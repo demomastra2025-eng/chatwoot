@@ -65,6 +65,25 @@ RSpec.describe HookJob do
       expect(Integrations::GoogleTranslate::DetectLanguageService).to receive(:new).with(hook: hook, message: event_data[:message])
       described_class.perform_now(hook, event_name, event_data)
     end
+
+    it 'enqueues the macrocrm sync job when its a macrocrm integration' do
+      hook = create(:integrations_hook,
+                    account: account,
+                    app_id: 'macrocrm',
+                    access_token: 'macro-secret',
+                    settings: {
+                      'app_id' => 'macro-app',
+                      'sync_incoming_messages' => true,
+                      'sync_outgoing_messages' => true
+                    })
+      allow(Integrations::Macrocrm::SyncJob).to receive(:perform_later)
+
+      expect(Integrations::Macrocrm::SyncJob)
+        .to receive(:perform_later)
+        .with(hook.id, event_name, event_data[:message].id)
+
+      described_class.perform_now(hook, event_name, event_data)
+    end
   end
 
   context 'when processing leadsquared integration' do

@@ -7,6 +7,21 @@ RSpec.describe Integrations::Hook do
   context 'with validations' do
     it { is_expected.to validate_presence_of(:app_id) }
     it { is_expected.to validate_presence_of(:account_id) }
+
+    it 'requires an access token for macrocrm' do
+      hook = build(:integrations_hook,
+                   account: create(:account),
+                   app_id: 'macrocrm',
+                   access_token: nil,
+                   settings: {
+                     'app_id' => 'macro-app',
+                     'sync_incoming_messages' => true,
+                     'sync_outgoing_messages' => true
+                   })
+
+      expect(hook).not_to be_valid
+      expect(hook.errors[:access_token]).to include("can't be blank")
+    end
   end
 
   describe 'associations' do

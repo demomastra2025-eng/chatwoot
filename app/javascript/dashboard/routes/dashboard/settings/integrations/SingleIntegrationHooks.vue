@@ -61,6 +61,12 @@ const headerDescription = computed(() =>
   )
 );
 
+const headerFeatureName = computed(() =>
+  ['dashboard_apps', 'webhook'].includes(props.integrationId)
+    ? props.integrationId
+    : 'integrations'
+);
+
 function humanizeProperty(property) {
   return property
     .split('_')
@@ -108,7 +114,8 @@ const hookDetails = computed(() => {
     <BaseSettingsHeader
       :title="integration.name"
       :description="headerDescription"
-      :feature-name="integrationId"
+      :link-text="$t('INTEGRATION_SETTINGS.LEARN_MORE')"
+      :feature-name="headerFeatureName"
       :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
     >
       <template #actions>

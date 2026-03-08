@@ -84,6 +84,21 @@ describe HookListener do
 
         listener.message_created(event)
       end
+
+      it 'enqueues the job for macrocrm' do
+        hook = create(:integrations_hook,
+                      account: account,
+                      app_id: 'macrocrm',
+                      access_token: 'macro-secret',
+                      settings: {
+                        'app_id' => 'macro-app',
+                        'sync_incoming_messages' => true,
+                        'sync_outgoing_messages' => true
+                      })
+        expect(HookJob).to receive(:perform_later).with(hook, event_name, message: message)
+
+        listener.message_created(event)
+      end
     end
 
     context 'with disabled hook' do

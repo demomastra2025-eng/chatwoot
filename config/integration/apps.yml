@@ -288,3 +288,60 @@ leadsquared:
       'conversation_activity_score',
       'transcript_activity_score',
     ]
+
+macrocrm:
+  id: macrocrm
+  logo: Official_Macro.png
+  i18n_key: macrocrm
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'app_id': { 'type': 'string' },
+          'sync_incoming_messages': { 'type': 'boolean' },
+          'sync_outgoing_messages': { 'type': 'boolean' },
+        },
+      'required': ['app_id'],
+      'additionalProperties': false,
+    }
+  settings_form_schema:
+    [
+      {
+        'label': 'App ID',
+        'type': 'text',
+        'name': 'app_id',
+        'validation': 'required',
+      },
+      {
+        'label': 'Bearer Token',
+        'type': 'password',
+        'name': 'access_token',
+        'validation': 'required',
+        'help': 'Stored securely. Leave blank on edit to keep the current token.',
+        'store': 'access_token',
+      },
+      {
+        'label': 'Integration enabled',
+        'type': 'checkbox',
+        'name': 'enabled',
+        'value': true,
+        'store': 'status',
+      },
+      {
+        'label': 'Sync incoming WhatsApp messages',
+        'type': 'checkbox',
+        'name': 'sync_incoming_messages',
+        'value': true,
+      },
+      {
+        'label': 'Sync outgoing WhatsApp messages',
+        'type': 'checkbox',
+        'name': 'sync_outgoing_messages',
+        'value': true,
+      },
+    ]
+  visible_properties: ['app_id', 'sync_incoming_messages', 'sync_outgoing_messages']

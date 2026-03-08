@@ -316,6 +316,10 @@ uk:
       name: 'LeadSquared'
       short_description: 'Sync your contacts and conversations with LeadSquared CRM.'
       description: 'Sync your contacts and conversations with LeadSquared CRM. This integration automatically creates leads in LeadSquared when new contacts are added, and logs conversation activity to provide your sales team with complete context.'
+    macrocrm:
+      name: 'MacroCRM'
+      short_description: 'Синхронізація вхідних і вихідних повідомлень WhatsApp з MacroCRM.'
+      description: 'Синхронізуйте повідомлення WhatsApp з MacroCRM. Інтеграція знаходить або створює контакт, знаходить або створює заявку та записує кожне повідомлення як нотатку в MacroCRM.'
   captain:
     copilot_message_required: Необхідне повідомлення
     copilot_error: 'Please connect an assistant to this inbox to use Copilot'
