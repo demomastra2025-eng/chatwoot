@@ -35,6 +35,9 @@ Rails.application.routes.draw do
     resource :slack_uploads, only: [:show]
   end
 
+  get '/legal/:locale/terms', to: 'legal#terms', as: :legal_terms
+  get '/legal/:locale/privacy', to: 'legal#privacy', as: :legal_privacy
+
   get '/health', to: 'health#show'
   get '/api', to: 'api#index'
   namespace :api, defaults: { format: 'json' } do

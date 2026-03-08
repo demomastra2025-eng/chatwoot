@@ -20,24 +20,24 @@ describe('#getUserString', () => {
         user: {
           name: 'Pranav',
           email: 'pranav@example.com',
-          avatar_url: 'https://images.chatwoot.com/placeholder',
+          avatar_url: 'https://one-link.kz/placeholder',
           identifier_hash: '12345',
         },
         identifier: '12345',
       })
     ).toBe(
-      'avatar_urlhttps://images.chatwoot.com/placeholderemailpranav@example.comnamePranavidentifier_hash12345identifier12345'
+      'avatar_urlhttps://one-link.kz/placeholderemailpranav@example.comnamePranavidentifier_hash12345identifier12345'
     );
 
     expect(
       getUserString({
         user: {
           email: 'pranav@example.com',
-          avatar_url: 'https://images.chatwoot.com/placeholder',
+          avatar_url: 'https://one-link.kz/placeholder',
         },
       })
     ).toBe(
-      'avatar_urlhttps://images.chatwoot.com/placeholderemailpranav@example.comnameidentifier_hashidentifier'
+      'avatar_urlhttps://one-link.kz/placeholderemailpranav@example.comnameidentifier_hashidentifier'
     );
   });
 });

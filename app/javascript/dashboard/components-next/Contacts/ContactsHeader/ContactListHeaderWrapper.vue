@@ -29,6 +29,8 @@ import ContactsFilter from 'dashboard/components-next/filter/ContactsFilter.vue'
 const props = defineProps({
   showSearch: { type: Boolean, default: true },
   searchValue: { type: String, default: '' },
+  companyFilterValue: { type: String, default: '' },
+  companyFilterOptions: { type: Array, default: () => [] },
   activeSort: { type: String, default: 'last_activity_at' },
   activeOrdering: { type: String, default: '' },
   headerTitle: { type: String, default: '' },
@@ -44,6 +46,7 @@ const emit = defineEmits([
   'search',
   'applyFilter',
   'clearFilters',
+  'update:companyFilter',
 ]);
 
 const { t } = useI18n();
@@ -274,6 +277,8 @@ defineExpose({
   <ContactsHeader
     :show-search="showSearch"
     :search-value="searchValue"
+    :company-filter-value="companyFilterValue"
+    :company-filter-options="companyFilterOptions"
     :active-sort="activeSort"
     :active-ordering="activeOrdering"
     :header-title="headerTitle"
@@ -283,6 +288,7 @@ defineExpose({
     :has-active-filters="hasAppliedFilters"
     :button-label="t('CONTACTS_LAYOUT.HEADER.MESSAGE_BUTTON')"
     @search="emit('search', $event)"
+    @update:company-filter="emit('update:companyFilter', $event)"
     @update:sort="emit('update:sort', $event)"
     @add="openCreateNewContactDialog"
     @import="openContactImportDialog"

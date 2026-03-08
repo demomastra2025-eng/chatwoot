@@ -478,7 +478,7 @@ onMounted(() => {
                   >
                     <button
                       type="button"
-                      class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-n-brand hover:bg-n-brand/90 rounded-lg transition-colors"
+                      class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-n-brand-contrast bg-n-brand-solid hover:bg-n-brand-solid/90 rounded-lg transition-colors"
                       @click="togglePolicyDropdown"
                     >
                       <i class="i-lucide-link text-sm" />

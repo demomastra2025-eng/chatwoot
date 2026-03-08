@@ -87,7 +87,7 @@ import { useBranding } from 'shared/composables/useBranding';
  * @property {number|null} [senderId=null] - The ID of the sender
  * @property {number} createdAt - Timestamp when the message was created
  * @property {number} currentUserId - The ID of the current user
- * @property {number} id - The unique identifier for the message
+ * @property {number|string} id - The unique identifier for the message
  * @property {number} messageType - The type of message (must be one of MESSAGE_TYPES)
  * @property {string|null} [error=null] - Error message if the message failed to send
  * @property {string|null} [senderType=null] - The type of the sender
@@ -101,7 +101,7 @@ import { useBranding } from 'shared/composables/useBranding';
 
 // eslint-disable-next-line vue/define-macros-order
 const props = defineProps({
-  id: { type: Number, required: true },
+  id: { type: [Number, String], required: true },
   messageType: {
     type: Number,
     required: true,

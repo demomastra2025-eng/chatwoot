@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Опрос успешно обновлен",
-      "ERROR_MESSAGE": "Не удается соединиться с сервером Woot, попробуйте позже"
+      "ERROR_MESSAGE": "Не удается соединиться с сервером Onelink, попробуйте позже"
     }
   },
-  "POWERED_BY": "Работает на Chatwoot"
+  "POWERED_BY": "Работает на OneLink"
 }

@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "ביטול",
       "API": {
-        "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Woot, נסה שוב מאוחר יותר"
+        "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Onelink, נסה שוב מאוחר יותר"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "מחק",
       "API": {
         "SUCCESS_MESSAGE": "התפקיד המותאם אישית נמחק בהצלחה.",
-        "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Woot, נסה שוב מאוחר יותר"
+        "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Onelink, נסה שוב מאוחר יותר"
       },
       "CONFIRM": {
         "TITLE": "אשר מחיקה",

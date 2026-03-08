@@ -4,7 +4,7 @@
     "TITLE": "Inregistrare",
     "TESTIMONIAL_HEADER": "Tot ce trebuie este un pas pentru a merge mai departe",
     "TESTIMONIAL_CONTENT": "Ești la un pas de a-ți angaja clienții, de a-i păstra și de a găsi altele noi.",
-    "TERMS_ACCEPT": "Prin crearea unui cont, sunteți de acord cu <a href=\"https://www.chatwoot.com/terms\">T & C</a> și <a href=\"https://www.chatwoot.com/privacy-policy\">politica noastră de confidențialitate</a>",
+    "TERMS_ACCEPT": "Prin crearea unui cont, sunteți de acord cu <a href=\"https://www.OneLink.com/terms\">T & C</a> și <a href=\"https://www.OneLink.com/privacy-policy\">politica noastră de confidențialitate</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Înscrieți-vă cu Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Woot. Vă rugăm să încercați din nou."
+      "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Onelink. Vă rugăm să încercați din nou."
     },
     "SUBMIT": "Creează cont",
     "HAVE_AN_ACCOUNT": "Ai deja un cont?"

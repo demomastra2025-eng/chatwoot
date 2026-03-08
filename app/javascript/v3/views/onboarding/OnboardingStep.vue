@@ -28,7 +28,7 @@ export default {
     :class="{
       'text-n-brand ': isActive,
       'text-n-slate-6': !isActive || isComplete,
-      'before:bg-n-brand': !isActive && isComplete,
+      'before:bg-n-brand-solid': !isActive && isComplete,
     }"
   >
     <div

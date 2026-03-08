@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Batalkan",
       "API": {
-        "ERROR_MESSAGE": "Masalah untuk hubungi Woot Server, Sila cuba sebentar lagi"
+        "ERROR_MESSAGE": "Masalah untuk hubungi Onelink Server, Sila cuba sebentar lagi"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Padamkan",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Masalah untuk hubungi Woot Server, Sila cuba sebentar lagi"
+        "ERROR_MESSAGE": "Masalah untuk hubungi Onelink Server, Sila cuba sebentar lagi"
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

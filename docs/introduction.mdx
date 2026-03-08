@@ -1,0 +1,94 @@
+---
+title: Welcome to Onelink Docs
+description: Central documentation hub for the Onelink product fork, platform architecture, deployment, and development workflow.
+sidebarTitle: Introduction
+---
+
+
+## What You'll Find Here
+
+<CardGroup cols={2}>
+  <Card
+    title="Platform Architecture"
+    icon="sitemap"
+    href="/contributing-guide/domain-access-architecture"
+  >
+    Understand how Onelink is evolving from a Chatwoot fork into a shared platform with isolated domain zones
+  </Card>
+  <Card
+    title="Development Guide"
+    icon="code"
+    href="/contributing-guide"
+  >
+    Build and maintain Onelink with our workflow, branching, coding, and architecture rules
+  </Card>
+  <Card
+    title="Deployment & Setup"
+    icon="server"
+    href="/self-hosted"
+  >
+    Run Onelink on your infrastructure using the inherited Chatwoot deployment and configuration guides
+  </Card>
+  <Card
+    title="API Reference"
+    icon="square-terminal"
+    href="/api-reference/introduction"
+  >
+    Explore the APIs that power accounts, agents, conversations, contacts, and integrations
+  </Card>
+</CardGroup>
+
+## Getting Started Paths
+
+Choose your path based on what you want to accomplish:
+
+### I want to understand the Onelink direction
+Start with the [Domain and Access Architecture](/contributing-guide/domain-access-architecture) document. It captures:
+- the account-scoped access model inherited from Chatwoot
+- the target platform layering for Onelink
+- the planned split between shared platform logic and domain zones like healthcare and construction
+- the CRM direction for shared entities, custom attributes, and domain-specific behavior
+
+### I want to work on the product
+Read the [Development Guide](/contributing-guide) to:
+- Set up your development environment
+- Follow the `onelink-main` branch workflow
+- Understand upstream sync expectations
+- Apply platform vs domain architecture rules while shipping features
+
+### I want to deploy or configure the product
+Use the [Installation & Setup](/self-hosted) section. Much of this content is inherited from Chatwoot and remains operationally relevant for the fork:
+- Docker
+- Kubernetes
+- cloud providers
+- environment configuration
+- monitoring and maintenance
+
+### I want to build integrations or extend APIs
+Use the [API Reference](/api-reference/introduction) and the development docs for:
+- application APIs
+- platform APIs
+- client APIs
+- integration-facing implementation patterns
+
+## What Onelink Is
+
+Onelink is a product fork built on top of Chatwoot. The goal is not only to rebrand the upstream product, but to evolve it into a shared platform that can support:
+
+- shared support and CRM capabilities
+- white-label branding and product-specific workflows
+- isolated domain zones such as healthcare and construction
+- controlled divergence from upstream while preserving the ability to receive Chatwoot updates
+
+## Documentation Principles
+
+This docs folder should increasingly reflect Onelink itself:
+
+- keep inherited Chatwoot operational docs where they still apply
+- add Onelink-specific architecture and product direction first
+- document where the fork intentionally diverges from upstream
+- prefer Onelink terminology and workflow over generic upstream wording for active development docs
+
+---
+
+Use the architecture and development sections as the source of truth for new work in this repository.

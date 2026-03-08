@@ -1,17 +1,21 @@
 type: object
 properties:
   app_id:
-    type: integer
+    type: string
     description: The ID of app for which integration hook is being created
-    example: 1
+    example: webhook
   inbox_id:
     type: integer
     description: The inbox ID, if the hook is an inbox hook
     example: 1
   status:
-    type: integer
-    description: The status of the integration (0 for inactive, 1 for active)
-    example: 1
+    type: string
+    description: The status of the integration
+    example: enabled
+  access_token:
+    type: string
+    description: Secret token stored separately from integration settings
+    example: secret-token
   settings:
     type: object
     description: The settings required by the integration

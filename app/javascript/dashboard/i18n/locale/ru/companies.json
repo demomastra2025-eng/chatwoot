@@ -1,13 +1,17 @@
 {
   "COMPANIES": {
     "HEADER": "Компании",
+    "BREADCRUMB": {
+      "COMPANIES": "Компании"
+    },
+    "DETAILS_HEADER": "Карточка компании",
     "SORT_BY": {
       "LABEL": "Сортировать по",
       "OPTIONS": {
         "NAME": "Имя",
         "DOMAIN": "Домен",
         "CREATED_AT": "Дата создания",
-        "CONTACTS_COUNT": "Contacts count"
+        "CONTACTS_COUNT": "Количество контактов"
       }
     },
     "ORDER": {
@@ -21,6 +25,54 @@
     "LOADING": "Загрузка компаний...",
     "UNNAMED": "Безымянная компания",
     "CONTACTS_COUNT": "{n} контакт | {n} контакта(-ов)",
+    "ACTIONS": {
+      "ADD": "Добавить компанию",
+      "SAVE": "Сохранить изменения",
+      "DELETE": "Удалить компанию"
+    },
+    "FORM": {
+      "NAME": {
+        "LABEL": "Название компании",
+        "PLACEHOLDER": "Введите название компании"
+      },
+      "DOMAIN": {
+        "LABEL": "Домен",
+        "PLACEHOLDER": "example.com"
+      },
+      "DESCRIPTION": {
+        "LABEL": "Описание",
+        "PLACEHOLDER": "Добавьте краткое описание компании"
+      },
+      "SUCCESS": {
+        "CREATE": "Компания успешно создана",
+        "UPDATE": "Компания успешно обновлена",
+        "DELETE": "Компания успешно удалена"
+      },
+      "ERROR": {
+        "CREATE": "Не удалось создать компанию",
+        "UPDATE": "Не удалось обновить компанию",
+        "DELETE": "Не удалось удалить компанию"
+      },
+      "VALIDATION": {
+        "NAME_REQUIRED": "Название компании обязательно"
+      }
+    },
+    "DETAILS": {
+      "META": {
+        "DOMAIN": "Домен",
+        "CREATED_AT": "Создано {date}",
+        "UPDATED_AT": "Обновлено {date}"
+      },
+      "DELETE_SECTION": {
+        "TITLE": "Удалить компанию",
+        "DESCRIPTION": "Компания будет безвозвратно удалена из вашего workspace."
+      },
+      "DELETE_DIALOG": {
+        "TITLE": "Удалить компанию",
+        "DESCRIPTION": "Это действие нельзя отменить.",
+        "CONFIRM": "Удалить компанию"
+      }
+    },
     "EMPTY_STATE": {
       "TITLE": "Компаний не найдено"
     }

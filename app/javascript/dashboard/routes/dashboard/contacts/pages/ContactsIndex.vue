@@ -34,7 +34,9 @@ const appliedFilters = useMapGetter('contacts/getAppliedContactFilters');
 const meta = useMapGetter('contacts/getMeta');
 
 const searchQuery = computed(() => route.query?.search);
+const companyQuery = computed(() => route.query?.company || '');
 const searchValue = ref(searchQuery.value || '');
+const companyFilterValue = ref(companyQuery.value || '');
 const pageNumber = computed(() => Number(route.query?.page) || 1);
 // For infinite scroll in search, track page internally
 const searchPageNumber = ref(1);
@@ -96,6 +98,28 @@ const activeSegment = computed(() => {
 });
 
 const hasContacts = computed(() => contacts.value.length > 0);
+const companyFilterOptions = computed(() => {
+  const companyNames = [
+    ...new Set(
+      contacts.value
+        .map(contact => contact.additionalAttributes?.companyName)
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  return companyNames.map(company => ({
+    label: company,
+    value: company,
+  }));
+});
+const filteredContacts = computed(() => {
+  if (!companyFilterValue.value) return contacts.value;
+
+  return contacts.value.filter(
+    contact =>
+      contact.additionalAttributes?.companyName === companyFilterValue.value
+  );
+});
 const isContactIndexView = computed(
   () => route.name === 'contacts_dashboard_index' && pageNumber.value === 1
 );
@@ -115,9 +139,10 @@ const showEmptyStateLayout = computed(() => {
 const showEmptyText = computed(() => {
   return (
     (searchQuery.value ||
+      companyFilterValue.value ||
       hasAppliedFilters.value ||
       !isContactIndexView.value) &&
-    !hasContacts.value
+    !filteredContacts.value.length
   );
 });
 
@@ -138,7 +163,7 @@ const emptyStateMessage = computed(() => {
 });
 
 const visibleContactIds = computed(() =>
-  contacts.value.map(contact => contact.id)
+  filteredContacts.value.map(contact => contact.id)
 );
 
 const clearSelection = () => {
@@ -167,15 +192,19 @@ const toggleContactSelection = ({ id, value }) => {
   }
 };
 
-const updatePageParam = (page, search = '') => {
+const updatePageParam = (page, search = '', company = '') => {
   const query = {
     ...route.query,
     page: page.toString(),
     ...(search ? { search } : {}),
+    ...(company ? { company } : {}),
   };
 
   if (!search) {
     delete query.search;
+  }
+  if (!company) {
+    delete query.company;
   }
 
   router.replace({ query });
@@ -194,7 +223,7 @@ const fetchContacts = async (page = 1) => {
   clearSelection();
   await store.dispatch('contacts/clearContactFilters');
   await store.dispatch('contacts/get', getCommonFetchParams(page));
-  updatePageParam(page);
+  updatePageParam(page, searchValue.value, companyFilterValue.value);
 };
 
 const fetchSavedOrAppliedFilteredContact = async (payload, page = 1) => {
@@ -204,7 +233,7 @@ const fetchSavedOrAppliedFilteredContact = async (payload, page = 1) => {
     ...getCommonFetchParams(page),
     queryPayload: payload,
   });
-  updatePageParam(page);
+  updatePageParam(page, searchValue.value, companyFilterValue.value);
 };
 
 const fetchActiveContacts = async (page = 1) => {
@@ -214,7 +243,7 @@ const fetchActiveContacts = async (page = 1) => {
     page,
     sortAttr: buildSortAttr(),
   });
-  updatePageParam(page);
+  updatePageParam(page, searchValue.value, companyFilterValue.value);
 };
 
 const searchContacts = debounce(async (value, page = 1, append = false) => {
@@ -226,12 +255,12 @@ const searchContacts = debounce(async (value, page = 1, append = false) => {
   searchValue.value = value;
 
   if (!value) {
-    updatePageParam(page);
+    updatePageParam(page, '', companyFilterValue.value);
     await fetchContacts(page);
     return;
   }
 
-  updatePageParam(page, value);
+  updatePageParam(page, value, companyFilterValue.value);
   await store.dispatch('contacts/search', {
     ...getCommonFetchParams(page),
     search: encodeURIComponent(value),
@@ -258,7 +287,7 @@ const loadMoreSearchResults = async () => {
 
 const fetchContactsBasedOnContext = async page => {
   clearSelection();
-  updatePageParam(page, searchValue.value);
+  updatePageParam(page, searchValue.value, companyFilterValue.value);
   if (isFetchingList.value) return;
   if (searchQuery.value) {
     await searchContacts(searchQuery.value, page);
@@ -283,6 +312,12 @@ const fetchContactsBasedOnContext = async page => {
   }
   // Default case: fetch regular contacts + label
   await fetchContacts(page);
+};
+
+const updateCompanyFilter = value => {
+  companyFilterValue.value = value || '';
+  clearSelection();
+  updatePageParam(1, searchValue.value, companyFilterValue.value);
 };
 
 const assignLabels = async labels => {
@@ -413,6 +448,10 @@ watch(searchQuery, value => {
   }
 });
 
+watch(companyQuery, value => {
+  companyFilterValue.value = value || '';
+});
+
 onMounted(async () => {
   if (!activeSegmentId.value) {
     if (searchQuery.value) {
@@ -439,10 +478,17 @@ onMounted(async () => {
   >
     <ContactsListLayout
       :search-value="searchValue"
+      :company-filter-value="companyFilterValue"
+      :company-filter-options="companyFilterOptions"
       :header-title="headerTitle"
       :current-page="currentPage"
-      :total-items="totalItems"
-      :show-pagination-footer="!isFetchingList && hasContacts && !isSearchView"
+      :total-items="companyFilterValue ? filteredContacts.length : totalItems"
+      :show-pagination-footer="
+        !isFetchingList &&
+        hasContacts &&
+        !isSearchView &&
+        !companyFilterValue
+      "
       :active-sort="sortState.activeSort"
       :active-ordering="sortState.activeOrdering"
       :active-segment="activeSegment"
@@ -454,6 +500,7 @@ onMounted(async () => {
       :is-loading-more="isLoadingMore"
       @update:current-page="fetchContactsBasedOnContext"
       @search="searchContacts"
+      @update:company-filter="updateCompanyFilter"
       @update:sort="handleSort"
       @apply-filter="fetchSavedOrAppliedFilteredContact"
       @clear-filters="fetchContacts"
@@ -495,7 +542,7 @@ onMounted(async () => {
         </div>
         <div v-else class="flex flex-col gap-4 px-6 pt-4 pb-6">
           <ContactsList
-            :contacts="contacts"
+            :contacts="filteredContacts"
             :selected-contact-ids="selectedContactIds"
             @toggle-contact="toggleContactSelection"
           />

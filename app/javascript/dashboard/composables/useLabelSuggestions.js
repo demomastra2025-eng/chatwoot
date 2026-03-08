@@ -1,5 +1,5 @@
-import { computed, onMounted } from 'vue';
-import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { computed } from 'vue';
+import { useMapGetter } from 'dashboard/composables/store';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import TasksAPI from 'dashboard/api/captain/tasks';
@@ -19,9 +19,7 @@ const cleanLabels = labels => {
 };
 
 export function useLabelSuggestions() {
-  const store = useStore();
-  const { isCloudFeatureEnabled } = useAccount();
-  const appIntegrations = useMapGetter('integrations/getAppIntegrations');
+  const { isCloudFeatureEnabled, currentAccount } = useAccount();
   const currentChat = useMapGetter('getSelectedChat');
   const conversationId = computed(() => currentChat.value?.id);
 
@@ -29,26 +27,13 @@ export function useLabelSuggestions() {
     return isCloudFeatureEnabled(FEATURE_FLAGS.CAPTAIN_TASKS);
   });
 
-  const aiIntegration = computed(
-    () =>
-      appIntegrations.value.find(
-        integration => integration.id === 'openai' && !!integration.hooks.length
-      )?.hooks[0]
-  );
-
   const isLabelSuggestionFeatureEnabled = computed(() => {
-    if (aiIntegration.value) {
-      const { settings = {} } = aiIntegration.value || {};
-      return !!settings.label_suggestion;
-    }
-    return false;
-  });
+    const accountSettings = currentAccount.value?.settings || {};
+    const captainFeatures =
+      accountSettings.captain_features || accountSettings.captainFeatures || {};
 
-  const fetchIntegrationsIfRequired = async () => {
-    if (!appIntegrations.value.length) {
-      await store.dispatch('integrations/get');
-    }
-  };
+    return captainFeatures.label_suggestion === true;
+  });
 
   /**
    * Gets label suggestions for the current conversation.
@@ -67,10 +52,6 @@ export function useLabelSuggestions() {
       return [];
     }
   };
-
-  onMounted(() => {
-    fetchIntegrationsIfRequired();
-  });
 
   return {
     captainTasksEnabled,

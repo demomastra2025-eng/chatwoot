@@ -4,7 +4,7 @@
     "TITLE": "הירשם",
     "TESTIMONIAL_HEADER": "כל מה שצריך זה צעד אחד כדי להתקדם",
     "TESTIMONIAL_CONTENT": "אתה במרחק צעד אחד מלהפעיל את הלקוחות שלך, לשמר אותם ולמצוא חדשים.",
-    "TERMS_ACCEPT": "על ידי יצירת חשבון, אתה מסכים ל<a href=\"https://www.chatwoot.com/terms\">תנאים וההגבלות</a> ול-<a href=\"https://www.chatwoot.com/ שלנו privacy-policy\">מדיניות הפרטיות</a>",
+    "TERMS_ACCEPT": "על ידי יצירת חשבון, אתה מסכים ל<a href=\"https://www.OneLink.com/terms\">תנאים וההגבלות</a> ול-<a href=\"https://www.OneLink.com/ שלנו privacy-policy\">מדיניות הפרטיות</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "הירשם לגוגל"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "ההרשמה הצליחה",
-      "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Woot, נסה שוב מאוחר יותר"
+      "ERROR_MESSAGE": "לא ניתן להתחבר לשרת Onelink, נסה שוב מאוחר יותר"
     },
     "SUBMIT": "צור חשבון",
     "HAVE_AN_ACCOUNT": "כבר יש לך חשבון?"

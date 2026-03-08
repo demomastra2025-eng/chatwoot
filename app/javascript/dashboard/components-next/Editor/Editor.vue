@@ -34,7 +34,8 @@ const slots = useSlots();
 
 const isFocused = ref(false);
 
-const characterCount = computed(() => props.modelValue.length);
+const normalizedModelValue = computed(() => props.modelValue || '');
+const characterCount = computed(() => normalizedModelValue.value.length);
 
 const messageClass = computed(() => {
   switch (props.messageType) {
@@ -69,8 +70,9 @@ watch(
   () => props.modelValue,
   newValue => {
     if (props.maxLength && props.showCharacterCount && !slots.actions) {
+      const nextValue = newValue || '';
       if (characterCount.value >= props.maxLength) {
-        emit('update:modelValue', newValue.slice(0, props.maxLength));
+        emit('update:modelValue', nextValue.slice(0, props.maxLength));
       }
     }
   }
@@ -98,7 +100,7 @@ watch(
     >
       <WootEditor
         :editor-id="editorKey"
-        :model-value="modelValue"
+        :model-value="normalizedModelValue"
         :placeholder="placeholder"
         :focus-on-mount="focusOnMount"
         :disabled="disabled"

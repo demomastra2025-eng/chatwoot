@@ -7,12 +7,19 @@ defineProps({
   headerTitle: { type: String, default: '' },
   currentPage: { type: Number, default: 1 },
   totalItems: { type: Number, default: 100 },
+  showCreateButton: { type: Boolean, default: true },
+  createButtonLabel: { type: String, default: '' },
   activeSort: { type: String, default: 'name' },
   activeOrdering: { type: String, default: '' },
   showPaginationFooter: { type: Boolean, default: true },
 });
 
-const emit = defineEmits(['update:currentPage', 'update:sort', 'search']);
+const emit = defineEmits([
+  'update:currentPage',
+  'update:sort',
+  'search',
+  'create',
+]);
 
 const updateCurrentPage = page => {
   emit('update:currentPage', page);
@@ -27,10 +34,13 @@ const updateCurrentPage = page => {
       <CompanyHeader
         :search-value="searchValue"
         :header-title="headerTitle"
+        :show-create-button="showCreateButton"
+        :create-button-label="createButtonLabel"
         :active-sort="activeSort"
         :active-ordering="activeOrdering"
         @search="emit('search', $event)"
         @update:sort="emit('update:sort', $event)"
+        @create="emit('create')"
       />
       <main class="flex-1 overflow-y-auto">
         <div class="w-full mx-auto max-w-[60rem]">

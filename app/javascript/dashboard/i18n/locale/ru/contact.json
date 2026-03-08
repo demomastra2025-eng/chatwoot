@@ -18,8 +18,8 @@
     "CREATED_AT_LABEL": "Создан",
     "NEW_MESSAGE": "Новое сообщение",
     "CALL": "Вызов",
-    "CALL_INITIATED": "Calling the contact…",
-    "CALL_FAILED": "Unable to start the call. Please try again.",
+    "CALL_INITIATED": "Звоним контакту…",
+    "CALL_FAILED": "Не удалось начать звонок. Попробуйте еще раз.",
     "VOICE_INBOX_PICKER": {
       "TITLE": "Выберите голосовую почту"
     },
@@ -220,7 +220,7 @@
       },
       "VALUE": {
         "LABEL": "Значение параметра",
-        "PLACEHOLDER": "Eg: 11901 "
+        "PLACEHOLDER": "Например: 11901"
       },
       "ADD": {
         "TITLE": "Создать новый атрибут ",
@@ -293,6 +293,10 @@
       "SEARCH_TITLE": "Поиск контактов",
       "ACTIVE_TITLE": "Активные контакты",
       "SEARCH_PLACEHOLDER": "Поиск...",
+      "COMPANY_FILTER": {
+        "PLACEHOLDER": "Все компании",
+        "SEARCH_PLACEHOLDER": "Поиск компаний"
+      },
       "MESSAGE_BUTTON": "Сообщение",
       "SEND_MESSAGE": "Отправить сообщение",
       "BLOCK_CONTACT": "Заблокировать контакт",
@@ -338,7 +342,7 @@
           "LABEL": "Сортировать по",
           "OPTIONS": {
             "NAME": "Имя",
-            "EMAIL": "Email",
+            "EMAIL": "Эл. почта",
             "PHONE_NUMBER": "Номер телефона",
             "COMPANY": "Компания",
             "COUNTRY": "Страна",
@@ -380,7 +384,7 @@
     },
     "FILTER": {
       "NAME": "Имя",
-      "EMAIL": "Email",
+      "EMAIL": "Эл. почта",
       "PHONE_NUMBER": "Номер телефона",
       "IDENTIFIER": "Идентификатор",
       "COUNTRY": "Страна",
@@ -458,7 +462,7 @@
             "PLACEHOLDER": "Добавить Instagram"
           },
           "TIKTOK": {
-            "PLACEHOLDER": "Add TikTok"
+            "PLACEHOLDER": "Добавить TikTok"
           },
           "LINKEDIN": {
             "PLACEHOLDER": "Добавить LinkedIn"
@@ -567,32 +571,33 @@
       }
     },
     "EMPTY_STATE": {
-      "TITLE": "Контакты не найдены в этом аккаунте",
+      "TITLE": "Контакты не найдены в этом workspace",
       "SUBTITLE": "Начните добавлять новые контакты, нажав на кнопку ниже",
       "BUTTON_LABEL": "Добавить контакт",
       "SEARCH_EMPTY_STATE_TITLE": "Нет контактов по вашему запросу 🔍",
       "LIST_EMPTY_STATE_TITLE": "Нет контактов в этом виде 📋",
       "ACTIVE_EMPTY_STATE_TITLE": "В данный момент нет активных контактов 🌙"
-    }
+    },
+    "LOAD_MORE": "Загрузить еще"
   },
   "CONTACTS_BULK_ACTIONS": {
     "ASSIGN_LABELS": "Назначить метки",
     "ASSIGN_LABELS_SUCCESS": "Метки успешно назначены.",
-    "ASSIGN_LABELS_FAILED": "Failed to assign labels",
-    "DESCRIPTION": "Select the labels you want to add to the selected contacts.",
-    "NO_LABELS_FOUND": "No labels available yet.",
+    "ASSIGN_LABELS_FAILED": "Не удалось назначить метки",
+    "DESCRIPTION": "Выберите метки, которые нужно добавить выбранным контактам.",
+    "NO_LABELS_FOUND": "Метки пока недоступны.",
     "SELECTED_COUNT": "Выбрано {count}",
-    "CLEAR_SELECTION": "Clear selection",
+    "CLEAR_SELECTION": "Очистить выбор",
     "SELECT_ALL": "Выбрать все ({count})",
     "DELETE_CONTACTS": "Удалить",
-    "DELETE_SUCCESS": "Contacts deleted successfully.",
-    "DELETE_FAILED": "Failed to delete contacts.",
+    "DELETE_SUCCESS": "Контакты успешно удалены.",
+    "DELETE_FAILED": "Не удалось удалить контакты.",
     "DELETE_DIALOG": {
-      "TITLE": "Delete selected contacts",
-      "SINGULAR_TITLE": "Delete selected contact",
-      "DESCRIPTION": "This will permanently delete {count} selected contacts. This action cannot be undone.",
-      "SINGULAR_DESCRIPTION": "This will permanently delete the selected contact. This action cannot be undone.",
-      "CONFIRM_MULTIPLE": "Delete contacts",
+      "TITLE": "Удалить выбранные контакты",
+      "SINGULAR_TITLE": "Удалить выбранный контакт",
+      "DESCRIPTION": "Это действие навсегда удалит {count} выбранных контактов. Его нельзя отменить.",
+      "SINGULAR_DESCRIPTION": "Это действие навсегда удалит выбранный контакт. Его нельзя отменить.",
+      "CONFIRM_MULTIPLE": "Удалить контакты",
       "CONFIRM_SINGLE": "Удалить контакт"
     }
   },
@@ -617,11 +622,11 @@
       "EMAIL_OPTIONS": {
         "SUBJECT_LABEL": "Тема :",
         "SUBJECT_PLACEHOLDER": "Введите тему email",
-        "CC_LABEL": "Cc:",
+        "CC_LABEL": "Копия:",
         "CC_PLACEHOLDER": "Поиск контакта с email адресом",
-        "BCC_LABEL": "Bcc:",
+        "BCC_LABEL": "Скрытая копия:",
         "BCC_PLACEHOLDER": "Поиск контакта с email адресом",
-        "BCC_BUTTON": "Bcc"
+        "BCC_BUTTON": "Скрытая копия"
       },
       "MESSAGE_EDITOR": {
         "PLACEHOLDER": "Напишите здесь ваше сообщение..."

@@ -4,7 +4,7 @@
     "TITLE": "Reģistrēt",
     "TESTIMONIAL_HEADER": "Viss, kas nepieciešams, ir viens solis, lai virzītos uz priekšu",
     "TESTIMONIAL_CONTENT": "Jūs esat viena soļa attālumā no klientu piesaistīšanas, noturēšanas un jaunu klientu atrašanas.",
-    "TERMS_ACCEPT": "Izveidojot kontu, Jūs piekrītat mūsu <a href=\"https://www.chatwoot.com/terms\">T & C</a> and <a href=\"https://www.chatwoot.com/privacy-policy\">Privātuma politikai</a>",
+    "TERMS_ACCEPT": "Izveidojot kontu, Jūs piekrītat mūsu <a href=\"https://www.OneLink.com/terms\">T & C</a> and <a href=\"https://www.OneLink.com/privacy-policy\">Privātuma politikai</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Reģistrēties, izmantojot Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+      "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
     },
     "SUBMIT": "Izveidot kontu",
     "HAVE_AN_ACCOUNT": "Jau ir konts?"

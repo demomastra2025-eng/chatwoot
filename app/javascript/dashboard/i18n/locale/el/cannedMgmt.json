@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Επεξεργασία",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Διαγραφή",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
       },
       "CONFIRM": {
         "TITLE": "Επιβεβαίωση Διαγραφής",

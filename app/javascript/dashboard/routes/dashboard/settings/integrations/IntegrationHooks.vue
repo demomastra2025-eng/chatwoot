@@ -40,6 +40,7 @@ export default {
       loading: {},
       showAddHookModal: false,
       showDeleteConfirmationPopup: false,
+      editableHook: null,
       selectedHook: {},
       alertMessage: '',
     };
@@ -72,10 +73,12 @@ export default {
     },
   },
   methods: {
-    openAddHookModal() {
+    openAddHookModal(hook = null) {
+      this.editableHook = hook;
       this.showAddHookModal = true;
     },
     hideAddHookModal() {
+      this.editableHook = null;
       this.showAddHookModal = false;
     },
     openDeletePopup(response) {
@@ -123,13 +126,18 @@ export default {
         <SingleIntegrationHooks
           :integration-id="integrationId"
           @add="openAddHookModal"
+          @edit="openAddHookModal"
           @delete="openDeletePopup"
         />
       </div>
     </div>
 
     <woot-modal v-model:show="showAddHookModal" :on-close="hideAddHookModal">
-      <NewHook :integration-id="integrationId" @close="hideAddHookModal" />
+      <NewHook
+        :integration-id="integrationId"
+        :hook="editableHook"
+        @close="hideAddHookModal"
+      />
     </woot-modal>
 
     <woot-delete-modal

@@ -31,7 +31,7 @@ export default {
   data() {
     return {
       isWidgetPreview: true,
-      color: '#1f93ff',
+      color: '#1A1A1A',
       websiteName: '',
       welcomeHeading: '',
       welcomeTagline: '',
@@ -165,12 +165,12 @@ export default {
         reply_time,
         avatar_url,
       } = this.inbox;
-      this.websiteName = name;
-      this.welcomeHeading = welcome_title;
-      this.welcomeTagline = welcome_tagline;
-      this.color = widget_color;
-      this.replyTime = reply_time;
-      this.avatarUrl = avatar_url;
+      this.websiteName = name || '';
+      this.welcomeHeading = welcome_title || '';
+      this.welcomeTagline = welcome_tagline || '';
+      this.color = widget_color || this.color;
+      this.replyTime = reply_time || this.replyTime;
+      this.avatarUrl = avatar_url || '';
 
       const savedInformation = this.getSavedInboxInformation();
       if (savedInformation) {

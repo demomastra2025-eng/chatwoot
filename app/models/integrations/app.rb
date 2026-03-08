@@ -30,6 +30,10 @@ class Integrations::App
     params[:fields]
   end
 
+  def hidden_in_ui?
+    params[:hidden_in_ui] == true
+  end
+
   # There is no way to get the account_id from the linear callback
   # so we are using the generate_linear_token method to generate a token and encode it in the state parameter
   def encode_state
@@ -85,7 +89,7 @@ class Integrations::App
     when 'dashboard_apps'
       account.dashboard_apps.exists?
     else
-      account.hooks.exists?(app_id: id)
+      account.hooks.exists?(app_id: id, status: :enabled)
     end
   end
 
@@ -110,6 +114,10 @@ class Integrations::App
       apps.values.each_with_object([]) do |app, result|
         result << new(app)
       end
+    end
+
+    def visible_in_ui
+      all.reject(&:hidden_in_ui?)
     end
 
     def find(params)

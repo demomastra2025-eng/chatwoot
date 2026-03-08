@@ -42,13 +42,13 @@ const resizeContainers = () => {
             <img
               :src="globalConfig.logo"
               :alt="globalConfig.installationName"
-              class="block w-auto h-7 dark:hidden"
+              class="block w-auto h-24 dark:hidden"
             />
             <img
               v-if="globalConfig.logoDark"
               :src="globalConfig.logoDark"
               :alt="globalConfig.installationName"
-              class="hidden w-auto h-7 dark:block"
+              class="hidden w-auto h-24 dark:block"
             />
             <h2 class="mt-6 text-2xl font-semibold text-n-slate-12">
               {{
@@ -60,7 +60,7 @@ const resizeContainers = () => {
             <p class="mt-2 text-sm text-n-slate-11">
               {{ $t('REGISTER.HAVE_AN_ACCOUNT') }}{{ ' '
               }}<router-link
-                class="text-n-blue-10 font-medium hover:text-n-blue-11"
+                class="text-n-brand font-medium hover:text-n-brand"
                 to="/app/login"
               >
                 {{ $t('LOGIN.SUBMIT') }}

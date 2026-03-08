@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Η επισκόπιση (suvey) ενημερώθηκε επιτυχώς",
-      "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+      "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
     }
   },
-  "POWERED_BY": "με την δύναμη του Chatwoot"
+  "POWERED_BY": "με την δύναμη του OneLink"
 }

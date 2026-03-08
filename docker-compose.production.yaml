@@ -1,11 +1,18 @@
-version: '3'
-
-services:
-  base: &base
-    image: chatwoot/chatwoot:latest
+x-base: &base
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+      args:
+        BUNDLE_WITHOUT: 'development:test'
+        EXECJS_RUNTIME: 'Disabled'
+        RAILS_ENV: 'production'
+        RAILS_SERVE_STATIC_FILES: 'true'
+    image: ${CW_IMAGE:-onelink:production}
     env_file: .env ## Change this file for customized env variables
     volumes:
       - storage_data:/app/storage
+
+services:
 
   rails:
     <<: *base
@@ -18,6 +25,7 @@ services:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=${CW_AUTO_PREPARE_DB:-true}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
     restart: always
@@ -31,6 +39,8 @@ services:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+    entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
     restart: always
 
@@ -42,10 +52,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=chatwoot
-      - POSTGRES_USER=postgres
-      # Please provide your own password.
-      - POSTGRES_PASSWORD=
+      - POSTGRES_DB=${POSTGRES_DATABASE:-chatwoot_production}
+      - POSTGRES_USER=${POSTGRES_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-replace_with_strong_postgres_password}
 
   redis:
     image: redis:alpine

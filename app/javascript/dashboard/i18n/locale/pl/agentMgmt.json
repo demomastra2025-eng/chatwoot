@@ -44,14 +44,14 @@
       "API": {
         "SUCCESS_MESSAGE": "Agent dodany pomyślnie",
         "EXIST_MESSAGE": "Email agenta jest już w użyciu, spróbuj innego adresu e-mail",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot, proszę spróbować później"
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink, proszę spróbować później"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Usuń",
       "API": {
         "SUCCESS_MESSAGE": "Agent został pomyślnie usunięty",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot, proszę spróbować później"
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink, proszę spróbować później"
       },
       "CONFIRM": {
         "TITLE": "Potwierdź usunięcie",
@@ -87,13 +87,13 @@
       "CANCEL_BUTTON_TEXT": "Anuluj",
       "API": {
         "SUCCESS_MESSAGE": "Agent został pomyślnie zaktualizowany",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot, proszę spróbować później"
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink, proszę spróbować później"
       },
       "PASSWORD_RESET": {
         "ADMIN_RESET_BUTTON": "Zresetuj hasło",
         "ADMIN_SUCCESS_MESSAGE": "E-mail z instrukcjami resetowania hasła został wysłany do agenta",
         "SUCCESS_MESSAGE": "Hasło agenta zostało pomyślnie zresetowane",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot, proszę spróbować później"
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink, proszę spróbować później"
       }
     },
     "SEARCH": {

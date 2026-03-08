@@ -11,6 +11,12 @@ export const useCompaniesStore = createStore({
     getCompaniesList: state => {
       return camelcaseKeys(state.records, { deep: true });
     },
+    getCompany: state => id => {
+      const company = state.records.find(
+        record => Number(record.id) === Number(id)
+      );
+      return camelcaseKeys(company || {}, { deep: true });
+    },
   },
   actions: () => ({
     async search({ search, page, sort }) {

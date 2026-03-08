@@ -41,7 +41,7 @@ export default {
     return {
       id: '',
       name: '',
-      locale: 'en',
+      locale: 'ru',
       domain: '',
       supportEmail: '',
       features: {},

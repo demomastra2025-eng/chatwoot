@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Cancel·la",
       "API": {
-        "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Woot. Torna-ho a provar més endavant"
+        "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Onelink. Torna-ho a provar més endavant"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Esborrar",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Woot. Torna-ho a provar més endavant"
+        "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Onelink. Torna-ho a provar més endavant"
       },
       "CONFIRM": {
         "TITLE": "Confirma la supressió",

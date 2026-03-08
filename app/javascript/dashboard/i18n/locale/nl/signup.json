@@ -4,7 +4,7 @@
     "TITLE": "Registreren",
     "TESTIMONIAL_HEADER": "Er is maar één stap nodig om vooruit te komen",
     "TESTIMONIAL_CONTENT": "U bent één stap verwijderd van het communiceren met uw klanten, ze te behouden en nieuwe te vinden.",
-    "TERMS_ACCEPT": "Door het aanmaken van een account, gaat u akkoord met onze <a href=\"https://www.chatwoot.com/terms\">T & C</a> en <a href=\"https://www.chatwoot.com/privacy-policy\">Privacy policy</a>",
+    "TERMS_ACCEPT": "Door het aanmaken van een account, gaat u akkoord met onze <a href=\"https://www.OneLink.com/terms\">T & C</a> en <a href=\"https://www.OneLink.com/privacy-policy\">Privacy policy</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Registreren met Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Kan geen verbinding maken met Woot Server, probeer het later opnieuw"
+      "ERROR_MESSAGE": "Kan geen verbinding maken met Onelink Server, probeer het later opnieuw"
     },
     "SUBMIT": "Account aanmaken",
     "HAVE_AN_ACCOUNT": "Heeft u al een account?"

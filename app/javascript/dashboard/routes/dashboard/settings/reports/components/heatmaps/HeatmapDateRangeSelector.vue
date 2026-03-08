@@ -55,7 +55,7 @@ const dayMenuItemConfigs = computed(() => [
 const resolvedLocale = computed(() => {
   const currentLocale =
     locale.value ||
-    (typeof navigator !== 'undefined' ? navigator.language : 'en');
+    (typeof navigator !== 'undefined' ? navigator.language : 'ru');
   return currentLocale.replace('_', '-');
 });
 

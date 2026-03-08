@@ -160,7 +160,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
         'values' => config.dig('survey_rules', 'values') || []
       },
       'button_text' => config['button_text'] || 'Please rate us',
-      'language' => config['language'] || 'en'
+      'language' => config['language'] || 'ru'
     }
     format_template_config(config, formatted)
     formatted

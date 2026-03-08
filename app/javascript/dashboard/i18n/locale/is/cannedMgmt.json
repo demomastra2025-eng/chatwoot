@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Woot, vinsamlegast reynið aftur"
+        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Onelink, vinsamlegast reynið aftur"
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Breyta",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Woot, vinsamlegast reynið aftur"
+        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Onelink, vinsamlegast reynið aftur"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Eyða",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Woot, vinsamlegast reynið aftur"
+        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Onelink, vinsamlegast reynið aftur"
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

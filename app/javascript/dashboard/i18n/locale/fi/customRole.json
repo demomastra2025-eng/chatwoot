@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Peruuta",
       "API": {
-        "ERROR_MESSAGE": "Yhteyden muodostaminen Woot-palvelimelle ei onnistunut, yritä myöhemmin uudelleen"
+        "ERROR_MESSAGE": "Yhteyden muodostaminen Onelink-palvelimelle ei onnistunut, yritä myöhemmin uudelleen"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Poista",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Yhteyden muodostaminen Woot-palvelimelle ei onnistunut, yritä myöhemmin uudelleen"
+        "ERROR_MESSAGE": "Yhteyden muodostaminen Onelink-palvelimelle ei onnistunut, yritä myöhemmin uudelleen"
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

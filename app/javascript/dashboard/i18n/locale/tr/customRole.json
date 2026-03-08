@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "İptal Et",
       "API": {
-        "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+        "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Sil",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+        "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
       },
       "CONFIRM": {
         "TITLE": "Silme işlemini onayla",

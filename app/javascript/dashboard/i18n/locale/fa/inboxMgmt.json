@@ -438,7 +438,7 @@
       },
       "AUTH": {
         "TITLE": "کانالی را انتخاب کنید",
-        "DESC": "Chatwoot از ویجت های چت زنده، فیس بوک مسنجر، پروفایل های توییتر، واتساپ، ایمیل ها و غیره به عنوان کانال پشتیبانی می کند. اگر می خواهید یک کانال سفارشی بسازید، می توانید آن را با استفاده از کانال API ایجاد کنید. برای شروع، یکی از کانال های زیر را انتخاب کنید.",
+        "DESC": "OneLink از ویجت های چت زنده، فیس بوک مسنجر، پروفایل های توییتر، واتساپ، ایمیل ها و غیره به عنوان کانال پشتیبانی می کند. اگر می خواهید یک کانال سفارشی بسازید، می توانید آن را با استفاده از کانال API ایجاد کنید. برای شروع، یکی از کانال های زیر را انتخاب کنید.",
         "TITLE_NEXT": "Complete the setup",
         "TITLE_FINISH": "Voilà!",
         "CHANNEL": {
@@ -693,8 +693,8 @@
       "MESSENGER_SUB_HEAD": "این دکمه را در تگ body قرار دهید",
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
-        "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.chatwoot.dev, chatwoot.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.chatwoot.dev, chatwoot.com)"
+        "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
       },
       "INBOX_AGENTS": "ایجنت ها",
       "INBOX_AGENTS_SUB_TEXT": "اضافه کردن یا حذف کردن دسترسی ایجنت به صندوق ورودی",
@@ -1022,7 +1022,7 @@
         "AGENT_MESSAGE": "سلام"
       },
       "BRANDING_TEXT": "قدرت گرفته از چت ووت",
-      "SCRIPT_SETTINGS": "\n      window.chatwootSettings = {options};"
+      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {

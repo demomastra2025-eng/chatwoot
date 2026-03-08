@@ -25,7 +25,7 @@ responses:
           payload:
             id: 123
             archived: false
-            color: "#1F93FF"
+            color: "#1A1A1A"
             config:
               allowed_locales:
                 - code: "en"
@@ -33,18 +33,18 @@ responses:
                   categories_count: 9
             custom_domain: "chatwoot.help"
             header_text: "Handbook"
-            homepage_link: "https://www.chatwoot.com"
+            homepage_link: "https://one-link.kz"
             name: "Handbook"
             slug: "handbook"
             page_title: "Handbook"
             account_id: 123
             inbox:
               id: 123
-              name: "Chatwoot"
-              website_url: "chatwoot.com"
+              name: "Onelink"
+              website_url: "one-link.kz"
               channel_type: "Channel::WebWidget"
               avatar_url: "https://example.com/avatar.png"
-              widget_color: "#1F93FF"
+              widget_color: "#1A1A1A"
               website_token: "4cWzuf9i9jxN9tbnv8K9STKU"
               enable_auto_assignment: true
               web_widget_script: "<script>...</script>"
@@ -57,7 +57,7 @@ responses:
               enable_email_collect: true
               csat_survey_enabled: true
               timezone: "America/Los_Angeles"
-              business_name: "Chatwoot"
+              business_name: "Onelink"
               hmac_mandatory: true
             logo:
               id: 123

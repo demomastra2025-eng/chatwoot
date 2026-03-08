@@ -31,9 +31,9 @@ export default {
     CONDENSED: 'condensed',
     EXPANDED: 'expanded',
   },
-  DOCS_URL: 'https://www.chatwoot.com/docs/product/',
+  DOCS_URL: 'https://one-link.kz/docs/product/',
   HELP_CENTER_DOCS_URL:
-    'https://www.chatwoot.com/docs/product/others/help-center',
+    'https://one-link.kz/docs/product/others/help-center',
   TESTIMONIAL_URL:
     'https://testimonials.cdn.chatwoot.com/testimonial-content.json',
   WHATSAPP_EMBEDDED_SIGNUP_DOCS_URL:

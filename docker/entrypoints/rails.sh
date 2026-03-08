@@ -30,5 +30,10 @@ do
   sleep 2;
 done
 
+if [ "${CW_AUTO_PREPARE_DB:-false}" = "true" ] || [ "${CW_AUTO_PREPARE_DB:-0}" = "1" ]; then
+  echo "Running db:chatwoot_prepare...."
+  bundle exec rails db:chatwoot_prepare
+fi
+
 # Execute the main process of the container
 exec "$@"

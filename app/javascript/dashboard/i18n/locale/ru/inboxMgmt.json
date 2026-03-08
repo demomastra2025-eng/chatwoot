@@ -1,6 +1,6 @@
 {
   "INBOX_MGMT": {
-    "HEADER": "Источники",
+    "HEADER": "Каналы",
     "DESCRIPTION": "Канал — это способ коммуникации, который ваш клиент выбирает для связи с вами. Входящие — это место, где вы управляете диалогами для определенного канала. Он может включать диалоги из различных источников, таких как электронная почта, онлайн чат или социальные сети.",
     "LEARN_MORE": "Узнать больше о «Входящих»",
     "RECONNECTION_REQUIRED": "Входящие сообщения отключены. Вы не будете получать новые сообщения пока не пройдете авторизацию повторно.",
@@ -13,15 +13,15 @@
     "CREATE_FLOW": {
       "CHANNEL": {
         "TITLE": "Выберите источник",
-        "BODY": "Выберите канал, который вы хотите подключить к Chatwoot."
+        "BODY": "Выберите канал, который вы хотите подключить к OneLink."
       },
       "INBOX": {
         "TITLE": "Создать источник",
         "BODY": "Авторизуйте свой аккаунт и создайте ящик."
       },
       "AGENT": {
-        "TITLE": "Добавить операторов",
-        "BODY": "Добавить агента в созданный источник."
+        "TITLE": "Добавить сотрудников",
+        "BODY": "Добавить сотрудника в созданный канал."
       },
       "FINISH": {
         "TITLE": "Voilà!",
@@ -39,7 +39,7 @@
         "PLACEHOLDER": "Введите имя вашего сайта (например: Acme Inc)"
       },
       "FB": {
-        "HELP": "PS: После авторизации мы получим доступ только к вашим сообщениям на странице. Личные сообщения недоступны Chatwoot.",
+        "HELP": "PS: После авторизации мы получим доступ только к вашим сообщениям на странице. Личные сообщения недоступны OneLink.",
         "CHOOSE_PAGE": "Выберите страницы",
         "CHOOSE_PLACEHOLDER": "Выберите страницу из списка",
         "INBOX_NAME": "Имя источника",
@@ -58,11 +58,11 @@
         "DUPLICATE_INBOX_BANNER": "Этот аккаунт Instagram был перенесен в новый почтовый ящик Instagram. Вы больше не сможете отправлять и получать сообщения Instagram из этого ящика."
       },
       "TIKTOK": {
-        "CONTINUE_WITH_TIKTOK": "Continue with TikTok",
-        "CONNECT_YOUR_TIKTOK_PROFILE": "Connect your TikTok Profile",
-        "HELP": "To add your TikTok profile as a channel, you need to authenticate your TikTok Profile by clicking on 'Continue with TikTok' ",
-        "ERROR_MESSAGE": "There was an error connecting to TikTok, please try again",
-        "ERROR_AUTH": "There was an error connecting to TikTok, please try again"
+        "CONTINUE_WITH_TIKTOK": "Продолжить с TikTok",
+        "CONNECT_YOUR_TIKTOK_PROFILE": "Подключите ваш профиль TikTok",
+        "HELP": "Чтобы добавить ваш профиль TikTok как канал, нужно авторизовать профиль TikTok, нажав «Продолжить с TikTok»",
+        "ERROR_MESSAGE": "Произошла ошибка при подключении к TikTok, попробуйте еще раз",
+        "ERROR_AUTH": "Произошла ошибка при подключении к TikTok, попробуйте еще раз"
       },
       "TWITTER": {
         "HELP": "Чтобы добавить свой Twitter профиль в качестве источника, вам нужно авторизоваться при помощи входа через Twitter ",
@@ -380,19 +380,19 @@
           "ERROR": "Это поле обязательно"
         },
         "EMAIL": {
-          "LABEL": "Email",
+          "LABEL": "Эл. почта",
           "SUBTITLE": "Email куда ваши клиенты пишут запросы",
-          "PLACEHOLDER": "Email"
+          "PLACEHOLDER": "Эл. почта"
         },
         "SUBMIT_BUTTON": "Создать источник email",
         "API": {
           "ERROR_MESSAGE": "Не удалось сохранить источник"
         },
         "FINISH_MESSAGE": "Начните пересылать свои письма на этот email.",
-        "FINISH_MESSAGE_NO_FORWARDING": "Your email inbox has been created successfully! You need to configure SMTP and IMAP credentials to send and receive emails. Without these settings, no emails will be processed.",
-        "FORWARDING_ADDRESS_LABEL": "Forward emails to this address:",
+        "FINISH_MESSAGE_NO_FORWARDING": "Ваш почтовый канал успешно создан. Теперь нужно настроить учетные данные SMTP и IMAP для отправки и получения писем. Без этих настроек письма не будут обрабатываться.",
+        "FORWARDING_ADDRESS_LABEL": "Пересылайте письма на этот адрес:",
         "CONFIGURE_SMTP_IMAP_LINK": "Нажмите здесь",
-        "CONFIGURE_SMTP_IMAP_TEXT": " to configure IMAP and SMTP settings"
+        "CONFIGURE_SMTP_IMAP_TEXT": " чтобы настроить параметры IMAP и SMTP"
       },
       "LINE_CHANNEL": {
         "TITLE": "Канал LINE",
@@ -438,7 +438,7 @@
       },
       "AUTH": {
         "TITLE": "Выберите источник",
-        "DESC": "Chatwoot поддерживает виджет чата, страницу Facebook, профиль Twitter, Whatsapp, Email и т. д., как канал связи с пользователями. Если вы хотите настроить пользовательский канал, вы можете создать его с помощью канала API. Выберите один канал из списка ниже, чтобы продолжить.",
+        "DESC": "OneLink поддерживает виджет чата, страницу Facebook, профиль Twitter, Whatsapp, Email и т. д., как канал связи с пользователями. Если вы хотите настроить пользовательский канал, вы можете создать его с помощью канала API. Выберите один канал из списка ниже, чтобы продолжить.",
         "TITLE_NEXT": "Завершить установку",
         "TITLE_FINISH": "Voilà!",
         "CHANNEL": {
@@ -480,7 +480,7 @@
           },
           "TIKTOK": {
             "TITLE": "TikTok",
-            "DESCRIPTION": "Connect your TikTok account"
+            "DESCRIPTION": "Подключите ваш аккаунт TikTok"
           },
           "VOICE": {
             "TITLE": "Голосовая связь",
@@ -489,10 +489,10 @@
         }
       },
       "AGENTS": {
-        "TITLE": "Операторы",
-        "DESC": "Здесь вы можете добавить операторов для управления только что созданным источником. Только эти операторы будут иметь доступ к вашему источнику. Операторы, которые не являются частью этого источника, не смогут видеть диалоги или отвечать на них. <br> <b>PS:</b> Если вам как администратору нужен доступ ко всем источникам, то вы должны добавить себя как операторы во все каналы, которые вы создаете.",
-        "VALIDATION_ERROR": "Добавьте хотя бы одного агента в новый канал",
-        "PICK_AGENTS": "Выберите агентов для канала"
+        "TITLE": "Сотрудники",
+        "DESC": "Здесь вы можете добавить сотрудников для управления только что созданным источником. Только эти сотрудники будут иметь доступ к вашему источнику. Сотрудники, которые не являются частью этого источника, не смогут видеть диалоги или отвечать на них. <br> <b>PS:</b> Если вам как администратору нужен доступ ко всем источникам, то вы должны добавить себя как сотрудники во все каналы, которые вы создаете.",
+        "VALIDATION_ERROR": "Добавьте хотя бы одного сотрудника в новый канал",
+        "PICK_AGENTS": "Выберите сотрудников для канала"
       },
       "DETAILS": {
         "TITLE": "Настройки источника",
@@ -500,7 +500,7 @@
       },
       "FINISH": {
         "TITLE": "Готово!",
-        "DESC": "Вы успешно подключили страницу Facebook к Chatwoot. В следующий раз когда покупатель напишет вашей странице, диалог автоматически отобразится здесь.<br>Мы также предоставляем вам скрипт виджета, который вы можете легко добавить на ваш сайт. Как только вы добавите его на сайт, клиенты смогут отправлять вам сообщения прямо с вашего сайта без помощи какого-либо внешнего инструмента и диалог появится прямо здесь, в Chatwoot.<br>Круто, да"
+        "DESC": "Вы успешно подключили страницу Facebook к OneLink. В следующий раз когда покупатель напишет вашей странице, диалог автоматически отобразится здесь.<br>Мы также предоставляем вам скрипт виджета, который вы можете легко добавить на ваш сайт. Как только вы добавите его на сайт, клиенты смогут отправлять вам сообщения прямо с вашего сайта без помощи какого-либо внешнего инструмента и диалог появится прямо здесь, в OneLink.<br>Круто, да"
       },
       "EMAIL_PROVIDER": {
         "TITLE": "Выберите почтового провайдера",
@@ -532,8 +532,8 @@
       "DESC": ""
     },
     "AGENTS": {
-      "BUTTON_TEXT": "Добавить операторов",
-      "ADD_AGENTS": "Добавление операторов в ваш источник..."
+      "BUTTON_TEXT": "Добавить сотрудников",
+      "ADD_AGENTS": "Добавление сотрудников в ваш источник..."
     },
     "FINISH": {
       "TITLE": "Истоник готов!",
@@ -563,12 +563,12 @@
       },
       "SENDER_NAME_SECTION": {
         "TITLE": "Имя отправителя",
-        "SUB_TEXT": "Выберите имя, отображаемое клиенту, когда он получает письма от ваших агентов.",
+        "SUB_TEXT": "Выберите имя, отображаемое клиенту, когда он получает письма от ваших сотрудников.",
         "FOR_EG": "Например:",
         "FRIENDLY": {
           "TITLE": "Дружелюбный",
           "FROM": "от",
-          "SUBTITLE": "Добавьте имя агента, который отправил ответ в имени отправителя, чтобы сделать его дружелюбным."
+          "SUBTITLE": "Добавьте имя сотрудника, отправившего ответ, в имя отправителя, чтобы письмо выглядело более персонально."
         },
         "PROFESSIONAL": {
           "TITLE": "Профессиональный",
@@ -618,7 +618,7 @@
       "COLLABORATORS": "Соавторы",
       "CONFIGURATION": "Настройки",
       "CAMPAIGN": "Кампании",
-      "PRE_CHAT_FORM": "Форма, показываемая перед стартом диалога",
+      "PRE_CHAT_FORM": "Форма",
       "BUSINESS_HOURS": "Время работы",
       "WIDGET_BUILDER": "Конструктор виджетов",
       "BOT_CONFIGURATION": "Конфигурация бота",
@@ -693,18 +693,18 @@
       "MESSENGER_SUB_HEAD": "Поместите эту кнопку внутри тега <body>",
       "ALLOWED_DOMAINS": {
         "TITLE": "Разрешенные домены",
-        "SUBTITLE": "Добавьте подстановочные или обычные домены, разделенные запятыми (оставьте пустым, чтобы разрешить всем), например *.chatwoot.dev, chatwoot.com.",
-        "PLACEHOLDER": "Введите домены, разделенные запятыми (например: *.chatwoot.dev, chatwoot.com)"
+        "SUBTITLE": "Добавьте подстановочные или обычные домены, разделенные запятыми (оставьте пустым, чтобы разрешить всем), например *.OneLink.dev, OneLink.com.",
+        "PLACEHOLDER": "Введите домены, разделенные запятыми (например: *.OneLink.dev, OneLink.com)"
       },
-      "INBOX_AGENTS": "Операторы",
-      "INBOX_AGENTS_SUB_TEXT": "Добавить или удалить агентов из этого источника",
+      "INBOX_AGENTS": "Сотрудники",
+      "INBOX_AGENTS_SUB_TEXT": "Добавляйте или удаляйте сотрудников из этого канала",
       "AGENT_ASSIGNMENT": "Назначения для беседы",
       "AGENT_ASSIGNMENT_SUB_TEXT": "Обновить настройки назначения для бесед",
       "UPDATE": "Обновить",
       "ENABLE_EMAIL_COLLECT_BOX": "Включить ящик сбора почты",
       "ENABLE_EMAIL_COLLECT_BOX_SUB_TEXT": "Включение или отключение ящик для сбора почты в новой беседе",
       "AUTO_ASSIGNMENT": "Включить автоназначение",
-      "SENDER_NAME_SECTION": "Включить имя агента в электронной почте",
+      "SENDER_NAME_SECTION": "Показывать имя сотрудника в письме",
       "SENDER_NAME_SECTION_TEXT": "Включить/выключить отображение имени Сотрудника в электронной почте, если отключено, он будет показывать бизнес-имя",
       "ENABLE_CONTINUITY_VIA_EMAIL": "Включить непрерывность диалогов по электронной почте",
       "ENABLE_CONTINUITY_VIA_EMAIL_SUB_TEXT": "Диалоги будут продолжаться по электронной почте, если доступен контактный адрес электронной почты.",
@@ -712,7 +712,7 @@
       "LOCK_TO_SINGLE_CONVERSATION_SUB_TEXT": "Включение или отключение нескольких диалогов для одного и того же контакта в этой папке «Входящие»",
       "INBOX_UPDATE_TITLE": "Настройки источника",
       "INBOX_UPDATE_SUB_TEXT": "Изменить настройки источника",
-      "AUTO_ASSIGNMENT_SUB_TEXT": "Включить или отключить автоматическое назначение новых разговоров к агентам, добавленным к этому источнику.",
+      "AUTO_ASSIGNMENT_SUB_TEXT": "Включить или отключить автоматическое назначение новых диалогов сотрудникам, добавленным в этот канал.",
       "HMAC_VERIFICATION": "Проверка личности пользователя",
       "HMAC_DESCRIPTION": "С помощью этого ключа вы можете сгенерировать секретный токен, который может быть использован для проверки личности ваших пользователей.",
       "HMAC_LINK_TO_DOCS": "Подробнее читайте здесь.",
@@ -722,7 +722,7 @@
       "INBOX_IDENTIFIER_SUB_TEXT": "Используйте токен `inbox_identifier` для аутентификации ваших клиентов API.",
       "FORWARD_EMAIL_TITLE": "Переслать на Email",
       "FORWARD_EMAIL_SUB_TEXT": "Начните пересылать свои письма на этот email.",
-      "FORWARD_EMAIL_NOT_CONFIGURED": "Forwarding emails to your inbox is currently disabled on this installation. To use this feature, it must be enabled by your administrator. Please get in touch with them to proceed.",
+      "FORWARD_EMAIL_NOT_CONFIGURED": "Пересылка писем в ваш канал сейчас отключена на этой установке. Чтобы использовать эту функцию, администратор должен включить ее. Свяжитесь с ним, чтобы продолжить.",
       "ALLOW_MESSAGES_AFTER_RESOLVED": "Разрешить отправлять сообщения после завершения диалога",
       "ALLOW_MESSAGES_AFTER_RESOLVED_SUB_TEXT": "Разрешить пользователям отправлять сообщения даже после того, как диалог будет завершен.",
       "WHATSAPP_SECTION_SUBHEADER": "Этот ключ API используется для интеграции с API WhatsApp.",
@@ -731,7 +731,7 @@
       "WHATSAPP_SECTION_UPDATE_TITLE": "Обновить ключ API",
       "WHATSAPP_SECTION_UPDATE_PLACEHOLDER": "Введите сюда новый ключ API",
       "WHATSAPP_SECTION_UPDATE_BUTTON": "Обновить",
-      "WHATSAPP_EMBEDDED_SIGNUP_TITLE": "WhatsApp Embedded Signup",
+      "WHATSAPP_EMBEDDED_SIGNUP_TITLE": "Встроенная регистрация WhatsApp",
       "WHATSAPP_EMBEDDED_SIGNUP_SUBHEADER": "Этот почтовый ящик подключён через WhatsApp Embedded Signup.",
       "WHATSAPP_EMBEDDED_SIGNUP_DESCRIPTION": "Вы можете перенастроить этот почтовый ящик для обновления параметров WhatsApp Business.",
       "WHATSAPP_RECONFIGURE_BUTTON": "Изменить настройки",
@@ -755,7 +755,7 @@
       "UPDATE_PRE_CHAT_FORM_SETTINGS": "Обновить настройки формы для чата"
     },
     "HELP_CENTER": {
-      "LABEL": "Центр поддержки",
+      "LABEL": "Ваша страница",
       "PLACEHOLDER": "Выберите справочный центр",
       "SELECT_PLACEHOLDER": "Выберите справочный центр",
       "REMOVE": "Удалить справочный центр",
@@ -764,7 +764,7 @@
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Авто распределение лимита",
       "MAX_ASSIGNMENT_LIMIT_RANGE_ERROR": "Пожалуйста, введите значение больше 0",
-      "MAX_ASSIGNMENT_LIMIT_SUB_TEXT": "Ограничьте максимальное количество диалогов из этого почтового ящика, которые могут быть автоматически назначены агенту"
+      "MAX_ASSIGNMENT_LIMIT_SUB_TEXT": "Ограничьте максимальное количество диалогов из этого почтового ящика, которые могут быть автоматически назначены одному сотруднику"
     },
     "FACEBOOK_REAUTHORIZE": {
       "TITLE": "Войти заново",
@@ -809,32 +809,32 @@
         "PLACEHOLDER": "Добавьте сообщение, которое будет отображено в форме обратной связи"
       },
       "BUTTON_TEXT": {
-        "LABEL": "Button text",
-        "PLACEHOLDER": "Please rate us"
+        "LABEL": "Текст кнопки",
+        "PLACEHOLDER": "Пожалуйста, оцените нас"
       },
       "LANGUAGE": {
         "LABEL": "Язык",
-        "PLACEHOLDER": "Select template language"
+        "PLACEHOLDER": "Выберите язык шаблона"
       },
       "MESSAGE_PREVIEW": {
-        "LABEL": "Message preview",
-        "TOOLTIP": "This may vary slightly when rendered on WhatsApp's platform."
+        "LABEL": "Предпросмотр сообщения",
+        "TOOLTIP": "При отображении на платформе WhatsApp вид может немного отличаться."
       },
       "TEMPLATE_STATUS": {
-        "APPROVED": "Approved by WhatsApp",
-        "PENDING": "Pending WhatsApp approval",
-        "REJECTED": "Meta rejected the template",
-        "DEFAULT": "Needs WhatsApp approval",
-        "NOT_FOUND": "The template does not exist in the Meta platform."
+        "APPROVED": "Одобрено WhatsApp",
+        "PENDING": "Ожидает одобрения WhatsApp",
+        "REJECTED": "Meta отклонила шаблон",
+        "DEFAULT": "Требуется одобрение WhatsApp",
+        "NOT_FOUND": "Шаблон не существует на платформе Meta."
       },
       "TEMPLATE_CREATION": {
-        "SUCCESS_MESSAGE": "WhatsApp template created successfully and sent for approval",
-        "ERROR_MESSAGE": "Failed to create WhatsApp template"
+        "SUCCESS_MESSAGE": "Шаблон WhatsApp успешно создан и отправлен на одобрение",
+        "ERROR_MESSAGE": "Не удалось создать шаблон WhatsApp"
       },
       "TEMPLATE_UPDATE_DIALOG": {
-        "TITLE": "Edit survey details",
-        "DESCRIPTION": "We will delete the previous template and make a new one which will be sent again for WhatsApp approval",
-        "CONFIRM": "Create new template",
+        "TITLE": "Изменить данные опроса",
+        "DESCRIPTION": "Мы удалим предыдущий шаблон и создадим новый, который снова будет отправлен на одобрение WhatsApp",
+        "CONFIRM": "Создать новый шаблон",
         "CANCEL": "Вернуться"
       },
       "SURVEY_RULE": {
@@ -848,7 +848,7 @@
         "SELECT_PLACEHOLDER": "Выбрать метки"
       },
       "NOTE": "Примечание: опросы CSAT отправляются только один раз для диалога",
-      "WHATSAPP_NOTE": "Note: We will create a template and send it for WhatsApp approval. After being approved, surveys will be sent only once per conversation as per the survey rule.",
+      "WHATSAPP_NOTE": "Примечание: мы создадим шаблон и отправим его на одобрение WhatsApp. После одобрения опрос будет отправляться только один раз на диалог согласно правилу опроса.",
       "API": {
         "SUCCESS_MESSAGE": "Настройки CSAT успешно обновлены",
         "ERROR_MESSAGE": "Не удалось обновить CSAT настройки. Повторите попытку позже."
@@ -1021,8 +1021,8 @@
         "USER_MESSAGE": "Хай",
         "AGENT_MESSAGE": "Привет"
       },
-      "BRANDING_TEXT": "Работает на Chatwoot",
-      "SCRIPT_SETTINGS": "\n      window.chatwootSettings = {options};"
+      "BRANDING_TEXT": "Работает на OneLink",
+      "SCRIPT_SETTINGS": "\n      window.chatonelinkSettings = {options};"
     },
     "EMAIL_PROVIDERS": {
       "MICROSOFT": {
@@ -1052,6 +1052,53 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Голосовая связь"
+    },
+    "ASSIGNMENT": {
+      "TITLE": "Назначение диалогов",
+      "DESCRIPTION": "Автоматически назначайте новые диалоги доступным сотрудникам на основе политик назначения",
+      "ENABLE_AUTO_ASSIGNMENT": "Включить автоматическое назначение диалогов",
+      "DEFAULT_RULES_TITLE": "Стандартные правила назначения",
+      "DEFAULT_RULES_DESCRIPTION": "Для всех диалогов используется стандартное поведение назначения",
+      "DEFAULT_RULE_1": "Сначала самые ранние созданные диалоги",
+      "DEFAULT_RULE_2": "Распределение по очереди",
+      "CUSTOMIZE_WITH_POLICY": "Настроить через политику назначения",
+      "USING_POLICY": "Для этого канала используется пользовательская политика назначения",
+      "CUSTOMIZE_POLICY": "Настроить через политику назначения",
+      "DELETE_POLICY": "Удалить политику",
+      "POLICY_LABEL": "Политика назначения",
+      "ASSIGNMENT_ORDER_LABEL": "Порядок назначения",
+      "ASSIGNMENT_METHOD_LABEL": "Метод назначения",
+      "POLICY_STATUS": {
+        "ACTIVE": "Активна",
+        "INACTIVE": "Неактивна"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "Сначала ранние",
+        "LONGEST_WAITING": "Дольше всех ожидают"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "По очереди",
+        "BALANCED": "Сбалансированное назначение"
+      },
+      "UPGRADE_PROMPT": "Пользовательские политики назначения доступны на тарифе Business",
+      "UPGRADE_TO_BUSINESS": "Перейти на Business",
+      "DEFAULT_POLICY_LINKED": "Стандартная политика привязана",
+      "DEFAULT_POLICY_DESCRIPTION": "Привяжите пользовательскую политику назначения, чтобы настроить распределение диалогов между сотрудниками в этом канале.",
+      "LINK_EXISTING_POLICY": "Привязать существующую политику",
+      "CREATE_NEW_POLICY": "Создать новую политику",
+      "NO_POLICIES": "Политики назначения не найдены",
+      "VIEW_ALL_POLICIES": "Посмотреть все политики",
+      "CURRENT_BEHAVIOR": "Сейчас используется стандартное поведение назначения:",
+      "LINK_SUCCESS": "Политика назначения успешно привязана",
+      "LINK_ERROR": "Не удалось привязать политику назначения"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "Удалить политику назначения?",
+      "DELETE_CONFIRM_MESSAGE": "Вы уверены, что хотите удалить эту политику назначения из этого канала? Канал вернется к стандартным правилам назначения.",
+      "CANCEL": "Отмена",
+      "CONFIRM_DELETE": "Удалить",
+      "DELETE_SUCCESS": "Политика назначения успешно удалена",
+      "DELETE_ERROR": "Не удалось удалить политику назначения"
     }
   }
 }

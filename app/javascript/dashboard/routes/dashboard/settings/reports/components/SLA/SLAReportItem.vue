@@ -41,7 +41,7 @@ const routerParams = computed(() => ({
     <div
       class="flex items-center gap-2 col-span-6 px-0 py-2 text-sm tracking-[0.5] text-n-slate-12 rtl:text-right"
     >
-      <router-link :to="routerParams" class="text-n-slate-12 hover:underline">
+      <router-link :to="routerParams" class="text-link">
         {{ `#${conversationId}` }}
       </router-link>
       <span class="text-n-slate-11">

@@ -3,11 +3,11 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   before_action :check_authorization
 
   def create
-    @hook = Current.account.hooks.create!(permitted_params)
+    @hook = Current.account.hooks.create!(normalized_params)
   end
 
   def update
-    @hook.update!(permitted_params.slice(:status, :settings))
+    @hook.update!(normalized_params.slice(:status, :settings, :access_token))
   end
 
   def process_event
@@ -40,6 +40,17 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   end
 
   def permitted_params
-    params.require(:hook).permit(:app_id, :inbox_id, :status, settings: {})
+    params.require(:hook).permit(:app_id, :inbox_id, :status, :access_token, settings: {})
+  end
+
+  def normalized_params
+    params = permitted_params.to_h
+
+    if [true, false, 'true', 'false'].include?(params['status'])
+      params['status'] = ActiveModel::Type::Boolean.new.cast(params['status']) ? 'enabled' : 'disabled'
+    end
+
+    params.delete('access_token') if params['access_token'].blank?
+    params
   end
 end

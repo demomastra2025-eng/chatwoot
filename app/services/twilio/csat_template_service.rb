@@ -88,7 +88,7 @@ class Twilio::CsatTemplateService
         content_sid: content_sid,
         friendly_name: whatsapp_data['name'] || template_response['friendly_name'],
         status: whatsapp_data['status'] || 'pending',
-        language: template_response['language'] || 'en'
+        language: template_response['language'] || 'ru'
       }
     }
   end
@@ -100,7 +100,7 @@ class Twilio::CsatTemplateService
         content_sid: content_sid,
         friendly_name: template_response['friendly_name'],
         status: 'pending',
-        language: template_response['language'] || 'en'
+        language: template_response['language'] || 'ru'
       }
     }
   end

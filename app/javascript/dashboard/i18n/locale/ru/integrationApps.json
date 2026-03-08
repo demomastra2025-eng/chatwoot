@@ -25,7 +25,7 @@
       "CANCEL_BUTTON_TEXT": "Отменить",
       "API": {
         "SUCCESS_MESSAGE": "Вебхук удален",
-        "ERROR_MESSAGE": "Не удается соединиться с сервером Woot, попробуйте позже"
+        "ERROR_MESSAGE": "Не удается соединиться с сервером Onelink, попробуйте позже"
       }
     },
     "LIST": {
@@ -46,7 +46,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Вебхук для интеграции успешно добавлен",
-        "ERROR_MESSAGE": "Не удается соединиться с сервером Woot, попробуйте позже"
+        "ERROR_MESSAGE": "Не удается соединиться с сервером Onelink, попробуйте позже"
       }
     },
     "CONNECT": {
@@ -56,7 +56,7 @@
       "BUTTON_TEXT": "Отключиться"
     },
     "SIDEBAR_DESCRIPTION": {
-      "DIALOGFLOW": "Dialogflow is a natural language processing platform for building conversational interfaces. Integrating it with {installationName} lets bots handle queries first and transfer them to agents when needed. It helps qualify leads and reduce agent workload by answering FAQs. To add Dialogflow, create a Service Account in Google Console and share the credentials. Refer to the docs for details"
+      "DIALOGFLOW": "Dialogflow — это платформа обработки естественного языка для создания разговорных интерфейсов. Интеграция с {installationName} позволяет роботам сначала обрабатывать запросы, а при необходимости передавать их сотрудникам. Это помогает квалифицировать лиды и снижать нагрузку на сотрудников, отвечая на часто задаваемые вопросы. Чтобы добавить Dialogflow, создайте Service Account в Google Console и передайте учетные данные. Подробности смотрите в документации."
     }
   }
 }

@@ -110,13 +110,13 @@ const dayClasses = day => ({
   'text-n-slate-10 pointer-events-none': !isInCurrentMonth(day),
   'text-n-slate-12 hover:text-n-slate-12 hover:bg-n-blue-6 dark:hover:bg-n-blue-7':
     isInCurrentMonth(day),
-  'bg-n-brand text-white':
+  'bg-n-brand-solid text-n-brand-contrast':
     isSelectedStartOrEndDate(day) && isInCurrentMonth(day),
   'bg-n-blue-4 dark:bg-n-blue-5':
     (isInRange(day) || isHoveringInRange(day)) &&
     !isSelectedStartOrEndDate(day) &&
     isInCurrentMonth(day),
-  'outline outline-1 outline-n-blue-8 -outline-offset-1 !text-n-blue-11':
+  'outline outline-1 outline-n-brand/40 -outline-offset-1 !text-n-brand':
     isToday(props.currentDate, day) && !isSelectedStartOrEndDate(day),
 });
 </script>

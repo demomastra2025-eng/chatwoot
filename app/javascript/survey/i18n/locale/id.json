@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Survei berhasil diperbarui",
-      "ERROR_MESSAGE": "Tidak dapat terhubung ke Server Woot, Silahkan coba lagi nanti"
+      "ERROR_MESSAGE": "Tidak dapat terhubung ke Server Onelink, Silahkan coba lagi nanti"
     }
   },
-  "POWERED_BY": "Powered by Chatwoot"
+  "POWERED_BY": "Powered by OneLink"
 }

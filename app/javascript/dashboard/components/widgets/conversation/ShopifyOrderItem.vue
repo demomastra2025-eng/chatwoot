@@ -70,7 +70,7 @@ const getFulfillmentClass = status => {
           :href="order.admin_url"
           target="_blank"
           rel="noopener noreferrer"
-          class="hover:underline text-n-slate-12 cursor-pointer truncate"
+          class="text-link truncate"
         >
           {{ $t('CONVERSATION_SIDEBAR.SHOPIFY.ORDER_ID', { id: order.id }) }}
           <i class="i-lucide-external-link pl-5" />

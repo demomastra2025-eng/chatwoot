@@ -1,9 +1,13 @@
 type: object
 properties:
   status:
-    type: integer
-    description: The status of the integration (0 for inactive, 1 for active)
-    example: 1
+    type: string
+    description: The status of the integration
+    example: disabled
+  access_token:
+    type: string
+    description: Optional replacement secret token. Omit or send an empty value to keep the existing token.
+    example: secret-token
   settings:
     type: object
     description: The settings required by the integration

@@ -61,7 +61,7 @@ export default {
     searchResultsWithUrl() {
       return this.searchResults.map(article => ({
         ...article,
-        localeName: this.localeName(article.category.locale || 'en'),
+        localeName: this.localeName(article.category.locale || 'ru'),
         url: this.generateArticleUrl(article),
       }));
     },

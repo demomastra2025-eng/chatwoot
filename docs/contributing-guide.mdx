@@ -1,0 +1,266 @@
+---
+title: Contributing to Onelink
+description: Development guide for the Onelink product fork: setup, workflow, upstream sync, architecture rules, and contribution expectations.
+sidebarTitle: Introduction
+---
+
+# Development Guide
+
+This guide is for developing the Onelink product fork at `/Users/akhanbakhitov/Documents/zeroprompt/onelink`.
+
+Onelink is built on top of Chatwoot, but active product development should follow Onelink's own architecture direction, branching workflow, and domain boundaries.
+
+## Getting Started
+
+<Warning>
+Before starting a substantial feature, decide whether the work belongs to shared platform code, a domain zone such as healthcare or construction, or tenant-specific configuration.
+</Warning>
+
+### Initial Steps
+
+1. **Classify the work**:
+   - shared platform capability
+   - domain-specific behavior
+   - tenant-specific configuration
+
+2. **Check the architecture source of truth**:
+   - [Domain Access Architecture](/contributing-guide/domain-access-architecture)
+
+3. **Search the current code paths first**:
+   - `app/`
+   - `enterprise/`
+   - existing docs and API surfaces
+   - remember that Onelink currently runs with inherited enterprise capabilities opened, so `enterprise/` is a technical code split, not a separate product tier
+
+4. **Decide whether the feature should stay isolated**:
+   - if needed by multiple domains, move toward shared platform code
+   - if needed by only one domain, keep it domain-scoped
+   - if needed by one tenant, prefer config/custom attributes before new shared code
+
+5. **Keep upstream compatibility in mind**:
+   - minimize invasive patches in shared Chatwoot-like code
+   - prefer extension points, services, overlays, and isolated routes/screens where possible
+
+## Git and Pull Request Workflow
+
+<Info>
+The main working branch in this fork is `onelink-main`, not `develop`.
+</Info>
+
+### Branching and Remotes
+
+- Branch from `onelink-main`
+- Use a focused branch name such as `feature/...`, `fix/...`, `chore/...`, or `sync/...`
+- Keep `origin` as the writable remote for Onelink work
+- Treat `upstream` as the read-only Chatwoot source
+- Push branches to GitHub over SSH, not HTTPS
+
+### Default Delivery Path
+
+For normal product work, use this path:
+
+```bash
+git switch onelink-main
+git pull origin onelink-main
+git switch -c feature/<short-name>
+git push -u origin feature/<short-name>
+```
+
+Then:
+
+- commit on the feature branch
+- push updates to `origin`
+- open a pull request into `onelink-main`
+- merge into `onelink-main` after review or maintainer verification
+
+Use `sync/...` branches only for bringing Chatwoot changes into the fork.
+
+### Before Submitting
+
+- Keep platform and domain concerns separated in your changes
+- Ensure all user-facing strings remain translatable
+- Update docs when the product direction, architecture, or API behavior changes
+- Do not push product changes to `upstream`
+
+### Worktree Recommendation
+
+For larger or concurrent tasks, prefer one git worktree and one branch per task. This keeps local process state isolated and matches the repository's Codex workflow.
+
+## Development Workflow
+
+### Developing a New Feature
+
+```bash
+# Create a branch in the following format:
+feature/<issue-id>-<issue-name>
+
+# Example:
+feature/crm-healthcare-panel
+```
+
+**Requirements:**
+- Follow platform vs domain layering rules
+- Avoid putting domain-specific conditionals into shared code when an isolated extension point is possible
+- Add accompanying tests when appropriate
+- Include proper documentation when behavior or architecture changes
+
+### Bug Fixes or Chores
+
+```bash
+# Branch naming for bug fixes:
+fix/<issue-id>-<issue-name>
+
+# Branch naming for chores:
+chore/<description>
+```
+
+**Requirements:**
+- Describe whether the fix affects upstream-like core, shared platform behavior, or a specific domain zone
+- Add appropriate test coverage if applicable
+- Call out compatibility risks if the change touches shared access, APIs, or domain boundaries
+
+## Environment Setup
+
+Choose the guide that matches your operating system:
+
+<CardGroup cols={2}>
+  <Card
+    title="macOS Setup"
+    icon="apple"
+    href="/contributing-guide/environment-setup/mac-os"
+  >
+    Complete setup guide for macOS developers
+  </Card>
+  <Card
+    title="Ubuntu Setup"
+    icon="ubuntu"
+    href="/contributing-guide/environment-setup/ubuntu"
+  >
+    Step-by-step Ubuntu installation guide
+  </Card>
+  <Card
+    title="Windows Setup"
+    icon="windows"
+    href="/contributing-guide/environment-setup/windows"
+  >
+    Windows 10/11 development environment setup
+  </Card>
+  <Card
+    title="Docker Setup"
+    icon="docker"
+    href="/contributing-guide/environment-setup/docker"
+  >
+    Quick setup using Docker containers
+  </Card>
+</CardGroup>
+
+### Speed Up Development
+
+Use our [Make commands](/contributing-guide/environment-setup/make) to speed up your local development workflow.
+
+## Project Setup
+
+Once you have set up the environment, follow these guides to get Onelink running locally:
+
+1. **[Quick Setup Guide](/contributing-guide/setup-guide)** - Step-by-step setup instructions
+2. **[Environment Variables](/contributing-guide/environment-variables)** - Configuration options
+3. **[Common Errors](/contributing-guide/common-errors)** - Troubleshooting guide
+
+### Special App Integrations
+
+If you're working on specific integrations:
+- **[Telegram App Setup](/contributing-guide/telegram-channel-setup)**
+- **[Line App Setup](/contributing-guide/line-channel-setup)**
+- **[Mobile App Development](/contributing-guide/mobile-app)**
+
+## Architecture Expectations
+
+Onelink development should follow these rules:
+
+- one shared platform, not multiple unrelated products
+- domain zones such as healthcare and construction stay isolated from each other where possible
+- `generic` should remain a first-class profile for broad customers
+- shared CRM behavior belongs in platform code
+- domain-specific fields and workflows belong in domain-scoped code
+- `Deal` and `Task` should remain separate business entities
+- custom attributes extend shared entities but should not replace core relationships and lifecycle state
+
+## Testing Your Contributions
+
+We use comprehensive testing to ensure code quality:
+
+### Test Types
+- **Unit Tests**: Test individual components and functions
+- **Integration Tests**: Test component interactions
+- **End-to-End Tests**: Test complete user workflows with [Cypress](/contributing-guide/tests/cypress)
+
+### Running Tests
+
+```bash
+# Run all tests
+bundle exec rspec
+
+# Run specific test file
+bundle exec rspec spec/models/user_spec.rb
+
+# Run Cypress tests
+npm run cypress:open
+```
+
+## Upstream Sync
+
+Because this repository is a fork of Chatwoot, not a greenfield application:
+
+- keep the fork diff intentional
+- prefer extension and composition over large hard forks
+- validate that shared changes still make sense for generic and domain-specific accounts
+- merge upstream updates into a dedicated sync branch before bringing them back to `onelink-main`
+
+Use the dedicated [Upstream Sync Strategy](/development/upstream-sync) document for the exact sync branch pattern and guardrails.
+
+## Documentation and Translation
+
+### Documentation Guidelines
+- Keep documentation clear and concise
+- Include code examples where helpful
+- Update documentation when changing functionality
+- Prefer Onelink terminology over generic upstream wording in active product docs
+- Use the Onelink architecture docs as the source of truth for platform/domain direction
+
+### Internationalization
+- All user-facing text must be translatable
+- Only add English strings - other languages are handled via [Crowdin](https://one-link.kz/)
+- Use proper i18n keys and formatting
+
+## Community Guidelines
+
+We strive to maintain a welcoming and inclusive community:
+
+- **[Code of Conduct](https://one-link.kz/docs/contributing-guide/other/code-of-conduct)** - Our community standards
+- **[Community Guidelines](https://one-link.kz/docs/contributing-guide/other/community-guidelines)** - How we interact
+- **[Security Reports](https://one-link.kz/docs/contributing-guide/other/security-reports)** - Reporting security issues
+
+## API Development
+
+If you're working on API-related features:
+
+- **[Onelink APIs](/contributing-guide/apis)** - API development guide
+- **[API Documentation](https://one-link.kz/docs/contributing-guide/other/api-documentation)** - Documenting APIs
+- **[Platform APIs](/contributing-guide/platform-apis)** - Platform-level APIs
+
+## Recognition
+
+We value all contributions to the product fork. Check out our [Contributors page](https://one-link.kz/docs/contributing-guide/other/contributors) to see the people who have helped shape the codebase.
+
+## Getting Help
+
+Need assistance? Here are your options:
+
+- **GitHub Issues**: For bug reports and feature requests
+- **Discord Community**: For real-time discussions with the core team
+- **Documentation**: Comprehensive guides and API references
+- **Community Forums**: Connect with other contributors
+
+---
+
+Use this guide together with the architecture docs before changing shared product behavior.

@@ -1,0 +1,103 @@
+{
+  "AGENT_BOTS": {
+    "HEADER": "Rororobots",
+    "LOADING_EDITOR": "Loading editor...",
+    "DESCRIPTION": "Agent Rororobots are like the most fabulous members of your team. They can handle the small stuff, so you can focus on the stuff that matters. Give them a try. You can manage your rorobots from this page or create new ones using the 'Add Rorobot' button.",
+    "LEARN_MORE": "Learn about agent rorobots",
+    "GLOBAL_BOT": "System robot",
+    "GLOBAL_BOT_BADGE": "System",
+    "AVATAR": {
+      "SUCCESS_DELETE": "Rorobot avatar deleted successfully",
+      "ERROR_DELETE": "Error deleting robot avatar, please try again"
+    },
+    "BOT_CONFIGURATION": {
+      "TITLE": "Select an agent robot",
+      "DESC": "Assign an Agent Rorobot to your inbox. They can handle initial conversations and transfer them to a live agent when necessary.",
+      "SUBMIT": "Update",
+      "DISCONNECT": "Disconnect robot",
+      "SUCCESS_MESSAGE": "Successfully updated the agent robot.",
+      "DISCONNECTED_SUCCESS_MESSAGE": "Successfully disconnected the agent robot.",
+      "ERROR_MESSAGE": "Could not update the agent robot. Please try again.",
+      "DISCONNECTED_ERROR_MESSAGE": "Could not disconnect the agent robot. Please try again.",
+      "SELECT_PLACEHOLDER": "Select robot"
+    },
+    "ADD": {
+      "TITLE": "Add Rorobot",
+      "CANCEL_BUTTON_TEXT": "Cancel",
+      "API": {
+        "SUCCESS_MESSAGE": "Rorobot added successfully.",
+        "ERROR_MESSAGE": "Could not add robot. Please try again later."
+      }
+    },
+    "LIST": {
+      "404": "No rorobots found. You can create a robot by clicking the 'Add Rorobot' button.",
+      "LOADING": "Fetching rorobots...",
+      "TABLE_HEADER": {
+        "DETAILS": "Rorobot Details",
+        "URL": "Webhook URL"
+      }
+    },
+    "DELETE": {
+      "BUTTON_TEXT": "Delete",
+      "TITLE": "Delete robot",
+      "CONFIRM": {
+        "TITLE": "Confirm Deletion",
+        "MESSAGE": "Are you sure you want to delete {name}?",
+        "YES": "Yes, Delete",
+        "NO": "No, Keep"
+      },
+      "API": {
+        "SUCCESS_MESSAGE": "Rorobot deleted successfully.",
+        "ERROR_MESSAGE": "Could not delete robot. Please try again."
+      }
+    },
+    "EDIT": {
+      "BUTTON_TEXT": "Edit",
+      "TITLE": "Edit robot",
+      "API": {
+        "SUCCESS_MESSAGE": "Rorobot updated successfully.",
+        "ERROR_MESSAGE": "Could not update robot. Please try again."
+      }
+    },
+    "ACCESS_TOKEN": {
+      "TITLE": "Access Token",
+      "DESCRIPTION": "Copy the access token and save it securely",
+      "COPY_SUCCESSFUL": "Access token copied to clipboard",
+      "RESET_SUCCESS": "Access token regenerated successfully",
+      "RESET_ERROR": "Unable to regenerate access token. Please try again"
+    },
+    "FORM": {
+      "AVATAR": {
+        "LABEL": "Rorobot avatar"
+      },
+      "NAME": {
+        "LABEL": "Rorobot name",
+        "PLACEHOLDER": "Enter robot name",
+        "REQUIRED": "Rorobot name is required"
+      },
+      "DESCRIPTION": {
+        "LABEL": "Description",
+        "PLACEHOLDER": "What does this robot do?"
+      },
+      "WEBHOOK_URL": {
+        "LABEL": "Webhook URL",
+        "PLACEHOLDER": "https://example.com/webhook",
+        "REQUIRED": "Webhook URL is required"
+      },
+      "ERRORS": {
+        "NAME": "Rorobot name is required",
+        "URL": "Webhook URL is required",
+        "VALID_URL": "Please enter a valid URL starting with http:// or https://"
+      },
+      "CANCEL": "Cancel",
+      "CREATE": "Create Rorobot",
+      "UPDATE": "Update Rorobot"
+    },
+    "WEBHOOK": {
+      "DESCRIPTION": "Configure a webhook robot to integrate with your custom services. The robot will receive and process events from conversations and can respond to them."
+    },
+    "TYPES": {
+      "WEBHOOK": "Webhook robot"
+    }
+  }
+}

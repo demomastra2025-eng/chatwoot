@@ -1,8 +1,8 @@
 {
   "CONVERSATION": {
+    "404": "Мы не можем найти диалог. Пожалуйста, попробуйте еще раз",
     "SELECT_A_CONVERSATION": "Пожалуйста, выберите диалог из левой панели",
     "CSAT_REPLY_MESSAGE": "Пожалуйста, оцените диалог",
-    "404": "Мы не можем найти диалог. Пожалуйста, попробуйте еще раз",
     "SWITCH_VIEW_LAYOUT": "Переключить вид",
     "DASHBOARD_APP_TAB_MESSAGES": "Сообщения",
     "UNVERIFIED_SESSION": "Подлинность этого пользователя не подтверждена",
@@ -12,8 +12,8 @@
     "NO_INBOX_2": " для начала",
     "NO_INBOX_AGENT": "Ой! Похоже, вы не добавлены ни к одному источнику сообщений. Обратитесь к администратору",
     "SEARCH_MESSAGES": "Поиск по сообщениям в диалогах",
-    "VIEW_ORIGINAL": "View original",
-    "VIEW_TRANSLATED": "View translated",
+    "VIEW_ORIGINAL": "Показать оригинал",
+    "VIEW_TRANSLATED": "Показать перевод",
     "EMPTY_STATE": {
       "CMD_BAR": "открыть меню команд",
       "KEYBOARD_SHORTCUTS": "для просмотра быстрых клавиш"
@@ -28,7 +28,7 @@
     "UNREAD_MESSAGES": "Непрочитанные сообщения",
     "UNREAD_MESSAGE": "Непрочитанное сообщение",
     "CLICK_HERE": "Нажмите здесь",
-    "LOADING_INBOXES": "Загружаем источники",
+    "LOADING_INBOXES": "Загружаем каналы",
     "LOADING_CONVERSATIONS": "Загрузка диалогов",
     "CANNOT_REPLY": "Вы не можете ответить из-за",
     "24_HOURS_WINDOW": "Ограничение на 24 часа",
@@ -114,7 +114,7 @@
       }
     },
     "MENTION": {
-      "AGENTS": "Операторы",
+      "AGENTS": "Сотрудники",
       "TEAMS": "Команды"
     },
     "CUSTOM_SNOOZE": {
@@ -156,9 +156,9 @@
         "TOMORROW": "До завтра",
         "NEXT_WEEK": "До следующей недели"
       },
-      "ASSIGN_AGENT": "Назначить агента",
+      "ASSIGN_AGENT": "Назначить сотрудника",
       "ASSIGN_LABEL": "Назначить метки",
-      "AGENTS_LOADING": "Загрузка агентов...",
+      "AGENTS_LOADING": "Загрузка сотрудников...",
       "ASSIGN_TEAM": "Назначить команду",
       "DELETE": "Удалить диалог",
       "OPEN_IN_NEW_TAB": "Открыть в новой вкладке",
@@ -167,7 +167,7 @@
       "API": {
         "AGENT_ASSIGNMENT": {
           "SUCCESFUL": "ID разговора {conversationId} присвоен \"{agentName}\"",
-          "FAILED": "Не удалось назначить агента. Пожалуйста, попробуйте еще раз."
+          "FAILED": "Не удалось назначить сотрудника. Пожалуйста, попробуйте еще раз."
         },
         "LABEL_ASSIGNMENT": {
           "SUCCESFUL": "Назначена метка #{labelName} диалогу {conversationId}",
@@ -176,6 +176,10 @@
         "TEAM_ASSIGNMENT": {
           "SUCCESFUL": "Назначена метка #{team} в разговор id {conversationId}",
           "FAILED": "Не удалось назначить команду. Пожалуйста, попробуйте еще раз."
+        },
+        "LABEL_REMOVAL": {
+          "SUCCESFUL": "Удалена метка #{labelName} из диалога с id {conversationId}",
+          "FAILED": "Не удалось удалить метку. Попробуйте еще раз."
         }
       }
     },
@@ -184,10 +188,13 @@
       "ENABLE_SIGN_TOOLTIP": "Включить подпись",
       "DISABLE_SIGN_TOOLTIP": "Отключить подпись",
       "MSG_INPUT": "Shift + enter чтобы начать новую строку. Начните с '/', чтобы выбрать шаблонный ответ.",
-      "PRIVATE_MSG_INPUT": "Shift + enter для новой строки. Это будет видно только Операторам",
+      "PRIVATE_MSG_INPUT": "Shift + enter для новой строки. Это сообщение будет видно только сотрудникам",
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Подпись сообщения не настроена, пожалуйста настройте её в настройках профиля.",
       "CLICK_HERE": "Нажмите здесь, чтобы обновить",
-      "WHATSAPP_TEMPLATES": "Шаблоны Whatsapp"
+      "WHATSAPP_TEMPLATES": "Шаблоны Whatsapp",
+      "MESSAGING_RESTRICTED": "Вы не можете ответить в этот диалог",
+      "MESSAGING_RESTRICTED_WHATSAPP": "Вы можете отвечать только шаблонным сообщением из-за ограничения 24-часового окна сообщений",
+      "COPILOT_MSG_INPUT": "Дайте копилоту дополнительную подсказку или задайте любой другой вопрос. Нажмите Enter, чтобы отправить продолжение"
     },
     "REPLYBOX": {
       "REPLY": "Ответить",
@@ -210,12 +217,12 @@
         "TO": "ДО",
         "ADD_BCC": "Добавить bcc",
         "CC": {
-          "LABEL": "CC",
+          "LABEL": "Копия",
           "PLACEHOLDER": "Письма, разделенные запятыми",
           "ERROR": "Пожалуйста, введите действительный адрес электронной почты"
         },
         "BCC": {
-          "LABEL": "BCC",
+          "LABEL": "Скрытая копия",
           "PLACEHOLDER": "Письма, разделенные запятыми",
           "ERROR": "Пожалуйста, введите действительный адрес электронной почты"
         }
@@ -234,12 +241,13 @@
         "REMOVE_PREVIEW": "Удалить цитируемые сообщения email",
         "COLLAPSE": "Свернуть предпросмотр",
         "EXPAND": "Развернуть предпросмотр"
-      }
+      },
+      "COPILOT_THINKING": "Копилот думает"
     },
     "VISIBLE_TO_AGENTS": "Приватная заметка: видна только вам и вашей команде",
     "CHANGE_STATUS": "Статус разговора изменен",
     "CHANGE_STATUS_FAILED": "Не удалось изменить статус диалога",
-    "CHANGE_AGENT": "Назначенный оператор изменен",
+    "CHANGE_AGENT": "Назначенный сотрудник изменен",
     "CHANGE_AGENT_FAILED": "Не удалось изменить назначение",
     "ASSIGN_LABEL_SUCCESFUL": "Метка успешно назначена",
     "ASSIGN_LABEL_FAILED": "Назначение метки не удалось",
@@ -253,7 +261,7 @@
     "SEND_FAILED": "Не удалось удалить сообщение! Попробуйте еще раз",
     "TRY_AGAIN": "повторить",
     "ASSIGNMENT": {
-      "SELECT_AGENT": "Выбрать Агента",
+      "SELECT_AGENT": "Выбрать сотрудника",
       "REMOVE": "Удалить",
       "ASSIGN": "Назначить"
     },
@@ -274,18 +282,22 @@
     },
     "SIDEBAR": {
       "CONTACT": "Контакт",
-      "COPILOT": "Copilot"
+      "COPILOT": "Копилот"
     },
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Входящий звонок",
       "OUTGOING_CALL": "Исходящий звонок",
       "CALL_IN_PROGRESS": "Идёт звонок",
       "NOT_ANSWERED_YET": "Пока нет ответа",
-      "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",
-      "REJECT_CALL": "Reject",
-      "JOIN_CALL": "Join call",
-      "END_CALL": "End call"
-    }
+      "HANDLED_IN_ANOTHER_TAB": "Обрабатывается в другой вкладке",
+      "REJECT_CALL": "Отклонить",
+      "JOIN_CALL": "Присоединиться к звонку",
+      "END_CALL": "Завершить звонок"
+    },
+    "UNSUPPORTED_MESSAGE_TIKTOK": "Это сообщение не поддерживается. Вы можете открыть его в приложении TikTok.",
+    "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается в этом диалоге",
+    "NATIVE_APP": "Нативное приложение",
+    "NATIVE_APP_ADVISORY": "Это сообщение было отправлено из нативного приложения. Ответьте из OneLink, чтобы сохранить окно сообщений."
   },
   "EMAIL_TRANSCRIPT": {
     "TITLE": "Отправить субтитры разговора",
@@ -296,7 +308,7 @@
     "SEND_EMAIL_ERROR": "Произошла ошибка, попробуйте еще раз",
     "FORM": {
       "SEND_TO_CONTACT": "Отправить субтитры клиенту",
-      "SEND_TO_AGENT": "Отправить транскрипт назначенному агенту",
+      "SEND_TO_AGENT": "Отправить транскрипт назначенному сотруднику",
       "SEND_TO_OTHER_EMAIL_ADDRESS": "Отправить субтитры на другой адрес электронной почты",
       "EMAIL": {
         "PLACEHOLDER": "Введите адрес электронной почты",
@@ -318,7 +330,7 @@
     },
     "TEAM_MEMBERS": {
       "TITLE": "Пригласить членов вашей команды",
-      "DESCRIPTION": "Так как вы готовы общаться с клиентом, пригласите в команду своих товарищей, чтобы помочь вам. Вы можете пригласить своих коллег по команде, добавив их адреса электронной почты в список агентов.",
+      "DESCRIPTION": "Так как вы готовы общаться с клиентом, пригласите в команду своих товарищей, чтобы помочь вам. Вы можете пригласить своих коллег по команде, добавив их адреса электронной почты в список сотрудников.",
       "NEW_LINK": "Нажмите здесь, чтобы пригласить члена команды"
     },
     "LABELS": {
@@ -328,12 +340,12 @@
     },
     "CANNED_RESPONSES": {
       "TITLE": "Создать шаблонные ответы",
-      "DESCRIPTION": "Предварительно написанные шаблонные ответы помогут вам быстро отвечать на диалоги. Агенты могут ввести символ '/' и короткое название, чтобы вставить ответ.",
+      "DESCRIPTION": "Предварительно написанные шаблонные ответы помогут вам быстро отвечать на диалоги. Сотрудники могут ввести символ '/' и короткое название, чтобы вставить ответ.",
       "NEW_LINK": "Нажмите здесь, чтобы создать шаблонный ответ"
     }
   },
   "CONVERSATION_SIDEBAR": {
-    "ASSIGNEE_LABEL": "Назначенный агент",
+    "ASSIGNEE_LABEL": "Назначенный сотрудник",
     "SELF_ASSIGN": "Назначить мне",
     "TEAM_LABEL": "Назначенная команда",
     "SELECT": {
@@ -349,25 +361,25 @@
       "PREVIOUS_CONVERSATION": "Предыдущие диалоги",
       "MACROS": "Макросс",
       "LINEAR_ISSUES": "Связанные проблемы",
-      "SHOPIFY_ORDERS": "Shopify Orders"
+      "SHOPIFY_ORDERS": "Заказы Shopify"
     },
     "SHOPIFY": {
-      "ORDER_ID": "Order #{id}",
-      "ERROR": "Error loading orders",
-      "NO_SHOPIFY_ORDERS": "No orders found",
+      "ORDER_ID": "Заказ #{id}",
+      "ERROR": "Ошибка загрузки заказов",
+      "NO_SHOPIFY_ORDERS": "Заказы не найдены",
       "FINANCIAL_STATUS": {
         "PENDING": "В ожидании",
-        "AUTHORIZED": "Authorized",
-        "PARTIALLY_PAID": "Partially Paid",
-        "PAID": "Paid",
-        "PARTIALLY_REFUNDED": "Partially Refunded",
-        "REFUNDED": "Refunded",
-        "VOIDED": "Voided"
+        "AUTHORIZED": "Авторизован",
+        "PARTIALLY_PAID": "Частично оплачен",
+        "PAID": "Оплачен",
+        "PARTIALLY_REFUNDED": "Частично возвращен",
+        "REFUNDED": "Возвращен",
+        "VOIDED": "Аннулирован"
       },
       "FULFILLMENT_STATUS": {
-        "FULFILLED": "Fulfilled",
-        "PARTIALLY_FULFILLED": "Partially Fulfilled",
-        "UNFULFILLED": "Unfulfilled"
+        "FULFILLED": "Выполнен",
+        "PARTIALLY_FULFILLED": "Частично выполнен",
+        "UNFULFILLED": "Не выполнен"
       }
     }
   },
@@ -396,8 +408,8 @@
   "EMAIL_HEADER": {
     "FROM": "От",
     "TO": "Кому",
-    "BCC": "Bcc",
-    "CC": "Cc",
+    "BCC": "Скрытая копия",
+    "CC": "Копия",
     "SUBJECT": "Тема",
     "EXPAND": "Развернуть email"
   },

@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Svarsmallen har lagts till.",
-        "ERROR_MESSAGE": "Kunde inte ansluta till Woot Server, försök igen senare."
+        "ERROR_MESSAGE": "Kunde inte ansluta till Onelink Server, försök igen senare."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Redigera",
       "API": {
         "SUCCESS_MESSAGE": "Svarsmallen har uppdaterats.",
-        "ERROR_MESSAGE": "Kunde inte ansluta till Woot server. Vänligen försök igen."
+        "ERROR_MESSAGE": "Kunde inte ansluta till Onelink server. Vänligen försök igen."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Radera",
       "API": {
         "SUCCESS_MESSAGE": "Svarsmallen har tagits bort.",
-        "ERROR_MESSAGE": "Kunde inte ansluta till Woot server. Vänligen försök igen."
+        "ERROR_MESSAGE": "Kunde inte ansluta till Onelink server. Vänligen försök igen."
       },
       "CONFIRM": {
         "TITLE": "Bekräfta borttagning",

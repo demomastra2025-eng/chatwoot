@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Cancelar",
       "API": {
-        "ERROR_MESSAGE": "No se pudo conectar al servidor Woot, por favor inténtalo de nuevo más tarde"
+        "ERROR_MESSAGE": "No se pudo conectar al servidor Onelink, por favor inténtalo de nuevo más tarde"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Eliminar",
       "API": {
         "SUCCESS_MESSAGE": "Rol personalizado eliminado con éxito.",
-        "ERROR_MESSAGE": "No se pudo conectar al servidor Woot, por favor inténtalo de nuevo más tarde"
+        "ERROR_MESSAGE": "No se pudo conectar al servidor Onelink, por favor inténtalo de nuevo más tarde"
       },
       "CONFIRM": {
         "TITLE": "Confirme eliminación",

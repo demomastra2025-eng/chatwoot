@@ -29,7 +29,7 @@ const { t } = useI18n();
 const processedParams = ref({});
 
 const languageLabel = computed(() => {
-  return `${t('CONTENT_TEMPLATES.PARSER.LANGUAGE')}: ${props.template.language || 'en'}`;
+  return `${t('CONTENT_TEMPLATES.PARSER.LANGUAGE')}: ${props.template.language || 'ru'}`;
 });
 
 const categoryLabel = computed(() => {

@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Sondaggio aggiornato con successo",
-      "ERROR_MESSAGE": "Impossibile connettersi al server Woot, riprova più tardi"
+      "ERROR_MESSAGE": "Impossibile connettersi al server Onelink, riprova più tardi"
     }
   },
-  "POWERED_BY": "Offerto da Chatwoot"
+  "POWERED_BY": "Offerto da OneLink"
 }

@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "预设回复已成功添加。",
-        "ERROR_MESSAGE": "无法与 Woot 服务器建立连接。请重试。"
+        "ERROR_MESSAGE": "无法与 Onelink 服务器建立连接。请重试。"
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "编辑",
       "API": {
         "SUCCESS_MESSAGE": "预设回复已成功更新。",
-        "ERROR_MESSAGE": "无法与 Woot 服务器建立连接。请重试。"
+        "ERROR_MESSAGE": "无法与 Onelink 服务器建立连接。请重试。"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "删除",
       "API": {
         "SUCCESS_MESSAGE": "预设回复已成功删除。",
-        "ERROR_MESSAGE": "连接 Woot 服务器失败，请再试一次。"
+        "ERROR_MESSAGE": "连接 Onelink 服务器失败，请再试一次。"
       },
       "CONFIRM": {
         "TITLE": "确认删除",

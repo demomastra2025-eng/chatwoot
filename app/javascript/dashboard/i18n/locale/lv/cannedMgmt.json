@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Sagatavotā atbilde ir veiksmīgi pievienota.",
-        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Rediģēt",
       "API": {
         "SUCCESS_MESSAGE": "Sagatavotā atbilde ir veiksmīgi atjaunināta.",
-        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Dzēst",
       "API": {
         "SUCCESS_MESSAGE": "Sagatavotā atbilde ir veiksmīgi izdzēsta.",
-        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
       },
       "CONFIRM": {
         "TITLE": "Apstiprināt dzēšanu",

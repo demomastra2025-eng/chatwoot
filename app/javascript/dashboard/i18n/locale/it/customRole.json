@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Annulla",
       "API": {
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot. Riprova."
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink. Riprova."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Elimina",
       "API": {
         "SUCCESS_MESSAGE": "Ruolo personalizzato eliminato con successo.",
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot. Riprova."
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink. Riprova."
       },
       "CONFIRM": {
         "TITLE": "Conferma eliminazione",

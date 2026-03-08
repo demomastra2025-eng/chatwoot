@@ -31,7 +31,7 @@ class AccountDashboard < Administrate::BaseDashboard
     updated_at: Field::DateTime,
     users: CountField,
     conversations: CountField,
-    locale: Field::Select.with_options(collection: LANGUAGES_CONFIG.map { |_x, y| y[:iso_639_1_code] }),
+    locale: Field::Select.with_options(collection: ENABLED_LANGUAGES_CONFIG.map { |_x, y| y[:iso_639_1_code] }),
     status: Field::Select.with_options(collection: [%w[Active active], %w[Suspended suspended]]),
     account_users: Field::HasMany,
     custom_attributes: Field::String

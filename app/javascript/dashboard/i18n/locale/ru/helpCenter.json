@@ -1,8 +1,8 @@
 {
   "HELP_CENTER": {
-    "TITLE": "Центр поддержки",
+    "TITLE": "Ваша страница",
     "NEW_PAGE": {
-      "DESCRIPTION": "Создайте порталы самообслуживания для вашего центра поддержки. Помогите вашим клиентам быстро находить ответы, без ожидания. Оптимизируйте запросы, повысите эффективность агентов и улучшите поддержку клиентов.",
+      "DESCRIPTION": "Создайте порталы самообслуживания для вашего центра поддержки. Помогите вашим клиентам быстро находить ответы, без ожидания. Оптимизируйте запросы, снизьте нагрузку на сотрудников и улучшите поддержку клиентов.",
       "CREATE_PORTAL_BUTTON": "Создать портал"
     },
     "HEADER": {
@@ -178,7 +178,7 @@
             "TITLE": "Категории"
           },
           "LOCALE_SETTINGS": {
-            "TITLE": "Locales"
+            "TITLE": "Локали"
           }
         },
         "CATEGORIES": {
@@ -319,8 +319,8 @@
       }
     },
     "TABLE": {
-      "LOADING_MESSAGE": "Загрузка статей...",
       "404": "Нет статей, соответствующих вашему запросу 🔍",
+      "LOADING_MESSAGE": "Загрузка статей...",
       "NO_ARTICLES": "Нет доступных статей",
       "HEADERS": {
         "TITLE": "Название",
@@ -397,7 +397,7 @@
         "SLUG": {
           "LABEL": "Метка",
           "PLACEHOLDER": "Метка категории для url",
-          "HELP_TEXT": "app.chatwoot.com/hc/my-portal/en-US/categories/my-slug",
+          "HELP_TEXT": "app.OneLink.com/hc/my-portal/en-US/categories/my-slug",
           "ERROR": "Необходимо указать метку"
         },
         "DESCRIPTION": {
@@ -428,7 +428,7 @@
         "SLUG": {
           "LABEL": "Метка",
           "PLACEHOLDER": "Метка категории для url",
-          "HELP_TEXT": "app.chatwoot.com/hc/my-portal/en-US/categories/my-slug",
+          "HELP_TEXT": "app.OneLink.com/hc/my-portal/en-US/categories/my-slug",
           "ERROR": "Необходимо указать метку"
         },
         "DESCRIPTION": {
@@ -468,7 +468,7 @@
       "BACK_RESULTS": "Назад к результатам"
     },
     "UPGRADE_PAGE": {
-      "TITLE": "Центр поддержки",
+      "TITLE": "Ваша страница",
       "DESCRIPTION": "Создайте удобные для пользователя порталы самообслуживания. Помогите пользователям получить доступ к материалам и получите поддержку 24/7. Обновите свою подписку, чтобы включить эту функцию.",
       "SELF_HOSTED_DESCRIPTION": "Создавайте пользовательские порталы самообслуживания. Помогите пользователям получить доступ к материалам и получите поддержку 24/7. Обратитесь к администратору, чтобы включить эту функцию.",
       "BUTTON": {
@@ -478,7 +478,7 @@
       "FEATURES": {
         "PORTALS": {
           "TITLE": "Несколько порталов",
-          "DESCRIPTION": "Создайте несколько порталов справочного центра для разных товаров с использованием одного аккаунта."
+          "DESCRIPTION": "Создайте несколько порталов справочного центра для разных товаров с использованием одного workspace."
         },
         "LOCALES": {
           "TITLE": "Полная поддержка языков",
@@ -612,7 +612,7 @@
             "LABEL": "Метка",
             "PLACEHOLDER": "Метка категории для url",
             "ERROR": "Необходимо указать метку",
-            "HELP_TEXT": "app.chatwoot.com/hc/{portalSlug}/{localeCode}/categories/{categorySlug}"
+            "HELP_TEXT": "app.OneLink.com/hc/{portalSlug}/{localeCode}/categories/{categorySlug}"
           },
           "DESCRIPTION": {
             "LABEL": "Описание",
@@ -695,7 +695,7 @@
       "CONFIRM_BUTTON_LABEL": "Создать",
       "NAME": {
         "LABEL": "Имя",
-        "PLACEHOLDER": "Руководство пользователя | Chatwoot",
+        "PLACEHOLDER": "Руководство пользователя | OneLink",
         "MESSAGE": "Выберите имя для вашего портала.",
         "ERROR": "Необходимо указать имя"
       },
@@ -775,7 +775,7 @@
           },
           "DNS_CONFIGURATION_DIALOG": {
             "HEADER": "Настройка DNS",
-            "DESCRIPTION": "Войдите в учетную запись с вашим DNS провайдером и добавьте запись CNAME для поддомена, указывающего на chatwoot.help",
+            "DESCRIPTION": "Войдите в учетную запись с вашим DNS провайдером и добавьте запись CNAME для поддомена, указывающего на OneLink.help",
             "COPY": "CNAME успешно скопирован",
             "SEND_INSTRUCTIONS": {
               "HEADER": "Отправить инструкции",

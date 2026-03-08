@@ -86,7 +86,9 @@ class DashboardController < ActionController::Base
 
   def allowed_login_methods
     methods = ['email']
-    methods << 'google_oauth' if GlobalConfigService.load('ENABLE_GOOGLE_OAUTH_LOGIN', 'true').to_s != 'false'
+    google_oauth_enabled = GlobalConfigService.load('ENABLE_GOOGLE_OAUTH_LOGIN', 'true').to_s != 'false'
+    google_oauth_configured = ENV.fetch('GOOGLE_OAUTH_CLIENT_ID', nil).present? && ENV.fetch('GOOGLE_OAUTH_CALLBACK_URL', nil).present?
+    methods << 'google_oauth' if google_oauth_enabled && google_oauth_configured
     methods << 'saml' if ChatwootHub.pricing_plan != 'community' && GlobalConfigService.load('ENABLE_SAML_SSO_LOGIN', 'true').to_s != 'false'
     methods
   end

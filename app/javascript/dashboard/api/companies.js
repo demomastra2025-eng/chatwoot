@@ -32,6 +32,18 @@ class CompanyAPI extends ApiClient {
     const requestURL = `${this.url}/search?${buildSearchParams(query, page, sort)}`;
     return axios.get(requestURL);
   }
+
+  show(id) {
+    return axios.get(`${this.url}/${id}`);
+  }
+
+  create(data) {
+    return axios.post(this.url, { company: data });
+  }
+
+  update(id, data) {
+    return axios.patch(`${this.url}/${id}`, { company: data });
+  }
 }
 
 export default new CompanyAPI();

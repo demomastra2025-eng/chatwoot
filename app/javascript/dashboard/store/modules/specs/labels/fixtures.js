@@ -9,7 +9,7 @@ export default [
   {
     id: 4,
     title: 'saas-customer',
-    description: 'Customers who have account on app.chatwoot.com',
+    description: 'Customers who have account on app.one-link.kz',
     color: '#A8DBCB',
     show_on_sidebar: false,
   },

@@ -63,7 +63,7 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
           friendly_name: result[:friendly_name],
           content_sid: result[:content_sid],
           status: result[:status] || 'pending',
-          language: result[:language] || 'en'
+          language: result[:language] || 'ru'
         }
       }, status: :created
     else
@@ -72,7 +72,7 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
           name: result[:template_name],
           template_id: result[:template_id],
           status: 'PENDING',
-          language: result[:language] || 'en'
+          language: result[:language] || 'ru'
         }
       }, status: :created
     end

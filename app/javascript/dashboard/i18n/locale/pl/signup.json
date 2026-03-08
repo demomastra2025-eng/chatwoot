@@ -4,7 +4,7 @@
     "TITLE": "Rejestracja",
     "TESTIMONIAL_HEADER": "Wszystko czego potrzebujesz to jeden krok do przodu",
     "TESTIMONIAL_CONTENT": "Jesteś tylko jeden krok od zaangażowania swoich klientów, zatrzymania ich i znalezienia nowych.",
-    "TERMS_ACCEPT": "Tworząc konto, zgadzasz się na nasze <a href=\"https://www.chatwoot.com/terms\">Warunki korzystania</a> i <a href=\"https://www.chatwoot.com/privacy-policy\">Politykę prywatności</a>",
+    "TERMS_ACCEPT": "Tworząc konto, zgadzasz się na nasze <a href=\"https://www.OneLink.com/terms\">Warunki korzystania</a> i <a href=\"https://www.OneLink.com/privacy-policy\">Politykę prywatności</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Zarejestruj się za pomocą Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot. Spróbuj ponownie później"
+      "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink. Spróbuj ponownie później"
     },
     "SUBMIT": "Utwórz konto",
     "HAVE_AN_ACCOUNT": "Masz już konto?"

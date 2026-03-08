@@ -42,7 +42,7 @@ const count = computed(() =>
       <Icon v-if="icon" :icon="icon" class="size-4" />
       <span
         v-if="showBadge"
-        class="size-2 -top-px ltr:-right-px rtl:-left-px bg-n-brand absolute rounded-full border border-n-solid-2"
+        class="size-2 -top-px ltr:-right-px rtl:-left-px bg-n-brand-solid absolute rounded-full border border-n-solid-2"
       />
     </div>
     <div class="flex items-center gap-1.5 flex-grow min-w-0 flex-1">

@@ -19,8 +19,11 @@ By default, it renders:
   <meta name="ROBOTS" content="NOODP">
   <meta name="viewport" content="initial-scale=1">
   <title>
-    <%= content_for(:title) %> - <%= application_title %>
+    <%= content_for?(:title) ? "#{content_for(:title)} - OneLink Admin" : 'OneLink Admin' %>
   </title>
+  <link rel="icon" href="/favicon.ico?v=onelink-brand">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=onelink-brand">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=onelink-brand">
   <%= render "stylesheet" %>
   <%= vite_client_tag %>
   <%= vite_javascript_tag 'superadmin' %>

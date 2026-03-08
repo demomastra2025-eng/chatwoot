@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "キャンセル",
       "API": {
-        "ERROR_MESSAGE": "Woot サーバーに接続できませんでした。後でもう一度お試しください。"
+        "ERROR_MESSAGE": "Onelink サーバーに接続できませんでした。後でもう一度お試しください。"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "削除",
       "API": {
         "SUCCESS_MESSAGE": "カスタムロールが正常に削除されました。",
-        "ERROR_MESSAGE": "Woot サーバーに接続できませんでした。後でもう一度お試しください。"
+        "ERROR_MESSAGE": "Onelink サーバーに接続できませんでした。後でもう一度お試しください。"
       },
       "CONFIRM": {
         "TITLE": "削除の確認",

@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Stornieren",
       "API": {
-        "ERROR_MESSAGE": "Es konnte keine Verbindung zum Woot Server hergestellt werden. Bitte versuchen Sie es später erneut"
+        "ERROR_MESSAGE": "Es konnte keine Verbindung zum Onelink Server hergestellt werden. Bitte versuchen Sie es später erneut"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Löschen",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Es konnte keine Verbindung zum Woot Server hergestellt werden. Bitte versuchen Sie es später erneut"
+        "ERROR_MESSAGE": "Es konnte keine Verbindung zum Onelink Server hergestellt werden. Bitte versuchen Sie es später erneut"
       },
       "CONFIRM": {
         "TITLE": "Löschen bestätigen",

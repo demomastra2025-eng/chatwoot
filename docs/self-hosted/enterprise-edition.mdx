@@ -1,0 +1,88 @@
+---
+title: 'Inherited Enterprise Overlay In Onelink'
+description: 'How to think about the inherited enterprise code split in Onelink now that enterprise capabilities are opened for the project.'
+---
+
+Onelink inherits an `enterprise/` overlay from Chatwoot. In the current Onelink product state, enterprise capabilities are opened for the project, so this layer should be treated as an inherited technical implementation split, not as a real product or paywall boundary.
+
+For Onelink planning, keep these ideas separate:
+
+- inherited `enterprise/` tree as an implementation and extension mechanism
+- `platform capabilities` as shared product behavior
+- `domain zones` such as healthcare and construction
+- explicit capability gating as a deliberate product/runtime control layer when you actually need it
+
+## Current Working Assumption
+
+In current Onelink work, assume inherited enterprise-scoped capabilities are available by default. Do not model product architecture around the old OSS-vs-Enterprise boundary.
+
+Instead:
+
+- keep capability access centralized when runtime gating is genuinely needed
+- avoid scattering paywall or plan shortcuts through the codebase
+- continue designing shared and domain features independently from the inherited `enterprise/` split
+
+## How To Use The Enterprise Overlay In Onelink
+
+Use the inherited `enterprise/` overlay primarily for:
+
+- existing extension hooks and overrides
+- compatibility with code paths already split between `app/` and `enterprise/`
+- shared technical layering where the repository already expects `enterprise/`
+
+Avoid using it as the place where all new vertical-specific behavior must live.
+
+Domain logic should still be classified as:
+
+- shared platform behavior
+- domain-specific behavior
+- tenant-specific configuration
+
+## Inherited Enterprise-Scoped Features
+
+The repository still contains inherited licensed/self-hosted plan concepts such as:
+
+- white-labeling
+- SLA management
+- audit logs
+- agent capacity policies
+- advanced configuration surfaces
+
+These can remain operationally available by default in Onelink, but their location under `enterprise/` should not define the long-term product decomposition of the fork.
+
+## Inherited Licensing Surfaces
+
+If you still use inherited licensing or plan-management screens, they continue to live in Super Admin and related operational surfaces.
+
+If commercial rules differ for your fork, document those rules separately and do not treat the inherited Chatwoot OSS-vs-Enterprise split as the active architecture model for Onelink.
+
+### Settings Overview
+
+<img src="/self-hosted/images/superadmin-settings.png" width="100%" alt="Manage Enterprise Plan" />
+
+- `Installation Identifier`: This is the unique identifier used to identify an installation and associate a license with that installation.
+- `Manage Plan`: Redirects to the inherited billing surface if you still use it operationally.
+- `Refresh`: Refresh button next to plan details helps to sync your server with the license server in cases where a license purchase is not yet reflected in the system.
+- `Feature Config`: You can configure settings for enterprise features like `Whitelabeling` by clicking on the gear icon next to the feature name under feature settings.
+- `Support Options`: Based on your plan, applicable support options will be displayed.
+
+## Architectural Rule
+
+When implementing new product features in Onelink:
+
+- do not assume `enterprise/` equals domain-specific code
+- do not assume a vertical feature is automatically a paid feature
+- do not assume code under `enterprise/` is inactive just because the paywall distinction is not used in Onelink
+- keep domain architecture and capability gating as separate design concerns
+
+## FAQ
+
+### Do you have Instance level plans?
+
+This answer depends on your commercial model for the fork. The inherited Chatwoot answer may not match the current Onelink business setup.
+
+### Transferring licenses?
+
+If you are moving the installation between servers and doing so with a database backup, the original installation identifier is retained, and you don't need to activate the license again.
+
+If for some reason you decide to delete an existing licensed installation and want to do a new installation, follow your current commercial and support process for the forked product.

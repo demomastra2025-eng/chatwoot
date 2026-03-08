@@ -133,4 +133,28 @@ describe('#actions', () => {
       ]);
     });
   });
+
+  describe('#updateHook', () => {
+    it('sends correct actions if API is success', async () => {
+      let data = { id: 2, app_id: 'webhook', status: true };
+      axios.patch.mockResolvedValue({ data });
+      await actions.updateHook({ commit }, { hookId: 2, hookData: data });
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: true }],
+        [types.ADD_INTEGRATION_HOOKS, data],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false }],
+      ]);
+    });
+
+    it('sends correct actions if API is error', async () => {
+      axios.patch.mockRejectedValue(errorMessage);
+      await expect(
+        actions.updateHook({ commit }, { hookId: 2, hookData: {} })
+      ).rejects.toThrow(Error);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: true }],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false }],
+      ]);
+    });
+  });
 });

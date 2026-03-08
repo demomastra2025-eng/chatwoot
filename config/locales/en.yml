@@ -302,16 +302,16 @@ en:
       description: 'Dashboard Apps allow you to create and embed applications that display user information, orders, or payment history, providing more context to your customer support agents.'
     dyte:
       name: 'Dyte'
-      short_description: 'Start video/voice calls with customers directly from Chatwoot.'
-      description: 'Dyte is a product that integrates audio and video functionalities into your application. With this integration, your agents can start video/voice calls with your customers directly from Chatwoot.'
+      short_description: 'Start video/voice calls with customers directly from Onelink.'
+      description: 'Dyte is a product that integrates audio and video functionalities into your application. With this integration, your agents can start video/voice calls with your customers directly from Onelink.'
       meeting_name: '%{agent_name} has started a meeting'
     slack:
       name: 'Slack'
       short_description: 'Receive notifications and respond to conversations directly in Slack.'
-      description: "Integrate Chatwoot with Slack to keep your team in sync. This integration allows you to receive notifications for new conversations and respond to them directly within Slack's interface."
+      description: "Integrate Onelink with Slack to keep your team in sync. This integration allows you to receive notifications for new conversations and respond to them directly within Slack's interface."
     webhooks:
       name: 'Webhooks'
-      description: 'Webhook events provide real-time updates about activities in your Chatwoot account. You can subscribe to your preferred events, and Chatwoot will send you HTTP callbacks with the updates.'
+      description: 'Webhook events provide real-time updates about activities in your Onelink account. You can subscribe to your preferred events, and Onelink will send you HTTP callbacks with the updates.'
     dialogflow:
       name: 'Dialogflow'
       short_description: 'Build chatbots to handle initial queries before transferring to agents.'
@@ -465,3 +465,89 @@ en:
       subject: 'Finish setting up %{custom_domain}'
     ssl_status:
       custom_domain_not_configured: 'Custom domain is not configured'
+  legal:
+    shared:
+      last_updated_label: 'Last updated'
+      last_updated_value: 'March 7, 2026'
+    terms:
+      title: 'Terms of Service'
+      intro:
+        - 'These Terms of Service govern your access to and use of the OneLink platform, website, applications, and related services.'
+        - 'By creating an account, accessing the service, or using OneLink on behalf of an organization, you confirm that you have authority to accept these terms for that organization.'
+      sections:
+        eligibility:
+          title: 'Eligibility and Account Responsibility'
+          paragraphs:
+            - 'You must provide accurate registration information, keep your credentials confidential, and promptly update any material changes to your account details.'
+            - 'You are responsible for all activities that occur under your account, including access granted to employees, contractors, and administrators.'
+        acceptable_use:
+          title: 'Acceptable Use'
+          paragraphs:
+            - 'You may use OneLink only for lawful business purposes and in compliance with applicable privacy, consumer protection, labor, and communications laws.'
+          points:
+            - 'You must not upload malicious code, interfere with service availability, or attempt unauthorized access to data, systems, or accounts.'
+            - 'You must not use OneLink to send unlawful spam, infringing content, defamatory material, or content that violates third-party rights.'
+        customer_data:
+          title: 'Customer Data and Instructions'
+          paragraphs:
+            - 'As between the parties, you retain rights to the customer data, messages, files, and other content you submit to the service.'
+            - 'You instruct OneLink to process that data to provide, secure, maintain, and improve the service, and to comply with legal obligations.'
+        fees:
+          title: 'Fees, Plans, and Suspension'
+          paragraphs:
+            - 'Paid features are billed under the plan you select. Unless otherwise agreed in writing, fees are non-refundable except where required by law.'
+            - 'OneLink may suspend or limit access if fees remain overdue, if your use creates security or legal risk, or if suspension is required to prevent harm.'
+        intellectual_property:
+          title: 'Intellectual Property'
+          paragraphs:
+            - 'OneLink and its licensors own the platform, software, documentation, branding, and related intellectual property, excluding your customer data.'
+            - 'Subject to these terms, OneLink grants you a limited, non-exclusive, non-transferable right to use the service during the active subscription term.'
+        warranties_liability:
+          title: 'Warranties, Disclaimers, and Liability'
+          paragraphs:
+            - 'The service is provided on an "as is" and "as available" basis except to the extent expressly stated in a separate written agreement.'
+            - 'To the maximum extent permitted by law, OneLink is not liable for indirect, incidental, special, consequential, or punitive damages, or for lost profits, revenue, data, or goodwill.'
+            - 'To the maximum extent permitted by law, OneLink aggregate liability arising out of these terms or the service will not exceed the amounts paid by you for the service during the twelve months preceding the event giving rise to the claim.'
+        termination:
+          title: 'Termination and Contact'
+          paragraphs:
+            - 'You may stop using the service at any time. OneLink may terminate or suspend the service for material breach, legal requirements, or sustained misuse.'
+            - 'Questions about these terms may be sent to legal@one-link.kz.'
+    privacy:
+      title: 'Privacy Policy'
+      intro:
+        - 'This Privacy Policy explains how OneLink collects, uses, stores, and discloses personal data when you visit our website, create an account, or use our customer communication platform.'
+        - 'Where OneLink processes customer data on behalf of a workspace, the workspace remains the controller of that data and OneLink acts as a processor or service provider where applicable.'
+      sections:
+        collected_data:
+          title: 'Information We Collect'
+          points:
+            - 'Account and profile details such as name, email address, workspace name, role, and authentication data.'
+            - 'Service usage data such as device information, browser details, IP address, logs, events, and feature interactions.'
+            - 'Customer communication data that you or your end users submit through the platform, including messages, attachments, labels, and configuration data.'
+        purposes:
+          title: 'How We Use Information'
+          points:
+            - 'To provide, authenticate, maintain, and support the service.'
+            - 'To secure the platform, detect abuse, troubleshoot issues, and improve performance and product functionality.'
+            - 'To send service notices, transactional communications, legal notices, and, where permitted, product updates.'
+        legal_basis:
+          title: 'Legal Bases and Sharing'
+          paragraphs:
+            - 'Depending on the context, OneLink processes data based on contract performance, legitimate interests, legal obligations, and consent where consent is required.'
+            - 'We may share data with infrastructure providers, analytics vendors, support providers, payment processors, and professional advisers who act under contractual confidentiality and data protection obligations.'
+        retention:
+          title: 'Retention and Security'
+          paragraphs:
+            - 'We retain personal data for as long as necessary to provide the service, satisfy legal or accounting obligations, resolve disputes, and enforce agreements.'
+            - 'We use technical and organizational safeguards designed to protect personal data, but no method of transmission or storage can be guaranteed as completely secure.'
+        rights:
+          title: 'Your Rights'
+          paragraphs:
+            - 'Subject to applicable law, you may request access, correction, deletion, restriction, objection, portability, or withdrawal of consent where consent is the basis for processing.'
+            - 'If you are an end user whose data was submitted by a OneLink customer, please contact that workspace first because it controls the relevant customer data.'
+        international:
+          title: 'International Transfers and Contact'
+          paragraphs:
+            - 'If personal data is transferred across borders, OneLink will use reasonable contractual, technical, and organizational safeguards appropriate to the transfer.'
+            - 'Privacy requests and questions may be sent to legal@one-link.kz.'

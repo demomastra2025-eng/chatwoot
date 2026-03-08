@@ -1,0 +1,59 @@
+---
+title: Onelink Production Deployment Architecture
+description: Shared production architecture and deployment requirements for the Onelink fork running on the inherited Chatwoot infrastructure base.
+sidebarTitle: Architecture
+---
+
+This guide describes the production deployment architecture for the Onelink fork.
+
+Operationally, Onelink still inherits the same core infrastructure shape as Chatwoot, so this page should be treated as the base deployment architecture for the forked product.
+
+## Architecture
+
+Running Onelink in production requires the following set of services.
+
+* Onelink web servers
+* Onelink workers
+* PostgreSQL Database
+* Redis Database
+* Email service (SMTP servers / SendGrid / Mailgun etc)
+* Object Storage (S3, Azure Storage, GCS, etc)
+
+![architecture](/self-hosted/images/architecture.png)
+
+## Updating your Onelink installation
+
+Because Onelink is a fork of Chatwoot, updates can come from two directions:
+
+- upstream Chatwoot releases
+- fork-specific Onelink changes
+
+Use the upstream sync strategy in the development docs when pulling changes from Chatwoot, and validate shared platform behavior plus domain profiles before promoting an update to the main branch.
+
+We recommend staying current with upstream security fixes and critical infrastructure improvements while keeping product-specific divergences intentional and documented.
+
+The deployment process for a newer version involves updating your app servers and workers with the latest code. Most updates would involve database migrations as well which can be executed through the following Rails command.
+
+```bash
+bundle exec rails db:migrate
+```
+
+The detailed instructions can be found in respective deployment guides.
+
+## Available deployment options
+
+If you want to self-host Onelink, the recommended approach is to use one of the supported deployment paths below. Most of these documents are inherited from Chatwoot and remain relevant for the fork.
+
+* **[Heroku](/self-hosted/deployment/heroku)** (recommended)
+* **[Docker](/self-hosted/deployment/docker)** (recommended)
+* **[Linux](/self-hosted/deployment/linux-vm)**
+* **[Kubernetes](/self-hosted/deployment/helm-chart)**
+* **[Chatwoot CTL](/self-hosted/deployment/chatwoot-ctl)** for inherited operational setup
+
+### Cloud Providers
+
+* **[AWS](/self-hosted/deployment/aws)**
+* **[Azure](/self-hosted/deployment/azure)**
+* **[DigitalOcean](/self-hosted/deployment/digitalocean)**
+* **[Google Cloud](/self-hosted/deployment/gcp)**
+* **[Heroku](/self-hosted/deployment/heroku)**

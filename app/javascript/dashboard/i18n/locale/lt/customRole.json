@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Atšaukti",
       "API": {
-        "ERROR_MESSAGE": "Nepavyko prisijungti prie Woot serverio. Bandykite dar kartą vėliau."
+        "ERROR_MESSAGE": "Nepavyko prisijungti prie Onelink serverio. Bandykite dar kartą vėliau."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Ištrinti",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Nepavyko prisijungti prie Woot serverio. Bandykite dar kartą vėliau."
+        "ERROR_MESSAGE": "Nepavyko prisijungti prie Onelink serverio. Bandykite dar kartą vėliau."
       },
       "CONFIRM": {
         "TITLE": "Patvirtinti Ištrynimą",

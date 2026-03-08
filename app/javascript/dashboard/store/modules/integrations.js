@@ -12,6 +12,7 @@ const state = {
     isFetchingItem: false,
     isUpdating: false,
     isCreatingHook: false,
+    isUpdatingHook: false,
     isDeletingHook: false,
     isCreatingSlack: false,
     isUpdatingSlack: false,
@@ -124,6 +125,17 @@ export const actions = {
       throw new Error(error);
     }
   },
+  updateHook: async ({ commit }, { hookId, hookData }) => {
+    commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: true });
+    try {
+      const response = await IntegrationsAPI.updateHook(hookId, hookData);
+      commit(types.default.ADD_INTEGRATION_HOOKS, response.data);
+      commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false });
+    } catch (error) {
+      commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false });
+      throw new Error(error);
+    }
+  },
   deleteHook: async ({ commit }, { appId, hookId }) => {
     commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isDeletingHook: true });
     try {
@@ -147,9 +159,14 @@ export const mutations = {
   [types.default.ADD_INTEGRATION_HOOKS]: ($state, data) => {
     $state.records = $state.records.map(record => {
       if (record.id === data.app_id) {
+        const hooks = record.hooks.some(hook => hook.id === data.id)
+          ? record.hooks.map(hook => (hook.id === data.id ? data : hook))
+          : [...record.hooks, data];
+
         return {
           ...record,
-          hooks: [...record.hooks, data],
+          hooks,
+          enabled: hooks.some(hook => hook.status),
         };
       }
       return record;
@@ -158,9 +175,12 @@ export const mutations = {
   [types.default.DELETE_INTEGRATION_HOOKS]: ($state, { appId, hookId }) => {
     $state.records = $state.records.map(record => {
       if (record.id === appId) {
+        const hooks = record.hooks.filter(hook => hook.id !== hookId);
+
         return {
           ...record,
-          hooks: record.hooks.filter(hook => hook.id !== hookId),
+          hooks,
+          enabled: hooks.some(hook => hook.status),
         };
       }
       return record;

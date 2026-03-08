@@ -1,7 +1,7 @@
 {
   "SEARCH": {
     "TABS": {
-      "ALL": "All results",
+      "ALL": "Все результаты",
       "CONTACTS": "Контакты",
       "CONVERSATIONS": "Диалоги",
       "MESSAGES": "Сообщения",
@@ -21,48 +21,48 @@
     "EMPTY_STATE_FULL": "Ничего не найдено по запросу '{query}'",
     "PLACEHOLDER_KEYBINDING": "/фокусироваться",
     "INPUT_PLACEHOLDER": "Введите 3 или более символов для поиска",
-    "RECENT_SEARCHES": "Recent searches",
+    "RECENT_SEARCHES": "Недавние поиски",
     "CLEAR_ALL": "Очистить всё",
-    "MOST_RECENT": "Most recent",
+    "MOST_RECENT": "Сначала новые",
     "EMPTY_STATE_DEFAULT": "Поиск по идентификатору разговора, электронной почте, номеру телефона, сообщениям для улучшения результатов поиска. ",
     "BOT_LABEL": "Бот",
     "READ_MORE": "Читать далее",
-    "READ_LESS": "Read less",
+    "READ_LESS": "Свернуть",
     "WROTE": "написал:",
     "FROM": "От",
-    "EMAIL": "Email",
+    "EMAIL": "Эл. почта",
     "EMAIL_SUBJECT": "Тема",
-    "PRIVATE": "Private note",
-    "TRANSCRIPT": "Transcript",
+    "PRIVATE": "Приватная заметка",
+    "TRANSCRIPT": "Расшифровка",
     "CREATED_AT": "создано {time}",
-    "UPDATED_AT": "updated {time}",
+    "UPDATED_AT": "обновлено {time}",
     "SORT_BY": {
-      "RELEVANCE": "Relevance"
+      "RELEVANCE": "По релевантности"
     },
     "DATE_RANGE": {
       "LAST_7_DAYS": "Последние 7 дней",
       "LAST_30_DAYS": "Последние 30 дней",
       "LAST_60_DAYS": "Последние 60 дней",
       "LAST_90_DAYS": "Последние 90 дней",
-      "CUSTOM_RANGE": "Custom range:",
-      "CREATED_BETWEEN": "Created between",
+      "CUSTOM_RANGE": "Произвольный диапазон:",
+      "CREATED_BETWEEN": "Создано между",
       "AND": "и",
       "APPLY": "Применить",
-      "BEFORE_DATE": "Before {date}",
-      "AFTER_DATE": "After {date}",
-      "TIME_RANGE": "Filter by time",
+      "BEFORE_DATE": "До {date}",
+      "AFTER_DATE": "После {date}",
+      "TIME_RANGE": "Фильтр по времени",
       "CLEAR_FILTER": "Очистить фильтр"
     },
     "FILTERS": {
-      "FILTER_MESSAGE": "Filter messages by:",
+      "FILTER_MESSAGE": "Фильтровать сообщения по:",
       "FROM": "Отправитель",
       "IN": "Электронная почта",
-      "AGENTS": "Операторы",
+      "AGENTS": "Сотрудники",
       "CONTACTS": "Контакты",
-      "INBOXES": "Источники",
-      "NO_AGENTS": "Операторы не найдены",
-      "NO_CONTACTS": "Start by searching to see results",
-      "NO_INBOXES": "No inboxes found"
+      "INBOXES": "Каналы",
+      "NO_AGENTS": "Сотрудники не найдены",
+      "NO_CONTACTS": "Начните поиск, чтобы увидеть результаты",
+      "NO_INBOXES": "Каналы не найдены"
     }
   }
 }

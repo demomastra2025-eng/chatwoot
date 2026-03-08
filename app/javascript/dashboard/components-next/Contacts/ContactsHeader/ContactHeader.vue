@@ -1,5 +1,6 @@
 <script setup>
 import Button from 'dashboard/components-next/button/Button.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ContactSortMenu from './components/ContactSortMenu.vue';
@@ -11,6 +12,8 @@ defineProps({
   searchValue: { type: String, default: '' },
   headerTitle: { type: String, required: true },
   buttonLabel: { type: String, default: '' },
+  companyFilterValue: { type: String, default: '' },
+  companyFilterOptions: { type: Array, default: () => [] },
   activeSort: { type: String, default: 'last_activity_at' },
   activeOrdering: { type: String, default: '' },
   isSegmentsView: { type: Boolean, default: false },
@@ -28,6 +31,7 @@ const emit = defineEmits([
   'export',
   'createSegment',
   'deleteSegment',
+  'update:companyFilter',
 ]);
 </script>
 
@@ -41,6 +45,17 @@ const emit = defineEmits([
       </span>
       <div class="flex items-center flex-col sm:flex-row flex-shrink-0 gap-4">
         <div v-if="showSearch" class="flex items-center gap-2 w-full">
+          <ComboBox
+            v-if="companyFilterOptions.length"
+            :model-value="companyFilterValue"
+            :options="companyFilterOptions"
+            :placeholder="$t('CONTACTS_LAYOUT.HEADER.COMPANY_FILTER.PLACEHOLDER')"
+            :search-placeholder="
+              $t('CONTACTS_LAYOUT.HEADER.COMPANY_FILTER.SEARCH_PLACEHOLDER')
+            "
+            class="w-56"
+            @update:model-value="emit('update:companyFilter', $event)"
+          />
           <Input
             :model-value="searchValue"
             type="search"
@@ -75,7 +90,7 @@ const emit = defineEmits([
               >
                 <div
                   v-if="hasActiveFilters && !isSegmentsView"
-                  class="absolute top-0 right-0 w-2 h-2 rounded-full bg-n-brand"
+                  class="absolute top-0 right-0 w-2 h-2 rounded-full bg-n-brand-solid"
                 />
               </Button>
               <slot name="filter" />

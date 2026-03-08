@@ -13,7 +13,7 @@ export default defineConfig({
   viteIgnorePlugins: ['vite-plugin-ruby'],
   theme: {
     darkClass: 'dark',
-    title: '@chatwoot/design',
+    title: '@onelink/design',
     logo: {
       square: './design-system/images/logo-thumbnail.svg',
       light: './design-system/images/logo.png',
@@ -22,7 +22,7 @@ export default defineConfig({
   },
   defaultStoryProps: {
     icon: 'carbon:cube',
-    iconColor: '#1F93FF',
+    iconColor: '#1A1A1A',
     layout: {
       type: 'grid',
       width: '80%',

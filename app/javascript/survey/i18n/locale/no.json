@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Spørreundersøkelse oppdatert",
-      "ERROR_MESSAGE": "Kunne ikke koble til Woot Server, vennligst prøv igjen senere"
+      "ERROR_MESSAGE": "Kunne ikke koble til Onelink Server, vennligst prøv igjen senere"
     }
   },
-  "POWERED_BY": "Drevet av Chatwoot"
+  "POWERED_BY": "Drevet av OneLink"
 }

@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Enquête succesvol bijgewerkt",
-      "ERROR_MESSAGE": "Kan geen verbinding maken met Woot Server, probeer het later opnieuw"
+      "ERROR_MESSAGE": "Kan geen verbinding maken met Onelink Server, probeer het later opnieuw"
     }
   },
-  "POWERED_BY": "Mogelijk gemaakt door Chatwoot"
+  "POWERED_BY": "Mogelijk gemaakt door OneLink"
 }

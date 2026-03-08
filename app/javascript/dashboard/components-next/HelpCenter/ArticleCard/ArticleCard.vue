@@ -125,10 +125,7 @@ const handleClick = id => {
 <template>
   <CardLayout>
     <div class="flex justify-between w-full gap-1">
-      <span
-        class="text-base cursor-pointer hover:underline underline-offset-2 hover:text-n-blue-11 text-n-slate-12 line-clamp-1"
-        @click="handleClick(id)"
-      >
+      <span class="text-link text-base line-clamp-1" @click="handleClick(id)">
         {{ title }}
       </span>
       <div class="flex items-center gap-2">

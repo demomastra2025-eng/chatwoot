@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Hazır yanıt başarıyla eklendi.",
-        "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+        "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Düzenle",
       "API": {
         "SUCCESS_MESSAGE": "Hazır yanıt başarıyla güncellendi.",
-        "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+        "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Sil",
       "API": {
         "SUCCESS_MESSAGE": "Hazır yanıt başarıyla silindi.",
-        "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+        "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
       },
       "CONFIRM": {
         "TITLE": "Silme işlemini onayla",

@@ -4,7 +4,7 @@
     "TITLE": "Daftar",
     "TESTIMONIAL_HEADER": "Hanya butuh satu langkah untuk maju",
     "TESTIMONIAL_CONTENT": "Anda hanya tinggal selangkah lagi untuk berinteraksi dengan pelanggan Anda, mempertahankan mereka, dan menemukan yang baru.",
-    "TERMS_ACCEPT": "Dengan membuat akun, Anda menyetujui <a href=\"https://www.chatwoot.com/terms\">Syarat & Ketentuan</a> dan <a href=\"https://www.chatwoot.com/privacy-policy\">Kebijakan Privasi</a> kami.",
+    "TERMS_ACCEPT": "Dengan membuat akun, Anda menyetujui <a href=\"https://www.OneLink.com/terms\">Syarat & Ketentuan</a> dan <a href=\"https://www.OneLink.com/privacy-policy\">Kebijakan Privasi</a> kami.",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Daftar dengan Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Tidak dapat terhubung ke Server Woot, Silahkan coba lagi nanti"
+      "ERROR_MESSAGE": "Tidak dapat terhubung ke Server Onelink, Silahkan coba lagi nanti"
     },
     "SUBMIT": "Buat akun",
     "HAVE_AN_ACCOUNT": "Sudah punya akun?"

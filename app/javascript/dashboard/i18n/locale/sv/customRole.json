@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Avbryt",
       "API": {
-        "ERROR_MESSAGE": "Kunde inte ansluta till Woot server. Vänligen försök igen."
+        "ERROR_MESSAGE": "Kunde inte ansluta till Onelink server. Vänligen försök igen."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Radera",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Kunde inte ansluta till Woot server. Vänligen försök igen."
+        "ERROR_MESSAGE": "Kunde inte ansluta till Onelink server. Vänligen försök igen."
       },
       "CONFIRM": {
         "TITLE": "Bekräfta borttagning",

@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Hætta við",
       "API": {
-        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Woot, vinsamlegast reynið aftur"
+        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Onelink, vinsamlegast reynið aftur"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Eyða",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Woot, vinsamlegast reynið aftur"
+        "ERROR_MESSAGE": "Náði ekki að tengjast við netþjóna Onelink, vinsamlegast reynið aftur"
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

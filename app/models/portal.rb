@@ -59,7 +59,7 @@ class Portal < ApplicationRecord
   end
 
   def default_locale
-    config['default_locale'] || 'en'
+    config['default_locale'] || 'ru'
   end
 
   private

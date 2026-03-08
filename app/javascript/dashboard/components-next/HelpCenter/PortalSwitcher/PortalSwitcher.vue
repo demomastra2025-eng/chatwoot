@@ -100,7 +100,7 @@ const redirectToPortalHomePage = () => {
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-2">
           <h2
-            class="text-base font-medium cursor-pointer text-n-slate-12 w-fit hover:underline"
+            class="text-link text-base font-medium w-fit"
             @click="redirectToPortalHomePage"
           >
             {{ t('HELP_CENTER.PORTAL_SWITCHER.PORTALS') }}

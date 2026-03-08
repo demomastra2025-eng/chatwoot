@@ -4,7 +4,7 @@
     "TITLE": "Regisztrálás",
     "TESTIMONIAL_HEADER": "Már csak egy lépés van hátra",
     "TESTIMONIAL_CONTENT": "Már csak egy lépésre vagy!",
-    "TERMS_ACCEPT": "A fiók létrehozásával elfogadod az <a href=\"https://www.chatwoot.com/terms\">ÁSZF</a> és az <a href=\"https://www.chatwoot.com/privacy-policy\">Adatkezelési nyilatkozat</a> tartalmát",
+    "TERMS_ACCEPT": "A fiók létrehozásával elfogadod az <a href=\"https://www.OneLink.com/terms\">ÁSZF</a> és az <a href=\"https://www.OneLink.com/privacy-policy\">Adatkezelési nyilatkozat</a> tartalmát",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Regisztráció Google-el"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Nem sikerült csatlakozni a Woot szerverhez, kérjük próbáld később"
+      "ERROR_MESSAGE": "Nem sikerült csatlakozni a Onelink szerverhez, kérjük próbáld később"
     },
     "SUBMIT": "Fiók létrehozása",
     "HAVE_AN_ACCOUNT": "Már van fiókod?"

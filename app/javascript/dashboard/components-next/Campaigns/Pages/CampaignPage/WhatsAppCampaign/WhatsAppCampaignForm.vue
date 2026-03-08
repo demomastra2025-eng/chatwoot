@@ -79,7 +79,7 @@ const templateOptions = computed(() => {
 
     return {
       value: template.id,
-      label: `${friendlyName} (${template.language || 'en'})`,
+      label: `${friendlyName} (${template.language || 'ru'})`,
       template: template,
     };
   });

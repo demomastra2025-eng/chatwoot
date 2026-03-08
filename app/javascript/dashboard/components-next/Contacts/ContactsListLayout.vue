@@ -9,6 +9,8 @@ import ContactsLoadMore from 'dashboard/components-next/Contacts/ContactsLoadMor
 
 const props = defineProps({
   searchValue: { type: String, default: '' },
+  companyFilterValue: { type: String, default: '' },
+  companyFilterOptions: { type: Array, default: () => [] },
   headerTitle: { type: String, default: '' },
   showPaginationFooter: { type: Boolean, default: true },
   currentPage: { type: Number, default: 1 },
@@ -32,6 +34,7 @@ const emit = defineEmits([
   'applyFilter',
   'clearFilters',
   'loadMore',
+  'update:companyFilter',
 ]);
 
 const route = useRoute();
@@ -85,6 +88,8 @@ const showPagination = computed(() => {
         ref="contactListHeaderWrapper"
         :show-search="isNotSegmentView && !isActiveView"
         :search-value="searchValue"
+        :company-filter-value="companyFilterValue"
+        :company-filter-options="companyFilterOptions"
         :active-sort="activeSort"
         :active-ordering="activeOrdering"
         :header-title="headerTitle"
@@ -95,6 +100,7 @@ const showPagination = computed(() => {
         :is-active-view="isActiveView"
         @update:sort="emit('update:sort', $event)"
         @search="emit('search', $event)"
+        @update:company-filter="emit('update:companyFilter', $event)"
         @apply-filter="emit('applyFilter', $event)"
         @clear-filters="emit('clearFilters')"
       />

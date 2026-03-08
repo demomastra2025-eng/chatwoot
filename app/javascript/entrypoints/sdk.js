@@ -182,7 +182,7 @@ const runSDK = ({ baseUrl, websiteToken }) => {
       IFrameHelper.sendMessage('remove-label', { label });
     },
 
-    setLocale(localeToBeUsed = 'en') {
+    setLocale(localeToBeUsed = 'ru') {
       IFrameHelper.sendMessage('set-locale', { locale: localeToBeUsed });
     },
 

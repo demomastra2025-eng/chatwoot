@@ -294,24 +294,24 @@ describe PortalHelper do
 
   describe '#generate_portal_brand_url' do
     it 'builds URL with UTM params and referer host as source (happy path)' do
-      result = helper.generate_portal_brand_url('https://brand.example.com', 'https://app.chatwoot.com/some/page')
+      result = helper.generate_portal_brand_url('https://brand.example.com', 'https://one-link.kz/some/page')
       uri = URI.parse(result)
       params = Rack::Utils.parse_query(uri.query)
       expect(uri.scheme).to eq('https')
       expect(uri.host).to eq('brand.example.com')
       expect(params['utm_medium']).to eq('helpcenter')
       expect(params['utm_campaign']).to eq('branding')
-      expect(params['utm_source']).to eq('app.chatwoot.com')
+      expect(params['utm_source']).to eq('one-link.kz')
     end
 
     it 'returns utm string when brand_url is nil or empty' do
       expect(helper.generate_portal_brand_url(nil,
-                                              'https://app.chatwoot.com')).to eq(
-                                                '?utm_campaign=branding&utm_medium=helpcenter&utm_source=app.chatwoot.com'
+                                              'https://one-link.kz')).to eq(
+                                                '?utm_campaign=branding&utm_medium=helpcenter&utm_source=one-link.kz'
                                               )
       expect(helper.generate_portal_brand_url('',
-                                              'https://app.chatwoot.com')).to eq(
-                                                '?utm_campaign=branding&utm_medium=helpcenter&utm_source=app.chatwoot.com'
+                                              'https://one-link.kz')).to eq(
+                                                '?utm_campaign=branding&utm_medium=helpcenter&utm_source=one-link.kz'
                                               )
     end
 

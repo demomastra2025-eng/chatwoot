@@ -120,16 +120,16 @@ blockquote {
 }
 
 .button {
-  @apply appearance-none bg-n-brand border border-solid border-n-brand text-white cursor-pointer inline-block text-sm h-10 leading-none outline-none outline-0 py-1 px-4 text-center no-underline select-none align-middle whitespace-nowrap;
+  @apply appearance-none bg-n-brand-solid border border-solid border-n-brand-solid text-n-brand-contrast cursor-pointer inline-block text-sm h-10 leading-none outline-none outline-0 py-1 px-4 text-center no-underline select-none align-middle whitespace-nowrap;
 
   &:focus,
   &:hover {
-    @apply no-underline border-n-brand brightness-110;
+    @apply no-underline border-n-brand-solid brightness-110;
   }
 
   &:active,
   &.active {
-    @apply no-underline border-n-brand brightness-125;
+    @apply no-underline border-n-brand-solid brightness-125;
   }
 
   &[disabled],

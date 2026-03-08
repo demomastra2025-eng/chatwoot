@@ -4,7 +4,7 @@
     "TITLE": "Реєстрація",
     "TESTIMONIAL_HEADER": "Один крок і вперед",
     "TESTIMONIAL_CONTENT": "Ви за один крок від залучення своїх клієнтів, утримання їх та пошуку нових.",
-    "TERMS_ACCEPT": "Зареєструвавшись, ви погоджуєтеся з нашими <a href=\"https://www.chatwoot.com/terms\">Умовами Користування</a> та <a href=\"https://www.chatwoot.com/privacy-policy\">Політикою конфіденційності</a>",
+    "TERMS_ACCEPT": "Зареєструвавшись, ви погоджуєтеся з нашими <a href=\"https://www.OneLink.com/terms\">Умовами Користування</a> та <a href=\"https://www.OneLink.com/privacy-policy\">Політикою конфіденційності</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Зареєструватися через Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Не вдалося підключитися до Woot сервера. Будь ласка, спробуйте ще раз."
+      "ERROR_MESSAGE": "Не вдалося підключитися до Onelink сервера. Будь ласка, спробуйте ще раз."
     },
     "SUBMIT": "Створити акаунт",
     "HAVE_AN_ACCOUNT": "Вже маєте обліковий запис?"

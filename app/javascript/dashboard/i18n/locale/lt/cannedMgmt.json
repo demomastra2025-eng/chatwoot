@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Atsakymų ruošinys pridėtas sėkmingai.",
-        "ERROR_MESSAGE": "Nepavyko prisijungti prie Woot serverio. Bandykite dar kartą vėliau."
+        "ERROR_MESSAGE": "Nepavyko prisijungti prie Onelink serverio. Bandykite dar kartą vėliau."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Taisyti",
       "API": {
         "SUCCESS_MESSAGE": "Atsakymų Ruošinys atnaujintas sėkmingai.",
-        "ERROR_MESSAGE": "Nepavyko prisijungti prie Woot serverio. Bandykite dar kartą vėliau."
+        "ERROR_MESSAGE": "Nepavyko prisijungti prie Onelink serverio. Bandykite dar kartą vėliau."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Ištrinti",
       "API": {
         "SUCCESS_MESSAGE": "Atsakymų ruošinys ištrintas sėkmingai.",
-        "ERROR_MESSAGE": "Nepavyko prisijungti prie Woot serverio. Bandykite dar kartą vėliau."
+        "ERROR_MESSAGE": "Nepavyko prisijungti prie Onelink serverio. Bandykite dar kartą vėliau."
       },
       "CONFIRM": {
         "TITLE": "Patvirtinti Ištrynimą",

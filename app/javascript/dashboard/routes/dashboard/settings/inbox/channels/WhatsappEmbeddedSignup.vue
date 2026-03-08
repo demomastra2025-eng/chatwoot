@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
               :href="globalConstants.WHATSAPP_EMBEDDED_SIGNUP_DOCS_URL"
               target="_blank"
               rel="noopener noreferrer"
-              class="underline text-n-brand"
+              class="text-link"
             >
               {{
                 $t(

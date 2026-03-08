@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Woot. Vă rugăm să încercați din nou."
+        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Onelink. Vă rugăm să încercați din nou."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Editare",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Woot. Vă rugăm să încercați din nou."
+        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Onelink. Vă rugăm să încercați din nou."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Şterge",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Woot. Vă rugăm să încercați din nou."
+        "ERROR_MESSAGE": "Nu s-a putut conecta la serverul Onelink. Vă rugăm să încercați din nou."
       },
       "CONFIRM": {
         "TITLE": "Confirmă ștergerea",

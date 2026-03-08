@@ -1,17 +1,20 @@
 <script setup>
 import Input from 'dashboard/components-next/input/Input.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 import CompanySortMenu from './components/CompanySortMenu.vue';
 
 defineProps({
   showSearch: { type: Boolean, default: true },
   searchValue: { type: String, default: '' },
   headerTitle: { type: String, required: true },
+  showCreateButton: { type: Boolean, default: true },
+  createButtonLabel: { type: String, default: '' },
   activeSort: { type: String, default: 'last_activity_at' },
   activeOrdering: { type: String, default: '' },
 });
 
-const emit = defineEmits(['search', 'update:sort']);
+const emit = defineEmits(['search', 'update:sort', 'create']);
 </script>
 
 <template>
@@ -30,11 +33,17 @@ const emit = defineEmits(['search', 'update:sort']);
             @update:sort="emit('update:sort', $event)"
           />
         </div>
+        <Button
+          v-if="showCreateButton"
+          size="sm"
+          :label="createButtonLabel || $t('COMPANIES.ACTIONS.ADD')"
+          @click="emit('create')"
+        />
         <div v-if="showSearch" class="flex items-center gap-2 w-full">
           <Input
             :model-value="searchValue"
             type="search"
-            :placeholder="$t('CONTACTS_LAYOUT.HEADER.SEARCH_PLACEHOLDER')"
+            :placeholder="$t('COMPANIES.SEARCH_PLACEHOLDER')"
             :custom-input-class="[
               'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pl-8 !py-1 rtl:!pr-8',
             ]"

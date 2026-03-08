@@ -17,6 +17,7 @@ import id from './locale/id.json';
 import is from './locale/is.json';
 import it from './locale/it.json';
 import ja from './locale/ja.json';
+import kk from './locale/kk.json';
 import ko from './locale/ko.json';
 import lt from './locale/lt.json';
 import lv from './locale/lv.json';
@@ -59,6 +60,7 @@ export default {
   is,
   it,
   ja,
+  kk,
   ko,
   lt,
   lv,

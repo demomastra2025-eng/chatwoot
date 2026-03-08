@@ -22,7 +22,7 @@ export const useIntegrationHook = integrationId => {
    * @type {import('vue').ComputedRef<boolean>}
    */
   const isHookTypeInbox = computed(() => {
-    return integration.value.hook_type === 'inbox';
+    return integration.value?.hook_type === 'inbox';
   });
 
   /**
@@ -30,7 +30,7 @@ export const useIntegrationHook = integrationId => {
    * @type {import('vue').ComputedRef<boolean>}
    */
   const hasConnectedHooks = computed(() => {
-    return !!integration.value.hooks.length;
+    return !!integration.value?.hooks?.length;
   });
 
   /**
@@ -38,7 +38,7 @@ export const useIntegrationHook = integrationId => {
    * @type {import('vue').ComputedRef<string>}
    */
   const integrationType = computed(() => {
-    return integration.value.allow_multiple_hooks ? 'multiple' : 'single';
+    return integration.value?.allow_multiple_hooks ? 'multiple' : 'single';
   });
 
   /**

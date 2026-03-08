@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Не можа да се свърже с Woot сървър. Моля, опитайте отново по-късно"
+        "ERROR_MESSAGE": "Не можа да се свърже с Onelink сървър. Моля, опитайте отново по-късно"
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Редактирай",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Не можа да се свърже с Woot сървър. Моля, опитайте отново по-късно"
+        "ERROR_MESSAGE": "Не можа да се свърже с Onelink сървър. Моля, опитайте отново по-късно"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Изтрий",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Не можа да се свърже с Woot сървър. Моля, опитайте отново по-късно"
+        "ERROR_MESSAGE": "Не можа да се свърже с Onelink сървър. Моля, опитайте отново по-късно"
       },
       "CONFIRM": {
         "TITLE": "Потвърди изтриването",

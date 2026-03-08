@@ -25,6 +25,9 @@ import vue from '@vitejs/plugin-vue';
 
 const isLibraryMode = process.env.BUILD_MODE === 'library';
 const isTestMode = process.env.TEST === 'true';
+const devServerBindHost = process.env.VITE_DEV_SERVER_BIND_HOST || '0.0.0.0';
+const devServerHost = process.env.VITE_DEV_SERVER_HOST || '127.0.0.1';
+const devServerPort = Number(process.env.VITE_DEV_SERVER_PORT || 3036);
 
 const vueOptions = {
   template: {
@@ -44,6 +47,15 @@ if (isLibraryMode) {
 
 export default defineConfig({
   plugins: plugins,
+  server: {
+    host: devServerBindHost,
+    port: devServerPort,
+    strictPort: true,
+    hmr: {
+      host: devServerHost,
+      port: devServerPort,
+    },
+  },
   build: {
     rollupOptions: {
       output: {

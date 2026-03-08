@@ -12,9 +12,8 @@ module ChatwootApp
   end
 
   def self.enterprise?
-    return if ENV.fetch('DISABLE_ENTERPRISE', false)
-
-    @enterprise ||= root.join('enterprise').exist?
+    # Onelink ships with the inherited enterprise layer as part of the base product runtime.
+    true
   end
 
   def self.chatwoot_cloud?

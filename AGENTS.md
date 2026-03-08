@@ -4,6 +4,20 @@
 
 - **Setup**: `bundle install && pnpm install`
 - **Run Dev**: `pnpm dev` or `overmind start -f ./Procfile.dev`
+- **Run Dev Lite**: `foreman start -f ./Procfile.dev-lite` for low-resource development with hot reload and without Sidekiq
+- **Restart Dev Lite**: `./bin/dev-lite-restart` or `pnpm dev:lite:restart`
+- **Restart Dev Lite + DB Prepare**: `PREPARE_DB=1 ./bin/dev-lite-restart` when migrations or database setup changed
+- **Enterprise bootstrap**:
+  - Dev lite restart now reapplies enterprise mode by default; opt out with `CW_BOOTSTRAP_ENTERPRISE=0 ./bin/dev-lite-restart`
+  - Manual bootstrap in any non-test env: `bundle exec rake chatwoot:instance:unlock_enterprise`
+  - Automatic bootstrap during `db:chatwoot_prepare`: set `CW_BOOTSTRAP_ENTERPRISE=1`
+  - Optional account plan label override: `CW_BOOTSTRAP_ACCOUNT_PLAN_NAME=Enterprise`
+- **Dev Host**: local Vite is expected on `127.0.0.1:3036`; open the app as `http://127.0.0.1:3000` to avoid host mismatches with HMR
+- **Infra for Dev Lite**:
+  - Start Colima if Docker Desktop is not running: `colima start --cpu 2 --memory 4 --disk 20`
+  - Point Docker CLI to Colima: `export DOCKER_HOST=unix:///Users/akhanbakhitov/.colima/default/docker.sock`
+  - Start only database services: `docker compose up -d postgres redis`
+  - On first boot or after DB reset: `bundle exec rake db:chatwoot_prepare`
 - **Seed Local Test Data**: `bundle exec rails db:seed` (quickly populates minimal data for standard feature verification)
 - **Seed Search Test Data**: `bundle exec rails search:setup_test_data` (bulk fixture generation for search/performance/manual load scenarios)
 - **Seed Account Sample Data (richer test data)**: `Seeders::AccountSeeder` is available as an internal utility and is exposed through Super Admin `Accounts#seed`, but can be used directly in dev workflows too:
@@ -19,6 +33,34 @@
 - **rbenv setup**: Before running any `bundle` or `rspec` commands, init rbenv in your shell (`eval "$(rbenv init -)"`) so the correct Ruby/Bundler versions are used
 - Always prefer `bundle exec` for Ruby CLI tasks (rspec, rake, rubocop, etc.)
 
+## Git / GitHub Workflow
+
+- **Primary branch**: `onelink-main`
+- **Do not use as base branch**: `develop` in this fork is not the product base branch
+- **Remote layout**:
+  - `origin` = `git@github.com:demomastra2025-eng/chatwoot.git`
+  - `upstream` = `https://github.com/chatwoot/chatwoot.git`
+- **Pushes must use SSH**:
+  - Verify with `git remote -v`
+  - Push with `git push origin HEAD`
+  - For a new branch use `git push -u origin <branch-name>`
+- **SSH auth check**: `ssh -T git@github.com`
+- **Daily branch flow**:
+  - Branch from `onelink-main`
+  - Prefer branch names like `feature/...`, `fix/...`, `chore/...`, `sync/...`
+  - Commit locally, then push to `origin` over SSH
+- **Syncing with upstream Chatwoot**:
+  - Prefer stable upstream tags over `upstream/develop` for product updates
+  - Fetch updates with `git fetch upstream --tags`
+  - Create a sync branch from `onelink-main`, for example `sync/chatwoot-v4.11.1`
+  - Merge the target upstream tag or branch into that sync branch
+  - Resolve conflicts there, verify app boot/tests, then merge back into `onelink-main`
+- **Avoid**:
+  - Pushing to `upstream`
+  - Using HTTPS for `origin` pushes
+  - Force-pushing `onelink-main` unless explicitly requested
+  - Using `develop` from this fork as the main working branch
+
 ## Code Style
 
 - **Ruby**: Follow RuboCop rules (150 character max line length)
@@ -30,16 +72,29 @@
 - **Models**: Validate presence/uniqueness, add proper indexes
 - **Type Safety**: Use PropTypes in Vue, strong params in Rails
 - **Naming**: Use clear, descriptive names with consistent casing
-- **Vue API**: Always use Composition API with `<script setup>` at the top
+- **Vue API**: For new or heavily reworked components, prefer Composition API with `<script setup>`. Do not assume the existing repo already follows this everywhere.
 
 ## Styling
 
-- **Tailwind Only**:  
-  - Do not write custom CSS  
-  - Do not use scoped CSS  
-  - Do not use inline styles  
-  - Always use Tailwind utility classes  
+- **Tailwind Preferred For New Work**:
+  - For new or heavily reworked surfaces, prefer Tailwind utility classes
+  - Do not assume the existing repo is already Tailwind-only
+  - Existing SCSS and scoped styles still exist in multiple frontend surfaces
+  - Avoid introducing new styling patterns unless the touched surface already depends on them
 - **Colors**: Refer to `tailwind.config.js` for color definitions
+
+## Architecture Sources
+
+Use architecture materials in this order:
+
+1. code in `app/`, `enterprise/`, `config/`, and `db/`
+2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` for the current implemented system
+3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
+4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
+5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
+
+Do not treat target architecture documents as proof that the runtime implementation already exists.
+Use the implementation roadmap when the task is about sequencing, decomposition, or deciding what to build next.
 
 ## General Guidelines
 
@@ -55,12 +110,76 @@
 - Prefer `with_modified_env` (from spec helpers) over stubbing `ENV` directly in specs
 - Specs in parallel/reloading environments: prefer comparing `error.class.name` over constant class equality when asserting raised errors
 
+## Product Architecture Direction
+
+- Treat `/Users/akhanbakhitov/Documents/zeroprompt/onelink` as the primary product fork, not as a temporary patch layer.
+- Current implemented shape first: this repo is today an account-scoped omnichannel support platform with CRM-adjacent primitives and an inherited `enterprise/` technical split. In Onelink, that split is not a separate product/paywall boundary because enterprise capabilities are currently opened for the project.
+- Keep three conceptual layers in mind:
+  - `upstream/core`: Chatwoot-compatible base and smallest possible fork diff
+  - `platform`: shared Onelink capabilities, branding, shared CRM behavior, shared integrations, shared access model
+  - `domain zones`: isolated vertical behavior such as healthcare and construction
+- Do not model verticals by scattering conditionals across shared core code when an isolated extension point or domain service will work.
+- If a feature is needed by 2 or more domain zones, prefer promoting it into the shared platform layer.
+- If a feature is needed by only 1 tenant, prefer configuration/custom attributes/forms before adding new shared code.
+- Keep domain specialization separate from plan/licensing logic. A domain is not the same thing as the inherited `enterprise/` tree or any future capability gating.
+
+## CRM Architecture Direction
+
+- Build one shared CRM engine, not separate CRMs per vertical.
+- Current implemented CRM-adjacent primitives are `Contact`, `Company`, `Note`, `Label`, `CustomAttributeDefinition`, search/reporting, and communication history around `Conversation`.
+- Planned shared CRM entities such as `Deal`, `Task`, `Pipeline`, `Stage`, and `Activity` should be treated as roadmap until they exist in code.
+- Shared CRM entities should remain explicit business entities. In particular, `Deal` and `Task` should be separate entities, not one generic record with overloaded state.
+- Treat `Company` as an existing shared CRM organization entity in this repo. It should be reused as the default B2B grouping layer across generic, healthcare, and construction flows instead of inventing parallel organization models too early.
+- Keep `Contact` as the person-level entity and `Company` as the organization-level entity. Prefer attaching future organization-centric CRM flows such as deals/projects/cases to `company_id` when appropriate.
+- Use custom attributes to extend CRM entities, not to replace core state and relationships.
+- Use `Company` custom attributes for domain-specific organization data before adding separate vertical-specific company tables.
+- Reuse the existing native platform primitives before inventing new ones:
+  - `Account` as workspace/tenant boundary
+  - `Contact` as person-level entity
+  - `Company` as organization-level entity
+  - `Conversation` as communication layer
+  - `Note` as internal contact note layer
+  - `Label` as lightweight segmentation
+  - `CustomAttributeDefinition` as current schema layer for contact/conversation variance
+  - `Team` as shared ownership/routing primitive
+  - `Macro`, `AutomationRule`, `Integrations::App`, and `Integrations::Hook` as native operational and integration primitives
+  - `Captain` as shared AI/knowledge/tooling layer
+- Keep the distinction clear:
+  - `Integrations::App` = integration catalog/capability descriptor
+  - `Integrations::Hook` = installed account/inbox integration instance
+  - `Captain::CustomTool` = AI-callable tool, not a full integration lifecycle by default
+- Treat notes, labels, custom attributes, teams, macros, automations, integrations, and Captain as first-class extension points when designing domain behavior.
+- Put stable shared behavior such as pipelines, stages, ownership, activities, permissions, and base UI in shared platform code.
+- Put domain-specific fields, screens, workflows, reports, and validations in domain-scoped code.
+- Treat `generic` as a first-class domain profile for broad/non-vertical customers.
+
+## Domain Change Rules
+
+- Before implementing a new domain feature, decide whether it belongs to:
+  - shared platform capability
+  - domain-specific behavior
+  - tenant-specific configuration
+- Do not assume `generic`, `healthcare`, and `construction` already exist as runtime-bounded contexts. Verify concrete implementation points first.
+- Avoid adding healthcare/construction-specific columns into shared tables unless the field is truly stable and shared.
+- Prefer this escalation path:
+  - existing native entity + config/labels/notes/custom attributes/Captain
+  - domain service/policy/UI extension
+  - new domain model
+- Before adding a new entity, explicitly check whether `Account`, `Company`, `Contact`, `Conversation`, `Note`, `Label`, `Team`, `Macro`, `AutomationRule`, `Integrations::App`, `Integrations::Hook`, or `Captain` already cover the need.
+- When changing shared code, verify that the behavior still makes sense for:
+  - generic accounts
+  - healthcare accounts
+  - construction accounts
+- Use code plus `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` as the current-state source of truth, and use `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` as the companion guide for access/entity decisions.
+- Use `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` when the task is roadmap-driven or requires phase-aware implementation planning.
+
 ## Codex Worktree Workflow
 
 - Use a separate git worktree + branch per task to keep changes isolated.
 - Keep Codex-specific local setup under `.codex/` and use `Procfile.worktree` for worktree process orchestration.
 - The setup workflow in `.codex/environments/environment.toml` should dynamically generate per-worktree DB/port values (Rails, Vite, Redis DB index) to avoid collisions.
 - Start each worktree with its own Overmind socket/title so multiple instances can run at the same time.
+- If using a worktree for this repo, preserve the same git remote layout: `origin` over SSH and `upstream` pointing to `chatwoot/chatwoot`
 
 ## Commit Messages
 
@@ -81,10 +200,12 @@
 
 - Use compact `module/class` definitions; avoid nested styles
 
-## Enterprise Edition Notes
+## Inherited Enterprise Layer Notes
 
-- Chatwoot has an Enterprise overlay under `enterprise/` that extends/overrides OSS code.
+- Chatwoot has an inherited `enterprise/` code split under `enterprise/` that extends/overrides OSS code.
+- In Onelink, enterprise capabilities are currently opened for the project, so treat `enterprise/` as a technical repository/runtime layer rather than as a real product or paywall boundary.
 - When you add or modify core functionality, always check for corresponding files in `enterprise/` and keep behavior compatible.
+- For Onelink planning, treat `enterprise/` primarily as an existing technical overlay/extension mechanism. Do not use it as the conceptual boundary for domain architecture.
 - Follow the Enterprise development practices documented here:
   - https://chatwoot.help/hc/handbook/articles/developing-enterprise-edition-features-38
 
@@ -93,12 +214,20 @@ Practical checklist for any change impacting core logic or public APIs
 - If adding new endpoints, services, or models, consider whether Enterprise needs:
   - An override (e.g., `enterprise/app/...`), or
   - An extension point (e.g., `prepend_mod_with`, hooks, configuration) to avoid hard forks.
-- Avoid hardcoding instance- or plan-specific behavior in OSS; prefer configuration, feature flags, or extension points consumed by Enterprise.
-- Keep request/response contracts stable across OSS and Enterprise; update both sets of routes/controllers when introducing new APIs.
+- Avoid reintroducing OSS-vs-Enterprise product gating in Onelink code; if you need capability control, make it explicit at the product/account level instead of leaning on inherited paywall assumptions.
+- Keep request/response contracts stable across `app/` and `enterprise/`; update both sets of routes/controllers when introducing new APIs.
 - When renaming/moving shared code, mirror the change in `enterprise/` to prevent drift.
-- Tests: Add Enterprise-specific specs under `spec/enterprise`, mirroring OSS spec layout where applicable.
-- When modifying existing OSS features for Enterprise-only behavior, add an Enterprise module (via `prepend_mod_with`/`include_mod_with`) instead of editing OSS files directly—especially for policies, controllers, and services. For Enterprise-exclusive features, place code directly under `enterprise/`.
+- Tests: Add `spec/enterprise` coverage when behavior is specific to inherited `enterprise/` paths, mirroring OSS spec layout where applicable.
+- When modifying existing OSS features for behavior that currently lives only in the inherited `enterprise/` tree, add an `enterprise/` module (via `prepend_mod_with`/`include_mod_with`) instead of editing OSS files directly, especially for policies, controllers, and services. If a surface still exists only under `enterprise/`, place the code there until it is intentionally promoted into shared code.
 
 ## Branding / White-labeling note
 
 - For user-facing strings that currently contain "Chatwoot" but should adapt to branded/self-hosted installs, prefer applying `replaceInstallationName` from `shared/composables/useBranding` in the UI layer (for example tooltip and suggestion labels) instead of adding hardcoded brand-specific copy.
+
+## Repository Notes
+
+- `CLAUDE.md` is a symlink to `AGENTS.md`, so updating this file updates both instruction entrypoints.
+- This repo has a lightweight local dev path:
+  - App processes run locally: Rails + Vite
+  - Infra runs separately: Postgres + Redis
+  - Only start Sidekiq when working on jobs, async flows, or features that require background processing

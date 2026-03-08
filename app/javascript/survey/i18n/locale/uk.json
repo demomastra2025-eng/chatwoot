@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Опитування успішно оновлено",
-      "ERROR_MESSAGE": "Не вдалося підключитися до Woot Server, спробуйте ще раз пізніше"
+      "ERROR_MESSAGE": "Не вдалося підключитися до Onelink Server, спробуйте ще раз пізніше"
     }
   },
-  "POWERED_BY": "Працює на Chatwoot"
+  "POWERED_BY": "Працює на OneLink"
 }

@@ -4,7 +4,7 @@
     "TITLE": "Kayıt ol",
     "TESTIMONIAL_HEADER": "İlerlemek için tek bir adım atmanız yeterlidir",
     "TESTIMONIAL_CONTENT": "Müşterilerinizle etkileşimde bulunmaktan, onları elde tutmaktan ve yeni müşteriler bulmaktan sadece bir adım uzaktasınız.",
-    "TERMS_ACCEPT": "Bir hesap oluşturarak, <a href=\"https://www.chatwoot.com/terms\">Kullanım Koşulları</a> ve <a href=\"https://www.chatwoot.com/privacy-policy\">Gizlilik Politikamızı</a> kabul etmiş olursunuz",
+    "TERMS_ACCEPT": "Bir hesap oluşturarak, <a href=\"https://www.OneLink.com/terms\">Kullanım Koşulları</a> ve <a href=\"https://www.OneLink.com/privacy-policy\">Gizlilik Politikamızı</a> kabul etmiş olursunuz",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Google ile kaydol"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Başarıyla Kayıt Olundu",
-      "ERROR_MESSAGE": "Woot sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
+      "ERROR_MESSAGE": "Onelink sunucusuna bağlanılamadı. Lütfen tekrar deneyin."
     },
     "SUBMIT": "Hesap oluştur",
     "HAVE_AN_ACCOUNT": "Hesabın var mı?"

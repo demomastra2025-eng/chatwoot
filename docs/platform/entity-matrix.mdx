@@ -1,0 +1,99 @@
+---
+title: Entity Matrix
+description: Native-first entity map for Onelink shared platform and domain-zone architecture.
+sidebarTitle: Entity Matrix
+---
+
+# Entity Matrix
+
+## Status
+
+- document type: mixed current state and planning matrix
+- the `Exists now` column is authoritative for current implementation
+- if the matrix conflicts with code, trust the code
+
+This page is the practical reference for deciding what to reuse in `onelink`, what belongs in shared platform code, and what should remain domain-specific.
+
+## Core Decision Rule
+
+When adding a new feature:
+
+1. reuse an existing native entity first
+2. extend it with notes, labels, custom attributes, settings, or Captain configuration if possible
+3. add a domain service, policy, workflow, or UI extension if needed
+4. add a new shared entity only if the lifecycle is stable across domains
+5. add a domain-only entity only if the shared model is no longer semantically correct
+
+## Entity Matrix
+
+| Entity | Exists now | Layer | Generic | Healthcare | Construction | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Account` | Yes | Shared platform | Workspace / tenant | Workspace for clinic or medical org | Workspace for builder / contractor org | Use as the real workspace boundary; do not invent a second internal workspace model |
+| `User` / `AccountUser` | Yes | Shared platform | Operators and admins | Operators, coordinators, admins | Operators, estimators, managers, admins | Per-account access identity already exists |
+| `Inbox` | Yes | Shared platform | Communication channels | Front desk, support, intake channels | Sales, estimate, support channels | Keep routing and assignment here |
+| `Conversation` | Yes | Shared platform | Communication thread | Patient/client communication thread | Buyer/client communication thread | Do not replace with domain-specific messaging models |
+| `Company` | Yes | Shared CRM primitive | Customer organization | Clinic, insurer, employer, partner org | Developer, contractor, supplier, buyer org | Default organization-level entity |
+| `Contact` | Yes | Shared CRM primitive | Person | Patient, family contact, coordinator | Buyer, manager, stakeholder | Default person-level entity |
+| `Note` | Yes | Shared platform | Internal notes | Medical/operator notes | Estimate/project notes | Use before inventing a separate note model |
+| `Label` | Yes | Shared platform | Segmentation and tags | Intake/status tags | Qualification/project tags | Use for lightweight classification, not primary workflow state |
+| `CustomAttributeDefinition` | Yes, for `Contact` and `Conversation` | Shared variability layer | Tenant/domain fields | Medical fields | Construction fields | Good first step; currently not a universal schema system for every entity |
+| `Team` | Yes | Shared platform | Ownership groups | Front desk, support, sales groups | Sales, field, estimator groups | Reuse for routing and visibility |
+| `Macro` | Yes | Shared platform | Reusable actions | Protocol or reply shortcuts | Estimate/sales shortcuts | Native repeatability layer |
+| `AutomationRule` | Yes | Shared platform | Workflow automation | Intake/escalation automation | Lead/project automation | Native event-driven automation layer |
+| `Integrations::App` | Yes | Shared integration catalog | App definition | Same | Same | Catalog and capability descriptor, not installed instance |
+| `Integrations::Hook` | Yes | Shared integration instance | Connected app | Connected medical/ops system | Connected construction/ops system | Installed integration at account or inbox level |
+| `Captain::Assistant` | Yes | Shared AI layer | General assistant | Domain-aware medical assistant | Domain-aware construction assistant | Shared AI framework, domain-aware configuration |
+| `Captain::Document` | Yes | Shared AI knowledge layer | Generic docs | Medical knowledge docs | Construction knowledge docs | Use for domain knowledge before building special AI stores |
+| `Captain::CustomTool` | Yes | Shared AI action layer | Generic tools | Medical-safe action tools | Construction-safe action tools | Account-scoped action surface for Captain |
+| `CopilotThread` | Yes | Shared AI collaboration layer | Operator copilot | Medical operator copilot | Construction operator copilot | Reuse for internal AI help flows |
+| `Deal` | Not yet | Future shared CRM | Needed | Needed | Needed | Should be introduced as shared entity, not per-domain clone |
+| `Task` | Not yet | Future shared CRM | Needed | Needed | Needed | Separate from `Deal` |
+| `Activity` | Partial via existing timeline/events | Future shared CRM | Needed | Needed | Needed | Normalize later as shared CRM timeline layer |
+
+## What Is Already Shared
+
+These should already be treated as common platform primitives:
+
+- `Account`
+- `User`
+- `AccountUser`
+- `Inbox`
+- `Conversation`
+- `Company`
+- `Contact`
+- `Note`
+- `Label`
+- `CustomAttributeDefinition`
+- `Team`
+- `Macro`
+- `AutomationRule`
+- `Integrations::App`
+- `Integrations::Hook`
+- `Captain`
+
+## What Should Be Domain-Specific
+
+Domain-specific behavior should usually mean:
+
+- field packs
+- validation rules
+- workflow rules
+- UI sections and screens
+- reporting views
+- Captain documents, prompts, scenarios, and tools
+
+Not:
+
+- a second workspace model
+- a second person model
+- a second organization model
+- a second messaging model
+
+## Near-Term Build Order
+
+1. attach domain profile or config to `Account`
+2. treat `Company` and `Contact` as mandatory shared CRM primitives
+3. use notes, labels, and current custom attributes for early domain variance
+4. use teams, macros, automation rules, integrations, and Captain as native extension points
+5. add shared CRM entities such as `Deal`, `Task`, and later `Activity`
+6. add domain-only entities only when the shared primitives stop matching the real business lifecycle

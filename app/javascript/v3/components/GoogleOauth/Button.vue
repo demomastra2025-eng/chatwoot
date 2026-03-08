@@ -37,7 +37,7 @@ export default {
     >
       <span class="i-logos-google-icon h-6" />
       <span class="ml-2 text-base font-medium text-n-slate-12">
-        {{ $t('LOGIN.OAUTH.GOOGLE_LOGIN') }}
+        <slot>{{ $t('LOGIN.OAUTH.GOOGLE_LOGIN') }}</slot>
       </span>
     </a>
   </div>

@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Đã cập nhật khảo sát thành công",
-      "ERROR_MESSAGE": "Không thể kết nối với Máy chủ Woot, Vui lòng thử lại sau"
+      "ERROR_MESSAGE": "Không thể kết nối với Máy chủ Onelink, Vui lòng thử lại sau"
     }
   },
-  "POWERED_BY": "Cung cấp bởi Chatwoot"
+  "POWERED_BY": "Cung cấp bởi OneLink"
 }

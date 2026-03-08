@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Άκυρο",
       "API": {
-        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Διαγραφή",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Woot Server, Παρακαλώ προσπαθήστε αργότερα"
+        "ERROR_MESSAGE": "Αδυναμία σύνδεσης με τον Onelink Server, Παρακαλώ προσπαθήστε αργότερα"
       },
       "CONFIRM": {
         "TITLE": "Επιβεβαίωση Διαγραφής",

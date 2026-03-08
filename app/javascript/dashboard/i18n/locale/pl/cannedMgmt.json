@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot. Spróbuj ponownie."
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink. Spróbuj ponownie."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Edytuj",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot. Spróbuj ponownie."
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink. Spróbuj ponownie."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Usuń",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Woot. Spróbuj ponownie."
+        "ERROR_MESSAGE": "Nie można połączyć się z serwerem Onelink. Spróbuj ponownie."
       },
       "CONFIRM": {
         "TITLE": "Potwierdzenie usunięcia",

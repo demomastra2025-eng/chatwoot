@@ -95,9 +95,7 @@ const openCreateAssistantDialog = () => {
     >
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-2">
-          <h2
-            class="text-base font-medium cursor-pointer text-n-slate-12 w-fit hover:underline"
-          >
+          <h2 class="text-link text-base font-medium w-fit">
             {{ t('CAPTAIN.ASSISTANT_SWITCHER.ASSISTANTS') }}
           </h2>
         </div>

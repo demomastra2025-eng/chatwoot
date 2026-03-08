@@ -43,11 +43,7 @@ export default {
 
 <template>
   <div class="w-full h-5 ltr:-ml-1 rtl:-mr-1">
-    <a
-      v-if="href"
-      :href="href"
-      class="flex items-center gap-2 text-n-slate-11 hover:underline"
-    >
+    <a v-if="href" :href="href" class="flex items-center gap-2 text-link">
       <EmojiOrIcon
         :icon="icon"
         :emoji="emoji"

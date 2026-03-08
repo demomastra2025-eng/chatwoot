@@ -8,6 +8,7 @@ import { useAlert } from 'dashboard/composables';
 import { DEFAULT_REDIRECT_URL } from 'dashboard/constants/globals';
 import VueHcaptcha from '@hcaptcha/vue3-hcaptcha';
 import FormInput from '../../../../../components/Form/Input.vue';
+import CheckBox from '../../../../../components/Form/CheckBox.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import PasswordRequirements from './PasswordRequirements.vue';
 import { isValidPassword } from 'shared/helpers/Validators';
@@ -18,7 +19,7 @@ import * as CompanyEmailValidator from 'company-email-validator';
 const MIN_PASSWORD_LENGTH = 6;
 
 const store = useStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const hCaptcha = ref(null);
 const isPasswordFocused = ref(false);
@@ -28,6 +29,11 @@ const credentials = reactive({
   email: '',
   password: '',
   hCaptchaClientResponse: '',
+});
+
+const consent = reactive({
+  terms: false,
+  privacy: false,
 });
 
 const rules = {
@@ -45,20 +51,19 @@ const rules = {
       minLength: minLength(MIN_PASSWORD_LENGTH),
     },
   },
+  consent: {
+    terms: {
+      accepted: value => value === true,
+    },
+    privacy: {
+      accepted: value => value === true,
+    },
+  },
 };
 
-const v$ = useVuelidate(rules, { credentials });
+const v$ = useVuelidate(rules, { credentials, consent });
 
 const globalConfig = computed(() => store.getters['globalConfig/get']);
-
-const termsLink = computed(() =>
-  t('REGISTER.TERMS_ACCEPT')
-    .replace('https://www.chatwoot.com/terms', globalConfig.value.termsURL)
-    .replace(
-      'https://www.chatwoot.com/privacy-policy',
-      globalConfig.value.privacyURL
-    )
-);
 
 const allowedLoginMethods = computed(
   () => window.chatwootConfig.allowedLoginMethods || ['email']
@@ -67,8 +72,13 @@ const allowedLoginMethods = computed(
 const showGoogleOAuth = computed(
   () =>
     allowedLoginMethods.value.includes('google_oauth') &&
-    Boolean(window.chatwootConfig.googleOAuthClientId)
+    Boolean(window.chatwootConfig.googleOAuthClientId) &&
+    Boolean(window.chatwootConfig.googleOAuthCallbackUrl)
 );
+
+const selectedLocale = computed(() => locale.value || 'ru');
+const termsUrl = computed(() => `/legal/${selectedLocale.value}/terms`);
+const privacyUrl = computed(() => `/legal/${selectedLocale.value}/privacy`);
 
 const isFormValid = computed(() => !v$.value.$invalid);
 
@@ -167,6 +177,56 @@ const onCaptchaError = () => {
         @challenge-expired="onCaptchaError"
         @closed="onCaptchaError"
       />
+      <div class="space-y-3 rounded-lg border border-n-container bg-n-brand-solid/5 p-4">
+        <label class="flex items-start gap-3 text-sm text-n-slate-12">
+          <CheckBox
+            :is-checked="consent.terms"
+            value="terms"
+            @update="(_, value) => (consent.terms = value)"
+          />
+          <span>
+            {{ $t('REGISTER.CONSENTS.TERMS_PREFIX') }}
+            <a
+              :href="termsUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-medium text-n-brand hover:text-n-brand"
+            >
+              {{ $t('REGISTER.CONSENTS.TERMS_LINK') }}
+            </a>
+          </span>
+        </label>
+        <p
+          v-if="v$.consent.terms.$error"
+          class="text-sm text-n-ruby-9"
+        >
+          {{ $t('REGISTER.CONSENTS.TERMS_ERROR') }}
+        </p>
+        <label class="flex items-start gap-3 text-sm text-n-slate-12">
+          <CheckBox
+            :is-checked="consent.privacy"
+            value="privacy"
+            @update="(_, value) => (consent.privacy = value)"
+          />
+          <span>
+            {{ $t('REGISTER.CONSENTS.PRIVACY_PREFIX') }}
+            <a
+              :href="privacyUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-medium text-n-brand hover:text-n-brand"
+            >
+              {{ $t('REGISTER.CONSENTS.PRIVACY_LINK') }}
+            </a>
+          </span>
+        </label>
+        <p
+          v-if="v$.consent.privacy.$error"
+          class="text-sm text-n-ruby-9"
+        >
+          {{ $t('REGISTER.CONSENTS.PRIVACY_ERROR') }}
+        </p>
+      </div>
       <NextButton
         lg
         type="submit"
@@ -180,9 +240,5 @@ const onCaptchaError = () => {
     <GoogleOAuthButton v-if="showGoogleOAuth" class="mt-3">
       {{ $t('REGISTER.OAUTH.GOOGLE_SIGNUP') }}
     </GoogleOAuthButton>
-    <p
-      class="text-sm mt-5 mb-0 text-n-slate-11 [&>a]:text-n-blue-10 [&>a]:font-medium [&>a]:hover:text-n-blue-11"
-      v-html="termsLink"
-    />
   </div>
 </template>

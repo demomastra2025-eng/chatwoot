@@ -1,0 +1,38 @@
+<a href="/" class="brand">
+  <img src="/brand-assets/logo_thumbnail.svg" alt="OneLink">
+  <span>OneLink</span>
+</a>
+
+<div class="locale-nav">
+  <% { ru: 'Русский', kk: 'Қазақша', en: 'English' }.each do |code, label| %>
+    <%= link_to label,
+                request.path.include?('/privacy') ? legal_privacy_path(locale: code) : legal_terms_path(locale: code),
+                class: (I18n.locale.to_s == code.to_s ? 'active' : nil) %>
+  <% end %>
+</div>
+
+<div class="card">
+  <h1><%= t("legal.#{page_key}.title") %></h1>
+  <p class="meta"><%= t("legal.shared.last_updated_label") %>: <%= t("legal.shared.last_updated_value") %></p>
+
+  <% Array(t("legal.#{page_key}.intro")).each do |paragraph| %>
+    <p><%= paragraph %></p>
+  <% end %>
+
+  <% t("legal.#{page_key}.sections").each_value do |section| %>
+    <section>
+      <h2><%= section[:title] || section['title'] %></h2>
+      <% Array(section[:paragraphs] || section['paragraphs']).each do |paragraph| %>
+        <p><%= paragraph %></p>
+      <% end %>
+      <% points = section[:points] || section['points'] %>
+      <% if points.present? %>
+        <ul>
+          <% Array(points).each do |point| %>
+            <li><%= point %></li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+  <% end %>
+</div>

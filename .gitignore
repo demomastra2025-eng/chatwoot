@@ -26,6 +26,7 @@
 node_modules
 master.key
 *.rdb
+# Docs are part of the product and architecture source of truth.
 
 # Ignore env files
 .env

@@ -44,14 +44,14 @@
       "API": {
         "SUCCESS_MESSAGE": "Operatore aggiunto correttamente",
         "EXIST_MESSAGE": "Email dell'operatore già in uso, prova con un altro indirizzo email",
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot, riprova più tardi"
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink, riprova più tardi"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Elimina",
       "API": {
         "SUCCESS_MESSAGE": "Operatore eliminato correttamente",
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot, riprova più tardi"
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink, riprova più tardi"
       },
       "CONFIRM": {
         "TITLE": "Conferma Eliminazione",
@@ -87,13 +87,13 @@
       "CANCEL_BUTTON_TEXT": "Annulla",
       "API": {
         "SUCCESS_MESSAGE": "Operatore aggiornato correttamente",
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot, riprova più tardi"
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink, riprova più tardi"
       },
       "PASSWORD_RESET": {
         "ADMIN_RESET_BUTTON": "Reimposta la password",
         "ADMIN_SUCCESS_MESSAGE": "Un'email con le istruzioni per reimpostare la password è stata inviata all'operatore",
         "SUCCESS_MESSAGE": "Password dell'operatore reimpostata correttamente",
-        "ERROR_MESSAGE": "Impossibile connettersi al server Woot, riprova più tardi"
+        "ERROR_MESSAGE": "Impossibile connettersi al server Onelink, riprova più tardi"
       }
     },
     "SEARCH": {

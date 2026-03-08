@@ -101,7 +101,7 @@ const tailwindConfig = {
               marginBottom: '1.5em',
             },
             a: {
-              color: 'rgb(var(--slate-12))',
+              color: 'rgb(var(--blue-11))',
               textDecoration: 'underline',
             },
             ul: {

@@ -95,7 +95,7 @@
         "CONTENT": "Местоположение"
       },
       "ig_reel": {
-        "CONTENT": "Instagram Reel"
+        "CONTENT": "Рилс Instagram"
       },
       "fallback": {
         "CONTENT": "поделился ссылкой"
@@ -104,7 +104,7 @@
         "CONTENT": "Общий контакт"
       },
       "embed": {
-        "CONTENT": "Embedded content"
+        "CONTENT": "Встроенный контент"
       }
     },
     "CHAT_SORT_BY_FILTER": {

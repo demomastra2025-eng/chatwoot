@@ -1,0 +1,50 @@
+---
+title: "Onelink Platform APIs"
+---
+
+# Onelink Platform APIs
+
+The Platform APIs allow you to integrate account, user, and installation-level administration into your existing software stack. In the Onelink fork, these APIs are inherited from Chatwoot's platform model and should be used with the fork's own account, product, and architecture assumptions in mind.
+
+> **Note:** These APIs are intended for self-hosted or installation-admin use cases exposed by the fork.
+
+## Creating a Platform App
+
+To create a platform app, follow these steps:
+
+1. Go to the super admin portal and navigate to `super_admin/platform_apps`.
+
+   ![Super Admin Portal](/contributing-guide/images/platform-app/super_admin.png)
+
+2. Click on the "New platform app" button.
+
+   ![Platform Apps Home](/contributing-guide/images/platform-app/platform-home.png)
+
+3. Fill in the platform app name and click the "Create" button.
+
+   ![Create Platform App](/contributing-guide/images/platform-app/platform-create.png)
+
+4. After creating the platform app, open it to view and copy the access token.
+
+   ![Platform App Access Token](/contributing-guide/images/platform-app/platform-access-token.png)
+
+## Using the Access Token
+
+The `access_token` is required to authenticate all API requests. Use the Postman collection and the current product behavior in the fork to validate exact request flows.
+
+### Testing the APIs
+
+To test the APIs:
+
+1. Copy the access token from the platform app.
+2. Use it in the `Authorization` header of your API requests.
+
+Here's an example of creating a user using the API:
+
+![Create User API](/contributing-guide/images/platform-app/create-user.png)
+
+Similarly, you can create `Account` and related administrative entities using the APIs.
+
+## Reference
+
+For more detailed information and to test the APIs, refer to our [Postman Collection](https://www.postman.com/chatwoot/workspace/chatwoot-apis/collection/162770-e5451b69-9f97-489b-b352-4ca7d8d82aff).

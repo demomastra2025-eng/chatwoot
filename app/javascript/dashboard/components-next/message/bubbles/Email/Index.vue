@@ -219,7 +219,7 @@ const handleSeeOriginal = () => {
   @apply bg-n-slate-4 border-n-slate-6 rounded-md !important;
 
   a {
-    @apply text-n-slate-12 !important;
+    @apply text-n-blue-11 !important;
 
     img {
       display: inline-block;

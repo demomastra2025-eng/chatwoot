@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Woot 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
+        "ERROR_MESSAGE": "Onelink 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "수정",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Woot 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
+        "ERROR_MESSAGE": "Onelink 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "삭제",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Woot 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
+        "ERROR_MESSAGE": "Onelink 서버에 연결할 수 없습니다. 나중에 다시 시도해 주세요."
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

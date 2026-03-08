@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Atcelt",
       "API": {
-        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Dzēst",
       "API": {
         "SUCCESS_MESSAGE": "Pielāgota loma ir veiksmīgi izdzēsta.",
-        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Woot serveri. Lūdzu mēģiniet vēlreiz."
+        "ERROR_MESSAGE": "Nevarēja izveidot savienojumu ar Onelink serveri. Lūdzu mēģiniet vēlreiz."
       },
       "CONFIRM": {
         "TITLE": "Apstiprināt dzēšanu",

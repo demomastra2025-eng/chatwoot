@@ -35,7 +35,7 @@
       },
       "API": {
         "SUCCESS_MESSAGE": "Canned response added successfully.",
-        "ERROR_MESSAGE": "Masalah untuk hubungi Woot Server, Sila cuba sebentar lagi"
+        "ERROR_MESSAGE": "Masalah untuk hubungi Onelink Server, Sila cuba sebentar lagi"
       }
     },
     "EDIT": {
@@ -57,14 +57,14 @@
       "BUTTON_TEXT": "Edit",
       "API": {
         "SUCCESS_MESSAGE": "Canned response is updated successfully.",
-        "ERROR_MESSAGE": "Masalah untuk hubungi Woot Server, Sila cuba sebentar lagi"
+        "ERROR_MESSAGE": "Masalah untuk hubungi Onelink Server, Sila cuba sebentar lagi"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Padamkan",
       "API": {
         "SUCCESS_MESSAGE": "Canned response deleted successfully.",
-        "ERROR_MESSAGE": "Masalah untuk hubungi Woot Server, Sila cuba sebentar lagi"
+        "ERROR_MESSAGE": "Masalah untuk hubungi Onelink Server, Sila cuba sebentar lagi"
       },
       "CONFIRM": {
         "TITLE": "Confirm deletion",

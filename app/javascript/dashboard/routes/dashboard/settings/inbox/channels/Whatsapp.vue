@@ -113,7 +113,7 @@ const handleManualLinkClick = () => {
               <template #link>
                 <a
                   href="#"
-                  class="underline text-n-brand"
+                  class="text-link"
                   @click.prevent="handleManualLinkClick"
                 >
                   {{

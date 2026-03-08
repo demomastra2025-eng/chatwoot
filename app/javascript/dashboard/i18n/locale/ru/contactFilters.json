@@ -35,7 +35,7 @@
     },
     "ATTRIBUTES": {
       "NAME": "Имя",
-      "EMAIL": "Email",
+      "EMAIL": "Эл. почта",
       "PHONE_NUMBER": "Номер телефона",
       "IDENTIFIER": "Идентификатор",
       "CITY": "Город",

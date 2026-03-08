@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COLIMA_SOCKET="${HOME}/.colima/default/docker.sock"
+DOCKER_HOST_CANDIDATE="unix://${COLIMA_SOCKET}"
+APP_PORTS=(3000 3036)
+RESTART_INFRA="${RESTART_INFRA:-0}"
+PREPARE_DB="${PREPARE_DB:-0}"
+CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
+
+log() {
+  printf '[dev-lite-restart] %s\n' "$*"
+}
+
+env_value() {
+  local key="$1"
+  local default_value="$2"
+  local file="${ROOT_DIR}/.env"
+
+  if [[ -f "$file" ]]; then
+    local value
+    value="$(grep -E "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true)"
+    if [[ -n "$value" ]]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  fi
+
+  printf '%s' "$default_value"
+}
+
+ensure_rbenv() {
+  if command -v rbenv >/dev/null 2>&1; then
+    eval "$(rbenv init -)"
+  fi
+}
+
+ensure_dependencies() {
+  if ! bundle check >/dev/null 2>&1; then
+    log "Installing missing Ruby gems"
+    bundle install
+  fi
+
+  if [[ ! -d "${ROOT_DIR}/node_modules" ]]; then
+    log "Installing missing pnpm packages"
+    pnpm install
+  fi
+}
+
+ensure_docker() {
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! command -v colima >/dev/null 2>&1; then
+    log "Docker is unavailable and colima is not installed"
+    exit 1
+  fi
+
+  export DOCKER_HOST="${DOCKER_HOST_CANDIDATE}"
+
+  if ! docker info >/dev/null 2>&1; then
+    log "Starting colima"
+    colima start --cpu 2 --memory 4 --disk 20
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    log "Docker is still unavailable after starting colima"
+    exit 1
+  fi
+}
+
+stop_listeners() {
+  local port
+  local pids
+
+  for port in "${APP_PORTS[@]}"; do
+    pids="$(lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "$pids" ]]; then
+      log "Stopping listeners on port ${port}: ${pids//$'\n'/ }"
+      kill $pids 2>/dev/null || true
+    fi
+  done
+
+  sleep 1
+
+  for port in "${APP_PORTS[@]}"; do
+    pids="$(lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "$pids" ]]; then
+      log "Force stopping listeners on port ${port}: ${pids//$'\n'/ }"
+      kill -9 $pids 2>/dev/null || true
+    fi
+  done
+}
+
+start_infra() {
+  log "Starting postgres and redis"
+  docker compose up -d postgres redis
+
+  if [[ "$RESTART_INFRA" == "1" ]]; then
+    log "Restarting postgres and redis containers"
+    docker compose restart postgres redis
+  fi
+}
+
+wait_for_postgres() {
+  local db_name db_user attempts
+  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
+  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  attempts=60
+
+  until docker compose exec -T postgres pg_isready -U "$db_user" -d "$db_name" >/dev/null 2>&1; do
+    attempts=$((attempts - 1))
+    if (( attempts == 0 )); then
+      log "Postgres did not become ready in time"
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+wait_for_redis() {
+  local redis_password attempts
+  local redis_cmd
+  redis_password="$(env_value REDIS_PASSWORD redis)"
+  attempts=30
+  redis_cmd=(docker compose exec -T redis redis-cli)
+
+  if [[ -n "$redis_password" ]]; then
+    redis_cmd+=(-a "$redis_password")
+  fi
+
+  redis_cmd+=(ping)
+
+  until [[ "$("${redis_cmd[@]}" 2>/dev/null | tail -n 1)" == "PONG" ]]; do
+    attempts=$((attempts - 1))
+    if (( attempts == 0 )); then
+      log "Redis did not become ready in time"
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+prepare_database() {
+  if [[ "$PREPARE_DB" == "1" ]]; then
+    log "Preparing database"
+    bundle exec rake db:chatwoot_prepare
+  else
+    log "Skipping database prepare (set PREPARE_DB=1 to run it)"
+  fi
+}
+
+bootstrap_enterprise() {
+  if [[ "$CW_BOOTSTRAP_ENTERPRISE" != "1" ]]; then
+    log "Skipping enterprise bootstrap (set CW_BOOTSTRAP_ENTERPRISE=1 to enable it)"
+    return 0
+  fi
+
+  if [[ "$PREPARE_DB" == "1" ]]; then
+    log "Enterprise bootstrap already applied via db:chatwoot_prepare"
+    return 0
+  fi
+
+  log "Applying enterprise bootstrap"
+  bundle exec rake chatwoot:instance:unlock_enterprise
+}
+
+start_app() {
+  log "Starting Rails + Vite (dev lite)"
+  exec foreman start -f ./Procfile.dev-lite
+}
+
+main() {
+  cd "$ROOT_DIR"
+  ensure_rbenv
+  ensure_dependencies
+  ensure_docker
+  stop_listeners
+  start_infra
+  wait_for_postgres
+  wait_for_redis
+  prepare_database
+  bootstrap_enterprise
+  start_app
+}
+
+main "$@"

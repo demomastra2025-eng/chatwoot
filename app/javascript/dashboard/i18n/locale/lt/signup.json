@@ -4,7 +4,7 @@
     "TITLE": "Registras",
     "TESTIMONIAL_HEADER": "Tereikia vieno žingsnio, kad judėtume į priekį",
     "TESTIMONIAL_CONTENT": "Liko vienas žingsnis, kad įtrauktumėte savo klientus, išlaikytumėte juos ir rastumėte naujų.",
-    "TERMS_ACCEPT": "Kurdami paskyrą sutinkate su mūsų <a href=\"https://www.chatwoot.com/terms\">T & C</a> ir <a href=\"https://www.chatwoot.com/ privacy-policy\">Privatumo politika</a>",
+    "TERMS_ACCEPT": "Kurdami paskyrą sutinkate su mūsų <a href=\"https://www.OneLink.com/terms\">T & C</a> ir <a href=\"https://www.OneLink.com/ privacy-policy\">Privatumo politika</a>",
     "OAUTH": {
       "GOOGLE_SIGNUP": "Užsiregistruoti su Google"
     },
@@ -41,7 +41,7 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Registration Successful",
-      "ERROR_MESSAGE": "Could not connect to Woot Server, Please try again later"
+      "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
     },
     "SUBMIT": "Sukurti paskyrą",
     "HAVE_AN_ACCOUNT": "Jau turi prisijungimo paskyrą?"

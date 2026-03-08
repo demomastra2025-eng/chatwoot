@@ -77,7 +77,7 @@ const handleAction = ({ action, value }) => {
   <CardLayout>
     <div class="flex justify-between w-full gap-1">
       <h6
-        class="text-base font-normal text-n-slate-12 line-clamp-1 hover:underline transition-colors"
+        class="text-link text-base font-normal line-clamp-1 transition-colors"
       >
         {{ name }}
       </h6>

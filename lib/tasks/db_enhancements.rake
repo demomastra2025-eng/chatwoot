@@ -6,6 +6,13 @@ Rake::Task['db:migrate'].enhance do
   end
 end
 
+def bootstrap_enterprise_if_requested
+  return unless ActiveModel::Type::Boolean.new.cast(ENV.fetch('CW_BOOTSTRAP_ENTERPRISE', 'false'))
+
+  puts 'Applying enterprise bootstrap'
+  Rake::Task['chatwoot:instance:unlock_enterprise'].invoke
+end
+
 # we are creating a custom database prepare task
 # the default rake db:prepare task isn't ideal for environments like heroku
 # In heroku the database is already created before the first run of db:prepare
@@ -27,5 +34,7 @@ db_namespace = namespace :db do
     rescue ActiveRecord::NoDatabaseError
       db_namespace['setup'].invoke
     end
+
+    bootstrap_enterprise_if_requested
   end
 end

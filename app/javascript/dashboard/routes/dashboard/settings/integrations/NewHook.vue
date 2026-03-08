@@ -18,6 +18,10 @@ export default {
       type: String,
       required: true,
     },
+    hook: {
+      type: Object,
+      default: null,
+    },
   },
   emits: ['close'],
   setup(props) {
@@ -30,7 +34,6 @@ export default {
   },
   data() {
     return {
-      endPoint: '',
       alertMessage: '',
       values: {},
     };
@@ -55,18 +58,87 @@ export default {
       if (!this.isIntegrationDialogflow) {
         return [];
       }
-      return this.integration.hooks.map(hook => hook.inbox?.id);
+      return (this.integration.hooks || []).map(hook => hook.inbox?.id);
+    },
+    isEditing() {
+      return !!this.hook?.id;
     },
     formItems() {
-      return this.integration.settings_form_schema;
+      return (this.integration.settings_form_schema || []).map(item => {
+        if (this.isEditing && item.store === 'access_token') {
+          return { ...item, validation: '' };
+        }
+        return item;
+      });
     },
     isIntegrationDialogflow() {
       return this.integration.id === 'dialogflow';
+    },
+    submitLoading() {
+      return this.isEditing
+        ? this.uiFlags.isUpdatingHook
+        : this.uiFlags.isCreatingHook;
+    },
+  },
+  watch: {
+    integration: {
+      immediate: true,
+      handler() {
+        this.setInitialValues();
+      },
+    },
+    hook: {
+      immediate: true,
+      handler() {
+        this.setInitialValues();
+      },
     },
   },
   methods: {
     onClose() {
       this.$emit('close');
+    },
+    defaultValueForItem(item) {
+      if (this.isEditing) {
+        if (item.store === 'status') {
+          return this.hook.status;
+        }
+
+        if (item.store === 'access_token') {
+          return '';
+        }
+
+        if (
+          Object.prototype.hasOwnProperty.call(
+            this.hook.settings || {},
+            item.name
+          )
+        ) {
+          return this.hook.settings[item.name];
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(item, 'value')) {
+        return item.value;
+      }
+
+      return item.type === 'checkbox' ? false : '';
+    },
+    setInitialValues() {
+      if (!this.integration?.id) {
+        return;
+      }
+
+      const values = this.formItems.reduce((acc, item) => {
+        acc[item.name] = this.defaultValueForItem(item);
+        return acc;
+      }, {});
+
+      if (this.isHookTypeInbox && this.isEditing && this.hook?.inbox?.id) {
+        values.inbox = this.hook.inbox.id;
+      }
+
+      this.values = values;
     },
     buildHookPayload() {
       const hookPayload = {
@@ -75,14 +147,37 @@ export default {
       };
 
       hookPayload.settings = Object.keys(this.values).reduce((acc, key) => {
-        if (key !== 'inbox') {
-          acc[key] = this.values[key];
+        if (key === 'inbox') {
+          return acc;
         }
+
+        const formItem = this.formItems.find(item => item.name === key);
+
+        if (formItem?.store === 'access_token') {
+          if (this.values[key]) {
+            hookPayload.access_token = this.values[key];
+          }
+          return acc;
+        }
+
+        if (formItem?.store === 'status') {
+          hookPayload.status = this.values[key] ? 'enabled' : 'disabled';
+          return acc;
+        }
+
+        acc[key] = this.values[key];
         return acc;
       }, {});
 
       this.formItems.forEach(item => {
-        if (item.validation?.includes('JSON')) {
+        if (item.store) {
+          return;
+        }
+
+        if (
+          item.validation?.includes('JSON') &&
+          hookPayload.settings[item.name]
+        ) {
           hookPayload.settings[item.name] = JSON.parse(
             hookPayload.settings[item.name]
           );
@@ -97,10 +192,17 @@ export default {
     },
     async submitForm() {
       try {
-        await this.$store.dispatch(
-          'integrations/createHook',
-          this.buildHookPayload()
-        );
+        const hookPayload = this.buildHookPayload();
+
+        if (this.isEditing) {
+          await this.$store.dispatch('integrations/updateHook', {
+            hookId: this.hook.id,
+            hookData: hookPayload,
+          });
+        } else {
+          await this.$store.dispatch('integrations/createHook', hookPayload);
+        }
+
         this.alertMessage = this.$t('INTEGRATION_APPS.ADD.API.SUCCESS_MESSAGE');
         this.onClose();
       } catch (error) {
@@ -155,7 +257,7 @@ export default {
         <NextButton
           type="submit"
           :label="$t('INTEGRATION_APPS.ADD.FORM.SUBMIT')"
-          :is-loading="uiFlags.isCreatingHook"
+          :is-loading="submitLoading"
         />
       </div>
     </FormKit>

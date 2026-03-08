@@ -63,6 +63,10 @@
         },
         "ENABLE_REGEX": {
           "LABEL": "Включить проверку регулярных выражений"
+        },
+        "BADGES": {
+          "PRE_CHAT": "Перед началом диалога",
+          "RESOLUTION": "При завершении"
         }
       },
       "API": {
@@ -131,8 +135,8 @@
       }
     },
     "BADGES": {
-      "PRE_CHAT": "Pre-chat",
-      "RESOLUTION": "Resolution"
+      "PRE_CHAT": "Перед началом диалога",
+      "RESOLUTION": "При завершении"
     }
   }
 }

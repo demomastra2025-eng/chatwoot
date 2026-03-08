@@ -16,12 +16,16 @@ p {
   @apply mb-2 leading-[1.65] text-sm;
 
   a {
-    @apply text-n-brand dark:text-n-brand cursor-pointer;
+    @apply text-n-blue-11 dark:text-n-blue-10 cursor-pointer;
   }
 }
 
 a {
   @apply text-sm;
+}
+
+.text-link {
+  @apply text-n-blue-11 dark:text-n-blue-10 cursor-pointer hover:underline underline-offset-2;
 }
 
 hr {

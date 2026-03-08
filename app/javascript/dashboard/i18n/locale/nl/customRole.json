@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Annuleren",
       "API": {
-        "ERROR_MESSAGE": "Kan geen verbinding maken met de Woot server. Probeer het opnieuw."
+        "ERROR_MESSAGE": "Kan geen verbinding maken met de Onelink server. Probeer het opnieuw."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Verwijderen",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Kan geen verbinding maken met de Woot server. Probeer het opnieuw."
+        "ERROR_MESSAGE": "Kan geen verbinding maken met de Onelink server. Probeer het opnieuw."
       },
       "CONFIRM": {
         "TITLE": "Verwijdering bevestigen",

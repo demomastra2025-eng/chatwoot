@@ -64,7 +64,7 @@ watch(
 );
 
 const redirectToPortal = portal => {
-  emit('create', { slug: portal.slug, locale: 'en' });
+  emit('create', { slug: portal.slug, locale: 'ru' });
 };
 
 const resetForm = () => {
@@ -109,7 +109,7 @@ const handleDialogConfirm = async () => {
     slug: state.slug,
     custom_domain: state.domain,
     blob_id: state.avatarBlobId || null,
-    color: '#2781F6', // The default color is set to Chatwoot brand color
+    color: '#1A1A1A', // The default color is set to the installation brand color
   };
   await createPortal(portal);
 };

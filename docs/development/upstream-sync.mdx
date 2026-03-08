@@ -1,0 +1,50 @@
+---
+title: Upstream Sync Strategy
+description: How Onelink should receive updates from Chatwoot while preserving product and domain boundaries.
+sidebarTitle: Upstream Sync
+---
+
+# Upstream Sync Strategy
+
+Onelink is a fork of Chatwoot and should keep a disciplined sync process.
+
+## Branching Model
+
+- main working branch: `onelink-main`
+- upstream sync branch: `sync/chatwoot-vX.Y.Z`
+- feature branches from `onelink-main`
+- writable remote for product work: `origin`
+- upstream Chatwoot remote: `upstream`
+
+## Daily GitHub Flow
+
+For normal product changes, do not develop directly on `onelink-main`.
+
+1. update local `onelink-main`
+2. create a focused `feature/...`, `fix/...`, or `chore/...` branch from it
+3. push that branch to `origin` over SSH
+4. open a pull request into `onelink-main`
+5. merge after review or maintainer verification
+
+Use `sync/...` branches only for bringing Chatwoot changes into the fork.
+
+## Sync Process
+
+```mermaid
+flowchart LR
+    A[Fetch upstream tags] --> B[Create sync branch]
+    B --> C[Merge upstream release]
+    C --> D[Resolve conflicts]
+    D --> E[Verify shared platform]
+    E --> F[Verify domain profiles]
+    F --> G[Merge back to onelink-main]
+```
+
+## Guardrails
+
+- minimize direct core patches
+- prefer extension points and isolated overlays
+- validate generic, healthcare, and construction assumptions after shared changes
+- document intentional divergences from upstream
+- do not push product changes to `upstream`
+- do not use `develop` from this fork as the base branch for active work

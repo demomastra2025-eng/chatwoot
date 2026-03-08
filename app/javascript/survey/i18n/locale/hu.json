@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Felmérés sikeresen frissítve",
-      "ERROR_MESSAGE": "Nem sikerült csatlakozni a Woot szerverhez, kérjük próbáld később"
+      "ERROR_MESSAGE": "Nem sikerült csatlakozni a Onelink szerverhez, kérjük próbáld később"
     }
   },
-  "POWERED_BY": "Chatwoot"
+  "POWERED_BY": "OneLink"
 }

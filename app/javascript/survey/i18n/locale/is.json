@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Könnunin var uppfærð",
-      "ERROR_MESSAGE": "Náði ekki að tengjast við Woot þjónin, Vinsamlegast reyndu aftur síðar"
+      "ERROR_MESSAGE": "Náði ekki að tengjast við Onelink þjónin, Vinsamlegast reyndu aftur síðar"
     }
   },
-  "POWERED_BY": "Keyrt af Chatwoot"
+  "POWERED_BY": "Keyrt af OneLink"
 }

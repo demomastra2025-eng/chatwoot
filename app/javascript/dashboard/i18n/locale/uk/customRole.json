@@ -54,7 +54,7 @@
       },
       "CANCEL_BUTTON_TEXT": "Скасувати",
       "API": {
-        "ERROR_MESSAGE": "Не вдалося підключитися до Woot сервера. Будь ласка, спробуйте ще раз."
+        "ERROR_MESSAGE": "Не вдалося підключитися до Onelink сервера. Будь ласка, спробуйте ще раз."
       }
     },
     "ADD": {
@@ -78,7 +78,7 @@
       "BUTTON_TEXT": "Видалити",
       "API": {
         "SUCCESS_MESSAGE": "Custom role deleted successfully.",
-        "ERROR_MESSAGE": "Не вдалося підключитися до Woot сервера. Будь ласка, спробуйте ще раз."
+        "ERROR_MESSAGE": "Не вдалося підключитися до Onelink сервера. Будь ласка, спробуйте ще раз."
       },
       "CONFIRM": {
         "TITLE": "Підтвердіть видалення",

@@ -12,8 +12,8 @@
     },
     "API": {
       "SUCCESS_MESSAGE": "Enquesta actualitzada correctament",
-      "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Woot. Torna-ho a provar més endavant"
+      "ERROR_MESSAGE": "No s'ha pogut connectar amb el servidor Onelink. Torna-ho a provar més endavant"
     }
   },
-  "POWERED_BY": "Desenvolupat per Chatwoot"
+  "POWERED_BY": "Desenvolupat per OneLink"
 }

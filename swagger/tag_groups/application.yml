@@ -1,16 +1,16 @@
 openapi: '3.0.4'
 info:
-  title: Chatwoot - Application API
-  description: Application API endpoints for Chatwoot
+  title: Onelink - Application API
+  description: Application API endpoints for Onelink
   version: 1.1.0
-  termsOfService: https://www.chatwoot.com/terms-of-service/
+  termsOfService: https://one-link.kz
   contact:
-    email: hello@chatwoot.com
+    email: hello@one-link.kz
   license:
     name: MIT License
     url: https://opensource.org/licenses/MIT
 servers:
-  - url: https://app.chatwoot.com/
+  - url: https://one-link.kz/
 tags:
   - name: Account AgentBots
     description: Manage agent bots within accounts

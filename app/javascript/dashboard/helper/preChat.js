@@ -1,7 +1,7 @@
 import i18n from 'widget/i18n/index';
 const defaultTranslations = Object.fromEntries(
-  Object.entries(i18n).filter(([key]) => key.includes('en'))
-).en;
+  Object.entries(i18n).filter(([key]) => key.includes('ru'))
+).ru;
 
 export const standardFieldKeys = {
   emailAddress: {

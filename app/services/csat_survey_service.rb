@@ -122,7 +122,7 @@ class CsatSurveyService
   def build_template_info(template_name, template_config)
     {
       name: template_name,
-      lang_code: template_config['language'] || 'en',
+      lang_code: template_config['language'] || 'ru',
       parameters: [
         {
           type: 'button',
