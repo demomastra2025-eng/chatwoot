@@ -475,6 +475,7 @@ Use these rules in every phase:
 - if a requirement is single-domain but still semantically compatible with shared entities, prefer domain services and UI composition
 - if a capability is needed by multiple domains, promote it into shared platform code
 - if docs and code disagree, trust the code and update docs
+- if a delivery contains reusable base work plus an optional feature, ship it as stacked branches so the base can merge and roll out independently
 
 ## Verification Matrix
 

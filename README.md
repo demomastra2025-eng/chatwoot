@@ -101,6 +101,7 @@ Onelink does not use the inherited Chatwoot `develop`/`master` branching model f
 - Feature branches: `feature/...`, `fix/...`, `chore/...`
 - Upstream sync branches: `sync/chatwoot-vX.Y.Z`
 - Default delivery path: branch from `onelink-main`, push to `origin` over SSH, merge back into `onelink-main`
+- If a change includes reusable base work plus an optional feature, use stacked branches so the base can merge separately from the optional feature
 
 See the [Development Guide](https://one-link.kz/docs/contributing-guide) and [Upstream Sync Strategy](https://one-link.kz/docs/development/upstream-sync) for the current workflow.
 

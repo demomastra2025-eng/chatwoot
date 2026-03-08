@@ -49,6 +49,10 @@
   - Branch from `onelink-main`
   - Prefer branch names like `feature/...`, `fix/...`, `chore/...`, `sync/...`
   - Commit locally, then push to `origin` over SSH
+  - When a deliverable has a reusable base plus an optional feature, use stacked branches:
+    - commit the shared/base work in one branch first
+    - branch the optional feature from that base branch
+    - push both branches so the base can merge independently from the optional feature
 - **Syncing with upstream Chatwoot**:
   - Prefer stable upstream tags over `upstream/develop` for product updates
   - Fetch updates with `git fetch upstream --tags`
