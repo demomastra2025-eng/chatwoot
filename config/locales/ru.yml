@@ -310,6 +310,10 @@ ru:
       name: LeadSquared
       short_description: Синхронизация контактов и диалогов с LeadSquared CRM.
       description: Синхронизация контактов и диалогов с LeadSquared CRM. Эта интеграция автоматически создает лиды в LeadSquared при добавлении новых контактов, и ведет разговор активности, чтобы обеспечить вашу команду продаж полным контекстом.
+    macrocrm:
+      name: MacroCRM
+      short_description: Синхронизация входящих и исходящих сообщений WhatsApp с MacroCRM.
+      description: Синхронизируйте сообщения WhatsApp с MacroCRM. Интеграция находит или создает контакт, находит или создает заявку и записывает каждое сообщение как заметку в MacroCRM.
   captain:
     copilot_message_required: Необходимо ввести сообщение
     copilot_error: Пожалуйста, подключите ассистента к этому источнику входящих для использования Copilot

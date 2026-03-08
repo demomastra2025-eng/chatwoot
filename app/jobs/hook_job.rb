@@ -15,6 +15,8 @@ class HookJob < MutexApplicationJob
       google_translate_integration(hook, event_name, event_data)
     when 'leadsquared'
       process_leadsquared_integration_with_lock(hook, event_name, event_data)
+    when 'macrocrm'
+      process_macrocrm_integration(hook, event_name, event_data)
     end
   rescue StandardError => e
     Rails.logger.error e
@@ -79,5 +81,14 @@ class HookJob < MutexApplicationJob
     when 'conversation.resolved'
       processor.handle_conversation_resolved(event_data[:conversation])
     end
+  end
+
+  def process_macrocrm_integration(hook, event_name, event_data)
+    return unless ['message.created'].include?(event_name)
+
+    message = event_data[:message]
+    return if message.blank?
+
+    Integrations::Macrocrm::SyncJob.perform_later(hook.id, event_name, message.id)
   end
 end
