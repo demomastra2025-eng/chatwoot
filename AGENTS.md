@@ -48,6 +48,10 @@
 - **Before docs work**:
   - run `git submodule update --init --recursive` after cloning or when `docs/` is missing
   - if docs were edited in Mintlify or elsewhere, pull the latest changes inside `docs/` before using them as the source of truth
+- **Local skill family**:
+  - workspace guidance lives under `/Users/akhanbakhitov/.codex/skills`
+  - use `onelink-builder` for broad or cross-surface work
+  - use the specialized skills for narrow work: `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`
 - **Pushes must use SSH**:
   - Verify with `git remote -v`
   - Push with `git push origin HEAD`
@@ -125,19 +129,23 @@ Use architecture materials in this order:
 
 1. code in `app/`, `enterprise/`, `config/`, and `db/`
 2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` for the current implemented system
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` when the task is a backend implementation task and the agent needs placement and execution rules
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` when the task touches frontend structure, component sourcing, state management, or library choices
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` when the task is a frontend implementation task and the agent needs placement, reuse, extension, or verification rules
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` when the task may require a new frontend dependency
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` when the task creates a new dashboard feature or module
-8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` when the task creates a new backend feature shape
-9. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` when the task needs practical UI styling conventions
-10. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` when the task needs concrete code references
-11. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` when the task needs verification guidance
-12. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
-13. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
-14. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
-15. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, docs publishing, Mintlify setup, or OpenAPI docs sync
+3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx` when the task depends on knowing which repo, directory, or control file owns the change
+4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx` when the task spans runtime, docs, API contracts, or delivery flow
+5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx` when the task spans app code, docs, or local skills and needs clean commit boundaries
+6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx` when the agent needs to choose the correct project skill
+7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` when the task is a backend implementation task and the agent needs placement and execution rules
+8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` when the task touches frontend structure, component sourcing, state management, or library choices
+9. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` when the task is a frontend implementation task and the agent needs placement, reuse, extension, or verification rules
+10. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` when the task may require a new frontend dependency
+11. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` when the task creates a new dashboard feature or module
+12. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` when the task creates a new backend feature shape
+13. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` when the task needs practical UI styling conventions
+14. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` when the task needs concrete code references
+15. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` when the task needs verification guidance
+16. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
+17. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
+18. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
+19. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, docs publishing, Mintlify setup, or OpenAPI docs sync
 
 Do not treat target architecture documents as proof that the runtime implementation already exists.
 Use the implementation roadmap when the task is about sequencing, decomposition, or deciding what to build next.
