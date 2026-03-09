@@ -2,35 +2,37 @@
 
 ## Use These Files First
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
+- `AGENTS.md`
   - Repo-specific coding rules, dev commands, git flow, enterprise checklist, and translation constraints.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
+- `docs/platform/current-architecture.mdx`
   - Current implemented system shape.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
+- `docs/platform/repository-map.mdx`
   - Repo ownership, directory placement, and control files.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
+- `docs/contributing-guide/project-operations.mdx`
   - Runtime, delivery, API, docs, and deployment operating model.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx`
+- `docs/contributing-guide/ai-agent-operating-model.mdx`
   - Agent read order, commit boundaries, staging rules, and verification expectations.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx`
+- `docs/contributing-guide/skill-map.mdx`
   - Which specialized Onelink skill should own which task.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/.codex/skills/`
+- `.codex/skills/`
   - Versioned project copy of the Onelink skill family.
+- `.codex/scripts/sync-skills.sh`
+  - Syncs the versioned project skill family into the installed Codex runtime copy.
 
 ## Development and Setup Docs
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/setup-guide.mdx`
+- `docs/contributing-guide/setup-guide.mdx`
   - Baseline local setup, Docker dev flow, widget test page, and test server notes.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/environment-variables.mdx`
+- `docs/contributing-guide/environment-variables.mdx`
   - Development/test environment variables such as `LETTER_OPENER`.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/api-documentation.mdx`
+- `docs/contributing-guide/api-documentation.mdx`
   - Swagger file layout, build command, and `/swagger` preview flow.
 
 ## Product and Channel Docs
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted/supported-features.mdx`
+- `docs/self-hosted/supported-features.mdx`
   - Channel matrix for supported features, message size limits, outbound restrictions, delivery status support, reply support, attachment types, and editor formatting.
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted/enterprise-edition.mdx`
+- `docs/self-hosted/enterprise-edition.mdx`
   - Business context for Enterprise features such as whitelabeling, SLA, audit logs, and capacity management.
 
 ## Docs Workspace Notes

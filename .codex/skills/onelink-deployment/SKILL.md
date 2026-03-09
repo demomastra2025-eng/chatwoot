@@ -11,6 +11,8 @@ Use this skill when the task is about how Onelink is run, configured, packaged, 
 
 This skill owns deployment assets, runtime config touchpoints, self-hosted docs, and the gap between current operational files and operator-facing documentation.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - editing `deployment/`
@@ -21,11 +23,11 @@ This skill owns deployment assets, runtime config touchpoints, self-hosted docs,
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted/deployment/architecture.mdx`
+1. `AGENTS.md`
+2. `docs/platform/repository-map.mdx`
+3. `docs/contributing-guide/project-operations.mdx`
+4. `docs/self-hosted.mdx`
+5. `docs/self-hosted/deployment/architecture.mdx`
 
 ## Workflow
 
@@ -39,6 +41,12 @@ This skill owns deployment assets, runtime config touchpoints, self-hosted docs,
 3. Change the runtime files in `onelink`.
 4. If operator behavior changed, update the self-hosted docs in `onelink/docs`.
 5. Keep the app repo commit and docs repo commit separate.
+
+## Documentation Discipline
+
+- Read the deployment and self-hosted docs before editing.
+- If deployment steps, runtime config, infra assumptions, or operator workflow changed, update `docs/` in the same task.
+- Keep deployment/config commits in `onelink` and self-hosted docs commits in `docs/`.
 
 ## Placement Rules
 
@@ -70,7 +78,7 @@ Deployment code and config live in `onelink`. Operator docs live in `onelink/doc
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/self-hosted/deployment/architecture.mdx`
+- `docs/platform/repository-map.mdx`
+- `docs/contributing-guide/project-operations.mdx`
+- `docs/self-hosted.mdx`
+- `docs/self-hosted/deployment/architecture.mdx`

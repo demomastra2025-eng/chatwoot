@@ -11,6 +11,8 @@ Use this skill when the task is primarily backend implementation inside the main
 
 This skill owns placement and execution decisions for Rails-side work. It should keep changes aligned with existing Onelink entities, service patterns, account scoping, and the active `enterprise/` extension layer.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - changing `app/models/`, `app/services/`, `app/controllers/`, `app/jobs/`, `app/listeners/`, `app/policies/`, or `app/presenters/`
@@ -21,13 +23,13 @@ This skill owns placement and execution decisions for Rails-side work. It should
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx` if placement is unclear
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx`
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/repository-map.mdx` if placement is unclear
+4. `docs/contributing-guide/backend-agent-playbook.mdx`
+5. `docs/contributing-guide/backend-feature-template.mdx`
+6. `docs/contributing-guide/implementation-examples-map.mdx`
+7. `docs/contributing-guide/testing-strategy-for-agents.mdx`
 
 ## Workflow
 
@@ -42,6 +44,12 @@ This skill owns placement and execution decisions for Rails-side work. It should
 5. Place the smallest coherent change in the existing service or controller path before inventing a new abstraction.
 6. If request or response behavior changes, coordinate with `onelink-api`.
 7. Verify with the narrowest meaningful backend command.
+
+## Documentation Discipline
+
+- Read the backend docs listed above before editing.
+- If backend behavior, entity meaning, API payloads, access rules, or operator workflow changed, update `docs/` in the same task.
+- Keep the docs commit separate in `docs/` when documentation changes are required.
 
 ## Placement Rules
 
@@ -81,8 +89,8 @@ This skill normally edits only `onelink`. If docs also need updates, keep the do
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`
+- `docs/platform/current-architecture.mdx`
+- `docs/contributing-guide/backend-agent-playbook.mdx`
+- `docs/contributing-guide/backend-feature-template.mdx`
+- `docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/contributing-guide/testing-strategy-for-agents.mdx`

@@ -11,6 +11,8 @@ Use this skill when the task is primarily documentation work in `onelink/docs`.
 
 This skill owns Mintlify structure, page organization, docs clarity for human analysts and AI agents, and the commit flow for the separate docs repository.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - changing `onelink/docs/*.mdx`
@@ -22,14 +24,14 @@ This skill owns Mintlify structure, page organization, docs clarity for human an
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/README.md`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx`
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx`
-8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`
+1. `docs/AGENTS.md`
+2. `docs/README.md`
+3. `docs/platform/current-architecture.mdx`
+4. `docs/platform/repository-map.mdx`
+5. `docs/contributing-guide/project-operations.mdx`
+6. `docs/contributing-guide/ai-agent-operating-model.mdx`
+7. `docs/contributing-guide/skill-map.mdx`
+8. `docs/contributing-guide/docs-repository-workflow.mdx`
 
 ## Workflow
 
@@ -43,9 +45,15 @@ This skill owns Mintlify structure, page organization, docs clarity for human an
 3. Prefer one clear source page over multiple overlapping pages.
 4. Keep navigation in `docs.json` aligned with page purpose and reading order.
 5. If API docs changed, sync `openapi/` from the app repo.
-6. If the task changes project skills, update the versioned copy in `onelink/.codex/skills` and then sync the installed copy into `$CODEX_HOME/skills`.
+6. If the task changes project skills, update the versioned copy in `.codex/skills` and then sync the installed copy into `$CODEX_HOME/skills`.
 7. Commit the docs content in `onelink/docs` first.
 8. If needed, update the `docs` submodule pointer in the parent `onelink` repo.
+
+## Documentation Discipline
+
+- Always start from current code and current-state docs before rewriting structure or claims.
+- Documentation work is required whenever behavior, architecture meaning, API contracts, operator flow, or skill workflow changed.
+- Prefer updating the existing source page over creating overlapping pages.
 
 ## Documentation Rules
 
@@ -73,14 +81,14 @@ This skill owns Mintlify structure, page organization, docs clarity for human an
 ## Repo Boundary Rule
 
 This skill edits the separate docs repository mounted at `onelink/docs`. Product code changes still belong to the parent `onelink` repo.
-Versioned skill sources belong in `onelink/.codex/skills`. Installed Codex runtime skills belong in `$CODEX_HOME/skills`.
+Versioned skill sources belong in `.codex/skills`. Installed Codex runtime skills belong in `$CODEX_HOME/skills`.
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/README.md`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`
+- `docs/AGENTS.md`
+- `docs/README.md`
+- `docs/platform/repository-map.mdx`
+- `docs/contributing-guide/project-operations.mdx`
+- `docs/contributing-guide/ai-agent-operating-model.mdx`
+- `docs/contributing-guide/skill-map.mdx`
+- `docs/contributing-guide/docs-repository-workflow.mdx`

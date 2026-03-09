@@ -11,6 +11,8 @@ Use this skill when the task is about how Onelink talks to external channels, pr
 
 This skill owns provider-specific placement, channel lifecycle behavior, inbox integration rules, and the distinction between integration definitions, installed hooks, and AI tools.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - changing channel providers such as WhatsApp, Instagram, Facebook, Telegram, Line, TikTok, email, SMS, or website chat
@@ -21,11 +23,11 @@ This skill owns provider-specific placement, channel lifecycle behavior, inbox i
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/integrations-architecture.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/integrations-architecture.mdx`
+4. `docs/platform/repository-map.mdx`
+5. `docs/contributing-guide/implementation-examples-map.mdx`
 6. the relevant integration setup page under `contributing-guide/` or `self-hosted/` when one exists
 
 ## Workflow
@@ -42,6 +44,12 @@ This skill owns provider-specific placement, channel lifecycle behavior, inbox i
    - `Captain::CustomTool` = AI tool surface, not a general integration lifecycle
 4. Search `enterprise/` for overlays before changing shared provider behavior.
 5. If request or response contracts change, coordinate with `onelink-api`.
+
+## Documentation Discipline
+
+- Read the relevant integration docs before editing.
+- If setup steps, provider behavior, message constraints, or operator flow changed, update `docs/` in the same task.
+- Keep product code commits in `onelink` and provider/setup docs commits in `docs/`.
 
 ## Placement Rules
 
@@ -73,6 +81,6 @@ Integration code lives in `onelink`. Integration setup and operator docs live in
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/integrations-architecture.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/platform/integrations-architecture.mdx`
+- `docs/platform/current-architecture.mdx`
+- `docs/contributing-guide/implementation-examples-map.mdx`

@@ -1,5 +1,7 @@
 # Chatwoot Development Guidelines
 
+Repo paths below are relative to the Onelink repository root unless stated otherwise.
+
 ## Build / Test / Lint
 
 - **Setup**: `bundle install && pnpm install`
@@ -15,7 +17,7 @@
 - **Dev Host**: local Vite is expected on `127.0.0.1:3036`; open the app as `http://127.0.0.1:3000` to avoid host mismatches with HMR
 - **Infra for Dev Lite**:
   - Start Colima if Docker Desktop is not running: `colima start --cpu 2 --memory 4 --disk 20`
-  - Point Docker CLI to Colima: `export DOCKER_HOST=unix:///Users/akhanbakhitov/.colima/default/docker.sock`
+  - Point Docker CLI to Colima: `export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`
   - Start only database services: `docker compose up -d postgres redis`
   - On first boot or after DB reset: `bundle exec rake db:chatwoot_prepare`
 - **Seed Local Test Data**: `bundle exec rails db:seed` (quickly populates minimal data for standard feature verification)
@@ -42,17 +44,17 @@
   - `upstream` = `https://github.com/chatwoot/chatwoot.git`
 - **Docs repo layout**:
   - `docs/` is a git submodule that points to `git@github.com:demomastra2025-eng/onelink-docs.git`
-  - treat `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs` as readable local files plus a separate Git repository
+  - treat `docs/` as readable local files plus a separate Git repository
   - docs content commits belong in the `docs/` repository first
   - the parent `onelink` repository stores only the submodule pointer update after a docs commit
 - **Before docs work**:
   - run `git submodule update --init --recursive` after cloning or when `docs/` is missing
   - if docs were edited in Mintlify or elsewhere, pull the latest changes inside `docs/` before using them as the source of truth
 - **Local skill family**:
-  - versioned project skill source lives under `/Users/akhanbakhitov/Documents/zeroprompt/onelink/.codex/skills`
-  - installed Codex runtime copy lives under `/Users/akhanbakhitov/.codex/skills`
+  - versioned project skill source lives under `.codex/skills`
+  - installed Codex runtime copy lives under `$CODEX_HOME/skills` or `~/.codex/skills`
   - use `onelink-builder` for broad or cross-surface work
-  - use the specialized skills for narrow work: `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`
+  - use the specialized skills for narrow work: `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`, `onelink-gitops`
   - after changing the versioned project copy, sync it to Codex home with `./.codex/scripts/sync-skills.sh to-codex-home`
 - **Pushes must use SSH**:
   - Verify with `git remote -v`
@@ -108,13 +110,13 @@
 - Default new feature state to `Pinia`; bridge to existing `Vuex` only where necessary. Reuse `dashboard/store/storeFactory.js` when the existing CRUD pattern fits.
 - For forms, prefer `components-next` inputs/dialogs/selects with `Vuelidate`. Use `FormKit` only when schema-driven forms clearly benefit from it.
 - Use `Histoire` for reusable components and visually complex feature surfaces.
-- For frontend execution workflow, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx`.
-- For frontend package decisions, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx`.
-- For new dashboard module structure, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx`.
-- For visual consistency, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx`.
-- For concrete code references, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`.
-- For verification depth, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`.
-- For docs-specific workflow, read `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md` and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`.
+- For frontend execution workflow, follow `docs/contributing-guide/frontend-agent-playbook.mdx`.
+- For frontend package decisions, follow `docs/contributing-guide/frontend-dependency-policy.mdx`.
+- For new dashboard module structure, follow `docs/contributing-guide/dashboard-feature-template.mdx`.
+- For visual consistency, follow `docs/contributing-guide/design-tokens-and-ui-conventions.mdx`.
+- For concrete code references, follow `docs/contributing-guide/implementation-examples-map.mdx`.
+- For verification depth, follow `docs/contributing-guide/testing-strategy-for-agents.mdx`.
+- For docs-specific workflow, read `docs/AGENTS.md` and `docs/contributing-guide/docs-repository-workflow.mdx`.
 - Source new component ideas in this order:
   1. existing `components-next` components and stories
   2. similar route screens already present in `onelink`
@@ -130,24 +132,24 @@
 Use architecture materials in this order:
 
 1. code in `app/`, `enterprise/`, `config/`, and `db/`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` for the current implemented system
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx` when the task depends on knowing which repo, directory, or control file owns the change
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx` when the task spans runtime, docs, API contracts, or delivery flow
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx` when the task spans app code, docs, or local skills and needs clean commit boundaries
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx` when the agent needs to choose the correct project skill
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` when the task is a backend implementation task and the agent needs placement and execution rules
-8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` when the task touches frontend structure, component sourcing, state management, or library choices
-9. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` when the task is a frontend implementation task and the agent needs placement, reuse, extension, or verification rules
-10. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` when the task may require a new frontend dependency
-11. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` when the task creates a new dashboard feature or module
-12. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` when the task creates a new backend feature shape
-13. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` when the task needs practical UI styling conventions
-14. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` when the task needs concrete code references
-15. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` when the task needs verification guidance
-16. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
-17. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
-18. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
-19. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, docs publishing, Mintlify setup, or OpenAPI docs sync
+2. `docs/platform/current-architecture.mdx` for the current implemented system
+3. `docs/platform/repository-map.mdx` when the task depends on knowing which repo, directory, or control file owns the change
+4. `docs/contributing-guide/project-operations.mdx` when the task spans runtime, docs, API contracts, or delivery flow
+5. `docs/contributing-guide/ai-agent-operating-model.mdx` when the task spans app code, docs, or local skills and needs clean commit boundaries
+6. `docs/contributing-guide/skill-map.mdx` when the agent needs to choose the correct project skill
+7. `docs/contributing-guide/backend-agent-playbook.mdx` when the task is a backend implementation task and the agent needs placement and execution rules
+8. `docs/platform/frontend-implementation.mdx` when the task touches frontend structure, component sourcing, state management, or library choices
+9. `docs/contributing-guide/frontend-agent-playbook.mdx` when the task is a frontend implementation task and the agent needs placement, reuse, extension, or verification rules
+10. `docs/contributing-guide/frontend-dependency-policy.mdx` when the task may require a new frontend dependency
+11. `docs/contributing-guide/dashboard-feature-template.mdx` when the task creates a new dashboard feature or module
+12. `docs/contributing-guide/backend-feature-template.mdx` when the task creates a new backend feature shape
+13. `docs/contributing-guide/design-tokens-and-ui-conventions.mdx` when the task needs practical UI styling conventions
+14. `docs/contributing-guide/implementation-examples-map.mdx` when the task needs concrete code references
+15. `docs/contributing-guide/testing-strategy-for-agents.mdx` when the task needs verification guidance
+16. `docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
+17. `docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
+18. `docs/platform/overview.mdx`, `docs/platform/crm-architecture.mdx`, and `docs/domains/overview.mdx` for target direction and planning constraints
+19. `docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, docs publishing, Mintlify setup, or OpenAPI docs sync
 
 Do not treat target architecture documents as proof that the runtime implementation already exists.
 Use the implementation roadmap when the task is about sequencing, decomposition, or deciding what to build next.
@@ -168,7 +170,7 @@ Use the implementation roadmap when the task is about sequencing, decomposition,
 
 ## Product Architecture Direction
 
-- Treat `/Users/akhanbakhitov/Documents/zeroprompt/onelink` as the primary product fork, not as a temporary patch layer.
+- Treat this repository as the primary product fork, not as a temporary patch layer.
 - Current implemented shape first: this repo is today an account-scoped omnichannel support platform with CRM-adjacent primitives and an inherited `enterprise/` technical split. In Onelink, that split is not a separate product/paywall boundary because enterprise capabilities are currently opened for the project.
 - Keep three conceptual layers in mind:
   - `upstream/core`: Chatwoot-compatible base and smallest possible fork diff
@@ -226,8 +228,8 @@ Use the implementation roadmap when the task is about sequencing, decomposition,
   - generic accounts
   - healthcare accounts
   - construction accounts
-- Use code plus `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` as the current-state source of truth, and use `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` as the companion guide for access/entity decisions.
-- Use `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` when the task is roadmap-driven or requires phase-aware implementation planning.
+- Use code plus `docs/platform/current-architecture.mdx` as the current-state source of truth, and use `docs/contributing-guide/domain-access-architecture.md` as the companion guide for access/entity decisions.
+- Use `docs/platform/implementation-roadmap.mdx` when the task is roadmap-driven or requires phase-aware implementation planning.
 
 ## Codex Worktree Workflow
 
@@ -252,22 +254,22 @@ Use the implementation roadmap when the task is about sequencing, decomposition,
 - **Frontend**:
   - Use `components-next/` for message bubbles
   - Prefer `components-next/` for new reusable dashboard components
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` for frontend structure and component sourcing policy
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` for the concrete agent workflow: reuse vs extend vs create, file placement, and verification
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` for new package decisions
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` for default module structure
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` for practical UI conventions
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
+  - Follow `docs/platform/frontend-implementation.mdx` for frontend structure and component sourcing policy
+  - Follow `docs/contributing-guide/frontend-agent-playbook.mdx` for the concrete agent workflow: reuse vs extend vs create, file placement, and verification
+  - Follow `docs/contributing-guide/frontend-dependency-policy.mdx` for new package decisions
+  - Follow `docs/contributing-guide/dashboard-feature-template.mdx` for default module structure
+  - Follow `docs/contributing-guide/design-tokens-and-ui-conventions.mdx` for practical UI conventions
+  - Follow `docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
+  - Follow `docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
 - **Backend**:
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` for backend execution workflow: native entity reuse, placement, and `enterprise/` checks
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` for default backend feature structure
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
+  - Follow `docs/contributing-guide/backend-agent-playbook.mdx` for backend execution workflow: native entity reuse, placement, and `enterprise/` checks
+  - Follow `docs/contributing-guide/backend-feature-template.mdx` for default backend feature structure
+  - Follow `docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
+  - Follow `docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
 - **Docs**:
-  - Edit docs content inside `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs`, but remember it is a separate Git repository
+  - Edit docs content inside `docs/`, but remember it is a separate Git repository
   - Commit docs content inside `docs/` first, then commit the updated `docs` submodule pointer in the parent `onelink` repo when needed
-  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md` and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`
+  - Follow `docs/AGENTS.md` and `docs/contributing-guide/docs-repository-workflow.mdx`
 
 ## Ruby Best Practices
 

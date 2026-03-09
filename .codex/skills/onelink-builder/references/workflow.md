@@ -21,7 +21,7 @@
   - Optional plan label override: `CW_BOOTSTRAP_ACCOUNT_PLAN_NAME=Enterprise`
 - Dev-lite infra path from repo guidance:
   - `colima start --cpu 2 --memory 4 --disk 20` if Docker Desktop is not available
-  - `export DOCKER_HOST=unix:///Users/akhanbakhitov/.colima/default/docker.sock`
+  - `export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`
   - `docker compose up -d postgres redis`
   - `bundle exec rake db:chatwoot_prepare`
 - Open the app at `http://127.0.0.1:3000` so HMR matches the configured Vite host.
@@ -89,8 +89,9 @@
 ## Practical Heuristics
 
 - Start broad tasks with `onelink-builder`, then switch to the matching specialized skill when the task surface is clear.
+- Use `onelink-gitops` when the task is mainly about remotes, branches, GitHub flow, submodule updates, or upstream sync from Chatwoot.
 - If a task changes skill definitions, update the versioned project copy under `onelink/.codex/skills` and then sync to `$CODEX_HOME/skills` with `./.codex/scripts/sync-skills.sh to-codex-home`.
-- For docs tasks, read `onelink/docs/AGENTS.md`, `platform/repository-map.mdx`, `project-operations.mdx`, and `docs-repository-workflow.mdx`.
+- For docs tasks, read `docs/AGENTS.md`, `docs/platform/repository-map.mdx`, `docs/contributing-guide/project-operations.mdx`, and `docs/contributing-guide/docs-repository-workflow.mdx`.
 - Choose dev-lite unless the feature depends on jobs, cron, async mailers, or background processing.
 - If the task touches channels, start by reading existing service folders and docs for channel constraints instead of designing from scratch.
 - If the task adds an endpoint, check controller, route, serializer/builder, policy, request spec pattern, and `swagger/`.

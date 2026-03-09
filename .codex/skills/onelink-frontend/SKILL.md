@@ -11,6 +11,8 @@ Use this skill when the task is primarily in `app/javascript/` and needs current
 
 This skill owns frontend surface selection, component sourcing, state decisions, UI placement, and narrow verification for the existing Rails + Vue + Vite stack.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - editing dashboard routes, components, stores, API clients, or composables
@@ -21,15 +23,15 @@ This skill owns frontend surface selection, component sourcing, state decisions,
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx`
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx`
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
-8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
-9. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/frontend-implementation.mdx`
+4. `docs/contributing-guide/frontend-agent-playbook.mdx`
+5. `docs/contributing-guide/frontend-dependency-policy.mdx`
+6. `docs/contributing-guide/dashboard-feature-template.mdx`
+7. `docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
+8. `docs/contributing-guide/implementation-examples-map.mdx`
+9. `docs/contributing-guide/testing-strategy-for-agents.mdx`
 
 ## Workflow
 
@@ -51,6 +53,12 @@ This skill owns frontend surface selection, component sourcing, state decisions,
 4. Default new state to `Pinia`; bridge to legacy patterns only where required by the touched surface.
 5. Prefer Tailwind utilities for new or heavily reworked UI.
 6. If the feature changes API contracts, coordinate with `onelink-api`.
+
+## Documentation Discipline
+
+- Read the frontend docs listed above before editing.
+- If UI behavior, route structure, dependency policy, or operator-facing workflow changed, update `docs/` in the same task.
+- Keep the docs commit separate in `docs/` when documentation changes are required.
 
 ## Placement Rules
 
@@ -90,10 +98,10 @@ This skill normally edits only `onelink`. If the UI change also requires docs up
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`
+- `docs/platform/frontend-implementation.mdx`
+- `docs/contributing-guide/frontend-agent-playbook.mdx`
+- `docs/contributing-guide/frontend-dependency-policy.mdx`
+- `docs/contributing-guide/dashboard-feature-template.mdx`
+- `docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
+- `docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/contributing-guide/testing-strategy-for-agents.mdx`

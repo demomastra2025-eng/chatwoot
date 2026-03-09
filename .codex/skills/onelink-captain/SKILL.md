@@ -11,6 +11,8 @@ Use this skill when the task is about Captain, copilot, knowledge documents, AI 
 
 This skill owns the AI surface inside Onelink and should coordinate model, service, config, and enterprise prompt/tool layers together.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - changing Captain assistants, documents, scenarios, or inbox bindings
@@ -21,10 +23,10 @@ This skill owns the AI surface inside Onelink and should coordinate model, servi
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/repository-map.mdx`
+4. `docs/contributing-guide/implementation-examples-map.mdx`
 5. `config/agents/tools.yml`
 6. the touched code paths under `app/models/`, `app/services/`, `enterprise/lib/captain/`, and `enterprise/lib/enterprise/captain/`
 
@@ -41,6 +43,12 @@ This skill owns the AI surface inside Onelink and should coordinate model, servi
 3. Keep data contracts and tool registry behavior aligned.
 4. If the task changes external tool or API behavior, coordinate with `onelink-api` or `onelink-integrations`.
 5. Update docs if the operator or agent workflow changed.
+
+## Documentation Discipline
+
+- Read the Captain and architecture docs before editing.
+- If assistant behavior, tool contracts, scenario flow, or operator/agent workflow changed, update `docs/` in the same task.
+- Keep runtime code commits in `onelink` and documentation commits in `docs/`.
 
 ## Placement Rules
 
@@ -72,6 +80,6 @@ Captain runtime code lives in `onelink`. Captain-related docs live in `onelink/d
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/platform/current-architecture.mdx`
+- `docs/platform/repository-map.mdx`
+- `docs/contributing-guide/implementation-examples-map.mdx`

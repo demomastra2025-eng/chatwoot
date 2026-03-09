@@ -11,6 +11,8 @@ Use this skill when the task changes an API contract or the documentation genera
 
 This skill owns controller-to-spec-to-Swagger alignment and the follow-up sync into Mintlify OpenAPI files.
 
+All repo paths below are relative to the Onelink repository root.
+
 ## Use This Skill When
 
 - adding or changing endpoints under `api/`, `platform/`, `public/`, or survey surfaces
@@ -20,14 +22,14 @@ This skill owns controller-to-spec-to-Swagger alignment and the follow-up sync i
 
 ## Read First
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/apis.mdx`
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/api-documentation.mdx`
-7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/platform-apis.mdx`
-8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx` if docs sync is required
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/repository-map.mdx`
+4. `docs/contributing-guide/project-operations.mdx`
+5. `docs/contributing-guide/apis.mdx`
+6. `docs/contributing-guide/api-documentation.mdx`
+7. `docs/contributing-guide/platform-apis.mdx`
+8. `docs/contributing-guide/docs-repository-workflow.mdx` if docs sync is required
 
 ## Workflow
 
@@ -37,6 +39,12 @@ This skill owns controller-to-spec-to-Swagger alignment and the follow-up sync i
 4. Run `bundle exec rake swagger:build`.
 5. If Mintlify API reference should change, run `./scripts/sync-openapi-from-onelink.sh` from `onelink/docs`.
 6. Commit docs-side OpenAPI changes in the docs repo separately from app code.
+
+## Documentation Discipline
+
+- Read the API docs listed above before editing.
+- If request or response contracts, auth rules, or generated API reference changed, update `docs/` in the same task.
+- Keep runtime API commits in `onelink` and docs/OpenAPI commits in `docs/`.
 
 ## Placement Rules
 
@@ -70,8 +78,8 @@ Runtime API code lives in `onelink`. Mintlify API reference files live in `oneli
 
 ## References
 
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/apis.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/api-documentation.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/platform-apis.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-- `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`
+- `docs/contributing-guide/apis.mdx`
+- `docs/contributing-guide/api-documentation.mdx`
+- `docs/contributing-guide/platform-apis.mdx`
+- `docs/contributing-guide/project-operations.mdx`
+- `docs/contributing-guide/docs-repository-workflow.mdx`

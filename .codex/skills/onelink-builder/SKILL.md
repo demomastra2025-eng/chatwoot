@@ -1,6 +1,6 @@
 ---
 name: onelink-builder
-description: "Use for broad or cross-cutting work in the Onelink project at /Users/akhanbakhitov/Documents/zeroprompt/onelink. This is the coordinator skill for choosing the correct Onelink surface and specialized skill across backend, frontend, API, integrations, Captain/AI, documentation, deployment, and repo-boundary workflows."
+description: "Use for broad or cross-cutting work in the Onelink project. This is the coordinator skill for choosing the correct Onelink surface and specialized skill across backend, frontend, API, integrations, Captain/AI, documentation, deployment, git/GitHub operations, and repo-boundary workflows."
 ---
 
 # Onelink Builder
@@ -16,6 +16,8 @@ This skill is the coordinator. It should:
 - load the minimum set of project docs needed
 - select the correct specialized skill when the task becomes narrow
 
+All repo paths below are relative to the Onelink repository root.
+
 If the task is already clearly backend-only, frontend-only, docs-only, and so on, use the specialized skill directly instead of loading this skill first.
 
 ## Use This Skill When
@@ -23,7 +25,7 @@ If the task is already clearly backend-only, frontend-only, docs-only, and so on
 Use `onelink-builder` when the user asks for any of the following:
 
 - a project-wide or architectural change
-- a task that spans app code, docs, and deployment
+- a task that spans app code, docs, skills, GitHub flow, or deployment
 - a task where the correct repo or directory is not obvious
 - a task that may touch more than one specialized skill surface
 - a request to understand how Onelink is structured before editing
@@ -47,17 +49,19 @@ Use `onelink-builder` when the user asks for any of the following:
   - Mintlify docs structure, docs content, docs navigation, and docs repo workflow
 - `onelink-deployment`
   - runtime operations, Docker, self-hosted docs, deployment scripts, and operator guidance
+- `onelink-gitops`
+  - GitHub flow, branching, submodules, skill sync, and upstream sync from Chatwoot
 
 ## Read First
 
 For broad tasks, build context in this order:
 
-1. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/AGENTS.md`
-2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx`
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/repository-map.mdx`
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/project-operations.mdx`
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/ai-agent-operating-model.mdx`
-6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/skill-map.mdx`
+1. `AGENTS.md`
+2. `docs/platform/current-architecture.mdx`
+3. `docs/platform/repository-map.mdx`
+4. `docs/contributing-guide/project-operations.mdx`
+5. `docs/contributing-guide/ai-agent-operating-model.mdx`
+6. `docs/contributing-guide/skill-map.mdx`
 
 Load target-direction pages only when current-state docs and concrete code are not enough.
 
@@ -71,22 +75,29 @@ Load target-direction pages only when current-state docs and concrete code are n
    - captain/ai
    - docs
    - deployment
+   - gitops/upstream
    - mixed
 2. Identify the owning repo:
-   - `onelink` for product code, specs, routes, runtime config, and deployment assets
-   - `onelink/docs` for Mintlify docs content and OpenAPI files
-   - `$CODEX_HOME/skills` for local skill definitions
+   - `onelink` for product code, specs, routes, runtime config, deployment assets, and versioned skills
+   - `docs/` for Mintlify docs content and OpenAPI files
+   - `$CODEX_HOME/skills` for the installed runtime skill copy
 3. Identify the primary directories to inspect.
 4. Hand off to the matching specialized skill if the task is now narrow enough.
 5. Keep commits separate when a mixed task touches more than one repo.
 
+## Documentation Discipline
+
+- Start from the relevant docs page before editing.
+- If runtime behavior, architecture meaning, API contracts, operator flow, repo workflow, or skill workflow changed, update docs in the same task.
+- Keep docs commits separate in `docs/` when the change belongs to the docs repository.
+
 ## Repo Boundary Rules
 
 - `docs/` inside `onelink` is a git submodule backed by `demomastra2025-eng/onelink-docs`.
-- Read and edit `onelink/docs` as local files, but commit docs content in the docs repo first.
+- Read and edit `docs/` as local files, but commit docs content in the docs repo first.
 - The parent `onelink` repo only stores the updated submodule pointer after docs changes.
-- Versioned project skill files live under `/Users/akhanbakhitov/Documents/zeroprompt/onelink/.codex/skills`.
-- Installed runtime skill files live under `/Users/akhanbakhitov/.codex/skills`.
+- Versioned project skill files live under `.codex/skills`.
+- Installed runtime skill files live under `$CODEX_HOME/skills`.
 - If a skill changes, keep the project copy and the installed Codex copy in sync.
 
 ## Project Rules
@@ -97,7 +108,7 @@ Load target-direction pages only when current-state docs and concrete code are n
 - Prefer native entities and existing extension points before introducing new abstractions.
 - Use the narrowest verification that meaningfully covers the touched surface.
 - Do not mix unrelated staged files into a task commit just because they are already staged.
-- After changing versioned skills in `onelink/.codex/skills`, sync them into Codex home with `./.codex/scripts/sync-skills.sh to-codex-home`.
+- After changing versioned skills in `.codex/skills`, sync them into Codex home with `./.codex/scripts/sync-skills.sh to-codex-home`.
 
 ## Handoff Standard
 
@@ -111,6 +122,6 @@ At the end of a broad task, leave enough context for a human or another agent to
 
 ## References
 
-- `/Users/akhanbakhitov/.codex/skills/onelink-builder/references/architecture.md`
-- `/Users/akhanbakhitov/.codex/skills/onelink-builder/references/workflow.md`
-- `/Users/akhanbakhitov/.codex/skills/onelink-builder/references/docs-map.md`
+- `references/architecture.md`
+- `references/workflow.md`
+- `references/docs-map.md`
