@@ -49,9 +49,11 @@
   - run `git submodule update --init --recursive` after cloning or when `docs/` is missing
   - if docs were edited in Mintlify or elsewhere, pull the latest changes inside `docs/` before using them as the source of truth
 - **Local skill family**:
-  - workspace guidance lives under `/Users/akhanbakhitov/.codex/skills`
+  - versioned project skill source lives under `/Users/akhanbakhitov/Documents/zeroprompt/onelink/.codex/skills`
+  - installed Codex runtime copy lives under `/Users/akhanbakhitov/.codex/skills`
   - use `onelink-builder` for broad or cross-surface work
   - use the specialized skills for narrow work: `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`
+  - after changing the versioned project copy, sync it to Codex home with `./.codex/scripts/sync-skills.sh to-codex-home`
 - **Pushes must use SSH**:
   - Verify with `git remote -v`
   - Push with `git push origin HEAD`

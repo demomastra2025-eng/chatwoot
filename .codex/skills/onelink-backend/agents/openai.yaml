@@ -1,0 +1,4 @@
+interface:
+  display_name: "Onelink Backend"
+  short_description: "Rails backend work for Onelink"
+  default_prompt: "Use $onelink-backend to implement or refactor Rails backend features in Onelink."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Onelink Documentation"
+  short_description: "Mintlify docs and structure for Onelink"
+  default_prompt: "Use $onelink-documentation to update Onelink Mintlify docs, page structure, docs.json navigation, or OpenAPI docs sync."

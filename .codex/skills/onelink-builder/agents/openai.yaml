@@ -1,0 +1,4 @@
+interface:
+  display_name: "Onelink Builder"
+  short_description: "Coordinate work across Onelink surfaces"
+  default_prompt: "Use $onelink-builder to classify an Onelink task, choose the right project skill, and keep repo boundaries correct."

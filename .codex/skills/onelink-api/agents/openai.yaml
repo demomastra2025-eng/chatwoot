@@ -1,0 +1,4 @@
+interface:
+  display_name: "Onelink API"
+  short_description: "API contracts and Swagger for Onelink"
+  default_prompt: "Use $onelink-api to change API contracts, request specs, Swagger, or OpenAPI documentation in Onelink."
