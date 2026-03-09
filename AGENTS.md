@@ -40,6 +40,14 @@
 - **Remote layout**:
   - `origin` = `git@github.com:demomastra2025-eng/chatwoot.git`
   - `upstream` = `https://github.com/chatwoot/chatwoot.git`
+- **Docs repo layout**:
+  - `docs/` is a git submodule that points to `git@github.com:demomastra2025-eng/onelink-docs.git`
+  - treat `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs` as readable local files plus a separate Git repository
+  - docs content commits belong in the `docs/` repository first
+  - the parent `onelink` repository stores only the submodule pointer update after a docs commit
+- **Before docs work**:
+  - run `git submodule update --init --recursive` after cloning or when `docs/` is missing
+  - if docs were edited in Mintlify or elsewhere, pull the latest changes inside `docs/` before using them as the source of truth
 - **Pushes must use SSH**:
   - Verify with `git remote -v`
   - Push with `git push origin HEAD`
@@ -100,13 +108,16 @@
 - For visual consistency, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx`.
 - For concrete code references, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`.
 - For verification depth, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`.
+- For docs-specific workflow, read `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md` and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`.
 - Source new component ideas in this order:
   1. existing `components-next` components and stories
   2. similar route screens already present in `onelink`
   3. `reka-ui` for accessible headless primitives
   4. `shadcn-vue` for recipes and implementation patterns
-  5. `Inspira UI` for visual inspiration only
+  5. `PrimeVue` for dense admin/table/filter patterns only when local wrappers are insufficient
+  6. `Inspira UI` for visual inspiration only
 - Wrap third-party primitives in local components instead of letting external libraries become the public UI API of the app.
+- For a current native module reference, use `app/javascript/dashboard/routes/dashboard/scheduling/`, `app/javascript/dashboard/components-next/Scheduling/`, `app/javascript/dashboard/stores/scheduling/`, and `app/services/scheduling/`.
 
 ## Architecture Sources
 
@@ -126,6 +137,7 @@ Use architecture materials in this order:
 12. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
 13. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
 14. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
+15. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, docs publishing, Mintlify setup, or OpenAPI docs sync
 
 Do not treat target architecture documents as proof that the runtime implementation already exists.
 Use the implementation roadmap when the task is about sequencing, decomposition, or deciding what to build next.
@@ -242,6 +254,10 @@ Use the implementation roadmap when the task is about sequencing, decomposition,
   - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` for default backend feature structure
   - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
   - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
+- **Docs**:
+  - Edit docs content inside `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs`, but remember it is a separate Git repository
+  - Commit docs content inside `docs/` first, then commit the updated `docs` submodule pointer in the parent `onelink` repo when needed
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/AGENTS.md` and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/docs-repository-workflow.mdx`
 
 ## Ruby Best Practices
 
