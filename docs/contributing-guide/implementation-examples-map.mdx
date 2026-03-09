@@ -1,0 +1,186 @@
+---
+title: Implementation Examples Map
+description: Canonical code examples in Onelink for AI agents to copy patterns from.
+sidebarTitle: Examples Map
+---
+
+# Implementation Examples Map
+
+## Status
+
+- document type: example index
+- use this page when an agent needs concrete code references instead of abstract guidance
+
+## Goal
+
+Point agents to real files in `onelink` that demonstrate common backend and frontend patterns.
+
+## Frontend Examples
+
+### Shared Primitive Components
+
+- button:
+  `app/javascript/dashboard/components-next/button/Button.vue`
+- dialog:
+  `app/javascript/dashboard/components-next/dialog/Dialog.vue`
+- banner:
+  `app/javascript/dashboard/components-next/banner/Banner.vue`
+- combobox:
+  `app/javascript/dashboard/components-next/combobox/`
+- select menu:
+  `app/javascript/dashboard/components-next/selectmenu/`
+
+### Histoire Story Examples
+
+- button story:
+  `app/javascript/dashboard/components-next/button/Button.story.vue`
+- dialog story:
+  `app/javascript/dashboard/components-next/dialog/Dialog.story.vue`
+- combobox story:
+  `app/javascript/dashboard/components-next/combobox/ComboBox.story.vue`
+
+### API Client Pattern
+
+- account-scoped CRUD-style client:
+  `app/javascript/dashboard/api/companies.js`
+- broader account client:
+  `app/javascript/dashboard/api/account.js`
+- nested feature clients:
+  `app/javascript/dashboard/api/captain/`
+- integration-specific clients:
+  `app/javascript/dashboard/api/integrations/`
+
+### Pinia Store Pattern
+
+- `Pinia` CRUD store via store factory:
+  `app/javascript/dashboard/stores/companies.js`
+- store factory bridge for `Vuex` and `Pinia`:
+  `app/javascript/dashboard/store/storeFactory.js`
+
+### Route-Level Page Pattern
+
+- companies index page:
+  `app/javascript/dashboard/routes/dashboard/companies/pages/CompaniesIndex.vue`
+- contacts index and detail flow:
+  `app/javascript/dashboard/routes/dashboard/contacts/pages/`
+- integrations settings routes:
+  `app/javascript/dashboard/routes/dashboard/settings/integrations/`
+- captain route composition:
+  `app/javascript/dashboard/routes/dashboard/captain/`
+
+### Feature Component Pattern
+
+- companies feature UI:
+  `app/javascript/dashboard/components-next/Companies/`
+- contacts feature UI:
+  `app/javascript/dashboard/components-next/Contacts/`
+- help center feature UI:
+  `app/javascript/dashboard/components-next/HelpCenter/`
+- captain feature UI:
+  `app/javascript/dashboard/components-next/captain/`
+
+### Form And Validation Pattern
+
+- company and contact feature forms:
+  `app/javascript/dashboard/components-next/Companies/CompanyForm/`
+  `app/javascript/dashboard/components-next/Contacts/ContactsForm/`
+- `Vuelidate`-based form examples:
+  `app/javascript/dashboard/components-next/captain/pageComponents/assistant/AssistantForm.vue`
+  `app/javascript/dashboard/components-next/HelpCenter/Pages/CategoryPage/CategoryForm.vue`
+
+### Frontend Test Pattern
+
+- API client spec:
+  `app/javascript/dashboard/api/specs/companies.spec.js`
+
+## Backend Examples
+
+### Account-Scoped API Controller Pattern
+
+- companies controller:
+  `enterprise/app/controllers/api/v1/accounts/companies_controller.rb`
+- contacts controller:
+  `app/controllers/api/v1/accounts/contacts_controller.rb`
+- integrations controllers:
+  `app/controllers/api/v1/accounts/integrations/`
+- captain controllers:
+  `enterprise/app/controllers/api/v1/accounts/captain/`
+
+### Policy Pattern
+
+- company policy:
+  `enterprise/app/policies/company_policy.rb`
+- contact policy:
+  `app/policies/contact_policy.rb`
+
+### Service Pattern
+
+- company association service:
+  `enterprise/app/services/contacts/company_association_service.rb`
+- conversation permission or filter services:
+  `app/services/conversations/`
+- integration processor service:
+  `app/services/integrations/macrocrm/processor_service.rb`
+- scheduling services:
+  `app/services/scheduling/`
+
+### Model Pattern
+
+- company model:
+  `enterprise/app/models/company.rb`
+- contact model:
+  `app/models/contact.rb`
+
+### Backend Spec Pattern
+
+- service spec:
+  `spec/services/integrations/macrocrm/processor_service_spec.rb`
+- enterprise controller spec:
+  `spec/enterprise/controllers/api/v1/accounts/companies_controller_spec.rb`
+- enterprise policy spec:
+  `spec/enterprise/policies/company_policy_spec.rb`
+- contacts controller spec:
+  `spec/controllers/api/v1/accounts/contacts_controller_spec.rb`
+
+## Good Default Reference Sets
+
+### If Building A New Shared Dashboard CRUD Feature
+
+Read this set first:
+
+- `app/javascript/dashboard/api/companies.js`
+- `app/javascript/dashboard/stores/companies.js`
+- `app/javascript/dashboard/routes/dashboard/companies/pages/CompaniesIndex.vue`
+- `app/javascript/dashboard/components-next/Companies/`
+- `enterprise/app/controllers/api/v1/accounts/companies_controller.rb`
+- `enterprise/app/policies/company_policy.rb`
+
+### If Building A New Integration Surface
+
+Read this set first:
+
+- `app/javascript/dashboard/routes/dashboard/settings/integrations/`
+- `app/javascript/dashboard/api/integrations/`
+- `app/controllers/api/v1/accounts/integrations/`
+- `app/services/integrations/`
+
+### If Building A New AI Or Captain Surface
+
+Read this set first:
+
+- `app/javascript/dashboard/routes/dashboard/captain/`
+- `app/javascript/dashboard/components-next/captain/`
+- `app/javascript/dashboard/api/captain/`
+- `enterprise/app/controllers/api/v1/accounts/captain/`
+- `enterprise/app/services/captain/`
+
+## Rule
+
+When the agent is unsure how to implement a pattern, it should consult this examples map before inventing a new structure.
+
+## Related Documents
+
+- [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook)
+- [Backend Agent Playbook](/contributing-guide/backend-agent-playbook)
+- [Dashboard Feature Template](/contributing-guide/dashboard-feature-template)
+- [Backend Feature Template](/contributing-guide/backend-feature-template)

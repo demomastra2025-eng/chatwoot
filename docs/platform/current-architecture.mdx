@@ -23,6 +23,22 @@ The current codebase is primarily:
 - a set of CRM-adjacent primitives such as `Contact`, `Company`, `Note`, `Label`, and `CustomAttributeDefinition`
 - an event-driven application with listeners, jobs, hooks, reporting, automations, and AI/Captain features around the conversation core
 
+## Frontend Runtime
+
+The implemented frontend shape today is:
+
+- `Vue 3 + Vite` attached to the Rails monolith rather than a separate Nuxt-style app shell
+- multiple entrypoints such as dashboard, widget, portal, survey, and SDK
+- incremental frontend modernization with both `Vuex` and `Pinia` active in the dashboard
+- a newer shared UI layer in `app/javascript/dashboard/components-next/`
+- older shared UI layers and route-local composition still present across the dashboard
+- Tailwind preferred for new work, while SCSS and scoped styles remain in older surfaces
+- `Histoire` and `Vitest` already available for component development and verification
+
+Use [Frontend Implementation Guide](/platform/frontend-implementation) when the task is specifically about frontend structure, component sourcing, state management, or library choices.
+Use [Backend Agent Playbook](/contributing-guide/backend-agent-playbook) when the task is a backend implementation task and the agent needs an execution workflow rather than only architecture context.
+Use [Implementation Examples Map](/contributing-guide/implementation-examples-map) when the task needs concrete code references for an existing pattern.
+
 ## Core Runtime Graph
 
 ```mermaid
@@ -203,6 +219,9 @@ These appear in planning docs but should not be treated as existing runtime laye
 ## How To Use This Page
 
 - use this page for current architecture questions
+- use `frontend-implementation` for frontend stack, component sourcing, and implementation rules
+- use `backend-agent-playbook` for backend execution workflow
+- use `implementation-examples-map` for concrete code references
 - use `implementation-roadmap` for delivery sequencing
 - use `overview`, `crm-architecture`, and `domains/overview` for target direction
 - if docs and code disagree, trust the code

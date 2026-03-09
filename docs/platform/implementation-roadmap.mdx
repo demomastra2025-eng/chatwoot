@@ -44,6 +44,29 @@ The codebase does not yet have:
 - use feature flags, account settings, and gradual rollout for every new CRM surface
 - treat `enterprise/` as a technical extension mechanism, not the conceptual home of new domain architecture or a product/paywall boundary for Onelink
 
+## Cross-Cutting Frontend Delivery Rules
+
+Frontend delivery should follow these constraints across all phases:
+
+- keep `Rails + Vue 3 + Vite` as the application shell for dashboard work
+- use `app/javascript/dashboard/components-next/` as the preferred shared UI layer for new reusable dashboard components
+- default new feature state to `Pinia`, bridging to existing `Vuex` only where needed
+- source component ideas in this order:
+  1. existing `components-next` components and stories
+  2. similar route screens already implemented in `onelink`
+  3. `reka-ui` for headless accessible primitives
+  4. `shadcn-vue` for recipes and component patterns
+  5. `Inspira UI` for visual inspiration only
+- wrap third-party primitives in local components instead of letting external libraries become the public UI API of the app
+- use `Histoire` for reusable components and `Vitest` for targeted frontend verification
+
+For the detailed frontend implementation policy, use [Frontend Implementation Guide](/platform/frontend-implementation).
+For the step-by-step execution workflow, use [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook).
+For package adoption decisions, use [Frontend Dependency Policy](/contributing-guide/frontend-dependency-policy).
+For the default module shape, use [Dashboard Feature Template](/contributing-guide/dashboard-feature-template).
+For concrete reference implementations, use [Implementation Examples Map](/contributing-guide/implementation-examples-map).
+For verification depth, use [Testing Strategy For Agents](/contributing-guide/testing-strategy-for-agents).
+
 ## Non-Goals
 
 This roadmap does not recommend:

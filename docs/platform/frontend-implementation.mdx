@@ -1,0 +1,229 @@
+---
+title: Frontend Implementation Guide
+description: Current frontend architecture and implementation rules for new Onelink UI work.
+sidebarTitle: Frontend Guide
+---
+
+# Frontend Implementation Guide
+
+## Status
+
+- document type: current frontend rules plus implementation guidance
+- source of truth for runtime stack: code in `package.json`, `vite.config.ts`, `tailwind.config.js`, and `app/javascript`
+- use this page when the task touches dashboard, widget, portal, survey, or SDK frontend work; component sourcing; state management; or frontend library choices
+- use [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook) for the execution workflow that decides reuse, extension, placement, and verification
+- use [Frontend Dependency Policy](/contributing-guide/frontend-dependency-policy) when deciding whether a new package should be adopted
+- use [Dashboard Feature Template](/contributing-guide/dashboard-feature-template) for the default module structure of a new dashboard feature
+- use [Design Tokens And UI Conventions](/contributing-guide/design-tokens-and-ui-conventions) for practical styling decisions
+- use [Implementation Examples Map](/contributing-guide/implementation-examples-map) for concrete code references
+
+## Current Frontend Runtime
+
+The current codebase frontend is:
+
+- a Vue 3 + Vite frontend attached to a Rails monolith rather than a standalone SPA platform
+- split into dashboard, widget, portal, survey, and SDK entrypoints
+- booted in the dashboard with both `Vuex` and `Pinia`, because migration is incremental rather than complete
+- organized around several UI layers instead of one fully unified design system
+
+## Implemented Frontend Layers
+
+### Shared UI Layers
+
+- `app/javascript/dashboard/components-next/` is the preferred shared dashboard UI layer for new reusable components
+- `app/javascript/dashboard/components/ui/` contains older shared wrappers and utilities still in use
+- `app/javascript/dashboard/components/` is legacy/shared dashboard UI that still powers existing surfaces
+- route-local components under `routes/` or feature folders are common for feature-specific composition
+
+### Styling
+
+- Tailwind 3 is already installed and should be preferred for new or heavily reworked surfaces
+- existing SCSS and scoped styles still exist, especially on older surfaces
+- shared visual tokens already exist through the project theme and `n-*` Tailwind classes
+- dark mode is already supported through existing token usage and should not be broken by new work
+
+### State And Data
+
+- legacy dashboard surfaces still use `Vuex`
+- newer work can use `Pinia`
+- `app/javascript/dashboard/store/storeFactory.js` already provides a bridge pattern so new CRUD stores can be created with `Pinia` without rewriting unrelated `Vuex` modules
+- dashboard API clients already live under `app/javascript/dashboard/api/`
+
+### Forms And Validation
+
+- `Vuelidate` is the active default validation pattern across many dashboard surfaces
+- `FormKit` exists in the repo and is useful for targeted schema-driven or integration-specific cases
+- `FormKit` should not be treated as the default architecture for all new dashboard forms
+
+### Visual Development And Tests
+
+- `Histoire` is already configured and should be used for reusable components and visually complex feature components
+- `Vitest` is already configured for frontend unit and component tests
+
+## Non-Goals
+
+This guide does not recommend:
+
+- introducing `Nuxt` as a second application runtime for dashboard features
+- replacing the whole dashboard UI layer with a third-party component kit
+- spreading raw third-party primitives directly through feature code without local wrappers
+- forcing a full `Vuex` to `Pinia` rewrite before shipping new product work
+
+## Frontend Implementation Rules
+
+### App Shell And Build
+
+- keep `Rails + Vue 3 + Vite` as the frontend platform
+- keep frontend changes additive and aligned with existing account-scoped routing and boot payloads
+- prefer shipping a coherent feature inside the current shell over building a parallel app runtime
+
+### Shared UI Layer Rules
+
+Use this order when deciding where new UI code should live:
+
+1. existing `components-next` primitive or feature component
+2. new shared reusable component in `components-next`
+3. route-local component for feature-specific composition
+4. legacy `components/` only when extending an already-legacy surface
+
+If a primitive is missing, add a local wrapper in `components-next` rather than using a raw third-party component everywhere.
+
+### State And Data Rules
+
+- default new feature state to `Pinia`
+- use `storeFactory` when the feature matches the existing CRUD store pattern
+- read existing `Vuex` bootstrap or account state through a small composable or bridge when needed
+- do not migrate unrelated `Vuex` modules as part of a feature unless the feature is blocked without it
+- keep API clients in `app/javascript/dashboard/api/`
+- keep feature stores in `app/javascript/dashboard/stores/`
+- keep reusable logic in `app/javascript/dashboard/composables/` or feature-local composables when that is clearer
+
+### Component Sourcing Order
+
+When designing or implementing a new component, use sources in this order:
+
+1. existing `components-next` components and Histoire stories
+2. existing route screens or feature modules that already solve a similar interaction
+3. `reka-ui` for accessible headless primitives
+4. `shadcn-vue` for recipes, APIs, and code patterns
+5. `Inspira UI` for visual inspiration and motion ideas
+6. feature-local specialist libraries only after checking that the current stack and wrappers are insufficient
+
+For the exact reuse-vs-extend-vs-create workflow, use [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook).
+
+## External Source Policy
+
+### `reka-ui`
+
+Use `reka-ui` as the preferred external source for accessible primitives such as:
+
+- dialog
+- popover
+- dropdown menu
+- tooltip
+- tabs
+- accordion
+- select
+- combobox
+- checkbox and switch style primitives where headless behavior matters
+
+Wrap `reka-ui` usage inside local `components-next` components so the external library does not become the public UI API of the app.
+
+### `shadcn-vue`
+
+Use `shadcn-vue` as:
+
+- a recipe source
+- an API design reference
+- a code pattern library for how a component can be composed
+
+Do not treat `shadcn-vue` as a second design system that should be imported wholesale into `onelink`.
+
+### `Inspira UI`
+
+Use `Inspira UI` as:
+
+- visual inspiration
+- motion and presentation inspiration
+- a source for specific aesthetic ideas when a surface needs to feel more polished or intentional
+
+Do not use `Inspira UI` as the architectural base for dashboard/admin UI, and do not import a Nuxt-oriented app shell into the Rails dashboard.
+
+### Specialist Libraries
+
+Specialist libraries such as calendar, scheduler, kanban, or drag-and-drop packages may be used when the feature genuinely needs them, but they should be treated as feature-local dependencies unless they prove reusable across multiple product surfaces.
+
+## Styling And Token Rules
+
+- prefer Tailwind utilities for new work
+- reuse existing project colors, spacing, radius, and token conventions before inventing a parallel token layer
+- preserve existing dark/light behavior
+- if a reusable component needs variant logic, keep the API local and readable first
+- do not introduce a new class utility stack unless several new reusable components clearly justify it
+
+## Forms And Validation Rules
+
+- default to `components-next` inputs, textareas, dialogs, selects, and validation with `Vuelidate`
+- use `FormKit` only where schema-driven or integration-generated forms clearly benefit from it
+- keep validation logic close to the form or feature composable
+
+## Stories, Testing, And Verification
+
+- add or update `Histoire` stories for reusable primitives and visually complex feature components
+- use `Vitest` for API clients, composables, and non-trivial component behavior
+- for route-level features, run a manual smoke pass in the real dashboard in addition to stories
+
+## Shared Platform Versus Domain UI
+
+- shared platform screens, primitives, filters, list patterns, and workflow shells belong in shared dashboard code
+- domain-specific sections, vocabulary, validation rules, and composition should sit on top of shared screens instead of forking the whole module
+- if a capability is needed by multiple domain profiles, move it into shared frontend code first
+
+## Recommended Structure For A New Frontend Module
+
+```text
+app/javascript/dashboard/
+  api/<feature>.js
+  stores/<feature>.js
+  composables/use<Feature>.js
+  components-next/<Feature>/
+  routes/dashboard/<feature>/
+```
+
+Use this split by default:
+
+- shared primitives in `components-next`
+- feature-specific screens in `routes/dashboard/...`
+- feature stores in `stores`
+- API clients in `api`
+- stories next to reusable components
+
+## Delivery Sequence For A New Frontend Feature
+
+1. confirm the backend contract and create the frontend API client
+2. identify reusable components that already exist in `components-next`
+3. add missing wrappers or primitives in `components-next`, ideally with Histoire stories
+4. build the `Pinia` store or feature composables
+5. assemble route-level pages, drawers, sidebars, or detail panels
+6. add domain-specific overlays only after the shared happy path works
+7. verify with Histoire, Vitest where useful, and a dashboard smoke check
+
+## Known Gaps
+
+These are still weak spots in the repo and should be treated as follow-up work rather than assumed solved:
+
+- there is no dedicated design-token guide beyond `tailwind.config.js` and the current component code
+- there is no official code generator for new dashboard features yet
+
+## Related Documents
+
+- [Current Architecture](/platform/current-architecture)
+- [Implementation Roadmap](/platform/implementation-roadmap)
+- [Onelink Platform Overview](/platform/overview)
+- [Domain Access Architecture](/contributing-guide/domain-access-architecture)
+- [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook)
+- [Frontend Dependency Policy](/contributing-guide/frontend-dependency-policy)
+- [Dashboard Feature Template](/contributing-guide/dashboard-feature-template)
+- [Design Tokens And UI Conventions](/contributing-guide/design-tokens-and-ui-conventions)
+- [Implementation Examples Map](/contributing-guide/implementation-examples-map)
+- [Testing Strategy For Agents](/contributing-guide/testing-strategy-for-agents)

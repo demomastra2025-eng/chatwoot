@@ -1,0 +1,348 @@
+---
+title: Frontend Agent Playbook
+description: Step-by-step frontend workflow for AI agents working in Onelink.
+sidebarTitle: Frontend Agent Playbook
+---
+
+# Frontend Agent Playbook
+
+## Status
+
+- document type: execution playbook for AI agents and contributors
+- use this page when an agent needs to decide how to build, extend, or place frontend work inside `onelink`
+- pair this with [Frontend Implementation Guide](/platform/frontend-implementation) for stack rules and [Current Architecture](/platform/current-architecture) for current runtime boundaries
+
+## Goal
+
+Help an AI agent answer these questions consistently before writing frontend code:
+
+- where should this frontend change live?
+- should the agent reuse, extend, or create a component?
+- what internal source should it read first?
+- what external library is allowed as an idea source or primitive source?
+- when should it create a store, composable, or route-local component?
+
+## Read Order For Frontend Tasks
+
+When the task touches dashboard, widget, portal, survey, or SDK frontend work, read in this order:
+
+1. `AGENTS.md`
+2. [Current Architecture](/platform/current-architecture)
+3. [Frontend Implementation Guide](/platform/frontend-implementation)
+4. this playbook
+5. the closest existing screen or component in code
+
+If the task may require a new package, also read [Frontend Dependency Policy](/contributing-guide/frontend-dependency-policy).
+
+If the task is a new dashboard module, also read [Dashboard Feature Template](/contributing-guide/dashboard-feature-template).
+
+If the agent needs concrete code references, also read [Implementation Examples Map](/contributing-guide/implementation-examples-map).
+
+## Step 1: Classify The Task
+
+Before coding, classify the task into one of these buckets:
+
+- primitive component
+  examples: button variant, dialog, tabs, dropdown, date input wrapper
+- reusable feature component
+  examples: card, sidebar section, table row, form block, appointment tile
+- route or page
+  examples: scheduling calendar page, integration settings page, contact details page
+- overlay or embedded workflow
+  examples: drawer, modal, conversation side panel, inline quick-create flow
+- feature state and data layer
+  examples: store, API client, search/filter composable
+- domain overlay
+  examples: healthcare-only section on top of a shared form or screen
+
+This classification decides placement, reuse expectations, and whether a new dependency is justified.
+
+## Step 2: Search Internal Sources First
+
+Use this search order before inventing new UI:
+
+1. `app/javascript/dashboard/components-next/`
+2. stories under `components-next`
+3. similar route screens in `app/javascript/dashboard/routes/`
+4. feature folders near the touched surface
+5. legacy `components/` or `components/ui/` only if the touched surface already depends on them
+
+Typical search patterns:
+
+```bash
+rg --files app/javascript/dashboard/components-next | rg 'Dialog|Button|Select|Sidebar'
+rg --files app/javascript/dashboard/components-next | rg 'story|stories'
+rg -n "useVuelidate|createStore|defineStore|components-next" app/javascript/dashboard
+rg -n "ContactDetails|CompanyForm|PortalSettings|Sidebar" app/javascript/dashboard/routes
+```
+
+## Step 3: Decide Reuse vs Extend vs Create
+
+Use this matrix.
+
+### Reuse Existing Component
+
+Reuse when:
+
+- an existing component already matches the behavior and visual role
+- only props, content, or slots need to change at call-site level
+- introducing a second similar component would fragment the UI layer
+
+Typical outcome:
+
+- import the component
+- pass different props, slots, or route data
+
+### Extend Existing Component
+
+Extend when:
+
+- the component is already the right abstraction
+- the new need is a variant, slot, event, or optional behavior that fits the same component role
+- the change can be backward compatible for existing usages
+
+Typical outcome:
+
+- add prop, slot, emitted event, or variant class
+- update Histoire story if the component is reusable
+
+Do not extend when the component would become multi-purpose noise or when the new behavior changes its domain too much.
+
+### Create New Shared Component
+
+Create a new shared component in `components-next` when:
+
+- the missing element is likely reusable in multiple screens
+- it represents a real UI primitive or stable feature block
+- multiple routes would otherwise duplicate the same composition
+
+Typical outcome:
+
+- new folder under `components-next/<FeatureOrPrimitive>/`
+- local story in the same area if it is reusable or visually non-trivial
+
+### Create Route-Local Component
+
+Create a route-local component when:
+
+- the component is tightly coupled to one screen or one workflow
+- reusability is speculative rather than proven
+- the component mainly composes existing shared primitives
+
+Typical outcome:
+
+- new component next to the route or page
+- extract later only if reuse actually appears
+
+### Wrap Third-Party Primitive
+
+Create a local wrapper when:
+
+- the project lacks a shared primitive like popover, tabs, combobox, or dialog behavior
+- the need is reusable
+- `reka-ui` or another approved primitive source solves the behavior cleanly
+
+Typical outcome:
+
+- local wrapper inside `components-next`
+- external package hidden behind the local API
+
+## Step 4: Choose The Right Source For New UI
+
+Use this sourcing order.
+
+### Source 1: Existing Onelink UI
+
+Best default source:
+
+- `components-next`
+- Histoire stories
+- existing route implementations
+
+Use this for:
+
+- API shape
+- class naming
+- slot patterns
+- visual rhythm
+- i18n patterns
+- store and form patterns
+
+### Source 2: `reka-ui`
+
+Use for:
+
+- accessible headless primitives
+- interaction behavior
+- keyboard and focus handling
+- low-level overlay or selection patterns
+
+Do not expose raw `reka-ui` primitives directly throughout feature code. Wrap them locally first.
+
+### Source 3: `shadcn-vue`
+
+Use for:
+
+- example component composition
+- prop and slot API ideas
+- implementation recipes
+- patterns for turning headless primitives into project-owned components
+
+Treat it as reference code, not as the main design system runtime.
+
+### Source 4: `Inspira UI`
+
+Use for:
+
+- visual ideas
+- animation or presentation ideas
+- empty states, cards, hero-like sections, polished micro-layouts
+
+Do not use it as a dashboard architecture source.
+
+## Step 5: Place Files Correctly
+
+Use this default structure for a new frontend feature:
+
+```text
+app/javascript/dashboard/
+  api/<feature>.js
+  stores/<feature>.js
+  composables/use<Feature>.js
+  components-next/<Feature>/
+  routes/dashboard/<feature>/
+```
+
+Placement rules:
+
+- API client: `dashboard/api`
+- reusable store: `dashboard/stores`
+- reusable logic: `dashboard/composables`
+- shared UI: `dashboard/components-next`
+- route screen composition: `dashboard/routes/dashboard/...`
+
+## Step 6: Choose The Right State Pattern
+
+### No Store
+
+Use no store when:
+
+- state is local to one component or one dialog
+- there is no shared account-scoped data lifecycle
+
+### Composable
+
+Use a composable when:
+
+- logic is reused across several components in the same feature
+- you need derived state, side effects, keyboard behavior, or data formatting
+
+### `Pinia`
+
+Use `Pinia` when:
+
+- the feature has account-scoped entity data
+- several screens or panels consume the same records or UI flags
+- the feature needs CRUD, pagination, search, loading states, or caching
+
+Prefer `dashboard/store/storeFactory.js` when the CRUD shape matches existing patterns.
+
+### `Vuex` Bridge
+
+Use a `Vuex` bridge only when:
+
+- the feature must read existing global boot/account/conversation state that still lives in `Vuex`
+- migrating that state is out of scope
+
+Do not start a brand new feature store in `Vuex`.
+
+## Step 7: Forms And Validation
+
+Use this default form stack:
+
+- `components-next` inputs/selects/dialogs/textarea
+- `Vuelidate` for validation
+- feature-local form state in `<script setup>`
+
+Use `FormKit` only when:
+
+- the form is strongly schema-driven
+- the integration already uses `FormKit`
+- the form would otherwise require a large amount of repetitive dynamic rendering code
+
+## Step 8: Domain Overlay Rule
+
+When a frontend feature has both shared and domain-specific parts:
+
+1. build the shared platform screen first
+2. keep shared vocabulary, data flow, and layout generic
+3. add domain-specific sections, fields, or copy as a composition layer on top
+
+Do not fork the whole screen early unless the workflow is genuinely different end to end.
+
+## Step 9: Verification Checklist
+
+Before considering the frontend task complete, the agent should check:
+
+- the component or screen uses existing `components-next` patterns where possible
+- strings are localized
+- dark mode and token usage are not broken
+- a reusable component has a Histoire story when appropriate
+- non-trivial API client, store, or composable logic has targeted frontend tests when useful
+- the real dashboard screen still boots and behaves correctly
+
+## Step 10: Minimum Deliverable Shape
+
+For a new frontend feature, the minimum coherent deliverable should usually include:
+
+- API client
+- state or composable layer
+- route/page or embedded panel
+- reused or newly wrapped shared components
+- i18n wiring
+- at least one verification path: Histoire, Vitest, or manual smoke
+
+## Agent Decision Tree
+
+Use this quick rule set:
+
+1. Is there already a near-match in `components-next`?
+   If yes: reuse or extend it.
+2. Is the missing part a reusable primitive?
+   If yes: wrap `reka-ui` or another approved primitive source in `components-next`.
+3. Is the UI specific to one route?
+   If yes: keep it route-local and compose existing shared parts.
+4. Does the feature need shared entity state?
+   If yes: use `Pinia`.
+5. Is the feature only adding domain-specific fields to a shared workflow?
+   If yes: layer that on top of the shared screen, do not fork the whole module.
+
+## What The Agent Should Avoid
+
+- adding `Nuxt` or another application shell
+- importing third-party kits wholesale into production feature code
+- building new reusable feature state in `Vuex`
+- copying `shadcn-vue` or `Inspira UI` code without adapting it to local tokens and patterns
+- introducing a second design system under a new folder parallel to `components-next`
+- inventing new abstractions before checking nearby route implementations
+
+## Still Missing
+
+The repo is still missing two things that would make agent work even more deterministic:
+
+- a real code generator for new dashboard feature modules
+- a dedicated design-token guide beyond the current Tailwind config and component code
+
+Until those exist, use this playbook plus the frontend implementation guide as the operational standard.
+
+## Related Documents
+
+- [Frontend Implementation Guide](/platform/frontend-implementation)
+- [Frontend Dependency Policy](/contributing-guide/frontend-dependency-policy)
+- [Dashboard Feature Template](/contributing-guide/dashboard-feature-template)
+- [Design Tokens And UI Conventions](/contributing-guide/design-tokens-and-ui-conventions)
+- [Implementation Examples Map](/contributing-guide/implementation-examples-map)
+- [Testing Strategy For Agents](/contributing-guide/testing-strategy-for-agents)
+- [Current Architecture](/platform/current-architecture)
+- [Implementation Roadmap](/platform/implementation-roadmap)
+- [Domain Access Architecture](/contributing-guide/domain-access-architecture)

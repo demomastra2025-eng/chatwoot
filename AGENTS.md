@@ -87,15 +87,45 @@
   - Avoid introducing new styling patterns unless the touched surface already depends on them
 - **Colors**: Refer to `tailwind.config.js` for color definitions
 
+## Frontend Implementation
+
+- Keep the existing `Rails + Vue 3 + Vite` shell for dashboard work; do not introduce `Nuxt` as a parallel runtime for product features.
+- For new reusable dashboard UI, prefer `app/javascript/dashboard/components-next/`.
+- Default new feature state to `Pinia`; bridge to existing `Vuex` only where necessary. Reuse `dashboard/store/storeFactory.js` when the existing CRUD pattern fits.
+- For forms, prefer `components-next` inputs/dialogs/selects with `Vuelidate`. Use `FormKit` only when schema-driven forms clearly benefit from it.
+- Use `Histoire` for reusable components and visually complex feature surfaces.
+- For frontend execution workflow, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx`.
+- For frontend package decisions, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx`.
+- For new dashboard module structure, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx`.
+- For visual consistency, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx`.
+- For concrete code references, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx`.
+- For verification depth, follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx`.
+- Source new component ideas in this order:
+  1. existing `components-next` components and stories
+  2. similar route screens already present in `onelink`
+  3. `reka-ui` for accessible headless primitives
+  4. `shadcn-vue` for recipes and implementation patterns
+  5. `Inspira UI` for visual inspiration only
+- Wrap third-party primitives in local components instead of letting external libraries become the public UI API of the app.
+
 ## Architecture Sources
 
 Use architecture materials in this order:
 
 1. code in `app/`, `enterprise/`, `config/`, and `db/`
 2. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/current-architecture.mdx` for the current implemented system
-3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
-4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
-5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
+3. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` when the task is a backend implementation task and the agent needs placement and execution rules
+4. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` when the task touches frontend structure, component sourcing, state management, or library choices
+5. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` when the task is a frontend implementation task and the agent needs placement, reuse, extension, or verification rules
+6. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` when the task may require a new frontend dependency
+7. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` when the task creates a new dashboard feature or module
+8. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` when the task creates a new backend feature shape
+9. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` when the task needs practical UI styling conventions
+10. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` when the task needs concrete code references
+11. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` when the task needs verification guidance
+12. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/domain-access-architecture.md` for current account/access/entity rules and extension strategy
+13. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/implementation-roadmap.mdx` for delivery order, phases, and rollout strategy
+14. `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/overview.mdx`, `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/crm-architecture.mdx`, and `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/domains/overview.mdx` for target direction and planning constraints
 
 Do not treat target architecture documents as proof that the runtime implementation already exists.
 Use the implementation roadmap when the task is about sequencing, decomposition, or deciding what to build next.
@@ -198,7 +228,20 @@ Use the implementation roadmap when the task is about sequencing, decomposition,
   - Other languages are handled by the community
   - Backend i18n → `en.yml`, Frontend i18n → `en.json`
 - **Frontend**:
-  - Use `components-next/` for message bubbles (the rest is being deprecated)
+  - Use `components-next/` for message bubbles
+  - Prefer `components-next/` for new reusable dashboard components
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/platform/frontend-implementation.mdx` for frontend structure and component sourcing policy
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-agent-playbook.mdx` for the concrete agent workflow: reuse vs extend vs create, file placement, and verification
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/frontend-dependency-policy.mdx` for new package decisions
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/dashboard-feature-template.mdx` for default module structure
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/design-tokens-and-ui-conventions.mdx` for practical UI conventions
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
+- **Backend**:
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-agent-playbook.mdx` for backend execution workflow: native entity reuse, placement, and `enterprise/` checks
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/backend-feature-template.mdx` for default backend feature structure
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/implementation-examples-map.mdx` for canonical code references
+  - Follow `/Users/akhanbakhitov/Documents/zeroprompt/onelink/docs/contributing-guide/testing-strategy-for-agents.mdx` for verification depth
 
 ## Ruby Best Practices
 

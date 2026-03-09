@@ -1,0 +1,115 @@
+---
+title: Design Tokens And UI Conventions
+description: Practical UI conventions for agents building frontend surfaces in Onelink.
+sidebarTitle: UI Conventions
+---
+
+# Design Tokens And UI Conventions
+
+## Status
+
+- document type: practical UI guide
+- use this page when an agent needs to translate frontend rules into actual component-level styling choices
+
+## Goal
+
+Keep new frontend work visually aligned with existing `onelink` dashboard patterns without forcing the agent to reverse-engineer every token from component code.
+
+## Core Rule
+
+For new or heavily reworked dashboard UI:
+
+- prefer Tailwind utilities
+- prefer existing project token classes
+- prefer `components-next` visual conventions over inventing a parallel style language
+
+## Token Conventions
+
+The current UI commonly uses project token classes like:
+
+- `bg-n-*`
+- `text-n-*`
+- `outline-n-*`
+- `border-n-*`
+
+These should be preferred over raw ad-hoc colors when a matching token already exists.
+
+Source of truth for tokens and theme:
+
+- `tailwind.config.js`
+- current `components-next` components
+
+## Canonical Component References
+
+Use these as style references:
+
+- button variants and token usage:
+  `app/javascript/dashboard/components-next/button/Button.vue`
+- dialog layout and overlay styling:
+  `app/javascript/dashboard/components-next/dialog/Dialog.vue`
+- banner color conventions:
+  `app/javascript/dashboard/components-next/banner/Banner.vue`
+- sidebar visual language:
+  `app/javascript/dashboard/components-next/sidebar/`
+- form and page composition examples:
+  `app/javascript/dashboard/components-next/Companies/`
+  `app/javascript/dashboard/components-next/Contacts/`
+
+## Layout Conventions
+
+Default patterns commonly used in the dashboard:
+
+- rounded containers
+- subtle outlines instead of heavy borders
+- `bg-n-alpha-*` surfaces for cards, dialogs, and floating layers
+- compact but readable spacing
+- strong use of `text-n-slate-*` hierarchy for headings, body, and metadata
+
+## Component API Conventions
+
+When creating a reusable component:
+
+- prefer clear props and slots over deeply nested config objects
+- keep variants readable and local
+- expose project-owned names and APIs rather than external library semantics
+- stay consistent with `components-next` naming and prop style where possible
+
+## Dark Mode Rule
+
+Dark mode already exists in the repo.
+
+Agents should:
+
+- preserve dark-mode compatibility
+- use existing token classes that already encode dark/light behavior
+- avoid one-off raw colors that look fine only in one theme
+
+## Motion Rule
+
+Motion should be:
+
+- minimal
+- meaningful
+- consistent with existing utility-driven transitions
+
+Do not introduce flashy animation systems for normal dashboard CRUD surfaces.
+
+## Typography Rule
+
+Follow the current dashboard style:
+
+- readable system-driven sans stack
+- restrained hierarchy
+- no novelty typography for admin surfaces unless the touched surface is intentionally more expressive
+
+## Do Not Do
+
+- do not introduce a second token naming scheme
+- do not bypass project token classes with many raw hex colors
+- do not import a third-party theme wholesale into a shared admin surface
+- do not design a new module as if it were a marketing landing page unless that is the actual surface
+
+## Related Documents
+
+- [Frontend Implementation Guide](/platform/frontend-implementation)
+- [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook)

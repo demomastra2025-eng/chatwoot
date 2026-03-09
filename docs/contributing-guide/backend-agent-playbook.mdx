@@ -1,0 +1,185 @@
+---
+title: Backend Agent Playbook
+description: Step-by-step backend workflow for AI agents working in Onelink.
+sidebarTitle: Backend Agent Playbook
+---
+
+# Backend Agent Playbook
+
+## Status
+
+- document type: execution playbook for AI agents and contributors
+- use this page when an agent needs to decide how to implement backend changes inside `onelink`
+
+## Goal
+
+Help an AI agent answer these questions consistently before writing backend code:
+
+- is this shared platform behavior, domain-specific behavior, or tenant configuration?
+- should the agent reuse an existing native entity?
+- where should the logic live: model, service, controller, policy, serializer, job, or listener?
+- when should the inherited `enterprise/` tree be checked or extended?
+
+## Read Order For Backend Tasks
+
+1. `AGENTS.md`
+2. [Current Architecture](/platform/current-architecture)
+3. [Domain Access Architecture](/contributing-guide/domain-access-architecture)
+4. [Implementation Roadmap](/platform/implementation-roadmap) when sequencing matters
+5. the closest existing model/service/controller in code
+
+If the task creates a new backend feature shape, also read [Backend Feature Template](/contributing-guide/backend-feature-template).
+
+If the agent needs concrete code references, also read [Implementation Examples Map](/contributing-guide/implementation-examples-map).
+
+## Step 1: Classify The Change
+
+Every backend task should be classified as one of:
+
+- shared platform capability
+- domain-specific behavior
+- tenant-specific configuration
+
+If the behavior is shared across multiple domains, keep it in shared platform code.
+
+If the behavior is needed by one tenant only, prefer configuration, custom attributes, or settings before creating new shared models.
+
+## Step 2: Reuse Native Entities First
+
+Before creating a new model, check whether the need can be satisfied by:
+
+- `Account`
+- `Contact`
+- `Company`
+- `Conversation`
+- `Message`
+- `Note`
+- `Label`
+- `CustomAttributeDefinition`
+- `Team`
+- `Macro`
+- `AutomationRule`
+- `Integrations::App`
+- `Integrations::Hook`
+- `Captain::*`
+
+If one of these fits with custom attributes, settings, notes, labels, or services, do that before inventing a new entity.
+
+## Step 3: Search Both Trees
+
+Before editing shared backend behavior, search both:
+
+- `app/`
+- `enterprise/`
+
+Use searches like:
+
+```bash
+rg -n "ModelName|ServiceName|ControllerName|PolicyName" app enterprise
+```
+
+## Step 4: Choose The Right Backend Surface
+
+### Model
+
+Use the model for:
+
+- associations
+- stable validations
+- scopes
+- small state helpers that truly belong to the record
+
+Do not push workflow orchestration or cross-aggregate coordination into the model.
+
+### Service
+
+Use a service for:
+
+- multi-step mutations
+- orchestration across several records
+- workflows that must stay readable and testable
+- feature-specific business actions
+
+### Controller
+
+Use the controller for:
+
+- request parsing
+- authorization hooks
+- invoking the service or model layer
+- response serialization
+
+Do not bury business orchestration in controllers.
+
+### Policy
+
+Use a policy when:
+
+- the change affects who can list, read, create, update, or delete a record
+- visibility rules depend on account membership, inbox access, teams, or custom roles
+
+### Serializer
+
+Use a serializer or presenter layer when:
+
+- frontend payload shape changes
+- a field should be exposed consistently without leaking model internals
+
+### Job Or Listener
+
+Use a job or listener when:
+
+- the behavior is async
+- the task is side-effect-heavy
+- the flow belongs to event fan-out rather than the request lifecycle
+
+## Step 5: API Rules
+
+When adding or changing APIs:
+
+- keep account scoping explicit
+- keep contracts compatible across `app/` and `enterprise/` where applicable
+- update `swagger/` and generated docs
+- do not expose domain-specific payload shape in shared endpoints unless that contract is intentionally shared
+
+## Step 6: Shared Versus Domain Behavior
+
+Use this rule:
+
+1. shared entity and lifecycle first
+2. domain-specific service or extension second
+3. true domain runtime layer only when the domain behavior is stable and clearly separate
+
+Do not scatter healthcare or construction fields directly into shared models unless the field is genuinely shared.
+
+## Step 7: Verification Checklist
+
+Before considering the backend task complete, the agent should check:
+
+- native entities were reused where possible
+- `enterprise/` impact was considered
+- account scoping and policy rules still make sense
+- API contract changes were reflected in docs when needed
+- the narrowest useful spec or smoke check was run for the touched surface
+
+## Quick Decision Tree
+
+1. Can this be done with an existing native entity plus settings or custom attributes?
+   If yes: do that first.
+2. Is the change multi-step or cross-aggregate?
+   If yes: create or extend a service.
+3. Does access or visibility change?
+   If yes: review policies and list filtering.
+4. Does the request/response contract change?
+   If yes: update serializers and Swagger.
+5. Does `enterprise/` already extend this area?
+   If yes: keep the extension path compatible.
+
+## Related Documents
+
+- [Current Architecture](/platform/current-architecture)
+- [Domain Access Architecture](/contributing-guide/domain-access-architecture)
+- [Implementation Roadmap](/platform/implementation-roadmap)
+- [Backend Feature Template](/contributing-guide/backend-feature-template)
+- [Implementation Examples Map](/contributing-guide/implementation-examples-map)
+- [Testing Strategy For Agents](/contributing-guide/testing-strategy-for-agents)

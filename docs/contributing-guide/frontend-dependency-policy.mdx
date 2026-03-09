@@ -1,0 +1,147 @@
+---
+title: Frontend Dependency Policy
+description: Rules for adding or adopting frontend dependencies in Onelink.
+sidebarTitle: Frontend Dependency Policy
+---
+
+# Frontend Dependency Policy
+
+## Status
+
+- document type: policy and decision guide
+- use this page when an agent or contributor is considering a new frontend dependency
+
+## Goal
+
+Prevent random frontend dependency sprawl while still allowing targeted use of specialist libraries where they materially improve delivery.
+
+## Decision Order
+
+Before adding any frontend dependency, use this order:
+
+1. existing `onelink` component, composable, or utility
+2. local wrapper or composition on top of existing project dependencies
+3. approved external primitive or specialist library
+4. only then a brand-new dependency
+
+If step 1 or 2 solves the task cleanly, do not add a package.
+
+## Approved Source Roles
+
+### `reka-ui`
+
+Approved as a source of accessible headless primitives for reusable dashboard UI.
+
+Typical use:
+
+- dialog
+- popover
+- dropdown
+- tooltip
+- tabs
+- accordion
+- select
+- combobox
+
+Rule:
+
+- wrap it locally in `components-next`
+
+### `shadcn-vue`
+
+Approved as a recipe and code-pattern source.
+
+Rule:
+
+- do not import it wholesale as a second design system
+- adapt code to local tokens, local wrappers, and `components-next`
+
+### `Inspira UI`
+
+Approved as a visual inspiration source only.
+
+Rule:
+
+- do not use it as the architectural base for dashboard/admin UI
+- do not import a Nuxt app shell into the dashboard
+
+### Specialist Libraries
+
+Approved conditionally when the feature is specialist enough that local composition would be slower or weaker:
+
+- calendar and scheduler libraries
+- kanban and drag-and-drop libraries
+- charting libraries
+- rich media or heavy editor helpers
+
+Rule:
+
+- treat them as feature-local first unless reuse across multiple surfaces becomes real
+
+## Compatibility Checklist
+
+Before adopting a package, the agent should verify:
+
+- it supports `Vue 3`
+- it works in the current `Vite` setup
+- it does not require `Nuxt` or another alternate app runtime
+- it fits the current Tailwind 3 and project-token setup, or can be wrapped cleanly
+- it does not force a new state-management architecture
+- it does not conflict with the existing `Vuex` to `Pinia` migration path
+
+## Adoption Rules
+
+### Reusable Primitive
+
+If the dependency solves a reusable primitive:
+
+- create a local wrapper in `components-next`
+- expose a project-owned API instead of leaking the external package everywhere
+- add Histoire stories for the wrapper when appropriate
+
+### Feature-Local Dependency
+
+If the dependency solves one specialist feature:
+
+- keep imports close to that feature
+- do not promote it into shared UI until reuse is proven
+- document the reason in the implementing PR or agent summary
+
+### Inspiration-Only Source
+
+If the source is only for ideas:
+
+- copy/adapt the pattern into local code
+- do not install the package unless its runtime is actually needed
+
+## Do Not Add A New Dependency When
+
+- the repo already has a similar solution
+- the requirement is mostly visual and can be implemented with local code
+- the library is tightly coupled to `Nuxt`
+- the library would become the public UI API of the app without wrappers
+- the agent has not searched `components-next`, Histoire stories, and nearby routes first
+
+## Required Search Before Adding A Package
+
+Run searches like these first:
+
+```bash
+rg --files app/javascript/dashboard/components-next
+rg --files app/javascript/dashboard/components-next | rg 'story|stories'
+rg -n "defineStore|createStore|useVuelidate|Dialog|Select|Popover" app/javascript/dashboard
+```
+
+## Required Explanation When Adding A Package
+
+If a new package is added, the agent should be able to answer:
+
+- why the existing repo stack was insufficient
+- why this library is compatible with `onelink`
+- whether the dependency is shared or feature-local
+- how it will be wrapped or isolated
+
+## Related Documents
+
+- [Frontend Implementation Guide](/platform/frontend-implementation)
+- [Frontend Agent Playbook](/contributing-guide/frontend-agent-playbook)
