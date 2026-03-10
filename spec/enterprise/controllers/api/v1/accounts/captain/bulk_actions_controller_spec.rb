@@ -88,7 +88,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::BulkActions', type: :request do
              headers: admin.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(json_response[:success]).to be(false)
 
         # Verify no changes were made
@@ -112,7 +112,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::BulkActions', type: :request do
              headers: admin.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(json_response[:success]).to be(false)
 
         # Verify no changes were made

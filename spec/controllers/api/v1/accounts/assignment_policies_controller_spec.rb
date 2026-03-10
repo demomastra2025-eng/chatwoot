@@ -150,7 +150,7 @@ RSpec.describe 'Assignment Policies API', type: :request do
                as: :json
         end.not_to change(AssignmentPolicy, :count)
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'validates required fields' do
@@ -161,7 +161,7 @@ RSpec.describe 'Assignment Policies API', type: :request do
              params: invalid_params,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
 
@@ -237,7 +237,7 @@ RSpec.describe 'Assignment Policies API', type: :request do
             params: duplicate_params,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'returns not found for non-existent policy' do

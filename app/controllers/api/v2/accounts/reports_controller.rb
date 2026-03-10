@@ -52,7 +52,7 @@ class Api::V2::Accounts::ReportsController < Api::V1::Accounts::BaseController
   end
 
   def conversations
-    return head :unprocessable_entity if params[:type].blank?
+    return head :unprocessable_content if params[:type].blank?
 
     render json: conversation_metrics
   end
@@ -81,7 +81,7 @@ class Api::V2::Accounts::ReportsController < Api::V1::Accounts::BaseController
   OUTGOING_MESSAGES_ALLOWED_GROUP_BY = %w[agent team inbox label].freeze
 
   def outgoing_messages_count
-    return head :unprocessable_entity unless OUTGOING_MESSAGES_ALLOWED_GROUP_BY.include?(params[:group_by])
+    return head :unprocessable_content unless OUTGOING_MESSAGES_ALLOWED_GROUP_BY.include?(params[:group_by])
 
     builder = V2::Reports::OutgoingMessagesCountBuilder.new(Current.account, outgoing_messages_count_params)
     render json: builder.build

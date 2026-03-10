@@ -105,7 +105,7 @@ RSpec.describe 'DashboardAppsController', type: :request do
                                                                 params: invalid_url_payload
         end.not_to change(DashboardApp, :count)
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
         expect(json_response['message']).to eq 'Content : Invalid data'
       end
@@ -116,7 +116,7 @@ RSpec.describe 'DashboardAppsController', type: :request do
                                                                 params: non_http_url_payload
         end.not_to change(DashboardApp, :count)
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
         expect(json_response['message']).to eq 'Content : Invalid data'
       end
@@ -127,7 +127,7 @@ RSpec.describe 'DashboardAppsController', type: :request do
                                                                 params: invalid_type_payload
         end.not_to change(DashboardApp, :count)
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
   end

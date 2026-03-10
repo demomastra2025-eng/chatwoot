@@ -89,7 +89,7 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
              headers: administrator.create_new_auth_token,
              params: params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(account.automation_rules.count).to eq(0)
       end
 
@@ -106,7 +106,7 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
              headers: administrator.create_new_auth_token,
              params: params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(account.automation_rules.count).to eq(0)
       end
 
@@ -212,7 +212,7 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
              headers: administrator.create_new_auth_token,
              params: params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
       end
 
@@ -394,7 +394,7 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
               headers: administrator.create_new_auth_token,
               params: update_params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
       end
 

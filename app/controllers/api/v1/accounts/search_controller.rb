@@ -29,6 +29,6 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
       params: params
     ).perform
   rescue ArgumentError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   end
 end

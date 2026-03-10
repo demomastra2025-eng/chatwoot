@@ -1058,7 +1058,7 @@ RSpec.describe 'Inboxes API', type: :request do
                headers: admin.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['error']).to eq('Template sync is only available for WhatsApp channels')
         end
@@ -1166,7 +1166,7 @@ RSpec.describe 'Inboxes API', type: :request do
               headers: admin.create_new_auth_token,
               as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['error']).to include('API Error')
         end

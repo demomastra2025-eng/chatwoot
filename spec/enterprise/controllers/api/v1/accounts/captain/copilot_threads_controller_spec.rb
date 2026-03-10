@@ -71,7 +71,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotThreads', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(json_response[:error]).to eq('Message is required')
         end
 

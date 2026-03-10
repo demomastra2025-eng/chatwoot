@@ -79,7 +79,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
                params: {},
                headers: admin.create_new_auth_token
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
         end
       end
     end

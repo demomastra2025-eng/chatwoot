@@ -21,7 +21,7 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
     result = service.create_template(template_params)
     render_template_creation_result(result)
   rescue ActionController::ParameterMissing
-    render json: { error: 'Template parameters are required' }, status: :unprocessable_entity
+    render json: { error: 'Template parameters are required' }, status: :unprocessable_content
   end
 
   private
@@ -43,7 +43,7 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
   end
 
   def render_missing_message_error
-    render json: { error: 'Message is required' }, status: :unprocessable_entity
+    render json: { error: 'Message is required' }, status: :unprocessable_content
   end
 
   def render_template_creation_result(result)
@@ -85,7 +85,7 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
     render json: {
       error: error_message,
       details: whatsapp_error[:technical_details]
-    }, status: :unprocessable_entity
+    }, status: :unprocessable_content
   end
 
   def parse_whatsapp_error(response_body)

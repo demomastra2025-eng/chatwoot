@@ -73,6 +73,8 @@ tags:
     description: User profile APIs
   - name: Reports
     description: Analytics and reporting APIs
+  - name: Scheduling
+    description: Scheduling, appointment, and kassa APIs
   - name: Teams
     description: Team management APIs
   - name: Webhooks
@@ -115,6 +117,7 @@ x-tagGroups:
       - Messages
       - Profile
       - Reports
+      - Scheduling
       - Teams
       - Webhooks
       - Automation Rule

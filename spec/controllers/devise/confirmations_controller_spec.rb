@@ -28,7 +28,7 @@ RSpec.describe 'Token Confirmation', type: :request do
       let(:confirmation_token) { '' }
 
       it 'has status 422' do
-        expect(response).to have_http_status :unprocessable_entity
+        expect(response).to have_http_status :unprocessable_content
       end
 
       it 'returns message "Invalid token"' do
@@ -41,7 +41,7 @@ RSpec.describe 'Token Confirmation', type: :request do
       let(:confirmation_token) { '12345' }
 
       it 'has status 422' do
-        expect(response).to have_http_status :unprocessable_entity
+        expect(response).to have_http_status :unprocessable_content
       end
 
       it 'returns message "Already confirmed"' do

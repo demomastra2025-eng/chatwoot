@@ -260,7 +260,7 @@ RSpec.describe 'Api::V1::Accounts::Portals', type: :request do
              params: {},
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Email is required')
       end
 
@@ -270,7 +270,7 @@ RSpec.describe 'Api::V1::Accounts::Portals', type: :request do
              params: { email: 'invalid-email' },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Invalid email format')
       end
 
@@ -280,7 +280,7 @@ RSpec.describe 'Api::V1::Accounts::Portals', type: :request do
              params: { email: 'dev@example.com' },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Custom domain is not configured')
       end
 

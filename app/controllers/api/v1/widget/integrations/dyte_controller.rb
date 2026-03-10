@@ -5,7 +5,7 @@ class Api::V1::Widget::Integrations::DyteController < Api::V1::Widget::BaseContr
     if @message.content_type != 'integrations'
       return render json: {
         error: I18n.t('errors.dyte.invalid_message_type')
-      }, status: :unprocessable_entity
+      }, status: :unprocessable_content
     end
 
     response = dyte_processor_service.add_participant_to_meeting(
@@ -18,7 +18,7 @@ class Api::V1::Widget::Integrations::DyteController < Api::V1::Widget::BaseContr
   private
 
   def render_response(response)
-    render json: response, status: response[:error].blank? ? :ok : :unprocessable_entity
+    render json: response, status: response[:error].blank? ? :ok : :unprocessable_content
   end
 
   def dyte_processor_service

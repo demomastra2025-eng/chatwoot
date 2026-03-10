@@ -73,6 +73,7 @@ gem 'faraday_middleware-aws-sigv4'
 ##--- gems for server & infra configuration ---##
 gem 'dotenv-rails', '>= 3.0.0'
 gem 'foreman'
+gem 'fiddle'
 gem 'puma'
 gem 'vite_rails'
 # metrics on heroku

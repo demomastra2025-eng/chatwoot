@@ -64,7 +64,7 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
              headers: { 'X-Auth-Token' => token },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
 
         json_response = response.parsed_body
 

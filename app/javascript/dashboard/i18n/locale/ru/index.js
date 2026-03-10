@@ -32,6 +32,7 @@ import mfa from './mfa.json';
 import report from './report.json';
 import resetPassword from './resetPassword.json';
 import search from './search.json';
+import scheduling from './scheduling.json';
 import setNewPassword from './setNewPassword.json';
 import settings from './settings.json';
 import signup from './signup.json';
@@ -75,6 +76,7 @@ export default {
   ...report,
   ...resetPassword,
   ...search,
+  ...scheduling,
   ...setNewPassword,
   ...settings,
   ...signup,

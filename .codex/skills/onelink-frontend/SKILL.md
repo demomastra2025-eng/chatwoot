@@ -47,9 +47,11 @@ All repo paths below are relative to the Onelink repository root.
 3. Source components in this order:
    - existing `components-next`
    - similar local route screens
+   - `VueUse`
    - `reka-ui`
+   - `originui-vue`
    - `shadcn-vue`
-   - `PrimeVue` only for dense admin patterns when wrappers are insufficient
+   - `Inspira UI`
 4. Default new state to `Pinia`; bridge to legacy patterns only where required by the touched surface.
 5. Prefer Tailwind utilities for new or heavily reworked UI.
 6. If the feature changes API contracts, coordinate with `onelink-api`.

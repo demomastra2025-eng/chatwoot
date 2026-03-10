@@ -40,7 +40,7 @@ RSpec.describe 'Agent Capacity Policy Inbox Limits API', type: :request do
              headers: administrator.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('agent_capacity_policy.inbox_already_assigned'))
       end
     end

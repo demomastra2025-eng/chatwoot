@@ -26,12 +26,12 @@ class Api::V1::Accounts::ArticlesController < Api::V1::Accounts::BaseController
     params_with_defaults[:status] ||= :draft
     @article = @portal.articles.create!(params_with_defaults)
     @article.associate_root_article(article_params[:associated_article_id])
-    render json: { error: @article.errors.messages }, status: :unprocessable_entity and return unless @article.valid?
+    render json: { error: @article.errors.messages }, status: :unprocessable_content and return unless @article.valid?
   end
 
   def update
     @article.update!(article_params) if params[:article].present?
-    render json: { error: @article.errors.messages }, status: :unprocessable_entity and return unless @article.valid?
+    render json: { error: @article.errors.messages }, status: :unprocessable_content and return unless @article.valid?
   end
 
   def destroy

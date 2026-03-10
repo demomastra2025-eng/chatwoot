@@ -9,7 +9,7 @@ class Api::V1::Accounts::Twitter::AuthorizationsController < Api::V1::Accounts::
       ::Redis::Alfred.setex(oauth_token, Current.account.id)
       render json: { success: true, url: oauth_authorize_endpoint(oauth_token) }
     else
-      render json: { success: false }, status: :unprocessable_entity
+      render json: { success: false }, status: :unprocessable_content
     end
   end
 

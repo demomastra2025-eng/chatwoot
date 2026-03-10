@@ -30,6 +30,7 @@ class Company < ApplicationRecord
 
   belongs_to :account
   has_many :contacts, dependent: :nullify
+  has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
 
   scope :ordered_by_name, -> { order(:name) }
   scope :search_by_name_or_domain, lambda { |query|

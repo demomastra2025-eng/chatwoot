@@ -62,7 +62,7 @@ RSpec.describe 'Api::V1::Accounts::Integrations::Slacks' do
             params: { channel: SecureRandom.hex },
             headers: admin.create_new_auth_token
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
         expect(json_response['error']).to eql('Invalid slack channel. Please try again')
       end

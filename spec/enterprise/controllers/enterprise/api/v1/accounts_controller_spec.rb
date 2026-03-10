@@ -84,7 +84,7 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
                headers: admin.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = JSON.parse(response.body)
           expect(json_response['error']).to eq('Please subscribe to a plan before viewing the billing details')
         end
@@ -303,7 +303,7 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
              headers: admin.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'returns error for invalid credits amount' do
@@ -312,7 +312,7 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
              params: { credits: 999 },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
   end
@@ -396,7 +396,7 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
                params: { action_type: 'invalid' },
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(JSON.parse(response.body)['error']).to include('Invalid action_type')
         end
 
@@ -405,7 +405,7 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
                headers: admin.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(JSON.parse(response.body)['error']).to include('Invalid action_type')
         end
       end

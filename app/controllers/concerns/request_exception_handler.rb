@@ -32,7 +32,7 @@ module RequestExceptionHandler
   end
 
   def render_could_not_create_error(message)
-    render json: { error: message }, status: :unprocessable_entity
+    render json: { error: message }, status: :unprocessable_content
   end
 
   def render_payment_required(message)
@@ -48,7 +48,7 @@ module RequestExceptionHandler
     render json: {
       message: exception.record.errors.full_messages.join(', '),
       attributes: exception.record.errors.attribute_names
-    }, status: :unprocessable_entity
+    }, status: :unprocessable_content
   end
 
   def render_error_response(exception)

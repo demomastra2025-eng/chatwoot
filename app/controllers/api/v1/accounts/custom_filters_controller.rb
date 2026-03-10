@@ -12,7 +12,7 @@ class Api::V1::Accounts::CustomFiltersController < Api::V1::Accounts::BaseContro
     @custom_filter = Current.account.custom_filters.create!(
       permitted_payload.merge(user: Current.user)
     )
-    render json: { error: @custom_filter.errors.messages }, status: :unprocessable_entity and return unless @custom_filter.valid?
+    render json: { error: @custom_filter.errors.messages }, status: :unprocessable_content and return unless @custom_filter.valid?
   end
 
   def update

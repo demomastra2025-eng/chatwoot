@@ -219,7 +219,7 @@ RSpec.describe 'Summary Reports API', type: :request do
             headers: admin.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('errors.reports.date_range_too_long'))
       end
     end

@@ -18,7 +18,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
     if response.nil?
       render json: { message: nil }
     elsif response[:error]
-      render json: { error: response[:error] }, status: :unprocessable_entity
+      render json: { error: response[:error] }, status: :unprocessable_content
     else
       render json: { message: response[:message] }
     end

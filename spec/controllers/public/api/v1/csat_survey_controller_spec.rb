@@ -44,7 +44,7 @@ RSpec.describe 'Public Survey Responses API', type: :request do
       patch "/public/api/v1/csat_survey/#{conversation.uuid}",
             params: params,
             as: :json
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 end

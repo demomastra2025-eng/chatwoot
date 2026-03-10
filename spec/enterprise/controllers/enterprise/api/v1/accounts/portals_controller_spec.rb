@@ -105,7 +105,7 @@ RSpec.describe 'Enterprise Portal API', type: :request do
             headers: agent.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Custom domain is not configured')
       end
 
@@ -151,7 +151,7 @@ RSpec.describe 'Enterprise Portal API', type: :request do
             headers: agent.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(['API token not found'])
       end
     end

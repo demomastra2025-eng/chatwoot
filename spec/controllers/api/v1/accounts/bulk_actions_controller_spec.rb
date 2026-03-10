@@ -39,7 +39,7 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
              headers: agent.create_new_auth_token,
              params: { type: 'Test', fields: { status: 'snoozed' }, ids: %w[1 2 3] }
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'Bulk update conversation status' do

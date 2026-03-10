@@ -11,7 +11,7 @@ class Api::V1::Accounts::Integrations::DyteController < Api::V1::Accounts::BaseC
     if @message.content_type != 'integrations'
       return render json: {
         error: I18n.t('errors.dyte.invalid_message_type')
-      }, status: :unprocessable_entity
+      }, status: :unprocessable_content
     end
 
     render_response(
@@ -26,7 +26,7 @@ class Api::V1::Accounts::Integrations::DyteController < Api::V1::Accounts::BaseC
   end
 
   def render_response(response)
-    render json: response, status: response[:error].blank? ? :ok : :unprocessable_entity
+    render json: response, status: response[:error].blank? ? :ok : :unprocessable_content
   end
 
   def dyte_processor_service

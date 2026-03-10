@@ -64,7 +64,7 @@ RSpec.describe 'Webhooks API', type: :request do
              params: { account_id: account.id, inbox_id: inbox.id, url: 'javascript:alert(1)' },
              headers: administrator.create_new_auth_token,
              as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['message']).to eql 'Url is invalid'
       end
 
@@ -73,7 +73,7 @@ RSpec.describe 'Webhooks API', type: :request do
              params: { url: 'https://hello.com', subscriptions: ['conversation_random_event'] },
              headers: administrator.create_new_auth_token,
              as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['message']).to eql 'Subscriptions Invalid events'
       end
 
@@ -82,7 +82,7 @@ RSpec.describe 'Webhooks API', type: :request do
              params: { url: 'https://hello.com', subscriptions: [] },
              headers: administrator.create_new_auth_token,
              as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['message']).to eql 'Subscriptions Invalid events'
       end
 

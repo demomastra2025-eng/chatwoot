@@ -139,7 +139,7 @@ RSpec.describe 'Companies API', type: :request do
         get "/api/v1/accounts/#{account.id}/companies/search",
             headers: admin.create_new_auth_token,
             as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Specify search string with parameter q')
       end
 
@@ -266,7 +266,7 @@ RSpec.describe 'Companies API', type: :request do
              params: invalid_params,
              headers: admin.create_new_auth_token,
              as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
   end

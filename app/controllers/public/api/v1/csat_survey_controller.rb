@@ -5,7 +5,7 @@ class Public::Api::V1::CsatSurveyController < PublicController
   def show; end
 
   def update
-    render json: { error: 'You cannot update the CSAT survey after 14 days' }, status: :unprocessable_entity and return if check_csat_locked
+    render json: { error: 'You cannot update the CSAT survey after 14 days' }, status: :unprocessable_content and return if check_csat_locked
 
     @message.update!(message_update_params[:message])
   end

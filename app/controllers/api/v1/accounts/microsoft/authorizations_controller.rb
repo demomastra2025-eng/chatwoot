@@ -13,7 +13,7 @@ class Api::V1::Accounts::Microsoft::AuthorizationsController < Api::V1::Accounts
     if redirect_url
       render json: { success: true, url: redirect_url }
     else
-      render json: { success: false }, status: :unprocessable_entity
+      render json: { success: false }, status: :unprocessable_content
     end
   end
 end

@@ -122,6 +122,32 @@ Rails.application.routes.draw do
           end
           resources :campaigns, only: [:index, :create, :show, :update, :destroy]
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
+          namespace :scheduling do
+            resource :calendar, only: [:show], controller: 'calendar'
+            resources :resources, only: [:index, :show, :create, :update, :destroy] do
+              resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
+              resource :break_rules, only: [:show, :update], controller: 'resource_break_rules'
+            end
+            resources :contacts, only: [:index, :create, :update]
+            resources :services, only: [:index, :show, :create, :update, :destroy]
+            resources :appointments, only: [:index, :show, :create, :update] do
+              post :cancel, on: :member
+              resources :payments, only: [:create], controller: 'appointment_payments'
+              delete :payments, on: :member, to: 'appointment_payments#destroy'
+            end
+            resources :payments, only: [:index]
+            resources :expenses, only: [:index] do
+              collection do
+                post :pay_all
+              end
+              member do
+                post :pay
+              end
+            end
+            resources :holidays, only: [:index, :create, :update, :destroy]
+            resources :workday_overrides, only: [:index, :create, :update, :destroy]
+            resources :time_offs, only: [:index, :create, :update, :destroy]
+          end
           namespace :channels do
             resource :twilio_channel, only: [:create]
           end

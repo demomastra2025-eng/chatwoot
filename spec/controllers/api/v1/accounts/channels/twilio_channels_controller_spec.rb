@@ -138,7 +138,7 @@ RSpec.describe '/api/v1/accounts/{account.id}/channels/twilio_channel', type: :r
                params: params,
                headers: admin.create_new_auth_token
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
         end
       end
 

@@ -3548,9 +3548,9 @@
         "type": "object",
         "properties": {
           "app_id": {
-            "type": "integer",
+            "type": "string",
             "description": "The ID of app for which integration hook is being created",
-            "example": 1
+            "example": "webhook"
           },
           "inbox_id": {
             "type": "integer",
@@ -3558,9 +3558,14 @@
             "example": 1
           },
           "status": {
-            "type": "integer",
-            "description": "The status of the integration (0 for inactive, 1 for active)",
-            "example": 1
+            "type": "string",
+            "description": "The status of the integration",
+            "example": "enabled"
+          },
+          "access_token": {
+            "type": "string",
+            "description": "Secret token stored separately from integration settings",
+            "example": "secret-token"
           },
           "settings": {
             "type": "object",
@@ -3573,9 +3578,14 @@
         "type": "object",
         "properties": {
           "status": {
-            "type": "integer",
-            "description": "The status of the integration (0 for inactive, 1 for active)",
-            "example": 1
+            "type": "string",
+            "description": "The status of the integration",
+            "example": "disabled"
+          },
+          "access_token": {
+            "type": "string",
+            "description": "Optional replacement secret token. Omit or send an empty value to keep the existing token.",
+            "example": "secret-token"
           },
           "settings": {
             "type": "object",
@@ -5762,6 +5772,7 @@
         "Messages",
         "Profile",
         "Reports",
+        "Scheduling",
         "Teams",
         "Webhooks",
         "Automation Rule",

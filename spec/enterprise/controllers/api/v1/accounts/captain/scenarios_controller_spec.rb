@@ -150,7 +150,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
                headers: admin.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
         end
       end
     end
@@ -211,7 +211,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
                 headers: admin.create_new_auth_token,
                 as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
         end
       end
     end

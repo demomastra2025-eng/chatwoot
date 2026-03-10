@@ -165,7 +165,7 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
              headers: administrator.create_new_auth_token,
              params: params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
       end
 
@@ -258,7 +258,7 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
             params: { actions: [{ 'action_name': :send_attachment, 'action_params': [999_999] }] },
             headers: administrator.create_new_auth_token
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
       end
 

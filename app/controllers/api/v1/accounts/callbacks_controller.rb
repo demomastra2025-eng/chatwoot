@@ -63,7 +63,7 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
       end
     end
 
-    head :unprocessable_entity
+    head :unprocessable_content
   end
 
   private

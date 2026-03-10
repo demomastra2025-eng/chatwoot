@@ -35,7 +35,7 @@ RSpec.describe 'Shopify Integration API', type: :request do
              headers: agent.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Shop domain is required')
       end
     end
@@ -121,7 +121,7 @@ RSpec.describe 'Shopify Integration API', type: :request do
             headers: agent.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Contact information missing')
       end
 

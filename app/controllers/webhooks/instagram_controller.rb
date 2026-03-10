@@ -17,7 +17,7 @@ class Webhooks::InstagramController < ActionController::API
       render json: :ok
     else
       Rails.logger.warn("Message is not received from the instagram webhook event: #{params['object']}")
-      head :unprocessable_entity
+      head :unprocessable_content
     end
   end
 

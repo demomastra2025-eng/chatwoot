@@ -11,7 +11,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
   def teams
     teams = linear_processor_service.teams
     if teams[:error]
-      render json: { error: teams[:error] }, status: :unprocessable_entity
+      render json: { error: teams[:error] }, status: :unprocessable_content
     else
       render json: teams[:data], status: :ok
     end
@@ -21,7 +21,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
     team_id = permitted_params[:team_id]
     team_entities = linear_processor_service.team_entities(team_id)
     if team_entities[:error]
-      render json: { error: team_entities[:error] }, status: :unprocessable_entity
+      render json: { error: team_entities[:error] }, status: :unprocessable_content
     else
       render json: team_entities[:data], status: :ok
     end
@@ -30,7 +30,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
   def create_issue
     issue = linear_processor_service.create_issue(permitted_params, Current.user)
     if issue[:error]
-      render json: { error: issue[:error] }, status: :unprocessable_entity
+      render json: { error: issue[:error] }, status: :unprocessable_content
     else
       Linear::ActivityMessageService.new(
         conversation: @conversation,
@@ -47,7 +47,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
     title = permitted_params[:title]
     issue = linear_processor_service.link_issue(conversation_link, issue_id, title, Current.user)
     if issue[:error]
-      render json: { error: issue[:error] }, status: :unprocessable_entity
+      render json: { error: issue[:error] }, status: :unprocessable_content
     else
       Linear::ActivityMessageService.new(
         conversation: @conversation,
@@ -65,7 +65,7 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
     issue = linear_processor_service.unlink_issue(link_id)
 
     if issue[:error]
-      render json: { error: issue[:error] }, status: :unprocessable_entity
+      render json: { error: issue[:error] }, status: :unprocessable_content
     else
       Linear::ActivityMessageService.new(
         conversation: @conversation,
@@ -81,19 +81,19 @@ class Api::V1::Accounts::Integrations::LinearController < Api::V1::Accounts::Bas
     issues = linear_processor_service.linked_issues(conversation_link)
 
     if issues[:error]
-      render json: { error: issues[:error] }, status: :unprocessable_entity
+      render json: { error: issues[:error] }, status: :unprocessable_content
     else
       render json: issues[:data], status: :ok
     end
   end
 
   def search_issue
-    render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_entity if params[:q].blank? && return
+    render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_content if params[:q].blank? && return
 
     term = params[:q]
     issues = linear_processor_service.search_issue(term)
     if issues[:error]
-      render json: { error: issues[:error] }, status: :unprocessable_entity
+      render json: { error: issues[:error] }, status: :unprocessable_content
     else
       render json: issues[:data], status: :ok
     end

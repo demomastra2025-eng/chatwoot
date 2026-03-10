@@ -14,7 +14,7 @@ class Api::V1::Accounts::CategoriesController < Api::V1::Accounts::BaseControlle
   def create
     @category = @portal.categories.create!(category_params)
     @category.related_categories << related_categories_records
-    render json: { error: @category.errors.messages }, status: :unprocessable_entity and return unless @category.valid?
+    render json: { error: @category.errors.messages }, status: :unprocessable_content and return unless @category.valid?
 
     @category.save!
   end
@@ -22,7 +22,7 @@ class Api::V1::Accounts::CategoriesController < Api::V1::Accounts::BaseControlle
   def update
     @category.update!(category_params)
     @category.related_categories = related_categories_records if related_categories_records.any?
-    render json: { error: @category.errors.messages }, status: :unprocessable_entity and return unless @category.valid?
+    render json: { error: @category.errors.messages }, status: :unprocessable_content and return unless @category.valid?
 
     @category.save!
   end

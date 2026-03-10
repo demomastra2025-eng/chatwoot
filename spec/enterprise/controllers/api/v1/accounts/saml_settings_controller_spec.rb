@@ -145,7 +145,7 @@ RSpec.describe 'Api::V1::Accounts::SamlSettings', type: :request do
                headers: administrator.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(AccountSamlSettings.count).to eq(0)
         end
       end

@@ -71,7 +71,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def sync_templates
-    return render status: :unprocessable_entity, json: { error: 'Template sync is only available for WhatsApp channels' } unless whatsapp_channel?
+    return render status: :unprocessable_content, json: { error: 'Template sync is only available for WhatsApp channels' } unless whatsapp_channel?
 
     trigger_template_sync
     render status: :ok, json: { message: 'Template sync initiated successfully' }
@@ -84,7 +84,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render json: health_data
   rescue StandardError => e
     Rails.logger.error "[INBOX HEALTH] Error fetching health data: #{e.message}"
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   end
 
   private
@@ -135,7 +135,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def validate_and_update_email_channel(channel_attributes)
     validate_email_channel(channel_attributes)
   rescue StandardError => e
-    render json: { message: e }, status: :unprocessable_entity and return
+    render json: { message: e }, status: :unprocessable_content and return
   end
 
   def reauthorize_and_update_channel(channel_attributes)

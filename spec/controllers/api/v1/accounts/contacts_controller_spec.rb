@@ -209,7 +209,7 @@ RSpec.describe 'Contacts API', type: :request do
 
         json_response = response.parsed_body
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(json_response['error']).to eq('File is blank')
       end
     end
@@ -457,7 +457,7 @@ RSpec.describe 'Contacts API', type: :request do
              headers: admin.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include('Invalid operator. The allowed operators for country_code are [equal_to,not_equal_to]')
       end
 
@@ -471,7 +471,7 @@ RSpec.describe 'Contacts API', type: :request do
              headers: admin.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.body).to include('Invalid value. The values provided for country_code are invalid"')
       end
     end
@@ -576,7 +576,7 @@ RSpec.describe 'Contacts API', type: :request do
         post "/api/v1/accounts/#{account.id}/contacts", headers: admin.create_new_auth_token,
                                                         params: valid_params
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
 
         json_response = response.parsed_body
         expect(json_response['message']).to eq('Name is too long (maximum is 255 characters)')
@@ -646,7 +646,7 @@ RSpec.describe 'Contacts API', type: :request do
               params: valid_params.merge({ email: other_contact.email }),
               as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['attributes']).to include('email')
       end
 
@@ -658,7 +658,7 @@ RSpec.describe 'Contacts API', type: :request do
               params: valid_params.merge({ phone_number: other_contact.phone_number }),
               as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['attributes']).to include('phone_number')
       end
 
@@ -743,7 +743,7 @@ RSpec.describe 'Contacts API', type: :request do
         delete "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
                headers: admin.create_new_auth_token
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'returns unauthorized for agent user' do

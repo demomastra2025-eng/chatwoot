@@ -120,11 +120,13 @@ Repo paths below are relative to the Onelink repository root unless stated other
 - Source new component ideas in this order:
   1. existing `components-next` components and stories
   2. similar route screens already present in `onelink`
-  3. `reka-ui` for accessible headless primitives
-  4. `shadcn-vue` for recipes and implementation patterns
-  5. `PrimeVue` for dense admin/table/filter patterns only when local wrappers are insufficient
-  6. `Inspira UI` for visual inspiration only
+  3. `VueUse` for composables, directives, interaction helpers, browser APIs, and lightweight renderless behavior
+  4. `reka-ui` for accessible headless primitives
+  5. `originui-vue` for copy-paste Vue component composition and polished Tailwind app patterns
+  6. `shadcn-vue` for recipes and implementation patterns
+  7. `Inspira UI` for visual inspiration only
 - Wrap third-party primitives in local components instead of letting external libraries become the public UI API of the app.
+- Prefer `VueUse` before adding small utility packages for outside-click, resize, scroll, storage, debounce, media query, or query-param behavior.
 - For a current native module reference, use `app/javascript/dashboard/routes/dashboard/scheduling/`, `app/javascript/dashboard/components-next/Scheduling/`, `app/javascript/dashboard/stores/scheduling/`, and `app/services/scheduling/`.
 
 ## Architecture Sources

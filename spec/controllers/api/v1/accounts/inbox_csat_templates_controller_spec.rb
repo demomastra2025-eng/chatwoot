@@ -179,7 +179,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
              params: invalid_params,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Message is required')
       end
 
@@ -189,7 +189,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
              params: {},
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Template parameters are required')
       end
 
@@ -260,7 +260,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
              params: valid_template_params,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         response_data = response.parsed_body
         expect(response_data['error']).to eq('The template message contains invalid content. Please review your message and try again.')
         expect(response_data['details']).to include({
@@ -283,7 +283,7 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
              params: valid_template_params,
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Network timeout')
       end
 

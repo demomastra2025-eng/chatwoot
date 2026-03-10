@@ -341,7 +341,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
             params: { group_by: 'invalid', since: since_epoch, until: until_epoch },
             headers: admin.create_new_auth_token, as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
 
       it 'returns outgoing message counts grouped by agent' do

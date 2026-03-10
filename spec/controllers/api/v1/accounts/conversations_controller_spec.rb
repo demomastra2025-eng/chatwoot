@@ -181,7 +181,7 @@ RSpec.describe 'Conversations API', type: :request do
              },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         response_data = JSON.parse(response.body, symbolize_names: true)
         expect(response_data[:error]).to include('Invalid attribute key - [phone_number]')
       end
@@ -198,7 +198,7 @@ RSpec.describe 'Conversations API', type: :request do
              },
              as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         response_data = JSON.parse(response.body, symbolize_names: true)
         expect(response_data[:error]).to eq('Invalid operator. The allowed operators for status are [equal_to,not_equal_to].')
       end
@@ -353,7 +353,7 @@ RSpec.describe 'Conversations API', type: :request do
                headers: agent.create_new_auth_token,
                params: { source_id: contact_inbox.source_id, inbox_id: inbox.id, contact_id: new_contact.id },
                as: :json
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
         end
 
         it 'creates a conversation in specificed status' do
@@ -891,7 +891,7 @@ RSpec.describe 'Conversations API', type: :request do
              headers: agent.create_new_auth_token,
              params: {},
              as: :json
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
   end

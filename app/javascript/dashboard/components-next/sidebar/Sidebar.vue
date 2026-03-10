@@ -467,6 +467,38 @@ const menuItems = computed(() => {
       ],
     },
     {
+      name: 'Scheduling',
+      label: t('SIDEBAR.SCHEDULING'),
+      icon: 'i-lucide-calendar-range',
+      children: [
+        {
+          name: 'Scheduling Calendar',
+          label: t('SIDEBAR.SCHEDULING_CALENDAR'),
+          to: accountScopedRoute('scheduling_calendar'),
+        },
+        {
+          name: 'Scheduling Resources',
+          label: t('SIDEBAR.SCHEDULING_RESOURCES'),
+          to: accountScopedRoute('scheduling_resources'),
+        },
+        {
+          name: 'Scheduling Services',
+          label: t('SIDEBAR.SCHEDULING_SERVICES'),
+          to: accountScopedRoute('scheduling_services'),
+        },
+        {
+          name: 'Scheduling Exceptions',
+          label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
+          to: accountScopedRoute('scheduling_exceptions'),
+        },
+        {
+          name: 'Scheduling Kassa',
+          label: t('SIDEBAR.SCHEDULING_KASSA'),
+          to: accountScopedRoute('scheduling_kassa'),
+        },
+      ],
+    },
+    {
       name: 'Reports',
       label: t('SIDEBAR.REPORTS'),
       icon: 'i-lucide-chart-spline',

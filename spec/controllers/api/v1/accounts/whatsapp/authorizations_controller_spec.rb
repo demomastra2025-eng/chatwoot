@@ -26,7 +26,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.parsed_body['error']).to include('code')
         end
 
@@ -39,7 +39,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.parsed_body['error']).to include('business_id')
         end
 
@@ -52,7 +52,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.parsed_body['error']).to include('waba_id')
         end
 
@@ -162,7 +162,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           response_data = response.parsed_body
           expect(response_data['success']).to be false
           expect(response_data['error']).to eq('Service error')
@@ -197,7 +197,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.parsed_body['error']).to eq('Invalid authorization code')
         end
 
@@ -214,7 +214,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: agent.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.parsed_body['error']).to eq('Channel already exists')
         end
       end
@@ -347,7 +347,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: administrator.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['success']).to be false
           expect(json_response['error']).to eq('Token exchange failed')
@@ -375,7 +375,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: administrator.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['success']).to be false
           expect(json_response['error']).to include('Phone number mismatch')
@@ -417,7 +417,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: administrator.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['success']).to be false
         end
@@ -442,7 +442,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
                headers: administrator.create_new_auth_token,
                as: :json
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['success']).to be false
         end
@@ -478,7 +478,7 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
              as: :json
 
         # Agents should get unprocessable_entity since they can find the inbox but channel doesn't need reauth
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
       end
     end
 

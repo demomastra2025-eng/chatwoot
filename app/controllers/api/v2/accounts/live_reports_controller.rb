@@ -38,7 +38,7 @@ class Api::V2::Accounts::LiveReportsController < Api::V1::Accounts::BaseControll
   end
 
   def set_group_scope
-    render json: { error: 'invalid group_by' }, status: :unprocessable_entity and return unless %w[
+    render json: { error: 'invalid group_by' }, status: :unprocessable_content and return unless %w[
       team_id
       assignee_id
     ].include?(permitted_params[:group_by])

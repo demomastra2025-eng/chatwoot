@@ -33,7 +33,7 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
       post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/#{conversation.display_id}/messages",
            params: { content: content }
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
 
       json_response = response.parsed_body
 
@@ -93,7 +93,7 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
             params: { submitted_values: { csat_survey_response: { rating: 4, feedback_message: 'amazing experience' } } },
             as: :json
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
     end
   end
 end

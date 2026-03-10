@@ -49,7 +49,7 @@ RSpec.describe 'Linear Integration API', type: :request do
           get "/api/v1/accounts/#{account.id}/integrations/linear/teams",
               headers: agent.create_new_auth_token,
               as: :json
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -91,7 +91,7 @@ RSpec.describe 'Linear Integration API', type: :request do
               params: { team_id: team_id },
               headers: agent.create_new_auth_token,
               as: :json
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -159,7 +159,7 @@ RSpec.describe 'Linear Integration API', type: :request do
                  as: :json
           end.not_to have_enqueued_job(Conversations::ActivityMessageJob)
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -208,7 +208,7 @@ RSpec.describe 'Linear Integration API', type: :request do
                  as: :json
           end.not_to have_enqueued_job(Conversations::ActivityMessageJob)
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -256,7 +256,7 @@ RSpec.describe 'Linear Integration API', type: :request do
                  as: :json
           end.not_to have_enqueued_job(Conversations::ActivityMessageJob)
 
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -288,7 +288,7 @@ RSpec.describe 'Linear Integration API', type: :request do
               params: { q: term },
               headers: agent.create_new_auth_token,
               as: :json
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end
@@ -321,7 +321,7 @@ RSpec.describe 'Linear Integration API', type: :request do
               params: { conversation_id: conversation.display_id },
               headers: agent.create_new_auth_token,
               as: :json
-          expect(response).to have_http_status(:unprocessable_entity)
+          expect(response).to have_http_status(:unprocessable_content)
           expect(response.body).to include('error message')
         end
       end

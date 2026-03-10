@@ -245,3 +245,9 @@
   display_name: Advanced Assignment
   enabled: false
   premium: true
+- name: scheduling
+  display_name: Scheduling
+  enabled: true
+- name: scheduling_finance
+  display_name: Scheduling Finance
+  enabled: true

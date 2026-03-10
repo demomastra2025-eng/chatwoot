@@ -22,7 +22,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def search
-    render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_entity if params[:q].blank? && return
+    render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_content if params[:q].blank? && return
 
     contacts = Current.account.contacts.where(
       'name ILIKE :search OR email ILIKE :search OR phone_number ILIKE :search OR contacts.identifier LIKE :search',
@@ -32,7 +32,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def import
-    render json: { error: I18n.t('errors.contacts.import.failed') }, status: :unprocessable_entity and return if params[:import_file].blank?
+    render json: { error: I18n.t('errors.contacts.import.failed') }, status: :unprocessable_content and return if params[:import_file].blank?
 
     ActiveRecord::Base.transaction do
       import = Current.account.data_imports.create!(data_type: 'contacts')
@@ -102,7 +102,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
       @contact.account.id, 'Contact', @contact.id
     )
       return render_error({ message: I18n.t('contacts.online.delete', contact_name: @contact.name.capitalize) },
-                          :unprocessable_entity)
+                          :unprocessable_content)
     end
 
     @contact.destroy!

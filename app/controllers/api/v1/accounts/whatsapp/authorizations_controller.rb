@@ -34,7 +34,7 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
     render json: {
       success: false,
       message: I18n.t('inbox.reauthorization.not_required')
-    }, status: :unprocessable_entity
+    }, status: :unprocessable_content
   end
 
   def can_upgrade_to_embedded_signup?
@@ -61,7 +61,7 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
     render json: {
       success: false,
       error: error.message
-    }, status: :unprocessable_entity
+    }, status: :unprocessable_content
   end
 
   def validate_embedded_signup_params!

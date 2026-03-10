@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_07_153000) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -73,6 +73,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_07_153000) do
     t.integer "status", default: 0
     t.jsonb "internal_attributes", default: {}, null: false
     t.jsonb "settings", default: {}
+    t.jsonb "feature_flags_overflow", default: [], null: false
     t.index ["status"], name: "index_accounts_on_status"
   end
 
@@ -1124,6 +1125,222 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_07_153000) do
     t.index ["user_id"], name: "index_reporting_events_on_user_id"
   end
 
+  create_table "scheduling_appointments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id", null: false
+    t.bigint "contact_id"
+    t.bigint "service_id"
+    t.bigint "company_id"
+    t.bigint "conversation_id"
+    t.bigint "created_by_id"
+    t.string "service_name_snapshot"
+    t.string "service_type_snapshot"
+    t.integer "service_duration_min_snapshot"
+    t.datetime "starts_at", null: false
+    t.datetime "ends_at", null: false
+    t.integer "duration_min", default: 30, null: false
+    t.string "status", default: "scheduled", null: false
+    t.string "appointment_type", default: "primary", null: false
+    t.string "client_name", null: false
+    t.string "client_phone"
+    t.string "client_identifier"
+    t.date "client_birth_date"
+    t.string "client_gender"
+    t.text "client_comment"
+    t.string "source", default: "manual", null: false
+    t.string "external_ref"
+    t.string "idempotency_key"
+    t.integer "service_amount", default: 0, null: false
+    t.string "compensation_type_snapshot"
+    t.integer "compensation_value_snapshot"
+    t.integer "prepaid_amount", default: 0, null: false
+    t.string "prepaid_payment_method"
+    t.integer "settlement_amount", default: 0, null: false
+    t.string "settlement_payment_method"
+    t.string "payment_status", default: "awaiting_payment", null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
+    t.index ["account_id", "starts_at"], name: "idx_scheduling_appointments_on_account_starts_at"
+    t.index ["account_id"], name: "index_scheduling_appointments_on_account_id"
+    t.index ["company_id"], name: "index_scheduling_appointments_on_company_id"
+    t.index ["contact_id"], name: "index_scheduling_appointments_on_contact_id"
+    t.index ["conversation_id"], name: "index_scheduling_appointments_on_conversation_id"
+    t.index ["created_by_id"], name: "index_scheduling_appointments_on_created_by_id"
+    t.index ["resource_id"], name: "index_scheduling_appointments_on_resource_id"
+    t.index ["service_id"], name: "index_scheduling_appointments_on_service_id"
+  end
+
+  create_table "scheduling_break_rules", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id", null: false
+    t.integer "weekday", null: false
+    t.integer "start_minute", null: false
+    t.integer "end_minute", null: false
+    t.string "title"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "weekday", "active"], name: "idx_scheduling_break_rules_on_account_resource_weekday"
+    t.index ["account_id"], name: "index_scheduling_break_rules_on_account_id"
+    t.index ["resource_id", "weekday", "start_minute", "end_minute"], name: "idx_scheduling_break_rules_on_resource_slot", unique: true
+    t.index ["resource_id"], name: "index_scheduling_break_rules_on_resource_id"
+  end
+
+  create_table "scheduling_expenses", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "appointment_id", null: false
+    t.bigint "resource_id", null: false
+    t.bigint "paid_by_id"
+    t.integer "amount", default: 0, null: false
+    t.string "status", default: "unpaid", null: false
+    t.datetime "paid_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "idx_scheduling_expenses_on_account_status"
+    t.index ["account_id"], name: "index_scheduling_expenses_on_account_id"
+    t.index ["appointment_id"], name: "index_scheduling_expenses_on_appointment_id", unique: true
+    t.index ["paid_by_id"], name: "index_scheduling_expenses_on_paid_by_id"
+    t.index ["resource_id"], name: "index_scheduling_expenses_on_resource_id"
+  end
+
+  create_table "scheduling_holidays", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.date "date", null: false
+    t.string "title", null: false
+    t.boolean "recurring_yearly", default: false, null: false
+    t.boolean "working_day_override", default: false, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "date"], name: "idx_scheduling_holidays_on_account_date"
+    t.index ["account_id"], name: "index_scheduling_holidays_on_account_id"
+  end
+
+  create_table "scheduling_payments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "appointment_id", null: false
+    t.bigint "recorded_by_id"
+    t.integer "amount", default: 0, null: false
+    t.string "payment_method", null: false
+    t.string "payment_kind", default: "payment", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_scheduling_payments_on_account_created_at"
+    t.index ["account_id"], name: "index_scheduling_payments_on_account_id"
+    t.index ["appointment_id", "payment_kind"], name: "idx_scheduling_payments_on_appointment_adjustment", unique: true, where: "((payment_kind)::text = 'adjustment'::text)"
+    t.index ["appointment_id", "payment_kind"], name: "idx_scheduling_payments_on_appointment_prepaid", unique: true, where: "((payment_kind)::text = 'prepaid'::text)"
+    t.index ["appointment_id"], name: "index_scheduling_payments_on_appointment_id"
+    t.index ["recorded_by_id"], name: "index_scheduling_payments_on_recorded_by_id"
+  end
+
+  create_table "scheduling_resources", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id"
+    t.string "name", null: false
+    t.string "specialty"
+    t.string "photo_url"
+    t.text "description"
+    t.string "color"
+    t.string "timezone", default: "Asia/Almaty", null: false
+    t.integer "slot_duration_min", default: 30, null: false
+    t.string "compensation_type", default: "percent", null: false
+    t.integer "compensation_value", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active", "name"], name: "idx_scheduling_resources_on_account_active_name"
+    t.index ["account_id"], name: "index_scheduling_resources_on_account_id"
+    t.index ["user_id"], name: "index_scheduling_resources_on_user_id"
+  end
+
+  create_table "scheduling_service_prices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "service_id", null: false
+    t.bigint "resource_id", null: false
+    t.integer "price", default: 0, null: false
+    t.string "compensation_type", default: "percent", null: false
+    t.integer "compensation_value", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "active"], name: "idx_scheduling_service_prices_on_account_resource_active"
+    t.index ["account_id"], name: "index_scheduling_service_prices_on_account_id"
+    t.index ["resource_id"], name: "index_scheduling_service_prices_on_resource_id"
+    t.index ["service_id", "resource_id"], name: "idx_scheduling_service_prices_on_service_resource", unique: true
+    t.index ["service_id"], name: "index_scheduling_service_prices_on_service_id"
+  end
+
+  create_table "scheduling_services", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.integer "base_price", default: 0, null: false
+    t.integer "duration_min", default: 30, null: false
+    t.string "category"
+    t.string "direction"
+    t.string "service_type"
+    t.text "description"
+    t.boolean "active", default: true, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active", "name"], name: "idx_scheduling_services_on_account_active_name"
+    t.index ["account_id"], name: "index_scheduling_services_on_account_id"
+  end
+
+  create_table "scheduling_time_offs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id"
+    t.string "kind", null: false
+    t.datetime "starts_at", null: false
+    t.datetime "ends_at", null: false
+    t.string "title"
+    t.text "notes"
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_time_offs_on_account_resource_range"
+    t.index ["account_id"], name: "index_scheduling_time_offs_on_account_id"
+    t.index ["resource_id"], name: "index_scheduling_time_offs_on_resource_id"
+  end
+
+  create_table "scheduling_work_rules", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id", null: false
+    t.integer "weekday", null: false
+    t.integer "start_minute", null: false
+    t.integer "end_minute", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "weekday", "active"], name: "idx_scheduling_work_rules_on_account_resource_weekday"
+    t.index ["account_id"], name: "index_scheduling_work_rules_on_account_id"
+    t.index ["resource_id", "weekday", "start_minute", "end_minute"], name: "idx_scheduling_work_rules_on_resource_slot", unique: true
+    t.index ["resource_id"], name: "index_scheduling_work_rules_on_resource_id"
+  end
+
+  create_table "scheduling_workday_overrides", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "resource_id", null: false
+    t.date "date", null: false
+    t.integer "start_minute", null: false
+    t.integer "end_minute", null: false
+    t.integer "break_start_minute"
+    t.integer "break_end_minute"
+    t.string "break_title"
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "date"], name: "idx_scheduling_workday_overrides_on_account_date"
+    t.index ["account_id"], name: "index_scheduling_workday_overrides_on_account_id"
+    t.index ["resource_id", "date"], name: "idx_scheduling_workday_overrides_on_resource_date", unique: true
+    t.index ["resource_id"], name: "index_scheduling_workday_overrides_on_resource_id"
+  end
+
   create_table "sla_events", force: :cascade do |t|
     t.bigint "applied_sla_id", null: false
     t.bigint "conversation_id", null: false
@@ -1272,6 +1489,35 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_07_153000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "inboxes", "portals"
+  add_foreign_key "scheduling_appointments", "accounts"
+  add_foreign_key "scheduling_appointments", "companies"
+  add_foreign_key "scheduling_appointments", "contacts"
+  add_foreign_key "scheduling_appointments", "conversations"
+  add_foreign_key "scheduling_appointments", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_appointments", "scheduling_services", column: "service_id"
+  add_foreign_key "scheduling_appointments", "users", column: "created_by_id"
+  add_foreign_key "scheduling_break_rules", "accounts"
+  add_foreign_key "scheduling_break_rules", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_expenses", "accounts"
+  add_foreign_key "scheduling_expenses", "scheduling_appointments", column: "appointment_id"
+  add_foreign_key "scheduling_expenses", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_expenses", "users", column: "paid_by_id"
+  add_foreign_key "scheduling_holidays", "accounts"
+  add_foreign_key "scheduling_payments", "accounts"
+  add_foreign_key "scheduling_payments", "scheduling_appointments", column: "appointment_id"
+  add_foreign_key "scheduling_payments", "users", column: "recorded_by_id"
+  add_foreign_key "scheduling_resources", "accounts"
+  add_foreign_key "scheduling_resources", "users"
+  add_foreign_key "scheduling_service_prices", "accounts"
+  add_foreign_key "scheduling_service_prices", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_service_prices", "scheduling_services", column: "service_id"
+  add_foreign_key "scheduling_services", "accounts"
+  add_foreign_key "scheduling_time_offs", "accounts"
+  add_foreign_key "scheduling_time_offs", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_work_rules", "accounts"
+  add_foreign_key "scheduling_work_rules", "scheduling_resources", column: "resource_id"
+  add_foreign_key "scheduling_workday_overrides", "accounts"
+  add_foreign_key "scheduling_workday_overrides", "scheduling_resources", column: "resource_id"
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

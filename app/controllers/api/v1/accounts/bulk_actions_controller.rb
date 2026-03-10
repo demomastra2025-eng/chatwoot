@@ -9,7 +9,7 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
       enqueue_contact_job
       head :ok
     else
-      render json: { success: false }, status: :unprocessable_entity
+      render json: { success: false }, status: :unprocessable_content
     end
   end
 

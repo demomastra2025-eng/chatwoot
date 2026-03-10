@@ -244,7 +244,7 @@ RSpec.describe 'Accounts API', type: :request do
             headers: admin.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
         expect(json_response['message']).to eq('Name is too long (maximum is 255 characters)')
       end

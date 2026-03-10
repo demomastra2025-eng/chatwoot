@@ -123,6 +123,17 @@ class Account < ApplicationRecord
   has_many :notification_settings, dependent: :destroy_async
   has_many :notifications, dependent: :destroy_async
   has_many :portals, dependent: :destroy_async, class_name: '::Portal'
+  has_many :scheduling_appointments, dependent: :destroy_async, class_name: 'Scheduling::Appointment'
+  has_many :scheduling_break_rules, dependent: :destroy_async, class_name: 'Scheduling::BreakRule'
+  has_many :scheduling_expenses, dependent: :destroy_async, class_name: 'Scheduling::Expense'
+  has_many :scheduling_holidays, dependent: :destroy_async, class_name: 'Scheduling::Holiday'
+  has_many :scheduling_payments, dependent: :destroy_async, class_name: 'Scheduling::Payment'
+  has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
+  has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
+  has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'
+  has_many :scheduling_time_offs, dependent: :destroy_async, class_name: 'Scheduling::TimeOff'
+  has_many :scheduling_work_rules, dependent: :destroy_async, class_name: 'Scheduling::WorkRule'
+  has_many :scheduling_workday_overrides, dependent: :destroy_async, class_name: 'Scheduling::WorkdayOverride'
   has_many :sms_channels, dependent: :destroy_async, class_name: '::Channel::Sms'
   has_many :teams, dependent: :destroy_async
   has_many :telegram_channels, dependent: :destroy_async, class_name: '::Channel::Telegram'

@@ -60,7 +60,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
              headers: user.create_new_auth_token,
              params: { external_url: 'not_a_url' }
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Invalid URL provided')
       end
 
@@ -69,7 +69,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
              headers: user.create_new_auth_token,
              params: { external_url: 'ftp://example.com/image.jpg' }
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Invalid URL provided')
       end
 
@@ -81,7 +81,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
              headers: user.create_new_auth_token,
              params: { external_url: 'http://nonexistent.example.com' }
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq('Invalid URL provided')
       end
 
@@ -93,7 +93,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
              headers: user.create_new_auth_token,
              params: { external_url: 'http://error.example.com' }
 
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to start_with('Failed to fetch file from URL')
       end
     end
@@ -103,7 +103,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
            headers: user.create_new_auth_token,
            params: {}
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['error']).to eq('No file or URL provided')
     end
   end

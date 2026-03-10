@@ -105,7 +105,7 @@ RSpec.describe 'Api::V1::Accounts::Categories', type: :request do
         post "/api/v1/accounts/#{account.id}/portals/#{portal.slug}/categories",
              params: category_params,
              headers: admin.create_new_auth_token
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
         expect(json_response['message']).to eql('Locale should be unique in the category and portal')
       end
@@ -123,7 +123,7 @@ RSpec.describe 'Api::V1::Accounts::Categories', type: :request do
         post "/api/v1/accounts/#{account.id}/portals/#{portal.slug}/categories",
              params: category_params,
              headers: admin.create_new_auth_token
-        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
 
         expect(json_response['message']).to eql("Slug can't be blank")
