@@ -13,7 +13,7 @@
 
 <div class="card">
   <h1><%= t("legal.#{page_key}.title") %></h1>
-  <p class="meta"><%= t("legal.shared.last_updated_label") %>: <%= t("legal.shared.last_updated_value") %></p>
+  <p class="meta"><%= t("legal.shared.last_updated_label") %>: <%= t("legal.#{page_key}.last_updated_value", default: t("legal.shared.last_updated_value")) %></p>
 
   <% Array(t("legal.#{page_key}.intro")).each do |paragraph| %>
     <p><%= paragraph %></p>
