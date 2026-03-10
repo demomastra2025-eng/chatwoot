@@ -11,6 +11,8 @@ Use this skill when the task is primarily in `app/javascript/` and needs current
 
 This skill owns frontend surface selection, component sourcing, state decisions, UI placement, and narrow verification for the existing Rails + Vue + Vite stack.
 
+When the requirement is interaction-heavy but not visually complex, this skill prefers `VueUse` before bespoke utility code or another small helper package.
+
 All repo paths below are relative to the Onelink repository root.
 
 ## Use This Skill When
@@ -56,6 +58,41 @@ All repo paths below are relative to the Onelink repository root.
 5. Prefer Tailwind utilities for new or heavily reworked UI.
 6. If the feature changes API contracts, coordinate with `onelink-api`.
 
+## VueUse First Rule
+
+Before adding a helper dependency or writing a new low-level composable, check whether `VueUse` already solves the requirement cleanly.
+
+Default `VueUse` candidates for Onelink:
+
+- interaction and DOM behavior:
+  - `useEventListener`
+  - `onClickOutside`
+  - `useResizeObserver`
+  - `useElementSize`
+  - `useWindowSize`
+  - `useBreakpoints`
+  - `useScroll`
+  - `useIntersectionObserver`
+  - `useInfiniteScroll`
+- persistence and timing:
+  - `useStorage`
+  - `useLocalStorage`
+  - `useSessionStorage`
+  - `watchDebounced`
+  - `useDebounceFn`
+  - `useThrottleFn`
+  - `useTimeoutFn`
+- composable structure:
+  - `createInjectionState`
+  - `createSharedComposable`
+  - `useToggle`
+  - `useVModel`
+  - `useVModels`
+- form and text helpers:
+  - `useTextareaAutosize`
+
+Use `VueUse` as a utility layer, not as a replacement for the app's data architecture.
+
 ## Documentation Discipline
 
 - Read the frontend docs listed above before editing.
@@ -86,6 +123,10 @@ All repo paths below are relative to the Onelink repository root.
 - do not expose third-party component APIs directly if a local wrapper is more stable
 - do not add bare strings in templates
 - do not introduce a new design language when an existing local pattern already fits
+- do not use `useFetch` or `useWebSocket` to bypass `dashboard/api/*`, existing service clients, or established transport layers
+- do not use `createGlobalState` as a default store replacement when `Pinia`, a local composable, or route state is clearer
+- do not add `VueUse` integrations or niche add-on packages unless the dependency already exists or the task clearly justifies it
+- do not read the entire `VueUse` catalog by default; pick the specific function that matches the requirement and consult only that usage pattern
 
 ## Verification
 
@@ -93,6 +134,7 @@ All repo paths below are relative to the Onelink repository root.
 - Histoire or local component preview for reusable UI when relevant
 - manual smoke check in the touched surface using the dev server
 - API coordination if the UI depends on new response fields
+- if the change relies on `VueUse`-driven behavior, add a narrow test around the derived interaction or state change when practical
 
 ## Repo Boundary Rule
 

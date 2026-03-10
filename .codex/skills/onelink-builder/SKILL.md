@@ -106,6 +106,7 @@ Load target-direction pages only when current-state docs and concrete code are n
 - Treat target-direction docs as intent, not proof of runtime implementation.
 - Search both `app/` and `enterprise/` before changing shared behavior.
 - Prefer native entities and existing extension points before introducing new abstractions.
+- For frontend behavior and utility needs, hand off to `onelink-frontend`, which already applies the project's `VueUse`-first rule before adding helper packages or bespoke low-level composables.
 - Use the narrowest verification that meaningfully covers the touched surface.
 - Do not mix unrelated staged files into a task commit just because they are already staged.
 - After changing versioned skills in `.codex/skills`, sync them into Codex home with `./.codex/scripts/sync-skills.sh to-codex-home`.
