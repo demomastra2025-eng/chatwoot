@@ -281,6 +281,10 @@
                                 "type": "integer",
                                 "nullable": true
                               },
+                              "compensation_percent": {
+                                "type": "integer",
+                                "nullable": true
+                              },
                               "active": {
                                 "type": "boolean"
                               },
@@ -825,6 +829,10 @@
                             "type": "integer",
                             "nullable": true
                           },
+                          "compensation_percent": {
+                            "type": "integer",
+                            "nullable": true
+                          },
                           "active": {
                             "type": "boolean"
                           },
@@ -941,6 +949,9 @@
                   "compensation_value": {
                     "type": "integer"
                   },
+                  "compensation_percent": {
+                    "type": "integer"
+                  },
                   "active": {
                     "type": "boolean"
                   },
@@ -995,6 +1006,10 @@
                           "nullable": true
                         },
                         "compensation_value": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "compensation_percent": {
                           "type": "integer",
                           "nullable": true
                         },
@@ -1168,6 +1183,10 @@
                           "type": "integer",
                           "nullable": true
                         },
+                        "compensation_percent": {
+                          "type": "integer",
+                          "nullable": true
+                        },
                         "active": {
                           "type": "boolean"
                         },
@@ -1315,6 +1334,9 @@
                   "compensation_value": {
                     "type": "integer"
                   },
+                  "compensation_percent": {
+                    "type": "integer"
+                  },
                   "active": {
                     "type": "boolean"
                   },
@@ -1369,6 +1391,10 @@
                           "nullable": true
                         },
                         "compensation_value": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "compensation_percent": {
                           "type": "integer",
                           "nullable": true
                         },
@@ -2934,6 +2960,10 @@
                                   "type": "integer",
                                   "nullable": true
                                 },
+                                "compensation_percent": {
+                                  "type": "integer",
+                                  "nullable": true
+                                },
                                 "active": {
                                   "type": "boolean"
                                 }
@@ -3065,6 +3095,9 @@
                         "compensation_value": {
                           "type": "integer"
                         },
+                        "compensation_percent": {
+                          "type": "integer"
+                        },
                         "active": {
                           "type": "boolean"
                         }
@@ -3140,6 +3173,10 @@
                                 "nullable": true
                               },
                               "compensation_value": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "compensation_percent": {
                                 "type": "integer",
                                 "nullable": true
                               },
@@ -3333,6 +3370,10 @@
                                 "type": "integer",
                                 "nullable": true
                               },
+                              "compensation_percent": {
+                                "type": "integer",
+                                "nullable": true
+                              },
                               "active": {
                                 "type": "boolean"
                               }
@@ -3493,6 +3534,9 @@
                         "compensation_value": {
                           "type": "integer"
                         },
+                        "compensation_percent": {
+                          "type": "integer"
+                        },
                         "active": {
                           "type": "boolean"
                         }
@@ -3568,6 +3612,10 @@
                                 "nullable": true
                               },
                               "compensation_value": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "compensation_percent": {
                                 "type": "integer",
                                 "nullable": true
                               },

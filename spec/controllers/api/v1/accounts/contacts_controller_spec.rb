@@ -538,6 +538,31 @@ RSpec.describe 'Contacts API', type: :request do
         # only the inboxes which agent has access to are shown
         expect(response.parsed_body['payload'].pluck('inbox').pluck('id')).to eq([twilio_whatsapp_inbox.id])
       end
+
+      it 'returns whatsapp web inboxes via the native service flow' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+          whatsapp_web_inbox = whatsapp_web_channel.inbox
+          create(:inbox_member, user: agent, inbox: whatsapp_web_inbox)
+          contact.update!(phone_number: '+15551234567')
+
+          get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/contactable_inboxes",
+              headers: agent.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['payload']).to include(
+            {
+              'source_id' => '15551234567',
+              'inbox' => hash_including('id' => whatsapp_web_inbox.id)
+            }
+          )
+        end
+      end
     end
   end
 

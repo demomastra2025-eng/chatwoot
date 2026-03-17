@@ -6,6 +6,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show, :health]
   before_action :validate_whatsapp_cloud_channel, only: [:health]
+  before_action :validate_whatsapp_web_channel,
+                only: [:refresh_whatsapp_web_qr, :reconnect_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web,
+                       :whatsapp_web_diagnostics]
 
   def index
     @inboxes = policy_scope(Current.account.inboxes.order_by_name.includes(:channel, { avatar_attachment: [:blob] }))
@@ -87,6 +90,50 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render json: { error: e.message }, status: :unprocessable_content
   end
 
+  def refresh_whatsapp_web_qr
+    if truthy_param?(:status_only)
+      @inbox.channel.sync_connection_state!
+    else
+      @inbox.channel.refresh_qr!
+    end
+
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def reconnect_whatsapp_web
+    @inbox.channel.reconnect!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('reconnect_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def disconnect_whatsapp_web
+    @inbox.channel.disconnect!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('disconnect_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def repair_whatsapp_web
+    @inbox.channel.repair!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('repair_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def whatsapp_web_diagnostics
+    render json: @inbox.channel.diagnostics
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('whatsapp_web_diagnostics', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
   private
 
   def fetch_inbox
@@ -107,11 +154,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def create_channel
     return unless allowed_channel_types.include?(permitted_params[:channel][:type])
 
-    account_channels_method.create!(permitted_params(channel_type_from_params::EDITABLE_ATTRS)[:channel].except(:type))
+    channel_type_from_params.create!(channel_create_attributes)
   end
 
   def allowed_channel_types
-    %w[web_widget api email line telegram whatsapp sms]
+    %w[web_widget api email line telegram whatsapp whatsapp_web sms]
   end
 
   def update_inbox_working_hours
@@ -170,6 +217,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     formatted['template'] = config['template'] if config['template'].present?
   end
 
+  def log_whatsapp_web_runtime_error(action, error)
+    Rails.logger.error(
+      "[WHATSAPP WEB] #{action} failed for inbox=#{@inbox&.id} channel=#{@inbox&.channel&.id}: #{error.class}: #{error.message}"
+    )
+  end
+
   def inbox_attributes
     [:name, :avatar, :greeting_enabled, :greeting_message, :enable_email_collect, :csat_survey_enabled,
      :enable_auto_assignment, :working_hours_enabled, :out_of_office_message, :timezone, :allow_messages_after_resolved,
@@ -193,8 +246,28 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'line' => Channel::Line,
       'telegram' => Channel::Telegram,
       'whatsapp' => Channel::Whatsapp,
+      'whatsapp_web' => Channel::WhatsappWeb,
       'sms' => Channel::Sms
     }[permitted_params[:channel][:type]]
+  end
+
+  def channel_create_attributes
+    attrs = permitted_params(channel_type_from_params::EDITABLE_ATTRS)[:channel].except(:type).merge(account: Current.account)
+    return attrs unless channel_type_from_params == Channel::WhatsappWeb
+
+    attrs[:provider_config] = whatsapp_web_provider_config(attrs[:provider_config])
+    attrs
+  end
+
+  def whatsapp_web_provider_config(existing_config)
+    config = (existing_config || {}).deep_stringify_keys
+    config['client'] ||= 'onelink'
+    config['service_user'] ||= {
+      'id' => Current.user&.id,
+      'email' => Current.user&.email,
+      'name' => Current.user&.name
+    }.compact
+    config
   end
 
   def get_channel_attributes(channel_type)
@@ -211,6 +284,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     elsif @inbox.twilio? && @inbox.channel.whatsapp?
       Channels::Twilio::TemplatesSyncJob.perform_later(@inbox.channel)
     end
+  end
+
+  def validate_whatsapp_web_channel
+    return if @inbox.whatsapp_web?
+
+    render json: { error: 'This action is only available for WhatsApp Web channels' }, status: :bad_request
+  end
+
+  def truthy_param?(key)
+    ActiveModel::Type::Boolean.new.cast(params[key])
   end
 end
 

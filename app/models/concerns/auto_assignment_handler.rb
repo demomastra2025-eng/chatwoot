@@ -9,6 +9,7 @@ module AutoAssignmentHandler
   private
 
   def run_auto_assignment
+    return if Current.suppress_runtime_events || (respond_to?(:skip_runtime_events) && skip_runtime_events)
     # Round robin kicks in on conversation create & update
     # run it only when conversation status changes to open
     return unless conversation_status_changed_to_open?

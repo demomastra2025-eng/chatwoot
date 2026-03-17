@@ -7,6 +7,7 @@ class SendReplyJob < ApplicationJob
     'Channel::Line' => ::Line::SendOnLineService,
     'Channel::Telegram' => ::Telegram::SendOnTelegramService,
     'Channel::Whatsapp' => ::Whatsapp::SendOnWhatsappService,
+    'Channel::WhatsappWeb' => ::WhatsappWeb::SendOnWhatsappWebService,
     'Channel::Sms' => ::Sms::SendOnSmsService,
     'Channel::Instagram' => ::Instagram::SendOnInstagramService,
     'Channel::Tiktok' => ::Tiktok::SendOnTiktokService,
@@ -17,6 +18,8 @@ class SendReplyJob < ApplicationJob
 
   def perform(message_id)
     message = Message.find(message_id)
+    return unless message.outgoing?
+
     channel_name = message.conversation.inbox.channel.class.to_s
 
     return send_on_facebook_page(message) if channel_name == 'Channel::FacebookPage'

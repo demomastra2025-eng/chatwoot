@@ -1,0 +1,52 @@
+get:
+  tags:
+    - Inboxes
+  operationId: whatsappWebDiagnostics
+  summary: Get WhatsApp Web diagnostics
+  description: Returns provider diagnostic counters and samples for a WhatsApp Web inbox.
+  security:
+    - userApiKey: []
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - name: id
+      in: path
+      schema:
+        type: number
+      description: ID of the inbox
+      required: true
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              counts:
+                type: object
+                additionalProperties:
+                  type: integer
+              samples:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: object
+    '400':
+      description: Invalid inbox type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '401':
+      description: Authentication error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '422':
+      description: Provider runtime error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'

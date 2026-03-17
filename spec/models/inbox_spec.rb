@@ -160,6 +160,32 @@ RSpec.describe Inbox do
     end
   end
 
+  describe '#whatsapp_web?' do
+    let(:inbox) do
+      FactoryBot.build(:inbox, channel: channel_val)
+    end
+
+    context 'when the channel type is Channel::WhatsappWeb' do
+      let(:channel_val) { Channel::WhatsappWeb.new }
+
+      it do
+        expect(inbox.whatsapp_web?).to be(true)
+        expect(inbox.display_channel_type).to eq('Channel::WhatsappWeb')
+      end
+    end
+
+    context 'when the channel is a legacy Channel::Api whatsapp web provider' do
+      let(:channel_val) do
+        Channel::Api.new(additional_attributes: { 'provider' => Channel::Api::WHATSAPP_WEB_PROVIDER })
+      end
+
+      it do
+        expect(inbox.whatsapp_web?).to be(false)
+        expect(inbox.display_channel_type).to eq('Channel::Api')
+      end
+    end
+  end
+
   describe '#validations' do
     let(:inbox) { FactoryBot.create(:inbox) }
 

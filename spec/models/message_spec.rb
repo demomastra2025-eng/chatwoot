@@ -456,11 +456,18 @@ RSpec.describe Message do
         expect { message.save! }.not_to have_enqueued_job(ConversationReplyEmailJob)
       end
 
-      it 'calls SendReplyJob for all channels' do
+      it 'calls SendReplyJob for outgoing messages' do
         allow(SendReplyJob).to receive(:perform_later).and_return(true)
         message.message_type = 'outgoing'
         message.save!
         expect(SendReplyJob).to have_received(:perform_later).with(message.id)
+      end
+
+      it 'does not call SendReplyJob for incoming messages' do
+        allow(SendReplyJob).to receive(:perform_later).and_return(true)
+        message.message_type = 'incoming'
+        message.save!
+        expect(SendReplyJob).not_to have_received(:perform_later)
       end
     end
   end

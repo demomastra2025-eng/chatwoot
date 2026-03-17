@@ -62,6 +62,8 @@ class Conversation < ApplicationRecord
   include PushDataHelper
   include ConversationMuteHelpers
 
+  attr_accessor :skip_runtime_events
+
   validates :account_id, presence: true
   validates :inbox_id, presence: true
   validates :contact_id, presence: true
@@ -219,6 +221,8 @@ class Conversation < ApplicationRecord
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
+    return if runtime_events_suppressed?
+
     notify_status_change
     create_activity
     notify_conversation_updation
@@ -266,10 +270,13 @@ class Conversation < ApplicationRecord
   end
 
   def notify_conversation_creation
+    return if runtime_events_suppressed?
+
     dispatcher_dispatch(CONVERSATION_CREATED)
   end
 
   def notify_conversation_updation
+    return if runtime_events_suppressed?
     return unless previous_changes.keys.present? && allowed_keys?
 
     dispatch_conversation_updated_event(previous_changes)
@@ -294,6 +301,10 @@ class Conversation < ApplicationRecord
     obj_from_db = self.class.find(id)
     self[:display_id] = obj_from_db[:display_id]
     self[:uuid] = obj_from_db[:uuid]
+  end
+
+  def runtime_events_suppressed?
+    skip_runtime_events || Current.suppress_runtime_events
   end
 
   def notify_status_change

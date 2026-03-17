@@ -81,6 +81,7 @@ class Message < ApplicationRecord
 
   # when you have a temperory id in your frontend and want it echoed back via action cable
   attr_accessor :echo_id
+  attr_accessor :skip_runtime_events
 
   enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
   enum content_type: {
@@ -308,17 +309,29 @@ class Message < ApplicationRecord
   end
 
   def execute_after_create_commit_callbacks
+    if runtime_events_suppressed?
+      set_conversation_activity
+      update_contact_activity(runtime_events: false)
+      return
+    end
+
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
     set_conversation_activity
     dispatch_create_events
     send_reply
     execute_message_template_hooks
-    update_contact_activity
+    update_contact_activity(runtime_events: true)
   end
 
-  def update_contact_activity
-    sender.update(last_activity_at: DateTime.now) if sender.is_a?(Contact)
+  def update_contact_activity(runtime_events: true)
+    return unless sender.is_a?(Contact)
+
+    if runtime_events
+      sender.update(last_activity_at: DateTime.now)
+    else
+      sender.update_columns(last_activity_at: Time.current, updated_at: Time.current)
+    end
   end
 
   def update_waiting_since
@@ -368,6 +381,7 @@ class Message < ApplicationRecord
   end
 
   def dispatch_update_event
+    return if runtime_events_suppressed?
     # ref: https://github.com/rails/rails/issues/44500
     # we want to skip the update event if the message is not updated
     return if previous_changes.blank?
@@ -376,6 +390,8 @@ class Message < ApplicationRecord
   end
 
   def send_reply
+    return unless outgoing?
+
     # FIXME: Giving it few seconds for the attachment to be uploaded to the service
     # active storage attaches the file only after commit
     attachments.blank? ? ::SendReplyJob.perform_later(id) : ::SendReplyJob.set(wait: 2.seconds).perform_later(id)
@@ -422,6 +438,14 @@ class Message < ApplicationRecord
 
   def reindex_for_search
     reindex(mode: :async)
+  end
+
+  def runtime_events_suppressed?
+    skip_runtime_events || imported_history_message? || Current.suppress_runtime_events
+  end
+
+  def imported_history_message?
+    content_attributes.to_h['imported_history'] == true
   end
 end
 

@@ -117,9 +117,41 @@ properties:
   phone_number:
     type: string
     description: Phone number associated with the inbox
+  conversation_pending:
+    type: boolean
+    description: Whether new live inbound WhatsApp Web conversations start in pending
+  history_lookback_days:
+    type: integer
+    description: Number of days imported during the first WhatsApp Web history sync
+  ignore_jids:
+    type: array
+    description: WhatsApp JIDs ignored by the native WhatsApp Web channel
+    items:
+      type: string
+  sign_messages:
+    type: boolean
+    description: Whether outgoing WhatsApp Web messages are signed with the agent name
+  sign_delimiter:
+    type: string
+    description: Delimiter used between the agent signature and message body for WhatsApp Web
+  import_contacts:
+    type: boolean
+    description: Whether WhatsApp Web address book contacts are imported
+  import_messages:
+    type: boolean
+    description: Whether WhatsApp Web history messages are imported
+  sync_labels:
+    type: boolean
+    description: Whether WhatsApp labels are synced into Onelink labels
   medium:
     type: string
     description: Medium of communication (e.g., sms, email)
   provider:
     type: string
     description: Provider of the channel
+  provider_config:
+    type: object
+    description: Provider-specific configuration returned for administrator users on supported channels
+  additional_attributes:
+    type: object
+    description: Channel-specific additional attributes, including WhatsApp Web runtime state

@@ -10,7 +10,7 @@ end
 json.inbox do
   json.id conversation.inbox.id
   json.name conversation.inbox.name
-  json.channel_type conversation.inbox.channel_type
+  json.channel_type conversation.inbox.display_channel_type
 end
 json.messages do
   json.array! conversation.messages do |message|

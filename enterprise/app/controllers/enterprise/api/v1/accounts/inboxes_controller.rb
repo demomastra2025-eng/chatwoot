@@ -22,12 +22,4 @@ module Enterprise::Api::V1::Accounts::InboxesController
     end
   end
 
-  def account_channels_method
-    case permitted_params[:channel][:type]
-    when 'voice'
-      Current.account.voice_channels
-    else
-      super
-    end
-  end
 end

@@ -247,6 +247,11 @@ Rails.application.routes.draw do
             delete :avatar, on: :member
             post :sync_templates, on: :member
             get :health, on: :member
+            post :refresh_whatsapp_web_qr, on: :member
+            post :reconnect_whatsapp_web, on: :member
+            post :disconnect_whatsapp_web, on: :member
+            post :repair_whatsapp_web, on: :member
+            get :whatsapp_web_diagnostics, on: :member
             if ChatwootApp.enterprise?
               resource :conference, only: %i[create destroy], controller: 'conference' do
                 get :token, on: :member
@@ -590,6 +595,7 @@ Rails.application.routes.draw do
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
   post 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#process_payload'
+  post 'webhooks/whatsapp_web/:webhook_identifier', to: 'webhooks/whatsapp_web#process_payload'
   get 'webhooks/instagram', to: 'webhooks/instagram#verify'
   post 'webhooks/instagram', to: 'webhooks/instagram#events'
   post 'webhooks/tiktok', to: 'webhooks/tiktok#events'

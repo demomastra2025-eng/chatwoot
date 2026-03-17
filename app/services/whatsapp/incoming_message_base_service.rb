@@ -45,9 +45,10 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def process_statuses
-    return unless find_message_by_source_id(@processed_params[:statuses].first[:id])
-
-    update_message_with_status(@message, @processed_params[:statuses].first)
+    status_payload = @processed_params[:statuses].first
+    find_message_by_source_id(status_payload[:id])
+    update_message_with_status(@message, status_payload) if @message.present?
+    update_campaign_delivery_with_status(status_payload)
   rescue ArgumentError => e
     Rails.logger.error "Error while processing whatsapp status update #{e.message}"
   end
@@ -59,6 +60,18 @@ class Whatsapp::IncomingMessageBaseService
       message.external_error = "#{error[:code]}: #{error[:title]}"
     end
     message.save!
+  end
+
+  def update_campaign_delivery_with_status(status)
+    delivery = CampaignDelivery.find_by(provider_message_id: status[:id], inbox_id: inbox.id)
+    return unless delivery.present?
+
+    error_message = if status[:status] == 'failed' && status[:errors].present?
+                      error = status[:errors].first
+                      "#{error[:code]}: #{error[:title]}"
+                    end
+
+    delivery.mark_status!(status: status[:status], error_message: error_message)
   end
 
   def create_messages

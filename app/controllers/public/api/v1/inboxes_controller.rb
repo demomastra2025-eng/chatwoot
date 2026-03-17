@@ -4,7 +4,7 @@ class Public::Api::V1::InboxesController < PublicController
   before_action :set_conversation
 
   def show
-    @inbox_channel = ::Channel::Api.find_by!(identifier: params[:id])
+    @inbox_channel = find_inbox_channel!(params[:id])
   end
 
   private
@@ -12,7 +12,7 @@ class Public::Api::V1::InboxesController < PublicController
   def set_inbox_channel
     return if params[:inbox_id].blank?
 
-    @inbox_channel = ::Channel::Api.find_by!(identifier: params[:inbox_id])
+    @inbox_channel = find_inbox_channel!(params[:inbox_id])
   end
 
   def set_contact_inbox
@@ -25,5 +25,14 @@ class Public::Api::V1::InboxesController < PublicController
     return if params[:conversation_id].blank?
 
     @conversation = @contact_inbox.contact.conversations.find_by!(display_id: params[:conversation_id])
+  end
+
+  def find_inbox_channel!(identifier)
+    Inbox
+      .joins("INNER JOIN #{Channel::Api.table_name} ON #{Channel::Api.table_name}.id = inboxes.channel_id")
+      .where(channel_type: Inbox::API_CHANNEL_TYPES)
+      .where(channel_api: { identifier: identifier })
+      .first!
+      .channel
   end
 end

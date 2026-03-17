@@ -214,6 +214,7 @@ x-scheduling-resource-schema: &scheduling_resource_schema
     slot_duration_min: { type: integer }
     compensation_type: { type: string, nullable: true }
     compensation_value: { type: integer, nullable: true }
+    compensation_percent: { type: integer, nullable: true }
     active: { type: boolean }
     custom_attributes:
       type: object
@@ -241,6 +242,7 @@ x-scheduling-service-schema: &scheduling_service_schema
           price: { type: integer }
           compensation_type: { type: string, nullable: true }
           compensation_value: { type: integer, nullable: true }
+          compensation_percent: { type: integer, nullable: true }
           active: { type: boolean }
 
 x-scheduling-contact-schema: &scheduling_contact_schema
@@ -543,6 +545,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               slot_duration_min: { type: integer }
               compensation_type: { type: string }
               compensation_value: { type: integer }
+              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -622,6 +625,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               slot_duration_min: { type: integer }
               compensation_type: { type: string }
               compensation_value: { type: integer }
+              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -1020,6 +1024,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                     price: { type: integer }
                     compensation_type: { type: string }
                     compensation_value: { type: integer }
+                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -1106,6 +1111,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                     price: { type: integer }
                     compensation_type: { type: string }
                     compensation_value: { type: integer }
+                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -2341,6 +2347,16 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   $ref: ./application/inboxes/get_agent_bot.yml
 /api/v1/accounts/{account_id}/inboxes/{id}/set_agent_bot:
   $ref: ./application/inboxes/set_agent_bot.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/refresh_whatsapp_web_qr:
+  $ref: ./application/inboxes/refresh_whatsapp_web_qr.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/reconnect_whatsapp_web:
+  $ref: ./application/inboxes/reconnect_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/disconnect_whatsapp_web:
+  $ref: ./application/inboxes/disconnect_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/repair_whatsapp_web:
+  $ref: ./application/inboxes/repair_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/whatsapp_web_diagnostics:
+  $ref: ./application/inboxes/whatsapp_web_diagnostics.yml
 
 # Inbox Members
 /api/v1/accounts/{account_id}/inbox_members/{inbox_id}:
