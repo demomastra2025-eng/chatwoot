@@ -1,5 +1,6 @@
 class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseService
   EVOLUTION_INTEGRATION = 'WHATSAPP-BAILEYS'.freeze
+  MEDIA_UNAVAILABLE_STATUSES = [403, 404, 410].freeze
   ECHO_JOB_CLASSES = [
     Channels::WhatsappWeb::OutgoingEchoJob.name,
     Channels::WhatsappWeb::MessageUpdateBackfillJob.name
@@ -218,6 +219,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       message: record,
       convertToMp4: convert_to_mp4
     }).deep_symbolize_keys
+  rescue RequestError => e
+    raise unless MEDIA_UNAVAILABLE_STATUSES.include?(e.status)
+
+    {
+      unavailable: true,
+      status: e.status,
+      error: e.message
+    }
   end
 
   def fetch_labels

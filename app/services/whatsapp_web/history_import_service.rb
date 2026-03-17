@@ -224,7 +224,7 @@ class WhatsappWeb::HistoryImportService
     attachment_file = download_remote_attachment(attachment_payload, source_id: source_id)
     return attachment_file if attachment_file.present?
 
-    download_provider_attachment(record, attachment_payload)
+    download_provider_attachment(record, attachment_payload, source_id: source_id)
   rescue StandardError => e
     Rails.logger.warn("[WHATSAPP WEB] Failed to import history attachment #{source_id}: #{e.message}")
     nil
@@ -237,18 +237,14 @@ class WhatsappWeb::HistoryImportService
     tempfile.binmode
     tempfile.write(Base64.decode64(attachment_payload[:base64]))
     tempfile.rewind
-    tempfile.define_singleton_method(:original_filename) { attachment_payload[:file_name] }
-    tempfile.define_singleton_method(:content_type) { attachment_payload[:mimetype] }
-    tempfile
+    annotate_attachment_file(tempfile, attachment_payload)
   end
 
   def download_remote_attachment(attachment_payload, source_id:)
     return if attachment_payload[:media_url].blank?
 
     file = Down.download(attachment_payload[:media_url])
-    file.define_singleton_method(:original_filename) { attachment_payload[:file_name] }
-    file.define_singleton_method(:content_type) { attachment_payload[:mimetype] }
-    file
+    annotate_attachment_file(file, attachment_payload)
   rescue StandardError => e
     Rails.logger.info(
       "[WHATSAPP WEB] Direct history attachment download failed for #{source_id}: #{e.message}; trying provider fallback"
@@ -256,16 +252,88 @@ class WhatsappWeb::HistoryImportService
     nil
   end
 
-  def download_provider_attachment(record, attachment_payload)
-    provider_payload = channel.provider_service.fetch_message_media(record: record)
-    return if provider_payload[:unavailable]
-    return if provider_payload[:base64].blank?
+  def annotate_attachment_file(file, attachment_payload)
+    file_name = attachment_payload[:file_name].to_s
+    content_type = detect_attachment_content_type(file, file_name) || attachment_payload[:mimetype].presence || 'application/octet-stream'
 
+    file.define_singleton_method(:original_filename) { file_name }
+    file.define_singleton_method(:content_type) { content_type }
+    file
+  end
+
+  def detect_attachment_content_type(file, file_name)
+    rewind_attachment_file(file)
+    detected_content_type = Marcel::MimeType.for(file, name: file_name)
+    rewind_attachment_file(file)
+    detected_content_type.presence
+  rescue StandardError => e
+    Rails.logger.info("[WHATSAPP WEB] Failed to detect attachment MIME type for #{file_name}: #{e.message}")
+    nil
+  end
+
+  def rewind_attachment_file(file)
+    file.rewind if file.respond_to?(:rewind)
+  end
+
+  def download_provider_attachment(record, attachment_payload, source_id:)
+    provider_payload = fetch_provider_attachment_payload(record, source_id: source_id)
+    return build_provider_attachment_file(provider_payload, attachment_payload) if provider_attachment_available?(provider_payload)
+
+    refreshed_record = refetch_provider_message(record)
+    return if refreshed_record.blank?
+
+    provider_payload = fetch_provider_attachment_payload(refreshed_record, source_id: source_id, refreshed: true)
+    return unless provider_attachment_available?(provider_payload)
+
+    build_provider_attachment_file(provider_payload, attachment_payload)
+  end
+
+  def fetch_provider_attachment_payload(record, source_id:, refreshed: false)
+    channel.provider_service.fetch_message_media(record: record)
+  rescue StandardError => e
+    stage = refreshed ? 'refreshed provider media fetch' : 'provider media fetch'
+    Rails.logger.info("[WHATSAPP WEB] #{stage} failed for #{source_id}: #{e.message}")
+    { unavailable: true }
+  end
+
+  def provider_attachment_available?(provider_payload)
+    provider_payload.present? &&
+      provider_payload[:unavailable] != true &&
+      provider_payload[:base64].present?
+  end
+
+  def build_provider_attachment_file(provider_payload, attachment_payload)
     attachment_payload[:file_name] = provider_payload[:fileName].presence || attachment_payload[:file_name]
     attachment_payload[:mimetype] = provider_payload[:mimetype].presence || attachment_payload[:mimetype]
     attachment_payload[:base64] = provider_payload[:base64]
 
     file_from_base64_payload(attachment_payload)
+  end
+
+  def refetch_provider_message(record)
+    key = record[:key].to_h.deep_symbolize_keys
+    source_id = key[:id].to_s
+    remote_jid = provider_lookup_remote_jid(key)
+    from_me = ActiveModel::Type::Boolean.new.cast(key[:fromMe])
+
+    provider_record = channel.provider_service.fetch_message_by_source_id(
+      source_id: source_id,
+      remote_jid: remote_jid,
+      from_me: from_me
+    )
+    return if provider_record.blank?
+
+    Rails.logger.info("[WHATSAPP WEB] Refetched provider record for history attachment #{source_id}")
+    provider_record.deep_symbolize_keys
+  rescue StandardError => e
+    Rails.logger.info("[WHATSAPP WEB] Provider message lookup failed for #{source_id}: #{e.message}")
+    nil
+  end
+
+  def provider_lookup_remote_jid(key)
+    WhatsappWeb::ProviderPayloadNormalizer.provider_lookup_remote_jid(
+      WhatsappWeb::ProviderPayloadNormalizer.canonical_remote_jid(key[:remoteJid], key[:remoteJidAlt], key[:remoteLid])
+    )
   end
 
   def skip_empty_history_record?(record, content:, attachment_payload:, attachment_file:)
