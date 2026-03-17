@@ -59,6 +59,8 @@ describe Twilio::OneoffSmsCampaignService do
 
       sms_campaign_service.perform
       expect(campaign.reload.completed?).to be true
+      expect(campaign.campaign_deliveries.count).to eq(3)
+      expect(campaign.campaign_deliveries.pluck(:status).uniq).to eq(['submitted'])
     end
 
     it 'uses liquid template service to process campaign message' do
@@ -100,6 +102,8 @@ describe Twilio::OneoffSmsCampaignService do
 
       sms_campaign_service.perform
       expect(campaign.reload.completed?).to be true
+      expect(campaign.campaign_deliveries.find_by(contact: contact_error).status).to eq('failed')
+      expect(campaign.campaign_deliveries.find_by(contact: contact_success).status).to eq('submitted')
     end
   end
 end

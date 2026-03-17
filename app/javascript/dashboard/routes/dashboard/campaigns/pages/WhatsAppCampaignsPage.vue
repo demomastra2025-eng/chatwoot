@@ -9,6 +9,7 @@ import CampaignLayout from 'dashboard/components-next/Campaigns/CampaignLayout.v
 import CampaignList from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignList.vue';
 import WhatsAppCampaignDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/WhatsAppCampaign/WhatsAppCampaignDialog.vue';
 import ConfirmDeleteCampaignDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/ConfirmDeleteCampaignDialog.vue';
+import CampaignAnalyticsDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignAnalyticsDialog.vue';
 import WhatsAppCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/WhatsAppCampaignEmptyState.vue';
 
 const { t } = useI18n();
@@ -21,6 +22,7 @@ const uiFlags = useMapGetter('campaigns/getUIFlags');
 const isFetchingCampaigns = computed(() => uiFlags.value.isFetching);
 
 const confirmDeleteCampaignDialogRef = ref(null);
+const campaignAnalyticsDialogRef = ref(null);
 
 const WhatsAppCampaigns = computed(
   () => getters['campaigns/getWhatsAppCampaigns'].value
@@ -33,6 +35,11 @@ const hasNoWhatsAppCampaigns = computed(
 const handleDelete = campaign => {
   selectedCampaign.value = campaign;
   confirmDeleteCampaignDialogRef.value.dialogRef.open();
+};
+
+const handleAnalytics = campaign => {
+  selectedCampaign.value = campaign;
+  campaignAnalyticsDialogRef.value.open();
 };
 </script>
 
@@ -59,6 +66,7 @@ const handleDelete = campaign => {
       v-else-if="!hasNoWhatsAppCampaigns"
       :campaigns="WhatsAppCampaigns"
       @delete="handleDelete"
+      @analytics="handleAnalytics"
     />
     <WhatsAppCampaignEmptyState
       v-else
@@ -68,6 +76,10 @@ const handleDelete = campaign => {
     />
     <ConfirmDeleteCampaignDialog
       ref="confirmDeleteCampaignDialogRef"
+      :selected-campaign="selectedCampaign"
+    />
+    <CampaignAnalyticsDialog
+      ref="campaignAnalyticsDialogRef"
       :selected-campaign="selectedCampaign"
     />
   </CampaignLayout>

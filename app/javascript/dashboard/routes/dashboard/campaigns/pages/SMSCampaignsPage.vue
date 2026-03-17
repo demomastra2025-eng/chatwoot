@@ -9,6 +9,7 @@ import CampaignLayout from 'dashboard/components-next/Campaigns/CampaignLayout.v
 import CampaignList from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignList.vue';
 import SMSCampaignDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/SMSCampaign/SMSCampaignDialog.vue';
 import ConfirmDeleteCampaignDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/ConfirmDeleteCampaignDialog.vue';
+import CampaignAnalyticsDialog from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignAnalyticsDialog.vue';
 import SMSCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/SMSCampaignEmptyState.vue';
 
 const { t } = useI18n();
@@ -21,6 +22,7 @@ const uiFlags = useMapGetter('campaigns/getUIFlags');
 const isFetchingCampaigns = computed(() => uiFlags.value.isFetching);
 
 const confirmDeleteCampaignDialogRef = ref(null);
+const campaignAnalyticsDialogRef = ref(null);
 
 const SMSCampaigns = computed(() => getters['campaigns/getSMSCampaigns'].value);
 
@@ -31,6 +33,11 @@ const hasNoSMSCampaigns = computed(
 const handleDelete = campaign => {
   selectedCampaign.value = campaign;
   confirmDeleteCampaignDialogRef.value.dialogRef.open();
+};
+
+const handleAnalytics = campaign => {
+  selectedCampaign.value = campaign;
+  campaignAnalyticsDialogRef.value.open();
 };
 </script>
 
@@ -57,6 +64,7 @@ const handleDelete = campaign => {
       v-else-if="!hasNoSMSCampaigns"
       :campaigns="SMSCampaigns"
       @delete="handleDelete"
+      @analytics="handleAnalytics"
     />
     <SMSCampaignEmptyState
       v-else
@@ -66,6 +74,10 @@ const handleDelete = campaign => {
     />
     <ConfirmDeleteCampaignDialog
       ref="confirmDeleteCampaignDialogRef"
+      :selected-campaign="selectedCampaign"
+    />
+    <CampaignAnalyticsDialog
+      ref="campaignAnalyticsDialogRef"
       :selected-campaign="selectedCampaign"
     />
   </CampaignLayout>

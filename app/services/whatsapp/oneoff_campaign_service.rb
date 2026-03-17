@@ -47,18 +47,21 @@ class Whatsapp::OneoffCampaignService
 
   def process_contact(contact)
     Rails.logger.info "Processing contact: #{contact.name} (#{contact.phone_number})"
+    delivery = ensure_delivery(contact)
 
     if contact.phone_number.blank?
+      delivery.mark_status!(status: :skipped, error_message: 'Contact has no phone number')
       Rails.logger.info "Skipping contact #{contact.name} - no phone number"
       return
     end
 
     if campaign.template_params.blank?
+      delivery.mark_status!(status: :skipped, error_message: 'WhatsApp template params are missing')
       Rails.logger.error "Skipping contact #{contact.name} - no template_params found for WhatsApp campaign"
       return
     end
 
-    send_whatsapp_template_message(to: contact.phone_number)
+    send_whatsapp_template_message(delivery: delivery, to: contact.phone_number)
   end
 
   def process_audience(audience_labels)
@@ -70,7 +73,7 @@ class Whatsapp::OneoffCampaignService
     Rails.logger.info "Campaign #{campaign.id} processing completed"
   end
 
-  def send_whatsapp_template_message(to:)
+  def send_whatsapp_template_message(delivery:, to:)
     processor = Whatsapp::TemplateProcessorService.new(
       channel: channel,
       template_params: campaign.template_params
@@ -78,19 +81,43 @@ class Whatsapp::OneoffCampaignService
 
     name, namespace, lang_code, processed_parameters = processor.call
 
-    return if name.blank?
+    if name.blank?
+      delivery.mark_status!(status: :failed, error_message: 'Unable to resolve WhatsApp template')
+      return
+    end
 
-    channel.send_template(to, {
-                            name: name,
-                            namespace: namespace,
-                            lang_code: lang_code,
-                            parameters: processed_parameters
-                          }, nil)
+    provider_message_id = channel.send_template(to, {
+                                                  name: name,
+                                                  namespace: namespace,
+                                                  lang_code: lang_code,
+                                                  parameters: processed_parameters
+                                                }, nil)
+
+    if provider_message_id.present?
+      delivery.mark_status!(
+        status: :submitted,
+        provider_message_id: provider_message_id,
+        metadata: { template_name: name, template_language: lang_code }
+      )
+    else
+      delivery.mark_status!(status: :failed, error_message: 'WhatsApp provider did not return a message id')
+    end
 
   rescue StandardError => e
+    delivery.mark_status!(status: :failed, error_message: e.message)
     Rails.logger.error "Failed to send WhatsApp template message to #{to}: #{e.message}"
     Rails.logger.error "Backtrace: #{e.backtrace.first(5).join('\n')}"
     # continue processing remaining contacts
     nil
+  end
+
+  def ensure_delivery(contact)
+    CampaignDelivery.track!(
+      campaign: campaign,
+      contact: contact,
+      target_identifier: contact.phone_number,
+      provider: channel.provider,
+      status: :pending
+    )
   end
 end
