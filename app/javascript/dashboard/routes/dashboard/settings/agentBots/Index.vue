@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
@@ -10,6 +11,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import AgentBotModal from './components/AgentBotModal.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import { getTriggerSummary } from './flowBuilder/defaultConfig';
 
 const MODAL_TYPES = {
   CREATE: 'create',
@@ -17,6 +19,8 @@ const MODAL_TYPES = {
 };
 
 const store = useStore();
+const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
 
 const agentBots = useMapGetter('agentBots/getBots');
@@ -31,7 +35,8 @@ const agentBotDeleteDialogRef = ref(null);
 const tableHeaders = computed(() => {
   return [
     t('AGENT_BOTS.LIST.TABLE_HEADER.DETAILS'),
-    t('AGENT_BOTS.LIST.TABLE_HEADER.URL'),
+    t('AGENT_BOTS.LIST.TABLE_HEADER.TYPE'),
+    t('AGENT_BOTS.LIST.TABLE_HEADER.ENTRY_POINT'),
   ];
 });
 
@@ -52,6 +57,43 @@ const openEditModal = bot => {
 const openDeletePopup = bot => {
   selectedBot.value = bot;
   agentBotDeleteDialogRef.value.open();
+};
+
+const openBuilder = botId => {
+  router.push({
+    name: 'agent_bot_builder',
+    params: {
+      accountId: route.params.accountId,
+      botId,
+    },
+  });
+};
+
+const triggerText = triggerEvent => {
+  switch (triggerEvent) {
+    case 'all_messages':
+      return t('AGENT_BOTS.BUILDER.TRIGGERS.ALL_MESSAGES');
+    case 'first_message':
+      return t('AGENT_BOTS.BUILDER.TRIGGERS.FIRST_MESSAGE');
+    case 'keyword':
+      return t('AGENT_BOTS.BUILDER.TRIGGERS.KEYWORD');
+    default:
+      return triggerEvent;
+  }
+};
+
+const triggerLabel = bot => {
+  const triggerEvent = getTriggerSummary(bot?.bot_config).event;
+  return triggerText(triggerEvent || 'all_messages');
+};
+
+const handleBotSaved = bot => {
+  if (
+    modalType.value === MODAL_TYPES.CREATE &&
+    bot?.bot_type === 'flow_builder'
+  ) {
+    openBuilder(bot.id);
+  }
 };
 
 const deleteAgentBot = async id => {
@@ -138,10 +180,40 @@ onMounted(() => {
               </div>
             </td>
             <td class="py-4 ltr:pr-4 rtl:pl-4 text-sm">
-              {{ bot.outgoing_url || bot.bot_config?.webhook_url }}
+              <span
+                class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium"
+                :class="
+                  bot.bot_type === 'flow_builder'
+                    ? 'bg-n-blue-3 text-n-blue-11'
+                    : 'bg-n-alpha-2 text-n-slate-12'
+                "
+              >
+                {{
+                  bot.bot_type === 'flow_builder'
+                    ? t('AGENT_BOTS.TYPES.FLOW_BUILDER')
+                    : t('AGENT_BOTS.TYPES.WEBHOOK')
+                }}
+              </span>
+            </td>
+            <td class="py-4 ltr:pr-4 rtl:pl-4 text-sm">
+              <span v-if="bot.bot_type === 'flow_builder'">
+                {{ triggerLabel(bot) }}
+              </span>
+              <span v-else>
+                {{ bot.outgoing_url || bot.bot_config?.webhook_url }}
+              </span>
             </td>
             <td class="py-4 min-w-xs">
               <div class="flex gap-1 justify-end">
+                <Button
+                  v-if="bot.bot_type === 'flow_builder' && !bot.system_bot"
+                  v-tooltip.top="t('AGENT_BOTS.BUILDER.OPEN')"
+                  icon="i-lucide-workflow"
+                  slate
+                  xs
+                  faded
+                  @click="openBuilder(bot.id)"
+                />
                 <Button
                   v-if="!bot.system_bot"
                   v-tooltip.top="t('AGENT_BOTS.EDIT.BUTTON_TEXT')"
@@ -173,6 +245,7 @@ onMounted(() => {
       ref="agentBotModalRef"
       :type="modalType"
       :selected-bot="selectedBot"
+      @saved="handleBotSaved"
     />
 
     <Dialog

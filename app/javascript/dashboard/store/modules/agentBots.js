@@ -4,6 +4,21 @@ import AgentBotsAPI from '../../api/agentBots';
 import InboxesAPI from '../../api/inboxes';
 import { throwErrorMessage } from '../utils/api';
 
+const appendBotFormData = (formData, botData) => {
+  formData.append('name', botData.name || '');
+  formData.append('description', botData.description || '');
+  formData.append('bot_type', botData.bot_type || 'webhook');
+  formData.append('outgoing_url', botData.outgoing_url || '');
+
+  if (botData.bot_config) {
+    formData.append('bot_config', JSON.stringify(botData.bot_config));
+  }
+
+  if (botData.avatar) {
+    formData.append('avatar', botData.avatar);
+  }
+};
+
 export const state = {
   records: [],
   uiFlags: {
@@ -53,17 +68,8 @@ export const actions = {
   create: async ({ commit }, botData) => {
     commit(types.SET_AGENT_BOT_UI_FLAG, { isCreating: true });
     try {
-      // Create FormData for file upload
       const formData = new FormData();
-      formData.append('name', botData.name);
-      formData.append('description', botData.description);
-      formData.append('bot_type', botData.bot_type || 'webhook');
-      formData.append('outgoing_url', botData.outgoing_url);
-
-      // Add avatar file if available
-      if (botData.avatar) {
-        formData.append('avatar', botData.avatar);
-      }
+      appendBotFormData(formData, botData);
 
       const response = await AgentBotsAPI.create(formData);
       commit(types.ADD_AGENT_BOT, response.data);
@@ -79,24 +85,18 @@ export const actions = {
   update: async ({ commit }, { id, data }) => {
     commit(types.SET_AGENT_BOT_UI_FLAG, { isUpdating: true });
     try {
-      // Create FormData for file upload
       const formData = new FormData();
-      formData.append('name', data.name);
-      formData.append('description', data.description);
-      formData.append('bot_type', data.bot_type || 'webhook');
-      formData.append('outgoing_url', data.outgoing_url);
-
-      if (data.avatar) {
-        formData.append('avatar', data.avatar);
-      }
+      appendBotFormData(formData, data);
 
       const response = await AgentBotsAPI.update(id, formData);
       commit(types.EDIT_AGENT_BOT, response.data);
+      return response.data;
     } catch (error) {
       throwErrorMessage(error);
     } finally {
       commit(types.SET_AGENT_BOT_UI_FLAG, { isUpdating: false });
     }
+    return null;
   },
 
   delete: async ({ commit }, id) => {
