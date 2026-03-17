@@ -15,19 +15,22 @@ class Integrations::Macrocrm::Client
     post('/estateBuy/find', { contacts_id: contact_id })
   end
 
-  def create_estate_buy(name:, phone:, message:)
-    post('/estateBuy/create', {
-           name: name,
-           phone: phone,
-           action: 'buy',
-           message: message,
-           utm: {
-             channel_medium: 'WhatsApp (One-Link)',
-             utm_source: 'whatsapp',
-             utm_medium: 'messenger',
-             utm_campaign: 'one-link'
-           }
-         })
+  def create_estate_buy(name:, phone:, message:, manager_id: nil)
+    payload = {
+      name: name,
+      phone: phone,
+      action: 'buy',
+      message: message,
+      utm: {
+        channel_medium: 'WhatsApp (One-Link)',
+        utm_source: 'whatsapp',
+        utm_medium: 'messenger',
+        utm_campaign: 'one-link'
+      }
+    }
+    payload[:manager_id] = manager_id if manager_id.present?
+
+    post('/estateBuy/create', payload)
   end
 
   def add_note(estate_id:, note:)
@@ -35,6 +38,10 @@ class Integrations::Macrocrm::Client
            id: estate_id,
            note: note
          })
+  end
+
+  def company_users
+    get('/company/getUsers')
   end
 
   private
@@ -47,6 +54,17 @@ class Integrations::Macrocrm::Client
       body: payload.to_json,
       headers: headers
     )
+
+    parsed_response = response.parsed_response
+    return parsed_response if response.success?
+
+    raise ApiError, "MacroCRM request failed for #{endpoint}: HTTP #{response.code} #{parsed_response}"
+  rescue SocketError, Net::OpenTimeout, Net::ReadTimeout, Timeout::Error => e
+    raise ApiError, "MacroCRM request failed for #{endpoint}: #{e.message}"
+  end
+
+  def get(endpoint)
+    response = HTTParty.get("#{BASE_URL}#{endpoint}", headers: headers.except('Content-Type'))
 
     parsed_response = response.parsed_response
     return parsed_response if response.success?

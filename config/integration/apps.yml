@@ -304,6 +304,23 @@ macrocrm:
           'app_id': { 'type': 'string' },
           'sync_incoming_messages': { 'type': 'boolean' },
           'sync_outgoing_messages': { 'type': 'boolean' },
+          'sync_chat_manager_from_macro': { 'type': 'boolean' },
+          'sync_chat_manager_to_macro': { 'type': 'boolean' },
+          'manager_mappings':
+            {
+              'type': 'array',
+              'items':
+                {
+                  'type': 'object',
+                  'properties':
+                    {
+                      'user_id': { 'type': 'integer' },
+                      'macro_manager_id': { 'type': 'integer' },
+                    },
+                  'required': ['user_id', 'macro_manager_id'],
+                  'additionalProperties': false,
+                },
+            },
         },
       'required': ['app_id'],
       'additionalProperties': false,
@@ -343,5 +360,35 @@ macrocrm:
         'name': 'sync_outgoing_messages',
         'value': true,
       },
+      {
+        'label': 'Assign chat manager from existing MacroCRM deal',
+        'type': 'checkbox',
+        'name': 'sync_chat_manager_from_macro',
+        'value': true,
+      },
+      {
+        'label': 'Send current chat manager to new MacroCRM deals',
+        'type': 'checkbox',
+        'name': 'sync_chat_manager_to_macro',
+        'value': true,
+      },
+      {
+        'label': 'Manager mappings JSON',
+        'type': 'textarea',
+        'name': 'manager_mappings',
+        'validation': 'JSON',
+        'validationName': 'Manager mappings',
+        'placeholder':
+          '[\n  {\n    "user_id": 12,\n    "macro_manager_id": 78731\n  },\n  {\n    "user_id": 18,\n    "macro_manager_id": 79777\n  }\n]',
+        'help': 'Optional. Example: [{"user_id": 12, "macro_manager_id": 78731}]',
+        'validation-messages': { 'JSON': 'Invalid JSON' },
+      },
     ]
-  visible_properties: ['app_id', 'sync_incoming_messages', 'sync_outgoing_messages']
+  visible_properties:
+    [
+      'app_id',
+      'sync_incoming_messages',
+      'sync_outgoing_messages',
+      'sync_chat_manager_from_macro',
+      'sync_chat_manager_to_macro',
+    ]

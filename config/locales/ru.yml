@@ -1,5 +1,9 @@
 ---
 ru:
+  activerecord:
+    errors:
+      messages:
+        record_invalid: "Ошибка валидации: %{errors}"
   hello: Привет мир
   inbox:
     reauthorization:
@@ -123,7 +127,7 @@ ru:
       resolution_count: Количество завершенных
       avg_customer_waiting_time: Среднее время ожидания клиента
     inbox_csv:
-      inbox_name: Имя источника
+      inbox_name: Название канала
       inbox_type: Тип входящего сообщения
       conversations_count: Количество диалогов
       avg_first_response_time: Среднее время первого ответа
@@ -285,7 +289,7 @@ ru:
     dialogflow:
       name: Диалог
       short_description: Постройте чат ботов для обработки начальных запросов перед передачей сотрудникам.
-      description: Создайте чат-роботов с помощью Dialogflow и легко интегрируйте их в ваш источник. Эти роботы могут обрабатывать начальные запросы, прежде чем передавать их сотруднику поддержки.
+      description: Создайте чат-ботов с помощью Dialogflow и легко интегрируйте их в ваш канал. Эти боты могут обрабатывать начальные запросы, прежде чем передавать их сотруднику поддержки.
     google_translate:
       name: Google Перевод
       short_description: Автоматически переводить сообщения клиентов для сотрудников.
@@ -316,7 +320,7 @@ ru:
       description: Синхронизируйте сообщения WhatsApp с MacroCRM. Интеграция находит или создает контакт, находит или создает заявку и записывает каждое сообщение как заметку в MacroCRM.
   captain:
     copilot_message_required: Необходимо ввести сообщение
-    copilot_error: Пожалуйста, подключите ассистента к этому источнику входящих для использования Copilot
+    copilot_error: Пожалуйста, подключите ассистента к этому каналу для использования Copilot
     copilot_limit: У вас закончились кредиты для Copilot. Вы можете купить дополнительные кредиты в разделе биллинга.
     copilot:
       using_tool: Использование инструмента %{function_name}
@@ -391,7 +395,7 @@ ru:
       phone_number: Телефон
       company_name: Компания
       inbox_name: Электронная почта
-      inbox_type: Тип источника
+      inbox_type: Тип канала
     button: Открыть беседу
   time_units:
     days:

@@ -22,16 +22,23 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
            message_type: 'incoming',
            content: 'Здравствуйте, хочу узнать о квартирах')
   end
+  let(:manager_mappings) { [] }
+  let(:macrocrm_settings) do
+    {
+      'app_id' => 'macro-app',
+      'sync_incoming_messages' => true,
+      'sync_outgoing_messages' => true,
+      'sync_chat_manager_from_macro' => true,
+      'sync_chat_manager_to_macro' => true,
+      'manager_mappings' => manager_mappings
+    }
+  end
   let(:hook) do
     create(:integrations_hook,
            account: account,
            app_id: 'macrocrm',
            access_token: 'macro-secret',
-           settings: {
-             'app_id' => 'macro-app',
-             'sync_incoming_messages' => true,
-             'sync_outgoing_messages' => true
-           })
+           settings: macrocrm_settings)
   end
   let(:client) { instance_double(Integrations::Macrocrm::Client) }
 
@@ -60,6 +67,55 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
+  context 'when the existing MacroCRM deal manager is mapped to a local agent' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731 }] }
+      )
+      allow(client).to receive(:add_note)
+    end
+
+    it 'assigns the mapped agent to the conversation before adding the note' do
+      perform
+
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(client).to have_received(:add_note).with(
+        estate_id: 5767119,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
+  context 'when manager sync from MacroCRM is disabled' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:macrocrm_settings) do
+      super().merge('sync_chat_manager_from_macro' => false)
+    end
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731 }] }
+      )
+      allow(client).to receive(:add_note)
+    end
+
+    it 'does not change the conversation assignee' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
+    end
+  end
+
   context 'when the contact exists but does not have a deal' do
     it 'creates a deal before adding the note' do
       allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
@@ -80,6 +136,106 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       expect(client).to have_received(:add_note).with(
         estate_id: 4321,
         note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
+  context 'when a local assignee is mapped for new deals' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      conversation.update!(assignee: mapped_agent)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [] }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'passes the mapped MacroCRM manager id when creating a new deal' do
+      perform
+
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      )
+    end
+  end
+
+  context 'when there is no assignee yet but the inbox has a mapped agent' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => nil }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'assigns the fallback local agent and uses its manager mapping' do
+      perform
+
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      )
+    end
+  end
+
+  context 'when manager sync to MacroCRM is disabled for new deals' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:macrocrm_settings) do
+      super().merge('sync_chat_manager_to_macro' => false)
+    end
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      conversation.update!(assignee: mapped_agent)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => nil }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах'
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'creates the deal without manager_id' do
+      perform
+
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах'
       )
     end
   end
@@ -119,11 +275,7 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
              account: account,
              app_id: 'macrocrm',
              access_token: 'macro-secret',
-             settings: {
-               'app_id' => 'macro-app',
-               'sync_incoming_messages' => true,
-               'sync_outgoing_messages' => false
-             })
+             settings: macrocrm_settings.merge('sync_outgoing_messages' => false))
     end
 
     before do
@@ -142,6 +294,24 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     let(:contact) { create(:contact, account: account, name: 'Ahan', phone_number: nil) }
 
     it 'falls back to the whatsapp source id and normalizes it to e164' do
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => nil }
+      )
+      allow(client).to receive(:create_estate_buy).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+
+      perform
+
+      expect(client).to have_received(:find_contact).with(phone: '+77001234567')
+    end
+  end
+
+  context 'when the contact phone contains formatting characters' do
+    before do
+      allow(contact).to receive(:phone_number).and_return('+7 (700) 123-45-67')
+    end
+
+    it 'normalizes the phone before querying MacroCRM' do
       allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
         { 'contact' => nil }
       )
