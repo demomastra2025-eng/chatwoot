@@ -1,6 +1,7 @@
 require Rails.root.join('lib/redis/config')
 
 schedule_file = 'config/schedule.yml'
+enable_sidekiq_cron = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SIDEKIQ_CRON', true))
 
 Sidekiq.configure_client do |config|
   config.redis = Redis::Config.app
@@ -34,5 +35,8 @@ end
 
 # https://github.com/ondrejbartas/sidekiq-cron
 Rails.application.reloader.to_prepare do
-  Sidekiq::Cron::Job.load_from_hash YAML.load_file(schedule_file) if File.exist?(schedule_file) && Sidekiq.server?
+  next unless enable_sidekiq_cron
+  next unless File.exist?(schedule_file) && Sidekiq.server?
+
+  Sidekiq::Cron::Job.load_from_hash YAML.load_file(schedule_file)
 end

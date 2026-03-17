@@ -1,4 +1,6 @@
 backend: DISABLE_MINI_PROFILER=true bin/rails s -p 3000
 # https://github.com/mperham/sidekiq/issues/3090#issuecomment-389748695
-worker: dotenv bundle exec sidekiq -C config/sidekiq.yml
+worker: ENABLE_SIDEKIQ_CRON=true dotenv bundle exec sidekiq -C config/sidekiq.yml
+history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml
+echo_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_echo.yml
 vite: bin/vite build --watch
