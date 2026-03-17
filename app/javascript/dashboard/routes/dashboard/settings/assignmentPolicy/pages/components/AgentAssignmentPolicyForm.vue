@@ -213,6 +213,7 @@ defineExpose({
                 v-for="option in section.options"
                 :id="option.key"
                 :key="option.key"
+                :name="section.key"
                 :label="option.label"
                 :description="option.description"
                 :is-active="option.isActive"

@@ -1,8 +1,10 @@
 <script>
 import WithLabel from './WithLabel.vue';
+import BaseSelect from 'dashboard/components-next/select/Select.vue';
 export default {
   components: {
     WithLabel,
+    BaseSelect,
   },
   props: {
     id: {
@@ -43,9 +45,14 @@ export default {
     },
   },
   emits: ['update:modelValue'],
-  methods: {
-    onInput(e) {
-      this.$emit('update:modelValue', e.target.value);
+  computed: {
+    selectedValue: {
+      get() {
+        return this.modelValue;
+      },
+      set(value) {
+        this.$emit('update:modelValue', value);
+      },
     },
   },
 };
@@ -59,9 +66,9 @@ export default {
     :has-error="hasError"
     :error-message="errorMessage"
   >
-    <select
+    <BaseSelect
       :id="id"
-      :selected="modelValue"
+      v-model="selectedValue"
       :name="name"
       :class="{
         'text-n-slate-9': !modelValue,
@@ -69,7 +76,6 @@ export default {
         'pl-9': icon,
       }"
       class="block w-full px-3 py-2 pr-6 mb-0 border-0 shadow-sm appearance-none rounded-xl select-caret leading-6"
-      @input="onInput"
     >
       <option value="" disabled selected class="hidden">
         {{ placeholder }}
@@ -79,7 +85,7 @@ export default {
           {{ opt.label }}
         </option>
       </slot>
-    </select>
+    </BaseSelect>
   </WithLabel>
 </template>
 

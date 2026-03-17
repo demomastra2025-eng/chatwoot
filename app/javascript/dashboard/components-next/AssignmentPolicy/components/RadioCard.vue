@@ -1,10 +1,15 @@
 <script setup>
 import { useI18n } from 'vue-i18n';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
 
 const props = defineProps({
   id: {
     type: String,
     required: true,
+  },
+  name: {
+    type: String,
+    default: '',
   },
   label: {
     type: String,
@@ -49,15 +54,13 @@ const handleChange = () => {
     ]"
     @click="handleChange"
   >
-    <div class="absolute top-4 right-4">
-      <input
-        :id="`${id}`"
-        :checked="isActive"
+    <div class="absolute top-4 right-4" @click.stop>
+      <Radio
+        :id="id"
+        :name="name"
+        :model-value="isActive ? id : null"
         :value="id"
-        :name="id"
         :disabled="disabled"
-        type="radio"
-        class="h-4 w-4 border-n-slate-6 text-n-brand focus:ring-n-brand focus:ring-offset-0"
         @change="handleChange"
       />
     </div>

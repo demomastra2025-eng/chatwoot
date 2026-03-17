@@ -3,6 +3,10 @@ import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import { useResizeObserver } from '@vueuse/core';
 
 const props = defineProps({
+  activeTextClass: {
+    type: String,
+    default: 'text-n-blue-11 scale-100',
+  },
   initialActiveTab: {
     type: Number,
     default: 0,
@@ -84,7 +88,7 @@ const showDivider = index => {
         class="relative z-10 px-4 truncate py-1.5 text-sm border-0 outline-1 outline-transparent rounded-lg transition-all duration-200 ease-out hover:text-n-brand active:scale-[1.02]"
         :class="[
           activeTab === index
-            ? 'text-n-blue-11 scale-100'
+            ? activeTextClass
             : 'text-n-slate-10 scale-[0.98]',
         ]"
         @click="selectTab(index)"

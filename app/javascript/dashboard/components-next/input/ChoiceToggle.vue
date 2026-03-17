@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
 
 defineProps({
   modelValue: {
@@ -31,10 +32,9 @@ const handleSelect = value => {
       class="flex flex-1 gap-2 justify-center items-center"
     >
       <label class="inline-flex gap-2 items-center text-base cursor-pointer">
-        <input
-          type="radio"
+        <Radio
+          :model-value="modelValue"
           :value="option.value"
-          :checked="modelValue === option.value"
           class="size-4 accent-n-blue-9 text-n-blue-9"
           @change="handleSelect(option.value)"
         />

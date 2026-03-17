@@ -19,6 +19,7 @@ const handleSelect = value => {
       <div class="p-8 bg-n-background space-y-4">
         <RadioCard
           id="round_robin"
+          name="assignment-order"
           label="Round Robin"
           description="Distributes conversations evenly among all available agents in a rotating manner"
           :is-active="selectedOption === 'round_robin'"
@@ -26,6 +27,7 @@ const handleSelect = value => {
         />
         <RadioCard
           id="balanced"
+          name="assignment-order"
           label="Balanced Assignment"
           description="Assigns conversations based on agent workload to maintain balance"
           :is-active="selectedOption === 'balanced'"
@@ -38,6 +40,7 @@ const handleSelect = value => {
       <div class="p-8 bg-n-background">
         <RadioCard
           id="active_option"
+          name="active-state"
           label="Active Option"
           description="This option is currently selected and active"
           is-active
@@ -50,9 +53,9 @@ const handleSelect = value => {
       <div class="p-8 bg-n-background">
         <RadioCard
           id="inactive_option"
+          name="inactive-state"
           label="Inactive Option"
           description="This option is not selected and can be clicked to activate"
-          is-active
           @select="handleSelect"
         />
       </div>

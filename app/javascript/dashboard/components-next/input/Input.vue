@@ -143,6 +143,7 @@ onMounted(() => {
       @blur="handleBlur"
       @keyup.enter="handleEnter"
     />
+    <slot name="suffix" />
     <p
       v-if="message"
       class="min-w-0 mt-1 mb-0 text-xs truncate transition-all duration-500 ease-in-out"
