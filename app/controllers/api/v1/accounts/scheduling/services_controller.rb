@@ -53,6 +53,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
       price: payload[:price],
       compensation_type: payload[:compensation_type],
       compensation_value: payload[:compensation_value],
+      compensation_percent: payload[:compensation_percent],
       active: payload.key?(:active) ? payload[:active] : true
     }
   end
@@ -60,8 +61,8 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
   def price_payloads
     return nil unless params.key?(:prices) || params.key?(:employee_prices)
 
-    raw_prices = params.permit(prices: [:resource_id, :price, :compensation_type, :compensation_value, :active],
-                               employee_prices: [:employee_id, :price, :compensation_type, :compensation_value, :active])
+    raw_prices = params.permit(prices: [:resource_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active],
+                               employee_prices: [:employee_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active])
     raw_prices[:prices] || raw_prices[:employee_prices] || []
   end
 

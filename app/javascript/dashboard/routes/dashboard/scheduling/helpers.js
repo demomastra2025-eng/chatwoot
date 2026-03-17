@@ -20,6 +20,10 @@ import {
 } from './constants';
 
 const WEEK_STARTS_ON = 1;
+const normalizeLocale = locale => locale?.replace(/_/g, '-') || undefined;
+
+const formatLocalizedDate = (value, locale, options) =>
+  new Intl.DateTimeFormat(normalizeLocale(locale), options).format(value);
 
 export const toDate = value => {
   if (value instanceof Date) return value;
@@ -49,6 +53,7 @@ export const buildCalendarRange = (view, anchorDate) => {
         to: endOfWeek(endOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
       };
     case 'list':
+    case 'kanban':
       return {
         from: startOfDay(date),
         to: endOfDay(addDays(date, 13)),
@@ -71,6 +76,7 @@ export const shiftAnchorDate = (view, anchorDate, direction) => {
     case 'month':
       return addMonths(date, direction);
     case 'list':
+    case 'kanban':
       return addDays(date, direction * 14);
     case 'week':
     default:
@@ -78,22 +84,33 @@ export const shiftAnchorDate = (view, anchorDate, direction) => {
   }
 };
 
-export const formatCalendarTitle = (view, anchorDate) => {
+export const formatCalendarTitle = (view, anchorDate, locale) => {
   const { from, to } = buildCalendarRange(view, anchorDate);
 
   if (view === 'day') {
-    return format(from, 'EEEE, d MMMM yyyy');
+    return formatLocalizedDate(from, locale, {
+      day: 'numeric',
+      month: 'long',
+      weekday: 'long',
+      year: 'numeric',
+    });
   }
 
   if (view === 'month') {
-    return format(from, 'MMMM yyyy');
+    return formatLocalizedDate(from, locale, {
+      month: 'long',
+      year: 'numeric',
+    });
   }
 
-  if (view === 'list') {
-    return `${format(from, 'd MMM')} - ${format(to, 'd MMM yyyy')}`;
-  }
-
-  return `${format(from, 'd MMM')} - ${format(to, 'd MMM yyyy')}`;
+  return `${formatLocalizedDate(from, locale, {
+    day: 'numeric',
+    month: 'short',
+  })} - ${formatLocalizedDate(to, locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })}`;
 };
 
 export const buildDayListForView = (view, anchorDate) => {

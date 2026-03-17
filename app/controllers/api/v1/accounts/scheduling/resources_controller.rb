@@ -13,7 +13,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def show
-    render_payload(Scheduling::PayloadBuilder.resource(@resource))
+    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
   def create
@@ -22,12 +22,12 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def update
-    @resource.update!(resource_params)
-    render_payload(Scheduling::PayloadBuilder.resource(@resource))
+    @scheduling_resource.update!(resource_params)
+    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
   def destroy
-    @resource.destroy!
+    @scheduling_resource.destroy!
     head :no_content
   end
 
@@ -44,6 +44,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       :slot_duration_min,
       :compensation_type,
       :compensation_value,
+      :compensation_percent,
       :active,
       :user_id,
       custom_attributes: {}
@@ -51,6 +52,6 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def set_resource
-    @resource = Current.account.scheduling_resources.find(params[:id])
+    @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
   end
 end

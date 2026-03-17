@@ -6,6 +6,7 @@ import {
   formatTimeLabel,
   minuteOfDayFromDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
+import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   appointment: {
@@ -60,6 +61,11 @@ const appointmentStatusLabel = computed(() => {
 
   return labels[props.appointment.status] || labels.scheduled;
 });
+const appointmentStatusIcon = computed(
+  () =>
+    APPOINTMENT_STATUS_ICONS[props.appointment.status] ||
+    APPOINTMENT_STATUS_ICONS.scheduled
+);
 
 const paymentStatusLabel = computed(() => {
   const labels = {
@@ -117,7 +123,13 @@ const backgroundStyle = computed(() => ({
       <span class="truncate" :class="paymentClass">
         {{ paymentStatusLabel }}
       </span>
-      <span class="px-2 py-0.5 rounded-full bg-n-alpha-2 text-n-slate-11">
+      <span
+        class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-n-slate-11"
+      >
+        <span
+          :class="[appointmentStatusIcon, 'size-3 shrink-0']"
+          aria-hidden="true"
+        />
         {{ appointmentStatusLabel }}
       </span>
     </div>

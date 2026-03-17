@@ -19,6 +19,12 @@ describe('scheduling helpers', () => {
     expect(nextDate.toISOString()).toBe('2026-03-23T00:00:00.000Z');
   });
 
+  it('shifts kanban view by two weeks', () => {
+    const nextDate = shiftAnchorDate('kanban', '2026-03-09T00:00:00.000Z', 1);
+
+    expect(nextDate.toISOString()).toBe('2026-03-23T00:00:00.000Z');
+  });
+
   it('derives a visible minute window from rules and appointments', () => {
     const window = deriveVisibleMinuteWindow({
       appointments: [

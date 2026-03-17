@@ -12,9 +12,11 @@ defineProps({
 </script>
 
 <template>
-  <div class="overflow-hidden border rounded-2xl border-n-weak">
+  <div
+    class="overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
+  >
     <div
-      class="grid px-4 py-3 text-xs font-semibold uppercase border-b bg-n-surface-2 border-n-weak text-n-slate-10"
+      class="grid border-b border-n-weak bg-n-surface-2/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-n-slate-10 backdrop-blur"
       :style="{
         gridTemplateColumns: columns
           .map(column => column.width || '1fr')
@@ -24,7 +26,9 @@ defineProps({
       <div
         v-for="column in columns"
         :key="column.key"
-        :class="column.align === 'end' ? 'text-end' : 'text-start'"
+        class="min-w-0 truncate"
+        :title="column.label"
+        :class="[column.align === 'end' ? 'text-end' : 'text-start']"
       >
         {{ column.label }}
       </div>
@@ -32,7 +36,7 @@ defineProps({
 
     <div
       v-if="rows.length === 0"
-      class="px-4 py-8 text-sm text-center text-n-slate-11"
+      class="px-5 py-10 text-sm text-center text-n-slate-11"
     >
       <slot name="empty">
         {{ $t('SCHEDULING.GENERAL.NO_DATA') }}
@@ -43,7 +47,7 @@ defineProps({
       <div
         v-for="row in rows"
         :key="row.id"
-        class="grid items-center gap-3 px-4 py-3 text-sm text-n-slate-12"
+        class="grid items-center gap-3 px-5 py-3 text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-1"
         :style="{
           gridTemplateColumns: columns
             .map(column => column.width || '1fr')
@@ -53,7 +57,8 @@ defineProps({
         <div
           v-for="column in columns"
           :key="column.key"
-          :class="column.align === 'end' ? 'text-end' : 'text-start'"
+          class="min-w-0"
+          :class="[column.align === 'end' ? 'text-end' : 'text-start']"
         >
           <slot :name="`cell-${column.key}`" :row="row">
             {{ row[column.key] }}

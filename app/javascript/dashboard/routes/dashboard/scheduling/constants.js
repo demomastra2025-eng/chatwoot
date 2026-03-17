@@ -1,12 +1,13 @@
 export const CALENDAR_STORAGE_KEY = 'onelink:scheduling:calendar-preferences';
 
-export const SCHEDULING_VIEW_ORDER = ['day', 'week', 'month', 'list'];
+export const SCHEDULING_VIEW_ORDER = ['day', 'week', 'month', 'list', 'kanban'];
 
 export const SCHEDULING_VIEWS = [
   { value: 'day', labelKey: 'SCHEDULING.VIEWS.DAY' },
   { value: 'week', labelKey: 'SCHEDULING.VIEWS.WEEK' },
   { value: 'month', labelKey: 'SCHEDULING.VIEWS.MONTH' },
   { value: 'list', labelKey: 'SCHEDULING.VIEWS.LIST' },
+  { value: 'kanban', labelKey: 'SCHEDULING.VIEWS.KANBAN' },
 ];
 
 export const APPOINTMENT_STATUS_VALUES = [
@@ -16,6 +17,14 @@ export const APPOINTMENT_STATUS_VALUES = [
   'cancelled',
   'no_show',
 ];
+
+export const APPOINTMENT_STATUS_ICONS = {
+  scheduled: 'i-lucide-clock-3',
+  confirmed: 'i-lucide-badge-check',
+  completed: 'i-lucide-check-check',
+  cancelled: 'i-lucide-circle-off',
+  no_show: 'i-lucide-user-round-x',
+};
 
 export const PAYMENT_STATUS_VALUES = [
   'awaiting_payment',
@@ -39,7 +48,7 @@ export const APPOINTMENT_TYPE_VALUES = ['primary', 'secondary', 'other'];
 
 export const EXPENSE_STATUS_VALUES = ['unpaid', 'paid'];
 
-export const COMPENSATION_TYPE_VALUES = ['percent', 'fixed'];
+export const COMPENSATION_TYPE_VALUES = ['percent', 'fixed', 'fixed_plus_percent'];
 
 export const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0];
 
@@ -62,14 +71,4 @@ export const RESOURCE_COLORS = [
   '#F97316',
   '#EF4444',
   '#F43F5E',
-  '#EC4899',
-  '#D946EF',
-  '#A855F7',
-  '#8B5CF6',
-  '#6366F1',
-  '#3B82F6',
-  '#14B8A6',
-  '#65A30D',
-  '#EA580C',
-  '#DC2626',
 ];

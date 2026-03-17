@@ -1,12 +1,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { format } from 'date-fns';
 import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
-import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
-import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -14,9 +11,11 @@ import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDra
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
+import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingResourceFilter from 'dashboard/components-next/Scheduling/SchedulingResourceFilter.vue';
+import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingSectionCard from 'dashboard/components-next/Scheduling/SchedulingSectionCard.vue';
 import {
   EXPENSE_STATUS_VALUES,
@@ -31,10 +30,23 @@ import { formatCurrency } from '../helpers';
 import { useSchedulingKassaStore } from 'dashboard/stores/scheduling/kassa';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
-const { t } = useI18n();
-
+const { t, locale } = useI18n();
 const kassaStore = useSchedulingKassaStore();
 const referencesStore = useSchedulingReferencesStore();
+const localeCode = computed(
+  () => locale.value?.replace(/_/g, '-') || undefined
+);
+
+const formatDateTimeLabel = value => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat(localeCode.value, {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+  }).format(new Date(value));
+};
 
 const paymentDrawerOpen = ref(false);
 const paymentForm = reactive({
@@ -73,7 +85,7 @@ const appointmentOptions = computed(() =>
     label: [
       appointment.clientName || `#${appointment.id}`,
       appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE'),
-      format(new Date(appointment.startsAt), 'dd.MM HH:mm'),
+      formatDateTimeLabel(appointment.startsAt),
     ]
       .filter(Boolean)
       .join(' · '),
@@ -201,9 +213,7 @@ const appointmentLabel = appointment => {
     .join(' · ');
 };
 
-const formatDateTime = value => {
-  return value ? format(new Date(value), 'yyyy-MM-dd HH:mm') : '—';
-};
+const formatDateTime = value => formatDateTimeLabel(value);
 
 const resetPaymentForm = () => {
   Object.assign(paymentForm, {
@@ -296,10 +306,7 @@ onMounted(async () => {
 
 <template>
   <section class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-n-surface-1">
-    <SchedulingPageHeader
-      :title="$t('SCHEDULING.NAV.KASSA')"
-      :description="$t('SCHEDULING.KASSA.DESCRIPTION')"
-    >
+    <SchedulingPageHeader :title="$t('SCHEDULING.NAV.KASSA')">
       <template #actions>
         <Button
           v-if="kassaStore.activeTab === 'income'"
@@ -319,7 +326,7 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-6 p-6">
+    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
       <div v-if="kassaStore.ui.isLoading" class="flex justify-center py-16">
         <Spinner class="!w-8 !h-8" />
       </div>
@@ -332,12 +339,10 @@ onMounted(async () => {
       />
 
       <template v-else>
-        <SchedulingSectionCard
-          :title="$t('SCHEDULING.KASSA.FILTERS_TITLE')"
-          :description="$t('SCHEDULING.KASSA.FILTERS_DESCRIPTION')"
-        >
+        <SchedulingSectionCard>
           <div class="flex flex-col gap-5">
             <TabBar
+              active-text-class="text-n-slate-12 scale-100"
               :tabs="tabOptions"
               :initial-active-tab="activeTabIndex"
               @tab-changed="kassaStore.setActiveTab($event.value)"
@@ -671,20 +676,19 @@ onMounted(async () => {
         :title="$t('SCHEDULING.KASSA.PAYMENT_FORM_TITLE')"
         :description="$t('SCHEDULING.KASSA.PAYMENT_FORM_DESCRIPTION')"
       >
-        <ComboBox
+        <SchedulingSelectField
           :model-value="paymentForm.appointmentId"
           :options="appointmentOptions"
           :placeholder="$t('SCHEDULING.KASSA.APPOINTMENT')"
           @update:model-value="paymentForm.appointmentId = $event"
         />
         <div class="grid gap-4 md:grid-cols-2">
-          <Input
+          <SchedulingMoneyInput
             v-model="paymentForm.amount"
-            type="number"
             min="0"
             :label="$t('SCHEDULING.GENERAL.AMOUNT')"
           />
-          <ComboBox
+          <SchedulingSelectField
             :model-value="paymentForm.paymentMethod"
             :options="paymentMethodOptions"
             :placeholder="$t('SCHEDULING.KASSA.PAYMENT_METHOD')"

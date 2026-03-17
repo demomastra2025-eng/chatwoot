@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
   modelValue: {
@@ -43,10 +44,7 @@ const selectedResources = computed(() => {
 });
 
 const buttonLabel = computed(() => {
-  if (
-    !props.modelValue.length ||
-    props.modelValue.length === props.resources.length
-  ) {
+  if (!props.modelValue.length) {
     return t('SCHEDULING.TOOLBAR.ALL_RESOURCES');
   }
 
@@ -91,16 +89,17 @@ const clearSelection = () => {
       <Button
         size="sm"
         color="slate"
-        variant="faded"
+        variant="outline"
         trailing-icon
         :label="buttonLabel"
+        class="!h-8 !rounded-lg !bg-n-alpha-black2 !px-3 !py-2 !font-normal !outline-n-weak hover:!outline-n-slate-6"
         :icon="isOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
         @click="isOpen = !isOpen"
       />
 
       <div
         v-if="isOpen"
-        class="absolute left-0 z-30 flex flex-col gap-3 p-3 mt-2 shadow-xl min-w-72 rounded-2xl bg-n-alpha-3 backdrop-blur-[100px] border border-n-weak"
+        class="absolute left-0 z-30 mt-2 flex min-w-72 flex-col gap-3 rounded-2xl border border-n-weak bg-n-solid-2/95 p-3 shadow-xl outline outline-1 outline-n-container backdrop-blur-[16px]"
       >
         <Input
           v-model="query"
@@ -132,14 +131,14 @@ const clearSelection = () => {
             v-for="resource in filteredResources"
             :key="resource.id"
             type="button"
-            class="flex items-center gap-3 px-1 py-3 transition-colors rounded-lg hover:bg-n-alpha-2"
+            class="flex items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-n-alpha-2"
             @click="toggleResource(resource.id)"
           >
-            <input
-              :checked="modelValue.includes(resource.id)"
-              type="checkbox"
-              class="rounded accent-blue-600"
-              @change.prevent
+            <Checkbox
+              :model-value="modelValue.includes(resource.id)"
+              aria-hidden="true"
+              class="pointer-events-none"
+              tabindex="-1"
             />
             <Avatar
               :src="resource.photoUrl || ''"

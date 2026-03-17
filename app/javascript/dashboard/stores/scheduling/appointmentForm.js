@@ -157,12 +157,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
         );
         if (!selectedService) return;
 
+        const nextServiceAmount = getServicePriceForResource(
+          selectedService,
+          this.form.resourceId
+        );
+        if (
+          `${this.form.serviceAmount ?? ''}` === `${nextServiceAmount ?? ''}`
+        ) {
+          return;
+        }
+
         this.form = {
           ...this.form,
-          serviceAmount: getServicePriceForResource(
-            selectedService,
-            this.form.resourceId
-          ),
+          serviceAmount: nextServiceAmount,
         };
       },
 
@@ -195,7 +202,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
             full_name: contact.fullName,
             gender: contact.gender,
             iin: contact.iin || undefined,
-            identifier: contact.identifier,
             phone: contact.phone,
           });
           const { data } = await SchedulingContactsAPI.create(payload);
@@ -203,6 +209,37 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.contacts = [createdContact, ...this.contacts];
           this.applyContact(createdContact);
           return createdContact;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isCreatingContact = false;
+        }
+      },
+
+      async updateInlineContact(contactId, contact) {
+        this.ui.isCreatingContact = true;
+
+        try {
+          const payload = compactPayload({
+            birth_date: contact.birthDate,
+            company_id: toNumeric(contact.companyId),
+            full_name: contact.fullName,
+            gender: contact.gender,
+            iin: contact.iin || undefined,
+            phone: contact.phone,
+          });
+          const { data } = await SchedulingContactsAPI.update(
+            contactId,
+            payload
+          );
+          const updatedContact = normalizePayload(data);
+          this.contacts = [
+            updatedContact,
+            ...this.contacts.filter(item => item.id !== updatedContact.id),
+          ];
+          this.applyContact(updatedContact);
+          return updatedContact;
         } catch (error) {
           this.ui.error = extractSchedulingError(error);
           throw error;

@@ -75,7 +75,7 @@ useEventListener(document, 'keydown', event => {
     >
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-[110] flex justify-end bg-n-alpha-black1 backdrop-blur-[2px]"
+        class="fixed inset-0 z-[110] flex justify-end bg-black/35 p-2 backdrop-blur-[4px] sm:p-3"
       >
         <Transition
           enter-active-class="transition-transform duration-200 ease-out"
@@ -85,13 +85,23 @@ useEventListener(document, 'keydown', event => {
           leave-from-class="translate-x-0"
           leave-to-class="translate-x-full"
         >
-          <OnClickOutside class="flex justify-end w-full" @trigger="close">
+          <OnClickOutside
+            class="flex justify-end w-full"
+            :options="{
+              ignore: [
+                '.dashboard-combobox-dropdown',
+                '.reka-date-time-picker__content',
+                '.reka-color-picker__content',
+              ],
+            }"
+            @trigger="close"
+          >
             <aside
-              class="flex flex-col h-full w-full bg-n-solid-2 shadow-2xl border-l border-n-weak"
+              class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"
               :class="widthClass"
             >
               <header
-                class="flex items-start justify-between gap-4 px-6 py-5 border-b border-n-weak"
+                class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"
               >
                 <div class="flex flex-col gap-1">
                   <h3 class="mb-0 text-lg font-semibold text-n-slate-12">
@@ -117,7 +127,7 @@ useEventListener(document, 'keydown', event => {
               </div>
 
               <footer
-                class="flex items-center justify-between gap-3 px-6 py-4 border-t border-n-weak bg-n-surface-1"
+                class="flex items-center justify-between gap-3 border-t border-n-weak bg-n-surface-1 px-6 py-4"
               >
                 <slot name="footer">
                   <Button

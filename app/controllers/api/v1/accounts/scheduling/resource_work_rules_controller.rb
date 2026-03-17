@@ -3,7 +3,7 @@ class Api::V1::Accounts::Scheduling::ResourceWorkRulesController < Api::V1::Acco
   before_action :set_resource
 
   def show
-    rules = @resource.work_rules.ordered
+    rules = @scheduling_resource.work_rules.ordered
     render_payload(rules.map { |rule| Scheduling::PayloadBuilder.work_rule(rule) }, meta: { count: rules.size })
   end
 
@@ -11,19 +11,19 @@ class Api::V1::Accounts::Scheduling::ResourceWorkRulesController < Api::V1::Acco
     rules_payload = params.permit(work_rules: [:weekday, :start_minute, :end_minute, :active])[:work_rules] || []
 
     ApplicationRecord.transaction do
-      @resource.work_rules.destroy_all
+      @scheduling_resource.work_rules.destroy_all
       rules_payload.each do |item|
-        @resource.work_rules.create!(item.to_h)
+        @scheduling_resource.work_rules.create!(item.to_h)
       end
     end
 
-    rules = @resource.work_rules.reload.ordered
+    rules = @scheduling_resource.work_rules.reload.ordered
     render_payload(rules.map { |rule| Scheduling::PayloadBuilder.work_rule(rule) }, meta: { count: rules.size })
   end
 
   private
 
   def set_resource
-    @resource = Current.account.scheduling_resources.find(params[:resource_id])
+    @scheduling_resource = Current.account.scheduling_resources.find(params[:resource_id])
   end
 end

@@ -6,6 +6,7 @@
 #  active             :boolean          default(TRUE), not null
 #  compensation_type  :string           default("percent"), not null
 #  compensation_value :integer          default(0), not null
+#  compensation_percent :integer         default(0), not null
 #  price              :integer          default(0), not null
 #  created_at         :datetime         not null
 #  updated_at         :datetime         not null
@@ -25,7 +26,9 @@ class Scheduling::ServicePrice < ApplicationRecord
   validates :price, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :compensation_type, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }
   validates :compensation_value, numericality: { greater_than_or_equal_to: 0, only_integer: true }
+  validates :compensation_percent, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validate :compensation_percent_within_range
+  validate :combined_compensation_percent_within_range
   validate :active_price_requires_positive_amount
   validate :resource_and_service_belong_to_same_account
 
@@ -46,6 +49,13 @@ class Scheduling::ServicePrice < ApplicationRecord
     return if compensation_value.to_i.between?(0, 100)
 
     errors.add(:compensation_value, 'must be between 0 and 100 for percent compensation')
+  end
+
+  def combined_compensation_percent_within_range
+    return unless compensation_type == 'fixed_plus_percent'
+    return if compensation_percent.to_i.between?(0, 100)
+
+    errors.add(:compensation_percent, 'must be between 0 and 100 for fixed plus percent compensation')
   end
 
   def resource_and_service_belong_to_same_account

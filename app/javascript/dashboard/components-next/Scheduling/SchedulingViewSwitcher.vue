@@ -1,7 +1,6 @@
 <script setup>
-import { computed } from 'vue';
-
-import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
+import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 
 const props = defineProps({
   modelValue: {
@@ -16,26 +15,25 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue']);
 
-const activeIndex = computed(() =>
-  props.views.findIndex(view => view.value === props.modelValue)
-);
-
-const tabs = computed(() =>
-  props.views.map(view => ({
-    ...view,
-    label: view.label,
-  }))
-);
-
-const handleTabChanged = tab => {
-  emit('update:modelValue', tab.value);
+const handleViewSelect = value => {
+  if (value === props.modelValue) return;
+  emit('update:modelValue', value);
 };
 </script>
 
 <template>
-  <TabBar
-    :tabs="tabs"
-    :initial-active-tab="Math.max(activeIndex, 0)"
-    @tab-changed="handleTabChanged"
-  />
+  <ButtonGroup
+    class="inline-flex items-center gap-1 rounded-xl bg-n-alpha-black2 p-0.5 outline outline-1 outline-n-weak"
+  >
+    <Button
+      v-for="view in views"
+      :key="view.value"
+      size="sm"
+      color="slate"
+      :variant="view.value === modelValue ? 'solid' : 'ghost'"
+      :label="view.label"
+      class="!h-8 !rounded-lg !px-3 !text-sm"
+      @click="handleViewSelect(view.value)"
+    />
+  </ButtonGroup>
 </template>

@@ -69,6 +69,7 @@ class Scheduling::Appointments::UpsertService
       service_amount: service_amount,
       compensation_type_snapshot: service_snapshot[:compensation_type_snapshot],
       compensation_value_snapshot: service_snapshot[:compensation_value_snapshot],
+      compensation_percent_snapshot: service_snapshot[:compensation_percent_snapshot],
       prepaid_amount: prepaid_amount,
       prepaid_payment_method: resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method),
       settlement_amount: settlement_amount,
@@ -232,10 +233,11 @@ class Scheduling::Appointments::UpsertService
         resolved_price: nil,
         service_name_snapshot: nil,
         service_type_snapshot: nil,
-        service_duration_min_snapshot: nil,
-        compensation_type_snapshot: resource.compensation_type,
-        compensation_value_snapshot: resource.compensation_value
-      }
+      service_duration_min_snapshot: nil,
+      compensation_type_snapshot: resource.compensation_type,
+      compensation_value_snapshot: resource.compensation_value,
+      compensation_percent_snapshot: resource.compensation_percent
+    }
     end
 
     price = service.prices.find_by(resource_id: resource.id)
@@ -263,6 +265,11 @@ class Scheduling::Appointments::UpsertService
                          else
                            resource.compensation_value
                          end
+    compensation_percent = if price&.active? && price.price.to_i.positive?
+                             price.compensation_percent
+                           else
+                             resource.compensation_percent
+                           end
 
     {
       resolved_price: resolved_price,
@@ -270,7 +277,8 @@ class Scheduling::Appointments::UpsertService
       service_type_snapshot: service.service_type,
       service_duration_min_snapshot: service.duration_min,
       compensation_type_snapshot: compensation_type,
-      compensation_value_snapshot: compensation_value
+      compensation_value_snapshot: compensation_value,
+      compensation_percent_snapshot: compensation_percent
     }
   end
 

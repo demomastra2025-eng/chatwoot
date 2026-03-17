@@ -2,12 +2,17 @@
 import { computed } from 'vue';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import DateTimePicker from 'dashboard/components/ui/DateTimePicker.vue';
 
 import SchedulingViewSwitcher from './SchedulingViewSwitcher.vue';
 
 const props = defineProps({
   currentLabel: {
     type: String,
+    required: true,
+  },
+  anchorDate: {
+    type: [String, Date],
     required: true,
   },
   modelValue: {
@@ -20,7 +25,13 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['next', 'previous', 'today', 'update:modelValue']);
+const emit = defineEmits([
+  'next',
+  'previous',
+  'select-date',
+  'today',
+  'update:modelValue',
+]);
 
 const translatedViews = computed(() =>
   props.views.map(view => ({
@@ -31,13 +42,19 @@ const translatedViews = computed(() =>
 </script>
 
 <template>
-  <div
-    class="flex flex-col gap-4 px-6 py-4 border-b bg-n-surface-1 border-n-weak"
-  >
-    <div
-      class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between"
-    >
-      <div class="flex flex-wrap items-center gap-2">
+  <div class="bg-n-surface-1 px-5 pb-2 pt-4">
+    <div class="grid gap-3 xl:grid-cols-[auto_1fr_auto] xl:items-center">
+      <div class="min-w-0">
+        <SchedulingViewSwitcher
+          :model-value="modelValue"
+          :views="translatedViews"
+          @update:model-value="emit('update:modelValue', $event)"
+        />
+      </div>
+
+      <div
+        class="flex flex-wrap items-center justify-start gap-2 xl:justify-center"
+      >
         <Button
           size="sm"
           color="slate"
@@ -59,18 +76,19 @@ const translatedViews = computed(() =>
           :label="$t('SCHEDULING.GENERAL.TODAY')"
           @click="emit('today')"
         />
-        <span class="ml-1 text-sm font-semibold text-n-slate-12">
-          {{ currentLabel }}
-        </span>
+        <DateTimePicker
+          class="!w-auto"
+          type="date"
+          :value="anchorDate"
+          :display-label="currentLabel"
+          hide-icon
+          input-class="!h-8 !w-auto !bg-n-alpha-black2 !px-3 !py-1.5 !text-sm !font-semibold !text-n-slate-12 !outline-n-weak hover:!outline-n-slate-6 focus-visible:!outline-n-brand data-[state=open]:!outline-n-brand"
+          @change="emit('select-date', $event)"
+        />
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2 xl:justify-end">
         <slot name="filters" />
-        <SchedulingViewSwitcher
-          :model-value="modelValue"
-          :views="translatedViews"
-          @update:model-value="emit('update:modelValue', $event)"
-        />
         <slot name="actions" />
       </div>
     </div>

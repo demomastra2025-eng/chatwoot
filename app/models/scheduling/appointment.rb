@@ -12,6 +12,7 @@
 #  client_phone                  :string
 #  compensation_type_snapshot    :string
 #  compensation_value_snapshot   :integer
+#  compensation_percent_snapshot :integer          default(0), not null
 #  custom_attributes             :jsonb            not null
 #  duration_min                  :integer          default(30), not null
 #  ends_at                       :datetime         not null
@@ -64,6 +65,7 @@ class Scheduling::Appointment < ApplicationRecord
   validates :compensation_type_snapshot, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }, allow_blank: true
   validates :duration_min, inclusion: { in: 5..720 }
   validates :service_amount, :prepaid_amount, :settlement_amount, numericality: { greater_than_or_equal_to: 0, only_integer: true }
+  validates :compensation_percent_snapshot, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
   validate :ends_after_starts
@@ -71,6 +73,7 @@ class Scheduling::Appointment < ApplicationRecord
   validate :payment_methods_present_for_positive_amounts
   validate :associations_belong_to_account
   validate :compensation_snapshot_percent_within_range
+  validate :combined_compensation_snapshot_percent_within_range
 
   scope :ordered, -> { order(:starts_at, :id) }
   scope :active_statuses, -> { where.not(status: 'cancelled') }
@@ -114,6 +117,13 @@ class Scheduling::Appointment < ApplicationRecord
     return if compensation_value_snapshot.to_i.between?(0, 100)
 
     errors.add(:compensation_value_snapshot, 'must be between 0 and 100 for percent compensation')
+  end
+
+  def combined_compensation_snapshot_percent_within_range
+    return unless compensation_type_snapshot == 'fixed_plus_percent'
+    return if compensation_percent_snapshot.to_i.between?(0, 100)
+
+    errors.add(:compensation_percent_snapshot, 'must be between 0 and 100 for fixed plus percent compensation')
   end
 
   def ends_after_starts
