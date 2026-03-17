@@ -80,12 +80,11 @@ export default {
         <tr>
           <td class="ltr:pl-2.5 rtl:pr-2.5">
             <div class="flex items-center">
-              <input
+              <Checkbox
                 name="select-all-agents"
-                type="checkbox"
-                :checked="allAgentsSelected ? 'checked' : ''"
+                :model-value="allAgentsSelected"
                 :title="$t('TEAMS_SETTINGS.AGENTS.SELECT_ALL')"
-                @click.self="selectAllAgents"
+                @change="selectAllAgents"
               />
             </div>
           </td>
@@ -106,10 +105,9 @@ export default {
         >
           <td class="w-12">
             <div class="flex items-center">
-              <input
-                type="checkbox"
-                :checked="isAgentSelected(agent.id)"
-                @click.self="() => handleSelectAgent(agent.id)"
+              <Checkbox
+                :model-value="isAgentSelected(agent.id)"
+                @change="handleSelectAgent(agent.id)"
               />
             </div>
           </td>

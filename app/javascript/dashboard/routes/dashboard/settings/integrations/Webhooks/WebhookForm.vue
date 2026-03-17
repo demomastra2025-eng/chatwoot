@@ -120,10 +120,9 @@ export default {
           :key="event"
           class="flex items-center"
         >
-          <input
+          <Checkbox
             :id="event"
             v-model="subscriptions"
-            type="checkbox"
             :value="event"
             name="subscriptions"
             class="mr-2"

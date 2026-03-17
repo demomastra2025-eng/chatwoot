@@ -1,8 +1,12 @@
 <script>
 import { mapGetters } from 'vuex';
 import { getContrastingTextColor } from '@chatwoot/utils';
+import BaseSelect from 'dashboard/components-next/select/Select.vue';
 
 export default {
+  components: {
+    BaseSelect,
+  },
   props: {
     buttonLabel: {
       type: String,
@@ -119,7 +123,7 @@ export default {
           :placeholder="item.placeholder"
           :disabled="!!submittedValues.length"
         />
-        <select
+        <BaseSelect
           v-else-if="item.type === 'select'"
           v-model="formValues[item.name]"
           :required="item.required && 'required'"
@@ -131,7 +135,7 @@ export default {
           >
             {{ option.label }}
           </option>
-        </select>
+        </BaseSelect>
         <span class="error-message">
           {{ item.pattern_error || $t('CHAT_FORM.INVALID.FIELD') }}
         </span>

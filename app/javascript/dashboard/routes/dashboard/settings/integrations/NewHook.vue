@@ -65,10 +65,18 @@ export default {
     },
     formItems() {
       return (this.integration.settings_form_schema || []).map(item => {
+        const normalizedItem = {
+          ...item,
+          placeholder:
+            typeof item.placeholder === 'string'
+              ? item.placeholder.replace(/\\n/g, '\n')
+              : item.placeholder,
+        };
+
         if (this.isEditing && item.store === 'access_token') {
-          return { ...item, validation: '' };
+          return { ...normalizedItem, validation: '' };
         }
-        return item;
+        return normalizedItem;
       });
     },
     isIntegrationDialogflow() {
@@ -114,6 +122,10 @@ export default {
             item.name
           )
         ) {
+          if (item.validation?.includes('JSON')) {
+            return JSON.stringify(this.hook.settings[item.name], null, 2);
+          }
+
           return this.hook.settings[item.name];
         }
       }
@@ -165,6 +177,10 @@ export default {
           return acc;
         }
 
+        if (formItem?.validation?.includes('JSON') && !this.values[key]) {
+          return acc;
+        }
+
         acc[key] = this.values[key];
         return acc;
       }, {});
@@ -178,9 +194,10 @@ export default {
           item.validation?.includes('JSON') &&
           hookPayload.settings[item.name]
         ) {
-          hookPayload.settings[item.name] = JSON.parse(
-            hookPayload.settings[item.name]
-          );
+          hookPayload.settings[item.name] =
+            typeof hookPayload.settings[item.name] === 'string'
+              ? JSON.parse(hookPayload.settings[item.name])
+              : hookPayload.settings[item.name];
         }
       });
 

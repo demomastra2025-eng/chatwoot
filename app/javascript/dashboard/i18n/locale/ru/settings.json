@@ -290,7 +290,7 @@
   "CONFIRM_EMAIL": "Проверка...",
   "SETTINGS": {
     "INBOXES": {
-      "NEW_INBOX": "Добавить источник"
+      "NEW_INBOX": "Добавить канал"
     }
   },
   "SIDEBAR": {
@@ -312,9 +312,9 @@
     "ALL_COMPANIES": "Все компании",
     "SCHEDULING": "Записи",
     "SCHEDULING_CALENDAR": "Календарь",
-    "SCHEDULING_RESOURCES": "Ресурсы",
+    "SCHEDULING_RESOURCES": "Специалисты",
     "SCHEDULING_SERVICES": "Услуги",
-    "SCHEDULING_EXCEPTIONS": "Исключения",
+    "SCHEDULING_EXCEPTIONS": "Перерывы",
     "SCHEDULING_KASSA": "Касса",
     "CAPTAIN": "Капитан",
     "CAPTAIN_ASSISTANTS": "Ассистенты",
@@ -370,7 +370,7 @@
     "CUSTOM_ROLES": "Роли",
     "BETA": "Бета",
     "REPORTS_OVERVIEW": "Обзор",
-    "REAUTHORIZE": "Срок действия вашего источника истек, пожалуйста, переподключите\n чтобы снова получать и отправлять сообщения",
+    "REAUTHORIZE": "Срок действия вашего канала истек, пожалуйста, переподключите\n чтобы снова получать и отправлять сообщения",
     "HELP_CENTER": {
       "TITLE": "Ваша страница",
       "ARTICLES": "Статьи",

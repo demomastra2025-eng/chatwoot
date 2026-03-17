@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
@@ -298,14 +299,10 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Confirmation -->
+        <!-- Confirmation -->
       <div class="space-y-4">
         <label class="flex items-start gap-3">
-          <input
-            v-model="backupCodesConfirmed"
-            type="checkbox"
-            class="mt-1 rounded border-n-slate-4 text-n-blue-9 focus:ring-n-blue-8"
-          />
+          <Checkbox v-model="backupCodesConfirmed" class="mt-1" />
           <span class="text-sm text-n-slate-11">
             {{ $t('MFA_SETTINGS.BACKUP.CONFIRM') }}
           </span>

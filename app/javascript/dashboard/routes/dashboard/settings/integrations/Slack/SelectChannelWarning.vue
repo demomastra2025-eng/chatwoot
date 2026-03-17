@@ -89,7 +89,7 @@ const updateIntegration = async () => {
         {{ $t('INTEGRATION_SETTINGS.SLACK.SELECT_CHANNEL.BUTTON_TEXT') }}
       </Button>
       <div v-else class="inline-flex">
-        <select
+        <Select
           v-model="selectedChannelId"
           class="h-8 py-1 mr-4 text-xs leading-4 border border-n-amber-10"
         >
@@ -103,7 +103,7 @@ const updateIntegration = async () => {
           >
             #{{ channel.name }}
           </option>
-        </select>
+        </Select>
         <Button
           teal
           sm

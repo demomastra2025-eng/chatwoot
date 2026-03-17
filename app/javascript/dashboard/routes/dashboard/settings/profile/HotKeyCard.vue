@@ -1,4 +1,6 @@
 <script setup>
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+
 defineProps({
   active: {
     type: Boolean,
@@ -37,11 +39,13 @@ defineProps({
         >
           <span class="block truncate">{{ title }}</span>
         </div>
-        <input
-          :checked="active"
-          type="radio"
+        <Radio
+          :model-value="active ? title : null"
           :name="`hotkey-${title}`"
-          class="shadow cursor-pointer grid place-items-center border-2 border-n-strong appearance-none rounded-full w-5 h-5 checked:bg-n-brand-solid before:content-[''] before:bg-n-brand-solid before:border-4 before:rounded-full before:border-n-strong checked:before:w-[18px] checked:before:h-[18px] checked:border checked:border-n-brand-solid"
+          :value="title"
+          aria-hidden="true"
+          class="pointer-events-none"
+          tabindex="-1"
         />
       </div>
       <span
