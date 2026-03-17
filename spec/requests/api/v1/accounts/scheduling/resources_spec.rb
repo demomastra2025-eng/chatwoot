@@ -27,7 +27,7 @@ RSpec.describe 'Scheduling Resources API', type: :request do
             compensation_percent: 10,
             active: resource.active
           },
-          headers:,
+          headers: headers,
           as: :json
 
     expect(response).to have_http_status(:ok)
@@ -42,7 +42,7 @@ RSpec.describe 'Scheduling Resources API', type: :request do
               { weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60, active: true }
             ]
           },
-          headers:,
+          headers: headers,
           as: :json
 
     expect(response).to have_http_status(:ok)
@@ -56,7 +56,7 @@ RSpec.describe 'Scheduling Resources API', type: :request do
               { weekday: 1, start_minute: 13 * 60, end_minute: 14 * 60, title: 'Lunch', active: true }
             ]
           },
-          headers:,
+          headers: headers,
           as: :json
 
     expect(response).to have_http_status(:ok)

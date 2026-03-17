@@ -233,11 +233,11 @@ class Scheduling::Appointments::UpsertService
         resolved_price: nil,
         service_name_snapshot: nil,
         service_type_snapshot: nil,
-      service_duration_min_snapshot: nil,
-      compensation_type_snapshot: resource.compensation_type,
-      compensation_value_snapshot: resource.compensation_value,
-      compensation_percent_snapshot: resource.compensation_percent
-    }
+        service_duration_min_snapshot: nil,
+        compensation_type_snapshot: resource.compensation_type,
+        compensation_value_snapshot: resource.compensation_value,
+        compensation_percent_snapshot: resource.compensation_percent
+      }
     end
 
     price = service.prices.find_by(resource_id: resource.id)

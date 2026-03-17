@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::Appointments::FinanceSyncService do
+  subject(:service_object) { described_class.new(appointment: appointment) }
+
   let(:account) { create(:account) }
   let(:resource) do
     create(
@@ -27,8 +29,6 @@ RSpec.describe Scheduling::Appointments::FinanceSyncService do
       settlement_payment_method: 'cash'
     )
   end
-
-  subject(:service_object) { described_class.new(appointment: appointment) }
 
   it 'creates an expense using fixed and percent compensation' do
     service_object.sync!
