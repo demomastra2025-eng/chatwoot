@@ -10,7 +10,11 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_14_113000) do
+  create_schema "agent_transport"
+  create_schema "evolution_api"
+  create_schema "mastra_agent"
+
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -259,6 +263,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.datetime "updated_at", null: false
     t.boolean "active", default: true, null: false
     t.index ["account_id"], name: "index_automation_rules_on_account_id"
+  end
+
+  create_table "campaign_deliveries", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "campaign_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "contact_id", null: false
+    t.integer "status", default: 0, null: false
+    t.string "provider", null: false
+    t.string "target_identifier"
+    t.string "provider_message_id"
+    t.text "error_message"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_status_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_campaign_deliveries_on_account_id"
+    t.index ["campaign_id", "contact_id"], name: "index_campaign_deliveries_on_campaign_id_and_contact_id", unique: true
+    t.index ["campaign_id"], name: "index_campaign_deliveries_on_campaign_id"
+    t.index ["contact_id"], name: "index_campaign_deliveries_on_contact_id"
+    t.index ["inbox_id"], name: "index_campaign_deliveries_on_inbox_id"
+    t.index ["provider_message_id"], name: "index_campaign_deliveries_on_provider_message_id"
   end
 
   create_table "campaigns", force: :cascade do |t|
@@ -581,6 +607,34 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.jsonb "message_templates", default: {}
     t.datetime "message_templates_last_updated", precision: nil
     t.index ["phone_number"], name: "index_channel_whatsapp_on_phone_number", unique: true
+  end
+
+  create_table "channel_whatsapp_web", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.string "phone_number", null: false
+    t.string "provider", default: "evolution", null: false
+    t.jsonb "provider_config", default: {}, null: false
+    t.string "instance_name", null: false
+    t.string "lifecycle_state", default: "creating", null: false
+    t.string "connection_state", default: "close", null: false
+    t.text "last_error"
+    t.datetime "last_synced_at"
+    t.jsonb "qr_code", default: {}, null: false
+    t.string "webhook_identifier", null: false
+    t.string "webhook_secret", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "sync_state", default: {}, null: false
+    t.boolean "conversation_pending", default: false, null: false
+    t.integer "history_lookback_days", default: 365, null: false
+    t.jsonb "ignore_jids", default: [], null: false
+    t.boolean "sign_messages", default: false, null: false
+    t.string "sign_delimiter", default: "\\n", null: false
+    t.boolean "import_contacts", default: true, null: false
+    t.boolean "import_messages", default: true, null: false
+    t.boolean "sync_labels", default: true, null: false
+    t.index ["instance_name"], name: "index_channel_whatsapp_web_on_instance_name", unique: true
+    t.index ["webhook_identifier"], name: "index_channel_whatsapp_web_on_webhook_identifier", unique: true
   end
 
   create_table "companies", force: :cascade do |t|
@@ -989,6 +1043,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.index ["conversation_id", "account_id", "message_type", "created_at"], name: "index_messages_on_conversation_account_type_created"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["created_at"], name: "index_messages_on_created_at"
+    t.index ["inbox_id", "source_id"], name: "idx_messages_unique_inbox_source_id", unique: true, where: "(source_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_messages_on_inbox_id"
     t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
     t.index ["source_id"], name: "index_messages_on_source_id"
@@ -1161,6 +1216,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "compensation_percent_snapshot", default: 0, null: false
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -1253,6 +1309,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "compensation_percent", default: 0, null: false
     t.index ["account_id", "active", "name"], name: "idx_scheduling_resources_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_resources_on_account_id"
     t.index ["user_id"], name: "index_scheduling_resources_on_user_id"
@@ -1268,6 +1325,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "compensation_percent", default: 0, null: false
     t.index ["account_id", "resource_id", "active"], name: "idx_scheduling_service_prices_on_account_resource_active"
     t.index ["account_id"], name: "index_scheduling_service_prices_on_account_id"
     t.index ["resource_id"], name: "index_scheduling_service_prices_on_resource_id"
@@ -1488,6 +1546,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_09_110200) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "campaign_deliveries", "accounts"
+  add_foreign_key "campaign_deliveries", "campaigns"
+  add_foreign_key "campaign_deliveries", "contacts"
+  add_foreign_key "campaign_deliveries", "inboxes"
   add_foreign_key "inboxes", "portals"
   add_foreign_key "scheduling_appointments", "accounts"
   add_foreign_key "scheduling_appointments", "companies"
