@@ -128,9 +128,8 @@ export default {
     >
       <form @submit.prevent="updateInbox">
         <label for="toggle-business-hours" class="toggle-input-wrap">
-          <input
+          <Checkbox
             v-model="isBusinessHoursEnabled"
-            type="checkbox"
             class="ltr:mr-2 rtl:ml-2"
             name="toggle-business-hours"
           />

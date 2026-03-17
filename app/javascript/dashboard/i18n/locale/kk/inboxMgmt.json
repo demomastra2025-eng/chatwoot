@@ -240,7 +240,7 @@
         },
         "SELECT_PROVIDER": {
           "TITLE": "Select your API provider",
-          "DESCRIPTION": "Choose your WhatsApp provider. You can connect directly through Meta which requires no setup, or connect through Twilio using your account credentials."
+          "DESCRIPTION": "WhatsApp-ты қосу тәсілін таңдаңыз. Meta арқылы тікелей, Twilio арқылы немесе QR-кодпен WhatsApp Web арқылы қосуға болады."
         },
         "INBOX_NAME": {
           "LABEL": "Inbox Name",
@@ -371,6 +371,20 @@
           "ERROR_MESSAGE": "We were not able to save the api channel"
         }
       },
+      "WHATSAPP_WEB_CHANNEL": {
+        "TITLE": "WhatsApp Web",
+        "DESC": "WhatsApp нөмірін енгізіңіз. OneLink арна атауын өзі құрады, Evolution webhook-ын баптайды және QR-кодты автоматты түрде сұратады.",
+        "PHONE_NUMBER": {
+          "LABEL": "WhatsApp нөмірі",
+          "SUBTITLE": "Қазақстан нөмірін 77001234567 форматында енгізіңіз. Плюс автоматты түрде қосылады.",
+          "PLACEHOLDER": "77001234567",
+          "ERROR": "77001234567 форматындағы 11 таңбалы Қазақстан нөмірін енгізіңіз"
+        },
+        "SUBMIT_BUTTON": "WhatsApp Web арнасын құру",
+        "API": {
+          "ERROR_MESSAGE": "WhatsApp Web арнасын сақтау мүмкін болмады"
+        }
+      },
       "EMAIL_CHANNEL": {
         "TITLE": "Email Channel",
         "DESC": "Integrate your email inbox.",
@@ -454,6 +468,10 @@
             "TITLE": "WhatsApp",
             "DESCRIPTION": "Support your customers on WhatsApp"
           },
+          "WHATSAPP_WEB": {
+            "TITLE": "WhatsApp Web",
+            "DESCRIPTION": "API арқылы WhatsApp стиліндегі арнайы арнаны жасаңыз"
+          },
           "EMAIL": {
             "TITLE": "Email",
             "DESCRIPTION": "Connect with Gmail, Outlook, or other providers"
@@ -490,7 +508,9 @@
       },
       "AGENTS": {
         "TITLE": "Employees",
-        "DESC": "Here you can add employees to manage your newly created inbox. Only these selected employees will have access to your inbox. Employees which are not part of this inbox will not be able to see or respond to messages in this inbox when they login. <br> <b>PS:</b> As an administrator, if you need access to all inboxes, you should add yourself as agent to all inboxes that you create.",
+        "DESC": "Here you can add employees to manage your newly created inbox. Only these selected employees will have access to your inbox. Employees who are not part of this inbox will not be able to see or respond to messages in it after they sign in.",
+        "ADMIN_NOTE_LABEL": "PS:",
+        "ADMIN_NOTE": "As an administrator, if you need access to all inboxes, add yourself as an agent to every inbox you create.",
         "VALIDATION_ERROR": "Add at least one agent to your new Inbox",
         "PICK_AGENTS": "Pick employees for the inbox"
       },
@@ -542,6 +562,22 @@
       "MORE_SETTINGS": "More settings",
       "WEBSITE_SUCCESS": "You have successfully finished creating a website channel. Copy the code shown below and paste it on your website. Next time a customer use the live chat, the conversation will automatically appear on your inbox.",
       "WHATSAPP_QR_INSTRUCTION": "Scan the QR code above to quickly test your WhatsApp inbox",
+      "WHATSAPP_WEB": {
+        "TITLE": "WhatsApp Web қосылымы",
+        "DESCRIPTION": "Бұл QR-код дәл осы WhatsApp Web inbox-ына тиесілі. Қосылу Evolution API арқылы жүреді және осы inbox үшін жеке WhatsApp Web сессиясын жасайды.",
+        "SCAN_HINT": "Телефоныңыздағы WhatsApp-ты ашып, Linked Devices бөліміне өтіңіз де, төмендегі QR-кодты сканерлеңіз.",
+        "CONNECTING": "Evolution API-ге қосылып, WhatsApp Web үшін жаңа QR-код сұратып жатырмыз.",
+        "LOADING_TITLE": "WhatsApp Web QR-коды сұратылып жатыр",
+        "LOADING_DESCRIPTION": "Қосылу қадамы аяқталғанша күтіңіз. Evolution API кодты қайтарған сәтте, ол осы жерде автоматты түрде көрсетіледі.",
+        "QR_DESCRIPTION": "Бұл QR-кодты тек осы нақты WhatsApp Web inbox-ын қосу үшін пайдаланыңыз.",
+        "PAIR_CODE_LABEL": "Қосу коды",
+        "PAIR_CODE_DESCRIPTION": "Егер QR-код сканерленбесе, осы кодты телефоныңыздағы WhatsApp ішінде енгізіңіз.",
+        "CONNECTED": "WhatsApp Web әлдеқашан қосылған.",
+        "FAILED": "WhatsApp Web үшін QR-кодты алу мүмкін болмады.",
+        "REQUEST_NEW_QR": "Жаңа QR-код сұрату",
+        "REFRESH_SUCCESS": "WhatsApp Web QR-коды жаңартылды",
+        "REFRESH_ERROR": "WhatsApp Web QR-кодын жаңарту мүмкін болмады"
+      },
       "MESSENGER_QR_INSTRUCTION": "Scan the QR code above to quickly test your Facebook Messenger inbox",
       "TELEGRAM_QR_INSTRUCTION": "Scan the QR code above to quickly test your Telegram inbox"
     },
@@ -746,8 +782,8 @@
       "WHATSAPP_APP_ID_MISSING": "WhatsApp App ID is not configured. Please contact your administrator.",
       "WHATSAPP_CONFIG_ID_MISSING": "WhatsApp Configuration ID is not configured. Please contact your administrator.",
       "WHATSAPP_LOGIN_CANCELLED": "WhatsApp login was cancelled. Please try again.",
-      "WHATSAPP_WEBHOOK_TITLE": "Webhook Verification Token",
-      "WHATSAPP_WEBHOOK_SUBHEADER": "This token is used to verify the authenticity of the webhook endpoint.",
+      "WHATSAPP_WEBHOOK_TITLE": "Webhook растау токені",
+      "WHATSAPP_WEBHOOK_SUBHEADER": "Бұл токен webhook endpoint түпнұсқалығын тексеру үшін қолданылады.",
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
@@ -1091,6 +1127,7 @@
       "TWITTER_PROFILE": "Twitter",
       "TWILIO_SMS": "Twilio SMS",
       "WHATSAPP": "WhatsApp",
+      "WHATSAPP_WEB": "WhatsApp Web",
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",

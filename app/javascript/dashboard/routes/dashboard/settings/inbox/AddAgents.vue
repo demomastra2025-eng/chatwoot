@@ -76,9 +76,9 @@ export default {
         router.replace({
           name: 'settings_inbox_finish',
           params: {
-            page: 'new',
             inbox_id: this.$route.params.inbox_id,
           },
+          query: this.$route.query,
         });
       } catch (error) {
         useAlert(error.message);
@@ -93,10 +93,18 @@ export default {
   <div class="h-full w-full p-6 col-span-6">
     <form class="flex flex-wrap flex-col mx-0" @submit.prevent="addAgents()">
       <div class="w-full">
-        <PageHeader
-          :header-title="$t('INBOX_MGMT.ADD.AGENTS.TITLE')"
-          :header-content="$t('INBOX_MGMT.ADD.AGENTS.DESC')"
-        />
+        <PageHeader :header-title="$t('INBOX_MGMT.ADD.AGENTS.TITLE')">
+          <template #content>
+            <div class="text-sm w-full text-n-slate-11 space-y-2">
+              <p>{{ $t('INBOX_MGMT.ADD.AGENTS.DESC') }}</p>
+              <p>
+                <strong>{{ $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE_LABEL') }}</strong>
+                {{ ' ' }}
+                {{ $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE') }}
+              </p>
+            </div>
+          </template>
+        </PageHeader>
       </div>
       <div>
         <div class="w-full mb-4">

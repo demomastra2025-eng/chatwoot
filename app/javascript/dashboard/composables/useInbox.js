@@ -1,7 +1,7 @@
 import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
-import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { API_LIKE_INBOX_TYPES, INBOX_TYPES } from 'dashboard/helper/inbox';
 
 export const INBOX_FEATURES = {
   REPLY_TO: 'replyTo',
@@ -18,7 +18,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TIKTOK,
-    INBOX_TYPES.API,
+    ...API_LIKE_INBOX_TYPES,
   ],
   [INBOX_FEATURES.REPLY_TO_OUTGOING]: [
     INBOX_TYPES.WEB,
@@ -26,7 +26,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TIKTOK,
-    INBOX_TYPES.API,
+    ...API_LIKE_INBOX_TYPES,
   ],
 };
 
@@ -52,7 +52,7 @@ export const useInbox = (inboxId = null) => {
   });
 
   const isAPIInbox = computed(() => {
-    return channelType.value === INBOX_TYPES.API;
+    return API_LIKE_INBOX_TYPES.includes(channelType.value);
   });
 
   const isAFacebookInbox = computed(() => {
@@ -112,6 +112,10 @@ export const useInbox = (inboxId = null) => {
     );
   });
 
+  const isAWhatsAppWebChannel = computed(() => {
+    return channelType.value === INBOX_TYPES.WHATSAPP_WEB;
+  });
+
   const is360DialogWhatsAppChannel = computed(() => {
     return (
       channelType.value === INBOX_TYPES.WHATSAPP &&
@@ -152,6 +156,7 @@ export const useInbox = (inboxId = null) => {
     isAGoogleInbox,
     isATwilioWhatsAppChannel,
     isAWhatsAppCloudChannel,
+    isAWhatsAppWebChannel,
     is360DialogWhatsAppChannel,
     isAnEmailChannel,
     isAnInstagramChannel,

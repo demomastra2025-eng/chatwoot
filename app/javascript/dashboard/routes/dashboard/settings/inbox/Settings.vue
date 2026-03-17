@@ -27,9 +27,14 @@ import AccountHealth from './components/AccountHealth.vue';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import InboxSelect from 'dashboard/components-next/select/Select.vue';
+
+const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
+  '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
 
 export default {
   components: {
@@ -48,6 +53,8 @@ export default {
     MicrosoftReauthorize,
     GoogleReauthorize,
     NextButton,
+    Checkbox,
+    InboxSelect,
     InstagramReauthorize,
     TiktokReauthorize,
     WhatsappReauthorize,
@@ -85,6 +92,21 @@ export default {
       healthData: null,
       isLoadingHealth: false,
       healthError: null,
+      whatsappWebDiagnostics: null,
+      isLoadingWhatsappWebDiagnostics: false,
+      isRefreshingWhatsappWebStatus: false,
+      isRunningWhatsappWebReconnect: false,
+      isRunningWhatsappWebDisconnect: false,
+      isRunningWhatsappWebRepair: false,
+      isRefreshingWhatsappWebQr: false,
+      whatsappWebConversationPending: false,
+      whatsappWebHistoryLookbackDays: 365,
+      whatsappWebIgnoreJids: '',
+      whatsappWebSignMessages: false,
+      whatsappWebSignDelimiter: '\\n',
+      whatsappWebImportContacts: true,
+      whatsappWebImportMessages: true,
+      whatsappWebSyncLabels: true,
     };
   },
   computed: {
@@ -99,6 +121,15 @@ export default {
     },
     shouldShowWhatsAppConfiguration() {
       return this.isAWhatsAppCloudChannel;
+    },
+    isAWhatsAppWebInbox() {
+      return this.inbox?.channel_type === 'Channel::WhatsappWeb';
+    },
+    whatsappWebEvolutionState() {
+      return this.inbox?.additional_attributes?.evolution || {};
+    },
+    shouldShowWhatsappWebLifecycleSection() {
+      return this.isAWhatsAppWebInbox;
     },
     whatsAppAPIProviderName() {
       if (this.isAWhatsAppCloudChannel) {
@@ -155,7 +186,7 @@ export default {
       if (
         this.isATwilioChannel ||
         this.isALineChannel ||
-        this.isAPIInbox ||
+        (this.isAPIInbox && !this.isAWhatsAppWebInbox) ||
         this.isAVoiceChannel ||
         (this.isAnEmailChannel && !this.inbox.provider) ||
         this.shouldShowWhatsAppConfiguration ||
@@ -303,6 +334,14 @@ export default {
         this.healthData.throughput?.level === 'NOT_APPLICABLE'
       );
     },
+    whatsappWebDiagnosticsCounts() {
+      return this.whatsappWebDiagnostics?.counts || {};
+    },
+    whatsappWebIgnoreJidsPlaceholder() {
+      return this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IGNORE_JIDS_PLACEHOLDER', {
+        sample_jids: WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE,
+      });
+    },
   },
   watch: {
     $route(to) {
@@ -369,6 +408,10 @@ export default {
       this.selectedTabIndex = selectedTabIndex;
       this.refreshAvatarUrlOnTabChange(selectedTabIndex);
       this.updateRouteWithoutRefresh(selectedTabIndex);
+      if (this.tabs[selectedTabIndex]?.key === 'inbox-settings') {
+        this.syncWhatsappWebStatus();
+        this.fetchWhatsappWebDiagnostics();
+      }
     },
     updateRouteWithoutRefresh(selectedTabIndex) {
       const tab = this.tabs[selectedTabIndex];
@@ -413,16 +456,163 @@ export default {
         this.selectedFeatureFlags = this.inbox.selected_feature_flags || [];
         this.replyTime = this.inbox.reply_time;
         this.locktoSingleConversation = this.inbox.lock_to_single_conversation;
+        this.whatsappWebConversationPending =
+          this.inbox.conversation_pending || false;
+        this.whatsappWebHistoryLookbackDays =
+          this.inbox.history_lookback_days || 365;
+        this.whatsappWebIgnoreJids = (this.inbox.ignore_jids || []).join('\n');
+        this.whatsappWebSignMessages = this.inbox.sign_messages || false;
+        this.whatsappWebSignDelimiter = this.inbox.sign_delimiter || '\\n';
+        this.whatsappWebImportContacts =
+          this.inbox.import_contacts !== undefined
+            ? this.inbox.import_contacts
+            : true;
+        this.whatsappWebImportMessages =
+          this.inbox.import_messages !== undefined
+            ? this.inbox.import_messages
+            : true;
+        this.whatsappWebSyncLabels =
+          this.inbox.sync_labels !== undefined ? this.inbox.sync_labels : true;
         this.selectedPortalSlug = this.inbox.help_center
           ? this.inbox.help_center.slug
           : '';
 
         // Set initial tab after inbox data is loaded
         this.setTabFromRouteParam();
+        this.syncWhatsappWebStatus();
+        this.fetchWhatsappWebDiagnostics();
       });
+    },
+    async syncWhatsappWebStatus() {
+      if (!this.isAWhatsAppWebInbox || !this.currentInboxId) {
+        return;
+      }
+
+      try {
+        this.isRefreshingWhatsappWebStatus = true;
+        await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
+          inboxId: this.currentInboxId,
+          statusOnly: true,
+        });
+      } catch (error) {
+        // Diagnostics should stay non-blocking in settings.
+      } finally {
+        this.isRefreshingWhatsappWebStatus = false;
+      }
+    },
+    async fetchWhatsappWebDiagnostics() {
+      if (!this.isAWhatsAppWebInbox || !this.currentInboxId) {
+        this.whatsappWebDiagnostics = null;
+        return;
+      }
+
+      try {
+        this.isLoadingWhatsappWebDiagnostics = true;
+        this.whatsappWebDiagnostics = await this.$store.dispatch(
+          'inboxes/getWhatsappWebDiagnostics',
+          this.currentInboxId
+        );
+      } catch (error) {
+        this.whatsappWebDiagnostics = null;
+      } finally {
+        this.isLoadingWhatsappWebDiagnostics = false;
+      }
+    },
+    async reconnectWhatsappWeb() {
+      try {
+        this.isRunningWhatsappWebReconnect = true;
+        await this.$store.dispatch(
+          'inboxes/reconnectWhatsappWeb',
+          this.currentInboxId
+        );
+        await this.fetchWhatsappWebDiagnostics();
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT_STARTED'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningWhatsappWebReconnect = false;
+      }
+    },
+    async disconnectWhatsappWeb() {
+      try {
+        this.isRunningWhatsappWebDisconnect = true;
+        await this.$store.dispatch(
+          'inboxes/disconnectWhatsappWeb',
+          this.currentInboxId
+        );
+        await this.fetchWhatsappWebDiagnostics();
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningWhatsappWebDisconnect = false;
+      }
+    },
+    async repairWhatsappWeb() {
+      try {
+        this.isRunningWhatsappWebRepair = true;
+        await this.$store.dispatch(
+          'inboxes/repairWhatsappWeb',
+          this.currentInboxId
+        );
+        await this.fetchWhatsappWebDiagnostics();
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_ERROR')
+        );
+      } finally {
+        this.isRunningWhatsappWebRepair = false;
+      }
+    },
+    async refreshWhatsappWebQr() {
+      try {
+        this.isRefreshingWhatsappWebQr = true;
+        await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
+          inboxId: this.currentInboxId,
+          statusOnly: false,
+        });
+        await this.fetchWhatsappWebDiagnostics();
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_REFRESH_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_REFRESH_ERROR')
+        );
+      } finally {
+        this.isRefreshingWhatsappWebQr = false;
+      }
     },
     async updateInbox() {
       try {
+        const channelPayload = {
+          widget_color: this.inbox.widget_color,
+          website_url: this.channelWebsiteUrl,
+          webhook_url: this.webhookUrl,
+          welcome_title: this.channelWelcomeTitle || '',
+          welcome_tagline: this.channelWelcomeTagline || '',
+          selectedFeatureFlags: this.selectedFeatureFlags,
+          reply_time: this.replyTime || 'in_a_few_minutes',
+          continuity_via_email: this.continuityViaEmail,
+        };
+
+        if (this.isAWhatsAppWebInbox) {
+          channelPayload.conversation_pending =
+            this.whatsappWebConversationPending;
+          channelPayload.history_lookback_days =
+            this.normalizedWhatsappWebHistoryLookbackDays();
+          channelPayload.ignore_jids = this.normalizedWhatsappWebIgnoreJids();
+          channelPayload.sign_messages = this.whatsappWebSignMessages;
+          channelPayload.sign_delimiter =
+            this.whatsappWebSignDelimiter || '\\n';
+          channelPayload.import_contacts = this.whatsappWebImportContacts;
+          channelPayload.import_messages = this.whatsappWebImportMessages;
+          channelPayload.sync_labels = this.whatsappWebSyncLabels;
+        }
+
         const payload = {
           id: this.currentInboxId,
           name: this.selectedInboxName?.trim(),
@@ -438,16 +628,7 @@ export default {
           lock_to_single_conversation: this.locktoSingleConversation,
           sender_name_type: this.senderNameType,
           business_name: this.businessName || null,
-          channel: {
-            widget_color: this.inbox.widget_color,
-            website_url: this.channelWebsiteUrl,
-            webhook_url: this.webhookUrl,
-            welcome_title: this.channelWelcomeTitle || '',
-            welcome_tagline: this.channelWelcomeTagline || '',
-            selectedFeatureFlags: this.selectedFeatureFlags,
-            reply_time: this.replyTime || 'in_a_few_minutes',
-            continuity_via_email: this.continuityViaEmail,
-          },
+          channel: channelPayload,
         };
         if (this.avatarFile) {
           payload.avatar = this.avatarFile;
@@ -481,6 +662,21 @@ export default {
     },
     toggleSenderNameType(key) {
       this.senderNameType = key;
+    },
+    normalizedWhatsappWebHistoryLookbackDays() {
+      const value = Number(this.whatsappWebHistoryLookbackDays);
+
+      if (!Number.isFinite(value) || value <= 0) {
+        return 365;
+      }
+
+      return Math.min(Math.trunc(value), 3650);
+    },
+    normalizedWhatsappWebIgnoreJids() {
+      return this.whatsappWebIgnoreJids
+        .split(/[\n,]+/)
+        .map(value => value.trim())
+        .filter(Boolean);
     },
     onClickShowBusinessNameInput() {
       this.showBusinessNameInput = !this.showBusinessNameInput;
@@ -575,7 +771,7 @@ export default {
             @blur="v$.selectedInboxName.$touch"
           />
           <woot-input
-            v-if="isAPIInbox"
+            v-if="isAPIInbox && channelType !== 'Channel::WhatsappWeb'"
             v-model="webhookUrl"
             class="pb-4"
             :class="{ error: v$.webhookUrl.$error }"
@@ -647,7 +843,7 @@ export default {
             {{
               $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.LABEL')
             }}
-            <select v-model="greetingEnabled">
+            <InboxSelect v-model="greetingEnabled">
               <option :value="true">
                 {{
                   $t(
@@ -662,7 +858,7 @@ export default {
                   )
                 }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{
                 $t(
@@ -689,7 +885,7 @@ export default {
           </div>
           <label v-if="isAWebWidgetInbox" class="pb-4">
             {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.REPLY_TIME.TITLE') }}
-            <select v-model="replyTime">
+            <InboxSelect v-model="replyTime">
               <option key="in_a_few_minutes" value="in_a_few_minutes">
                 {{
                   $t(
@@ -705,7 +901,7 @@ export default {
               <option key="in_a_day" value="in_a_day">
                 {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.REPLY_TIME.IN_A_DAY') }}
               </option>
-            </select>
+            </InboxSelect>
 
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.REPLY_TIME.HELP_TEXT') }}
@@ -714,14 +910,14 @@ export default {
 
           <label v-if="isAWebWidgetInbox" class="pb-4">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.ENABLE_EMAIL_COLLECT_BOX') }}
-            <select v-model="emailCollectEnabled">
+            <InboxSelect v-model="emailCollectEnabled">
               <option :value="true">
                 {{ $t('INBOX_MGMT.EDIT.EMAIL_COLLECT_BOX.ENABLED') }}
               </option>
               <option :value="false">
                 {{ $t('INBOX_MGMT.EDIT.EMAIL_COLLECT_BOX.DISABLED') }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{
                 $t(
@@ -733,7 +929,7 @@ export default {
 
           <label v-if="isAWebWidgetInbox" class="pb-4">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.ALLOW_MESSAGES_AFTER_RESOLVED') }}
-            <select v-model="allowMessagesAfterResolved">
+            <InboxSelect v-model="allowMessagesAfterResolved">
               <option :value="true">
                 {{
                   $t('INBOX_MGMT.EDIT.ALLOW_MESSAGES_AFTER_RESOLVED.ENABLED')
@@ -744,7 +940,7 @@ export default {
                   $t('INBOX_MGMT.EDIT.ALLOW_MESSAGES_AFTER_RESOLVED.DISABLED')
                 }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{
                 $t(
@@ -756,14 +952,14 @@ export default {
 
           <label v-if="isAWebWidgetInbox" class="pb-4">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.ENABLE_CONTINUITY_VIA_EMAIL') }}
-            <select v-model="continuityViaEmail">
+            <InboxSelect v-model="continuityViaEmail">
               <option :value="true">
                 {{ $t('INBOX_MGMT.EDIT.ENABLE_CONTINUITY_VIA_EMAIL.ENABLED') }}
               </option>
               <option :value="false">
                 {{ $t('INBOX_MGMT.EDIT.ENABLE_CONTINUITY_VIA_EMAIL.DISABLED') }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{
                 $t(
@@ -776,28 +972,28 @@ export default {
             <label>
               {{ $t('INBOX_MGMT.HELP_CENTER.LABEL') }}
             </label>
-            <select v-model="selectedPortalSlug" class="filter__question">
+            <InboxSelect v-model="selectedPortalSlug" class="filter__question">
               <option value="">
                 {{ $t('INBOX_MGMT.HELP_CENTER.PLACEHOLDER') }}
               </option>
               <option v-for="p in portals" :key="p.slug" :value="p.slug">
                 {{ p.name }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{ $t('INBOX_MGMT.HELP_CENTER.SUB_TEXT') }}
             </p>
           </div>
           <label v-if="canLocktoSingleConversation" class="pb-4">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.LOCK_TO_SINGLE_CONVERSATION') }}
-            <select v-model="locktoSingleConversation">
+            <InboxSelect v-model="locktoSingleConversation">
               <option :value="true">
                 {{ $t('INBOX_MGMT.EDIT.LOCK_TO_SINGLE_CONVERSATION.ENABLED') }}
               </option>
               <option :value="false">
                 {{ $t('INBOX_MGMT.EDIT.LOCK_TO_SINGLE_CONVERSATION.DISABLED') }}
               </option>
-            </select>
+            </InboxSelect>
             <p class="pb-1 text-sm not-italic text-n-slate-11">
               {{
                 $t(
@@ -811,48 +1007,403 @@ export default {
             {{ $t('INBOX_MGMT.FEATURES.LABEL') }}
           </label>
           <div v-if="isAWebWidgetInbox" class="flex gap-2 pt-2 pb-4">
-            <input
+            <Checkbox
+              id="attachments"
               v-model="selectedFeatureFlags"
-              type="checkbox"
               value="attachments"
-              @input="handleFeatureFlag"
+              @change="handleFeatureFlag"
             />
             <label for="attachments">
               {{ $t('INBOX_MGMT.FEATURES.DISPLAY_FILE_PICKER') }}
             </label>
           </div>
           <div v-if="isAWebWidgetInbox" class="flex gap-2 pb-4">
-            <input
+            <Checkbox
+              id="emoji_picker"
               v-model="selectedFeatureFlags"
-              type="checkbox"
               value="emoji_picker"
-              @input="handleFeatureFlag"
+              @change="handleFeatureFlag"
             />
             <label for="emoji_picker">
               {{ $t('INBOX_MGMT.FEATURES.DISPLAY_EMOJI_PICKER') }}
             </label>
           </div>
           <div v-if="isAWebWidgetInbox" class="flex gap-2 pb-4">
-            <input
+            <Checkbox
+              id="end_conversation"
               v-model="selectedFeatureFlags"
-              type="checkbox"
               value="end_conversation"
-              @input="handleFeatureFlag"
+              @change="handleFeatureFlag"
             />
             <label for="end_conversation">
               {{ $t('INBOX_MGMT.FEATURES.ALLOW_END_CONVERSATION') }}
             </label>
           </div>
           <div v-if="isAWebWidgetInbox" class="flex gap-2 pb-4">
-            <input
+            <Checkbox
+              id="use_inbox_avatar_for_bot"
               v-model="selectedFeatureFlags"
-              type="checkbox"
               value="use_inbox_avatar_for_bot"
-              @input="handleFeatureFlag"
+              @change="handleFeatureFlag"
             />
             <label for="use_inbox_avatar_for_bot">
               {{ $t('INBOX_MGMT.FEATURES.USE_INBOX_AVATAR_FOR_BOT') }}
             </label>
+          </div>
+        </SettingsSection>
+        <SettingsSection
+          v-if="shouldShowWhatsappWebLifecycleSection"
+          :title="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.TITLE')"
+          :sub-title="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SUBTITLE')"
+          :show-border="false"
+        >
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div class="rounded-xl border border-n-strong p-4">
+              <p class="mb-3 text-sm font-medium text-n-slate-12">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CONNECTION_STATE') }}
+              </p>
+              <div class="space-y-2 text-sm text-n-slate-11">
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.STATUS')
+                  }}</span>
+                  {{ whatsappWebEvolutionState.status || 'unknown' }}
+                </p>
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CONNECTION')
+                  }}</span>
+                  {{ whatsappWebEvolutionState.connection_state || 'unknown' }}
+                </p>
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.INSTANCE')
+                  }}</span>
+                  {{
+                    whatsappWebEvolutionState.instance_name ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NUMBER')
+                  }}</span>
+                  {{
+                    whatsappWebEvolutionState.number ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.LAST_SYNCED')
+                  }}</span>
+                  {{
+                    whatsappWebEvolutionState.last_synced_at ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p>
+                  <span class="font-medium text-n-slate-12">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SERVICE_USER')
+                  }}</span>
+                  {{
+                    whatsappWebEvolutionState.service_user?.email ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p v-if="whatsappWebEvolutionState.last_error">
+                  <span class="font-medium text-rose-600">{{
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.LAST_ERROR')
+                  }}</span>
+                  {{ whatsappWebEvolutionState.last_error }}
+                </p>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-n-strong p-4">
+              <p class="mb-3 text-sm font-medium text-n-slate-12">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.OPERATOR_ACTIONS') }}
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <NextButton
+                  outline
+                  slate
+                  :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT')"
+                  :is-loading="isRunningWhatsappWebReconnect"
+                  @click="reconnectWhatsappWeb"
+                />
+                <NextButton
+                  outline
+                  slate
+                  :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REFRESH_QR')"
+                  :is-loading="isRefreshingWhatsappWebQr"
+                  @click="refreshWhatsappWebQr"
+                />
+                <NextButton
+                  outline
+                  slate
+                  :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT')"
+                  :is-loading="isRunningWhatsappWebDisconnect"
+                  @click="disconnectWhatsappWeb"
+                />
+                <NextButton
+                  outline
+                  slate
+                  :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_SYNC')"
+                  :is-loading="isRunningWhatsappWebRepair"
+                  @click="repairWhatsappWeb"
+                />
+              </div>
+              <p class="mt-3 text-sm text-n-slate-10">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.AUTO_SYNC_HINT') }}
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-n-strong p-4">
+            <p class="mb-3 text-sm font-medium text-n-slate-12">
+              {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NATIVE_SETTINGS') }}
+            </p>
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div class="space-y-4">
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{
+                      $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CONVERSATION_PENDING')
+                    }}
+                  </span>
+                  <InboxSelect v-model="whatsappWebConversationPending">
+                    <option :value="true">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_ENABLED') }}
+                    </option>
+                    <option :value="false">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_DISABLED') }}
+                    </option>
+                  </InboxSelect>
+                  <p class="mt-1 text-sm text-n-slate-10">
+                    {{
+                      $t(
+                        'INBOX_MGMT.EDIT.WHATSAPP_WEB.CONVERSATION_PENDING_HINT'
+                      )
+                    }}
+                  </p>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{
+                      $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.HISTORY_LOOKBACK_DAYS')
+                    }}
+                  </span>
+                  <input
+                    v-model="whatsappWebHistoryLookbackDays"
+                    class="mb-0"
+                    type="number"
+                    min="1"
+                    max="3650"
+                  />
+                  <p class="mt-1 text-sm text-n-slate-10">
+                    {{
+                      $t(
+                        'INBOX_MGMT.EDIT.WHATSAPP_WEB.HISTORY_LOOKBACK_DAYS_HINT'
+                      )
+                    }}
+                  </p>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IGNORE_JIDS') }}
+                  </span>
+                  <textarea
+                    v-model="whatsappWebIgnoreJids"
+                    class="mb-0 min-h-[112px] w-full resize-y"
+                    :placeholder="whatsappWebIgnoreJidsPlaceholder"
+                  />
+                  <p class="mt-1 text-sm text-n-slate-10">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IGNORE_JIDS_HINT') }}
+                  </p>
+                </label>
+              </div>
+
+              <div class="space-y-4">
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IMPORT_CONTACTS') }}
+                  </span>
+                  <InboxSelect v-model="whatsappWebImportContacts">
+                    <option :value="true">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_ENABLED') }}
+                    </option>
+                    <option :value="false">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_DISABLED') }}
+                    </option>
+                  </InboxSelect>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IMPORT_MESSAGES') }}
+                  </span>
+                  <InboxSelect v-model="whatsappWebImportMessages">
+                    <option :value="true">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_ENABLED') }}
+                    </option>
+                    <option :value="false">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_DISABLED') }}
+                    </option>
+                  </InboxSelect>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SYNC_LABELS') }}
+                  </span>
+                  <InboxSelect v-model="whatsappWebSyncLabels">
+                    <option :value="true">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_ENABLED') }}
+                    </option>
+                    <option :value="false">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_DISABLED') }}
+                    </option>
+                  </InboxSelect>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SIGN_MESSAGES') }}
+                  </span>
+                  <InboxSelect v-model="whatsappWebSignMessages">
+                    <option :value="true">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_ENABLED') }}
+                    </option>
+                    <option :value="false">
+                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SETTING_DISABLED') }}
+                    </option>
+                  </InboxSelect>
+                </label>
+
+                <label class="block">
+                  <span class="mb-1 block text-sm font-medium text-n-slate-12">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SIGN_DELIMITER') }}
+                  </span>
+                  <input
+                    v-model="whatsappWebSignDelimiter"
+                    class="mb-0"
+                    type="text"
+                    :placeholder="
+                      $t(
+                        'INBOX_MGMT.EDIT.WHATSAPP_WEB.SIGN_DELIMITER_PLACEHOLDER'
+                      )
+                    "
+                  />
+                  <p class="mt-1 text-sm text-n-slate-10">
+                    {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.SIGN_DELIMITER_HINT') }}
+                  </p>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-n-strong p-4">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm font-medium text-n-slate-12">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DIAGNOSTICS') }}
+              </p>
+              <span
+                v-if="
+                  isLoadingWhatsappWebDiagnostics ||
+                  isRefreshingWhatsappWebStatus
+                "
+                class="text-sm text-n-slate-10"
+              >
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REFRESHING') }}
+              </span>
+            </div>
+            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div class="rounded-lg bg-n-alpha-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-n-slate-10">
+                  {{
+                    $t(
+                      'INBOX_MGMT.EDIT.WHATSAPP_WEB.MISSING_PROVIDER_MESSAGE_ID'
+                    )
+                  }}
+                </p>
+                <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                  {{
+                    whatsappWebDiagnosticsCounts.messages_missing_provider_message_id ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div class="rounded-lg bg-n-alpha-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-n-slate-10">
+                  {{
+                    $t(
+                      'INBOX_MGMT.EDIT.WHATSAPP_WEB.MISSING_PROVIDER_CONVERSATION_ID'
+                    )
+                  }}
+                </p>
+                <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                  {{
+                    whatsappWebDiagnosticsCounts.conversations_missing_provider_conversation_id ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div class="rounded-lg bg-n-alpha-2 p-3">
+                <p class="text-xs uppercase tracking-wide text-n-slate-10">
+                  {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.PROVISIONAL_CONTACTS') }}
+                </p>
+                <p class="mt-1 text-lg font-semibold text-n-slate-12">
+                  {{ whatsappWebDiagnosticsCounts.provisional_contacts ?? 0 }}
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                whatsappWebDiagnostics?.samples?.provisional_contacts?.length
+              "
+              class="mt-4"
+            >
+              <p class="mb-2 text-sm font-medium text-n-slate-12">
+                {{
+                  $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.PROVISIONAL_CONTACTS_SAMPLE')
+                }}
+              </p>
+              <div
+                v-for="contact in whatsappWebDiagnostics.samples
+                  .provisional_contacts"
+                :key="contact.id"
+                class="mb-2 rounded-lg border border-n-strong p-3 text-sm text-n-slate-11"
+              >
+                <p class="font-medium text-n-slate-12">
+                  {{ contact.name || `Contact #${contact.id}` }}
+                </p>
+                <p>
+                  {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RAW_JID') }}
+                  {{
+                    contact.raw_jid ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p>
+                  {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.CANONICAL_JID') }}
+                  {{
+                    contact.canonical_jid ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+                <p>
+                  {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.IDENTIFIER') }}
+                  {{
+                    contact.identifier ||
+                    $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.NOT_AVAILABLE')
+                  }}
+                </p>
+              </div>
+            </div>
           </div>
         </SettingsSection>
         <SettingsSection

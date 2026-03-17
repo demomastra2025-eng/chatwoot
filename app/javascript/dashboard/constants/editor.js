@@ -39,6 +39,11 @@ export const FORMATTING = {
     nodes: [],
     menu: ['copilot', 'strong', 'em', 'undo', 'redo'],
   },
+  'Channel::WhatsappWeb': {
+    marks: ['strong', 'em'],
+    nodes: [],
+    menu: ['copilot', 'strong', 'em', 'undo', 'redo'],
+  },
   'Channel::FacebookPage': {
     marks: ['strong', 'em', 'code', 'strike'],
     nodes: ['bulletList', 'orderedList', 'codeBlock'],

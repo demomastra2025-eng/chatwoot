@@ -240,7 +240,7 @@
         },
         "SELECT_PROVIDER": {
           "TITLE": "Select your API provider",
-          "DESCRIPTION": "Choose your WhatsApp provider. You can connect directly through Meta which requires no setup, or connect through Twilio using your account credentials."
+          "DESCRIPTION": "Choose how you want to connect WhatsApp. You can connect directly through Meta, through Twilio using your account credentials, or through WhatsApp Web with a QR code."
         },
         "INBOX_NAME": {
           "LABEL": "Inbox Name",
@@ -371,6 +371,20 @@
           "ERROR_MESSAGE": "We were not able to save the api channel"
         }
       },
+      "WHATSAPP_WEB_CHANNEL": {
+        "TITLE": "WhatsApp Web",
+        "DESC": "Enter the WhatsApp number. Onelink will generate the channel name, configure the Evolution webhook, and request a QR code automatically.",
+        "PHONE_NUMBER": {
+          "LABEL": "WhatsApp Number",
+          "SUBTITLE": "Enter a Kazakhstan number in the 77001234567 format. The plus sign will be added automatically.",
+          "PLACEHOLDER": "77001234567",
+          "ERROR": "Please enter an 11-digit Kazakhstan number in the 77001234567 format"
+        },
+        "SUBMIT_BUTTON": "Create WhatsApp Web Channel",
+        "API": {
+          "ERROR_MESSAGE": "We were not able to save the WhatsApp Web channel"
+        }
+      },
       "EMAIL_CHANNEL": {
         "TITLE": "Email Channel",
         "DESC": "Integrate your email inbox.",
@@ -454,6 +468,10 @@
             "TITLE": "WhatsApp",
             "DESCRIPTION": "Support your customers on WhatsApp"
           },
+          "WHATSAPP_WEB": {
+            "TITLE": "WhatsApp Web",
+            "DESCRIPTION": "Link a dedicated WhatsApp Web session with a QR code"
+          },
           "EMAIL": {
             "TITLE": "Email",
             "DESCRIPTION": "Connect with Gmail, Outlook, or other providers"
@@ -490,7 +508,9 @@
       },
       "AGENTS": {
         "TITLE": "Agents",
-        "DESC": "Here you can add agents to manage your newly created inbox. Only these selected agents will have access to your inbox. Agents which are not part of this inbox will not be able to see or respond to messages in this inbox when they login. <br> <b>PS:</b> As an administrator, if you need access to all inboxes, you should add yourself as agent to all inboxes that you create.",
+        "DESC": "Here you can add agents to manage your newly created inbox. Only these selected agents will have access to your inbox. Agents who are not part of this inbox will not be able to see or respond to messages in it after they sign in.",
+        "ADMIN_NOTE_LABEL": "PS:",
+        "ADMIN_NOTE": "As an administrator, if you need access to all inboxes, add yourself as an agent to every inbox you create.",
         "VALIDATION_ERROR": "Add at least one agent to your new Inbox",
         "PICK_AGENTS": "Pick agents for the inbox"
       },
@@ -542,8 +562,34 @@
       "MORE_SETTINGS": "More settings",
       "WEBSITE_SUCCESS": "You have successfully finished creating a website channel. Copy the code shown below and paste it on your website. Next time a customer use the live chat, the conversation will automatically appear on your inbox.",
       "WHATSAPP_QR_INSTRUCTION": "Scan the QR code above to quickly test your WhatsApp inbox",
+      "WHATSAPP_QR_ALT": "WhatsApp QR code",
+      "WHATSAPP_WEB": {
+        "TITLE": "WhatsApp Web connection",
+        "DESCRIPTION": "This QR code belongs specifically to this WhatsApp Web inbox. The connection is handled through Evolution API and creates a dedicated WhatsApp Web session for this inbox.",
+        "SCAN_HINT": "Open WhatsApp on your phone, go to Linked Devices, and scan the QR code below.",
+        "CONNECTING": "Connecting to Evolution API and requesting a new WhatsApp Web QR code.",
+        "LOADING_TITLE": "Requesting WhatsApp Web QR code",
+        "LOADING_DESCRIPTION": "Wait until the connection step finishes. As soon as Evolution API returns the code, it will appear here automatically.",
+        "QR_DESCRIPTION": "Use this QR code only to connect this specific WhatsApp Web inbox.",
+        "QR_ALT": "WhatsApp Web QR code",
+        "PAIR_CODE_LABEL": "Pairing code",
+        "PAIR_CODE_DESCRIPTION": "If the QR code doesn't scan, enter this code in WhatsApp on your phone.",
+        "CONNECTED": "WhatsApp Web is already connected.",
+        "CONNECTED_SYNCING_HISTORY": "WhatsApp Web is connected. Recent history is syncing in the background.",
+        "CONNECTED_SUCCESS": "WhatsApp Web connected successfully.",
+        "CONNECTED_SYNCING_HINT": "The device is linked. Redirecting now while messages and contacts finish syncing in the background.",
+        "CONNECTED_REDIRECT": "QR setup is complete. Redirecting to inbox settings...",
+        "FAILED": "We couldn't get a WhatsApp Web QR code.",
+        "RECOVERING": "The previous QR attempt failed or expired. Requesting a fresh WhatsApp Web QR code.",
+        "QR_EXPIRED_REFRESHING": "The QR code expired. Requesting a fresh WhatsApp Web QR code.",
+        "REQUEST_NEW_QR": "Request new QR code",
+        "REFRESH_SUCCESS": "WhatsApp Web QR code refreshed",
+        "REFRESH_ERROR": "Unable to refresh the WhatsApp Web QR code"
+      },
       "MESSENGER_QR_INSTRUCTION": "Scan the QR code above to quickly test your Facebook Messenger inbox",
-      "TELEGRAM_QR_INSTRUCTION": "Scan the QR code above to quickly test your Telegram inbox"
+      "MESSENGER_QR_ALT": "Messenger QR code",
+      "TELEGRAM_QR_INSTRUCTION": "Scan the QR code above to quickly test your Telegram inbox",
+      "TELEGRAM_QR_ALT": "Telegram QR code"
     },
     "REAUTH": "Reauthorize",
     "VIEW": "View",
@@ -552,6 +598,59 @@
         "SUCCESS_MESSAGE": "Inbox settings updated successfully",
         "AUTO_ASSIGNMENT_SUCCESS_MESSAGE": "Auto assignment updated successfully",
         "ERROR_MESSAGE": "We couldn't update inbox settings. Please try again later."
+      },
+      "WHATSAPP_WEB": {
+        "TITLE": "WhatsApp Web lifecycle",
+        "SUBTITLE": "Operator controls and provider diagnostics for the connected WhatsApp Web session.",
+        "CONNECTION_STATE": "Connection state",
+        "STATUS": "Status:",
+        "CONNECTION": "Connection:",
+        "INSTANCE": "Instance:",
+        "NUMBER": "Number:",
+        "LAST_SYNCED": "Last synced:",
+        "SERVICE_USER": "Service user:",
+        "LAST_ERROR": "Last error:",
+        "OPERATOR_ACTIONS": "Operator actions",
+        "RECONNECT": "Reconnect",
+        "RECONNECT_STARTED": "WhatsApp Web reconnect started",
+        "RECONNECT_ERROR": "Unable to reconnect WhatsApp Web",
+        "REFRESH_QR": "Refresh QR",
+        "QR_REFRESH_SUCCESS": "WhatsApp Web QR code refreshed",
+        "QR_REFRESH_ERROR": "Unable to refresh WhatsApp Web QR",
+        "DISCONNECT": "Disconnect",
+        "DISCONNECT_SUCCESS": "WhatsApp Web disconnected",
+        "DISCONNECT_ERROR": "Unable to disconnect WhatsApp Web",
+        "REPAIR_SYNC": "Repair sync",
+        "REPAIR_SUCCESS": "WhatsApp Web repair completed",
+        "REPAIR_ERROR": "Unable to repair WhatsApp Web",
+        "AUTO_SYNC_HINT": "A silent status sync runs whenever this settings screen opens.",
+        "NATIVE_SETTINGS": "Native channel settings",
+        "SETTING_ENABLED": "Enabled",
+        "SETTING_DISABLED": "Disabled",
+        "CONVERSATION_PENDING": "Start new inbound conversations as pending",
+        "CONVERSATION_PENDING_HINT": "When enabled, the first live inbound message from a contact starts the conversation in pending instead of open.",
+        "HISTORY_LOOKBACK_DAYS": "History lookback days",
+        "HISTORY_LOOKBACK_DAYS_HINT": "Full history sync imports messages from this many days back on the first successful connection.",
+        "IGNORE_JIDS": "Ignore JIDs",
+        "IGNORE_JIDS_PLACEHOLDER": "{sample_jids}",
+        "IGNORE_JIDS_HINT": "One WhatsApp JID per line. Ignored chats are skipped during inbound processing and history sync.",
+        "IMPORT_CONTACTS": "Import contacts",
+        "IMPORT_MESSAGES": "Import messages",
+        "SYNC_LABELS": "Sync WhatsApp labels",
+        "SIGN_MESSAGES": "Sign outgoing messages",
+        "SIGN_DELIMITER": "Signature delimiter",
+        "SIGN_DELIMITER_PLACEHOLDER": "\\n",
+        "SIGN_DELIMITER_HINT": "Use \\n to insert a line break between the agent signature and the message body.",
+        "DIAGNOSTICS": "Diagnostics",
+        "REFRESHING": "Refreshing...",
+        "MISSING_PROVIDER_MESSAGE_ID": "Missing provider message id",
+        "MISSING_PROVIDER_CONVERSATION_ID": "Missing provider conversation id",
+        "PROVISIONAL_CONTACTS": "Provisional contacts",
+        "PROVISIONAL_CONTACTS_SAMPLE": "Provisional contacts sample",
+        "NOT_AVAILABLE": "Not available",
+        "RAW_JID": "raw_jid:",
+        "CANONICAL_JID": "canonical_jid:",
+        "IDENTIFIER": "identifier:"
       },
       "EMAIL_COLLECT_BOX": {
         "ENABLED": "Enabled",
@@ -1091,6 +1190,7 @@
       "TWITTER_PROFILE": "Twitter",
       "TWILIO_SMS": "Twilio SMS",
       "WHATSAPP": "WhatsApp",
+      "WHATSAPP_WEB": "WhatsApp Web",
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",

@@ -151,7 +151,7 @@ export default {
 
       <label class="w-full">
         {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.LABEL') }}
-        <select v-model="greetingEnabled">
+        <Select v-model="greetingEnabled">
           <option :value="true">
             {{
               $t(
@@ -166,7 +166,7 @@ export default {
               )
             }}
           </option>
-        </select>
+        </Select>
         <p class="help-text">
           {{
             $t(

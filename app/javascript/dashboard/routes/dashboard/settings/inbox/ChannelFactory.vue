@@ -7,6 +7,7 @@ import Api from './channels/Api.vue';
 import Email from './channels/Email.vue';
 import Sms from './channels/Sms.vue';
 import Whatsapp from './channels/Whatsapp.vue';
+import WhatsappWeb from './channels/WhatsappWeb.vue';
 import Line from './channels/Line.vue';
 import Telegram from './channels/Telegram.vue';
 import Instagram from './channels/Instagram.vue';
@@ -18,6 +19,7 @@ const channelViewList = {
   website: Website,
   twitter: Twitter,
   api: Api,
+  whatsapp_web: WhatsappWeb,
   email: Email,
   sms: Sms,
   whatsapp: Whatsapp,

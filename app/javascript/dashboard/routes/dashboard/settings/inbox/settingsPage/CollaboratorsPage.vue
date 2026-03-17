@@ -604,10 +604,9 @@ onMounted(() => {
       <template v-else>
         <label class="w-3/4 settings-item">
           <div class="flex items-center gap-2">
-            <input
+            <Checkbox
               id="enableAutoAssignment"
               v-model="enableAutoAssignment"
-              type="checkbox"
               @change="handleToggleAutoAssignment"
             />
             <label for="enableAutoAssignment">

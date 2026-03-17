@@ -64,12 +64,11 @@ export default {
           {{ item.type }}
         </td>
         <td class="pre-chat-field">
-          <input
+          <Checkbox
             v-model="item['required']"
-            type="checkbox"
             :value="`${item.name}-required`"
             :disabled="!item['enabled']"
-            @click="handlePreChatFieldOptions($event, 'required', item)"
+            @change="handlePreChatFieldOptions($event, 'required', item)"
           />
         </td>
         <td

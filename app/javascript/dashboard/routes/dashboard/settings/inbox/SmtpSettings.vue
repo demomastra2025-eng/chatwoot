@@ -162,9 +162,8 @@ export default {
     >
       <form @submit.prevent="updateInbox">
         <label for="toggle-enable-smtp">
-          <input
+          <Checkbox
             v-model="isSMTPEnabled"
-            type="checkbox"
             name="toggle-enable-smtp"
           />
           {{ $t('INBOX_MGMT.SMTP.TOGGLE_AVAILABILITY') }}

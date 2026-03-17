@@ -139,11 +139,10 @@ export default {
     class="day-wrap flex py-2 gap-1 items-center px-0 min-h-[3rem] box-content border-b border-solid border-n-weak"
   >
     <div class="checkbox-wrap flex items-center">
-      <input
+      <Checkbox
         v-model="isDayEnabled"
         name="enable-day"
         class="m-0"
-        type="checkbox"
         :title="$t('INBOX_MGMT.BUSINESS_HOURS.DAY.ENABLE')"
       />
     </div>
@@ -158,11 +157,10 @@ export default {
     >
       <div class="flex items-center flex-shrink-0 flex-grow">
         <div class="checkbox-wrap flex items-center open-all-day mr-6">
-          <input
+          <Checkbox
             v-model="isOpenAllDay"
             name="enable-open-all-day"
             class="enable-checkbox text-sm font-medium"
-            type="checkbox"
             :title="$t('INBOX_MGMT.BUSINESS_HOURS.ALL_DAY')"
           />
           <span class="text-sm font-medium ml-1">{{

@@ -14,6 +14,7 @@ import PriorityMark from './PriorityMark.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
 import ContextMenu from 'dashboard/components/ui/ContextMenu.vue';
 import VoiceCallStatus from './VoiceCallStatus.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
   activeLabel: { type: String, default: '' },
@@ -270,11 +271,9 @@ const deleteConversation = () => {
             :style="{ width: `${size}px`, height: `${size}px` }"
             @click.stop
           >
-            <input
-              :value="selected"
-              :checked="selected"
+            <Checkbox
+              :model-value="selected"
               class="!m-0 cursor-pointer"
-              type="checkbox"
               @change="onSelectConversation($event.target.checked)"
             />
           </label>

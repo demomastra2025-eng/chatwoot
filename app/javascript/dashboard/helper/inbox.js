@@ -4,6 +4,7 @@ export const INBOX_TYPES = {
   TWITTER: 'Channel::TwitterProfile',
   TWILIO: 'Channel::TwilioSms',
   WHATSAPP: 'Channel::Whatsapp',
+  WHATSAPP_WEB: 'Channel::WhatsappWeb',
   API: 'Channel::Api',
   EMAIL: 'Channel::Email',
   TELEGRAM: 'Channel::Telegram',
@@ -13,6 +14,8 @@ export const INBOX_TYPES = {
   TIKTOK: 'Channel::Tiktok',
   VOICE: 'Channel::Voice',
 };
+
+export const API_LIKE_INBOX_TYPES = [INBOX_TYPES.API, INBOX_TYPES.WHATSAPP_WEB];
 
 export const TWILIO_CHANNEL_MEDIUM = {
   WHATSAPP: 'whatsapp',
@@ -24,6 +27,7 @@ const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.FB]: 'i-ri-messenger-fill',
   [INBOX_TYPES.TWITTER]: 'i-ri-twitter-x-fill',
   [INBOX_TYPES.WHATSAPP]: 'i-ri-whatsapp-fill',
+  [INBOX_TYPES.WHATSAPP_WEB]: 'i-ri-whatsapp-fill',
   [INBOX_TYPES.API]: 'i-ri-cloudy-fill',
   [INBOX_TYPES.EMAIL]: 'i-ri-mail-fill',
   [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-fill',
@@ -40,6 +44,7 @@ const INBOX_ICON_MAP_LINE = {
   [INBOX_TYPES.FB]: 'i-ri-messenger-line',
   [INBOX_TYPES.TWITTER]: 'i-ri-twitter-x-line',
   [INBOX_TYPES.WHATSAPP]: 'i-ri-whatsapp-line',
+  [INBOX_TYPES.WHATSAPP_WEB]: 'i-ri-whatsapp-line',
   [INBOX_TYPES.API]: 'i-ri-cloudy-line',
   [INBOX_TYPES.EMAIL]: 'i-ri-mail-line',
   [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-line',
@@ -85,6 +90,9 @@ export const getReadableInboxByType = (type, phoneNumber) => {
     case INBOX_TYPES.WHATSAPP:
       return 'whatsapp';
 
+    case INBOX_TYPES.WHATSAPP_WEB:
+      return 'whatsapp_web';
+
     case INBOX_TYPES.API:
       return 'api';
 
@@ -122,6 +130,7 @@ export const getInboxClassByType = (type, phoneNumber) => {
         : 'brand-sms';
 
     case INBOX_TYPES.WHATSAPP:
+    case INBOX_TYPES.WHATSAPP_WEB:
       return 'brand-whatsapp';
 
     case INBOX_TYPES.API:

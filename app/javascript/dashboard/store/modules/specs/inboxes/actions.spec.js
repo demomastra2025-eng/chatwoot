@@ -255,4 +255,137 @@ describe('#actions', () => {
       );
     });
   });
+
+  describe('#refreshWhatsappWebQr', () => {
+    it('updates the inbox when the qr refresh succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.refreshWhatsappWebQr({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        {}
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+
+    it('supports silent status sync without forcing a new qr code', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      await actions.refreshWhatsappWebQr(
+        { commit },
+        { inboxId: 123, statusOnly: true }
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        { status_only: true }
+      );
+    });
+
+    it('throws a readable error when the qr refresh fails', async () => {
+      axios.post.mockRejectedValue({
+        response: { data: { error: 'Unable to refresh QR code' } },
+      });
+
+      await expect(
+        actions.refreshWhatsappWebQr({ commit }, 123)
+      ).rejects.toThrow('Unable to refresh QR code');
+    });
+
+    it('deduplicates in-flight status sync requests for the same inbox', async () => {
+      let resolveRequest;
+      axios.post.mockReturnValue(
+        new Promise(resolve => {
+          resolveRequest = resolve;
+        })
+      );
+
+      const firstRequest = actions.refreshWhatsappWebQr(
+        { commit },
+        { inboxId: 123, statusOnly: true }
+      );
+      const secondRequest = actions.refreshWhatsappWebQr(
+        { commit },
+        { inboxId: 123, statusOnly: true }
+      );
+
+      expect(axios.post).toHaveBeenCalledTimes(1);
+
+      resolveRequest({ data: inboxList[0] });
+      await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual(
+        [inboxList[0], inboxList[0]]
+      );
+      expect(commit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('#reconnectWhatsappWeb', () => {
+    it('updates the inbox when reconnect succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.reconnectWhatsappWeb({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/reconnect_whatsapp_web'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#disconnectWhatsappWeb', () => {
+    it('updates the inbox when disconnect succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.disconnectWhatsappWeb({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/disconnect_whatsapp_web'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#repairWhatsappWeb', () => {
+    it('updates the inbox when repair succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.repairWhatsappWeb({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/repair_whatsapp_web'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#getWhatsappWebDiagnostics', () => {
+    it('returns diagnostics payload', async () => {
+      const diagnostics = { counts: { total_messages: 2 } };
+      axios.get.mockResolvedValue({ data: diagnostics });
+
+      const response = await actions.getWhatsappWebDiagnostics({}, 123);
+
+      expect(response).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_web_diagnostics'
+      );
+    });
+  });
 });

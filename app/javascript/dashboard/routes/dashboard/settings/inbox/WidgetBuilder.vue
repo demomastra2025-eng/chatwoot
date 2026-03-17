@@ -342,7 +342,7 @@ export default {
               {{
                 $t('INBOX_MGMT.WIDGET_BUILDER.WIDGET_OPTIONS.REPLY_TIME.LABEL')
               }}
-              <select v-model="replyTime">
+              <Select v-model="replyTime">
                 <option
                   v-for="option in getReplyTimeOptions"
                   :key="option.key"
@@ -350,7 +350,7 @@ export default {
                 >
                   {{ option.text }}
                 </option>
-              </select>
+              </Select>
             </label>
             <label>
               {{

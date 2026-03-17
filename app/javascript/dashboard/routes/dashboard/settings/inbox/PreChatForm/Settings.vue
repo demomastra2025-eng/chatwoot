@@ -103,14 +103,14 @@ export default {
     <form class="flex flex-col" @submit.prevent="updateInbox">
       <label class="w-1/4">
         {{ $t('INBOX_MGMT.PRE_CHAT_FORM.ENABLE.LABEL') }}
-        <select v-model="preChatFormEnabled">
+        <Select v-model="preChatFormEnabled">
           <option :value="true">
             {{ $t('INBOX_MGMT.PRE_CHAT_FORM.ENABLE.OPTIONS.ENABLED') }}
           </option>
           <option :value="false">
             {{ $t('INBOX_MGMT.PRE_CHAT_FORM.ENABLE.OPTIONS.DISABLED') }}
           </option>
-        </select>
+        </Select>
       </label>
       <div v-if="preChatFormEnabled">
         <div>

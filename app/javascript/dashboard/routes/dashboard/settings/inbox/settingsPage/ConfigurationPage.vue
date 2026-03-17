@@ -255,10 +255,9 @@ export default {
         :sub-title="$t('INBOX_MGMT.SETTINGS_POPUP.HMAC_MANDATORY_DESCRIPTION')"
       >
         <div class="flex gap-2 items-center">
-          <input
+          <Checkbox
             id="hmacMandatory"
             v-model="hmacMandatory"
-            type="checkbox"
             @change="handleHmacFlag"
           />
           <label for="hmacMandatory">
@@ -268,7 +267,7 @@ export default {
       </SettingsSection>
     </div>
   </div>
-  <div v-else-if="isAPIInbox" class="mx-8">
+  <div v-else-if="isAPIInbox && !isAWhatsAppWebChannel" class="mx-8">
     <SettingsSection
       :title="$t('INBOX_MGMT.SETTINGS_POPUP.INBOX_IDENTIFIER')"
       :sub-title="$t('INBOX_MGMT.SETTINGS_POPUP.INBOX_IDENTIFIER_SUB_TEXT')"
@@ -287,10 +286,9 @@ export default {
       :sub-title="$t('INBOX_MGMT.SETTINGS_POPUP.HMAC_MANDATORY_DESCRIPTION')"
     >
       <div class="flex gap-2 items-center">
-        <input
+        <Checkbox
           id="hmacMandatory"
           v-model="hmacMandatory"
-          type="checkbox"
           @change="handleHmacFlag"
         />
         <label for="hmacMandatory">

@@ -87,7 +87,7 @@ export default {
       >
         <div>
           <label>
-            <select v-model="selectedAgentBotId">
+            <Select v-model="selectedAgentBotId">
               <option value="" disabled selected>
                 {{ $t('AGENT_BOTS.BOT_CONFIGURATION.SELECT_PLACEHOLDER') }}
               </option>
@@ -98,7 +98,7 @@ export default {
               >
                 {{ agentBot.name }}
               </option>
-            </select>
+            </Select>
           </label>
           <div class="button-container space-x-2">
             <NextButton
