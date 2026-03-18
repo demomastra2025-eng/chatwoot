@@ -3,6 +3,7 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
 
   def perform(params = {})
     channel = find_channel_from_whatsapp_business_payload(params)
+    log_webhook_dispatch(channel, params)
 
     if channel_is_inactive?(channel)
       Rails.logger.warn("Inactive WhatsApp channel: #{channel&.phone_number || "unknown - #{params[:phone_number]}"}")
@@ -98,5 +99,26 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
     channel = Channel::Whatsapp.find_by(phone_number: phone_number)
     # validate to ensure the phone number id matches the whatsapp channel
     return channel if channel && channel.provider_config['phone_number_id'] == phone_number_id
+  end
+
+  def log_webhook_dispatch(channel, params)
+    Rails.logger.info(
+      "[WHATSAPP_WEBHOOK] dispatch " \
+      "phone_number=#{channel&.phone_number || params[:phone_number] || params['phone_number']} " \
+      "channel_id=#{channel&.id || 'none'} " \
+      "account_id=#{channel&.account_id || 'none'} " \
+      "inbox_id=#{channel&.inbox&.id || 'none'} " \
+      "provider=#{channel&.provider || 'none'} " \
+      "fields=#{webhook_fields(params).join(',')} " \
+      "echo=#{message_echo_event?(params)}"
+    )
+  end
+
+  def webhook_fields(params)
+    Array(params[:entry] || params['entry']).flat_map do |entry|
+      Array(entry[:changes] || entry['changes']).filter_map do |change|
+        change[:field] || change['field']
+      end
+    end.uniq
   end
 end
