@@ -786,6 +786,10 @@
           "PLACEHOLDER": "Ricerca Ordini",
           "ERROR": "Nome strumento richiesto"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Descrizione",
           "PLACEHOLDER": "Cerca i dettagli di un ordine tramite l'ID ordine"
@@ -854,7 +858,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Nome del parametro richiesto"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQ",

@@ -921,6 +921,10 @@
           "PLACEHOLDER": "Поиск заказа",
           "ERROR": "Название инструмента обязательно"
         },
+        "GROUP_NAME": {
+          "LABEL": "Группа (необязательно)",
+          "PLACEHOLDER": "Заказы"
+        },
         "DESCRIPTION": {
           "LABEL": "Описание",
           "PLACEHOLDER": "Поиск деталей заказа по ID"
@@ -989,7 +993,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Имя параметра обязательно"
         }
-      }
+      },
+      "UNGROUPED": "Без группы"
     },
     "RESPONSES": {
       "HEADER": "FAQ",

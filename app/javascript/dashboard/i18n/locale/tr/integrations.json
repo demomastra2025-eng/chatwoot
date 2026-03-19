@@ -786,6 +786,10 @@
           "PLACEHOLDER": "Order Lookup",
           "ERROR": "Araç adı zorunludur"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Açıklama",
           "PLACEHOLDER": "Looks up order details by order ID"
@@ -854,7 +858,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "SSS",
