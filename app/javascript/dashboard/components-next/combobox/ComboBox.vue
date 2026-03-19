@@ -36,6 +36,12 @@ const search = ref('');
 const dropdownRef = ref(null);
 const comboboxRef = ref(null);
 const dropdownStyle = ref({});
+const teleportTarget = ref('body');
+
+const resolveTeleportTarget = () => {
+  const overlayElement = comboboxRef.value?.closest('dialog[open], .modal-mask');
+  teleportTarget.value = overlayElement || 'body';
+};
 
 const updateDropdownPosition = () => {
   if (!open.value || !comboboxRef.value) return;
@@ -117,6 +123,7 @@ const toggleDropdown = () => {
   if (props.disabled) return;
   open.value = !open.value;
   if (open.value) {
+    resolveTeleportTarget();
     search.value = '';
     nextTick(() => {
       updateDropdownPosition();
@@ -208,6 +215,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
       <ComboBoxDropdown
         ref="dropdownRef"
         v-model:search-value="search"
+        :teleport-target="teleportTarget"
         :open="open"
         :options="filteredOptions"
         :search-placeholder="searchPlaceholder"

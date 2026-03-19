@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-19
+
+- feat(captain): add native Firecrawl-powered file URL imports for Captain Documents so assistants can ingest supported remote Word and Excel files without changing the existing PDF upload or runtime response pipeline
+
+## 2026-03-18
+
+- fix(captain): force Captain embeddings onto 1536 dimensions for `text-embedding-3-*` models so FAQ search and embedding updates stay compatible with the existing pgvector columns
+- fix(captain): return a safe tool result when documentation lookup fails so assistant playground requests do not crash with follow-up `tool_calls` 500 errors
+- fix(captain): stop sending the current playground message twice, reducing duplicated prompts and flaky assistant behavior between turns
+- fix(captain): move the create-assistant action out of the switcher modal into the Captain header so it stays visible next to the current assistant selector
+- fix(captain): place the create-assistant button after the assistant switcher chevron and align the message collapse/history limit fields on one row in assistant forms
+- fix(captain): keep assistant playground requests from surfacing as 500s when an LLM response exceeds the rack timeout, and raise the production rack timeout budget to 30 seconds for long Captain responses
+- fix(settings): keep the profile settings page inside the dashboard scroll container so long content no longer pushes past the visible interface
+- fix(email): respect `imap_enable_ssl` when polling inboxes so IMAP accounts configured on port `143` without implicit TLS stop failing with SSL record-layer errors
+- fix(selects): stop teleported combobox dropdown clicks from being treated as backdrop/outside clicks so parent modals stay open while only the select closes
+
 ## 2026-03-17
 
 - fix(whatsapp-web): normalize imported history attachment MIME types from actual file contents before attaching, so non-image payloads are not misclassified as JPEG/PNG and sent through image analysis incorrectly

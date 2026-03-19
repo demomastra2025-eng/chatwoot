@@ -3,6 +3,7 @@ class Integrations::Macrocrm::ProcessorService
   OUTGOING_PREFIX = 'Исходящее WhatsApp'.freeze
   ATTACHMENT_PLACEHOLDER = '[Attachment]'.freeze
   CONTACT_NOT_FOUND_MESSAGE = 'No contacts found'.freeze
+  INACTIVE_ESTATE_STATUSES = [1, 3, 4, 40, 90, 100].freeze
 
   pattr_initialize [:hook!, :event_name!, :message!]
 
@@ -73,8 +74,18 @@ class Integrations::Macrocrm::ProcessorService
     return nil unless contact&.dig('id').present?
 
     buys_response = client.find_estate_buy(contact_id: contact['id'])
-    buys = buys_response['buys'] || []
-    buys.last if buys.last&.dig('id').present?
+    Array(buys_response['buys']).select { |buy| active_estate?(buy) }.last
+  end
+
+  def active_estate?(buy)
+    return false unless buy.is_a?(Hash)
+    return false if buy['id'].blank? && buy[:id].blank?
+
+    !INACTIVE_ESTATE_STATUSES.include?(estate_status(buy).to_i)
+  end
+
+  def estate_status(buy)
+    buy['status'] || buy[:status]
   end
 
   def create_estate_id(contact_name: nil)

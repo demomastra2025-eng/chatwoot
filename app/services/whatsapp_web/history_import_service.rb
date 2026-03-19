@@ -68,6 +68,7 @@ class WhatsappWeb::HistoryImportService
     )
     attach_history_payload(message, attachment_payload, attachment_file)
     message.save!
+    restore_history_reply_reference!(message, reply_to: extract_stanza_id(record))
 
     contact_inbox
   rescue ActiveRecord::RecordNotUnique
@@ -166,6 +167,15 @@ class WhatsappWeb::HistoryImportService
     )
   end
 
+  def restore_history_reply_reference!(message, reply_to:)
+    return if reply_to.blank?
+    return if message.content_attributes.to_h['in_reply_to_external_id'].present?
+
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys.merge('in_reply_to_external_id' => reply_to)
+    message.update_columns(content_attributes: content_attributes, updated_at: message.updated_at)
+    message.content_attributes = content_attributes
+  end
+
   def extract_text(record)
     message = raw_message(record)
 
@@ -174,7 +184,11 @@ class WhatsappWeb::HistoryImportService
       message.dig(:imageMessage, :caption).presence ||
       message.dig(:videoMessage, :caption).presence ||
       message.dig(:documentMessage, :caption).presence ||
-      message.dig(:documentWithCaptionMessage, :message, :documentMessage, :caption).presence
+      message.dig(:documentWithCaptionMessage, :message, :documentMessage, :caption).presence ||
+      template_message_text(message).presence ||
+      message.dig(:buttonsMessage, :contentText).presence ||
+      message.dig(:buttonsResponseMessage, :selectedDisplayText).presence ||
+      message.dig(:buttonsResponseMessage, :selectedButtonId).presence
   end
 
   def extract_attachment_payload(record)
@@ -369,12 +383,26 @@ class WhatsappWeb::HistoryImportService
     return context_info[:stanzaId] if context_info[:stanzaId].present?
 
     message = raw_message(record)
-    %i[extendedTextMessage imageMessage videoMessage audioMessage documentMessage stickerMessage].each do |key|
+    %i[extendedTextMessage imageMessage videoMessage audioMessage documentMessage stickerMessage buttonsResponseMessage].each do |key|
       stanza_id = message.dig(key, :contextInfo, :stanzaId)
       return stanza_id if stanza_id.present?
     end
 
     nil
+  end
+
+  def template_message_text(message)
+    template_payload = message[:templateMessage].to_h.deep_symbolize_keys
+    template = template_payload[:hydratedTemplate].presence || template_payload[:hydratedFourRowTemplate].presence
+    return if template.blank?
+
+    title = template[:hydratedTitleText].presence
+    content = template[:hydratedContentText].presence
+
+    [title.present? ? "*#{title}*" : nil, content]
+      .compact
+      .join("\n")
+      .presence
   end
 
   def mapped_message_status(record, outgoing:)

@@ -7,6 +7,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  teleportTarget: {
+    type: [String, Object],
+    default: 'body',
+  },
   open: {
     type: Boolean,
     required: true,
@@ -62,11 +66,15 @@ defineExpose({
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="teleportTarget">
     <div
       v-show="open"
+      data-modal-safe-interaction
       class="dashboard-combobox-dropdown fixed z-[170] rounded-2xl border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
       :style="props.dropdownStyle"
+      @mousedown.stop
+      @mouseup.stop
+      @click.stop
     >
       <div class="border-b border-n-weak pb-2">
         <div class="relative flex items-center">

@@ -20,6 +20,13 @@ json.lock_to_single_conversation resource.lock_to_single_conversation
 json.sender_name_type resource.sender_name_type
 json.business_name resource.business_name
 
+if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present?
+  json.captain_assistant do
+    json.id resource.captain_assistant.id
+    json.name resource.captain_assistant.name
+  end
+end
+
 if resource.portal.present?
   json.help_center do
     json.name resource.portal.name

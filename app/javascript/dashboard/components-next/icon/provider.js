@@ -15,7 +15,7 @@ export function useChannelIcon(inbox) {
     'Channel::WhatsappWeb': 'i-woot-whatsapp',
     'Channel::Instagram': 'i-woot-instagram',
     'Channel::Tiktok': 'i-woot-tiktok',
-    'Channel::Voice': 'i-ri-phone-fill',
+    'Channel::Voice': 'i-ri-phone-fill channel-icon-voice',
   };
 
   const providerIconMap = {

@@ -28,7 +28,12 @@ const modalClassName = computed(() => {
 // [TODO] Revisit this logic to use outside click directive
 const mousedDownOnBackdrop = ref(false);
 
-const handleMouseDown = () => {
+const handleMouseDown = event => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('[data-modal-safe-interaction]')) {
+    return;
+  }
+
   mousedDownOnBackdrop.value = true;
 };
 

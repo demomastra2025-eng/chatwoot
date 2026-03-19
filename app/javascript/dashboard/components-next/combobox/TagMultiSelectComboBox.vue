@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
+import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
 import ComboBoxDropdown from 'dashboard/components-next/combobox/ComboBoxDropdown.vue';
@@ -51,6 +52,34 @@ const open = ref(false);
 const search = ref('');
 const dropdownRef = ref(null);
 const comboboxRef = ref(null);
+const dropdownStyle = ref({});
+const teleportTarget = ref('body');
+
+const resolveTeleportTarget = () => {
+  const overlayElement = comboboxRef.value?.closest('dialog[open], .modal-mask');
+  teleportTarget.value = overlayElement || 'body';
+};
+
+const updateDropdownPosition = () => {
+  if (!open.value || !comboboxRef.value) return;
+
+  const rect = comboboxRef.value.getBoundingClientRect();
+  const viewportPadding = 8;
+  const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+  const left = Math.min(
+    Math.max(rect.left, viewportPadding),
+    window.innerWidth - width - viewportPadding
+  );
+  const top = Math.max(rect.bottom + 8, viewportPadding);
+  const maxHeight = Math.max(window.innerHeight - top - viewportPadding, 160);
+
+  dropdownStyle.value = {
+    left: `${Math.round(left)}px`,
+    maxHeight: `${Math.round(maxHeight)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(width)}px`,
+  };
+};
 
 const filteredOptions = computed(() => {
   const searchTerm = search.value.toLowerCase();
@@ -92,8 +121,12 @@ const toggleDropdown = () => {
   if (props.disabled) return;
   open.value = !open.value;
   if (open.value) {
+    resolveTeleportTarget();
     search.value = '';
-    nextTick(() => dropdownRef.value?.focus());
+    nextTick(() => {
+      updateDropdownPosition();
+      dropdownRef.value?.focus();
+    });
   }
 };
 
@@ -103,6 +136,21 @@ watch(
     selectedValues.value = newValue;
   }
 );
+
+watch(
+  () => props.options,
+  () => {
+    if (!open.value) return;
+    nextTick(() => updateDropdownPosition());
+  },
+  { deep: true }
+);
+
+useEventListener(window, 'resize', updateDropdownPosition);
+useEventListener(window, 'scroll', updateDropdownPosition, {
+  capture: true,
+  passive: true,
+});
 
 defineExpose({
   toggleDropdown,
@@ -121,7 +169,10 @@ defineExpose({
     }"
     @click.prevent
   >
-    <OnClickOutside @trigger="open = false">
+    <OnClickOutside
+      :options="{ ignore: ['.dashboard-combobox-dropdown'] }"
+      @trigger="open = false"
+    >
       <div
         class="flex flex-wrap w-full gap-2 px-3 py-2.5 border rounded-lg cursor-pointer bg-n-alpha-black2 min-h-[42px] transition-all duration-500 ease-in-out"
         :class="{
@@ -157,14 +208,15 @@ defineExpose({
 
       <ComboBoxDropdown
         ref="dropdownRef"
+        v-model:search-value="search"
+        :teleport-target="teleportTarget"
         :open="open"
         :options="filteredOptions"
-        :search-value="search"
         :search-placeholder="searchPlaceholder"
         :empty-state="emptyState"
         multiple
         :selected-values="selectedValues"
-        @update:search-value="search = $event"
+        :dropdown-style="dropdownStyle"
         @select="toggleOption"
       />
 

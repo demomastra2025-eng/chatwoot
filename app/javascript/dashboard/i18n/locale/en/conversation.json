@@ -188,6 +188,8 @@
       "MESSAGE_SIGN_TOOLTIP": "Message signature",
       "ENABLE_SIGN_TOOLTIP": "Enable signature",
       "DISABLE_SIGN_TOOLTIP": "Disable signature",
+      "CAPTAIN_ENABLE_TOOLTIP": "Enable Captain for this conversation",
+      "CAPTAIN_DISABLE_TOOLTIP": "Disable Captain for this conversation",
       "MSG_INPUT": "Shift + enter for new line. Start with '/' to select a Canned Response.",
       "PRIVATE_MSG_INPUT": "Shift + enter for new line. This will be visible only to Agents",
       "MESSAGING_RESTRICTED": "You cannot reply to this conversation",

@@ -1,110 +1,191 @@
 <script setup>
-import { computed, watch, ref, nextTick } from 'vue';
+import { computed, watch, reactive } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { useAlert } from 'dashboard/composables';
+import { useI18n } from 'vue-i18n';
 
-import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
-import ConnectInboxDialog from 'dashboard/components-next/captain/pageComponents/inbox/ConnectInboxDialog.vue';
-import InboxCard from 'dashboard/components-next/captain/assistant/InboxCard.vue';
+import CardLayout from 'dashboard/components-next/CardLayout.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
+import Policy from 'dashboard/components/policy.vue';
+import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
 import InboxPageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/InboxPageEmptyState.vue';
 
 const store = useStore();
-const dialogType = ref('');
 const route = useRoute();
+const { t } = useI18n();
 
-const assistantId = computed(() => route.params.assistantId);
+const assistantId = computed(() => Number(route.params.assistantId));
 const assistantUiFlags = useMapGetter('captainAssistants/getUIFlags');
-const uiFlags = useMapGetter('captainInboxes/getUIFlags');
 const isFetchingAssistant = computed(() => assistantUiFlags.value.fetchingItem);
-const isFetching = computed(() => uiFlags.value.fetchingList);
+const inboxUiFlags = useMapGetter('inboxes/getUIFlags');
+const isFetching = computed(() => inboxUiFlags.value.isFetching);
 
-const captainInboxes = useMapGetter('captainInboxes/getRecords');
+const inboxes = useMapGetter('inboxes/getInboxes');
+const connectionStateByInboxId = reactive({});
+const isUpdatingByInboxId = reactive({});
 
-const selectedInbox = ref(null);
-const disconnectInboxDialog = ref(null);
+const i18nKey = 'CAPTAIN.INBOXES';
 
-const handleDelete = () => {
-  disconnectInboxDialog.value.dialogRef.open();
+const inboxName = inbox => {
+  if (!inbox?.name) {
+    return '';
+  }
+
+  const isTwilioChannel = inbox.channel_type === INBOX_TYPES.TWILIO;
+  const isWhatsAppChannel = inbox.channel_type === INBOX_TYPES.WHATSAPP;
+  const isEmailChannel = inbox.channel_type === INBOX_TYPES.EMAIL;
+
+  if (isTwilioChannel || isWhatsAppChannel) {
+    const identifier = inbox.messaging_service_sid || inbox.phone_number;
+    return identifier ? `${inbox.name} (${identifier})` : inbox.name;
+  }
+
+  if (isEmailChannel && inbox.email) {
+    return `${inbox.name} (${inbox.email})`;
+  }
+
+  return inbox.name;
 };
 
-const connectInboxDialog = ref(null);
-
-const handleCreate = () => {
-  dialogType.value = 'create';
-  nextTick(() => connectInboxDialog.value.dialogRef.open());
+const inboxIcon = inbox => {
+  const { medium, channel_type: type } = inbox;
+  return getInboxIconByType(type, medium, 'outline');
 };
-const handleAction = ({ action, id }) => {
-  selectedInbox.value = captainInboxes.value.find(inbox => id === inbox.id);
-  nextTick(() => {
-    if (action === 'delete') {
-      handleDelete();
-    }
+
+const isConnectedToCurrentAssistant = inbox => {
+  return inbox?.captain_assistant?.id === assistantId.value;
+};
+
+const isLockedToAnotherAssistant = inbox => {
+  return (
+    inbox?.captain_assistant?.id &&
+    inbox?.captain_assistant?.id !== assistantId.value
+  );
+};
+
+const sortedInboxes = computed(() => {
+  return [...(inboxes.value || [])].sort((a, b) => {
+    const aName = a?.name || '';
+    const bName = b?.name || '';
+    return aName.localeCompare(bName);
   });
-};
-
-const handleCreateClose = () => {
-  dialogType.value = '';
-  selectedInbox.value = null;
-};
+});
 
 watch(
-  assistantId,
-  newId => {
-    store.dispatch('captainInboxes/get', {
-      assistantId: newId,
+  [sortedInboxes, assistantId],
+  ([newInboxes]) => {
+    (newInboxes || []).forEach(inbox => {
+      if (isUpdatingByInboxId[inbox.id]) {
+        return;
+      }
+      connectionStateByInboxId[inbox.id] = isConnectedToCurrentAssistant(inbox);
     });
   },
   { immediate: true }
 );
+
+watch(
+  assistantId,
+  () => {
+    store.dispatch('inboxes/get');
+  },
+  { immediate: true }
+);
+
+const toggleInboxConnection = async (inbox, nextValue) => {
+  if (!inbox?.id || isLockedToAnotherAssistant(inbox)) {
+    return;
+  }
+
+  isUpdatingByInboxId[inbox.id] = true;
+
+  try {
+    if (nextValue) {
+      await store.dispatch('captainInboxes/create', {
+        assistantId: assistantId.value,
+        inboxId: inbox.id,
+      });
+      useAlert(t(`${i18nKey}.CREATE.SUCCESS_MESSAGE`));
+    } else {
+      await store.dispatch('captainInboxes/delete', {
+        assistantId: assistantId.value,
+        inboxId: inbox.id,
+      });
+      useAlert(t(`${i18nKey}.DELETE.SUCCESS_MESSAGE`));
+    }
+
+    await store.dispatch('inboxes/get');
+  } catch (error) {
+    connectionStateByInboxId[inbox.id] = !nextValue;
+    const errorMessage = error?.message
+      ? error.message
+      : t(
+          nextValue
+            ? `${i18nKey}.CREATE.ERROR_MESSAGE`
+            : `${i18nKey}.DELETE.ERROR_MESSAGE`
+        );
+    useAlert(errorMessage);
+  } finally {
+    isUpdatingByInboxId[inbox.id] = false;
+  }
+};
+
+const toggleDisabled = inbox => {
+  return isLockedToAnotherAssistant(inbox) || isUpdatingByInboxId[inbox.id];
+};
 </script>
 
 <template>
   <PageLayout
     :header-title="$t('CAPTAIN.INBOXES.HEADER')"
-    :button-label="$t('CAPTAIN.INBOXES.ADD_NEW')"
-    :button-policy="['administrator']"
     :is-fetching="isFetchingAssistant || isFetching"
-    :is-empty="!captainInboxes.length"
+    :is-empty="!sortedInboxes.length"
     :show-pagination-footer="false"
     :show-know-more="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
-    @click="handleCreate"
   >
     <template #emptyState>
-      <InboxPageEmptyState @click="handleCreate" />
+      <InboxPageEmptyState />
     </template>
 
     <template #body>
       <div class="flex flex-col gap-4">
-        <InboxCard
-          v-for="captainInbox in captainInboxes"
-          :id="captainInbox.id"
-          :key="captainInbox.id"
-          :inbox="captainInbox"
-          @action="handleAction"
-        />
+        <CardLayout v-for="inbox in sortedInboxes" :key="inbox.id">
+          <div class="flex justify-between items-center w-full gap-4">
+            <div class="min-w-0">
+              <span
+                class="text-base text-n-slate-12 line-clamp-1 flex items-center gap-2"
+              >
+                <span :class="inboxIcon(inbox)" />
+                {{ inboxName(inbox) }}
+              </span>
+              <p
+                v-if="isLockedToAnotherAssistant(inbox)"
+                class="text-xs text-n-slate-11 mt-1 line-clamp-1"
+              >
+                {{
+                  $t('CAPTAIN.INBOXES.CONNECTED_TO', {
+                    assistantName: inbox.captain_assistant?.name,
+                  })
+                }}
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0">
+              <Policy :permissions="['administrator']">
+                <Switch
+                  v-model="connectionStateByInboxId[inbox.id]"
+                  :disabled="toggleDisabled(inbox)"
+                  @change="value => toggleInboxConnection(inbox, value)"
+                />
+              </Policy>
+            </div>
+          </div>
+        </CardLayout>
       </div>
     </template>
-
-    <DeleteDialog
-      v-if="selectedInbox"
-      ref="disconnectInboxDialog"
-      :entity="selectedInbox"
-      :delete-payload="{
-        assistantId: assistantId,
-        inboxId: selectedInbox.id,
-      }"
-      type="Inboxes"
-    />
-
-    <ConnectInboxDialog
-      v-if="dialogType"
-      ref="connectInboxDialog"
-      :assistant-id="assistantId"
-      :type="dialogType"
-      @close="handleCreateClose"
-    />
   </PageLayout>
 </template>

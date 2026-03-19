@@ -17,6 +17,14 @@ const messages = ref([]);
 const newMessage = ref('');
 const isLoading = ref(false);
 
+const appendAssistantMessage = content => {
+  messages.value.push({
+    content,
+    sender: 'assistant',
+    timestamp: new Date().toISOString(),
+  });
+};
+
 const formatMessagesForApi = () => {
   return messages.value.map(message => ({
     role: message.sender,
@@ -42,13 +50,14 @@ watch(
 const sendMessage = async () => {
   if (!newMessage.value.trim() || isLoading.value) return;
 
+  const currentMessage = newMessage.value;
+  const messageHistory = formatMessagesForApi();
   const userMessage = {
-    content: newMessage.value,
+    content: currentMessage,
     sender: 'user',
     timestamp: new Date().toISOString(),
   };
   messages.value.push(userMessage);
-  const currentMessage = newMessage.value;
   newMessage.value = '';
 
   try {
@@ -56,17 +65,14 @@ const sendMessage = async () => {
     const { data } = await CaptainAssistant.playground({
       assistantId,
       messageContent: currentMessage,
-      messageHistory: formatMessagesForApi(),
+      messageHistory,
     });
 
-    messages.value.push({
-      content: data.response,
-      sender: 'assistant',
-      timestamp: new Date().toISOString(),
-    });
+    appendAssistantMessage(data.response || t('CAPTAIN.COPILOT.EMPTY_MESSAGE'));
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Error getting assistant response:', error);
+    appendAssistantMessage(t('CAPTAIN.COPILOT.EMPTY_MESSAGE'));
   } finally {
     isLoading.value = false;
   }

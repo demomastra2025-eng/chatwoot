@@ -76,7 +76,16 @@ Rails.application.routes.draw do
               resources :copilot_messages, only: [:index, :create]
             end
             resources :custom_tools
-            resources :documents, only: [:index, :show, :create, :destroy]
+            resources :documents, only: [:index, :show, :create, :destroy] do
+              collection do
+                post :preview
+              end
+              member do
+                post :resync
+                post :refresh_changed_only
+                post :retry_failed
+              end
+            end
             resource :tasks, only: [], controller: 'tasks' do
               post :rewrite
               post :summarize

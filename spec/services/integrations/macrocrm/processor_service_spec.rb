@@ -52,7 +52,7 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
         { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
       )
       allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
-        { 'buys' => [{ 'id' => 5767119 }] }
+        { 'buys' => [{ 'id' => 5767119, 'status' => 10 }] }
       )
       allow(client).to receive(:create_estate_buy)
       allow(client).to receive(:add_note)
@@ -77,7 +77,7 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
         { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
       )
       allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
-        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731 }] }
+        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731, 'status' => 10 }] }
       )
       allow(client).to receive(:add_note)
     end
@@ -106,13 +106,46 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
         { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
       )
       allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
-        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731 }] }
+        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731, 'status' => 10 }] }
       )
       allow(client).to receive(:add_note)
     end
 
     it 'does not change the conversation assignee' do
       expect { perform }.not_to change { conversation.reload.assignee_id }
+    end
+  end
+
+  context 'when the contact has both inactive and active deals' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        {
+          'buys' => [
+            { 'id' => 5767119, 'manager_id' => 78731, 'status' => 10 },
+            { 'id' => 5767120, 'manager_id' => 99999, 'status' => 100 }
+          ]
+        }
+      )
+      allow(client).to receive(:create_estate_buy)
+      allow(client).to receive(:add_note)
+    end
+
+    it 'uses the last active deal instead of the last inactive one' do
+      perform
+
+      expect(client).not_to have_received(:create_estate_buy)
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(client).to have_received(:add_note).with(
+        estate_id: 5767119,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
     end
   end
 
@@ -171,6 +204,50 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
         phone: '+77001234567',
         message: 'Здравствуйте, хочу узнать о квартирах',
         manager_id: 78731
+      )
+    end
+  end
+
+  context 'when all existing contact deals are inactive' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      conversation.update!(assignee: mapped_agent)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        {
+          'buys' => [
+            { 'id' => 5767119, 'manager_id' => 90001, 'status' => 1 },
+            { 'id' => 5767120, 'manager_id' => 90002, 'status' => 100 }
+          ]
+        }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'creates a new deal and uses the local manager mapping' do
+      perform
+
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      )
+      expect(client).to have_received(:add_note).with(
+        estate_id: 4321,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
       )
     end
   end

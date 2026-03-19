@@ -204,6 +204,59 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(json_response[:name]).to eq('Test Document')
           expect(json_response[:external_link]).to eq('https://example.com/doc')
         end
+
+        it 'creates a supported remote file url import' do
+          allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   name: 'Quarterly Spreadsheet',
+                   external_link: 'https://example.com/reports/q1.xlsx',
+                   assistant_id: assistant.id,
+                   source_mode: 'file_url'
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:source_mode]).to eq('file_url')
+          expect(Captain::Document.last.metadata.dig('firecrawl', 'mode')).to eq('file_url')
+        end
+
+        it 'creates an uploaded supported office file import' do
+          allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+
+          tempfile = Tempfile.new(['report', '.xlsx'])
+          tempfile.binmode
+          tempfile.write('Spreadsheet content')
+          tempfile.rewind
+
+          uploaded_file = ActionDispatch::Http::UploadedFile.new(
+            tempfile: tempfile,
+            filename: 'report.xlsx',
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          )
+
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   name: 'Uploaded Spreadsheet',
+                   assistant_id: assistant.id,
+                   source_mode: 'file_upload',
+                   source_file: uploaded_file
+                 }
+               },
+               headers: admin.create_new_auth_token
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:source_mode]).to eq('file_upload')
+          expect(Captain::Document.last.metadata.dig('firecrawl', 'mode')).to eq('file_upload')
+          expect(Captain::Document.last.source_file).to be_attached
+        ensure
+          tempfile.close!
+        end
       end
 
       context 'with invalid parameters' do
@@ -211,6 +264,28 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           post "/api/v1/accounts/#{account.id}/captain/documents",
                params: invalid_attributes,
                headers: admin.create_new_auth_token
+        end
+
+        it 'returns unprocessable entity status' do
+          expect(response).to have_http_status(:unprocessable_content)
+        end
+      end
+
+      context 'with unsupported file url parameters' do
+        before do
+          allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   name: 'Unsupported File',
+                   external_link: 'https://example.com/page.html',
+                   assistant_id: assistant.id,
+                   source_mode: 'file_url'
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
         end
 
         it 'returns unprocessable entity status' do
@@ -286,6 +361,109 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(response).to have_http_status(:not_found)
         end
       end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/documents/preview' do
+    let(:preview_attributes) do
+      {
+        document: {
+          assistant_id: assistant.id,
+          external_link: 'https://example.com/docs',
+          source_mode: 'selected_pages',
+          import_profile: {
+            max_pages: 20
+          }
+        }
+      }
+    end
+
+    it 'returns preview links for admins' do
+      firecrawl_service = instance_double(Captain::Tools::FirecrawlService)
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      allow(Captain::Tools::FirecrawlService).to receive(:new).and_return(firecrawl_service)
+      allow(firecrawl_service).to receive(:map).and_return(
+        double(
+          parsed_response: {
+            'links' => [
+              { 'url' => 'https://example.com/docs/page-1', 'title' => 'Page 1', 'description' => 'Desc' }
+            ]
+          }
+        )
+      )
+
+      post "/api/v1/accounts/#{account.id}/captain/documents/preview",
+           params: preview_attributes,
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:payload].first[:url]).to eq('https://example.com/docs/page-1')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/documents/:id/resync' do
+    it 're-queues an existing document import for admins' do
+      allow(Captain::Documents::CrawlJob).to receive(:perform_later)
+
+      post "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/resync",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Captain::Documents::CrawlJob).to have_received(:perform_later).with(document)
+      expect(document.reload.sync_status).to eq('queued')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/documents/:id/refresh_changed_only' do
+    before do
+      document.update!(
+        metadata: {
+          'firecrawl' => {
+            'mode' => 'site_import',
+            'sync' => { 'status' => 'completed' }
+          }
+        }
+      )
+      allow(Captain::Documents::CrawlJob).to receive(:perform_later)
+    end
+
+    it 'starts a delta refresh for admins' do
+      post "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/refresh_changed_only",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Captain::Documents::CrawlJob).to have_received(:perform_later).with(document)
+      expect(document.reload.refresh_mode).to eq('delta')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/captain/documents/:id/retry_failed' do
+    before do
+      document.update!(
+        metadata: {
+          'firecrawl' => {
+            'mode' => 'site_import',
+            'sync' => {
+              'status' => 'completed',
+              'failed_urls' => ['https://example.com/failed-page']
+            }
+          }
+        }
+      )
+      allow(Captain::Documents::CrawlJob).to receive(:perform_later)
+    end
+
+    it 'retries failed URLs for admins' do
+      post "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/retry_failed",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Captain::Documents::CrawlJob).to have_received(:perform_later).with(document)
+      expect(document.reload.refresh_mode).to eq('retry_failed')
     end
   end
 end

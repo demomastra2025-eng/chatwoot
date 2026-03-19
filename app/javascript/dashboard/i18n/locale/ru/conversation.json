@@ -187,6 +187,8 @@
       "MESSAGE_SIGN_TOOLTIP": "Подпись сообщения",
       "ENABLE_SIGN_TOOLTIP": "Включить подпись",
       "DISABLE_SIGN_TOOLTIP": "Отключить подпись",
+      "CAPTAIN_ENABLE_TOOLTIP": "Включить Captain для этого диалога",
+      "CAPTAIN_DISABLE_TOOLTIP": "Выключить Captain для этого диалога",
       "MSG_INPUT": "Shift + enter чтобы начать новую строку. Начните с '/', чтобы выбрать шаблонный ответ.",
       "PRIVATE_MSG_INPUT": "Shift + enter для новой строки. Это сообщение будет видно только сотрудникам",
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Подпись сообщения не настроена, пожалуйста настройте её в настройках профиля.",

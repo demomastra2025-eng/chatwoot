@@ -21,7 +21,11 @@ provideDropdownContext({
 </script>
 
 <template>
-  <div v-on-click-outside="closeMenu" class="relative space-y-2">
+  <div
+    v-on-click-outside="closeMenu"
+    class="relative space-y-2"
+    :class="isOpen ? 'z-[160]' : ''"
+  >
     <slot name="trigger" :is-open :toggle="() => toggle()" />
     <div v-if="isOpen" class="absolute">
       <slot />

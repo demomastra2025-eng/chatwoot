@@ -11,7 +11,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
                        :whatsapp_web_diagnostics]
 
   def index
-    @inboxes = policy_scope(Current.account.inboxes.order_by_name.includes(:channel, { avatar_attachment: [:blob] }))
+    scope = Current.account.inboxes.order_by_name
+    includes_associations = [:channel, { avatar_attachment: [:blob] }]
+    includes_associations << { captain_inbox: :captain_assistant } if Inbox.reflect_on_association(:captain_inbox)
+
+    @inboxes = policy_scope(scope.includes(*includes_associations))
   end
 
   def show; end

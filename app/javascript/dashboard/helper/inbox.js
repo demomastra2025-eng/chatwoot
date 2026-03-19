@@ -34,7 +34,7 @@ const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.LINE]: 'i-ri-line-fill',
   [INBOX_TYPES.INSTAGRAM]: 'i-ri-instagram-fill',
   [INBOX_TYPES.TIKTOK]: 'i-ri-tiktok-fill',
-  [INBOX_TYPES.VOICE]: 'i-ri-phone-fill',
+  [INBOX_TYPES.VOICE]: 'i-ri-phone-fill channel-icon-voice',
 };
 
 const DEFAULT_ICON_FILL = 'i-ri-chat-1-fill';
@@ -51,7 +51,7 @@ const INBOX_ICON_MAP_LINE = {
   [INBOX_TYPES.LINE]: 'i-ri-line-line',
   [INBOX_TYPES.INSTAGRAM]: 'i-ri-instagram-line',
   [INBOX_TYPES.TIKTOK]: 'i-ri-tiktok-line',
-  [INBOX_TYPES.VOICE]: 'i-ri-phone-line',
+  [INBOX_TYPES.VOICE]: 'i-ri-phone-line channel-icon-voice',
 };
 
 const DEFAULT_ICON_LINE = 'i-ri-chat-1-line';

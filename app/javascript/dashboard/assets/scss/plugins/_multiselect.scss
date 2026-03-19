@@ -13,6 +13,8 @@
 }
 
 .multiselect {
+  @apply relative;
+
   &:not(.no-margin) {
     @apply mb-4;
   }
@@ -224,6 +226,8 @@
 }
 
 .multiselect--active {
+  z-index: 160 !important;
+
   .multiselect__select::before {
     @apply top-[62%];
   }
@@ -231,6 +235,10 @@
 
 .multiselect__select::before {
   top: 60% !important;
+}
+
+.multiselect__content-wrapper {
+  z-index: 161 !important;
 }
 
 .multiselect-wrap--medium {

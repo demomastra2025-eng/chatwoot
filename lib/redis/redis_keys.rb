@@ -9,6 +9,8 @@ module Redis::RedisKeys
   # Whether a conversation is muted ?
   CONVERSATION_MUTE_KEY = 'CONVERSATION::%<id>d::MUTED'.freeze
   CONVERSATION_DRAFT_MESSAGE = 'CONVERSATION::%<id>d::DRAFT_MESSAGE'.freeze
+  CAPTAIN_MESSAGE_BUFFER_STATE = 'CAPTAIN_MESSAGE_BUFFER_STATE::%<conversation_id>d'.freeze
+  CAPTAIN_MESSAGE_BUFFER_LOCK = 'CAPTAIN_MESSAGE_BUFFER_LOCK::%<conversation_id>d'.freeze
 
   ## User Keys
   # SSO Auth Tokens

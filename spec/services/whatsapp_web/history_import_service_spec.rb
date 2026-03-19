@@ -162,10 +162,103 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(channel.inbox.messages.find_by(source_id: 'history-msg-placeholder')).to be_nil
   end
 
+  it 'imports template history messages using hydrated template content' do
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-template',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            templateMessage: {
+              hydratedFourRowTemplate: {
+                hydratedTitleText: 'Template title',
+                hydratedContentText: 'Template body'
+              }
+            }
+          }
+        }
+      ]
+    ).perform
+
+    imported_message = channel.inbox.messages.find_by(source_id: 'history-msg-template')
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(imported_message).to be_present
+    expect(imported_message.content).to eq("*Template title*\nTemplate body")
+  end
+
+  it 'imports buttons history messages using content text' do
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-buttons',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            buttonsMessage: {
+              contentText: 'Please choose an option'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    imported_message = channel.inbox.messages.find_by(source_id: 'history-msg-buttons')
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(imported_message).to be_present
+    expect(imported_message.content).to eq('Please choose an option')
+  end
+
+  it 'imports button reply history messages and keeps the replied stanza id' do
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-buttons-response',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            buttonsResponseMessage: {
+              selectedButtonId: 'btn-1',
+              selectedDisplayText: 'Choice 1',
+              contextInfo: {
+                stanzaId: 'quoted-history-msg'
+              }
+            }
+          }
+        }
+      ]
+    ).perform
+
+    imported_message = channel.inbox.messages.find_by(source_id: 'history-msg-buttons-response')
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(imported_message).to be_present
+    expect(imported_message.content).to eq('Choice 1')
+    expect(imported_message.content_attributes['in_reply_to_external_id']).to eq('quoted-history-msg')
+  end
+
   it 'persists a media-only stub when attachment download fails' do
     allow(Down).to receive(:download).and_raise(StandardError, 'expired media URL')
     provider_service = instance_double(WhatsappWeb::Providers::EvolutionService, fetch_message_media: nil)
     allow(provider_service).to receive(:fetch_message_media).and_raise(StandardError, 'provider media unavailable')
+    allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
     allow(channel).to receive(:provider_service).and_return(provider_service)
 
     result = described_class.new(
@@ -257,6 +350,7 @@ RSpec.describe WhatsappWeb::HistoryImportService do
         statusCode: 410
       }
     )
+    allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
     allow(channel).to receive(:provider_service).and_return(provider_service)
 
     result = described_class.new(
