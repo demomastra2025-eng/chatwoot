@@ -102,5 +102,13 @@ RSpec.describe Concerns::CaptainToolsHelpers, type: :concern do
       result = test_instance.extract_tool_ids_from_text(text)
       expect(result).to eq(%w[add_contact_note update_priority add_private_note])
     end
+
+    it 'normalizes markdown-escaped tool IDs' do
+      text = 'Use [@Fetch Characters](tool://custom\\_fetch\\_characters) to look up data'
+
+      result = test_instance.extract_tool_ids_from_text(text)
+
+      expect(result).to eq(['custom_fetch_characters'])
+    end
   end
 end

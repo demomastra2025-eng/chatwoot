@@ -113,6 +113,16 @@ RSpec.describe Captain::Scenario, type: :model do
         expect(scenario).to be_valid
       end
 
+      it 'is valid with markdown-escaped custom tool references' do
+        create(:captain_custom_tool, account: account, slug: 'custom_fetch_characters')
+        scenario = build(:captain_scenario,
+                         assistant: assistant,
+                         account: account,
+                         instruction: 'Use [@Fetch Characters](tool://custom\\_fetch\\_characters) to get character data')
+
+        expect(scenario).to be_valid
+      end
+
       it 'is invalid with custom tool from different account' do
         other_account = create(:account)
         create(:captain_custom_tool, account: other_account, slug: 'custom_fetch-order')

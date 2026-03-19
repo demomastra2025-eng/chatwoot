@@ -1,6 +1,7 @@
 json.id custom_tool.id
 json.slug custom_tool.slug
 json.title custom_tool.title
+json.group_name custom_tool.group_name
 json.description custom_tool.description
 json.endpoint_url custom_tool.endpoint_url
 json.http_method custom_tool.http_method

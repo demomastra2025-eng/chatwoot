@@ -35,6 +35,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
   def custom_tool_params
     params.require(:custom_tool).permit(
       :title,
+      :group_name,
       :description,
       :endpoint_url,
       :http_method,

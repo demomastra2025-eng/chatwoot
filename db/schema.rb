@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_14_113000) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -355,6 +355,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_14_113000) do
     t.string "slug", null: false
     t.string "title", null: false
     t.text "description"
+    t.string "group_name"
     t.string "http_method", default: "GET", null: false
     t.text "endpoint_url", null: false
     t.text "request_template"
@@ -365,6 +366,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_14_113000) do
     t.boolean "enabled", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "group_name"], name: "index_captain_custom_tools_on_account_id_and_group_name"
     t.index ["account_id", "slug"], name: "index_captain_custom_tools_on_account_id_and_slug", unique: true
     t.index ["account_id"], name: "index_captain_custom_tools_on_account_id"
   end

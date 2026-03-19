@@ -34,6 +34,7 @@ const formState = {
 
 const initialState = {
   title: '',
+  group_name: '',
   description: '',
   endpoint_url: '',
   http_method: 'GET',
@@ -52,6 +53,7 @@ watch(
   newTool => {
     if (props.mode === 'edit' && newTool && newTool.id) {
       state.title = newTool.title || '';
+      state.group_name = newTool.group_name || '';
       state.description = newTool.description || '';
       state.endpoint_url = newTool.endpoint_url || '';
       state.http_method = newTool.http_method || 'GET';
@@ -153,6 +155,12 @@ const handleSubmit = async () => {
       :placeholder="t('CAPTAIN.CUSTOM_TOOLS.FORM.TITLE.PLACEHOLDER')"
       :message="formErrors.title"
       :message-type="formErrors.title ? 'error' : 'info'"
+    />
+
+    <Input
+      v-model="state.group_name"
+      :label="t('CAPTAIN.CUSTOM_TOOLS.FORM.GROUP_NAME.LABEL')"
+      :placeholder="t('CAPTAIN.CUSTOM_TOOLS.FORM.GROUP_NAME.PLACEHOLDER')"
     />
 
     <TextArea
