@@ -15,9 +15,9 @@ export default defineConfig({
     darkClass: 'dark',
     title: '@onelink/design',
     logo: {
-      square: './design-system/images/logo-thumbnail.svg',
-      light: './design-system/images/logo.png',
-      dark: './design-system/images/logo-dark.png',
+      square: '/brand-assets/logo_thumbnail.svg',
+      light: '/brand-assets/logo.svg',
+      dark: '/brand-assets/logo_dark.svg',
     },
   },
   defaultStoryProps: {

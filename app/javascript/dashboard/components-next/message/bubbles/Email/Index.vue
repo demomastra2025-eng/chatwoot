@@ -13,10 +13,10 @@ import EmailMeta from './EmailMeta.vue';
 import TranslationToggle from 'dashboard/components-next/message/TranslationToggle.vue';
 
 import { useMessageContext } from '../../provider.js';
-import { MESSAGE_TYPES } from 'next/message/constants.js';
+import { MESSAGE_TYPES, SENDER_TYPES } from 'next/message/constants.js';
 import { useTranslations } from 'dashboard/composables/useTranslations';
 
-const { content, contentAttributes, attachments, messageType } =
+const { content, contentAttributes, attachments, messageType, sender, senderType } =
   useMessageContext();
 
 const isExpandable = ref(false);
@@ -31,6 +31,19 @@ onMounted(() => {
 
 const isOutgoing = computed(() => messageType.value === MESSAGE_TYPES.OUTGOING);
 const isIncoming = computed(() => !isOutgoing.value);
+const resolvedSenderType = computed(
+  () => sender.value?.type ?? senderType.value ?? null
+);
+const isMachineSender = computed(() => {
+  if (!isOutgoing.value) return false;
+
+  return (
+    !resolvedSenderType.value ||
+    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
+      resolvedSenderType.value
+    )
+  );
+});
 
 const { hasTranslations, translationContent } =
   useTranslations(contentAttributes);
@@ -106,8 +119,9 @@ const handleSeeOriginal = () => {
   <BaseBubble
     class="w-full"
     :class="{
-      'bg-n-slate-4': isIncoming,
-      'bg-n-solid-blue': isOutgoing,
+      'bg-n-alpha-1': isIncoming,
+      'bg-n-blue-2 dark:bg-n-blue-1': isOutgoing && !isMachineSender,
+      'bg-n-solid-iris': isOutgoing && isMachineSender,
     }"
     data-bubble-name="email"
   >
@@ -115,7 +129,8 @@ const handleSeeOriginal = () => {
       class="p-3"
       :class="{
         'border-b border-n-strong': isIncoming,
-        'border-b border-n-slate-8/20': isOutgoing,
+        'border-b border-n-slate-8/20': isOutgoing && !isMachineSender,
+        'border-b border-n-iris-10/30': isOutgoing && isMachineSender,
       }"
     />
     <section ref="contentContainer" class="p-3">
@@ -129,10 +144,12 @@ const handleSeeOriginal = () => {
           v-if="isExpandable && !isExpanded"
           class="absolute left-0 right-0 bottom-0 h-40 px-8 flex items-end"
           :class="{
-            'bg-gradient-to-t from-n-slate-4 via-n-slate-4 via-20% to-transparent':
+            'bg-gradient-to-t from-n-alpha-1 via-n-alpha-1 via-20% to-transparent':
               isIncoming,
-            'bg-gradient-to-t from-n-solid-blue via-n-solid-blue via-20% to-transparent':
-              isOutgoing,
+            'bg-gradient-to-t from-n-blue-2 dark:from-n-blue-1 via-n-blue-2 dark:via-n-blue-1 via-20% to-transparent':
+              isOutgoing && !isMachineSender,
+            'bg-gradient-to-t from-n-solid-iris via-n-solid-iris via-20% to-transparent':
+              isOutgoing && isMachineSender,
           }"
         >
           <button

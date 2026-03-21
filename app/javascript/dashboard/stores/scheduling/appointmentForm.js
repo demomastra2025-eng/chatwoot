@@ -282,8 +282,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
               ? await SchedulingAppointmentsAPI.update(this.recordId, payload)
               : await SchedulingAppointmentsAPI.create(payload);
           const appointment = normalizePayload(response.data);
-          calendarStore.upsertAppointment(appointment);
-          await calendarStore.refresh();
+          calendarStore.syncAppointment(appointment);
+          if (calendarStore.currentView === 'month') {
+            await calendarStore.refresh();
+          }
           this.close();
           return appointment;
         } catch (error) {
@@ -305,8 +307,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
             this.recordId
           );
           const appointment = normalizePayload(data);
-          calendarStore.upsertAppointment(appointment);
-          await calendarStore.refresh();
+          calendarStore.syncAppointment(appointment);
+          if (calendarStore.currentView === 'month') {
+            await calendarStore.refresh();
+          }
           this.close();
           return appointment;
         } catch (error) {

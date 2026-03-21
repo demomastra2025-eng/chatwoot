@@ -1,4 +1,8 @@
 import { computed } from 'vue';
+import { CHANNEL_ICON_NEUTRAL_CLASS } from 'dashboard/helper/inbox';
+
+const withNeutralChannelColor = icon =>
+  `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
 
 export function useChannelIcon(inbox) {
   const channelTypeIconMap = {
@@ -8,7 +12,7 @@ export function useChannelIcon(inbox) {
     'Channel::Line': 'i-woot-line',
     'Channel::Sms': 'i-woot-sms',
     'Channel::Telegram': 'i-woot-telegram',
-    'Channel::TwilioSms': 'i-woot-sms',
+    'Channel::TwilioSms': withNeutralChannelColor('i-woot-sms'),
     'Channel::TwitterProfile': 'i-ri-twitter-x-fill',
     'Channel::WebWidget': 'i-woot-website',
     'Channel::Whatsapp': 'i-woot-whatsapp',
@@ -36,7 +40,7 @@ export function useChannelIcon(inbox) {
 
     // Special case for Twilio whatsapp
     if (type === 'Channel::TwilioSms' && inboxDetails.medium === 'whatsapp') {
-      icon = 'i-woot-whatsapp';
+      icon = withNeutralChannelColor('i-woot-whatsapp');
     }
 
     return icon ?? 'i-ri-global-fill';

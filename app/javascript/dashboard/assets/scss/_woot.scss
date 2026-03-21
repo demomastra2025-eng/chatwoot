@@ -3,8 +3,7 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
-@import 'shared/assets/fonts/InterDisplay/inter-display';
-@import 'shared/assets/fonts/inter';
+@import 'shared/assets/fonts/geist';
 
 // Next Colors
 @import 'next-colors';
@@ -19,7 +18,7 @@
 html,
 body {
   font-family:
-    'Inter',
+    'Geist',
     -apple-system,
     system-ui,
     BlinkMacSystemFont,
@@ -158,6 +157,10 @@ body {
 
   .channel-icon-voice {
     color: rgb(var(--channel-icon-voice)) !important;
+  }
+
+  .channel-icon-neutral {
+    color: inherit !important;
   }
 
   /* Hide scrollbar for Chrome, Safari and Opera */

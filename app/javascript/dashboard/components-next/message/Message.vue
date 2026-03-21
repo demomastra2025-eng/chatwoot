@@ -172,7 +172,12 @@ const variant = computed(() => {
     return MESSAGE_VARIANTS.AGENT;
   }
 
-  const isBot = !props.sender || props.sender.type === SENDER_TYPES.AGENT_BOT;
+  const senderType = props.sender?.type ?? props.senderType;
+  const isBot =
+    !props.sender ||
+    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
+      senderType
+    );
   if (isBot && props.messageType === MESSAGE_TYPES.OUTGOING) {
     return MESSAGE_VARIANTS.BOT;
   }

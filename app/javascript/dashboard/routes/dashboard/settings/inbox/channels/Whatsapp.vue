@@ -46,7 +46,7 @@ const availableProviders = computed(() => [
     key: PROVIDER_TYPES.TWILIO,
     title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
     description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
-    icon: 'i-woot-twilio',
+    icon: 'i-woot-twilio channel-icon-neutral',
   },
   {
     key: PROVIDER_TYPES.WHATSAPP_WEB,

@@ -50,8 +50,8 @@
       "SUCCESS_MESSAGE": "Регистрация прошла успешно",
       "ERROR_MESSAGE": "Не удалось подключиться к Onelink серверу. Пожалуйста, попробуйте еще раз."
     },
-    "SUBMIT": "Создать новый workspace",
-    "HAVE_AN_ACCOUNT": "Уже есть workspace?",
+    "SUBMIT": "Создать новый аккаунт",
+    "HAVE_AN_ACCOUNT": "Уже есть аккаунт?",
     "GET_STARTED": "Начните работу с OneLink"
   }
 }

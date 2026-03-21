@@ -26,6 +26,30 @@ const defaultPayload = () => ({
   slots: [],
 });
 
+const appointmentIntersectsRange = (appointment, range) => {
+  const startsAt = new Date(appointment.startsAt);
+  const endsAt = new Date(appointment.endsAt);
+
+  if (
+    Number.isNaN(startsAt.getTime()) ||
+    Number.isNaN(endsAt.getTime()) ||
+    !range?.from ||
+    !range?.to
+  ) {
+    return false;
+  }
+
+  return startsAt < range.to && endsAt > range.from;
+};
+
+const matchesNumericFilter = (selectedIds, value) => {
+  if (!selectedIds.length) {
+    return true;
+  }
+
+  return selectedIds.includes(Number(value));
+};
+
 export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
   state: () => ({
     anchorDate: new Date().toISOString(),
@@ -205,6 +229,42 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       return this.fetchCalendar(options);
     },
 
+    removeAppointment(appointmentId) {
+      const normalizedId = Number(appointmentId);
+
+      this.payload = {
+        ...this.payload,
+        appointments: this.payload.appointments.filter(
+          item => Number(item.id) !== normalizedId
+        ),
+        expenses: this.payload.expenses.filter(
+          item => Number(item.appointmentId) !== normalizedId
+        ),
+        payments: this.payload.payments.filter(
+          item => Number(item.appointmentId) !== normalizedId
+        ),
+      };
+    },
+
+    appointmentMatchesActiveView(appointment) {
+      const currentRange = buildCalendarRange(
+        this.currentView,
+        this.anchorDate
+      );
+
+      return (
+        matchesNumericFilter(
+          this.selectedResourceIds,
+          appointment.resourceId
+        ) &&
+        (!this.statusFilters.length ||
+          this.statusFilters.includes(appointment.status)) &&
+        (!this.paymentStatusFilters.length ||
+          this.paymentStatusFilters.includes(appointment.paymentStatus)) &&
+        appointmentIntersectsRange(appointment, currentRange)
+      );
+    },
+
     upsertAppointment(appointment) {
       const nextAppointment = camelcaseKeys(appointment, { deep: true });
       const nextAppointments = [...this.payload.appointments];
@@ -245,6 +305,17 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           (left, right) => new Date(right.createdAt) - new Date(left.createdAt)
         ),
       };
+    },
+
+    syncAppointment(appointment) {
+      const normalizedAppointment = camelcaseKeys(appointment, { deep: true });
+
+      if (!this.appointmentMatchesActiveView(normalizedAppointment)) {
+        this.removeAppointment(normalizedAppointment.id);
+        return;
+      }
+
+      this.upsertAppointment(normalizedAppointment);
     },
   },
 });

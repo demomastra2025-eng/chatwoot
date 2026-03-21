@@ -141,12 +141,43 @@ const serviceOptions = computed(() =>
   }))
 );
 
-const contactOptions = computed(() =>
-  formStore.contacts.map(contact => ({
+const contactOptions = computed(() => {
+  const options = formStore.contacts.map(contact => ({
     label: [contact.fullName, contact.phone].filter(Boolean).join(' '),
     value: contact.id,
-  }))
-);
+  }));
+
+  if (!formStore.form.contactId) {
+    return options;
+  }
+
+  const hasSelectedOption = options.some(
+    option => Number(option.value) === Number(formStore.form.contactId)
+  );
+
+  if (hasSelectedOption) {
+    return options;
+  }
+
+  const fallbackLabel = [
+    formStore.selectedContact?.fullName || formStore.form.clientName,
+    formStore.selectedContact?.phone || formStore.form.clientPhone,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (!fallbackLabel) {
+    return options;
+  }
+
+  return [
+    {
+      label: fallbackLabel,
+      value: formStore.form.contactId,
+    },
+    ...options,
+  ];
+});
 
 const appointmentStatusOptions = computed(() =>
   APPOINTMENT_STATUS_VALUES.map(value => ({
@@ -296,16 +327,49 @@ const handleAnchorDateSelect = async nextDate => {
 };
 
 const openNewAppointment = () => {
-  const resourceId =
-    calendarStore.visibleResources[0]?.id || calendarStore.resources[0]?.id;
-  const startsAt = new Date();
-  startsAt.setMinutes(Math.ceil(startsAt.getMinutes() / 30) * 30, 0, 0);
-  const endsAt = new Date(startsAt);
-  endsAt.setMinutes(endsAt.getMinutes() + 30);
+  const preferredResources = calendarStore.visibleResources.length
+    ? calendarStore.visibleResources
+    : calendarStore.resources;
+  const primaryResource = preferredResources[0] || null;
+  const primaryResourceId = primaryResource?.id || '';
+  const primaryDurationMin = Math.max(
+    5,
+    Number(primaryResource?.slotDurationMin) || 30
+  );
+  const now = new Date();
+
+  const nextSlot =
+    calendarStore.slots
+      .filter(slot => {
+        return (
+          (!primaryResourceId ||
+            Number(slot.resourceId) === Number(primaryResourceId)) &&
+          new Date(slot.endsAt) > now
+        );
+      })
+      .sort(
+        (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
+      )[0] ||
+    calendarStore.slots
+      .filter(slot => new Date(slot.endsAt) > now)
+      .sort(
+        (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
+      )[0] ||
+    null;
+
+  const startsAt = nextSlot ? new Date(nextSlot.startsAt) : new Date(now);
+  if (!nextSlot) {
+    startsAt.setMinutes(Math.ceil(startsAt.getMinutes() / 5) * 5, 0, 0);
+  }
+
+  const endsAt = nextSlot ? new Date(nextSlot.endsAt) : new Date(startsAt);
+  if (!nextSlot) {
+    endsAt.setMinutes(endsAt.getMinutes() + primaryDurationMin);
+  }
 
   formStore.openCreate({
     endsAt: endsAt.toISOString(),
-    resourceId,
+    resourceId: nextSlot?.resourceId || primaryResourceId,
     startsAt: startsAt.toISOString(),
   });
 };
@@ -422,6 +486,16 @@ const handleContactSelect = contactId => {
   }
 };
 
+const handleContactDropdownOpen = async () => {
+  if (formStore.ui.isLoadingContacts) return;
+
+  try {
+    await formStore.searchContacts('');
+  } catch {
+    // Surface API errors through the existing form store error state.
+  }
+};
+
 const handleStatusFiltersChange = async values => {
   calendarStore.setStatusFilters(values);
   await calendarStore.fetchCalendar();
@@ -449,16 +523,29 @@ const handleAppointmentCancel = async () => {
   }
 };
 
-const updateAppointmentMutation = async (appointment, patch) => {
+const updateAppointmentMutation = async (
+  appointment,
+  patch,
+  { refresh = false } = {}
+) => {
   try {
     const { data } = await SchedulingAppointmentsAPI.update(
       appointment.id,
       patch
     );
     const updatedAppointment = normalizePayload(data);
-    calendarStore.upsertAppointment(updatedAppointment);
-    await calendarStore.refresh();
+    calendarStore.syncAppointment(updatedAppointment);
+
+    if (refresh || calendarStore.currentView === 'month') {
+      await calendarStore.refresh();
+    }
   } catch (error) {
+    try {
+      await calendarStore.refresh();
+    } catch {
+      // Keep the original mutation error as the user-facing failure.
+    }
+
     const payload = extractSchedulingError(error);
     useAlert(payload.message);
   }
@@ -478,7 +565,6 @@ watch(
 
 onMounted(async () => {
   calendarStore.hydratePreferences();
-  calendarStore.setView('week');
   currentPresentation.value = 'calendar';
   await loadPage();
 });
@@ -656,6 +742,7 @@ onMounted(async () => {
                   $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
                 "
                 :empty-state="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')"
+                @open="handleContactDropdownOpen"
                 @search="formStore.searchContacts($event)"
                 @update:model-value="
                   formStore.updateField('contactId', $event);

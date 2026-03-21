@@ -123,7 +123,7 @@ const formatTimeRange = appointment =>
 
 const appointmentSubtitle = appointment => {
   return [
-    appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE'),
+    appointment.serviceNameSnapshot,
     resourceNamesById.value[appointment.resourceId],
   ]
     .filter(Boolean)

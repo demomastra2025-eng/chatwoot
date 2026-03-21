@@ -22,6 +22,10 @@ export const TWILIO_CHANNEL_MEDIUM = {
   SMS: 'sms',
 };
 
+export const CHANNEL_ICON_NEUTRAL_CLASS = 'channel-icon-neutral';
+
+const withNeutralChannelColor = icon => `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+
 const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.WEB]: 'i-ri-global-fill',
   [INBOX_TYPES.FB]: 'i-ri-messenger-fill',
@@ -166,8 +170,8 @@ export const getInboxIconByType = (type, medium, variant = 'fill') => {
     variant === 'fill' ? DEFAULT_ICON_FILL : DEFAULT_ICON_LINE;
 
   // Special case for Twilio (whatsapp and sms)
-  if (type === INBOX_TYPES.TWILIO && medium === 'whatsapp') {
-    return iconMap[INBOX_TYPES.WHATSAPP];
+  if (type === INBOX_TYPES.TWILIO && medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP) {
+    return withNeutralChannelColor(iconMap[INBOX_TYPES.WHATSAPP]);
   }
 
   return iconMap[type] ?? defaultIcon;

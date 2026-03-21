@@ -66,7 +66,7 @@ const emit = defineEmits([
   'selectAppointment',
 ]);
 
-const { t, locale } = useI18n();
+const { locale } = useI18n();
 
 const isCalendarView = computed(() => props.presentation === 'calendar');
 const isKanbanView = computed(() => props.presentation === 'kanban');
@@ -79,6 +79,35 @@ const listDays = computed(() =>
   buildDayListForView(props.view, props.anchorDate)
 );
 
+const getDayRange = day => {
+  const start = new Date(day);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return { end, start };
+};
+
+const getAppointmentDisplayRangeForDay = (appointment, day) => {
+  const startsAt = new Date(appointment.startsAt);
+  const endsAt = new Date(appointment.endsAt);
+  const { end, start } = getDayRange(day);
+
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+    return null;
+  }
+
+  if (startsAt >= end || endsAt <= start) {
+    return null;
+  }
+
+  return {
+    end: endsAt < end ? endsAt : end,
+    start: startsAt > start ? startsAt : start,
+  };
+};
+
 const resourceNamesById = computed(() =>
   props.resources.reduce((result, resource) => {
     result[resource.id] = resource.name;
@@ -89,11 +118,11 @@ const resourceNamesById = computed(() =>
 const listAppointments = computed(() => {
   return listDays.value.map(day => ({
     appointments: props.appointments
-      .filter(appointment => {
-        return formatDateKey(appointment.startsAt) === formatDateKey(day);
-      })
+      .filter(appointment => getAppointmentDisplayRangeForDay(appointment, day))
       .sort(
-        (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
+        (left, right) =>
+          getAppointmentDisplayRangeForDay(left, day).start -
+          getAppointmentDisplayRangeForDay(right, day).start
       ),
     day,
     key: formatDateKey(day),
@@ -112,6 +141,13 @@ const formatAppointmentDateTime = value =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+
+const formatAppointmentTimeRange = (appointment, day) => {
+  const range = getAppointmentDisplayRangeForDay(appointment, day);
+  if (!range) return '—';
+
+  return `${formatAppointmentDateTime(range.start)} - ${formatAppointmentDateTime(range.end)}`;
+};
 
 const resourceName = resourceId => resourceNamesById.value[resourceId] || '—';
 
@@ -179,7 +215,7 @@ const handleStatusChange = payload => {
                 @click="emit('selectAppointment', appointment)"
               >
                 <span class="font-medium text-n-slate-12">
-                  {{ formatAppointmentDateTime(appointment.startsAt) }}
+                  {{ formatAppointmentTimeRange(appointment, day.day) }}
                 </span>
                 <div class="flex min-w-0 flex-col">
                   <span class="truncate font-medium text-n-slate-12">
@@ -188,8 +224,7 @@ const handleStatusChange = payload => {
                   <span class="truncate text-xs text-n-slate-11">
                     {{
                       [
-                        appointment.serviceNameSnapshot ||
-                          t('SCHEDULING.CALENDAR.NO_SERVICE'),
+                        appointment.serviceNameSnapshot,
                         resourceName(appointment.resourceId),
                       ]
                         .filter(Boolean)

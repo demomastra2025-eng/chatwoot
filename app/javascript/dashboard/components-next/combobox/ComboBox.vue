@@ -25,7 +25,7 @@ const props = defineProps({
   inputLike: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['update:modelValue', 'search']);
+const emit = defineEmits(['open', 'update:modelValue', 'search']);
 
 const { t } = useI18n();
 const slots = useSlots();
@@ -123,6 +123,7 @@ const toggleDropdown = () => {
   if (props.disabled) return;
   open.value = !open.value;
   if (open.value) {
+    emit('open');
     resolveTeleportTarget();
     search.value = '';
     nextTick(() => {

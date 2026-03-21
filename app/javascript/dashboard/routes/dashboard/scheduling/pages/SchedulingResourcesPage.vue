@@ -175,6 +175,142 @@ const buildDefaultBreakRules = () =>
     weekday,
   }));
 
+let scheduleRowSequence = 0;
+
+const nextScheduleRowKey = () => {
+  const rowKey = `schedule-row-${scheduleRowSequence}`;
+  scheduleRowSequence += 1;
+  return rowKey;
+};
+
+const createScheduleRow = rule => {
+  const nextRule = {
+    active: false,
+    endMinute: 18 * 60,
+    startMinute: 9 * 60,
+    title: '',
+    ...rule,
+  };
+
+  return {
+    ...nextRule,
+    rowKey: nextScheduleRowKey(),
+    endMinuteText: minuteToTime(nextRule.endMinute),
+    startMinuteText: minuteToTime(nextRule.startMinute),
+  };
+};
+
+const sortScheduleRows = rows => {
+  return [...rows].sort((left, right) => {
+    if (left.weekday !== right.weekday) {
+      return left.weekday - right.weekday;
+    }
+
+    const leftMinute = timeToMinute(
+      left.startMinuteText || minuteToTime(left.startMinute)
+    );
+    const rightMinute = timeToMinute(
+      right.startMinuteText || minuteToTime(right.startMinute)
+    );
+
+    return (leftMinute ?? 0) - (rightMinute ?? 0);
+  });
+};
+
+const defaultScheduleRuleForType = (type, weekday) => {
+  if (type === 'work') {
+    return {
+      active: false,
+      endMinute: 18 * 60,
+      startMinute: 9 * 60,
+      weekday,
+    };
+  }
+
+  return {
+    active: false,
+    endMinute: 14 * 60,
+    startMinute: 13 * 60,
+    title: '',
+    weekday,
+  };
+};
+
+const buildScheduleRows = (type, rules) => {
+  return WEEKDAY_VALUES.flatMap(weekday => {
+    const weekdayRules = sortScheduleRows(
+      rules.filter(item => item.weekday === weekday)
+    );
+
+    if (!weekdayRules.length) {
+      return [createScheduleRow(defaultScheduleRuleForType(type, weekday))];
+    }
+
+    return weekdayRules.map(rule => createScheduleRow(rule));
+  });
+};
+
+const scheduleRulesForType = type => {
+  return type === 'work' ? scheduleForm.workRules : scheduleForm.breakRules;
+};
+
+const replaceScheduleRules = (type, rows) => {
+  if (type === 'work') {
+    scheduleForm.workRules = rows;
+    return;
+  }
+
+  scheduleForm.breakRules = rows;
+};
+
+const addScheduleRule = (type, weekday) => {
+  const rows = scheduleRulesForType(type);
+  const weekdayRows = rows.filter(row => row.weekday === weekday);
+  const lastWeekdayRow = weekdayRows[weekdayRows.length - 1];
+  const defaultRule = defaultScheduleRuleForType(type, weekday);
+  const nextRow = createScheduleRow({
+    ...defaultRule,
+    active: true,
+    endMinute:
+      timeToMinute(
+        lastWeekdayRow?.endMinuteText || minuteToTime(lastWeekdayRow?.endMinute)
+      ) ?? defaultRule.endMinute,
+    startMinute:
+      timeToMinute(
+        lastWeekdayRow?.startMinuteText ||
+          minuteToTime(lastWeekdayRow?.startMinute)
+      ) ?? defaultRule.startMinute,
+    title: lastWeekdayRow?.title ?? defaultRule.title,
+  });
+
+  replaceScheduleRules(type, sortScheduleRows([...rows, nextRow]));
+};
+
+const removeScheduleRule = (type, rowKey) => {
+  const rows = scheduleRulesForType(type);
+  const targetRow = rows.find(row => row.rowKey === rowKey);
+
+  if (!targetRow) return;
+
+  const weekdayRows = rows.filter(row => row.weekday === targetRow.weekday);
+  if (weekdayRows.length === 1) {
+    replaceScheduleRules(
+      type,
+      rows.map(row =>
+        row.rowKey === rowKey
+          ? createScheduleRow(defaultScheduleRuleForType(type, row.weekday))
+          : row
+      )
+    );
+    return;
+  }
+
+  replaceScheduleRules(
+    type,
+    rows.filter(row => row.rowKey !== rowKey)
+  );
+};
+
 const resourceCards = computed(() => referencesStore.resources);
 
 const linkedUser = resource => {
@@ -290,25 +426,6 @@ const deleteResource = async resource => {
   }
 };
 
-const buildScheduleRows = rules => {
-  return WEEKDAY_VALUES.map(weekday => {
-    const rule = rules.find(item => item.weekday === weekday);
-    const nextRule = rule || {
-      active: false,
-      endMinute: 18 * 60,
-      startMinute: 9 * 60,
-      title: '',
-      weekday,
-    };
-
-    return {
-      ...nextRule,
-      endMinuteText: minuteToTime(nextRule.endMinute),
-      startMinuteText: minuteToTime(nextRule.startMinute),
-    };
-  });
-};
-
 const openScheduleEditor = async resource => {
   activeResource.value = resource;
   scheduleDrawerOpen.value = true;
@@ -320,9 +437,11 @@ const openScheduleEditor = async resource => {
   ]);
 
   scheduleForm.workRules = buildScheduleRows(
+    'work',
     workRules.length ? workRules : buildDefaultWorkRules()
   );
   scheduleForm.breakRules = buildScheduleRows(
+    'break',
     breakRules.length ? breakRules : buildDefaultBreakRules()
   );
 };
@@ -740,8 +859,8 @@ onMounted(async () => {
         <div v-if="scheduleTab === 'work'" class="flex flex-col gap-4">
           <div
             v-for="rule in scheduleForm.workRules"
-            :key="`work-${rule.weekday}`"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr]"
+            :key="rule.rowKey"
+            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
@@ -760,14 +879,34 @@ onMounted(async () => {
               type="time"
               :label="$t('SCHEDULING.GENERAL.END')"
             />
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-plus"
+                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
+                :title="$t('SCHEDULING.GENERAL.CREATE')"
+                @click="addScheduleRule('work', rule.weekday)"
+              />
+              <Button
+                size="xs"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="removeScheduleRule('work', rule.rowKey)"
+              />
+            </div>
           </div>
         </div>
 
         <div v-else class="flex flex-col gap-4">
           <div
             v-for="rule in scheduleForm.breakRules"
-            :key="`break-${rule.weekday}`"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_1.2fr]"
+            :key="rule.rowKey"
+            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
@@ -790,6 +929,26 @@ onMounted(async () => {
               v-model="rule.title"
               :label="$t('SCHEDULING.RESOURCES.BREAK_TITLE')"
             />
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-plus"
+                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
+                :title="$t('SCHEDULING.GENERAL.CREATE')"
+                @click="addScheduleRule('break', rule.weekday)"
+              />
+              <Button
+                size="xs"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="removeScheduleRule('break', rule.rowKey)"
+              />
+            </div>
           </div>
         </div>
       </div>

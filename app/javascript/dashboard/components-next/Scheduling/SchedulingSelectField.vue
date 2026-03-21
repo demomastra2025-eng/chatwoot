@@ -44,7 +44,7 @@ defineProps({
   },
 });
 
-const emit = defineEmits(['search', 'update:modelValue']);
+const emit = defineEmits(['open', 'search', 'update:modelValue']);
 
 defineOptions({
   inheritAttrs: false,
@@ -68,6 +68,7 @@ defineOptions({
       :disabled="disabled"
       :use-api-results="useApiResults"
       input-like
+      @open="emit('open')"
       @search="emit('search', $event)"
       @update:model-value="emit('update:modelValue', $event)"
     >

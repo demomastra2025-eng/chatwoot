@@ -18,6 +18,8 @@ const defaultSansFonts = [
   'Arial',
   'sans-serif !important',
 ];
+const brandSansFonts = ['Geist', ...defaultSansFonts];
+const brandMonoFonts = ['"Geist Mono"', ...defaultTheme.fontFamily.mono];
 
 const tailwindConfig = {
   darkMode: 'class',
@@ -39,9 +41,12 @@ const tailwindConfig = {
   theme: {
     extend: {
       fontFamily: {
-        sans: defaultSansFonts,
-        inter: ['Inter', ...defaultSansFonts],
-        interDisplay: ['InterDisplay', ...defaultSansFonts],
+        sans: brandSansFonts,
+        inter: brandSansFonts,
+        interDisplay: brandSansFonts,
+        geist: brandSansFonts,
+        mono: brandMonoFonts,
+        geistMono: brandMonoFonts,
       },
       fontWeight: {
         420: '420',
@@ -101,7 +106,7 @@ const tailwindConfig = {
               marginBottom: '1.5em',
             },
             a: {
-              color: 'rgb(var(--blue-11))',
+              color: 'rgb(var(--brand-color))',
               textDecoration: 'underline',
             },
             ul: {

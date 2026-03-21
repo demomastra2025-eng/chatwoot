@@ -193,7 +193,7 @@ export const deriveVisibleMinuteWindow = ({
   columns,
   workRules,
   workdayOverrides,
-  appointments,
+  appointments = [],
 }) => {
   const relevantMinutes = [];
 
@@ -205,7 +205,13 @@ export const deriveVisibleMinuteWindow = ({
     });
 
     if (override) {
-      relevantMinutes.push(override.startMinute, override.endMinute);
+      if (
+        Number.isFinite(override.startMinute) &&
+        Number.isFinite(override.endMinute) &&
+        override.endMinute > override.startMinute
+      ) {
+        relevantMinutes.push(override.startMinute, override.endMinute);
+      }
       return;
     }
 
@@ -222,14 +228,18 @@ export const deriveVisibleMinuteWindow = ({
       });
   });
 
-  appointments.forEach(appointment => {
-    relevantMinutes.push(
-      minuteOfDayFromDate(appointment.startsAt),
-      minuteOfDayFromDate(appointment.endsAt)
-    );
-  });
+  const normalizedRelevantMinutes = relevantMinutes.filter(Number.isFinite);
 
-  if (relevantMinutes.length === 0) {
+  if (normalizedRelevantMinutes.length === 0) {
+    appointments.forEach(appointment => {
+      normalizedRelevantMinutes.push(
+        minuteOfDayFromDate(appointment.startsAt),
+        minuteOfDayFromDate(appointment.endsAt)
+      );
+    });
+  }
+
+  if (normalizedRelevantMinutes.length === 0) {
     return {
       startMinute: DEFAULT_VISIBLE_START_MINUTE,
       endMinute: DEFAULT_VISIBLE_END_MINUTE,
@@ -237,15 +247,17 @@ export const deriveVisibleMinuteWindow = ({
   }
 
   const startMinute = clampMinute(
-    Math.floor((Math.min(...relevantMinutes) - 60) / 60) * 60
+    Math.floor(Math.min(...normalizedRelevantMinutes) / MINUTE_STEP) *
+      MINUTE_STEP
   );
   const endMinute = clampMinute(
-    Math.ceil((Math.max(...relevantMinutes) + 60) / 60) * 60
+    Math.ceil(Math.max(...normalizedRelevantMinutes) / MINUTE_STEP) *
+      MINUTE_STEP
   );
 
   return {
-    startMinute: Math.min(startMinute, DEFAULT_VISIBLE_START_MINUTE),
-    endMinute: Math.max(endMinute, DEFAULT_VISIBLE_END_MINUTE),
+    startMinute,
+    endMinute: Math.max(endMinute, startMinute + MINUTE_STEP),
   };
 };
 

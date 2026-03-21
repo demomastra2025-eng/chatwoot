@@ -140,4 +140,69 @@ describe('useSchedulingCalendarStore', () => {
       { appointmentId: 9, createdAt: '2026-03-10T08:05:00.000Z', id: 302 },
     ]);
   });
+
+  it('removes synced appointments that no longer match active filters', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.selectedResourceIds = [5];
+    store.statusFilters = ['confirmed'];
+    store.payload = {
+      appointments: [
+        {
+          id: 3,
+          resourceId: 5,
+          startsAt: '2026-03-11T08:00:00.000Z',
+          endsAt: '2026-03-11T08:30:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+      breakRules: [],
+      expenses: [],
+      holidays: [],
+      payments: [],
+      range: { from: null, to: null },
+      resources: [],
+      slots: [],
+      timeOffs: [],
+      workRules: [],
+      workdayOverrides: [],
+    };
+
+    store.syncAppointment({
+      id: 3,
+      resource_id: 9,
+      starts_at: '2026-03-11T08:00:00.000Z',
+      ends_at: '2026-03-11T08:30:00.000Z',
+      status: 'cancelled',
+    });
+
+    expect(store.payload.appointments).toEqual([]);
+  });
+
+  it('keeps synced appointments when they stay inside the active view and filters', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.selectedResourceIds = [5];
+    store.statusFilters = ['confirmed'];
+
+    store.syncAppointment({
+      id: 7,
+      resource_id: 5,
+      starts_at: '2026-03-11T09:00:00.000Z',
+      ends_at: '2026-03-11T09:30:00.000Z',
+      status: 'confirmed',
+    });
+
+    expect(store.payload.appointments).toEqual([
+      {
+        id: 7,
+        resourceId: 5,
+        startsAt: '2026-03-11T09:00:00.000Z',
+        endsAt: '2026-03-11T09:30:00.000Z',
+        status: 'confirmed',
+      },
+    ]);
+  });
 });

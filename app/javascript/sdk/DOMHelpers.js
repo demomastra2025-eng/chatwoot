@@ -2,8 +2,9 @@ import { SDK_CSS } from './sdk.js';
 import { IFrameHelper } from './IFrameHelper';
 
 export const loadCSS = () => {
+  const baseUrl = (window.$chatwoot?.baseUrl || '').replace(/\/$/, '');
   const css = document.createElement('style');
-  css.innerHTML = `${SDK_CSS}`;
+  css.innerHTML = SDK_CSS.replaceAll('__CW_BASE_URL__', baseUrl);
   css.id = 'cw-widget-styles';
   css.dataset.turboPermanent = true;
   document.body.appendChild(css);

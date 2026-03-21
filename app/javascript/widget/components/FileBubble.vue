@@ -86,7 +86,7 @@ export default {
   }
 
   .download {
-    @apply text-n-blue-11 font-medium p-0 m-0 text-xs no-underline;
+    @apply text-n-brand font-medium p-0 m-0 text-xs no-underline;
   }
 }
 </style>

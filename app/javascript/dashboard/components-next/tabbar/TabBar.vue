@@ -85,7 +85,7 @@ const showDivider = index => {
     <template v-for="(tab, index) in tabs" :key="index">
       <button
         :ref="el => (tabRefs[index] = el)"
-        class="relative z-10 px-4 truncate py-1.5 text-sm border-0 outline-1 outline-transparent rounded-lg transition-all duration-200 ease-out hover:text-n-brand active:scale-[1.02]"
+        class="relative z-10 px-4 truncate py-1.5 text-sm border-0 outline-1 outline-transparent rounded-lg transition-all duration-200 ease-out hover:text-n-blue-11 active:scale-[1.02]"
         :class="[
           activeTab === index
             ? activeTextClass

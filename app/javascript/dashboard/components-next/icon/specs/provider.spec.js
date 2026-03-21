@@ -71,7 +71,7 @@ describe('useChannelIcon', () => {
     it('returns chat icon for regular Twilio SMS channel', () => {
       const inbox = { channel_type: 'Channel::TwilioSms' };
       const { value: icon } = useChannelIcon(inbox);
-      expect(icon).toBe('i-woot-sms');
+      expect(icon).toBe('i-woot-sms channel-icon-neutral');
     });
 
     it('returns WhatsApp icon for Twilio SMS with WhatsApp medium', () => {
@@ -80,7 +80,7 @@ describe('useChannelIcon', () => {
         medium: 'whatsapp',
       };
       const { value: icon } = useChannelIcon(inbox);
-      expect(icon).toBe('i-woot-whatsapp');
+      expect(icon).toBe('i-woot-whatsapp channel-icon-neutral');
     });
 
     it('returns chat icon for Twilio SMS with non-WhatsApp medium', () => {
@@ -89,7 +89,7 @@ describe('useChannelIcon', () => {
         medium: 'sms',
       };
       const { value: icon } = useChannelIcon(inbox);
-      expect(icon).toBe('i-woot-sms');
+      expect(icon).toBe('i-woot-sms channel-icon-neutral');
     });
 
     it('returns chat icon for Twilio SMS with undefined medium', () => {
@@ -98,7 +98,7 @@ describe('useChannelIcon', () => {
         medium: undefined,
       };
       const { value: icon } = useChannelIcon(inbox);
-      expect(icon).toBe('i-woot-sms');
+      expect(icon).toBe('i-woot-sms channel-icon-neutral');
     });
   });
 

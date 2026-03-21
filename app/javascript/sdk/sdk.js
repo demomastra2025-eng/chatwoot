@@ -1,4 +1,12 @@
 export const SDK_CSS = `
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('__CW_BASE_URL__/fonts/Geist/webfonts/Geist[wght].woff2') format('woff2');
+}
+
 :root {
   --b-100: #F2F3F7;
   --s-700: #37546D;
@@ -102,7 +110,7 @@ export const SDK_CSS = `
   align-items: center;
   color: #fff;
   display: flex;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen-Sans, Ubuntu, Cantarell, Helvetica Neue, Arial, sans-serif;
+  font-family: Geist, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen-Sans, Ubuntu, Cantarell, Helvetica Neue, Arial, sans-serif;
   font-size: 16px;
   font-weight: 500;
   justify-content: center;

@@ -16,7 +16,7 @@ p {
   @apply mb-2 leading-[1.65] text-sm;
 
   a {
-    @apply text-n-blue-11 dark:text-n-blue-10 cursor-pointer;
+    @apply text-n-brand cursor-pointer;
   }
 }
 
@@ -25,7 +25,7 @@ a {
 }
 
 .text-link {
-  @apply text-n-blue-11 dark:text-n-blue-10 cursor-pointer hover:underline underline-offset-2;
+  @apply text-n-brand cursor-pointer hover:underline underline-offset-2;
 }
 
 hr {
@@ -187,8 +187,8 @@ label:has(.help-text) {
 
 // Code styling
 code {
-  font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas',
-    '"Liberation Mono"', '"Courier New"', 'monospace';
+  font-family: 'Geist Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo',
+    'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace';
   @apply text-xs border-0;
 
   &.hljs {

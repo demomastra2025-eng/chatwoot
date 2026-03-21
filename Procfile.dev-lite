@@ -1,5 +1,2 @@
-backend: bin/rails s -p 3000
+backend: ACTIVE_JOB_QUEUE_ADAPTER=${ACTIVE_JOB_QUEUE_ADAPTER:-async} bin/rails s -p 3000
 vite: VITE_RUBY_HOST=127.0.0.1 bin/vite dev
-sidekiq: ENABLE_SIDEKIQ_CRON=true bundle exec sidekiq -C config/sidekiq.yml
-history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml
-echo_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec sidekiq -C config/sidekiq_whatsappweb_echo.yml
