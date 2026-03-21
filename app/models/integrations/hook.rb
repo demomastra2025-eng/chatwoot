@@ -20,6 +20,7 @@ class Integrations::Hook < ApplicationRecord
   attr_readonly :app_id, :account_id, :inbox_id, :hook_type
   before_validation :ensure_hook_type
   after_create :trigger_setup_if_crm
+  after_destroy_commit :enqueue_medelement_cleanup, if: :medelement?
 
   # TODO: Remove guard once encryption keys become mandatory (target 3-4 releases out).
   encrypts :access_token, deterministic: true if Chatwoot.encryption_configured?
@@ -30,6 +31,7 @@ class Integrations::Hook < ApplicationRecord
   validate :validate_settings_json_schema
   validate :ensure_feature_enabled
   validate :ensure_required_access_token
+  validate :ensure_required_secret_settings
   validates :app_id, uniqueness: { scope: [:account_id], unless: -> { app.present? && app.params[:allow_multiple_hooks].present? } }
 
   # TODO: This seems to be only used for slack at the moment
@@ -59,6 +61,19 @@ class Integrations::Hook < ApplicationRecord
 
   def notion?
     app_id == 'notion'
+  end
+
+  def medelement?
+    app_id == 'medelement'
+  end
+
+  def secret_settings
+    return {} if access_token.blank?
+    return {} unless access_token.to_s.start_with?('{')
+
+    JSON.parse(access_token)
+  rescue JSON::ParserError
+    {}
   end
 
   def disable
@@ -97,6 +112,16 @@ class Integrations::Hook < ApplicationRecord
     errors.add(:access_token, "can't be blank")
   end
 
+  def ensure_required_secret_settings
+    return unless medelement?
+    return if access_token.blank?
+
+    missing_keys = %w[integrator_key company_login password].reject { |key| secret_settings[key].present? }
+    return if missing_keys.blank?
+
+    errors.add(:access_token, "is missing required Medelement credentials: #{missing_keys.join(', ')}")
+  end
+
   def validate_settings_json_schema
     return if app.blank? || app.params[:settings_json_schema].blank?
 
@@ -114,5 +139,9 @@ class Integrations::Hook < ApplicationRecord
 
   def crm_integration?
     %w[leadsquared].include?(app_id)
+  end
+
+  def enqueue_medelement_cleanup
+    Integrations::Medelement::CleanupJob.perform_later(account_id)
   end
 end

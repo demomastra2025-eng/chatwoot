@@ -73,7 +73,10 @@ export default {
               : item.placeholder,
         };
 
-        if (this.isEditing && item.store === 'access_token') {
+        if (
+          this.isEditing &&
+          ['access_token', 'secret_settings'].includes(item.store)
+        ) {
           return { ...normalizedItem, validation: '' };
         }
         return normalizedItem;
@@ -112,7 +115,7 @@ export default {
           return this.hook.status;
         }
 
-        if (item.store === 'access_token') {
+        if (item.store === 'access_token' || item.store === 'secret_settings') {
           return '';
         }
 
@@ -168,6 +171,14 @@ export default {
         if (formItem?.store === 'access_token') {
           if (this.values[key]) {
             hookPayload.access_token = this.values[key];
+          }
+          return acc;
+        }
+
+        if (formItem?.store === 'secret_settings') {
+          if (this.values[key]) {
+            hookPayload.secret_settings ||= {};
+            hookPayload.secret_settings[key] = this.values[key];
           }
           return acc;
         }

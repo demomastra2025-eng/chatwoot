@@ -392,3 +392,109 @@ macrocrm:
       'sync_chat_manager_from_macro',
       'sync_chat_manager_to_macro',
     ]
+
+medelement:
+  id: medelement
+  logo: medelement.png
+  i18n_key: medelement
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  feature_flag: scheduling
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'organization_id': { 'type': 'string' },
+          'timezone': { 'type': 'string' },
+          'sync_specialists': { 'type': 'boolean' },
+          'sync_receptions': { 'type': 'boolean' },
+          'sync_patients': { 'type': 'boolean' },
+          'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
+          'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
+          'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
+        },
+      'required': ['organization_id', 'timezone'],
+      'additionalProperties': false,
+    }
+  settings_form_schema:
+    [
+      {
+        'label': 'Integrator Key',
+        'type': 'password',
+        'name': 'integrator_key',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Company Login',
+        'type': 'text',
+        'name': 'company_login',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Password',
+        'type': 'password',
+        'name': 'password',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Integration enabled',
+        'type': 'checkbox',
+        'name': 'enabled',
+        'value': true,
+        'store': 'status',
+      },
+      {
+        'label': 'Organization ID',
+        'type': 'text',
+        'name': 'organization_id',
+        'validation': 'required',
+      },
+      {
+        'label': 'Timezone',
+        'type': 'text',
+        'name': 'timezone',
+        'value': 'Asia/Almaty',
+        'validation': 'required',
+      },
+      {
+        'label': 'Sync specialists',
+        'type': 'checkbox',
+        'name': 'sync_specialists',
+        'value': true,
+      },
+      {
+        'label': 'Sync receptions',
+        'type': 'checkbox',
+        'name': 'sync_receptions',
+        'value': true,
+      },
+      {
+        'label': 'Sync patients',
+        'type': 'checkbox',
+        'name': 'sync_patients',
+        'value': true,
+      },
+      {
+        'label': 'Days back',
+        'type': 'number',
+        'name': 'receptions_days_back',
+        'value': 3,
+      },
+      {
+        'label': 'Days forward',
+        'type': 'number',
+        'name': 'receptions_days_forward',
+        'value': 70,
+      },
+      {
+        'label': 'Throttle (ms)',
+        'type': 'number',
+        'name': 'throttle_ms',
+        'value': 275,
+      },
+    ]

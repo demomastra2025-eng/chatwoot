@@ -47,6 +47,7 @@ module Redis::RedisKeys
   EMAIL_MESSAGE_MUTEX = 'EMAIL_CHANNEL_LOCK::%<inbox_id>s'.freeze
   WHATSAPP_WEB_HISTORY_SYNC_MUTEX = 'WHATSAPP_WEB_HISTORY_SYNC_LOCK::%<channel_id>s'.freeze
   CRM_PROCESS_MUTEX = 'CRM_PROCESS_MUTEX::%<hook_id>s'.freeze
+  MEDELEMENT_SYNC_MUTEX = 'MEDELEMENT_SYNC_MUTEX::%<account_id>s'.freeze
 
   ## Auto Assignment Keys
   # Track conversation assignments to agents for rate limiting

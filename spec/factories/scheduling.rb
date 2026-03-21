@@ -91,10 +91,10 @@ FactoryBot.define do
     client_phone { contact.phone_number }
     client_identifier { contact.identifier }
     source { 'manual' }
-    service_name_snapshot { service.name }
-    service_type_snapshot { service.service_type }
-    service_duration_min_snapshot { service.duration_min }
-    service_amount { service.base_price }
+    service_name_snapshot { service&.name }
+    service_type_snapshot { service&.service_type }
+    service_duration_min_snapshot { service&.duration_min }
+    service_amount { service&.base_price || 0 }
     compensation_type_snapshot { resource.compensation_type }
     compensation_value_snapshot { resource.compensation_value }
     compensation_percent_snapshot { resource.compensation_percent }

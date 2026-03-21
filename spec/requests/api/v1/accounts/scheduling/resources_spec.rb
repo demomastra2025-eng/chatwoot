@@ -62,4 +62,19 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 0, 'title')).to eq('Lunch')
   end
+
+  it 'rejects deleting imported Medelement specialists' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+  end
 end

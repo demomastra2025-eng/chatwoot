@@ -1,13 +1,38 @@
 class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts::Scheduling::BaseController
+  APPOINTMENT_PARAM_KEYS = %i[
+    resource_id
+    contact_id
+    service_id
+    company_id
+    conversation_id
+    created_by_id
+    starts_at
+    ends_at
+    duration_min
+    status
+    appointment_type
+    client_name
+    client_phone
+    client_identifier
+    client_birth_date
+    client_gender
+    client_comment
+    source
+    external_ref
+    idempotency_key
+    service_amount
+    prepaid_amount
+    prepaid_payment_method
+    settlement_amount
+    settlement_payment_method
+    payment_status
+  ].freeze
+
   before_action :set_appointment, only: [:show, :update, :cancel]
+  before_action :ensure_editable_appointment!, only: [:update, :cancel]
 
   def index
-    appointments = Current.account.scheduling_appointments.includes(:payments, :expense).ordered
-    appointments = filter_by_range(appointments)
-    appointments = appointments.where(resource_id: parse_csv_ids(params[:resource_ids])) if params[:resource_ids].present?
-    appointments = appointments.where(status: parse_csv_ids(params[:status])) if params[:status].present?
-    appointments = appointments.where(payment_status: parse_csv_ids(params[:payment_status])) if params[:payment_status].present?
-
+    appointments = filtered_appointments
     render_payload(
       appointments.map { |appointment| Scheduling::PayloadBuilder.appointment(appointment) },
       meta: { count: appointments.size }
@@ -56,35 +81,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   private
 
   def appointment_params
-    params.permit(
-      :resource_id,
-      :contact_id,
-      :service_id,
-      :company_id,
-      :conversation_id,
-      :created_by_id,
-      :starts_at,
-      :ends_at,
-      :duration_min,
-      :status,
-      :appointment_type,
-      :client_name,
-      :client_phone,
-      :client_identifier,
-      :client_birth_date,
-      :client_gender,
-      :client_comment,
-      :source,
-      :external_ref,
-      :idempotency_key,
-      :service_amount,
-      :prepaid_amount,
-      :prepaid_payment_method,
-      :settlement_amount,
-      :settlement_payment_method,
-      :payment_status,
-      custom_attributes: {}
-    )
+    params.permit(*APPOINTMENT_PARAM_KEYS, custom_attributes: {})
   end
 
   def filter_by_range(scope)
@@ -98,6 +95,20 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     scoped
   end
 
+  def filter_by_csv(scope, column, value)
+    return scope if value.blank?
+
+    scope.where(column => parse_csv_ids(value))
+  end
+
+  def filtered_appointments
+    scope = Current.account.scheduling_appointments.includes(:payments, :expense).ordered
+    scope = filter_by_range(scope)
+    scope = filter_by_csv(scope, :resource_id, params[:resource_ids])
+    scope = filter_by_csv(scope, :status, params[:status])
+    filter_by_csv(scope, :payment_status, params[:payment_status])
+  end
+
   def set_appointment
     @appointment = Current.account.scheduling_appointments.includes(:payments, :expense).find(params[:id])
   end
@@ -106,5 +117,15 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     return if appointment_params[:idempotency_key].blank?
 
     Current.account.scheduling_appointments.includes(:payments, :expense).find_by(idempotency_key: appointment_params[:idempotency_key])
+  end
+
+  def ensure_editable_appointment!
+    return unless @appointment.source == 'medelement'
+
+    raise Scheduling::Error.new(
+      code: 'APPOINTMENT_READ_ONLY',
+      message: 'Imported Medelement appointments are read-only',
+      status: :unprocessable_content
+    )
   end
 end

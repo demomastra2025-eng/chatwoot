@@ -22,6 +22,19 @@ RSpec.describe Integrations::Hook do
       expect(hook).not_to be_valid
       expect(hook.errors[:access_token]).to include("can't be blank")
     end
+
+    it 'requires the Medelement secret bundle' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+      hook = build(:integrations_hook,
+                   :medelement,
+                   account: account,
+                   access_token: { integrator_key: 'only-key' }.to_json)
+
+      expect(hook).not_to be_valid
+      expect(hook.errors[:access_token].join).to include('company_login')
+      expect(hook.errors[:access_token].join).to include('password')
+    end
   end
 
   describe 'associations' do

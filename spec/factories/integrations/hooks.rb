@@ -48,5 +48,28 @@ FactoryBot.define do
         }
       end
     end
+
+    trait :medelement do
+      app_id { 'medelement' }
+      access_token do
+        {
+          integrator_key: 'integration-key',
+          company_login: 'company-login',
+          password: 'super-secret'
+        }.to_json
+      end
+      settings do
+        {
+          'organization_id' => '412849431501753534',
+          'timezone' => 'Asia/Almaty',
+          'sync_specialists' => true,
+          'sync_receptions' => true,
+          'sync_patients' => true,
+          'receptions_days_back' => 3,
+          'receptions_days_forward' => 70,
+          'throttle_ms' => 0
+        }
+      end
+    end
   end
 end

@@ -40,11 +40,17 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   end
 
   def permitted_params
-    params.require(:hook).permit(:app_id, :inbox_id, :status, :access_token, settings: {})
+    params.require(:hook).permit(:app_id, :inbox_id, :status, :access_token, settings: {}, secret_settings: {})
   end
 
   def normalized_params
     params = permitted_params.to_h
+    secret_settings = compact_secret_settings(params.delete('secret_settings'))
+
+    if secret_settings.present?
+      existing_secret_settings = @hook&.secret_settings || {}
+      params['access_token'] = existing_secret_settings.merge(secret_settings).to_json
+    end
 
     if [true, false, 'true', 'false'].include?(params['status'])
       params['status'] = ActiveModel::Type::Boolean.new.cast(params['status']) ? 'enabled' : 'disabled'
@@ -52,5 +58,11 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
     params.delete('access_token') if params['access_token'].blank?
     params
+  end
+
+  def compact_secret_settings(secret_settings)
+    return {} if secret_settings.blank?
+
+    secret_settings.to_h.transform_values { |value| value.is_a?(String) ? value.strip : value }.compact_blank
   end
 end

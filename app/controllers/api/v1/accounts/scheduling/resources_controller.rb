@@ -27,6 +27,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def destroy
+    ensure_destroyable_resource!
     @scheduling_resource.destroy!
     head :no_content
   end
@@ -53,5 +54,15 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def set_resource
     @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
+  end
+
+  def ensure_destroyable_resource!
+    return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_READ_ONLY',
+      message: 'Imported Medelement specialists cannot be deleted',
+      status: :unprocessable_content
+    )
   end
 end

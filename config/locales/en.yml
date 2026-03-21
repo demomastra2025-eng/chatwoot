@@ -344,6 +344,10 @@ en:
       name: 'MacroCRM'
       short_description: 'Sync WhatsApp messages with MacroCRM deals and contact notes.'
       description: 'Sync incoming and outgoing WhatsApp messages with MacroCRM. The integration finds or creates a contact, finds or creates a deal, and writes each WhatsApp message as a note in MacroCRM.'
+    medelement:
+      name: 'Medelement'
+      short_description: 'Import specialists, receptions, and patients from Medelement into scheduling.'
+      description: 'Connect Medelement to import specialists, receptions, and patient data into Onelink scheduling while keeping imported data isolated from manual scheduling flows.'
   captain:
     copilot_message_required: Message is required
     copilot_error: 'Please connect an assistant to this inbox to use Copilot'

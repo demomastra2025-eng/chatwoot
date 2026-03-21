@@ -18,6 +18,27 @@ RSpec.describe 'Integration Hooks API', type: :request do
       }
     }
   end
+  let(:medelement_params) do
+    {
+      app_id: 'medelement',
+      status: 'enabled',
+      secret_settings: {
+        integrator_key: 'integration-key',
+        company_login: 'company-login',
+        password: 'super-secret'
+      },
+      settings: {
+        organization_id: '412849431501753534',
+        timezone: 'Asia/Almaty',
+        sync_specialists: true,
+        sync_receptions: true,
+        sync_patients: true,
+        receptions_days_back: 3,
+        receptions_days_forward: 70,
+        throttle_ms: 0
+      }
+    }
+  end
 
   describe 'POST /api/v1/accounts/{account.id}/integrations/hooks' do
     context 'when it is an unauthenticated user' do
@@ -63,6 +84,24 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.app_id).to eq 'macrocrm'
         expect(hook.access_token).to eq 'macro-secret'
         expect(hook.settings['app_id']).to eq 'macro-app'
+        expect(response.parsed_body).not_to have_key('access_token')
+      end
+
+      it 'creates a medelement hook with encrypted secret settings' do
+        account.enable_features!('scheduling')
+
+        post api_v1_account_integrations_hooks_url(account_id: account.id),
+             params: medelement_params,
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        hook = Integrations::Hook.last
+
+        expect(hook.app_id).to eq 'medelement'
+        expect(hook.secret_settings['integrator_key']).to eq 'integration-key'
+        expect(hook.secret_settings['company_login']).to eq 'company-login'
+        expect(hook.secret_settings['password']).to eq 'super-secret'
         expect(response.parsed_body).not_to have_key('access_token')
       end
     end
@@ -132,6 +171,30 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.settings['app_id']).to eq 'macro-app-updated'
         expect(hook.settings['sync_incoming_messages']).to be false
       end
+
+      it 'keeps existing medelement secret settings when blank values are submitted' do
+        account.enable_features!('scheduling')
+        hook = create(:integrations_hook, :medelement, account: account)
+
+        patch api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+              params: {
+                status: false,
+                secret_settings: {
+                  integrator_key: '',
+                  company_login: '',
+                  password: ''
+                },
+                settings: hook.settings.merge('throttle_ms' => 500)
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(hook.reload.secret_settings['integrator_key']).to eq('integration-key')
+        expect(hook.secret_settings['company_login']).to eq('company-login')
+        expect(hook.secret_settings['password']).to eq('super-secret')
+        expect(hook.settings['throttle_ms']).to eq(500)
+      end
     end
   end
 
@@ -189,6 +252,83 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(Integrations::Hook.exists?(hook.id)).to be false
+      end
+
+      it 'cleans up Medelement imported scheduling data only for the disconnected account' do
+        account.enable_features!('scheduling')
+        other_account = create(:account)
+        other_account.enable_features!('scheduling')
+
+        hook = create(:integrations_hook, :medelement, account: account)
+        create(:integrations_hook, :medelement, account: other_account)
+
+        resource_with_manual_data = create(
+          :scheduling_resource,
+          account: account,
+          custom_attributes: {
+            'medelement_specialist_code' => '27492901726817790',
+            'medelement_cabinets' => [{ 'companyCabinetCode' => 'cab-1' }],
+            'medelement_reception_time' => 20,
+            'medelement_schedule_published' => 1
+          }
+        )
+        removable_resource = create(
+          :scheduling_resource,
+          account: account,
+          custom_attributes: {
+            'medelement_specialist_code' => '27492901726817791'
+          }
+        )
+        other_account_resource = create(
+          :scheduling_resource,
+          account: other_account,
+          custom_attributes: {
+            'medelement_specialist_code' => 'other-account-specialist'
+          }
+        )
+
+        manual_appointment = create(
+          :scheduling_appointment,
+          account: account,
+          resource: resource_with_manual_data,
+          source: 'manual',
+          external_ref: nil
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          resource: resource_with_manual_data,
+          source: 'medelement',
+          external_ref: 'medelement:reception:1'
+        )
+        create(
+          :scheduling_appointment,
+          account: account,
+          resource: removable_resource,
+          source: 'medelement',
+          external_ref: 'medelement:reception:2'
+        )
+        create(
+          :scheduling_appointment,
+          account: other_account,
+          resource: other_account_resource,
+          source: 'medelement',
+          external_ref: 'medelement:reception:other'
+        )
+
+        perform_enqueued_jobs(only: Integrations::Medelement::CleanupJob) do
+          delete api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+                 headers: admin.create_new_auth_token,
+                 as: :json
+        end
+
+        expect(response).to have_http_status(:success)
+        expect(account.scheduling_appointments.where(source: 'medelement')).to be_empty
+        expect(other_account.scheduling_appointments.where(source: 'medelement').count).to eq(1)
+        expect(Scheduling::Appointment.exists?(manual_appointment.id)).to be true
+        expect(resource_with_manual_data.reload.custom_attributes['medelement_specialist_code']).to be_blank
+        expect(Scheduling::Resource.exists?(removable_resource.id)).to be false
+        expect(other_account_resource.reload.custom_attributes['medelement_specialist_code']).to eq('other-account-specialist')
       end
     end
   end
