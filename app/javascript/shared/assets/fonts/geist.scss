@@ -3,7 +3,7 @@
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/Geist/webfonts/Geist[wght].woff2') format('woff2');
+  src: url('/fonts/Geist/webfonts/Geist%5Bwght%5D.woff2') format('woff2');
 }
 
 @font-face {
@@ -11,7 +11,8 @@
   font-style: italic;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/Geist/webfonts/Geist-Italic[wght].woff2') format('woff2');
+  src: url('/fonts/Geist/webfonts/Geist-Italic%5Bwght%5D.woff2')
+    format('woff2');
 }
 
 @font-face {
@@ -19,7 +20,7 @@
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/GeistMono/webfonts/GeistMono[wght].woff2')
+  src: url('/fonts/GeistMono/webfonts/GeistMono%5Bwght%5D.woff2')
     format('woff2');
 }
 
@@ -28,6 +29,6 @@
   font-style: italic;
   font-weight: 100 900;
   font-display: swap;
-  src: url('/fonts/GeistMono/webfonts/GeistMono-Italic[wght].woff2')
+  src: url('/fonts/GeistMono/webfonts/GeistMono-Italic%5Bwght%5D.woff2')
     format('woff2');
 }
