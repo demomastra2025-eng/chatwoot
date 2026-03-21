@@ -18,7 +18,7 @@ import SchedulingPageHeader from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { toDateTimeInputValue } from '../helpers';
@@ -163,6 +163,12 @@ const currentColumns = computed(() => {
     { key: 'actions', label: '', width: '84px', align: 'end' },
   ];
 });
+
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(referencesStore.ui.error)
+);
 
 const formatDate = value => {
   if (!value) return '—';
@@ -346,7 +352,7 @@ const saveCurrentForm = async () => {
     closeDrawer();
     useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -361,7 +367,7 @@ const deleteCurrentRow = async row => {
     }
     useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_DELETE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -426,7 +432,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="referencesStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="referencesStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="
           Promise.all([
             referencesStore.loadResources({ include_inactive: true }),

@@ -20,7 +20,7 @@ import SchedulingRecordTable from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { COMPENSATION_TYPE_VALUES } from '../constants';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
@@ -61,6 +61,12 @@ const compensationTypeOptions = computed(() =>
     label: compensationTypeLabels.value[value] || value,
     value,
   }))
+);
+
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(referencesStore.ui.error)
 );
 
 const serviceCards = computed(() => referencesStore.services);
@@ -177,7 +183,7 @@ const saveService = async () => {
     useAlert(t('SCHEDULING.SERVICES.SUCCESS_SAVE'));
     closeDrawer();
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -196,7 +202,7 @@ const toggleActive = async service => {
     });
     useAlert(t('SCHEDULING.SERVICES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -205,7 +211,7 @@ const deleteService = async service => {
     await referencesStore.deleteService(service.id);
     useAlert(t('SCHEDULING.SERVICES.SUCCESS_DELETE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -262,7 +268,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="referencesStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="referencesStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="
           Promise.all([
             referencesStore.loadResources({ include_inactive: true }),

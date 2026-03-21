@@ -33,7 +33,10 @@ class Scheduling::Appointments::UpsertService
     duration_min = resolve_duration_min(starts_at: starts_at, ends_at: ends_at)
 
     service_snapshot = resolve_service_snapshot(resource: resource, service: service)
-    service_amount = resolve_service_amount(service_snapshot[:resolved_price])
+    service_amount = resolve_service_amount(
+      service: service,
+      resolved_price: service_snapshot[:resolved_price]
+    )
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
 
@@ -216,8 +219,9 @@ class Scheduling::Appointments::UpsertService
     raise ActiveRecord::RecordNotFound, 'resource not found'
   end
 
-  def resolve_service_amount(resolved_price)
+  def resolve_service_amount(service:, resolved_price:)
     return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
+    return 0 if service.blank?
     return resolved_price if resolved_price.present? && pricing_link_changed?
 
     current_amount = appointment.service_amount.to_i

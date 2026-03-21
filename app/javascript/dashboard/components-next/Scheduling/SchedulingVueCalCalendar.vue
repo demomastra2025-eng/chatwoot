@@ -654,19 +654,31 @@ const buildTimelinePayloadForStart = ({
   );
 };
 
-const availabilityBackgroundEvents = computed(() => {
+const buildUnavailableIntervals = intervals => {
+  return subtractIntervals(
+    [
+      {
+        startMinute: visibleWindow.value.startMinute,
+        endMinute: visibleWindow.value.endMinute,
+      },
+    ],
+    mergeIntervals(intervals)
+  );
+};
+
+const unavailableBackgroundEvents = computed(() => {
   if (!isTimelineView.value || !props.resources.length) {
     return [];
   }
 
   if (isWeekSharedTimeline.value) {
     return weekDays.value.flatMap(day => {
-      if (blockingHolidayForDay(day)) {
+      if (resolveFullDayBackgroundKindForDay(day)) {
         return [];
       }
 
       const dateKey = formatDateKey(day);
-      const intervals = mergeIntervals(
+      const intervals = buildUnavailableIntervals(
         columns.value
           .filter(column => column.dateKey === dateKey)
           .flatMap(column => buildAvailabilityDisplayIntervalsForColumn(column))
@@ -682,24 +694,26 @@ const availabilityBackgroundEvents = computed(() => {
         end.setMinutes(interval.endMinute, 0, 0);
 
         return {
-          id: `availability-week-${dateKey}-${interval.startMinute}`,
+          id: `unavailable-week-${dateKey}-${interval.startMinute}`,
           start,
           end,
           background: true,
-          backgroundKind: 'available',
+          backgroundKind: 'unavailable',
           class:
-            'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--available',
+            'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--unavailable',
         };
       });
     });
   }
 
   return columns.value.flatMap(column => {
-    if (blockingHolidayForDay(column.date)) {
+    if (resolveFullDayBackgroundKindForColumn(column)) {
       return [];
     }
 
-    const intervals = buildAvailabilityDisplayIntervalsForColumn(column);
+    const intervals = buildUnavailableIntervals(
+      buildAvailabilityDisplayIntervalsForColumn(column)
+    );
 
     return intervals.map(interval => {
       const start = new Date(column.date);
@@ -711,14 +725,14 @@ const availabilityBackgroundEvents = computed(() => {
       end.setMinutes(interval.endMinute, 0, 0);
 
       return {
-        id: `availability-${column.resourceId}-${column.dateKey}-${interval.startMinute}`,
+        id: `unavailable-${column.resourceId}-${column.dateKey}-${interval.startMinute}`,
         start,
         end,
         schedule: column.resourceId,
         background: true,
-        backgroundKind: 'available',
+        backgroundKind: 'unavailable',
         class:
-          'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--available',
+          'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--unavailable',
       };
     });
   });
@@ -932,7 +946,7 @@ const appointmentEvents = computed(() => {
 
 const calendarEvents = computed(() => {
   return [
-    ...availabilityBackgroundEvents.value,
+    ...unavailableBackgroundEvents.value,
     ...timelineBackgroundEvents.value,
     ...appointmentEvents.value,
   ];
@@ -983,6 +997,17 @@ const isMutedAppointmentCard = status =>
   ['completed', 'no_show'].includes(status);
 
 const isCancelledAppointmentCard = status => status === 'cancelled';
+
+const isUnavailableBackgroundKind = backgroundKind => {
+  return [
+    'unavailable',
+    'closed',
+    'day-off',
+    'holiday',
+    'break',
+    'time-off',
+  ].includes(backgroundKind);
+};
 
 const formatEventTimeRange = event => {
   return `${formatTimeLabel(minuteOfDayFromDate(event.start))}-${formatTimeLabel(minuteOfDayFromDate(event.end))}`;
@@ -1268,7 +1293,6 @@ const handleEventClick = ({ event, e }) => {
           :locale="localeCode"
           :events="calendarEvents"
           :schedules="schedules"
-          :stack-events="view === 'week'"
           :editable-events="editableEvents"
           events-on-month-view
           :snap-to-interval="timelineStepMin"
@@ -1400,18 +1424,8 @@ const handleEventClick = ({ event, e }) => {
               <div
                 class="scheduling-vue-cal__background-fill"
                 :class="{
-                  'scheduling-vue-cal__background-fill--available':
-                    event.backgroundKind === 'available',
-                  'scheduling-vue-cal__background-fill--closed':
-                    event.backgroundKind === 'closed',
-                  'scheduling-vue-cal__background-fill--day-off':
-                    event.backgroundKind === 'day-off',
-                  'scheduling-vue-cal__background-fill--holiday':
-                    event.backgroundKind === 'holiday',
-                  'scheduling-vue-cal__background-fill--break':
-                    event.backgroundKind === 'break',
-                  'scheduling-vue-cal__background-fill--time-off':
-                    event.backgroundKind === 'time-off',
+                  'scheduling-vue-cal__background-fill--unavailable':
+                    isUnavailableBackgroundKind(event.backgroundKind),
                 }"
               >
                 <span
@@ -1982,10 +1996,13 @@ const handleEventClick = ({ event, e }) => {
 .scheduling-vue-cal :deep(.vuecal__event:not(.vuecal__event--background)) {
   min-width: 0;
   pointer-events: none;
+  overflow: visible;
   background: transparent !important;
   transition:
     filter 0.16s ease,
-    box-shadow 0.16s ease;
+    box-shadow 0.16s ease,
+    left 0.16s ease,
+    width 0.16s ease;
 }
 
 .scheduling-vue-cal :deep(.vuecal__event-placeholder) {
@@ -2060,29 +2077,8 @@ const handleEventClick = ({ event, e }) => {
   overflow: visible;
 }
 
-.scheduling-vue-cal__background-fill--available {
-  background: rgb(var(--brand-color) / 0.06);
-  transform: translateY(1px);
-}
-
-.scheduling-vue-cal__background-fill--closed {
+.scheduling-vue-cal__background-fill--unavailable {
   background: rgb(var(--slate-6) / 0.16);
-}
-
-.scheduling-vue-cal__background-fill--day-off {
-  background: rgb(var(--slate-6) / 0.16);
-}
-
-.scheduling-vue-cal__background-fill--holiday {
-  background: rgb(var(--ruby-4) / 0.12);
-}
-
-.scheduling-vue-cal__background-fill--break {
-  background: rgb(var(--amber-8) / 0.2);
-}
-
-.scheduling-vue-cal__background-fill--time-off {
-  background: rgb(var(--amber-9) / 0.18);
 }
 
 .scheduling-vue-cal__background-label {
@@ -2106,49 +2102,7 @@ const handleEventClick = ({ event, e }) => {
 }
 
 .scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--available.vuecal__event--background
-  ) {
-  background: transparent !important;
-  box-shadow: none;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--closed.vuecal__event--background
-  ) {
-  background: transparent !important;
-  box-shadow: none;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--day-off.vuecal__event--background
-  ) {
-  background: transparent !important;
-  box-shadow: none;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--holiday.vuecal__event--background
-  ) {
-  background: transparent !important;
-  box-shadow: none;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--break.vuecal__event--background
-  ) {
-  background: transparent !important;
-  box-shadow: none;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .scheduling-vue-cal__background-event--time-off.vuecal__event--background
-  ) {
+  :deep(.scheduling-vue-cal__background-event.vuecal__event--background) {
   background: transparent !important;
   box-shadow: none;
 }
@@ -2282,87 +2236,6 @@ const handleEventClick = ({ event, e }) => {
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease;
-}
-
-.scheduling-vue-cal--week .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 0.25rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(
-        .vuecal__event--background
-      )[class*='vuecal__event--stack-2-']
-  )
-  .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 0.85rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(
-        .vuecal__event--background
-      )[class*='vuecal__event--stack-3-']
-  )
-  .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 1.45rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(
-        .vuecal__event--background
-      )[class*='vuecal__event--stack-4-']
-  )
-  .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 2.05rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(
-        .vuecal__event--background
-      )[class*='vuecal__event--stack-5-']
-  )
-  .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 2.65rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(
-        .vuecal__event--background
-      )[class*='vuecal__event--stack-6-']
-  )
-  .scheduling-vue-cal__event-card {
-  --event-slot-inset-left: 3.25rem;
-}
-
-.scheduling-vue-cal--week
-  :deep(.vuecal__event:not(.vuecal__event--background):hover) {
-  z-index: 8 !important;
-}
-
-.scheduling-vue-cal
-  :deep(
-    .vuecal__event:not(.vuecal__event--background):hover
-      .scheduling-vue-cal__event-card
-  ) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 8px 16px rgb(var(--slate-12) / 0.12),
-    0 2px 5px rgb(var(--slate-12) / 0.07);
-}
-
-.scheduling-vue-cal--week
-  :deep(
-    .vuecal__event:not(.vuecal__event--background):hover
-      .scheduling-vue-cal__event-card
-  ) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 10px 18px rgb(var(--slate-12) / 0.14),
-    0 3px 8px rgb(var(--slate-12) / 0.08);
 }
 
 .scheduling-vue-cal__event-card--muted {

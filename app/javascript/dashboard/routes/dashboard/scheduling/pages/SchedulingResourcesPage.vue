@@ -29,7 +29,7 @@ import {
   WEEKDAY_VALUES,
 } from '../constants';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
@@ -105,6 +105,12 @@ const compensationTypeOptions = computed(() =>
     label: compensationTypeLabels.value[value] || value,
     value,
   }))
+);
+
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(referencesStore.ui.error)
 );
 
 const weekDayLabel = weekday => weekDayLabels.value[weekday] || `${weekday}`;
@@ -390,7 +396,7 @@ const saveResource = async () => {
     closeResourceDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -413,7 +419,7 @@ const toggleResourceActive = async resource => {
     });
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -422,7 +428,7 @@ const deleteResource = async resource => {
     await referencesStore.deleteResource(resource.id);
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_DELETE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -489,7 +495,7 @@ const saveSchedule = async () => {
     closeScheduleDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -525,7 +531,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="referencesStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="referencesStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="
           Promise.all([
             referencesStore.loadResources({ include_inactive: true }),

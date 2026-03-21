@@ -23,7 +23,7 @@ import {
   PAYMENT_METHOD_VALUES,
 } from '../constants';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
@@ -112,6 +112,12 @@ const expenseStatusOptions = computed(() =>
     label: expenseStatusLabels.value[value] || value,
     value,
   }))
+);
+
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(kassaStore.ui.error)
 );
 
 const paymentKindLabel = kind => paymentKindLabels.value[kind] || kind;
@@ -254,7 +260,7 @@ const handleApplyFilters = async () => {
   try {
     await kassaStore.loadAll();
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -268,7 +274,7 @@ const handleAddPayment = async () => {
     useAlert(t('SCHEDULING.KASSA.SUCCESS_PAYMENT'));
     closePaymentDrawer();
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -277,7 +283,7 @@ const handleCancelPayments = async appointmentId => {
     await kassaStore.cancelPayments(appointmentId);
     useAlert(t('SCHEDULING.KASSA.SUCCESS_CANCEL'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -286,7 +292,7 @@ const handlePayExpense = async expenseId => {
     await kassaStore.payExpense(expenseId);
     useAlert(t('SCHEDULING.KASSA.SUCCESS_EXPENSE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -295,7 +301,7 @@ const handlePayAll = async () => {
     await kassaStore.payAll();
     useAlert(t('SCHEDULING.KASSA.SUCCESS_PAY_ALL'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -334,7 +340,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="kassaStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="kassaStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="loadPage"
       />
 

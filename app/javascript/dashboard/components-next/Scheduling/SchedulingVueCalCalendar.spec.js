@@ -59,7 +59,7 @@ describe('SchedulingVueCalCalendar', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders availability slots as background events in timeline views', async () => {
+  it('renders unavailable time as background events in timeline views', async () => {
     const wrapper = mountCalendar({
       workRules: [
         {
@@ -76,7 +76,8 @@ describe('SchedulingVueCalCalendar', () => {
     await nextTick();
 
     expect(
-      wrapper.findAll('.scheduling-vue-cal__background-fill--available').length
+      wrapper.findAll('.scheduling-vue-cal__background-fill--unavailable')
+        .length
     ).toBeGreaterThan(0);
   });
 
@@ -97,9 +98,7 @@ describe('SchedulingVueCalCalendar', () => {
 
     await nextTick();
 
-    expect(
-      wrapper.findAll('.scheduling-vue-cal__background-fill--break').length
-    ).toBeGreaterThan(0);
+    expect(wrapper.text()).toContain('Lunch');
   });
 
   it('renders a leading status icon inside appointment event cards', async () => {

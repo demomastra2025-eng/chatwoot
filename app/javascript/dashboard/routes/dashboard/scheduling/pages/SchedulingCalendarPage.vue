@@ -26,7 +26,7 @@ import {
   APPOINTMENT_TYPE_VALUES,
 } from '../constants';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCalendarTitle } from '../helpers';
@@ -83,6 +83,14 @@ const appointmentTypeLabels = computed(() => ({
   primary: t('SCHEDULING.APPOINTMENT_TYPE.primary'),
   secondary: t('SCHEDULING.APPOINTMENT_TYPE.secondary'),
 }));
+
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const calendarErrorDescription = computed(() =>
+  formatErrorMessage(calendarStore.ui.error)
+);
+
+const formErrorMessage = computed(() => formatErrorMessage(formStore.ui.error));
 
 const validationErrorMessage = key => {
   const labels = {
@@ -439,8 +447,7 @@ const handleInlineContactSave = async () => {
 
     closeInlineContactEditor();
   } catch (error) {
-    const payload = extractSchedulingError(error);
-    useAlert(payload.message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -507,8 +514,7 @@ const handleAppointmentSubmit = async () => {
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
     handleDrawerClose();
   } catch (error) {
-    const payload = extractSchedulingError(error);
-    useAlert(payload.message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -518,8 +524,7 @@ const handleAppointmentCancel = async () => {
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
     handleDrawerClose();
   } catch (error) {
-    const payload = extractSchedulingError(error);
-    useAlert(payload.message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -546,8 +551,7 @@ const updateAppointmentMutation = async (
       // Keep the original mutation error as the user-facing failure.
     }
 
-    const payload = extractSchedulingError(error);
-    useAlert(payload.message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -655,7 +659,7 @@ onMounted(async () => {
         <SchedulingErrorState
           v-else-if="calendarStore.ui.error"
           :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-          :description="calendarStore.ui.error.message"
+          :description="calendarErrorDescription"
           @retry="loadPage"
         />
 
@@ -712,7 +716,7 @@ onMounted(async () => {
           v-if="formStore.ui.error"
           class="px-4 py-3 text-sm rounded-xl bg-n-ruby-3/70 text-n-ruby-11"
         >
-          {{ formStore.ui.error.message }}
+          {{ formErrorMessage }}
         </div>
 
         <SchedulingFormFieldGroup
