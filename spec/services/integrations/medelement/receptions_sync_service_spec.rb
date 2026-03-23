@@ -87,4 +87,15 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       expect(account.scheduling_appointments.exists?(manual.id)).to be(true)
     end
   end
+
+  it 'imports Medelement timestamps using Asia/Almaty as UTC+05' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      service.perform
+
+      imported_appointment = account.scheduling_appointments.find_by!(source: 'medelement')
+
+      expect(imported_appointment.starts_at.iso8601).to eq('2026-03-21T04:00:00Z')
+      expect(imported_appointment.ends_at.iso8601).to eq('2026-03-21T04:20:00Z')
+    end
+  end
 end

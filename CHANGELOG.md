@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-23
+
+- fix(medelement): seed imported specialists with a business-hours default schedule of Mon-Fri `09:00-18:00`, Sat `09:00-15:00`, Sun off, and upgrade existing legacy `24/7` auto-seeded Medelement schedules in place
+- fix(scheduling): keep timeline calendars wide enough to render imported appointments that fall outside configured working-hour slots instead of clipping them out of view
+- fix(timezones): update Ruby timezone data so `Asia/Almaty` resolves globally as UTC+05, including Medelement imports and scheduling resources
+- fix(scheduling): auto-scroll day/week vue-cal timelines on open via the native `scrollToCurrentTime` / `scrollToTime` API
+- fix(scheduling): ignore stale calendar responses so rapid employee-filter changes stop showing all employees under a narrower selection
+
 ## 2026-03-19
 
 - feat(captain): add native Firecrawl-powered file URL imports for Captain Documents so assistants can ingest supported remote Word and Excel files without changing the existing PDF upload or runtime response pipeline

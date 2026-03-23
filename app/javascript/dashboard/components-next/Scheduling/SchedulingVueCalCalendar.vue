@@ -1,5 +1,5 @@
 <script setup>
-import { computed, toRef } from 'vue';
+import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { VueCal } from 'vue-cal';
@@ -80,6 +80,8 @@ const TIMELINE_HALF_HOUR_STEP_MIN = 30;
 const TIMELINE_HOUR_STEP_MIN = 60;
 
 const { t, locale } = useI18n();
+const vueCalRef = ref(null);
+const isVueCalReady = ref(false);
 
 const localeCode = computed(() => {
   const normalized = locale.value?.replace(/_/g, '-').toLowerCase();
@@ -555,6 +557,19 @@ const weekDays = computed(() =>
     ? buildDayListForView('week', props.anchorDate)
     : []
 );
+const timelineIncludesToday = computed(() => {
+  if (!isTimelineView.value) {
+    return false;
+  }
+
+  const todayKey = todayDateKey.value;
+
+  if (props.view === 'day') {
+    return formatDateKey(props.anchorDate) === todayKey;
+  }
+
+  return weekDays.value.some(day => formatDateKey(day) === todayKey);
+});
 
 const schedules = computed(() => {
   if (isWeekSharedTimeline.value) {
@@ -1275,6 +1290,48 @@ const handleEventClick = ({ event, e }) => {
 
   emit('selectAppointment', event.appointment);
 };
+
+const autoScrollTimeline = async () => {
+  if (!isTimelineView.value || !isVueCalReady.value) {
+    return;
+  }
+
+  await nextTick();
+
+  const viewApi = vueCalRef.value?.view;
+  if (!viewApi) {
+    return;
+  }
+
+  if (timelineIncludesToday.value && viewApi.scrollToCurrentTime) {
+    viewApi.scrollToCurrentTime();
+    return;
+  }
+
+  viewApi.scrollToTime?.(visibleWindow.value.startMinute);
+};
+
+const handleCalendarReady = () => {
+  isVueCalReady.value = true;
+  autoScrollTimeline();
+};
+
+watch(
+  [
+    () => props.view,
+    () => props.anchorDate,
+    () => visibleWindow.value.startMinute,
+    () => visibleWindow.value.endMinute,
+  ],
+  autoScrollTimeline,
+  {
+    flush: 'post',
+  }
+);
+
+onMounted(() => {
+  autoScrollTimeline();
+});
 </script>
 
 <template>
@@ -1289,6 +1346,7 @@ const handleEventClick = ({ event, e }) => {
     <div class="scheduling-vue-cal__viewport">
       <div class="scheduling-vue-cal__frame">
         <VueCal
+          ref="vueCalRef"
           class="scheduling-vue-cal__calendar bg-transparent"
           :locale="localeCode"
           :events="calendarEvents"
@@ -1297,6 +1355,7 @@ const handleEventClick = ({ event, e }) => {
           events-on-month-view
           :snap-to-interval="timelineStepMin"
           :time="view !== 'month'"
+          :watch-real-time="isTimelineView"
           :time-cell-height="timeCellHeight"
           :time-from="visibleWindow.startMinute"
           :time-step="timelineStepMin"
@@ -1314,6 +1373,7 @@ const handleEventClick = ({ event, e }) => {
           @event-drop="handleEventDrop"
           @event-resize-start="handleEventResizeStart"
           @event-resize-end="handleEventResizeEnd"
+          @ready="handleCalendarReady"
         >
           <template #weekday-heading="{ label, date }">
             <div class="scheduling-vue-cal__weekday-heading">

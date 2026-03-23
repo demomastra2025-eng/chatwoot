@@ -228,16 +228,14 @@ export const deriveVisibleMinuteWindow = ({
       });
   });
 
-  const normalizedRelevantMinutes = relevantMinutes.filter(Number.isFinite);
+  appointments.forEach(appointment => {
+    relevantMinutes.push(
+      minuteOfDayFromDate(appointment.startsAt),
+      minuteOfDayFromDate(appointment.endsAt)
+    );
+  });
 
-  if (normalizedRelevantMinutes.length === 0) {
-    appointments.forEach(appointment => {
-      normalizedRelevantMinutes.push(
-        minuteOfDayFromDate(appointment.startsAt),
-        minuteOfDayFromDate(appointment.endsAt)
-      );
-    });
-  }
+  const normalizedRelevantMinutes = relevantMinutes.filter(Number.isFinite);
 
   if (normalizedRelevantMinutes.length === 0) {
     return {

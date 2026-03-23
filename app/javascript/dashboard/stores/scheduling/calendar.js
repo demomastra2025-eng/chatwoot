@@ -52,6 +52,7 @@ const matchesNumericFilter = (selectedIds, value) => {
 
 export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
   state: () => ({
+    activeRequestId: 0,
     anchorDate: new Date().toISOString(),
     currentView: 'week',
     initialized: false,
@@ -182,6 +183,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
 
     async fetchCalendar(options = {}) {
       this.hydratePreferences();
+      const requestId = this.activeRequestId + 1;
+      this.activeRequestId = requestId;
       this.ui.isLoading = true;
       this.ui.error = null;
 
@@ -213,15 +216,25 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         }
 
         const { data } = await SchedulingCalendarAPI.show(params);
+        if (requestId !== this.activeRequestId) {
+          return this.payload;
+        }
+
         const payload = normalizePayload(data);
         this.payload = { ...defaultPayload(), ...payload };
         this.ui.lastLoadedAt = new Date().toISOString();
         return this.payload;
       } catch (error) {
+        if (requestId !== this.activeRequestId) {
+          return this.payload;
+        }
+
         this.ui.error = extractSchedulingError(error);
         throw error;
       } finally {
-        this.ui.isLoading = false;
+        if (requestId === this.activeRequestId) {
+          this.ui.isLoading = false;
+        }
       }
     },
 
