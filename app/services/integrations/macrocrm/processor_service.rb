@@ -160,6 +160,7 @@ class Integrations::Macrocrm::ProcessorService
 
     user = local_chat_manager
     return if user.blank?
+    return unless macrocrm_assignable_agent?(user)
 
     manager_id = manager_mapping_for_user(user)&.dig(:macro_manager_id)
     manager_id ||= user.custom_attributes&.dig('macrocrm_manager_id')
@@ -182,9 +183,9 @@ class Integrations::Macrocrm::ProcessorService
 
   def fallback_local_chat_manager
     candidates = if message.conversation.team.present?
-                   message.conversation.team.members.select { |user| assignable_to_conversation?(user) }
+                   message.conversation.team.members.select { |user| macrocrm_assignable_agent?(user) }
                  else
-                   message.conversation.inbox.assignable_agents
+                   message.conversation.inbox.members.select { |user| macrocrm_assignable_agent?(user) }
                  end
 
     candidates.compact.sort_by { |user| user.name.to_s.downcase }.first
@@ -197,13 +198,19 @@ class Integrations::Macrocrm::ProcessorService
     message.conversation.inbox.members.exists?(user.id) || message.conversation.account.administrators.exists?(user.id)
   end
 
+  def macrocrm_assignable_agent?(user)
+    return false unless assignable_to_conversation?(user)
+
+    hook.account.account_users.find_by(user_id: user.id)&.agent?
+  end
+
   def local_user_for_macro_manager(macro_manager_id)
     mapping = manager_mappings.find { |item| item[:macro_manager_id] == macro_manager_id.to_i }
     mapped_user = mapping && hook.account.users.find_by(id: mapping[:user_id])
-    return mapped_user if assignable_to_conversation?(mapped_user)
+    return mapped_user if macrocrm_assignable_agent?(mapped_user)
 
     hook.account.users.find_each do |user|
-      next unless assignable_to_conversation?(user)
+      next unless macrocrm_assignable_agent?(user)
 
       return user if user.custom_attributes&.dig('macrocrm_manager_id').to_s == macro_manager_id.to_s
     end

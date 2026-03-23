@@ -93,6 +93,29 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
+  context 'when the existing MacroCRM deal manager is mapped to a local administrator' do
+    let!(:mapped_admin) { create(:user, account: account, role: :administrator) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_admin.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [{ 'id' => 5767119, 'manager_id' => 78731, 'status' => 10 }] }
+      )
+      allow(client).to receive(:add_note)
+    end
+
+    it 'does not assign the administrator to the conversation' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect(client).to have_received(:add_note).with(
+        estate_id: 5767119,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
   context 'when manager sync from MacroCRM is disabled' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
     let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
@@ -208,6 +231,37 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
+  context 'when the current assignee is a local administrator for new deals' do
+    let!(:mapped_admin) { create(:user, account: account, role: :administrator) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_admin.id, 'macro_manager_id' => 78731 }] }
+
+    before do
+      conversation.update!(assignee: mapped_admin)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [] }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах'
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'does not send the administrator manager id or reassign the conversation' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Аманжол',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
   context 'when all existing contact deals are inactive' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
     let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
@@ -275,6 +329,45 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       perform
 
       expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(client).to have_received(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      )
+    end
+  end
+
+  context 'when there is no assignee and both administrator and agent candidates exist' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let!(:mapped_admin) { create(:user, account: account, role: :administrator) }
+    let(:manager_mappings) do
+      [
+        { 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 },
+        { 'user_id' => mapped_admin.id, 'macro_manager_id' => 78732 }
+      ]
+    end
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => nil }
+      )
+      allow(client).to receive(:create_estate_buy).with(
+        name: 'Ahan',
+        phone: '+77001234567',
+        message: 'Здравствуйте, хочу узнать о квартирах',
+        manager_id: 78731
+      ).and_return({ 'estate' => { 'id' => 4321 } })
+      allow(client).to receive(:add_note)
+    end
+
+    it 'uses the agent fallback instead of the administrator' do
+      perform
+
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(conversation.reload.assignee).not_to eq(mapped_admin)
       expect(client).to have_received(:create_estate_buy).with(
         name: 'Ahan',
         phone: '+77001234567',
