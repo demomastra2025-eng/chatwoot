@@ -33,11 +33,18 @@ RSpec.describe 'Integration Hooks API', type: :request do
         sync_specialists: true,
         sync_receptions: true,
         sync_patients: true,
+        sync_interval_hours: 24,
+        sync_time_of_day: '06:15',
         receptions_days_back: 3,
         receptions_days_forward: 70,
         throttle_ms: 0
       }
     }
+  end
+
+  before do
+    allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:sync!).and_return(true)
+    allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:destroy!).and_return(true)
   end
 
   describe 'POST /api/v1/accounts/{account.id}/integrations/hooks' do
@@ -102,6 +109,8 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.secret_settings['integrator_key']).to eq 'integration-key'
         expect(hook.secret_settings['company_login']).to eq 'company-login'
         expect(hook.secret_settings['password']).to eq 'super-secret'
+        expect(hook.settings['sync_interval_hours']).to eq(24)
+        expect(hook.settings['sync_time_of_day']).to eq('06:15')
         expect(response.parsed_body).not_to have_key('access_token')
       end
     end
@@ -184,7 +193,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
                   company_login: '',
                   password: ''
                 },
-                settings: hook.settings.merge('throttle_ms' => 500)
+                settings: hook.settings.merge('throttle_ms' => 500, 'sync_interval_hours' => 12, 'sync_time_of_day' => '10:30')
               },
               headers: admin.create_new_auth_token,
               as: :json
@@ -194,7 +203,47 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.secret_settings['company_login']).to eq('company-login')
         expect(hook.secret_settings['password']).to eq('super-secret')
         expect(hook.settings['throttle_ms']).to eq(500)
+        expect(hook.settings['sync_interval_hours']).to eq(12)
+        expect(hook.settings['sync_time_of_day']).to eq('10:30')
       end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/integrations/hooks/{hook_id}/run_sync' do
+    let(:hook) { create(:integrations_hook, :medelement, account: account) }
+
+    before do
+      account.enable_features!('scheduling')
+      allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+    end
+
+    it 'queues Medelement sync for an admin' do
+      post run_sync_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:accepted)
+      expect(response.parsed_body['message']).to eq('Medelement sync queued successfully')
+      expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(hook.id)
+    end
+
+    it 'returns unauthorized for an agent' do
+      post run_sync_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'rejects manual sync for a disabled hook' do
+      hook.disable
+
+      post run_sync_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['message']).to eq('Medelement hook must be enabled before running a sync')
     end
   end
 

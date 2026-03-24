@@ -14,6 +14,7 @@ const state = {
     isCreatingHook: false,
     isUpdatingHook: false,
     isDeletingHook: false,
+    isRunningHookSync: false,
     isCreatingSlack: false,
     isUpdatingSlack: false,
     isFetchingSlackChannels: false,
@@ -145,6 +146,19 @@ export const actions = {
     } catch (error) {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isDeletingHook: false });
       throw new Error(error);
+    }
+  },
+  runHookSync: async ({ commit }, hookId) => {
+    commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true });
+    try {
+      const response = await IntegrationsAPI.runHookSync(hookId);
+      return response.data;
+    } catch (error) {
+      throw error;
+    } finally {
+      commit(types.default.SET_INTEGRATIONS_UI_FLAG, {
+        isRunningHookSync: false,
+      });
     }
   },
 };

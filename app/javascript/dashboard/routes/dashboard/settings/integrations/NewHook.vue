@@ -192,7 +192,13 @@ export default {
           return acc;
         }
 
-        acc[key] = this.values[key];
+        let value = this.values[key];
+
+        if (formItem?.value_type === 'integer' && value !== '') {
+          value = Number(value);
+        }
+
+        acc[key] = value;
         return acc;
       }, {});
 

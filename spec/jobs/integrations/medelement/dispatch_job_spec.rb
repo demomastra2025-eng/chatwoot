@@ -6,6 +6,8 @@ RSpec.describe Integrations::Medelement::DispatchJob do
   before do
     account.enable_features!('scheduling')
     allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+    allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:sync!).and_return(true)
+    allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:destroy!).and_return(true)
   end
 
   it 'enqueues sync jobs for enabled Medelement hooks only' do

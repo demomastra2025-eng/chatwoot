@@ -20,6 +20,8 @@ class Integrations::Hook < ApplicationRecord
   attr_readonly :app_id, :account_id, :inbox_id, :hook_type
   before_validation :ensure_hook_type
   after_create :trigger_setup_if_crm
+  after_commit :sync_medelement_schedule, on: [:create, :update], if: :medelement?
+  after_destroy_commit :destroy_medelement_schedule, if: :medelement?
   after_destroy_commit :enqueue_medelement_cleanup, if: :medelement?
 
   # TODO: Remove guard once encryption keys become mandatory (target 3-4 releases out).
@@ -143,5 +145,13 @@ class Integrations::Hook < ApplicationRecord
 
   def enqueue_medelement_cleanup
     Integrations::Medelement::CleanupJob.perform_later(account_id)
+  end
+
+  def sync_medelement_schedule
+    Integrations::Medelement::CronScheduleService.new(hook: self).sync!
+  end
+
+  def destroy_medelement_schedule
+    Integrations::Medelement::CronScheduleService.new(hook: self).destroy!
   end
 end

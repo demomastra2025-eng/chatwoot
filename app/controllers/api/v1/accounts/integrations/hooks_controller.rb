@@ -1,6 +1,7 @@
 class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::BaseController
   before_action :fetch_hook, except: [:create]
   before_action :check_authorization
+  before_action :ensure_medelement_hook!, only: [:run_sync]
 
   def create
     @hook = Current.account.hooks.create!(normalized_params)
@@ -27,6 +28,16 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   def destroy
     @hook.destroy!
     head :ok
+  end
+
+  def run_sync
+    if @hook.disabled?
+      render json: { message: 'Medelement hook must be enabled before running a sync' }, status: :unprocessable_content
+      return
+    end
+
+    Integrations::Medelement::SyncJob.perform_later(@hook.id)
+    render json: { message: 'Medelement sync queued successfully' }, status: :accepted
   end
 
   private
@@ -64,5 +75,9 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
     return {} if secret_settings.blank?
 
     secret_settings.to_h.transform_values { |value| value.is_a?(String) ? value.strip : value }.compact_blank
+  end
+
+  def ensure_medelement_hook!
+    raise ActiveRecord::RecordNotFound unless @hook.medelement?
   end
 end

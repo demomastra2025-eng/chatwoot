@@ -401,6 +401,16 @@ medelement:
   allow_multiple_hooks: false
   access_token_required: true
   feature_flag: scheduling
+  visible_properties:
+    [
+      'organization_id',
+      'timezone',
+      'sync_interval_hours',
+      'sync_time_of_day',
+      'sync_specialists',
+      'sync_receptions',
+      'sync_patients',
+    ]
   settings_json_schema:
     {
       'type': 'object',
@@ -414,6 +424,8 @@ medelement:
           'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
           'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
+          'sync_interval_hours': { 'type': 'integer', 'enum': [1, 2, 3, 4, 6, 8, 12, 24] },
+          'sync_time_of_day': { 'type': 'string', 'pattern': '^([01]\\d|2[0-3]):[0-5]\\d$' },
         },
       'required': ['organization_id', 'timezone'],
       'additionalProperties': false,
@@ -478,6 +490,34 @@ medelement:
         'type': 'checkbox',
         'name': 'sync_patients',
         'value': true,
+      },
+      {
+        'label': 'Sync frequency',
+        'type': 'select',
+        'name': 'sync_interval_hours',
+        'value': 24,
+        'value_type': 'integer',
+        'validation': 'required',
+        'help': 'Choose how often Medelement sync should run. This uses stable supported intervals.',
+        'options':
+          [
+            { 'label': 'Every hour', 'value': 1 },
+            { 'label': 'Every 2 hours', 'value': 2 },
+            { 'label': 'Every 3 hours', 'value': 3 },
+            { 'label': 'Every 4 hours', 'value': 4 },
+            { 'label': 'Every 6 hours', 'value': 6 },
+            { 'label': 'Every 8 hours', 'value': 8 },
+            { 'label': 'Every 12 hours', 'value': 12 },
+            { 'label': 'Once a day', 'value': 24 },
+          ],
+      },
+      {
+        'label': 'First run time',
+        'type': 'time',
+        'name': 'sync_time_of_day',
+        'value': '06:15',
+        'validation': 'required',
+        'help': 'Runs use the selected integration timezone. For repeated schedules this is the first daily run anchor.',
       },
       {
         'label': 'Days back',

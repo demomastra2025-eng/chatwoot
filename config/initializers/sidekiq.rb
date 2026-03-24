@@ -39,4 +39,5 @@ Rails.application.reloader.to_prepare do
   next unless File.exist?(schedule_file) && Sidekiq.server?
 
   Sidekiq::Cron::Job.load_from_hash YAML.load_file(schedule_file)
+  Integrations::Medelement::CronScheduleService.sync_all!
 end
