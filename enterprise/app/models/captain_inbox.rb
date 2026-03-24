@@ -19,4 +19,14 @@ class CaptainInbox < ApplicationRecord
   belongs_to :inbox
 
   validates :inbox_id, uniqueness: true
+
+  after_commit :invalidate_inbox_cache, on: %i[create update destroy]
+
+  private
+
+  def invalidate_inbox_cache
+    return if Current.suppress_runtime_events
+
+    inbox&.account&.update_cache_key(Inbox.name.underscore)
+  end
 end

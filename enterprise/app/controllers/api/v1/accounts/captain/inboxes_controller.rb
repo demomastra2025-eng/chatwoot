@@ -9,8 +9,23 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
 
   def create
     inbox = Current.account.inboxes.find(assistant_params[:inbox_id])
+    existing_captain_inbox = CaptainInbox.find_by(inbox: inbox)
+
+    if existing_captain_inbox&.captain_assistant_id == @assistant.id
+      @captain_inbox = existing_captain_inbox
+      revalidate_inbox_cache(inbox)
+      render :create
+      return
+    end
+
     @captain_inbox = @assistant.captain_inboxes.build(inbox: inbox)
     @captain_inbox.save!
+  rescue ActiveRecord::RecordInvalid
+    @captain_inbox = CaptainInbox.find_by(inbox: inbox)
+    raise unless @captain_inbox&.captain_assistant_id == @assistant.id
+
+    revalidate_inbox_cache(inbox)
+    render :create
   end
 
   def destroy
@@ -35,5 +50,9 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
 
   def assistant_params
     params.require(:inbox).permit(:inbox_id)
+  end
+
+  def revalidate_inbox_cache(inbox)
+    inbox.account.update_cache_key(Inbox.name.underscore)
   end
 end
