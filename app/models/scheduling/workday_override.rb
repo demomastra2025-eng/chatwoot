@@ -26,6 +26,7 @@ class Scheduling::WorkdayOverride < ApplicationRecord
 
   validates :date, presence: true, uniqueness: { scope: :resource_id }
   validate :break_interval_is_valid
+  validate :resource_is_available_for_scheduling_setup
 
   scope :ordered, -> { order(:date, :resource_id, :id) }
 
@@ -50,6 +51,12 @@ class Scheduling::WorkdayOverride < ApplicationRecord
     return if break_end_minute.to_i > break_start_minute.to_i
 
     errors.add(:break_end_minute, 'must be greater than break_start_minute')
+  end
+
+  def resource_is_available_for_scheduling_setup
+    return if resource.blank? || !resource.deleted_from_scheduling?
+
+    errors.add(:resource_id, 'is not available for scheduling')
   end
 
   def sync_account_id

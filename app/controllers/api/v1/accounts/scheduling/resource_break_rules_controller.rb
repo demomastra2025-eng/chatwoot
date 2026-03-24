@@ -24,6 +24,6 @@ class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Acc
   private
 
   def set_resource
-    @scheduling_resource = Current.account.scheduling_resources.find(params[:resource_id])
+    @scheduling_resource = Current.account.scheduling_resources.not_deleted_from_scheduling.find(params[:resource_id])
   end
 end

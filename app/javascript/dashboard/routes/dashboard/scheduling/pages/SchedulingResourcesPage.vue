@@ -7,6 +7,7 @@ import AgentsAPI from 'dashboard/api/agents';
 import { useAlert } from 'dashboard/composables';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -43,6 +44,8 @@ const scheduleDrawerOpen = ref(false);
 const scheduleTab = ref('work');
 const activeResource = ref(null);
 const accountUsers = ref([]);
+const resourceDeleteDialogRef = ref(null);
+const resourcePendingDelete = ref(null);
 
 const resourceForm = reactive({
   active: true,
@@ -317,7 +320,11 @@ const removeScheduleRule = (type, rowKey) => {
   );
 };
 
-const resourceCards = computed(() => referencesStore.resources);
+const resourceCards = computed(() =>
+  referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  )
+);
 
 const linkedUser = resource => {
   return accountUsersById.value[resource.userId] || null;
@@ -423,9 +430,21 @@ const toggleResourceActive = async resource => {
   }
 };
 
-const deleteResource = async resource => {
+const openDeleteResourceDialog = resource => {
+  resourcePendingDelete.value = resource;
+  resourceDeleteDialogRef.value?.open();
+};
+
+const closeDeleteResourceDialog = () => {
+  resourcePendingDelete.value = null;
+};
+
+const deleteResource = async () => {
+  if (!resourcePendingDelete.value) return;
+
   try {
-    await referencesStore.deleteResource(resource.id);
+    await referencesStore.deleteResource(resourcePendingDelete.value.id);
+    resourceDeleteDialogRef.value?.close();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_DELETE'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
@@ -698,7 +717,7 @@ onMounted(async () => {
                 icon="i-lucide-trash-2"
                 :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
                 :title="$t('SCHEDULING.GENERAL.DELETE')"
-                @click="deleteResource(resource)"
+                @click="openDeleteResourceDialog(resource)"
               />
             </div>
           </div>
@@ -959,5 +978,21 @@ onMounted(async () => {
         </div>
       </div>
     </SchedulingDrawer>
+
+    <Dialog
+      ref="resourceDeleteDialogRef"
+      width="md"
+      type="alert"
+      :title="$t('SCHEDULING.RESOURCES.DELETE_TITLE')"
+      :description="
+        $t('SCHEDULING.RESOURCES.DELETE_DESCRIPTION', {
+          name: resourcePendingDelete?.name || '',
+        })
+      "
+      :confirm-button-label="$t('SCHEDULING.RESOURCES.DELETE_CONFIRM')"
+      :is-loading="referencesStore.ui.isSaving"
+      @close="closeDeleteResourceDialog"
+      @confirm="deleteResource"
+    />
   </section>
 </template>

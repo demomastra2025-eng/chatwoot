@@ -23,6 +23,7 @@ class Scheduling::TimeOff < ApplicationRecord
 
   validates :kind, :starts_at, :ends_at, presence: true
   validate :ends_after_starts
+  validate :resource_is_available_for_scheduling_setup
 
   scope :ordered, -> { order(:starts_at, :id) }
 
@@ -33,6 +34,12 @@ class Scheduling::TimeOff < ApplicationRecord
     return if ends_at > starts_at
 
     errors.add(:ends_at, 'must be after starts_at')
+  end
+
+  def resource_is_available_for_scheduling_setup
+    return if resource.blank? || !resource.deleted_from_scheduling?
+
+    errors.add(:resource_id, 'is not available for scheduling')
   end
 
   def sync_account_id

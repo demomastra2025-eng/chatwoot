@@ -213,7 +213,14 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_resource!
-    return account.scheduling_resources.find(params[:resource_id]) if params.key?(:resource_id)
+    if params.key?(:resource_id)
+      return appointment.resource if keep_current_resource?(params[:resource_id])
+
+      resource = account.scheduling_resources.find(params[:resource_id])
+      ensure_resource_available_for_scheduling!(resource)
+      return resource
+    end
+
     return appointment.resource if appointment.resource.present?
 
     raise ActiveRecord::RecordNotFound, 'resource not found'
@@ -298,6 +305,22 @@ class Scheduling::Appointments::UpsertService
 
   def pricing_link_changed?
     appointment.new_record? || params.key?(:resource_id) || params.key?(:service_id)
+  end
+
+  def keep_current_resource?(resource_id)
+    appointment.persisted? &&
+      appointment.resource.present? &&
+      appointment.resource_id == resource_id.to_i
+  end
+
+  def ensure_resource_available_for_scheduling!(resource)
+    return if resource.active? && !resource.deleted_from_scheduling?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING',
+      message: 'Specialist is not available for scheduling',
+      status: :unprocessable_content
+    )
   end
 
   def validate_availability!

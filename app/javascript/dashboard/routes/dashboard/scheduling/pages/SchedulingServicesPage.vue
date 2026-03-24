@@ -71,6 +71,11 @@ const pageErrorDescription = computed(() =>
 
 const serviceCards = computed(() => referencesStore.services);
 const resources = computed(() => referencesStore.resources);
+const pricingResources = computed(() =>
+  referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  )
+);
 
 const serviceColumns = computed(() => [
   { key: 'name', label: t('SCHEDULING.SERVICES.NAME'), width: '1.6fr' },
@@ -94,7 +99,7 @@ const serviceColumns = computed(() => [
 ]);
 
 const initializePriceRows = prices => {
-  return resources.value.map(resource => {
+  return pricingResources.value.map(resource => {
     const matchingPrice = prices.find(
       item => Number(item.resourceId) === Number(resource.id)
     );

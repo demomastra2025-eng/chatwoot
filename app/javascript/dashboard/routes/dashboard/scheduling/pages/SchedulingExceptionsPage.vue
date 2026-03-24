@@ -79,8 +79,26 @@ const activeTabIndex = computed(() =>
   )
 );
 
+const selectableResources = computed(() => {
+  const activeResources = referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  );
+  const selectedResourceIds = [overrideForm.resourceId, timeOffForm.resourceId]
+    .map(Number)
+    .filter(Boolean);
+
+  const extraResources = referencesStore.resources.filter(resource => {
+    return (
+      selectedResourceIds.includes(resource.id) &&
+      !activeResources.some(item => item.id === resource.id)
+    );
+  });
+
+  return [...activeResources, ...extraResources];
+});
+
 const resourceOptions = computed(() =>
-  referencesStore.resources.map(resource => ({
+  selectableResources.value.map(resource => ({
     label: resource.name,
     value: resource.id,
   }))

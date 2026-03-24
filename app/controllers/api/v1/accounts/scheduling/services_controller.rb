@@ -49,7 +49,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
     raise ArgumentError, 'resource_id is required for service prices' if resource_id.blank?
 
     {
-      resource: Current.account.scheduling_resources.find(resource_id),
+      resource: Current.account.scheduling_resources.not_deleted_from_scheduling.find(resource_id),
       price: payload[:price],
       compensation_type: payload[:compensation_type],
       compensation_value: payload[:compensation_value],

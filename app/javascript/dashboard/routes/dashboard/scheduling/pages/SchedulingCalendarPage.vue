@@ -130,11 +130,37 @@ const pageTitle = computed(() =>
   )
 );
 
+const filterableResources = computed(() =>
+  referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  )
+);
+
+const selectableResources = computed(() => referencesStore.activeResources);
+
+const selectedFormResource = computed(() => {
+  const selectedResourceId = Number(formStore.form.resourceId);
+  if (!selectedResourceId) return null;
+
+  return (
+    referencesStore.resources.find(resource => resource.id === selectedResourceId) ||
+    calendarStore.resources.find(resource => resource.id === selectedResourceId) ||
+    null
+  );
+});
+
 const resourceOptions = computed(() =>
-  (referencesStore.resources.length
-    ? referencesStore.resources
-    : calendarStore.resources
-  ).map(resource => ({
+  [
+    ...selectableResources.value,
+    ...(
+      selectedFormResource.value &&
+      !selectableResources.value.some(
+        resource => resource.id === selectedFormResource.value.id
+      )
+        ? [selectedFormResource.value]
+        : []
+    ),
+  ].map(resource => ({
     label: resource.specialty
       ? `${resource.name} · ${resource.specialty}`
       : resource.name,
@@ -319,12 +345,26 @@ const resetInlineContactForm = () => {
   });
 };
 
+const syncSelectedResources = () => {
+  const activeResourceIds = filterableResources.value.map(resource => resource.id);
+  const nextSelectedResourceIds = calendarStore.selectedResourceIds.filter(id =>
+    activeResourceIds.includes(id)
+  );
+
+  if (nextSelectedResourceIds.length === calendarStore.selectedResourceIds.length) {
+    return;
+  }
+
+  calendarStore.setSelectedResources(nextSelectedResourceIds);
+};
+
 const loadPage = async () => {
   await Promise.all([
-    calendarStore.fetchCalendar(),
     referencesStore.loadResources({ include_inactive: true }),
     referencesStore.loadServices({ include_inactive: true }),
   ]);
+  syncSelectedResources();
+  await calendarStore.fetchCalendar();
 };
 
 const handleAnchorDateSelect = async nextDate => {
@@ -597,7 +637,7 @@ onMounted(async () => {
     >
       <template #filters>
         <SchedulingResourceFilter
-          :resources="referencesStore.resources"
+          :resources="filterableResources"
           :model-value="calendarStore.selectedResourceIds"
           @update:model-value="
             calendarStore.setSelectedResources($event);

@@ -22,6 +22,8 @@
 #
 
 class Scheduling::Resource < ApplicationRecord
+  DELETED_FROM_SCHEDULING_KEY = 'deleted_from_scheduling'.freeze
+
   belongs_to :account
   belongs_to :user, optional: true
 
@@ -44,6 +46,20 @@ class Scheduling::Resource < ApplicationRecord
 
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
+  scope :not_deleted_from_scheduling,
+        -> { where.not("custom_attributes @> ?", { DELETED_FROM_SCHEDULING_KEY => true }.to_json) }
+  scope :available_for_scheduling, -> { active.not_deleted_from_scheduling }
+
+  def deleted_from_scheduling?
+    ActiveModel::Type::Boolean.new.cast(custom_attributes[DELETED_FROM_SCHEDULING_KEY])
+  end
+
+  def archive_from_scheduling!
+    update!(
+      active: false,
+      custom_attributes: custom_attributes.to_h.merge(DELETED_FROM_SCHEDULING_KEY => true)
+    )
+  end
 
   private
 
