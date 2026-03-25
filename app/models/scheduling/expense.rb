@@ -13,6 +13,21 @@
 #  paid_by_id     :bigint
 #  resource_id    :bigint           not null
 #
+# Indexes
+#
+#  idx_scheduling_expenses_on_account_status    (account_id,status)
+#  index_scheduling_expenses_on_account_id      (account_id)
+#  index_scheduling_expenses_on_appointment_id  (appointment_id) UNIQUE
+#  index_scheduling_expenses_on_paid_by_id      (paid_by_id)
+#  index_scheduling_expenses_on_resource_id     (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (appointment_id => scheduling_appointments.id)
+#  fk_rails_...  (paid_by_id => users.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::Expense < ApplicationRecord
   belongs_to :account

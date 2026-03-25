@@ -155,6 +155,12 @@ end
 
 ## Voice Channel Attributes
 if resource.channel_type == 'Channel::Voice'
-  json.voice_call_webhook_url resource.channel.try(:voice_call_webhook_url)
-  json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
+  if resource.channel.provider == 'twilio'
+    json.voice_call_webhook_url resource.channel.try(:voice_call_webhook_url)
+    json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
+  end
+
+  if resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding.present?
+    json.telephony resource.telephony_number_binding.to_telephony_h
+  end
 end

@@ -52,8 +52,22 @@ describe('scheduling helpers', () => {
     });
 
     expect(window).toEqual({
-      endMinute: 1200,
-      startMinute: 300,
+      endMinute: 1320,
+      startMinute: 390,
+    });
+  });
+
+  it('falls back to the default day timeline window when there is no data', () => {
+    const window = deriveVisibleMinuteWindow({
+      appointments: [],
+      columns: [],
+      workRules: [],
+      workdayOverrides: [],
+    });
+
+    expect(window).toEqual({
+      endMinute: 1320,
+      startMinute: 420,
     });
   });
 

@@ -313,44 +313,116 @@
         }
       },
       "VOICE": {
-        "TITLE": "Voice Channel",
-        "DESC": "Integrate Twilio Voice and start supporting your customers via phone calls.",
+        "TITLE": "Қоңыраулар",
+        "DESC": "Кіріс және шығыс қоңыраулар үшін провайдерді таңдап, нөмірлерді қосыңыз.",
+        "SELECT_PROVIDER": {
+          "CHANGE_ACTION": "Провайдерді өзгерту"
+        },
+        "PROVIDERS": {
+          "KAZAKHSTAN": "Fonoster",
+          "KAZAKHSTAN_DESC": "Қазақстан нөмірлері мен telephony bridge маршрутизациясы үшін Fonoster қолданыңыз.",
+          "TWILIO": "Twilio",
+          "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз."
+        },
         "PHONE_NUMBER": {
-          "LABEL": "Phone Number",
-          "PLACEHOLDER": "Enter your phone number (e.g. +1234567890)",
-          "ERROR": "Please provide a valid phone number in E.164 format (e.g. +1234567890)"
+          "LABEL": "Телефон нөмірі",
+          "PLACEHOLDER": "Телефон нөмірін енгізіңіз (мысалы, +1234567890)",
+          "ERROR": "E.164 форматындағы дұрыс телефон нөмірін енгізіңіз (мысалы, +1234567890)"
+        },
+        "FONOSTER": {
+          "NUMBER_REF": {
+            "LABEL": "Нөмір идентификаторы",
+            "PLACEHOLDER": "Қоңырау нөмірінің идентификаторын енгізіңіз",
+            "REQUIRED": "Нөмір идентификаторы міндетті"
+          },
+          "APP_REF": {
+            "LABEL": "Негізгі қосымша сілтемесі",
+            "PLACEHOLDER": "Маршрутизацияға немесе сыртқы қосымшаға арналған сілтеме",
+            "REQUIRED": "Қолданба маршруты таңдалса, негізгі қосымша сілтемесі міндетті"
+          },
+          "TRUNK_REF": {
+            "LABEL": "Транк сілтемесі",
+            "PLACEHOLDER": "Қосымша транк сілтемесі"
+          },
+          "ROUTING": {
+            "LABEL": "Әдепкі маршрутизация",
+            "MODE": {
+              "OPERATOR": "Оператор",
+              "APP": "Қолданба",
+              "AI": "AI",
+              "REJECT": "Қабылдамау"
+            }
+          },
+          "AI_APP_REF": {
+            "LABEL": "AI қосымшасының сілтемесі",
+            "PLACEHOLDER": "AI қосымшасының сілтемесін енгізіңіз",
+            "REQUIRED": "AI маршруты таңдалса, AI қосымшасының сілтемесі міндетті"
+          },
+          "OPERATOR_AGENT_AOR": {
+            "LABEL": "Оператор агентінің AOR-ы",
+            "PLACEHOLDER": "sip:agent@domain идентификаторын енгізіңіз",
+            "REQUIRED": "Оператор маршруты таңдалса, оператор агентінің AOR-ы міндетті"
+          },
+          "FALLBACK_MESSAGE": {
+            "LABEL": "Қабылдамау хабарламасы",
+            "PLACEHOLDER": "Қоңырау қабылданбағанда ойналатын қосымша хабарлама"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {
-            "LABEL": "Account SID",
-            "PLACEHOLDER": "Enter your Twilio Account SID",
-            "REQUIRED": "Account SID is required"
+            "LABEL": "Аккаунт SID",
+            "PLACEHOLDER": "Twilio аккаунтының SID мәнін енгізіңіз",
+            "REQUIRED": "Аккаунт SID міндетті"
           },
           "AUTH_TOKEN": {
             "LABEL": "Auth Token",
-            "PLACEHOLDER": "Enter your Twilio Auth Token",
-            "REQUIRED": "Auth Token is required"
+            "PLACEHOLDER": "Twilio Auth Token мәнін енгізіңіз",
+            "REQUIRED": "Auth Token міндетті"
           },
           "API_KEY_SID": {
             "LABEL": "API Key SID",
-            "PLACEHOLDER": "Enter your Twilio API Key SID",
-            "REQUIRED": "API Key SID is required"
+            "PLACEHOLDER": "Twilio API Key SID мәнін енгізіңіз",
+            "REQUIRED": "API Key SID міндетті"
           },
           "API_KEY_SECRET": {
             "LABEL": "API Key Secret",
-            "PLACEHOLDER": "Enter your Twilio API Key Secret",
-            "REQUIRED": "API Key Secret is required"
+            "PLACEHOLDER": "Twilio API Key Secret мәнін енгізіңіз",
+            "REQUIRED": "API Key Secret міндетті"
           }
         },
         "CONFIGURATION": {
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
-          "TWILIO_VOICE_URL_SUBTITLE": "Configure this URL as the Voice URL on your Twilio phone number and TwiML App.",
+          "TWILIO_VOICE_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіз бен TwiML қолданбасындағы Voice URL ретінде баптаңыз.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
-          "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number."
+          "TWILIO_STATUS_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіздегі Status Callback URL ретінде баптаңыз.",
+          "FONOSTER_TITLE": "Fonoster байланысы",
+          "FONOSTER_SUBTITLE": "Бұл қоңырау арнасы Onelink telephony bridge және Fonoster маршрутизациясы арқылы басқарылады.",
+          "FONOSTER_READINESS_TITLE": "Fonoster дайындығы",
+          "FONOSTER_READINESS_SUBTITLE": "Осы voice inbox үшін telephony bridge, нөмір binding-і және тиімді маршрут тексеріледі.",
+          "ROUTING_MODE": "Маршрутизация режимі",
+          "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",
+          "AI_APP_REF": "AI қосымшасының сілтемесі",
+          "OPERATOR_AGENT_AOR": "Оператор агентінің AOR-ы",
+          "READY": "Дайын",
+          "ACTION_REQUIRED": "Әрекет қажет",
+          "HEALTHY": "Қалыпты",
+          "ATTENTION_REQUIRED": "Назар қажет",
+          "STATUS": "Күйі",
+          "BRIDGE_HEALTH": "Bridge күйі",
+          "READY_INBOXES": "Дайын inbox саны",
+          "CALL_SURFACE": "Қоңырау беті",
+          "LAST_SYNCED_AT": "Соңғы синхрондау",
+          "NOT_SYNCED": "Әлі синхрондалмаған",
+          "LOADING": "Дайындық тексерістері жүктелуде...",
+          "LOAD_ERROR": "Fonoster дайындығын жүктеу мүмкін болмады.",
+          "REFRESH": "Жаңарту",
+          "WARNINGS_TITLE": "Ескертулер",
+          "NO_WARNINGS": "Бұғаттайтын ескертулер жоқ.",
+          "NO_DATA": "Бұл inbox үшін әзірге дайындық дерегі жоқ."
         },
-        "SUBMIT_BUTTON": "Create Voice Channel",
+        "SUBMIT_BUTTON": "Қоңыраулар арнасын құру",
         "API": {
-          "ERROR_MESSAGE": "We were not able to create the voice channel"
+          "ERROR_MESSAGE": "Қоңыраулар арнасын құру мүмкін болмады"
         }
       },
       "API_CHANNEL": {
@@ -501,8 +573,8 @@
             "DESCRIPTION": "Connect your TikTok account"
           },
           "VOICE": {
-            "TITLE": "Voice",
-            "DESCRIPTION": "Integrate with Twilio Voice"
+            "TITLE": "Қоңыраулар",
+            "DESCRIPTION": "Кіріс және шығыс қоңырауларды баптау"
           }
         }
       },
@@ -1135,7 +1207,7 @@
       "API": "API Channel",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Voice"
+      "VOICE": "Қоңыраулар"
     }
   }
 }

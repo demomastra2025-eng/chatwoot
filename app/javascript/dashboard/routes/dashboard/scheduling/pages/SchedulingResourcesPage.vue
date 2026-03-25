@@ -33,6 +33,10 @@ import {
   formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
+import {
+  getUnavailableResourceColors,
+  pickResourceColor,
+} from '../resourceColors';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t } = useI18n();
@@ -116,7 +120,54 @@ const pageErrorDescription = computed(() =>
   formatErrorMessage(referencesStore.ui.error)
 );
 
+const resourceCards = computed(() =>
+  referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  )
+);
+
 const weekDayLabel = weekday => weekDayLabels.value[weekday] || `${weekday}`;
+
+const defaultResourceColor = () =>
+  pickResourceColor(resourceCards.value, RESOURCE_COLORS);
+
+const unavailableStandardColors = computed(
+  () =>
+    new Set(
+      getUnavailableResourceColors(
+        resourceCards.value,
+        RESOURCE_COLORS,
+        resourceForm.id
+      )
+    )
+);
+
+const isStandardColorDisabled = color => {
+  const normalizedColor = String(color || '')
+    .trim()
+    .toUpperCase();
+
+  return (
+    unavailableStandardColors.value.has(normalizedColor) &&
+    resourceForm.color?.toUpperCase() !== normalizedColor
+  );
+};
+
+const standardColorAriaLabel = color => {
+  const suffix = isStandardColorDisabled(color)
+    ? `, ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`
+    : '';
+
+  return `${t('SCHEDULING.RESOURCES.COLOR')} ${color}${suffix}`;
+};
+
+const standardColorTitle = color => {
+  if (!isStandardColorDisabled(color)) {
+    return color;
+  }
+
+  return `${color} · ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`;
+};
 
 const compensationPrimaryLabel = type => {
   if (type === 'percent') return t('SCHEDULING.COMPENSATION.percent_value');
@@ -152,7 +203,7 @@ const minuteToTime = minute => {
 const resetResourceForm = () => {
   Object.assign(resourceForm, {
     active: true,
-    color: RESOURCE_COLORS[0],
+    color: defaultResourceColor(),
     compensationPercent: 0,
     compensationType: 'percent',
     compensationValue: 40,
@@ -319,12 +370,6 @@ const removeScheduleRule = (type, rowKey) => {
     rows.filter(row => row.rowKey !== rowKey)
   );
 };
-
-const resourceCards = computed(() =>
-  referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
-  )
-);
 
 const linkedUser = resource => {
   return accountUsersById.value[resource.userId] || null;
@@ -829,17 +874,34 @@ onMounted(async () => {
                 v-for="color in RESOURCE_COLORS"
                 :key="color"
                 type="button"
-                class="size-8 rounded-full border transition-transform hover:scale-105"
-                :class="
+                class="relative size-8 rounded-full border-2 transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:scale-100"
+                :class="[
                   resourceForm.color?.toUpperCase() === color.toUpperCase()
                     ? 'ring-2 ring-offset-2 ring-offset-n-surface-1 ring-n-slate-8 border-n-slate-9'
-                    : 'border-n-container'
-                "
+                    : 'border-n-container',
+                  isStandardColorDisabled(color)
+                    ? 'grayscale saturate-0 border-n-slate-8 shadow-inner'
+                    : '',
+                ]"
                 :style="{ backgroundColor: color }"
-                :aria-label="`${$t('SCHEDULING.RESOURCES.COLOR')} ${color}`"
-                :title="color"
+                :disabled="isStandardColorDisabled(color)"
+                :aria-label="standardColorAriaLabel(color)"
+                :title="standardColorTitle(color)"
                 @click="resourceForm.color = color"
-              />
+              >
+                <span
+                  v-if="isStandardColorDisabled(color)"
+                  class="pointer-events-none absolute inset-0 rounded-full bg-n-surface-1/55"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="isStandardColorDisabled(color)"
+                  class="pointer-events-none absolute inset-0 flex items-center justify-center text-n-slate-12"
+                  aria-hidden="true"
+                >
+                  <span class="size-4 i-lucide-slash" />
+                </span>
+              </button>
             </div>
             <div class="grid gap-2 md:max-w-xs">
               <span class="text-sm font-medium text-n-slate-12">

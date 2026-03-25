@@ -36,7 +36,7 @@
     "API_HOURS_WINDOW": "Вы можете ответить на этот диалог только в течение {hours} часов",
     "NOT_ASSIGNED_TO_YOU": "Этот диалог вам не назначен. Вы хотите назначить этот диалог себе?",
     "ASSIGN_TO_ME": "Назначить мне",
-    "BOT_HANDOFF_MESSAGE": "Вы отвечаете на диалог, который в настоящее время обрабатывается ассистентом или ботом.",
+    "BOT_HANDOFF_MESSAGE": "Вы отвечаете на диалог, который сейчас обрабатывает AI-агент или бот.",
     "BOT_HANDOFF_ACTION": "Отметить как открытый и назначить вам",
     "BOT_HANDOFF_REOPEN_ACTION": "Отметить диалог как открытый",
     "BOT_HANDOFF_SUCCESS": "Диалог был передан вам",
@@ -187,8 +187,8 @@
       "MESSAGE_SIGN_TOOLTIP": "Подпись сообщения",
       "ENABLE_SIGN_TOOLTIP": "Включить подпись",
       "DISABLE_SIGN_TOOLTIP": "Отключить подпись",
-      "CAPTAIN_ENABLE_TOOLTIP": "Включить Captain для этого диалога",
-      "CAPTAIN_DISABLE_TOOLTIP": "Выключить Captain для этого диалога",
+      "CAPTAIN_ENABLE_TOOLTIP": "Включить AI-агента для этого диалога",
+      "CAPTAIN_DISABLE_TOOLTIP": "Выключить AI-агента для этого диалога",
       "MSG_INPUT": "Shift + enter чтобы начать новую строку. Начните с '/', чтобы выбрать шаблонный ответ.",
       "PRIVATE_MSG_INPUT": "Shift + enter для новой строки. Это сообщение будет видно только сотрудникам",
       "MESSAGE_SIGNATURE_NOT_CONFIGURED": "Подпись сообщения не настроена, пожалуйста настройте её в настройках профиля.",
@@ -196,7 +196,7 @@
       "WHATSAPP_TEMPLATES": "Шаблоны Whatsapp",
       "MESSAGING_RESTRICTED": "Вы не можете ответить в этот диалог",
       "MESSAGING_RESTRICTED_WHATSAPP": "Вы можете отвечать только шаблонным сообщением из-за ограничения 24-часового окна сообщений",
-      "COPILOT_MSG_INPUT": "Дайте копилоту дополнительную подсказку или задайте любой другой вопрос. Нажмите Enter, чтобы отправить продолжение"
+      "COPILOT_MSG_INPUT": "Дайте ассистенту дополнительную подсказку или задайте любой другой вопрос. Нажмите Enter, чтобы отправить продолжение"
     },
     "REPLYBOX": {
       "REPLY": "Ответить",
@@ -244,7 +244,7 @@
         "COLLAPSE": "Свернуть предпросмотр",
         "EXPAND": "Развернуть предпросмотр"
       },
-      "COPILOT_THINKING": "Копилот думает"
+      "COPILOT_THINKING": "Ассистент думает"
     },
     "VISIBLE_TO_AGENTS": "Приватная заметка: видна только вам и вашей команде",
     "CHANGE_STATUS": "Статус разговора изменен",
@@ -284,17 +284,21 @@
     },
     "SIDEBAR": {
       "CONTACT": "Контакт",
-      "COPILOT": "Копилот"
+      "COPILOT": "Ассистент"
     },
     "VOICE_WIDGET": {
       "INCOMING_CALL": "Входящий звонок",
       "OUTGOING_CALL": "Исходящий звонок",
+      "HANDLED_OUTSIDE_BROWSER": "Обрабатывается вне браузера",
       "CALL_IN_PROGRESS": "Идёт звонок",
       "NOT_ANSWERED_YET": "Пока нет ответа",
       "HANDLED_IN_ANOTHER_TAB": "Обрабатывается в другой вкладке",
+      "BROWSER_CALLING_UNAVAILABLE": "Для этой линии звонок в браузере недоступен. Открываем диалог.",
       "REJECT_CALL": "Отклонить",
       "JOIN_CALL": "Присоединиться к звонку",
-      "END_CALL": "Завершить звонок"
+      "END_CALL": "Завершить звонок",
+      "UNKNOWN_CALLER": "Неизвестный абонент",
+      "DEFAULT_INBOX_NAME": "Поддержка клиентов"
     },
     "UNSUPPORTED_MESSAGE_TIKTOK": "Это сообщение не поддерживается. Вы можете открыть его в приложении TikTok.",
     "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается в этом диалоге",
@@ -364,6 +368,11 @@
       "MACROS": "Макросс",
       "LINEAR_ISSUES": "Связанные проблемы",
       "SHOPIFY_ORDERS": "Заказы Shopify"
+    },
+    "CRM_ACTIONS": {
+      "CREATE_DEAL": "Создать сделку",
+      "CREATE_TASK": "Создать задачу",
+      "TITLE": "CRM"
     },
     "SHOPIFY": {
       "ORDER_ID": "Заказ #{id}",

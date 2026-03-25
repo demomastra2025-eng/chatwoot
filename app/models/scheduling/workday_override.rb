@@ -15,6 +15,18 @@
 #  account_id         :bigint           not null
 #  resource_id        :bigint           not null
 #
+# Indexes
+#
+#  idx_scheduling_workday_overrides_on_account_date   (account_id,date)
+#  idx_scheduling_workday_overrides_on_resource_date  (resource_id,date) UNIQUE
+#  index_scheduling_workday_overrides_on_account_id   (account_id)
+#  index_scheduling_workday_overrides_on_resource_id  (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::WorkdayOverride < ApplicationRecord
   include Scheduling::MinuteRangeValidatable

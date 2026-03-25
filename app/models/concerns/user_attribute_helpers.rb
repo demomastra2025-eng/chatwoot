@@ -18,7 +18,11 @@ module UserAttributeHelpers
   end
 
   def active_account_user
-    account_users.order(Arel.sql('active_at DESC NULLS LAST'))&.first
+    if association(:account_users).loaded?
+      account_users.max_by { |account_user| account_user.active_at || Time.zone.at(0) }
+    else
+      account_users.order(Arel.sql('active_at DESC NULLS LAST')).first
+    end
   end
 
   def current_account_user

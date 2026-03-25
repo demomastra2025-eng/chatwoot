@@ -21,8 +21,9 @@
 #
 # Indexes
 #
-#  index_captain_custom_tools_on_account_id           (account_id)
-#  index_captain_custom_tools_on_account_id_and_slug  (account_id,slug) UNIQUE
+#  index_captain_custom_tools_on_account_id                 (account_id)
+#  index_captain_custom_tools_on_account_id_and_group_name  (account_id,group_name)
+#  index_captain_custom_tools_on_account_id_and_slug        (account_id,slug) UNIQUE
 #
 class Captain::CustomTool < ApplicationRecord
   include Concerns::Toolable

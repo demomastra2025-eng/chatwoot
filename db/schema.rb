@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_26_101500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -780,6 +780,192 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
     t.index ["user_id"], name: "index_copilot_threads_on_user_id"
   end
 
+  create_table "crm_comments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "commentable_type", null: false
+    t.bigint "commentable_id", null: false
+    t.bigint "user_id", null: false
+    t.text "body", null: false
+    t.datetime "deleted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "commentable_type", "commentable_id", "created_at"], name: "index_crm_comments_on_account_and_commentable_created_at"
+    t.index ["account_id"], name: "index_crm_comments_on_account_id"
+    t.index ["user_id"], name: "index_crm_comments_on_user_id"
+  end
+
+  create_table "crm_deal_contacts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "deal_id", null: false
+    t.bigint "contact_id", null: false
+    t.boolean "primary", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "contact_id"], name: "index_crm_deal_contacts_on_account_contact"
+    t.index ["account_id"], name: "index_crm_deal_contacts_on_account_id"
+    t.index ["contact_id"], name: "index_crm_deal_contacts_on_contact_id"
+    t.index ["deal_id", "contact_id"], name: "index_crm_deal_contacts_on_deal_contact", unique: true
+    t.index ["deal_id"], name: "index_crm_deal_contacts_on_deal_id"
+    t.index ["deal_id"], name: "index_crm_deal_contacts_on_primary_contact", unique: true, where: "(\"primary\" = true)"
+  end
+
+  create_table "crm_deals", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "pipeline_id", null: false
+    t.bigint "stage_id", null: false
+    t.bigint "owner_id"
+    t.bigint "creator_id"
+    t.bigint "team_id"
+    t.bigint "company_id"
+    t.bigint "originating_conversation_id"
+    t.string "title", null: false
+    t.text "description"
+    t.bigint "amount_minor"
+    t.string "currency"
+    t.date "expected_close_on"
+    t.datetime "closed_at"
+    t.integer "win_probability"
+    t.string "external_ref"
+    t.string "idempotency_key"
+    t.integer "lock_version", default: 0, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "archived_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "company_id"], name: "index_crm_deals_on_account_company"
+    t.index ["account_id", "expected_close_on", "updated_at", "id"], name: "index_crm_deals_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
+    t.index ["account_id", "external_ref"], name: "index_crm_deals_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "idempotency_key"], name: "index_crm_deals_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "originating_conversation_id"], name: "index_crm_deals_on_account_originating_conversation"
+    t.index ["account_id", "pipeline_id", "stage_id", "owner_id", "expected_close_on"], name: "index_crm_deals_on_active_list_dimensions", where: "(archived_at IS NULL)"
+    t.index ["account_id", "team_id"], name: "index_crm_deals_on_account_team"
+    t.index ["account_id"], name: "index_crm_deals_on_account_id"
+    t.index ["company_id"], name: "index_crm_deals_on_company_id"
+    t.index ["creator_id"], name: "index_crm_deals_on_creator_id"
+    t.index ["custom_attributes"], name: "index_crm_deals_on_custom_attributes", using: :gin
+    t.index ["originating_conversation_id"], name: "index_crm_deals_on_originating_conversation_id"
+    t.index ["owner_id"], name: "index_crm_deals_on_owner_id"
+    t.index ["pipeline_id"], name: "index_crm_deals_on_pipeline_id"
+    t.index ["stage_id"], name: "index_crm_deals_on_stage_id"
+    t.index ["team_id"], name: "index_crm_deals_on_team_id"
+  end
+
+  create_table "crm_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "eventable_type", null: false
+    t.bigint "eventable_id", null: false
+    t.bigint "actor_id"
+    t.string "event_type", null: false
+    t.jsonb "meta", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "eventable_type", "eventable_id", "created_at"], name: "index_crm_events_on_account_eventable_created_at"
+    t.index ["account_id"], name: "index_crm_events_on_account_id"
+    t.index ["actor_id"], name: "index_crm_events_on_actor_id"
+  end
+
+  create_table "crm_field_definitions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "entity_kind", null: false
+    t.string "key", null: false
+    t.string "label", null: false
+    t.text "description"
+    t.string "field_type", null: false
+    t.boolean "required", default: false, null: false
+    t.boolean "active", default: true, null: false
+    t.integer "position", default: 0, null: false
+    t.jsonb "default_value"
+    t.jsonb "options", default: [], null: false
+    t.jsonb "rules", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "entity_kind", "active", "position"], name: "index_crm_field_definitions_on_account_entity_active_position"
+    t.index ["account_id", "entity_kind", "key"], name: "index_crm_field_defs_on_account_kind_key", unique: true
+    t.index ["account_id"], name: "index_crm_field_definitions_on_account_id"
+  end
+
+  create_table "crm_pipelines", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "code", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.boolean "default", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "code"], name: "index_crm_pipelines_on_account_id_and_code", unique: true
+    t.index ["account_id"], name: "index_crm_pipelines_on_account_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
+    t.index ["account_id"], name: "index_crm_pipelines_on_account_id"
+  end
+
+  create_table "crm_stages", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "pipeline_id", null: false
+    t.string "name", null: false
+    t.string "code", null: false
+    t.integer "position", default: 0, null: false
+    t.string "outcome", default: "open", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
+    t.index ["account_id"], name: "index_crm_stages_on_account_id"
+    t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
+    t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
+  end
+
+  create_table "crm_task_statuses", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "code", null: false
+    t.integer "position", default: 0, null: false
+    t.string "category", default: "open", null: false
+    t.boolean "active", default: true, null: false
+    t.boolean "default", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "code"], name: "index_crm_task_statuses_on_account_id_and_code", unique: true
+    t.index ["account_id"], name: "index_crm_task_statuses_on_account_default_open", unique: true, where: "((\"default\" = true) AND ((category)::text = 'open'::text))"
+    t.index ["account_id"], name: "index_crm_task_statuses_on_account_id"
+  end
+
+  create_table "crm_tasks", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "deal_id"
+    t.bigint "status_id", null: false
+    t.bigint "assignee_id"
+    t.bigint "creator_id"
+    t.bigint "team_id"
+    t.string "title", null: false
+    t.text "description"
+    t.string "priority", default: "medium", null: false
+    t.datetime "start_at"
+    t.datetime "due_at"
+    t.datetime "completed_at"
+    t.string "external_ref"
+    t.string "idempotency_key"
+    t.integer "lock_version", default: 0, null: false
+    t.jsonb "custom_attributes", default: {}, null: false
+    t.datetime "archived_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "originating_conversation_id"
+    t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
+    t.index ["account_id", "due_at", "updated_at", "id"], name: "index_crm_tasks_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
+    t.index ["account_id", "external_ref"], name: "index_crm_tasks_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "idempotency_key"], name: "index_crm_tasks_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "originating_conversation_id"], name: "index_crm_tasks_on_account_originating_conversation"
+    t.index ["account_id", "status_id", "assignee_id", "due_at"], name: "index_crm_tasks_on_active_list_dimensions", where: "(archived_at IS NULL)"
+    t.index ["account_id", "team_id"], name: "index_crm_tasks_on_account_team"
+    t.index ["account_id"], name: "index_crm_tasks_on_account_id"
+    t.index ["assignee_id"], name: "index_crm_tasks_on_assignee_id"
+    t.index ["creator_id"], name: "index_crm_tasks_on_creator_id"
+    t.index ["custom_attributes"], name: "index_crm_tasks_on_custom_attributes", using: :gin
+    t.index ["deal_id"], name: "index_crm_tasks_on_deal_id"
+    t.index ["originating_conversation_id"], name: "index_crm_tasks_on_originating_conversation_id"
+    t.index ["status_id"], name: "index_crm_tasks_on_status_id"
+    t.index ["team_id"], name: "index_crm_tasks_on_team_id"
+  end
+
   create_table "csat_survey_responses", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "conversation_id", null: false
@@ -1478,6 +1664,115 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
     t.index ["name", "account_id"], name: "index_teams_on_name_and_account_id", unique: true
   end
 
+  create_table "telephony_agent_bindings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.string "provider", default: "fonoster", null: false
+    t.string "agent_ref", null: false
+    t.string "agent_aor"
+    t.string "domain_ref"
+    t.string "credentials_ref"
+    t.boolean "enabled", default: true, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "agent_ref"], name: "index_telephony_agent_bindings_on_account_agent_ref", unique: true
+    t.index ["account_id", "user_id"], name: "index_telephony_agent_bindings_on_account_user", unique: true
+    t.index ["account_id"], name: "index_telephony_agent_bindings_on_account_id"
+  end
+
+  create_table "telephony_call_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id"
+    t.bigint "contact_id"
+    t.bigint "inbox_id"
+    t.bigint "number_binding_id"
+    t.bigint "agent_binding_id"
+    t.string "provider", default: "fonoster", null: false
+    t.string "external_call_ref", null: false
+    t.string "provider_call_sid"
+    t.string "status", default: "ringing", null: false
+    t.string "direction", default: "outbound", null: false
+    t.string "from_number"
+    t.string "to_number"
+    t.string "recording_ref"
+    t.string "transcript_ref"
+    t.text "summary"
+    t.integer "duration_seconds"
+    t.datetime "started_at"
+    t.datetime "ended_at"
+    t.datetime "last_event_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "conversation_id"], name: "index_telephony_call_sessions_on_account_conversation"
+    t.index ["account_id", "created_at"], name: "index_telephony_call_sessions_on_account_created_at"
+    t.index ["account_id", "external_call_ref"], name: "index_telephony_call_sessions_on_account_call_ref", unique: true
+    t.index ["account_id", "provider_call_sid"], name: "index_telephony_call_sessions_on_account_provider_sid", unique: true, where: "(provider_call_sid IS NOT NULL)"
+    t.index ["account_id", "status", "direction"], name: "index_telephony_call_sessions_on_account_status_direction"
+    t.index ["account_id"], name: "index_telephony_call_sessions_on_account_id"
+    t.index ["agent_binding_id"], name: "index_telephony_call_sessions_on_agent_binding_id"
+    t.index ["contact_id"], name: "index_telephony_call_sessions_on_contact_id"
+    t.index ["conversation_id"], name: "index_telephony_call_sessions_on_conversation_id"
+    t.index ["inbox_id"], name: "index_telephony_call_sessions_on_inbox_id"
+    t.index ["number_binding_id"], name: "index_telephony_call_sessions_on_number_binding_id"
+  end
+
+  create_table "telephony_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "call_session_id"
+    t.string "event_key", null: false
+    t.string "event_type", null: false
+    t.string "status", default: "received", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "processed_at"
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "event_key"], name: "index_telephony_events_on_account_event_key", unique: true
+    t.index ["account_id", "event_type", "created_at"], name: "index_telephony_events_on_account_event_type_created_at"
+    t.index ["account_id"], name: "index_telephony_events_on_account_id"
+    t.index ["call_session_id"], name: "index_telephony_events_on_call_session_id"
+  end
+
+  create_table "telephony_number_bindings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "provider", default: "fonoster", null: false
+    t.string "number_ref", null: false
+    t.string "phone_number"
+    t.string "app_ref"
+    t.string "trunk_ref"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "number_ref"], name: "index_telephony_number_bindings_on_account_number_ref", unique: true
+    t.index ["account_id", "phone_number"], name: "index_telephony_number_bindings_on_account_phone"
+    t.index ["account_id"], name: "index_telephony_number_bindings_on_account_id"
+    t.index ["inbox_id"], name: "index_telephony_number_bindings_on_inbox_id", unique: true
+  end
+
+  create_table "telephony_routing_policies", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "number_binding_id", null: false
+    t.string "mode", default: "operator", null: false
+    t.boolean "ai_enabled", default: false, null: false
+    t.string "ai_app_ref"
+    t.string "operator_agent_ref"
+    t.string "operator_agent_aor"
+    t.string "fallback_mode", default: "reject", null: false
+    t.text "fallback_message"
+    t.jsonb "business_hours", default: {}, null: false
+    t.jsonb "settings", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "mode"], name: "index_telephony_routing_policies_on_account_mode"
+    t.index ["account_id"], name: "index_telephony_routing_policies_on_account_id"
+    t.index ["number_binding_id"], name: "index_telephony_routing_policies_on_number_binding_id", unique: true
+  end
+
   create_table "users", id: :serial, force: :cascade do |t|
     t.string "provider", default: "email", null: false
     t.string "uid", default: "", null: false
@@ -1552,6 +1847,33 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
   add_foreign_key "campaign_deliveries", "campaigns"
   add_foreign_key "campaign_deliveries", "contacts"
   add_foreign_key "campaign_deliveries", "inboxes"
+  add_foreign_key "crm_comments", "accounts"
+  add_foreign_key "crm_comments", "users"
+  add_foreign_key "crm_deal_contacts", "accounts"
+  add_foreign_key "crm_deal_contacts", "contacts"
+  add_foreign_key "crm_deal_contacts", "crm_deals", column: "deal_id"
+  add_foreign_key "crm_deals", "accounts"
+  add_foreign_key "crm_deals", "companies"
+  add_foreign_key "crm_deals", "conversations", column: "originating_conversation_id"
+  add_foreign_key "crm_deals", "crm_pipelines", column: "pipeline_id"
+  add_foreign_key "crm_deals", "crm_stages", column: "stage_id"
+  add_foreign_key "crm_deals", "teams"
+  add_foreign_key "crm_deals", "users", column: "creator_id"
+  add_foreign_key "crm_deals", "users", column: "owner_id"
+  add_foreign_key "crm_events", "accounts"
+  add_foreign_key "crm_events", "users", column: "actor_id"
+  add_foreign_key "crm_field_definitions", "accounts"
+  add_foreign_key "crm_pipelines", "accounts"
+  add_foreign_key "crm_stages", "accounts"
+  add_foreign_key "crm_stages", "crm_pipelines", column: "pipeline_id"
+  add_foreign_key "crm_task_statuses", "accounts"
+  add_foreign_key "crm_tasks", "accounts"
+  add_foreign_key "crm_tasks", "conversations", column: "originating_conversation_id"
+  add_foreign_key "crm_tasks", "crm_deals", column: "deal_id"
+  add_foreign_key "crm_tasks", "crm_task_statuses", column: "status_id"
+  add_foreign_key "crm_tasks", "teams"
+  add_foreign_key "crm_tasks", "users", column: "assignee_id"
+  add_foreign_key "crm_tasks", "users", column: "creator_id"
   add_foreign_key "inboxes", "portals"
   add_foreign_key "scheduling_appointments", "accounts"
   add_foreign_key "scheduling_appointments", "companies"
@@ -1582,6 +1904,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_19_184500) do
   add_foreign_key "scheduling_work_rules", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_workday_overrides", "accounts"
   add_foreign_key "scheduling_workday_overrides", "scheduling_resources", column: "resource_id"
+  add_foreign_key "telephony_agent_bindings", "accounts"
+  add_foreign_key "telephony_agent_bindings", "users"
+  add_foreign_key "telephony_call_sessions", "accounts"
+  add_foreign_key "telephony_call_sessions", "contacts"
+  add_foreign_key "telephony_call_sessions", "conversations"
+  add_foreign_key "telephony_call_sessions", "inboxes"
+  add_foreign_key "telephony_call_sessions", "telephony_agent_bindings", column: "agent_binding_id"
+  add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id"
+  add_foreign_key "telephony_events", "accounts"
+  add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
+  add_foreign_key "telephony_number_bindings", "accounts"
+  add_foreign_key "telephony_number_bindings", "inboxes"
+  add_foreign_key "telephony_routing_policies", "accounts"
+  add_foreign_key "telephony_routing_policies", "telephony_number_bindings", column: "number_binding_id"
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

@@ -6,6 +6,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
 import { debounce } from '@chatwoot/utils';
 import { useCompaniesStore } from 'dashboard/stores/companies';
+import { companyMatchesSearch } from '../helpers';
 
 import CompaniesListLayout from 'dashboard/components-next/Companies/CompaniesListLayout.vue';
 import CompaniesCard from 'dashboard/components-next/Companies/CompaniesCard/CompaniesCard.vue';
@@ -128,9 +129,14 @@ const toggleCompany = companyId => {
 const createCompany = async company => {
   try {
     const createdCompany = await companiesStore.create(company);
+    const nextSearch = companyMatchesSearch(createdCompany, searchValue.value)
+      ? searchValue.value
+      : '';
+
     useAlert(t('COMPANIES.FORM.SUCCESS.CREATE'));
     createCompanyDialogRef.value?.onSuccess?.();
-    await fetchCompanies(1, searchValue.value, sortParam.value);
+    searchValue.value = nextSearch;
+    await fetchCompanies(1, nextSearch, sortParam.value);
     expandedCompanyId.value = createdCompany.id;
   } catch {
     useAlert(t('COMPANIES.FORM.ERROR.CREATE'));
@@ -188,7 +194,7 @@ onMounted(() => {
         t('COMPANIES.EMPTY_STATE.TITLE')
       }}</span>
     </div>
-    <div v-else class="flex flex-col gap-4 p-4">
+    <div v-else class="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 items-start">
       <CompaniesCard
         v-for="company in companies"
         :id="company.id"

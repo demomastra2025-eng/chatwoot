@@ -131,6 +131,42 @@ describe('SchedulingVueCalCalendar', () => {
     ).toBe(true);
   });
 
+  it('renders time and client name in a single event summary row', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        {
+          id: 45,
+          clientName: 'Alexandria Very Long Name',
+          durationMin: 30,
+          endsAt: '2026-03-09T11:30:00.000Z',
+          resourceId: 12,
+          serviceNameSnapshot: 'Consultation',
+          startsAt: '2026-03-09T11:00:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const summary = wrapper.find('.scheduling-vue-cal__event-summary');
+
+    expect(summary.exists()).toBe(true);
+    expect(summary.text()).toContain('11:00 - 11:30');
+    expect(summary.text()).toContain('Alexandria Very Long Name');
+  });
+
+  it('marks hour and half-hour cells in the time column', async () => {
+    const wrapper = mountCalendar({ view: 'day' });
+
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('.vuecal__time-cell--hour').exists()).toBe(true);
+    expect(wrapper.find('.vuecal__time-cell--half-hour').exists()).toBe(true);
+  });
+
   it('shows the selected resource count in weekly header labels', async () => {
     const wrapper = mountCalendar({
       resources: [

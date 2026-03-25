@@ -82,7 +82,9 @@ class Integrations::Hook < ApplicationRecord
     update(status: 'disabled')
   end
 
-  def process_event(_event)
+  def process_event(event_name)
+    return process_medelement_event(event_name) if medelement?
+
     # OpenAI integration migrated to Captain::EditorService
     # Other integrations (slack, dialogflow, etc.) handled via HookJob
     { error: 'No processor found' }
@@ -141,6 +143,15 @@ class Integrations::Hook < ApplicationRecord
 
   def crm_integration?
     %w[leadsquared].include?(app_id)
+  end
+
+  def process_medelement_event(event_name)
+    return { error: 'No processor found' } unless event_name == 'sync'
+    return { error: 'Medelement integration is disabled' } unless enabled?
+    return { error: 'Scheduling feature is not enabled for this account' } unless feature_allowed?
+
+    Integrations::Medelement::SyncJob.perform_later(id)
+    { message: 'Medelement sync started' }
   end
 
   def enqueue_medelement_cleanup

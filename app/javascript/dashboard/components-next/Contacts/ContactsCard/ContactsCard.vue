@@ -116,7 +116,10 @@ const handleAvatarHover = isHovered => {
         'outline-n-weak !bg-n-slate-3 dark:!bg-n-solid-3': isSelected,
       }"
     >
-      <div class="flex items-center justify-start flex-1 gap-4">
+      <div
+        class="flex items-center justify-start flex-1 gap-4 min-w-0 cursor-pointer"
+        @click="onClickExpand"
+      >
         <div
           class="relative"
           @mouseenter="handleAvatarHover(true)"
@@ -187,20 +190,22 @@ const handleAvatarHover = isHovered => {
               :label="t('CONTACTS_LAYOUT.CARD.VIEW_DETAILS')"
               variant="link"
               size="xs"
-              @click="onClickViewDetails"
+              @click.stop="onClickViewDetails"
             />
           </div>
         </div>
       </div>
 
-      <Button
-        icon="i-lucide-chevron-down"
-        variant="ghost"
-        color="slate"
-        size="xs"
-        :class="{ 'rotate-180': isExpanded }"
-        @click="onClickExpand"
-      />
+      <div class="cursor-pointer" @click="onClickExpand">
+        <Button
+          icon="i-lucide-chevron-down"
+          variant="ghost"
+          color="slate"
+          size="xs"
+          :class="{ 'rotate-180': isExpanded }"
+          @click.stop="onClickExpand"
+        />
+      </div>
 
       <template #after>
         <div

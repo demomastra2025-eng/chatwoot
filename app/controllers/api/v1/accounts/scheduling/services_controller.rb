@@ -43,18 +43,22 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
 
   private
 
-  def normalize_price_payload(item)
+  def normalize_price_payload(item, service:)
     payload = item.to_h.symbolize_keys
     resource_id = payload[:resource_id].presence || payload[:employee_id].presence
     raise ArgumentError, 'resource_id is required for service prices' if resource_id.blank?
 
+    active = payload.key?(:active) ? ActiveModel::Type::Boolean.new.cast(payload[:active]) : true
+    price = payload[:price]
+    price = service.base_price if active && price.blank?
+
     {
       resource: Current.account.scheduling_resources.not_deleted_from_scheduling.find(resource_id),
-      price: payload[:price],
+      price: price,
       compensation_type: payload[:compensation_type],
       compensation_value: payload[:compensation_value],
       compensation_percent: payload[:compensation_percent],
-      active: payload.key?(:active) ? payload[:active] : true
+      active: active
     }
   end
 
@@ -81,7 +85,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
     keep_ids = []
 
     payloads.each do |item|
-      attrs = normalize_price_payload(item)
+      attrs = normalize_price_payload(item, service: service)
       price = service.prices.find_or_initialize_by(resource: attrs.delete(:resource))
       price.assign_attributes(attrs)
       price.save!

@@ -12,6 +12,18 @@
 #  account_id   :bigint           not null
 #  resource_id  :bigint           not null
 #
+# Indexes
+#
+#  idx_scheduling_work_rules_on_account_resource_weekday  (account_id,resource_id,weekday,active)
+#  idx_scheduling_work_rules_on_resource_slot             (resource_id,weekday,start_minute,end_minute) UNIQUE
+#  index_scheduling_work_rules_on_account_id              (account_id)
+#  index_scheduling_work_rules_on_resource_id             (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::WorkRule < ApplicationRecord
   include Scheduling::MinuteRangeValidatable

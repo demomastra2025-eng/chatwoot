@@ -28,6 +28,8 @@
   },
   "DATE_TIME_PICKER": {
     "BACK": "Назад",
+    "HOURS": "Часы",
+    "MINUTES": "Минуты",
     "MONTH": "Месяц",
     "YEAR": "Год"
   },

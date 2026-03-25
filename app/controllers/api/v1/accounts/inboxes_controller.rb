@@ -46,15 +46,18 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
         )
       )
       @inbox.save!
+      sync_voice_telephony!(channel)
     end
   end
 
   def update
-    inbox_params = permitted_params.except(:channel, :csat_config)
-    inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
-    @inbox.update!(inbox_params)
-    update_inbox_working_hours
-    update_channel if channel_update_required?
+    ActiveRecord::Base.transaction do
+      inbox_params = permitted_params.except(:channel, :csat_config)
+      inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
+      @inbox.update!(inbox_params)
+      update_inbox_working_hours
+      update_channel if channel_update_required?
+    end
   end
 
   def agent_bot
@@ -192,6 +195,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def reauthorize_and_update_channel(channel_attributes)
     @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
     @inbox.channel.update!(permitted_params(channel_attributes)[:channel])
+    sync_voice_telephony!(@inbox.channel)
   end
 
   def update_channel_feature_flags
@@ -200,6 +204,21 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
     @inbox.channel.selected_feature_flags = permitted_params(Channel::WebWidget::EDITABLE_ATTRS)[:channel][:selected_feature_flags]
     @inbox.channel.save!
+  end
+
+  def sync_voice_telephony!(channel)
+    return unless defined?(Channel::Voice) && channel.is_a?(Channel::Voice)
+    return unless channel.provider == 'fonoster'
+
+    binding = Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
+    return if binding.blank?
+
+    Telephony::RoutingService.new(account: Current.account).update_number_route!(
+      number_binding: binding,
+      attributes: binding.routing_policy.attributes.symbolize_keys.slice(
+        :mode, :ai_app_ref, :operator_agent_ref, :operator_agent_aor, :fallback_mode, :fallback_message
+      )
+    )
   end
 
   def format_csat_config(config)

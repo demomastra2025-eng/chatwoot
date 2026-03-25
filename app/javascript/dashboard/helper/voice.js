@@ -22,13 +22,32 @@ const shouldSkipCall = (callDirection, senderId, currentUserId) => {
   return callDirection === 'outbound' && senderId !== currentUserId;
 };
 
+const getContentData = message => message?.content_attributes?.data || {};
+
+const getContentMeta = contentData =>
+  contentData?.metadata || contentData?.meta || {};
+
 function extractCallData(message) {
-  const contentData = message?.content_attributes?.data || {};
+  const contentData = getContentData(message);
+  const contentMeta = getContentMeta(contentData);
+
   return {
-    callSid: contentData.call_sid,
+    callSid: contentData.call_sid || contentData.callSid,
     status: contentData.status,
-    callDirection: contentData.call_direction,
+    callDirection: contentData.call_direction || contentData.callDirection,
     conversationId: message?.conversation_id,
+    inboxId:
+      message?.inbox_id ||
+      contentData.inbox_id ||
+      contentData.inboxId ||
+      contentMeta?.chatwoot_inbox_id ||
+      contentMeta?.inbox_id ||
+      contentMeta?.inboxId,
+    provider:
+      contentData.provider ||
+      message?.provider ||
+      contentMeta?.provider ||
+      contentMeta?.chatwoot_provider,
     senderId: message?.sender?.id,
   };
 }
@@ -36,8 +55,14 @@ function extractCallData(message) {
 export function handleVoiceCallCreated(message, currentUserId) {
   if (!isVoiceCallMessage(message)) return;
 
-  const { callSid, callDirection, conversationId, senderId } =
-    extractCallData(message);
+  const {
+    callSid,
+    callDirection,
+    conversationId,
+    inboxId,
+    provider,
+    senderId,
+  } = extractCallData(message);
 
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
 
@@ -45,6 +70,8 @@ export function handleVoiceCallCreated(message, currentUserId) {
   callsStore.addCall({
     callSid,
     conversationId,
+    inboxId,
+    provider,
     callDirection,
     senderId,
   });
@@ -53,8 +80,15 @@ export function handleVoiceCallCreated(message, currentUserId) {
 export function handleVoiceCallUpdated(commit, message, currentUserId) {
   if (!isVoiceCallMessage(message)) return;
 
-  const { callSid, status, callDirection, conversationId, senderId } =
-    extractCallData(message);
+  const {
+    callSid,
+    status,
+    callDirection,
+    conversationId,
+    inboxId,
+    provider,
+    senderId,
+  } = extractCallData(message);
 
   const callsStore = useCallsStore();
 
@@ -72,6 +106,8 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     callsStore.addCall({
       callSid,
       conversationId,
+      inboxId,
+      provider,
       callDirection,
       senderId,
     });

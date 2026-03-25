@@ -48,12 +48,16 @@ export const APPOINTMENT_TYPE_VALUES = ['primary', 'secondary', 'other'];
 
 export const EXPENSE_STATUS_VALUES = ['unpaid', 'paid'];
 
-export const COMPENSATION_TYPE_VALUES = ['percent', 'fixed', 'fixed_plus_percent'];
+export const COMPENSATION_TYPE_VALUES = [
+  'percent',
+  'fixed',
+  'fixed_plus_percent',
+];
 
 export const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0];
 
 export const DEFAULT_VISIBLE_START_MINUTE = 7 * 60;
-export const DEFAULT_VISIBLE_END_MINUTE = 20 * 60;
+export const DEFAULT_VISIBLE_END_MINUTE = 22 * 60;
 export const MINUTE_STEP = 5;
 export const HOUR_ROW_HEIGHT = 100;
 export const MINUTE_HEIGHT = HOUR_ROW_HEIGHT / 60;
@@ -62,13 +66,20 @@ export const SIDEBAR_DATE_FORMAT = 'EEE, d MMM';
 
 export const RESOURCE_COLORS = [
   '#0EA5E9',
-  '#06B6D4',
-  '#10B981',
-  '#22C55E',
-  '#84CC16',
-  '#EAB308',
-  '#F59E0B',
-  '#F97316',
-  '#EF4444',
+  '#3B82F6',
+  '#6366F1',
+  '#8B5CF6',
+  '#A855F7',
+  '#D946EF',
+  '#EC4899',
   '#F43F5E',
+  '#EF4444',
+  '#F97316',
+  '#F59E0B',
+  '#EAB308',
+  '#84CC16',
+  '#22C55E',
+  '#10B981',
+  '#14B8A6',
+  '#06B6D4',
 ];

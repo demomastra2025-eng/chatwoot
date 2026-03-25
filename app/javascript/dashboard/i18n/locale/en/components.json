@@ -28,6 +28,8 @@
   },
   "DATE_TIME_PICKER": {
     "BACK": "Back",
+    "HOURS": "Hours",
+    "MINUTES": "Minutes",
     "MONTH": "Month",
     "YEAR": "Year"
   },

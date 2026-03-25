@@ -7,7 +7,6 @@
 #  last_status_at      :datetime
 #  metadata            :jsonb            not null
 #  provider            :string           not null
-#  provider_message_id :string
 #  status              :integer          default("pending"), not null
 #  target_identifier   :string
 #  created_at          :datetime         not null
@@ -16,6 +15,23 @@
 #  campaign_id         :bigint           not null
 #  contact_id          :bigint           not null
 #  inbox_id            :bigint           not null
+#  provider_message_id :string
+#
+# Indexes
+#
+#  index_campaign_deliveries_on_account_id                  (account_id)
+#  index_campaign_deliveries_on_campaign_id                 (campaign_id)
+#  index_campaign_deliveries_on_campaign_id_and_contact_id  (campaign_id,contact_id) UNIQUE
+#  index_campaign_deliveries_on_contact_id                  (contact_id)
+#  index_campaign_deliveries_on_inbox_id                    (inbox_id)
+#  index_campaign_deliveries_on_provider_message_id         (provider_message_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (campaign_id => campaigns.id)
+#  fk_rails_...  (contact_id => contacts.id)
+#  fk_rails_...  (inbox_id => inboxes.id)
 #
 
 class CampaignDelivery < ApplicationRecord

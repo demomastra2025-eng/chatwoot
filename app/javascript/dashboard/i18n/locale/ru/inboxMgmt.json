@@ -313,12 +313,60 @@
         }
       },
       "VOICE": {
-        "TITLE": "Голосовой канал",
-        "DESC": "Интегрируйте Twilio Voice и начните поддерживать ваших клиентов по телефонным звонкам.",
+        "TITLE": "Звонки",
+        "DESC": "Выберите провайдера звонков и подключите номера для входящих и исходящих вызовов.",
+        "SELECT_PROVIDER": {
+          "CHANGE_ACTION": "Сменить провайдера"
+        },
+        "PROVIDERS": {
+          "KAZAKHSTAN": "Виртуальная АТС",
+          "KAZAKHSTAN_DESC": "Используйте OneLink Виртуальная АТС для номеров Казахстана.",
+          "TWILIO": "Twilio",
+          "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки."
+        },
         "PHONE_NUMBER": {
           "LABEL": "Номер телефона",
           "PLACEHOLDER": "Введите ваш номер телефона (напр. +1234567890)",
           "ERROR": "Пожалуйста, введите правильный номер телефона в формате E.164 (например, +1234567890)"
+        },
+        "FONOSTER": {
+          "NUMBER_REF": {
+            "LABEL": "Идентификатор номера",
+            "PLACEHOLDER": "Введите идентификатор номера для звонков",
+            "REQUIRED": "Идентификатор номера обязателен"
+          },
+          "APP_REF": {
+            "LABEL": "Ссылка на основное приложение",
+            "PLACEHOLDER": "Ссылка на маршрутизацию или внешнее приложение",
+            "REQUIRED": "Ссылка на основное приложение обязательна при выборе маршрутизации в приложение"
+          },
+          "TRUNK_REF": {
+            "LABEL": "Ссылка на транк",
+            "PLACEHOLDER": "Необязательная ссылка на транк"
+          },
+          "ROUTING": {
+            "LABEL": "Маршрутизация по умолчанию",
+            "MODE": {
+              "OPERATOR": "Оператор",
+              "APP": "Приложение",
+              "AI": "AI",
+              "REJECT": "Отклонить"
+            }
+          },
+          "AI_APP_REF": {
+            "LABEL": "Ссылка на AI-приложение",
+            "PLACEHOLDER": "Введите ссылку на AI-приложение",
+            "REQUIRED": "Ссылка на AI-приложение обязательна при выборе AI-маршрутизации"
+          },
+          "OPERATOR_AGENT_AOR": {
+            "LABEL": "Адрес оператора (AOR)",
+            "PLACEHOLDER": "Введите идентификатор sip:agent@domain",
+            "REQUIRED": "Адрес оператора (AOR) обязателен при выборе маршрутизации на оператора"
+          },
+          "FALLBACK_MESSAGE": {
+            "LABEL": "Сообщение при отклонении",
+            "PLACEHOLDER": "Необязательное сообщение, которое проигрывается при отклонении звонка"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {
@@ -346,11 +394,35 @@
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
           "TWILIO_VOICE_URL_SUBTITLE": "Настройте этот URL как Voice URL на вашем Twilio телефонном номере и TwiML приложения.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
-          "TWILIO_STATUS_URL_SUBTITLE": "Настройте этот URL как Status Callback URL на ваш Twilio номер телефона."
+          "TWILIO_STATUS_URL_SUBTITLE": "Настройте этот URL как Status Callback URL на ваш Twilio номер телефона.",
+          "FONOSTER_TITLE": "Подключение Fonoster",
+          "FONOSTER_SUBTITLE": "Этот канал звонков работает через telephony bridge Onelink и маршрутизацию Fonoster.",
+          "FONOSTER_READINESS_TITLE": "Готовность Fonoster",
+          "FONOSTER_READINESS_SUBTITLE": "Проверяет telephony bridge, binding номера и эффективный маршрут для этого voice inbox.",
+          "ROUTING_MODE": "Режим маршрутизации",
+          "PRIMARY_APP_REF": "Ссылка на основное приложение",
+          "AI_APP_REF": "Ссылка на AI-приложение",
+          "OPERATOR_AGENT_AOR": "Адрес оператора (AOR)",
+          "READY": "Готово",
+          "ACTION_REQUIRED": "Нужно действие",
+          "HEALTHY": "Исправно",
+          "ATTENTION_REQUIRED": "Требует внимания",
+          "STATUS": "Статус",
+          "BRIDGE_HEALTH": "Состояние bridge",
+          "READY_INBOXES": "Готовые inbox",
+          "CALL_SURFACE": "Поверхность звонка",
+          "LAST_SYNCED_AT": "Последняя синхронизация",
+          "NOT_SYNCED": "Еще не синхронизировано",
+          "LOADING": "Загружаем проверки готовности...",
+          "LOAD_ERROR": "Не удалось загрузить готовность Fonoster.",
+          "REFRESH": "Обновить",
+          "WARNINGS_TITLE": "Предупреждения",
+          "NO_WARNINGS": "Блокирующих предупреждений нет.",
+          "NO_DATA": "Для этого inbox пока нет данных готовности."
         },
-        "SUBMIT_BUTTON": "Создать голосовой канал",
+        "SUBMIT_BUTTON": "Создать канал звонков",
         "API": {
-          "ERROR_MESSAGE": "Не удалось создать голосовой канал"
+          "ERROR_MESSAGE": "Не удалось создать канал звонков"
         }
       },
       "API_CHANNEL": {
@@ -501,8 +573,8 @@
             "DESCRIPTION": "Подключите ваш аккаунт TikTok"
           },
           "VOICE": {
-            "TITLE": "Голосовая связь",
-            "DESCRIPTION": "Интегрировать Twilio Voice"
+            "TITLE": "Звонки",
+            "DESCRIPTION": "Настроить входящие и исходящие звонки"
           }
         }
       },
@@ -716,7 +788,7 @@
       "SETTINGS": "Настройки",
       "COLLABORATORS": "Соавторы",
       "CONFIGURATION": "Настройки",
-      "CAMPAIGN": "Кампании",
+      "CAMPAIGN": "Рассылки кампаний",
       "PRE_CHAT_FORM": "Форма",
       "BUSINESS_HOURS": "Время работы",
       "WIDGET_BUILDER": "Конструктор виджетов",
@@ -1151,7 +1223,7 @@
       "API": "Источник API",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Голосовая связь"
+      "VOICE": "Звонки"
     },
     "ASSIGNMENT": {
       "TITLE": "Назначение диалогов",

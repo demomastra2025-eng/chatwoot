@@ -23,7 +23,6 @@ import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/Schedul
 import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_VALUES,
-  APPOINTMENT_TYPE_VALUES,
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
@@ -76,12 +75,6 @@ const appointmentStatusLabels = computed(() => ({
   confirmed: t('SCHEDULING.APPOINTMENT_STATUS.confirmed'),
   no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
   scheduled: t('SCHEDULING.APPOINTMENT_STATUS.scheduled'),
-}));
-
-const appointmentTypeLabels = computed(() => ({
-  other: t('SCHEDULING.APPOINTMENT_TYPE.other'),
-  primary: t('SCHEDULING.APPOINTMENT_TYPE.primary'),
-  secondary: t('SCHEDULING.APPOINTMENT_TYPE.secondary'),
 }));
 
 const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
@@ -143,8 +136,12 @@ const selectedFormResource = computed(() => {
   if (!selectedResourceId) return null;
 
   return (
-    referencesStore.resources.find(resource => resource.id === selectedResourceId) ||
-    calendarStore.resources.find(resource => resource.id === selectedResourceId) ||
+    referencesStore.resources.find(
+      resource => resource.id === selectedResourceId
+    ) ||
+    calendarStore.resources.find(
+      resource => resource.id === selectedResourceId
+    ) ||
     null
   );
 });
@@ -152,14 +149,12 @@ const selectedFormResource = computed(() => {
 const resourceOptions = computed(() =>
   [
     ...selectableResources.value,
-    ...(
-      selectedFormResource.value &&
-      !selectableResources.value.some(
-        resource => resource.id === selectedFormResource.value.id
-      )
-        ? [selectedFormResource.value]
-        : []
-    ),
+    ...(selectedFormResource.value &&
+    !selectableResources.value.some(
+      resource => resource.id === selectedFormResource.value.id
+    )
+      ? [selectedFormResource.value]
+      : []),
   ].map(resource => ({
     label: resource.specialty
       ? `${resource.name} · ${resource.specialty}`
@@ -217,13 +212,6 @@ const appointmentStatusOptions = computed(() =>
   APPOINTMENT_STATUS_VALUES.map(value => ({
     icon: APPOINTMENT_STATUS_ICONS[value],
     label: appointmentStatusLabels.value[value] || value,
-    value,
-  }))
-);
-
-const appointmentTypeOptions = computed(() =>
-  APPOINTMENT_TYPE_VALUES.map(value => ({
-    label: appointmentTypeLabels.value[value] || value,
     value,
   }))
 );
@@ -346,12 +334,16 @@ const resetInlineContactForm = () => {
 };
 
 const syncSelectedResources = () => {
-  const activeResourceIds = filterableResources.value.map(resource => resource.id);
+  const activeResourceIds = filterableResources.value.map(
+    resource => resource.id
+  );
   const nextSelectedResourceIds = calendarStore.selectedResourceIds.filter(id =>
     activeResourceIds.includes(id)
   );
 
-  if (nextSelectedResourceIds.length === calendarStore.selectedResourceIds.length) {
+  if (
+    nextSelectedResourceIds.length === calendarStore.selectedResourceIds.length
+  ) {
     return;
   }
 
@@ -596,11 +588,7 @@ const updateAppointmentMutation = async (
 };
 
 watch(
-  [
-    () => formStore.form.serviceId,
-    () => formStore.form.resourceId,
-    () => referencesStore.services,
-  ],
+  [() => formStore.form.serviceId, () => formStore.form.resourceId],
   ([serviceId, resourceId]) => {
     if (!serviceId || !resourceId) return;
     formStore.syncServicePricing(referencesStore.services);
@@ -760,6 +748,7 @@ onMounted(async () => {
         </div>
 
         <SchedulingFormFieldGroup
+          :framed="false"
           :title="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE')"
           :description="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT_DESCRIPTION')"
         >
@@ -880,6 +869,7 @@ onMounted(async () => {
         </SchedulingFormFieldGroup>
 
         <SchedulingFormFieldGroup
+          :framed="false"
           :title="$t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_TITLE')"
           :description="
             $t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_DESCRIPTION')
@@ -906,55 +896,69 @@ onMounted(async () => {
               :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
               @update:model-value="formStore.updateField('serviceId', $event)"
             />
-            <SchedulingSelectField
-              :model-value="formStore.form.status"
-              :options="appointmentStatusOptions"
-              :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
-              @update:model-value="formStore.updateField('status', $event)"
-            />
-            <SchedulingSelectField
-              :model-value="formStore.form.appointmentType"
-              :options="appointmentTypeOptions"
-              :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.APPOINTMENT_TYPE')"
-              @update:model-value="
-                formStore.updateField('appointmentType', $event)
-              "
-            />
-            <SchedulingDateTimeField
-              v-model="formStore.form.startsAt"
-              type="datetime"
-              :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
-              :message="
-                formStore.validationErrors.startsAt
-                  ? validationErrorMessage(formStore.validationErrors.startsAt)
-                  : ''
-              "
-              :message-type="
-                formStore.validationErrors.startsAt ? 'error' : 'info'
-              "
-            />
-            <SchedulingDateTimeField
-              v-model="formStore.form.endsAt"
-              type="datetime"
-              :label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
-              :message="
-                formStore.validationErrors.endsAt
-                  ? validationErrorMessage(formStore.validationErrors.endsAt)
-                  : ''
-              "
-              :message-type="
-                formStore.validationErrors.endsAt ? 'error' : 'info'
-              "
-            />
-            <SchedulingMoneyInput
-              v-model="formStore.form.serviceAmount"
-              min="0"
-              :label="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')"
-            />
+            <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
+              <SchedulingSelectField
+                :model-value="formStore.form.status"
+                :options="appointmentStatusOptions"
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
+                :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.STATUS')"
+                @update:model-value="formStore.updateField('status', $event)"
+              />
+              <SchedulingMoneyInput
+                v-model="formStore.form.serviceAmount"
+                min="0"
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')"
+              />
+              <SchedulingMoneyInput
+                v-model="formStore.form.prepaidAmount"
+                min="0"
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT')"
+                :message="
+                  formStore.validationErrors.prepaidAmount
+                    ? validationErrorMessage(
+                        formStore.validationErrors.prepaidAmount
+                      )
+                    : ''
+                "
+                :message-type="
+                  formStore.validationErrors.prepaidAmount ? 'error' : 'info'
+                "
+              />
+            </div>
+            <div class="grid gap-4 md:col-span-2 md:grid-cols-2">
+              <SchedulingDateTimeField
+                v-model="formStore.form.startsAt"
+                type="datetime"
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
+                :message="
+                  formStore.validationErrors.startsAt
+                    ? validationErrorMessage(
+                        formStore.validationErrors.startsAt
+                      )
+                    : ''
+                "
+                :message-type="
+                  formStore.validationErrors.startsAt ? 'error' : 'info'
+                "
+              />
+              <SchedulingDateTimeField
+                v-model="formStore.form.endsAt"
+                type="datetime"
+                :label="$t('SCHEDULING.APPOINTMENT_FORM.ENDS_AT')"
+                :message="
+                  formStore.validationErrors.endsAt
+                    ? validationErrorMessage(formStore.validationErrors.endsAt)
+                    : ''
+                "
+                :message-type="
+                  formStore.validationErrors.endsAt ? 'error' : 'info'
+                "
+              />
+            </div>
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup>
+        <SchedulingFormFieldGroup :framed="false">
           <TextArea
             v-model="formStore.form.clientComment"
             auto-height

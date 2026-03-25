@@ -34,10 +34,12 @@ class Scheduling::Appointments::UpsertService
 
     service_snapshot = resolve_service_snapshot(resource: resource, service: service)
     service_amount = resolve_service_amount(
+      resource: resource,
       service: service,
       resolved_price: service_snapshot[:resolved_price]
     )
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
+    prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
 
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
@@ -74,7 +76,7 @@ class Scheduling::Appointments::UpsertService
       compensation_value_snapshot: service_snapshot[:compensation_value_snapshot],
       compensation_percent_snapshot: service_snapshot[:compensation_percent_snapshot],
       prepaid_amount: prepaid_amount,
-      prepaid_payment_method: resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method),
+      prepaid_payment_method: prepaid_payment_method,
       settlement_amount: settlement_amount,
       settlement_payment_method: resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method),
       payment_status: derive_payment_status(
@@ -85,6 +87,14 @@ class Scheduling::Appointments::UpsertService
       ),
       custom_attributes: resolve_custom_attributes
     )
+  end
+
+  def resolve_prepaid_payment_method(prepaid_amount)
+    return nil if prepaid_amount.to_i <= 0
+
+    resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method) ||
+      resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method) ||
+      'cash'
   end
 
   def availability_service
@@ -226,12 +236,14 @@ class Scheduling::Appointments::UpsertService
     raise ActiveRecord::RecordNotFound, 'resource not found'
   end
 
-  def resolve_service_amount(service:, resolved_price:)
+  def resolve_service_amount(resource:, service:, resolved_price:)
     return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
     return 0 if service.blank?
-    return resolved_price if resolved_price.present? && pricing_link_changed?
+    pricing_changed = pricing_link_changed?(resource: resource, service: service)
+    return resolved_price if resolved_price.present? && pricing_changed
 
     current_amount = appointment.service_amount.to_i
+    return current_amount if appointment.persisted? && !pricing_changed
     return current_amount if current_amount.positive?
     return resolved_price if resolved_price.present?
 
@@ -303,8 +315,11 @@ class Scheduling::Appointments::UpsertService
     text
   end
 
-  def pricing_link_changed?
-    appointment.new_record? || params.key?(:resource_id) || params.key?(:service_id)
+  def pricing_link_changed?(resource:, service:)
+    return true if appointment.new_record?
+
+    appointment.resource_id != resource.id ||
+      appointment.service_id != service&.id
   end
 
   def keep_current_resource?(resource_id)

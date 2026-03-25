@@ -69,8 +69,9 @@ body {
     --channel-icon-telegram: 34 158 217;
     --channel-icon-line: 6 199 85;
     --channel-icon-instagram: 228 64 95;
-    --channel-icon-tiktok: 254 44 85;
+    --channel-icon-tiktok: 0 0 0;
     --channel-icon-voice: 249 115 22;
+    --channel-icon-twilio: 242 47 70;
   }
 }
 
@@ -153,6 +154,10 @@ body {
   .i-ri-tiktok-line,
   .brand-tiktok-outline {
     color: rgb(var(--channel-icon-tiktok)) !important;
+  }
+
+  .i-woot-twilio {
+    color: rgb(var(--channel-icon-twilio)) !important;
   }
 
   .channel-icon-voice {

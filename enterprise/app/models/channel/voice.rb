@@ -21,8 +21,10 @@ class Channel::Voice < ApplicationRecord
 
   self.table_name = 'channel_voice'
 
+  PROVIDERS = %w[twilio fonoster].freeze
+
   validates :phone_number, presence: true, uniqueness: true
-  validates :provider, presence: true
+  validates :provider, presence: true, inclusion: { in: PROVIDERS }
   validates :provider_config, presence: true
 
   # Validate phone number format (E.164 format)
@@ -31,6 +33,7 @@ class Channel::Voice < ApplicationRecord
   # Provider-specific configs stored in JSON
   validate :validate_provider_config
   before_validation :provision_twilio_on_create, on: :create, if: :twilio?
+  after_commit :sync_fonoster_binding, on: %i[create update], if: :fonoster?
 
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
 
@@ -46,6 +49,12 @@ class Channel::Voice < ApplicationRecord
     case provider
     when 'twilio'
       Voice::Provider::Twilio::Adapter.new(self).initiate_call(
+        to: to,
+        conference_sid: conference_sid,
+        agent_id: agent_id
+      )
+    when 'fonoster'
+      Voice::Provider::Fonoster::Adapter.new(self).initiate_call(
         to: to,
         conference_sid: conference_sid,
         agent_id: agent_id
@@ -72,12 +81,18 @@ class Channel::Voice < ApplicationRecord
     provider == 'twilio'
   end
 
+  def fonoster?
+    provider == 'fonoster'
+  end
+
   def validate_provider_config
     return if provider_config.blank?
 
     case provider
     when 'twilio'
       validate_twilio_config
+    when 'fonoster'
+      validate_fonoster_config
     end
   end
 
@@ -87,6 +102,26 @@ class Channel::Voice < ApplicationRecord
     required_keys = %w[account_sid auth_token api_key_sid api_key_secret twiml_app_sid]
     required_keys.each do |key|
       errors.add(:provider_config, "#{key} is required for Twilio provider") if config[key].blank?
+    end
+  end
+
+  def validate_fonoster_config
+    config = provider_config.with_indifferent_access
+    routing_mode = config[:routing_mode].to_s.presence || 'operator'
+
+    errors.add(:provider_config, 'number_ref is required for Fonoster provider') if config[:number_ref].blank? && config[:fonoster_number_ref].blank?
+    errors.add(:provider_config, 'routing_mode must be one of operator, app, ai, reject') unless routing_mode.in?(%w[operator app ai reject])
+
+    if routing_mode == 'ai' && config[:ai_app_ref].blank?
+      errors.add(:provider_config, 'ai_app_ref is required when routing_mode is ai')
+    end
+
+    if routing_mode == 'app' && config[:app_ref].blank?
+      errors.add(:provider_config, 'app_ref is required when routing_mode is app')
+    end
+
+    if routing_mode == 'operator' && config[:operator_agent_aor].blank?
+      errors.add(:provider_config, 'operator_agent_aor is required when routing_mode is operator')
     end
   end
 
@@ -116,6 +151,13 @@ class Channel::Voice < ApplicationRecord
     }
     Rails.logger.error("TWILIO_VOICE_SETUP_ON_CREATE_ERROR: #{error_details}")
     errors.add(:base, "Twilio setup failed: #{e.message}")
+  end
+
+  def sync_fonoster_binding
+    Telephony::NumberBinding.sync_from_voice_channel!(self)
+  rescue StandardError => e
+    Rails.logger.error("FONOSTER_VOICE_BINDING_SYNC_ERROR channel_id=#{id} account_id=#{account_id} message=#{e.message}")
+    raise
   end
 
   public :provider_config_hash

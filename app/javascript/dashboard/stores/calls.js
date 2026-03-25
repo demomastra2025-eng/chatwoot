@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia';
-import TwilioVoiceClient from 'dashboard/api/channel/voice/twilioVoiceClient';
+import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
+
+const buildCallState = (callData, existingCall = null) => ({
+  ...(existingCall || {}),
+  ...(callData || {}),
+  isActive: existingCall?.isActive || false,
+  browserJoinSupported:
+    callData?.browserJoinSupported ??
+    existingCall?.browserJoinSupported ??
+    null,
+});
 
 export const useCallsStore = defineStore('calls', {
   state: () => ({
@@ -23,19 +33,39 @@ export const useCallsStore = defineStore('calls', {
 
     addCall(callData) {
       if (!callData?.callSid) return;
-      const exists = this.calls.some(call => call.callSid === callData.callSid);
-      if (exists) return;
 
-      this.calls.push({
-        ...callData,
-        isActive: false,
-      });
+      const existingCall = this.calls.find(
+        call => call.callSid === callData.callSid
+      );
+
+      if (existingCall) {
+        this.calls = this.calls.map(call =>
+          call.callSid === callData.callSid
+            ? buildCallState(callData, call)
+            : call
+        );
+        return;
+      }
+
+      this.calls.push(buildCallState(callData));
+    },
+
+    markBrowserJoinUnsupported(callSid, provider) {
+      this.calls = this.calls.map(call =>
+        call.callSid === callSid
+          ? {
+              ...call,
+              browserJoinSupported: false,
+              provider: provider || call.provider,
+            }
+          : call
+      );
     },
 
     removeCall(callSid) {
       const callToRemove = this.calls.find(c => c.callSid === callSid);
       if (callToRemove?.isActive) {
-        TwilioVoiceClient.endClientCall();
+        WebphoneClient.endClientCall();
       }
       this.calls = this.calls.filter(c => c.callSid !== callSid);
     },
@@ -48,7 +78,7 @@ export const useCallsStore = defineStore('calls', {
     },
 
     clearActiveCall() {
-      TwilioVoiceClient.endClientCall();
+      WebphoneClient.endClientCall();
       this.calls = this.calls.filter(call => !call.isActive);
     },
 

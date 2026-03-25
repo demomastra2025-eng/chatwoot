@@ -2,16 +2,24 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   before_action :set_voice_inbox_for_conference
 
   def token
-    render json: Voice::Provider::Twilio::TokenService.new(
-      inbox: @voice_inbox,
-      user: Current.user,
-      account: Current.account
-    ).generate
+    if @voice_inbox.channel.provider == 'fonoster'
+      render json: Telephony::WebphoneService.new(
+        account: Current.account
+      ).token_for(user: Current.user, inbox: @voice_inbox)
+    else
+      render json: Voice::Provider::Twilio::TokenService.new(
+        inbox: @voice_inbox,
+        user: Current.user,
+        account: Current.account
+      ).generate
+    end
   end
 
   def create
     conversation = fetch_conversation_by_display_id
     ensure_call_sid!(conversation)
+
+    return render_fonoster_join_response(conversation) if @voice_inbox.channel.provider == 'fonoster'
 
     conference_service = Voice::Provider::Twilio::ConferenceService.new(conversation: conversation)
     conference_sid = conference_service.ensure_conference_sid
@@ -26,6 +34,8 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
   end
 
   def destroy
+    return render json: { status: 'success', id: params[:conversation_id], provider: 'fonoster' } if @voice_inbox.channel.provider == 'fonoster'
+
     conversation = fetch_conversation_by_display_id
     Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference
     render json: { status: 'success', id: conversation.display_id }
@@ -54,5 +64,16 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     conversation = @voice_inbox.conversations.find_by!(display_id: cid)
     authorize conversation, :show?
     conversation
+  end
+
+  def render_fonoster_join_response(conversation)
+    render json: {
+      status: 'success',
+      id: conversation.display_id,
+      call_ref: conversation.identifier,
+      provider: 'fonoster',
+      using_webrtc: false,
+      join_supported: false
+    }
   end
 end

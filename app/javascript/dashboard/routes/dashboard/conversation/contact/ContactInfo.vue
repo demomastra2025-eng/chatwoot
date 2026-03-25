@@ -1,6 +1,12 @@
 <script>
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import {
+  CRM_DEAL_MANAGE_PERMISSION,
+  CRM_TASK_MANAGE_PERMISSION,
+} from 'dashboard/constants/permissions';
+import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import ContactInfoRow from './ContactInfoRow.vue';
@@ -55,9 +61,44 @@ export default {
     };
   },
   computed: {
-    ...mapGetters({ uiFlags: 'contacts/getUIFlags' }),
+    ...mapGetters({
+      currentAccountId: 'getCurrentAccountId',
+      currentUser: 'getCurrentUser',
+      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
+      uiFlags: 'contacts/getUIFlags',
+    }),
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
+    },
+    currentAccountPermissions() {
+      const currentAccount = this.currentUser.accounts.find(
+        account => Number(account.id) === Number(this.currentAccountId)
+      );
+      return currentAccount?.permissions || [];
+    },
+    canCreateCrmDeal() {
+      return (
+        this.isFeatureEnabledonAccount(
+          this.currentAccountId,
+          FEATURE_FLAGS.CRM_DEALS
+        ) &&
+        hasPermissions(
+          ['administrator', CRM_DEAL_MANAGE_PERMISSION],
+          this.currentAccountPermissions
+        )
+      );
+    },
+    canCreateCrmTask() {
+      return (
+        this.isFeatureEnabledonAccount(
+          this.currentAccountId,
+          FEATURE_FLAGS.CRM_TASKS
+        ) &&
+        hasPermissions(
+          ['administrator', CRM_TASK_MANAGE_PERMISSION],
+          this.currentAccountPermissions
+        )
+      );
     },
     additionalAttributes() {
       return this.contact.additional_attributes || {};
@@ -168,6 +209,28 @@ export default {
     },
     openMergeModal() {
       this.$refs.mergeModal?.open();
+    },
+    openCrmRoute(name, query) {
+      this.$router.push({
+        name,
+        params: { accountId: this.currentAccountId },
+        query,
+      });
+    },
+    onCreateDeal() {
+      this.openCrmRoute('crm_deals_index', {
+        action: 'new',
+        contactId: this.contact.id,
+        contactName: this.contact.name || undefined,
+        source: 'contact',
+      });
+    },
+    onCreateTask() {
+      this.openCrmRoute('crm_tasks_index', {
+        action: 'new',
+        contactName: this.contact.name || undefined,
+        source: 'contact',
+      });
     },
   },
 };
@@ -284,6 +347,24 @@ export default {
           :tooltip-label="$t('CONTACT_PANEL.CALL')"
           slate
           faded
+        />
+        <NextButton
+          v-if="canCreateCrmDeal"
+          v-tooltip.top-end="$t('CRM.DEALS.NEW_DEAL')"
+          icon="i-lucide-briefcase-business"
+          slate
+          faded
+          sm
+          @click="onCreateDeal"
+        />
+        <NextButton
+          v-if="canCreateCrmTask"
+          v-tooltip.top-end="$t('CRM.TASKS.NEW_TASK')"
+          icon="i-lucide-list-checks"
+          slate
+          faded
+          sm
+          @click="onCreateTask"
         />
         <NextButton
           v-tooltip.top-end="$t('EDIT_CONTACT.BUTTON_LABEL')"

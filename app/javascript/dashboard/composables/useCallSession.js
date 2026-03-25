@@ -1,6 +1,6 @@
 import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
-import TwilioVoiceClient from 'dashboard/api/channel/voice/twilioVoiceClient';
+import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import Timer from 'dashboard/helper/Timer';
 
@@ -15,6 +15,7 @@ export function useCallSession() {
   const activeCall = computed(() => callsStore.activeCall);
   const incomingCalls = computed(() => callsStore.incomingCalls);
   const hasActiveCall = computed(() => callsStore.hasActiveCall);
+  const handleClientDisconnect = () => callsStore.clearActiveCall();
 
   watch(
     hasActiveCall,
@@ -30,21 +31,23 @@ export function useCallSession() {
   );
 
   onMounted(() => {
-    TwilioVoiceClient.addEventListener('call:disconnected', () =>
-      callsStore.clearActiveCall()
+    WebphoneClient.addEventListener(
+      'call:disconnected',
+      handleClientDisconnect
     );
   });
 
   onUnmounted(() => {
     durationTimer.stop();
-    TwilioVoiceClient.removeEventListener('call:disconnected', () =>
-      callsStore.clearActiveCall()
+    WebphoneClient.removeEventListener(
+      'call:disconnected',
+      handleClientDisconnect
     );
   });
 
   const endCall = async ({ conversationId, inboxId }) => {
     await VoiceAPI.leaveConference(inboxId, conversationId);
-    TwilioVoiceClient.endClientCall();
+    WebphoneClient.endClientCall();
     durationTimer.stop();
     callsStore.clearActiveCall();
   };
@@ -54,8 +57,19 @@ export function useCallSession() {
 
     isJoining.value = true;
     try {
-      const device = await TwilioVoiceClient.initializeDevice(inboxId);
-      if (!device) return null;
+      const webphoneSession = await WebphoneClient.initializeDevice(inboxId);
+      if (!webphoneSession) return null;
+
+      if (!webphoneSession.callingSupported) {
+        callsStore.markBrowserJoinUnsupported(
+          callSid,
+          webphoneSession.provider
+        );
+        return {
+          provider: webphoneSession.provider,
+          joinSupported: false,
+        };
+      }
 
       const joinResponse = await VoiceAPI.joinConference({
         conversationId,
@@ -63,15 +77,33 @@ export function useCallSession() {
         callSid,
       });
 
-      await TwilioVoiceClient.joinClientCall({
-        to: joinResponse?.conference_sid,
+      const joinSupported = joinResponse?.join_supported !== false;
+
+      if (!joinSupported) {
+        callsStore.markBrowserJoinUnsupported(
+          callSid,
+          joinResponse?.provider || webphoneSession.provider
+        );
+        return {
+          provider: joinResponse?.provider || webphoneSession.provider,
+          joinSupported: false,
+        };
+      }
+
+      await WebphoneClient.joinClientCall({
+        to: joinResponse?.conference_sid || joinResponse?.call_ref,
         conversationId,
+        callRef: joinResponse?.call_ref || callSid,
       });
 
       callsStore.setCallActive(callSid);
       durationTimer.start();
 
-      return { conferenceSid: joinResponse?.conference_sid };
+      return {
+        provider: joinResponse?.provider || webphoneSession.provider,
+        conferenceSid: joinResponse?.conference_sid,
+        joinSupported: true,
+      };
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to join call:', error);
@@ -82,7 +114,7 @@ export function useCallSession() {
   };
 
   const rejectIncomingCall = callSid => {
-    TwilioVoiceClient.endClientCall();
+    WebphoneClient.endClientCall();
     callsStore.dismissCall(callSid);
   };
 

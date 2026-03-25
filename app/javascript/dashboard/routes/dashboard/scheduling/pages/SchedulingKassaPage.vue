@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
@@ -12,6 +13,7 @@ import SchedulingEmptyState from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
+import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/SchedulingMultiSelectFilter.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingResourceFilter from 'dashboard/components-next/Scheduling/SchedulingResourceFilter.vue';
@@ -49,6 +51,8 @@ const formatDateTimeLabel = value => {
 };
 
 const paymentDrawerOpen = ref(false);
+const paymentDrawerAppointmentId = ref(null);
+const cancelActionAppointmentId = ref(null);
 const paymentForm = reactive({
   amount: '',
   appointmentId: '',
@@ -58,6 +62,14 @@ const paymentForm = reactive({
 const tabOptions = computed(() => [
   { label: t('SCHEDULING.KASSA.INCOME_TAB'), value: 'income' },
   { label: t('SCHEDULING.KASSA.EXPENSES_TAB'), value: 'expenses' },
+]);
+const incomeSection = ref('appointments');
+const incomeSectionTabOptions = computed(() => [
+  {
+    label: t('SCHEDULING.KASSA.APPOINTMENTS_TAB'),
+    value: 'appointments',
+  },
+  { label: t('SCHEDULING.KASSA.JOURNAL_TAB'), value: 'journal' },
 ]);
 
 const paymentMethodLabels = computed(() => ({
@@ -75,23 +87,17 @@ const paymentKindLabels = computed(() => ({
   prepaid: t('SCHEDULING.KASSA.PAYMENT_KINDS.prepaid'),
 }));
 
+const paymentStatusLabels = computed(() => ({
+  awaiting_payment: t('SCHEDULING.PAYMENT_STATUS.awaiting_payment'),
+  cancelled: t('SCHEDULING.PAYMENT_STATUS.cancelled'),
+  paid: t('SCHEDULING.PAYMENT_STATUS.paid'),
+  prepaid: t('SCHEDULING.PAYMENT_STATUS.prepaid'),
+}));
+
 const expenseStatusLabels = computed(() => ({
   paid: t('SCHEDULING.KASSA.EXPENSE_STATUS.paid'),
   unpaid: t('SCHEDULING.KASSA.EXPENSE_STATUS.unpaid'),
 }));
-
-const appointmentOptions = computed(() =>
-  kassaStore.appointmentCandidates.map(appointment => ({
-    label: [
-      appointment.clientName || `#${appointment.id}`,
-      appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE'),
-      formatDateTimeLabel(appointment.startsAt),
-    ]
-      .filter(Boolean)
-      .join(' · '),
-    value: appointment.id,
-  }))
-);
 
 const paymentMethodOptions = computed(() =>
   PAYMENT_METHOD_VALUES.map(value => ({
@@ -123,11 +129,53 @@ const pageErrorDescription = computed(() =>
 const paymentKindLabel = kind => paymentKindLabels.value[kind] || kind;
 const paymentMethodLabel = method =>
   paymentMethodLabels.value[method] || method;
+const paymentStatusLabel = status =>
+  paymentStatusLabels.value[status] || status || '—';
 const expenseStatusLabel = status =>
   expenseStatusLabels.value[status] || status;
 
 const paymentRows = computed(() => kassaStore.decoratedPayments);
 const expenseRows = computed(() => kassaStore.decoratedExpenses);
+const incomeAppointments = computed(() => {
+  return [...kassaStore.appointmentCandidates]
+    .sort((left, right) => new Date(left.startsAt) - new Date(right.startsAt))
+    .map(appointment => {
+      const paymentsJournal = [...(appointment.payments || [])].sort(
+        (left, right) => new Date(right.createdAt) - new Date(left.createdAt)
+      );
+      const receivedAmount =
+        appointment.paymentStatus === 'cancelled'
+          ? 0
+          : Number(appointment.prepaidAmount || 0) +
+            Number(appointment.settlementAmount || 0);
+
+      return {
+        ...appointment,
+        paymentTotal: paymentsJournal.reduce((sum, payment) => {
+          return sum + Number(payment.amount || 0);
+        }, 0),
+        paymentsJournal,
+        receivedAmount,
+        remainingAmount: Math.max(
+          Number(appointment.serviceAmount || 0) - receivedAmount,
+          0
+        ),
+      };
+    })
+    .filter(appointment => appointment.remainingAmount > 0);
+});
+const appointmentOptions = computed(() =>
+  incomeAppointments.value.map(appointment => ({
+    label: [
+      appointment.clientName || `#${appointment.id}`,
+      appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE'),
+      formatDateTimeLabel(appointment.startsAt),
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    value: appointment.id,
+  }))
+);
 
 const paymentColumns = computed(() => [
   {
@@ -188,6 +236,9 @@ const totals = computed(() => ({
 const activeTabIndex = computed(() =>
   kassaStore.activeTab === 'income' ? 0 : 1
 );
+const activeIncomeSectionIndex = computed(() =>
+  incomeSection.value === 'appointments' ? 0 : 1
+);
 
 const unpaidExpenseCount = computed(
   () => expenseRows.value.filter(item => item.status !== 'paid').length
@@ -208,6 +259,22 @@ const resourceName = resourceId => {
   );
 };
 
+const paymentStatusBadgeClass = status => {
+  if (status === 'paid') {
+    return 'bg-n-teal-9/10 text-n-teal-11';
+  }
+
+  if (status === 'prepaid') {
+    return 'bg-n-brand/10 text-n-brand';
+  }
+
+  if (status === 'cancelled') {
+    return 'bg-n-ruby-9/10 text-n-ruby-11';
+  }
+
+  return 'bg-n-amber-9/10 text-n-amber-11';
+};
+
 const appointmentLabel = appointment => {
   if (!appointment) return '—';
 
@@ -220,6 +287,52 @@ const appointmentLabel = appointment => {
 };
 
 const formatDateTime = value => formatDateTimeLabel(value);
+
+const defaultPaymentMethodForAppointment = appointment => {
+  return (
+    appointment?.settlementPaymentMethod ||
+    appointment?.prepaidPaymentMethod ||
+    'cash'
+  );
+};
+
+const selectedPaymentAppointment = computed(() => {
+  return (
+    kassaStore.appointmentCandidates.find(appointment => {
+      return Number(appointment.id) === Number(paymentForm.appointmentId);
+    }) || null
+  );
+});
+
+const selectedPaymentAppointmentDetails = computed(() => {
+  return (
+    incomeAppointments.value.find(appointment => {
+      return Number(appointment.id) === Number(paymentForm.appointmentId);
+    }) || null
+  );
+});
+
+const lockedPaymentAppointment = computed(() => {
+  return (
+    Number(paymentDrawerAppointmentId.value) > 0 &&
+    Number(selectedPaymentAppointment.value?.id) ===
+      Number(paymentDrawerAppointmentId.value)
+  );
+});
+
+const applyAppointmentToPaymentForm = appointment => {
+  if (!appointment) {
+    paymentForm.appointmentId = '';
+    paymentForm.amount = '';
+    paymentForm.paymentMethod = 'cash';
+    return;
+  }
+
+  paymentForm.appointmentId = appointment.id;
+  paymentForm.amount =
+    appointment.remainingAmount > 0 ? String(appointment.remainingAmount) : '';
+  paymentForm.paymentMethod = defaultPaymentMethodForAppointment(appointment);
+};
 
 const resetPaymentForm = () => {
   Object.assign(paymentForm, {
@@ -238,30 +351,46 @@ const loadPage = async () => {
 
 const openPaymentDrawer = () => {
   resetPaymentForm();
+  paymentDrawerAppointmentId.value = null;
+  paymentDrawerOpen.value = true;
+};
+
+const openAppointmentPaymentDrawer = appointment => {
+  resetPaymentForm();
+  paymentDrawerAppointmentId.value = appointment.id;
+  applyAppointmentToPaymentForm(appointment);
   paymentDrawerOpen.value = true;
 };
 
 const closePaymentDrawer = () => {
   paymentDrawerOpen.value = false;
+  paymentDrawerAppointmentId.value = null;
   resetPaymentForm();
 };
 
-const toggleFilterValue = async (field, value) => {
-  const current = kassaStore.filters[field];
-  const nextValues = current.includes(value)
-    ? current.filter(item => item !== value)
-    : [...current, value];
+const handlePaymentAppointmentChange = appointmentId => {
+  paymentForm.appointmentId = appointmentId;
 
-  kassaStore.updateFilters({ [field]: nextValues });
-  await kassaStore.loadAll();
+  const appointment = incomeAppointments.value.find(item => {
+    return Number(item.id) === Number(appointmentId);
+  });
+
+  if (!appointment) return;
+
+  applyAppointmentToPaymentForm(appointment);
 };
 
-const handleApplyFilters = async () => {
+const reloadWithCurrentFilters = useDebounceFn(async () => {
   try {
     await kassaStore.loadAll();
   } catch (error) {
     useAlert(formatErrorMessage(error));
   }
+}, 150);
+
+const handleFilterUpdate = patch => {
+  kassaStore.updateFilters(patch);
+  reloadWithCurrentFilters();
 };
 
 const handleAddPayment = async () => {
@@ -279,11 +408,15 @@ const handleAddPayment = async () => {
 };
 
 const handleCancelPayments = async appointmentId => {
+  cancelActionAppointmentId.value = appointmentId;
+
   try {
     await kassaStore.cancelPayments(appointmentId);
     useAlert(t('SCHEDULING.KASSA.SUCCESS_CANCEL'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
+  } finally {
+    cancelActionAppointmentId.value = null;
   }
 };
 
@@ -321,14 +454,6 @@ onMounted(async () => {
           :label="$t('SCHEDULING.KASSA.ADD_PAYMENT')"
           @click="openPaymentDrawer"
         />
-        <Button
-          v-else
-          size="sm"
-          color="teal"
-          :disabled="!unpaidExpenseCount"
-          :label="$t('SCHEDULING.KASSA.PAY_ALL')"
-          @click="handlePayAll"
-        />
       </template>
     </SchedulingPageHeader>
 
@@ -345,8 +470,46 @@ onMounted(async () => {
       />
 
       <template v-else>
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="rounded-2xl bg-n-alpha-black2 px-5 py-4">
+            <p class="mb-1 text-base font-semibold text-n-slate-12">
+              {{ $t('SCHEDULING.KASSA.TOTAL_INCOME') }}
+            </p>
+            <p class="mb-3 text-xs text-n-slate-11">
+              {{ $t('SCHEDULING.KASSA.TOTAL_INCOME_DESCRIPTION') }}
+            </p>
+            <p class="mb-0 text-2xl font-semibold text-n-slate-12">
+              {{ formatCurrency(totals.totalIncome) }}
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-n-alpha-black2 px-5 py-4">
+            <p class="mb-1 text-base font-semibold text-n-slate-12">
+              {{ $t('SCHEDULING.KASSA.TOTAL_UNPAID') }}
+            </p>
+            <p class="mb-3 text-xs text-n-slate-11">
+              {{ $t('SCHEDULING.KASSA.TOTAL_UNPAID_DESCRIPTION') }}
+            </p>
+            <p class="mb-0 text-2xl font-semibold text-n-ruby-11">
+              {{ formatCurrency(totals.unpaidExpenses) }}
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-n-alpha-black2 px-5 py-4">
+            <p class="mb-1 text-base font-semibold text-n-slate-12">
+              {{ $t('SCHEDULING.KASSA.TOTAL_PAID') }}
+            </p>
+            <p class="mb-3 text-xs text-n-slate-11">
+              {{ $t('SCHEDULING.KASSA.TOTAL_PAID_DESCRIPTION') }}
+            </p>
+            <p class="mb-0 text-2xl font-semibold text-n-teal-11">
+              {{ formatCurrency(totals.paidExpenses) }}
+            </p>
+          </div>
+        </div>
+
         <SchedulingSectionCard>
-          <div class="flex flex-col gap-5">
+          <div class="flex flex-col gap-4">
             <TabBar
               active-text-class="text-n-slate-12 scale-100"
               :tabs="tabOptions"
@@ -354,187 +517,309 @@ onMounted(async () => {
               @tab-changed="kassaStore.setActiveTab($event.value)"
             />
 
-            <div
-              class="grid gap-4 xl:grid-cols-[180px_180px_minmax(0,280px)_auto]"
-            >
-              <SchedulingDateTimeField
-                v-model="kassaStore.filters.from"
-                type="date"
-                :label="$t('SCHEDULING.KASSA.FROM')"
-              />
-              <SchedulingDateTimeField
-                v-model="kassaStore.filters.to"
-                type="date"
-                :label="$t('SCHEDULING.KASSA.TO')"
-              />
-              <div class="flex flex-col gap-1">
-                <span class="text-sm font-medium text-n-slate-12">
-                  {{ $t('SCHEDULING.TOOLBAR.RESOURCES') }}
-                </span>
-                <SchedulingResourceFilter
-                  :resources="referencesStore.resources"
-                  :model-value="kassaStore.filters.resourceIds"
-                  @update:model-value="
-                    kassaStore.updateFilters({ resourceIds: $event })
-                  "
-                />
-              </div>
-              <div class="flex items-end">
-                <Button
-                  size="sm"
-                  color="slate"
-                  variant="faded"
-                  :label="$t('SCHEDULING.KASSA.APPLY_FILTERS')"
-                  @click="handleApplyFilters"
-                />
-              </div>
-            </div>
-
-            <div
-              v-if="kassaStore.activeTab === 'income'"
-              class="flex flex-col gap-4"
-            >
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-xs font-semibold uppercase text-n-slate-10">
-                  {{ $t('SCHEDULING.KASSA.PAYMENT_KIND') }}
-                </span>
-                <Button
-                  size="sm"
-                  variant="faded"
-                  color="slate"
-                  :label="$t('SCHEDULING.GENERAL.CLEAR')"
-                  :disabled="!kassaStore.filters.paymentKinds.length"
-                  @click="
-                    kassaStore.updateFilters({ paymentKinds: [] });
-                    handleApplyFilters();
-                  "
-                />
-                <Button
-                  v-for="option in paymentKindOptions"
-                  :key="option.value"
-                  size="sm"
-                  :variant="
-                    kassaStore.filters.paymentKinds.includes(option.value)
-                      ? 'solid'
-                      : 'faded'
-                  "
-                  :color="
-                    kassaStore.filters.paymentKinds.includes(option.value)
-                      ? 'blue'
-                      : 'slate'
-                  "
-                  :label="option.label"
-                  @click="toggleFilterValue('paymentKinds', option.value)"
+            <div class="flex flex-wrap items-end justify-start gap-3">
+              <div class="w-[170px] max-w-full flex-none">
+                <SchedulingDateTimeField
+                  :model-value="kassaStore.filters.from"
+                  type="date"
+                  :label="$t('SCHEDULING.KASSA.FROM')"
+                  @update:model-value="handleFilterUpdate({ from: $event })"
                 />
               </div>
 
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-xs font-semibold uppercase text-n-slate-10">
-                  {{ $t('SCHEDULING.KASSA.PAYMENT_METHOD') }}
-                </span>
-                <Button
-                  size="sm"
-                  variant="faded"
-                  color="slate"
-                  :label="$t('SCHEDULING.GENERAL.CLEAR')"
-                  :disabled="!kassaStore.filters.paymentMethods.length"
-                  @click="
-                    kassaStore.updateFilters({ paymentMethods: [] });
-                    handleApplyFilters();
-                  "
-                />
-                <Button
-                  v-for="option in paymentMethodOptions"
-                  :key="option.value"
-                  size="sm"
-                  :variant="
-                    kassaStore.filters.paymentMethods.includes(option.value)
-                      ? 'solid'
-                      : 'faded'
-                  "
-                  :color="
-                    kassaStore.filters.paymentMethods.includes(option.value)
-                      ? 'blue'
-                      : 'slate'
-                  "
-                  :label="option.label"
-                  @click="toggleFilterValue('paymentMethods', option.value)"
+              <div class="w-[170px] max-w-full flex-none">
+                <SchedulingDateTimeField
+                  :model-value="kassaStore.filters.to"
+                  type="date"
+                  :label="$t('SCHEDULING.KASSA.TO')"
+                  @update:model-value="handleFilterUpdate({ to: $event })"
                 />
               </div>
-            </div>
 
-            <div v-else class="flex flex-wrap items-center gap-2">
-              <span class="text-xs font-semibold uppercase text-n-slate-10">
-                {{ $t('SCHEDULING.GENERAL.STATUS') }}
-              </span>
-              <Button
-                size="sm"
-                variant="faded"
-                color="slate"
-                :label="$t('SCHEDULING.GENERAL.CLEAR')"
-                :disabled="!kassaStore.filters.status.length"
-                @click="
-                  kassaStore.updateFilters({ status: [] });
-                  handleApplyFilters();
-                "
-              />
-              <Button
-                v-for="option in expenseStatusOptions"
-                :key="option.value"
-                size="sm"
-                :variant="
-                  kassaStore.filters.status.includes(option.value)
-                    ? 'solid'
-                    : 'faded'
-                "
-                :color="
-                  kassaStore.filters.status.includes(option.value)
-                    ? 'blue'
-                    : 'slate'
-                "
-                :label="option.label"
-                @click="toggleFilterValue('status', option.value)"
-              />
+              <div class="w-fit max-w-[240px] min-w-[180px] flex-none">
+                <div class="flex flex-col gap-1">
+                  <span class="text-sm font-medium text-n-slate-12">
+                    {{ $t('SCHEDULING.TOOLBAR.RESOURCES') }}
+                  </span>
+                  <SchedulingResourceFilter
+                    :resources="referencesStore.resources"
+                    :model-value="kassaStore.filters.resourceIds"
+                    @update:model-value="
+                      handleFilterUpdate({ resourceIds: $event })
+                    "
+                  />
+                </div>
+              </div>
+
+              <div
+                v-if="kassaStore.activeTab === 'income'"
+                class="w-fit max-w-[200px] min-w-[160px] flex-none"
+              >
+                <div class="flex flex-col gap-1">
+                  <span class="text-sm font-medium text-n-slate-12">
+                    {{ $t('SCHEDULING.KASSA.PAYMENT_KIND') }}
+                  </span>
+                  <SchedulingMultiSelectFilter
+                    :model-value="kassaStore.filters.paymentKinds"
+                    :options="paymentKindOptions"
+                    :placeholder="$t('SCHEDULING.KASSA.PAYMENT_KIND')"
+                    :show-trigger-icon="false"
+                    @update:model-value="
+                      handleFilterUpdate({ paymentKinds: $event })
+                    "
+                  />
+                </div>
+              </div>
+
+              <div
+                v-if="kassaStore.activeTab === 'income'"
+                class="w-fit max-w-[200px] min-w-[160px] flex-none"
+              >
+                <div class="flex flex-col gap-1">
+                  <span class="text-sm font-medium text-n-slate-12">
+                    {{ $t('SCHEDULING.KASSA.PAYMENT_METHOD') }}
+                  </span>
+                  <SchedulingMultiSelectFilter
+                    :model-value="kassaStore.filters.paymentMethods"
+                    :options="paymentMethodOptions"
+                    :placeholder="$t('SCHEDULING.KASSA.PAYMENT_METHOD')"
+                    :show-trigger-icon="false"
+                    @update:model-value="
+                      handleFilterUpdate({ paymentMethods: $event })
+                    "
+                  />
+                </div>
+              </div>
+
+              <div v-else class="w-fit max-w-[200px] min-w-[160px] flex-none">
+                <div class="flex flex-col gap-1">
+                  <span class="text-sm font-medium text-n-slate-12">
+                    {{ $t('SCHEDULING.GENERAL.STATUS') }}
+                  </span>
+                  <SchedulingMultiSelectFilter
+                    :model-value="kassaStore.filters.status"
+                    :options="expenseStatusOptions"
+                    :placeholder="$t('SCHEDULING.GENERAL.STATUS')"
+                    :show-trigger-icon="false"
+                    @update:model-value="handleFilterUpdate({ status: $event })"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </SchedulingSectionCard>
 
-        <div class="grid gap-4 md:grid-cols-3">
-          <SchedulingSectionCard
-            :title="$t('SCHEDULING.KASSA.TOTAL_INCOME')"
-            :description="$t('SCHEDULING.KASSA.TOTAL_INCOME_DESCRIPTION')"
-          >
-            <p class="mb-0 text-2xl font-semibold text-n-slate-12">
-              {{ formatCurrency(totals.totalIncome) }}
-            </p>
-          </SchedulingSectionCard>
-
-          <SchedulingSectionCard
-            :title="$t('SCHEDULING.KASSA.TOTAL_UNPAID')"
-            :description="$t('SCHEDULING.KASSA.TOTAL_UNPAID_DESCRIPTION')"
-          >
-            <p class="mb-0 text-2xl font-semibold text-n-ruby-11">
-              {{ formatCurrency(totals.unpaidExpenses) }}
-            </p>
-          </SchedulingSectionCard>
-
-          <SchedulingSectionCard
-            :title="$t('SCHEDULING.KASSA.TOTAL_PAID')"
-            :description="$t('SCHEDULING.KASSA.TOTAL_PAID_DESCRIPTION')"
-          >
-            <p class="mb-0 text-2xl font-semibold text-n-teal-11">
-              {{ formatCurrency(totals.paidExpenses) }}
-            </p>
-          </SchedulingSectionCard>
-        </div>
-
         <SchedulingSectionCard
           v-if="kassaStore.activeTab === 'income'"
-          :title="$t('SCHEDULING.KASSA.INCOME_TITLE')"
-          :description="$t('SCHEDULING.KASSA.INCOME_DESCRIPTION')"
+          borderless
+          :title="
+            incomeSection === 'appointments'
+              ? $t('SCHEDULING.KASSA.APPOINTMENTS_TITLE')
+              : $t('SCHEDULING.KASSA.INCOME_TITLE')
+          "
+          :description="
+            incomeSection === 'appointments'
+              ? $t('SCHEDULING.KASSA.APPOINTMENTS_DESCRIPTION')
+              : $t('SCHEDULING.KASSA.INCOME_DESCRIPTION')
+          "
         >
+          <template #headerActions>
+            <TabBar
+              active-text-class="text-n-slate-12 scale-100"
+              :tabs="incomeSectionTabOptions"
+              :initial-active-tab="activeIncomeSectionIndex"
+              @tab-changed="incomeSection = $event.value"
+            />
+          </template>
+
+          <template v-if="incomeSection === 'appointments'">
+            <SchedulingEmptyState
+              v-if="incomeAppointments.length === 0"
+              icon="i-lucide-wallet-cards"
+              :title="$t('SCHEDULING.KASSA.EMPTY_APPOINTMENTS_TITLE')"
+              :description="
+                $t('SCHEDULING.KASSA.EMPTY_APPOINTMENTS_DESCRIPTION')
+              "
+              :action-label="$t('SCHEDULING.KASSA.ADD_PAYMENT')"
+              @action="openPaymentDrawer"
+            />
+
+            <div v-else class="flex flex-col gap-3">
+              <div
+                v-for="appointment in incomeAppointments"
+                :key="appointment.id"
+                class="rounded-2xl bg-n-alpha-black2 px-4 py-4"
+              >
+                <div class="flex flex-col gap-4">
+                  <div
+                    class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between"
+                  >
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span
+                          class="truncate text-base font-semibold text-n-slate-12"
+                        >
+                          {{ appointment.clientName || `#${appointment.id}` }}
+                        </span>
+                        <span
+                          class="rounded-full px-2 py-1 text-[11px] font-medium"
+                          :class="
+                            paymentStatusBadgeClass(appointment.paymentStatus)
+                          "
+                        >
+                          {{ paymentStatusLabel(appointment.paymentStatus) }}
+                        </span>
+                      </div>
+
+                      <div
+                        class="mt-1 flex flex-wrap items-center gap-2 text-sm text-n-slate-11"
+                      >
+                        <span>{{ resourceName(appointment.resourceId) }}</span>
+                        <span
+                          class="inline-block size-1 rounded-full bg-n-slate-8"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          {{
+                            appointment.serviceNameSnapshot ||
+                            $t('SCHEDULING.CALENDAR.NO_SERVICE')
+                          }}
+                        </span>
+                        <span
+                          class="inline-block size-1 rounded-full bg-n-slate-8"
+                          aria-hidden="true"
+                        />
+                        <span>{{ formatDateTime(appointment.startsAt) }}</span>
+                      </div>
+                    </div>
+
+                    <div class="grid gap-2 sm:grid-cols-3 xl:min-w-[420px]">
+                      <div class="rounded-xl bg-n-surface-1/80 px-3 py-2">
+                        <p
+                          class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-n-slate-10"
+                        >
+                          {{ $t('SCHEDULING.KASSA.SERVICE_AMOUNT') }}
+                        </p>
+                        <p class="mb-0 text-sm font-semibold text-n-slate-12">
+                          {{ formatCurrency(appointment.serviceAmount) }}
+                        </p>
+                      </div>
+
+                      <div class="rounded-xl bg-n-teal-9/10 px-3 py-2">
+                        <p
+                          class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-n-teal-11"
+                        >
+                          {{ $t('SCHEDULING.KASSA.RECEIVED_AMOUNT') }}
+                        </p>
+                        <p class="mb-0 text-sm font-semibold text-n-teal-12">
+                          {{ formatCurrency(appointment.receivedAmount) }}
+                        </p>
+                      </div>
+
+                      <div class="rounded-xl bg-n-amber-9/10 px-3 py-2">
+                        <p
+                          class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-n-amber-11"
+                        >
+                          {{ $t('SCHEDULING.KASSA.REMAINING_AMOUNT') }}
+                        </p>
+                        <p class="mb-0 text-sm font-semibold text-n-amber-12">
+                          {{ formatCurrency(appointment.remainingAmount) }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <details
+                    v-if="appointment.paymentsJournal.length"
+                    class="rounded-xl bg-n-surface-1/65 px-3 py-2"
+                  >
+                    <summary
+                      class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden"
+                    >
+                      <div
+                        class="flex min-w-0 items-center gap-2 text-xs text-n-slate-11"
+                      >
+                        <span class="font-medium text-n-slate-12">
+                          {{ $t('SCHEDULING.KASSA.PAYMENT_JOURNAL') }}
+                        </span>
+                        <span>
+                          {{
+                            $t('SCHEDULING.GENERAL.SELECTED_COUNT', {
+                              count: appointment.paymentsJournal.length,
+                            })
+                          }}
+                        </span>
+                        <span
+                          class="inline-block size-1 rounded-full bg-n-slate-8"
+                          aria-hidden="true"
+                        />
+                        <span>{{
+                          formatCurrency(appointment.paymentTotal)
+                        }}</span>
+                      </div>
+                      <span
+                        class="size-4 shrink-0 text-n-slate-10 i-lucide-chevron-down"
+                        aria-hidden="true"
+                      />
+                    </summary>
+
+                    <div class="mt-2 flex flex-col gap-2">
+                      <div
+                        v-for="payment in appointment.paymentsJournal"
+                        :key="payment.id"
+                        class="flex flex-col gap-2 rounded-xl bg-n-surface-1/80 px-3 py-2 text-xs text-n-slate-11 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span
+                            class="rounded-full bg-n-alpha-black2 px-2 py-1 font-medium text-n-slate-12"
+                          >
+                            {{ paymentKindLabel(payment.paymentKind) }}
+                          </span>
+                          <span class="font-semibold text-n-slate-12">
+                            {{ formatCurrency(payment.amount) }}
+                          </span>
+                          <span>{{
+                            paymentMethodLabel(payment.paymentMethod)
+                          }}</span>
+                        </div>
+                        <span>{{ formatDateTime(payment.createdAt) }}</span>
+                      </div>
+                    </div>
+                  </details>
+
+                  <div
+                    class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end"
+                  >
+                    <Button
+                      size="sm"
+                      :label="$t('SCHEDULING.KASSA.PAY_APPOINTMENT')"
+                      @click="openAppointmentPaymentDrawer(appointment)"
+                    />
+
+                    <Button
+                      v-if="
+                        appointment.receivedAmount > 0 &&
+                        appointment.paymentStatus !== 'cancelled'
+                      "
+                      size="sm"
+                      variant="ghost"
+                      color="ruby"
+                      :disabled="kassaStore.ui.isSaving"
+                      :label="
+                        cancelActionAppointmentId === appointment.id
+                          ? $t('SCHEDULING.KASSA.CANCELLING_PAYMENTS')
+                          : $t('SCHEDULING.KASSA.CANCEL_PAYMENTS')
+                      "
+                      @click="handleCancelPayments(appointment.id)"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <SchedulingEmptyState
-            v-if="paymentRows.length === 0"
+            v-else-if="paymentRows.length === 0"
             icon="i-lucide-wallet-cards"
             :title="$t('SCHEDULING.KASSA.EMPTY_INCOME_TITLE')"
             :description="$t('SCHEDULING.KASSA.EMPTY_INCOME_DESCRIPTION')"
@@ -544,6 +829,7 @@ onMounted(async () => {
 
           <SchedulingRecordTable
             v-else
+            borderless
             :columns="paymentColumns"
             :rows="paymentRows"
           >
@@ -584,8 +870,12 @@ onMounted(async () => {
                   size="sm"
                   variant="ghost"
                   color="ruby"
-                  :disabled="!row.appointmentId"
-                  :label="$t('SCHEDULING.KASSA.CANCEL_PAYMENTS')"
+                  :disabled="!row.appointmentId || kassaStore.ui.isSaving"
+                  :label="
+                    cancelActionAppointmentId === row.appointmentId
+                      ? $t('SCHEDULING.KASSA.CANCELLING_PAYMENTS')
+                      : $t('SCHEDULING.KASSA.CANCEL_PAYMENTS')
+                  "
                   @click="handleCancelPayments(row.appointmentId)"
                 />
               </div>
@@ -595,6 +885,7 @@ onMounted(async () => {
 
         <SchedulingSectionCard
           v-else
+          borderless
           :title="$t('SCHEDULING.KASSA.EXPENSES_TITLE')"
           :description="$t('SCHEDULING.KASSA.EXPENSES_DESCRIPTION')"
         >
@@ -617,6 +908,7 @@ onMounted(async () => {
 
           <SchedulingRecordTable
             v-else
+            borderless
             :columns="expenseColumns"
             :rows="expenseRows"
           >
@@ -682,11 +974,37 @@ onMounted(async () => {
         :title="$t('SCHEDULING.KASSA.PAYMENT_FORM_TITLE')"
         :description="$t('SCHEDULING.KASSA.PAYMENT_FORM_DESCRIPTION')"
       >
+        <div
+          v-if="lockedPaymentAppointment && selectedPaymentAppointment"
+          class="rounded-2xl bg-n-alpha-black2 px-4 py-3"
+        >
+          <p class="mb-1 text-sm font-semibold text-n-slate-12">
+            {{ appointmentLabel(selectedPaymentAppointment) }}
+          </p>
+          <p class="mb-0 text-xs text-n-slate-11">
+            {{ formatDateTime(selectedPaymentAppointment.startsAt) }}
+            <span
+              class="mx-1 inline-block size-1 rounded-full bg-n-slate-8"
+              aria-hidden="true"
+            />
+            {{ resourceName(selectedPaymentAppointment.resourceId) }}
+          </p>
+          <p class="mb-0 mt-3 text-sm font-medium text-n-amber-11">
+            {{ $t('SCHEDULING.KASSA.REMAINING_AMOUNT') }}
+            {{
+              formatCurrency(
+                selectedPaymentAppointmentDetails?.remainingAmount || 0
+              )
+            }}
+          </p>
+        </div>
+
         <SchedulingSelectField
+          v-else
           :model-value="paymentForm.appointmentId"
           :options="appointmentOptions"
           :placeholder="$t('SCHEDULING.KASSA.APPOINTMENT')"
-          @update:model-value="paymentForm.appointmentId = $event"
+          @update:model-value="handlePaymentAppointmentChange"
         />
         <div class="grid gap-4 md:grid-cols-2">
           <SchedulingMoneyInput
@@ -695,6 +1013,7 @@ onMounted(async () => {
             :label="$t('SCHEDULING.GENERAL.AMOUNT')"
           />
           <SchedulingSelectField
+            :label="$t('SCHEDULING.KASSA.PAYMENT_METHOD')"
             :model-value="paymentForm.paymentMethod"
             :options="paymentMethodOptions"
             :placeholder="$t('SCHEDULING.KASSA.PAYMENT_METHOD')"

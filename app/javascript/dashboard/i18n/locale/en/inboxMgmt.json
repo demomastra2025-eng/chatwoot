@@ -313,12 +313,60 @@
         }
       },
       "VOICE": {
-        "TITLE": "Voice Channel",
-        "DESC": "Integrate Twilio Voice and start supporting your customers via phone calls.",
+        "TITLE": "Calls",
+        "DESC": "Choose a calling provider and connect numbers for inbound and outbound calls.",
+        "SELECT_PROVIDER": {
+          "CHANGE_ACTION": "Change provider"
+        },
+        "PROVIDERS": {
+          "KAZAKHSTAN": "Fonoster",
+          "KAZAKHSTAN_DESC": "Use Fonoster for Kazakhstan numbers and telephony bridge routing.",
+          "TWILIO": "Twilio",
+          "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
+        },
         "PHONE_NUMBER": {
           "LABEL": "Phone Number",
           "PLACEHOLDER": "Enter your phone number (e.g. +1234567890)",
           "ERROR": "Please provide a valid phone number in E.164 format (e.g. +1234567890)"
+        },
+        "FONOSTER": {
+          "NUMBER_REF": {
+            "LABEL": "Number ref",
+            "PLACEHOLDER": "Enter the calling number reference",
+            "REQUIRED": "Number ref is required"
+          },
+          "APP_REF": {
+            "LABEL": "Primary app ref",
+            "PLACEHOLDER": "Routing or external app reference",
+            "REQUIRED": "Primary app ref is required when app routing is selected"
+          },
+          "TRUNK_REF": {
+            "LABEL": "Trunk ref",
+            "PLACEHOLDER": "Optional trunk reference"
+          },
+          "ROUTING": {
+            "LABEL": "Default Routing",
+            "MODE": {
+              "OPERATOR": "Operator",
+              "APP": "App",
+              "AI": "AI",
+              "REJECT": "Reject"
+            }
+          },
+          "AI_APP_REF": {
+            "LABEL": "AI App Ref",
+            "PLACEHOLDER": "Enter the AI app reference",
+            "REQUIRED": "AI app ref is required when AI routing is selected"
+          },
+          "OPERATOR_AGENT_AOR": {
+            "LABEL": "Operator Agent AOR",
+            "PLACEHOLDER": "Enter sip:agent@domain identity",
+            "REQUIRED": "Operator agent AOR is required when operator routing is selected"
+          },
+          "FALLBACK_MESSAGE": {
+            "LABEL": "Reject Message",
+            "PLACEHOLDER": "Optional message played when the call is rejected"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {
@@ -346,11 +394,35 @@
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
           "TWILIO_VOICE_URL_SUBTITLE": "Configure this URL as the Voice URL on your Twilio phone number and TwiML App.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
-          "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number."
+          "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number.",
+          "FONOSTER_TITLE": "Fonoster connection",
+          "FONOSTER_SUBTITLE": "This calls channel is managed through the Onelink telephony bridge and Fonoster routing.",
+          "FONOSTER_READINESS_TITLE": "Fonoster readiness",
+          "FONOSTER_READINESS_SUBTITLE": "Checks the telephony bridge, inbox binding, and effective route for this voice inbox.",
+          "ROUTING_MODE": "Routing mode",
+          "PRIMARY_APP_REF": "Primary app ref",
+          "AI_APP_REF": "AI app ref",
+          "OPERATOR_AGENT_AOR": "Operator agent AOR",
+          "READY": "Ready",
+          "ACTION_REQUIRED": "Action required",
+          "HEALTHY": "Healthy",
+          "ATTENTION_REQUIRED": "Attention required",
+          "STATUS": "Status",
+          "BRIDGE_HEALTH": "Bridge health",
+          "READY_INBOXES": "Ready inboxes",
+          "CALL_SURFACE": "Call surface",
+          "LAST_SYNCED_AT": "Last synced at",
+          "NOT_SYNCED": "Not synced yet",
+          "LOADING": "Loading readiness checks...",
+          "LOAD_ERROR": "We were not able to load Fonoster readiness.",
+          "REFRESH": "Refresh",
+          "WARNINGS_TITLE": "Warnings",
+          "NO_WARNINGS": "No blocking warnings detected.",
+          "NO_DATA": "No readiness data available for this inbox yet."
         },
-        "SUBMIT_BUTTON": "Create Voice Channel",
+        "SUBMIT_BUTTON": "Create Calls Channel",
         "API": {
-          "ERROR_MESSAGE": "We were not able to create the voice channel"
+          "ERROR_MESSAGE": "We were not able to create the calls channel"
         }
       },
       "API_CHANNEL": {
@@ -501,8 +573,8 @@
             "DESCRIPTION": "Connect your TikTok account"
           },
           "VOICE": {
-            "TITLE": "Voice",
-            "DESCRIPTION": "Integrate with Twilio Voice"
+            "TITLE": "Calls",
+            "DESCRIPTION": "Set up inbound and outbound calling"
           }
         }
       },
@@ -1198,7 +1270,7 @@
       "API": "API Channel",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Voice"
+      "VOICE": "Calls"
     }
   }
 }

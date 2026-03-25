@@ -1,5 +1,9 @@
 <script setup>
-defineProps({
+const props = defineProps({
+  borderless: {
+    type: Boolean,
+    default: false,
+  },
   description: {
     type: String,
     default: '',
@@ -13,11 +17,14 @@ defineProps({
 
 <template>
   <section
-    class="flex flex-col overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
+    class="flex flex-col overflow-hidden rounded-2xl bg-n-solid-2"
+    :class="
+      props.borderless ? '' : 'outline outline-1 outline-n-container shadow-sm'
+    "
   >
     <header
       v-if="title || description || $slots.headerActions"
-      class="flex flex-col gap-3 border-b border-n-weak px-5 py-4 md:flex-row md:items-start md:justify-between"
+      class="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-start md:justify-between"
     >
       <div class="flex flex-col gap-1">
         <h2 v-if="title" class="mb-0 text-base font-semibold text-n-slate-12">

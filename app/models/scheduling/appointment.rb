@@ -10,9 +10,9 @@
 #  client_identifier             :string
 #  client_name                   :string           not null
 #  client_phone                  :string
+#  compensation_percent_snapshot :integer          default(0), not null
 #  compensation_type_snapshot    :string
 #  compensation_value_snapshot   :integer
-#  compensation_percent_snapshot :integer          default(0), not null
 #  custom_attributes             :jsonb            not null
 #  duration_min                  :integer          default(30), not null
 #  ends_at                       :datetime         not null
@@ -39,6 +39,30 @@
 #  created_by_id                 :bigint
 #  resource_id                   :bigint           not null
 #  service_id                    :bigint
+#
+# Indexes
+#
+#  idx_scheduling_appointments_on_account_external_ref     (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
+#  idx_scheduling_appointments_on_account_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  idx_scheduling_appointments_on_account_resource_range   (account_id,resource_id,starts_at,ends_at)
+#  idx_scheduling_appointments_on_account_starts_at        (account_id,starts_at)
+#  index_scheduling_appointments_on_account_id             (account_id)
+#  index_scheduling_appointments_on_company_id             (company_id)
+#  index_scheduling_appointments_on_contact_id             (contact_id)
+#  index_scheduling_appointments_on_conversation_id        (conversation_id)
+#  index_scheduling_appointments_on_created_by_id          (created_by_id)
+#  index_scheduling_appointments_on_resource_id            (resource_id)
+#  index_scheduling_appointments_on_service_id             (service_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (company_id => companies.id)
+#  fk_rails_...  (contact_id => contacts.id)
+#  fk_rails_...  (conversation_id => conversations.id)
+#  fk_rails_...  (created_by_id => users.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#  fk_rails_...  (service_id => scheduling_services.id)
 #
 
 class Scheduling::Appointment < ApplicationRecord

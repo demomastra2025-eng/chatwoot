@@ -7,8 +7,10 @@ import SmtpSettings from '../SmtpSettings.vue';
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TextArea from 'next/textarea/TextArea.vue';
 import WhatsappReauthorize from '../channels/whatsapp/Reauthorize.vue';
+import FonosterReadiness from '../components/FonosterReadiness.vue';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 
 export default {
@@ -17,8 +19,10 @@ export default {
     ImapSettings,
     SmtpSettings,
     NextButton,
+    Checkbox,
     TextArea,
     WhatsappReauthorize,
+    FonosterReadiness,
   },
   mixins: [inboxMixin],
   props: {
@@ -126,6 +130,12 @@ export default {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
       }
     },
+    routingModeLabel(mode) {
+      const normalizedMode = (mode || 'operator').toUpperCase();
+      return this.$t(
+        `INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.${normalizedMode}`
+      );
+    },
     async handleReconfigure() {
       if (this.$refs.whatsappReauth) {
         await this.$refs.whatsappReauth.requestAuthorization();
@@ -171,22 +181,68 @@ export default {
     </SettingsSection>
   </div>
   <div v-else-if="isAVoiceChannel" class="mx-8">
-    <SettingsSection
-      :title="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_TITLE')"
-      :sub-title="
-        $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_SUBTITLE')
-      "
-    >
-      <woot-code :script="inbox.voice_call_webhook_url" lang="html" />
-    </SettingsSection>
-    <SettingsSection
-      :title="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_TITLE')"
-      :sub-title="
-        $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_SUBTITLE')
-      "
-    >
-      <woot-code :script="inbox.voice_status_webhook_url" lang="html" />
-    </SettingsSection>
+    <template v-if="inbox.provider === 'twilio'">
+      <SettingsSection
+        :title="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_TITLE')"
+        :sub-title="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_VOICE_URL_SUBTITLE')
+        "
+      >
+        <woot-code :script="inbox.voice_call_webhook_url" lang="html" />
+      </SettingsSection>
+      <SettingsSection
+        :title="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_TITLE')
+        "
+        :sub-title="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.TWILIO_STATUS_URL_SUBTITLE')
+        "
+      >
+        <woot-code :script="inbox.voice_status_webhook_url" lang="html" />
+      </SettingsSection>
+    </template>
+    <template v-else>
+      <SettingsSection
+        :title="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_TITLE')"
+        :sub-title="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_SUBTITLE')"
+      >
+        <div class="flex flex-col gap-4">
+          <woot-code :script="inbox.telephony?.number_ref || ''" lang="text" />
+          <div class="text-sm text-n-slate-11">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}:
+            {{ routingModeLabel(inbox.telephony?.routing_policy?.mode) }}
+          </div>
+          <div v-if="inbox.telephony?.app_ref" class="text-sm text-n-slate-11">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PRIMARY_APP_REF') }}:
+            {{ inbox.telephony.app_ref }}
+          </div>
+          <div
+            v-if="inbox.telephony?.routing_policy?.ai_app_ref"
+            class="text-sm text-n-slate-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.AI_APP_REF') }}:
+            {{ inbox.telephony.routing_policy.ai_app_ref }}
+          </div>
+          <div
+            v-if="inbox.telephony?.routing_policy?.operator_agent_aor"
+            class="text-sm text-n-slate-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR') }}:
+            {{ inbox.telephony.routing_policy.operator_agent_aor }}
+          </div>
+        </div>
+      </SettingsSection>
+      <SettingsSection
+        :title="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_READINESS_TITLE')
+        "
+        :sub-title="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_READINESS_SUBTITLE')
+        "
+      >
+        <FonosterReadiness :inbox="inbox" />
+      </SettingsSection>
+    </template>
   </div>
 
   <div v-else-if="isALineChannel" class="mx-8">

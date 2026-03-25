@@ -39,6 +39,11 @@ const props = defineProps({
     type: Number,
     default: 5,
   },
+  timePickerVariant: {
+    type: String,
+    default: 'wheel',
+    validator: value => ['field', 'wheel'].includes(value),
+  },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -126,6 +131,7 @@ const handleChange = value => {
       :type="type"
       :format="displayFormat"
       :minute-step="minuteStep"
+      :time-picker-variant="timePickerVariant"
       :disabled="disabled"
       :placeholder="placeholder"
       :input-class="inputClass"

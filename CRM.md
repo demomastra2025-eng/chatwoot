@@ -1,393 +1,609 @@
-# CRM Backend Spec For Onelink
+# Shared CRM Runtime for Onelink
 
 ## Status
 
-- Проверено по коду `onelink` на `2026-03-20`
-- Этот документ описывает только backend
-- Frontend, dashboard routes, stores и экраны обсуждаются отдельно следующим шагом
-- Если документ расходится с кодом, источником истины считается код
+- Document type: target implementation contract
+- Scope: shared CRM runtime inside the Onelink monolith
+- Design priority: native to current architecture, reliable under concurrency, extensible for future vertical modules
+- Source of truth after implementation: code
 
-## Что реально есть в коде сейчас
+## Purpose
 
-Ниже не намерения и не roadmap, а то, что уже подтверждено в репозитории:
+Onelink should implement one shared CRM runtime, not a separate CRM product per vertical.
 
-- `Contact` уже является person-level сущностью и хранит `custom_attributes`, `additional_attributes`, связи с `Conversation`, `Note` и `Company`
-- `Contact` уже поддерживает labels через общий `Labelable` concern
-- `Conversation` уже является основной коммуникационной сущностью и привязана к `contact_id`
-- `Message` и activity messages уже формируют timeline вокруг `Conversation`
-- `Company` уже существует как account-scoped организация, но сейчас подключена через `enterprise/` overlay
-- `Note` уже существует, но она строго contact-scoped и не подходит как комментарий к сделке или задаче
-- `CustomAttributeDefinition` уже существует, но сейчас поддерживает только `contact_attribute` и `conversation_attribute`
-- `Team` уже существует как account-scoped shared ownership primitive
-- `Current.account` и `Current.account_user` уже являются основой account-scoped backend flow
-- фильтрация доступа к переписке уже проходит через `Conversations::PermissionFilterService` и enterprise overlay для custom roles
-- в проекте уже есть хороший образец нового native backend-модуля: `scheduling`
+That runtime must:
 
-Проверенные кодовые опоры:
+- reuse existing `Contact`, `Conversation`, `Company`, `Team`, `User`, and account-scoped patterns
+- add first-class CRM entities only where lifecycle is stable across multiple domains
+- support both standalone user tasks and deal-linked tasks
+- support account-defined CRM custom fields without weakening stable domain invariants
+- stay additive to the current support-platform architecture
 
-- `app/models/contact.rb`
-- `app/models/conversation.rb`
-- `app/models/note.rb`
-- `app/models/custom_attribute_definition.rb`
-- `app/models/team.rb`
-- `enterprise/app/models/company.rb`
-- `app/controllers/concerns/ensure_current_account_helper.rb`
-- `app/services/conversations/permission_filter_service.rb`
-- `enterprise/app/services/enterprise/conversations/permission_filter_service.rb`
-- `app/controllers/api/v1/accounts/scheduling/base_controller.rb`
-- `app/services/scheduling/payload_builder.rb`
-- `app/services/scheduling/appointments/upsert_service.rb`
+This document replaces a broad planning draft with a stricter implementation contract for the first native CRM build.
 
-## Что в коде пока отсутствует
+## Non-Goals
 
-На момент проверки в коде нет first-class shared CRM runtime сущностей:
+- do not turn `Conversation` into `Deal`
+- do not redefine current `Contact` semantics or repurpose `crm_v2`
+- do not introduce a second auth or permissions system
+- do not overload current `Note` or `CustomAttributeDefinition` with CRM-specific behavior
+- do not make migration of legacy external CRM integration code a phase-0 blocker
+- do not build one generic polymorphic "business record" table for all CRM behavior
+- do not expose public hard delete for operational CRM records in v1
 
-- `Deal`
-- `Task`
-- `Pipeline`
-- `Stage`
-- нормализованного CRM `Activity` слоя
+## Native Fit Rules
 
-Это значит, что CRM нужно строить как новый shared backend-модуль, а не как “включение уже существующего скрытого режима”.
+The CRM runtime must feel like it belongs to the current codebase.
 
-## Ключевые архитектурные выводы
+That means:
 
-1. `Conversation` нельзя использовать как `Deal`
+- account-scoped models and queries
+- `Current.account` and `Current.account_user` remain the ambient request context
+- backend authorization stays in Pundit with the existing `pundit_user` shape
+- dashboard gating stays in `currentAccount.permissions`, `FEATURE_FLAGS`, and `route.meta.permissions`
+- controllers follow the `scheduling` pattern for base controller, error rendering, payload rendering, and idempotency behavior
+- services own writes and transitions; model callbacks must not orchestrate CRM workflows
+- enterprise overlays remain overlays; core CRM code should live in `app/` unless the capability is already enterprise-only
 
-- переписка должна остаться в текущем communication core
-- сделка должна быть отдельной бизнес-сущностью
-- timeline сделки должен агрегировать данные из сделочных событий и существующих conversations/messages
+## Existing Primitives That Remain Canonical
 
-2. `Contact` и `Company` должны переиспользоваться как нативные CRM-примитивы
+The CRM runtime must reuse current primitives instead of replacing them.
 
-- `Contact` остается person-level записью
-- `Company` остается organization-level записью
-- новую параллельную организационную модель создавать не нужно
+### `Contact`
 
-3. `Note` нельзя переиспользовать как универсальный комментарий для CRM
+- `Contact` remains the person-level record
+- `contact_type` stays owned by contact lifecycle, not by deal lifecycle
+- CRM may link to any account contact
+- CRM v1 must not silently reinterpret `visitor`, `lead`, or `customer`
+- won deals do not automatically convert a contact into `customer` in v1
 
-- `Note` сейчас привязана к `contact`
-- для `Deal` и `Task` нужны собственные комментарии
+If product later wants explicit conversion rules, add a dedicated service such as `Contacts::Lifecycle::PromoteToCustomerService`. Do not hide that behavior inside deal transitions.
 
-4. текущий `CustomAttributeDefinition` нельзя просто “распространить” на CRM v1
+### `Conversation`
 
-- сейчас enum и filter-layer завязаны только на `contact_attribute` и `conversation_attribute`
-- безопаснее сделать отдельные definition tables для `Deal` и `Task`, а значения хранить в `jsonb custom_attributes`
+- `Conversation` remains the communication and support aggregate
+- a deal may reference one `originating_conversation_id`
+- CRM timelines may surface filtered conversation history, but CRM does not own message storage
+- CRM permissions do not replace conversation visibility rules
 
-5. contact labels и contact custom attributes уже являются нативным variability layer и должны переиспользоваться CRM
+### `Company`
 
-- не нужно дублировать contact labels в отдельных CRM-сущностях
-- не нужно копировать contact custom attributes в `Deal` или `Task`
-- сделки и задачи должны ссылаться на контакты, а не размножать их данные
+- `Company` remains the organization-level association
+- `company_id` is valid and useful on deals from day one
+- deal payloads and filters may expose company summary even if the separate companies UI is disabled
+- `company_id` must not expand message visibility or bypass contact/conversation policies
 
-6. новый CRM backend лучше строить по паттерну `scheduling`, а не по старому jbuilder CRUD стилю
+### `Team`
 
-- отдельный base controller
-- единый `render_payload` / `render_error`
-- payload builders
-- request specs вместо опоры на старые controller specs
+- `Team` remains the routing and grouping primitive
+- `team_id` is optional on deals and tasks
+- team membership may influence defaults and reporting, but account membership is the hard invariant
 
-7. `Team` нужно использовать как нативный shared ownership layer там, где нужен групповой контекст
+### `CustomAttributeDefinition`
 
-- у `Deal` можно иметь optional `team_id`
-- у `Task` можно иметь optional `team_id`
-- не нужно изобретать отдельную CRM-команду или department model
+- it remains the custom-field system for `Contact` and `Conversation`
+- CRM v1 must not extend it to `Deal` or `Task`
+- existing widget and pre-chat side effects are not CRM concerns
 
-8. доступ к сообщениям внутри сделки должен идти через текущую permission-модель conversations
+## Namespace and Placement
 
-- просто “видит сделку” не означает “видит все сообщения всех связанных контактов”
-- сообщение попадает в deal timeline только если пользователь имеет право видеть соответствующую conversation
+### Runtime CRM
 
-## Non-goals для backend v1
+New first-party CRM runtime code should live under:
 
-В первую итерацию не делаем:
+- `app/models/crm/*`
+- `app/services/crm/*`
+- `app/controllers/api/v1/accounts/crm/*`
+- `app/policies/crm/*`
+- `app/javascript/dashboard/routes/dashboard/crm/*`
 
-- новый чат-движок для сделок
-- отдельный deal inbox transport layer
-- автоматическое переприсваивание conversation ownership по deal ownership
-- отдельный labels subsystem для `Deal` и `Task`
-- сложную аналитику, автоворонки и automation rules поверх CRM
-- глобальный полнотекстовый CRM search
-- попытку сразу унифицировать весь старый `crm` integration layer
+### Legacy External CRM Integration Code
 
-## Namespace и размещение кода
+The codebase already has legacy external CRM integration classes under `Crm::*`.
 
-Целевой shared runtime namespace:
+That is not a blocker for v1.
 
-- `Crm::Pipeline`
-- `Crm::Stage`
-- `Crm::Deal`
-- `Crm::Task`
+Rules:
 
-Но в коде уже есть integration namespace вида `Crm::BaseProcessorService`, `Crm::LeadSquared::*`.
+- first-party runtime CRM may still live under `Crm::*`
+- legacy external adapter code may temporarily coexist under subnamespaces such as `Crm::Leadsquared`
+- all new external provider adapters should go under `Integrations::Crm::*`
+- migrating old external adapter code out of `Crm::*` is a follow-up cleanup, not a prerequisite for shipping the shared CRM runtime
 
-Поэтому перед реализацией нужно принять одно из двух решений:
+## Feature Flags
 
-1. Предпочтительный вариант:
-- перенести существующие внешние CRM integrations из `Crm::*` в `Integrations::Crm::*`
-- освободить `Crm::*` под shared runtime CRM
+Do not introduce a long-lived `crm_v3` flag.
 
-2. Временный вариант:
-- оставить integration layer как есть
-- новый shared CRM все равно положить в `Crm::*`, но строго разводить подпапки и константы
+Do not reuse or reinterpret existing flags:
 
-Для максимально нативной долгосрочной архитектуры предпочтителен первый вариант.
+- `crm`
+- `crm_integration`
+- `crm_v2`
 
-Размещение новых файлов:
+Use additive capability flags appended to `config/features.yml`:
 
-- модели: `app/models/crm/`
-- сервисы: `app/services/crm/`
-- контроллеры: `app/controllers/api/v1/accounts/crm/`
-- политики: `app/policies/`
-- request specs: `spec/requests/api/v1/accounts/crm/`
-- model specs: `spec/models/crm/`
-- service specs: `spec/services/crm/`
-- policy specs: `spec/policies/`
+- `crm_deals`
+- `crm_tasks`
 
-Новый shared CRM код должен жить в `app/`, не в `enterprise/`.
+Optional internal umbrella flag:
 
-## Предлагаемая доменная модель
+- `crm_runtime`
 
-### Pipelines
+Rules:
 
-`Crm::Pipeline`
+- new flags are append-only
+- existing feature bit positions must not be repurposed
+- deals and tasks can roll out independently
+- settings endpoints should require the capability they configure
+
+Examples:
+
+- pipelines and stages depend on `crm_deals`
+- task statuses depend on `crm_tasks`
+- field definitions for `deal` depend on `crm_deals`
+- field definitions for `task` depend on `crm_tasks`
+
+## Permissions and Access Model
+
+### Source of Truth
+
+Authorization must remain native to the current stack:
+
+- backend: Pundit policies plus policy scopes
+- frontend: `currentAccount.permissions` plus route meta permissions
+- identity: `pundit_user = { user:, account:, account_user: }`
+
+### New CRM Permissions
+
+Extend custom-role permissions with:
+
+- `crm_deal_view`
+- `crm_deal_manage`
+- `crm_task_view`
+- `crm_task_manage`
+- `crm_settings_view`
+- `crm_settings_manage`
+
+This requires updating both backend and frontend permission lists.
+
+### Role Behavior
+
+- `administrator` has full CRM access
+- plain `agent` gets default operational access to deals and tasks when the respective feature is enabled
+- agents with a custom role must receive explicit CRM permissions through `CustomRole.permissions`
+- settings management must never be implied by operational deal/task access
+
+Recommended route-meta pattern:
+
+- deals screens: `['administrator', 'agent', 'crm_deal_view', 'crm_deal_manage']`
+- task screens: `['administrator', 'agent', 'crm_task_view', 'crm_task_manage']`
+- settings screens: `['administrator', 'crm_settings_view', 'crm_settings_manage']`
+
+The backend remains the final authority.
+
+### Access Scope Rules
+
+All CRM access is account-scoped.
+
+V1 record-visibility rules:
+
+- if a user is allowed to view deals, they may view all deals in the current account
+- if a user is allowed to view tasks, they may view all tasks in the current account
+- `owner_id` and `team_id` are assignment and filtering attributes, not authorization boundaries in v1
+- future owner- or team-restricted CRM visibility may be added later, but it must be introduced as an explicit new policy layer
+
+Important separation:
+
+- deal/task authorization is controlled by CRM policies
+- conversation visibility inside CRM timeline is still controlled by conversation permissions
+- linked contact and company summaries may be visible inside CRM payloads without granting standalone management access to those modules
+
+### Permission Semantics
+
+`crm_deal_view` allows:
+
+- list deals
+- show deal detail
+- view deal kanban
+- view deal timeline
+- view linked contact and company summaries included in deal payloads
+
+`crm_deal_manage` allows:
+
+- create deal
+- update deal
+- transition deal stage
+- archive and unarchive deal
+- link and unlink contacts on a deal
+- create, update, and delete deal comments
+
+`crm_task_view` allows:
+
+- list tasks
+- show task detail
+- view task calendar
+- view task timeline
+- view linked deal summary included in task payloads
+
+`crm_task_manage` allows:
+
+- create task
+- update task
+- change task status
+- archive and unarchive task
+- create, update, and delete task comments
+
+`crm_settings_view` allows:
+
+- list pipelines
+- list stages
+- list task statuses
+- list CRM field definitions
+- open CRM settings screens in read-only mode
+
+`crm_settings_manage` allows:
+
+- create and update pipelines
+- create and update stages
+- create and update task statuses
+- create, update, deactivate, and delete CRM field definitions where allowed by policy
+
+Manage permissions imply the corresponding view permissions in backend policy logic.
+
+### Access Matrix
+
+- `administrator`: full access to deals, tasks, timelines, comments, and CRM settings
+- plain `agent`: operational access to deals and tasks, but no CRM settings management
+- custom-role agent with only `crm_deal_view`: read-only access to deals
+- custom-role agent with `crm_deal_manage`: full deal operations
+- custom-role agent with only `crm_task_view`: read-only access to tasks
+- custom-role agent with `crm_task_manage`: full task operations
+- custom-role agent with only `crm_settings_view`: read-only CRM settings access
+- custom-role agent with `crm_settings_manage`: full CRM settings management
+
+### Operational Reads vs Settings Screens
+
+Operational users still need read access to CRM configuration metadata required by forms and list rendering.
+
+Rules:
+
+- deal forms may receive active pipelines and stages as supporting metadata
+- task forms may receive active task statuses as supporting metadata
+- field catalog for `deal` or `task` may be exposed as part of operational create and edit flows
+- this supporting metadata does not mean the user can open CRM settings or mutate configuration
+
+This avoids a broken UX where agents can operate deals and tasks but cannot load the metadata required to render forms.
+
+### Frontend Route and Policy Note
+
+Custom-role agents do not inherit the plain `agent` shortcut in the same way as default account users.
+
+Therefore:
+
+- frontend routes must include explicit `crm_*` permissions, not rely only on `agent`
+- backend policies must not rely on route-meta shortcuts
+- request authorization must always be checked server-side
+
+### Frontend Reference and Reuse Note
+
+Frontend implementation should treat the existing scheduling pages as the main UI reference for CRM operational screens.
+
+Primary reference surface:
+
+- `SchedulingCalendarPage`
+- `SchedulingToolbar`
+- `SchedulingViewSwitcher`
+- `SchedulingCalendarGrid`
+- `SchedulingKanbanBoard`
+- `SchedulingRecordTable`
+- `SchedulingDrawer`
+- scheduling filters and inline form-group patterns
+
+Reason:
+
+- scheduling already implements the closest native Onelink pattern for account-scoped operational work
+- it already supports calendar, list, and kanban presentations behind one coherent page shell
+- it already has toolbar, filters, drawer, status actions, empty state, and error state patterns that fit the dashboard better than inventing a second visual system for CRM
+
+Recommended reuse:
+
+- task calendar should reuse the scheduling calendar page composition and calendar visual language
+- task list and deal list should reuse the existing table and list-page patterns where possible
+- deal kanban and task kanban should reuse the scheduling kanban interaction model and page framing where possible
+- CRM forms should reuse drawer-based create and edit flows, field groups, filters, and supporting metadata loading patterns established by scheduling
+- conversation sidebar actions may deep-link into CRM create flows with route-query prefill instead of embedding a second create form inside inbox UI
+- one-shot route prefill should be consumed by the CRM page, applied to the create drawer, and then cleared from the URL
+
+Important limit:
+
+- reuse the page shell, presentation patterns, and shared UI components
+- do not copy scheduling domain-specific form fields, labels, or appointment-specific business logic into CRM
+- if a scheduling component can be extracted into a truly generic dashboard component with low risk, prefer extraction over cloning
+- if generalization would delay delivery or distort either domain, keep separate domain components behind the same visual language
+
+### Identity Rules
+
+The following fields always reference `User` ids, not `AccountUser` ids:
+
+- `owner_id`
+- `assignee_id`
+- `creator_id`
+- `actor_id`
+
+Validation rule:
+
+- referenced users must belong to the current account
+
+### Contact and Company Read Semantics
+
+CRM screens may expose minimal linked summaries without granting full management permissions on those entities.
+
+Examples:
+
+- a deal payload may include linked contact names and phone/email summary
+- a deal payload may include company name and domain summary
+
+That does not grant access to full contact-management or company-management screens.
+
+### Conversation Visibility
+
+CRM must never bypass conversation visibility.
+
+If CRM surfaces related conversations or message excerpts, it must filter them through the existing conversation permission filter service before serialization.
+
+## Core Domain Model
+
+CRM v1 introduces separate business aggregates for deals and tasks.
+
+### `Crm::Pipeline`
+
+Core columns:
 
 - `account_id`
 - `name`
 - `code`
-- `category`
+- `position`
 - `active`
 - `default`
+- timestamps
 
-`Crm::Stage`
+Rules:
 
+- unique `code` per account
+- exactly one default active pipeline per account
+- pipelines are configuration entities, not operational records
+- if a pipeline is already referenced by deals, deactivate instead of deleting
+
+### `Crm::Stage`
+
+Core columns:
+
+- `account_id`
 - `pipeline_id`
 - `name`
 - `code`
 - `position`
 - `outcome`
 - `active`
+- timestamps
 
-`outcome` должен быть enum:
+`outcome` enum:
 
 - `open`
 - `won`
 - `lost`
 
-Почему так:
+Rules:
 
-- это надежнее, чем набор флагов `is_final/is_won/is_lost`
-- состояние сделки выводится из stage outcome
-- меньше риска логических противоречий
+- unique `code` within pipeline
+- stage belongs to the same account as its pipeline
+- moving a deal between stages is the only supported deal-state transition primitive in v1
+- stage configuration should ensure at least one open stage and at least one terminal stage per pipeline
 
-### Deals
+### `Crm::Deal`
 
-`Crm::Deal`
+Core columns:
 
 - `account_id`
 - `pipeline_id`
 - `stage_id`
 - `owner_id`
+- `creator_id`
 - `team_id`
 - `company_id`
 - `originating_conversation_id`
 - `title`
 - `description`
-- `lead_source_code`
 - `amount_minor`
 - `currency`
 - `expected_close_on`
+- `closed_at`
 - `win_probability`
+- `external_ref`
+- `idempotency_key`
+- `lock_version`
 - `custom_attributes`
+- `archived_at`
 - timestamps
 
-`Crm::DealContact`
+Rules:
 
+- `stage_id` must belong to `pipeline_id` and the same account
+- `owner_id`, `creator_id`, and `team_id` are optional, but when present must belong to the same account
+- `company_id` is optional
+- `originating_conversation_id` is optional, but when present must belong to the same account
+- at create time the deal must end up with at least one related party:
+  - a linked contact
+  - or `company_id`
+  - or `originating_conversation_id`
+- if `originating_conversation_id` is present and the conversation has a contact, the create service should auto-link that contact as primary unless the caller explicitly provides another primary contact
+- `amount_minor` uses integer minor units
+- `currency` is required when `amount_minor` is present
+- `win_probability` is optional, integer `0..100`
+- `closed_at` is managed by transition services, not raw params
+- `archived_at` hides the record from default queries
+
+### `Crm::DealContact`
+
+Core columns:
+
+- `account_id`
 - `deal_id`
 - `contact_id`
 - `primary`
-
-`Crm::DealEvent`
-
-- `deal_id`
-- `account_id`
-- `actor_id`
-- `event_type`
-- `meta`
 - timestamps
 
-`Crm::DealComment`
+Rules:
 
-- `deal_id`
-- `account_id`
-- `user_id`
-- `body`
-- timestamps
+- unique pair: `deal_id + contact_id`
+- at most one primary contact per deal
+- contact must belong to the same account
+- this join table is the native way to support one deal with multiple people without collapsing the deal into contact-only storage
 
-`company_id` в `Crm::Deal` на старте рассматривается как резерв под будущую связку.
+### `Crm::TaskStatus`
 
-Для v1:
-
-- компания может присутствовать в схеме как nullable поле
-- backend не строит на ней бизнес-логику
-- company не участвует в timeline aggregation
-- company не определяет permissions, filters и workflow
-- семантика связи будет определена отдельно, когда появится понимание реального кейса
-
-Поэтому в v1 не нужен `DealCompany` join table и не нужна company-based оркестрация.
-
-### Tasks
-
-`Crm::Task`
-
-- `account_id`
-- `creator_id`
-- `deal_id`
-- `team_id`
-- `title`
-- `description`
-- `status_id`
-- `start_at`
-- `due_at`
-- `completed_at`
-- `parent_task_id`
-- `custom_attributes`
-- timestamps
-
-`Task` является самостоятельной сущностью.
-
-Это значит:
-
-- задача может существовать вообще без связи с `Deal`
-- задача может быть связана со сделкой
-- lifecycle задачи не зависит от lifecycle сделки
-- задача не является subtype сделки
-
-`Crm::TaskStatus`
+Core columns:
 
 - `account_id`
 - `name`
 - `code`
 - `position`
 - `category`
-- `default`
 - `active`
+- `default`
+- timestamps
 
-`category` должен быть enum:
+`category` enum:
 
 - `open`
 - `done`
-- `archived`
 
-Это лучше, чем три boolean флага:
+Rules:
 
-- нельзя получить одновременно `done = true` и `archived = true`
-- проще строить scopes и фильтры
-- проще строить kanban и counters позже
+- unique `code` per account
+- exactly one default open status per account
+- statuses are configuration entities
+- if a status is already referenced by tasks, deactivate instead of deleting
 
-`Crm::TaskAssignee`
+### `Crm::Task`
 
-- `task_id`
-- `user_id`
+Core columns:
 
-`Crm::TaskComment`
-
-- `task_id`
 - `account_id`
+- `deal_id`
+- `status_id`
+- `assignee_id`
+- `creator_id`
+- `team_id`
+- `originating_conversation_id`
+- `title`
+- `description`
+- `priority`
+- `start_at`
+- `due_at`
+- `completed_at`
+- `external_ref`
+- `idempotency_key`
+- `lock_version`
+- `custom_attributes`
+- `archived_at`
+- timestamps
+
+`priority` enum:
+
+- `low`
+- `medium`
+- `high`
+- `urgent`
+
+Rules:
+
+- task may be standalone or linked to a deal
+- `deal_id` is optional
+- `status_id` must belong to the same account
+- if `deal_id` is present, the deal must belong to the same account
+- `assignee_id`, `creator_id`, and `team_id` are optional, but when present must belong to the same account
+- `originating_conversation_id` is optional, but when present must belong to the same account
+- `creator_id` should be written by user-facing create flows
+- `completed_at` is managed by status transition services, not raw params
+- `archived_at` hides the record from default queries
+- when a task is created under a deal and `team_id` is omitted, the create service may default it from the deal
+- when a task is created under a deal and `assignee_id` is omitted, the create service may default it from the deal owner
+- when a task is created under a deal and `originating_conversation_id` is omitted, the create service may default it from the deal
+- a standalone task may still reference `originating_conversation_id` when it was launched from inbox context
+
+### `Crm::Comment`
+
+Core columns:
+
+- `account_id`
+- `commentable_type`
+- `commentable_id`
 - `user_id`
 - `body`
+- `deleted_at`
+- timestamps
 
-`Crm::TaskEvent`
+Rules:
 
-- `task_id`
+- supported commentable types in v1:
+  - `Crm::Deal`
+  - `Crm::Task`
+- comments are for CRM discussion and notes on CRM entities
+- current `Note` remains contact-only
+- if compliance/history matters, prefer soft delete over hard delete
+
+### `Crm::Event`
+
+Core columns:
+
 - `account_id`
+- `eventable_type`
+- `eventable_id`
 - `actor_id`
 - `event_type`
 - `meta`
+- `created_at`
 
-Для v1 задача может быть:
+Rules:
 
-- standalone
-- optional связана с `Crm::Deal`
+- supported eventable types in v1:
+  - `Crm::Deal`
+  - `Crm::Task`
+- events back user-facing timelines
+- `actor_id` may be null for system-generated events
+- `meta` stores structured snapshots and transition details, not free-form blobs from AR serialization
 
-Для максимально нативного v1 прямой `deal_id` надежнее, чем универсальная relation table.
+### `Crm::FieldDefinition`
 
-Если позже реально понадобятся связи на:
-
-- `Contact`
-- `Company`
-- `Conversation`
-- другие будущие CRM сущности
-
-тогда можно будет добавить relation layer как расширение, не ломая базовую модель.
-
-### Mermaid: Shared CRM entity graph
-
-```mermaid
-flowchart TD
-    Account[Account]
-    AccountUser[AccountUser]
-    Team[Team]
-    Contact[Contact]
-    Company[Company future hook]
-    Conversation[Conversation]
-    Message[Message]
-    Pipeline[Crm::Pipeline]
-    Stage[Crm::Stage]
-    Deal[Crm::Deal]
-    DealContact[Crm::DealContact]
-    Task[Crm::Task]
-    TaskStatus[Crm::TaskStatus]
-
-    Account --> AccountUser
-    Account --> Team
-    Account --> Contact
-    Account --> Pipeline
-    Account --> Deal
-    Account --> Task
-    Account --> TaskStatus
-
-    Pipeline --> Stage
-    Stage --> Deal
-
-    Deal --> DealContact
-    DealContact --> Contact
-    Contact --> Conversation
-    Conversation --> Message
-
-    Team -. optional .-> Deal
-    Team -. optional .-> Task
-    Company -. reserved .-> Deal
-    Deal -. optional .-> Task
-    Task --> TaskStatus
-```
-
-## Custom fields
-
-Для v1 рекомендуется такой подход:
-
-- `Crm::DealFieldDefinition`
-- `Crm::TaskFieldDefinition`
-- `custom_attributes` на `Crm::Deal` и `Crm::Task` как `jsonb`
-
-`FieldDefinition` должен хранить:
+Core columns:
 
 - `account_id`
+- `entity_kind`
 - `key`
 - `label`
+- `description`
 - `field_type`
 - `required`
-- `position`
-- `options`
 - `active`
-- `description`
+- `position`
+- `default_value`
+- `options`
+- `rules`
+- timestamps
 
-Поддерживаемые типы полей:
+`entity_kind` enum:
+
+- `deal`
+- `task`
+
+Supported v1 field types:
 
 - `text`
 - `textarea`
 - `number`
 - `currency`
+- `percent`
 - `checkbox`
 - `date`
 - `datetime`
@@ -395,1191 +611,829 @@ flowchart TD
 - `multiselect`
 - `url`
 
-Валидация должна происходить в сервисе записи сущности, а не только на frontend.
+Rules:
 
-Почему не value-table в v1:
+- unique `key` per account and `entity_kind`
+- custom-field keys must not conflict with built-in CRM system fields
+- this model stores CRM custom fields only
+- values live in `custom_attributes` on the owning record
+- if a field already has stored values, prefer deactivation over destruction
+- `rules` is the extension point for context-aware behavior
 
-- `jsonb` проще и нативнее для текущего кода
-- это уже используемый паттерн в репозитории
-- definition layer дает схему и валидацию без избыточной EAV-сложности
+## Universal Field Catalog
 
-## Reuse текущих contact labels и contact attributes
+CRM must support custom fields in a way that is systematic, native, and future-safe.
 
-CRM v1 должен использовать уже существующие возможности `Contact` как shared customer entity:
+The correct model is not "everything is a column" and not "everything is an untyped JSON blob".
 
-- `Contact.label_list`
-- `Contact.custom_attributes`
-- `Contact.additional_attributes`
-- текущую связь `Contact -> Conversation`
+Use a merged field catalog:
 
-Практическое правило:
+- built-in CRM system fields are defined in code
+- account-specific CRM custom fields are stored in `Crm::FieldDefinition`
+- read and write APIs consume one unified field catalog per entity
 
-- `Deal` и `Task` не дублируют labels контакта
-- `Deal` и `Task` не копируют contact custom attributes в свои таблицы
-- если нужно отобразить сегментацию клиента, CRM берет ее из `Contact`
+Recommended service:
 
-Это дает несколько полезных свойств:
+- `Crm::FieldCatalog`
 
-- один источник истины по person-level данным
-- reuse существующего label engine проекта
-- reuse существующего custom attribute engine проекта
-- меньше риска рассинхронизации между CRM и communication core
+Responsibilities:
 
-Следствие для backend:
+- return built-in plus custom fields for `deal` or `task`
+- mark which fields are system fields and which are custom fields
+- expose filterability, searchability, editability, defaults, and context constraints
+- validate key collisions between built-in and custom fields
+- provide one contract to forms, filters, imports, payload builders, and validators
 
-- deal list/detail payload может включать summary по связанным контактам
-- в contact summary допустимо отдавать `labels`, `custom_attributes`, `additional_attributes` по необходимости
-- фильтры сделок можно позже расширять через contact labels и contact custom attributes, не изобретая для этого отдельный CRM metadata layer
+This mirrors the spirit of current contact/conversation custom attributes while avoiding leakage of their implementation constraints into CRM.
 
-## Что не нужно вводить в v1
+### Entity Coverage Policy
 
-Для `Deal` и `Task` в первой версии не нужен отдельный labels subsystem.
+Not every entity should participate in the managed CRM field-definition system.
 
-Причины:
+Use the following rule set.
 
-- в проекте labels уже нативно завязаны на `Contact` и `Conversation`
-- rename/update сервисы labels сейчас работают только с этими сущностями
-- для сделки primary workflow state уже покрывается `Pipeline/Stage`
-- для задачи primary workflow state уже покрывается `TaskStatus`
+Managed CRM custom fields in v1:
 
-Если позже реально понадобятся labels на `Deal` или `Task`, это лучше делать отдельной фазой с расширением label infrastructure, а не полумерой в v1.
+- `Crm::Deal`
+- `Crm::Task`
 
-## Deal timeline
+Existing platform entities that may keep raw `custom_attributes`, but are outside the CRM field-definition system:
 
-### Принцип
+- `Scheduling::Appointment`
+- `Scheduling::Service`
+- `Scheduling::Resource`
+- `Scheduling::Holiday`
+- `Scheduling::TimeOff`
+- `Scheduling::WorkdayOverride`
 
-Карточка сделки не хранит отдельные “deal conversations”.
+Configuration entities that should not get dynamic custom fields in v1:
 
-Она агрегирует:
+- `Crm::Pipeline`
+- `Crm::Stage`
+- `Crm::TaskStatus`
 
-- `deal_events`
-- `deal_comments`
-- все разрешенные `messages` из conversations связанных контактов
+Reason:
 
-### Источники контактов для timeline
+- `Deal` and `Task` are user-facing operational records with real need for tenant-specific forms, filters, exports, and workflow metadata
+- scheduling entities already support lightweight JSON metadata and do not yet justify a second managed field-definition layer
+- pipelines, stages, and statuses are workflow configuration records; if they need extra behavior such as `color`, `sla_days`, `system_code`, or UI hints, prefer explicit columns
 
-1. прямые `deal_contacts`
+### When a New Entity Deserves Managed Custom Fields
 
-После этого:
+Add a new entity to the managed field-definition system only if at least two of the following are true:
 
-1. объединяем contact ids
-2. убираем дубликаты
-3. загружаем `Current.account.conversations.where(contact_id: ids)`
-4. пропускаем relation через `Conversations::PermissionFilterService`
-5. добавляем enterprise narrowing для custom roles автоматически через overlay
-6. только после этого загружаем сообщения
+- tenants need to capture extra fields in first-party forms
+- those fields must round-trip through the API in a stable way
+- those fields must be filterable or searchable in list views
+- those fields matter for exports, imports, or reporting
 
-### Важное правило доступа
+If the need is only one or two internal knobs, do not add dynamic fields. Add normal columns instead.
 
-Пользователь может видеть сделку, но не видеть часть conversation history внутри нее.
+### Future Platform-Level Generalization Rule
 
-Следовательно:
+Do not build a global "fields for every entity in the platform" framework in v1.
 
-- deal timeline показывает только те conversations/messages, которые разрешены текущей permission-моделью
-- backend не должен обходить эту проверку “ради удобства CRM”
-- `company_id` в v1 не расширяет timeline и не добавляет новые conversations
+If later the product truly needs one shared field-definition engine across CRM and scheduling, that extraction should happen only after at least two non-CRM domains need the same behavior:
 
-### Реализация timeline
+- same field types
+- same validation model
+- same filter semantics
+- same API and UI authoring flow
 
-Для backend v1 нужен отдельный query object:
+Until then:
 
-- `Crm::Deals::TimelineQuery`
+- CRM keeps `Crm::FieldDefinition`
+- scheduling keeps its current `custom_attributes` pattern
+- config entities stay mostly explicit-column driven
 
-Он должен:
+### Why Not Reuse `CustomAttributeDefinition`
 
-- принимать `deal`, `current_user`, `current_account`, `cursor`, `limit`
-- возвращать нормализованные timeline items
-- поддерживать pagination
-- не тянуть все сообщения по сделке одним запросом без лимита
+Do not extend the existing `CustomAttributeDefinition` table for CRM because it already encodes contact/conversation assumptions:
 
-Нормализованные типы timeline item:
+- only two attribute models exist today
+- it has its own standard-attribute conflict list
+- it has widget/pre-chat side effects
+- it does not model task contexts or future pipeline/stage applicability
 
-- `deal_event`
-- `deal_comment`
-- `conversation_message`
+CRM needs a separate field-definition surface, but the value-storage pattern can still remain native:
 
-### Mermaid: Deal timeline logic
+- stable core business state in first-class columns and associations
+- tenant-specific metadata in `custom_attributes`
 
-```mermaid
-flowchart TD
-    A[Open deal] --> B[Load deal_contacts]
-    B --> C[Collect contact_ids]
-    C --> D[Deduplicate ids]
-    D --> E[Load account conversations by contact_id]
-    E --> F[Apply Conversations::PermissionFilterService]
-    F --> G[Apply enterprise custom role narrowing]
-    G --> H[Load messages for allowed conversations]
-    H --> I[Load deal_events]
-    I --> J[Load deal_comments]
-    J --> K[Normalize timeline items]
-    K --> L[Sort and paginate]
-    L --> M[Return deal_event, deal_comment, conversation_message]
+### Custom Field Rules
+
+`Crm::FieldDefinition.rules` should remain typed and machine-readable.
+
+Supported v1 responsibilities:
+
+- `contexts`
+- `filterable`
+- `searchable`
+- `read_only`
+- `min`
+- `max`
+- `regex`
+- `placeholder`
+- `help_text`
+
+Task-specific context support is required in v1:
+
+- `standalone_task`
+- `deal_task`
+
+Meaning:
+
+- one task model serves both standalone work and deal work
+- field applicability is controlled by field-definition rules, not by splitting tasks into separate models
+
+Future-safe reserved expansion:
+
+- pipeline-specific deal fields
+- stage-specific deal fields
+- task presets and templates
+
+Those future capabilities should extend `rules`, not require a redesign of `Task` or `Deal`.
+
+### Custom Field Write Rules
+
+- write payloads may include `custom_attributes`
+- unknown keys must be rejected with validation error
+- inactive fields remain readable for existing records but are not writable
+- default values apply on create, not retroactively
+- removing a field definition must not silently delete stored values from historical records
+
+### Example: Task Field That Only Applies Inside a Deal
+
+```json
+{
+  "entity_kind": "task",
+  "key": "follow_up_reason",
+  "label": "Follow-up reason",
+  "field_type": "select",
+  "required": true,
+  "options": ["pricing", "documents", "approval"],
+  "rules": {
+    "contexts": ["deal_task"],
+    "filterable": true,
+    "searchable": false
+  }
+}
 ```
 
-## View semantics для backend
+That is the intended native pattern:
 
-И `Deal`, и `Task` должны поддерживать несколько представлений, но backend не должен моделировать это отдельными сущностями.
+- one shared `Task` model
+- one shared custom-field system
+- context-aware applicability
 
-### Deals
+## Lifecycle Semantics
 
-Поддерживаемые view modes:
+### Deal Lifecycle
 
-- `list`
-- `kanban`
-- `calendar`
+Supported v1 lifecycle actions:
 
-Семантика:
+- create
+- update
+- transition stage
+- archive
+- unarchive
 
-- `list` это обычный index с filters/sort/pagination
-- `kanban` это группировка по `stage`
-- `calendar` это выборка по `expected_close_on`
+Rules:
 
-### Tasks
+- deal state is determined by pipeline plus stage
+- moving to a `won` or `lost` stage sets `closed_at`
+- moving back to an `open` stage clears `closed_at`
+- every stage transition writes a `Crm::Event`
+- stage changes must go through a dedicated transition service, not generic mass assignment
 
-Поддерживаемые view modes:
+### Task Lifecycle
 
-- `list`
-- `kanban`
-- `calendar`
+Supported v1 lifecycle actions:
 
-Семантика:
+- create
+- update
+- change status
+- archive
+- unarchive
 
-- `list` это обычный index с filters/sort/pagination
-- `kanban` это группировка по `status`
-- `calendar` это выборка по `start_at` и/или `due_at`
+Rules:
 
-### Практическое требование к API
+- task may exist without a deal
+- if linked to a deal, it remains its own aggregate with its own status and assignee
+- moving to a `done` status sets `completed_at`
+- moving back to an `open` status clears `completed_at`
+- every status change writes a `Crm::Event`
+- status changes must go through a dedicated transition service
 
-Backend должен поддерживать один и тот же domain model для разных view.
+### Interaction Between Deals and Tasks
 
-Значит нужны query services, а не разные сущности:
+Rules:
 
-- `Crm::Deals::IndexQuery`
-- `Crm::Tasks::IndexQuery`
+- deal-linked tasks are first-class tasks, not nested sub-documents on the deal
+- closing a deal does not automatically complete or archive open tasks in v1
+- deal detail should expose related tasks as a dedicated section
+- task detail should expose its linked deal summary when `deal_id` is present
 
-Они должны уметь:
+This keeps behavior predictable and leaves room for future automation without baking in premature side effects.
 
-- фильтрацию
-- сортировку
-- range queries для календаря
-- grouped response для kanban
-- pagination для list
-- фильтрацию по owner/team/contact/deal status/task status
+### Contact Lifecycle and Deal Outcomes
 
-### Mermaid: View/query logic
+Rules:
 
-```mermaid
-flowchart LR
-    DealsIndex[Crm::Deals::IndexQuery]
-    TasksIndex[Crm::Tasks::IndexQuery]
+- CRM may link any contact regardless of `contact_type`
+- `crm_v2` continues to affect current contact selection semantics where it already exists
+- deal creation or winning a deal does not mutate `Contact.contact_type`
+- if later required, contact promotion must be explicit, audited, and behind its own service and product rule
 
-    DealsIndex --> DealList[list]
-    DealsIndex --> DealKanban[kanban by stage]
-    DealsIndex --> DealCalendar[calendar by expected_close_on]
+### Company Behavior
 
-    TasksIndex --> TaskList[list]
-    TasksIndex --> TaskKanban[kanban by status]
-    TasksIndex --> TaskCalendar[calendar by start_at or due_at]
-```
+Rules:
 
-## Mermaid use cases
+- `company_id` on a deal is optional but first-class
+- if the caller omits `company_id` and the primary contact has a single obvious company, the service may default it
+- `company_id` improves search, filtering, and account-level reporting
+- `company_id` does not expand conversation/message visibility
+- company association should never be mandatory for deal creation
 
-### Mermaid: Primary backend cases
+## Timeline, Comments, and Activity
 
-```mermaid
-flowchart LR
-    Manager[Manager]
-    Agent[Agent]
-    Contact[Existing Contact]
-    Deal[Deal]
-    StandaloneTask[Standalone Task]
-    DealTask[Task linked to Deal]
+Do not build one giant generic `Activity` table before the behavior is stable.
 
-    Manager --> C1[Create deal from contact context]
-    Manager --> C2[Create task inside deal]
-    Manager --> C3[Create standalone managerial task]
-    Agent --> C4[Update deal stage]
-    Agent --> C5[Complete assigned task]
+Use three separate pieces:
 
-    Contact --> C1
-    C1 --> Deal
-    Deal --> C2
-    C2 --> DealTask
-    C3 --> StandaloneTask
-    DealTask --> C5
-    Deal --> C4
-```
+- `Crm::Event` for structured lifecycle events
+- `Crm::Comment` for human discussion
+- filtered related conversations for message history
 
-### Mermaid: Task cases logic
+### Deal Timeline
 
-```mermaid
-flowchart TD
-    A[Create task request] --> B{deal_id present?}
-    B -- Yes --> C[Validate deal belongs to current account]
-    B -- No --> D[Create standalone task]
-    C --> E[Create task in deal context]
-    D --> F[Task appears in task views only]
-    E --> G[Task appears in task views and deal detail]
-```
+The deal timeline may include:
 
-## События и аудит
+- deal events
+- deal comments
+- related conversation summaries and optional excerpts
 
-### Deal events
+Conversation inclusion rules:
 
-Логируем:
+- include `originating_conversation_id` when present
+- include conversations for linked contacts when useful
+- deduplicate conversation ids
+- filter through the existing conversation permission filter service before serializing
+- do not expand by `company_id` alone
 
-- создание сделки
-- смену owner
-- смену pipeline
-- смену stage
-- изменение суммы
-- изменение currency
-- изменение lead source
-- привязку контакта
-- отвязку контакта
-- изменение custom fields
+### Task Timeline
 
-### Task events
+The task timeline should include:
 
-Логируем:
+- task events
+- task comments
+- the originating conversation summary when `originating_conversation_id` is present and visible to the actor
 
-- создание задачи
-- смену статуса
-- назначение исполнителей
-- снятие исполнителей
-- изменение сроков
-- создание подзадачи
-- удаление подзадачи
+Conversation inclusion rules for task timeline:
 
-Комментарии не должны жить внутри event table как единственный источник текста.
+- include at most the explicitly linked `originating_conversation_id`
+- filter through the existing conversation permission filter service before serializing
+- do not automatically expand by linked deal contacts
+- do not automatically expand by company association
+- do not pull broad conversation history by default in v1
 
-Надежнее хранить:
+### User Timeline vs Compliance Audit
 
-- комментарии отдельно
-- аудит отдельно
+These are different concerns.
 
-## API surface
+- `Crm::Event` is for user-facing history
+- account-level audit trails are for compliance and admin traceability
 
-Новые backend endpoints нужно строить как account-scoped namespace:
+Configuration entities such as pipelines, stages, task statuses, and field definitions should follow the existing audit pattern used elsewhere in the codebase. User-facing activity should remain in `Crm::Event`.
 
-```text
-/api/v1/accounts/:account_id/crm/...
-```
+## API and Controller Contract
 
-Рекомендуемый набор:
+### Base Pattern
 
-- `pipelines#index/create/show/update/destroy`
-- `pipelines/:pipeline_id/stages#create/update/destroy`
-- `deals#index/create/show/update`
-- `deals/:id/transition`
-- `deals/:deal_id/contacts#create/destroy`
-- `deals/:deal_id/comments#index/create/update/destroy`
-- `deals/:deal_id/timeline#index`
-- `deal_field_definitions#index/create/update/destroy`
-- `tasks#index/create/show/update`
-- `tasks/:task_id/comments#index/create/update/destroy`
-- `task_statuses#index/create/update/destroy`
-- `task_field_definitions#index/create/update/destroy`
-
-Для `index` endpoints нужно сразу предусмотреть query-параметры под будущие view:
-
-- `view`
-- `page`
-- `sort_by`
-- `order`
-- `from`
-- `to`
-- `owner_id`
-- `team_id`
-- `pipeline_id`
-- `stage_id`
-- `status_id`
-- `deal_id`
-- `contact_id`
-- `labels`
-
-Для нового CRM API лучше использовать отдельный base controller по образцу scheduling:
+CRM controllers should follow the same shape as `scheduling`:
 
 - `Api::V1::Accounts::Crm::BaseController`
-
-В нем должны быть:
-
-- feature gating
-- общий error envelope
+- feature gating in `before_action`
 - `render_payload`
 - `render_error`
-- `parse_boolean`
-- cursor parsing helpers
+- typed CRM domain errors
+- standard rescue handling for record invalid, not found, unique conflicts, stale object conflicts, and bad params
 
-## API contract conventions
-
-CRM API должен reuse уже существующий паттерн новых модулей проекта:
-
-- успешный ответ через `render_payload`
-- ошибка через `render_error`
-- основной объект всегда живет под ключом `payload`
-- служебные данные pagination, cursors, counts, view mode живут под `meta`
-
-### Success envelope
-
-Рекомендуемый success shape:
-
-```json
-{
-  "payload": {},
-  "meta": {}
-}
-```
-
-`meta` опционален и добавляется только когда реально нужен.
-
-### Error envelope
-
-Рекомендуемый error shape:
-
-```json
-{
-  "error": "stage must belong to pipeline",
-  "code": "STAGE_PIPELINE_MISMATCH",
-  "details": {
-    "stage_id": [
-      "must belong to pipeline"
-    ]
-  }
-}
-```
-
-Важно:
-
-- не возвращать ad-hoc ошибки без `code`
-- не отдавать сырой stack trace
-- `details` использовать для field-level validation и конфликтов ссылок
-
-### Recommended payload shapes
-
-Для detail endpoints:
-
-```json
-{
-  "payload": {
-    "deal": {
-      "id": 101,
-      "account_id": 1,
-      "title": "Enterprise renewal",
-      "pipeline_id": 10,
-      "stage_id": 14,
-      "owner_id": 7,
-      "team_id": null,
-      "company_id": null,
-      "amount_minor": 2500000,
-      "currency": "KZT",
-      "expected_close_on": "2026-04-30",
-      "win_probability": 65,
-      "custom_attributes": {},
-      "created_at": "2026-03-20T10:00:00Z",
-      "updated_at": "2026-03-20T10:00:00Z"
-    },
-    "contacts": [
-      {
-        "id": 55,
-        "name": "Aruzhan Nurpeisova",
-        "label_list": [
-          "vip",
-          "renewal"
-        ],
-        "custom_attributes": {}
-      }
-    ],
-    "pipeline": {
-      "id": 10,
-      "name": "Sales"
-    },
-    "stage": {
-      "id": 14,
-      "name": "Negotiation",
-      "outcome": "open"
-    }
-  }
-}
-```
-
-Для list view:
-
-```json
-{
-  "payload": {
-    "items": []
-  },
-  "meta": {
-    "view": "list",
-    "page": 1,
-    "per_page": 25,
-    "total_count": 120
-  }
-}
-```
-
-Для kanban view:
-
-```json
-{
-  "payload": {
-    "groups": [
-      {
-        "key": "negotiation",
-        "label": "Negotiation",
-        "count": 8,
-        "items": []
-      }
-    ]
-  },
-  "meta": {
-    "view": "kanban"
-  }
-}
-```
-
-Для calendar view:
-
-```json
-{
-  "payload": {
-    "range": {
-      "from": "2026-04-01",
-      "to": "2026-04-30"
-    },
-    "items": []
-  },
-  "meta": {
-    "view": "calendar"
-  }
-}
-```
-
-Практическое правило:
-
-- одна и та же сделка или задача должна иметь один canonical payload shape
-- list, kanban и calendar отличаются aggregation/meta, а не разными сериализациями одной сущности
-
-## Validation rules и error codes
-
-Все mutating endpoints должны работать через сервисы и транзакции.
-
-### Deal create/update validation
-
-- `title` обязателен
-- `pipeline_id` обязателен
-- `stage_id` обязателен и должен принадлежать указанному pipeline
-- `owner_id` обязателен и должен принадлежать текущему account
-- `team_id` optional, но если передан, должен принадлежать текущему account
-- `company_id` optional, но если передан, должен принадлежать текущему account
-- `amount_minor` не может быть отрицательным
-- если задан `amount_minor`, должна быть задана `currency`
-- `currency` должна быть трехбуквенным ISO code
-- `win_probability` только в диапазоне `0..100`
-- `contact_ids` на create должны быть непустыми
-- `contact_ids` должны быть уникальны и принадлежать текущему account
-
-### Task create/update validation
-
-- `title` обязателен
-- `status_id` обязателен и должен принадлежать текущему account
-- `creator_id` не принимается снаружи, а заполняется из `Current.user`
-- `deal_id` optional, но если передан, должен принадлежать текущему account
-- `team_id` optional, но если передан, должен принадлежать текущему account
-- `due_at` не может быть раньше `start_at`
-- assignee ids должны быть уникальны и принадлежать текущему account
-- `parent_task_id` optional, но если передан, должен принадлежать текущему account и не создавать циклов
-
-### Pipeline, stage и task status validation
-
-- `code` уникален в своем scope
-- должен существовать один default pipeline на account, если CRM deals включен
-- должен существовать один default open task status на account, если CRM tasks включен
-- stage нельзя привязать к чужому pipeline
-- referenced stage/status нельзя удалить без миграции связанных records
-- task status configuration в v1 считается частью CRM workflow settings и управляется тем же permission layer, что и pipeline settings
-
-### Recommended error codes
+Recommended CRM error codes:
 
 - `FEATURE_DISABLED`
-- `FORBIDDEN`
-- `DEAL_NOT_FOUND`
-- `TASK_NOT_FOUND`
-- `PIPELINE_NOT_FOUND`
-- `STAGE_NOT_FOUND`
-- `TASK_STATUS_NOT_FOUND`
-- `CONTACT_NOT_FOUND`
-- `COMPANY_NOT_FOUND`
 - `VALIDATION_ERROR`
-- `STAGE_PIPELINE_MISMATCH`
-- `CROSS_ACCOUNT_REFERENCE`
-- `DUPLICATE_CODE`
-- `CANNOT_DELETE_REFERENCED_RECORD`
-- `INVALID_DATE_RANGE`
-- `INVALID_CURSOR`
+- `DUPLICATE_EXTERNAL_REF`
+- `DUPLICATE_IDEMPOTENCY_KEY`
+- `INVALID_TRANSITION`
+- `STALE_RECORD`
+- `NOT_FOUND`
 
-### Error mapping
+### Payload Building
 
-- `403`
-  - `FEATURE_DISABLED`
-  - `FORBIDDEN`
-- `404`
-  - resource-specific `*_NOT_FOUND`
-- `409`
-  - `DUPLICATE_CODE`
-- `422`
-  - `VALIDATION_ERROR`
-  - `STAGE_PIPELINE_MISMATCH`
-  - `CROSS_ACCOUNT_REFERENCE`
-  - `CANNOT_DELETE_REFERENCED_RECORD`
-  - `INVALID_DATE_RANGE`
-  - `INVALID_CURSOR`
+Add `Crm::PayloadBuilder` to serialize:
 
-## Сервисы
+- deals
+- tasks
+- pipelines
+- stages
+- task statuses
+- comments
+- events
+- compact related contact/company/user summaries
 
-### Pipelines
+Payload builders should:
 
-- `Crm::Pipelines::UpsertService`
-- `Crm::Pipelines::DeleteService`
-- `Crm::Stages::UpsertService`
-- `Crm::Stages::DeleteService`
+- emit stable JSON contracts
+- preload relations to avoid N+1s
+- serialize timestamps in ISO 8601
+- return `custom_attributes` exactly as stored
 
-### Deals
+### Recommended Routes
 
-- `Crm::Deals::UpsertService`
-- `Crm::Deals::TransitionService`
-- `Crm::Deals::LinkContactsService`
-- `Crm::Deals::CommentService`
-- `Crm::Deals::TimelineQuery`
+`/api/v1/accounts/:account_id/crm/pipelines`
+
+- `index`
+- `show`
+- `create`
+- `update`
+
+`/api/v1/accounts/:account_id/crm/pipelines/:pipeline_id/stages`
+
+- `create`
+- `update`
+
+`/api/v1/accounts/:account_id/crm/deals`
+
+- `index`
+- `show`
+- `create`
+- `update`
+
+`/api/v1/accounts/:account_id/crm/deals/:id`
+
+- `archive`
+- `unarchive`
+
+`/api/v1/accounts/:account_id/crm/deals/:id/transition_stage`
+
+- `create`
+
+`/api/v1/accounts/:account_id/crm/deals/:deal_id/contacts`
+
+- `create`
+- `destroy`
+
+`/api/v1/accounts/:account_id/crm/deals/:deal_id/comments`
+
+- `index`
+- `create`
+- `update`
+- `destroy`
+
+`/api/v1/accounts/:account_id/crm/deals/:deal_id/timeline`
+
+- `index`
+
+`/api/v1/accounts/:account_id/crm/tasks`
+
+- `index`
+- `show`
+- `create`
+- `update`
+
+`/api/v1/accounts/:account_id/crm/tasks/:id`
+
+- `archive`
+- `unarchive`
+
+`/api/v1/accounts/:account_id/crm/tasks/:id/change_status`
+
+- `create`
+
+`/api/v1/accounts/:account_id/crm/tasks/:task_id/comments`
+
+- `index`
+- `create`
+- `update`
+- `destroy`
+
+`/api/v1/accounts/:account_id/crm/tasks/:task_id/timeline`
+
+- `index`
+
+`/api/v1/accounts/:account_id/crm/task_statuses`
+
+- `index`
+- `create`
+- `update`
+
+`/api/v1/accounts/:account_id/crm/field_definitions`
+
+- `index`
+- `create`
+- `update`
+- `destroy`
+
+### Write Payload Rules
+
+Deal create and update payloads should accept:
+
+- system fields as first-class params
+- `contact_ids`
+- `primary_contact_id`
+- `custom_attributes`
+
+Task create and update payloads should accept:
+
+- system fields as first-class params
+- optional `deal_id`
+- optional `originating_conversation_id`
+- `custom_attributes`
+
+Write services must reject:
+
+- unknown custom-field keys
+- custom fields not allowed in the current task context
+- cross-account ids
+- raw writes to managed timestamps such as `closed_at` and `completed_at`
+
+## Query, Search, and View Semantics
+
+Do not extend the old generalized filter layer for CRM v1.
+
+Use dedicated query services:
+
 - `Crm::Deals::IndexQuery`
-- `Crm::Deals::EventRecorder`
-
-### Tasks
-
-- `Crm::Tasks::UpsertService`
-- `Crm::Tasks::AssignService`
-- `Crm::Tasks::ChangeStatusService`
-- `Crm::Tasks::CommentService`
 - `Crm::Tasks::IndexQuery`
-- `Crm::Tasks::EventRecorder`
+- `Crm::Deals::TimelineQuery`
+- `Crm::Tasks::TimelineQuery`
 
-Оркестрация должна жить в сервисах, а не в моделях и не в контроллерах.
+### Deal Views
 
-## Lifecycle, archive и delete semantics
+Supported projections:
 
-Для надежного v1 публичные destructive операции нужно минимизировать.
+- list
+- kanban
 
-### Deals
+Default filters:
 
-- `Deal` не должен иметь public hard delete в v1
-- вместо этого используется archive semantics
-- архивные сделки исключаются из default list/kanban/calendar
-- для включения архивных сделок нужен явный filter, например `include_archived=true`
-- архивирование не удаляет `deal_events`, `deal_comments` и `deal_contacts`
+- exclude archived deals
+- scope to current account
 
-### Tasks
+Recommended filters:
 
-- `Task` не должен иметь public hard delete в v1
-- completed и archived задачи это разные состояния
-- `completed` означает завершенную работу
-- `archived` означает скрытие из operational surfaces
-- standalone task и task внутри сделки используют один lifecycle
+- `pipeline_id`
+- `stage_id`
+- `owner_id`
+- `team_id`
+- `company_id`
+- `contact_id`
+- `expected_close_from`
+- `expected_close_to`
+- `closed_from`
+- `closed_to`
+- `include_archived`
+- `q`
 
-### Pipelines, stages и task statuses
+### Task Views
 
-- если сущность уже используется, вместо hard delete применяется `active = false`
-- hard delete допустим только для нереференсных записей
-- default pipeline и default task status нельзя деактивировать без замены
+Supported projections:
 
-### Comments
+- list
+- kanban
+- calendar
 
-- комментарии не должны каскадно удалять parent entity
-- удаление комментария должно писать audit event
-- если нужна совместимость с compliance/history, предпочтителен soft delete через `deleted_at`
+Default filters:
 
-## Domain events и hooks
+- exclude archived tasks
+- scope to current account
 
-CRM должен иметь внутренний domain event layer, но не должен в первой версии тащить синхронные внешние интеграции в request path.
+Recommended filters:
 
-### After-commit events
+- `status_id`
+- `assignee_id`
+- `creator_id`
+- `team_id`
+- `deal_id`
+- `standalone_only`
+- `deal_tasks_only`
+- `due_from`
+- `due_to`
+- `start_from`
+- `start_to`
+- `include_archived`
+- `q`
 
-Рекомендуемые внутренние события:
+Calendar rules:
+
+- calendar range queries should use `due_from` and `due_to`
+- use `due_at` as the default calendar anchor in v1
+- tasks without `due_at` are not part of the calendar projection in the first runtime slice
+- frontend day, week, and month calendar views may derive `due_from` and `due_to` from the shared scheduling date-range helpers
+
+### Pagination Rules
+
+- list endpoints use `page` and `per_page`
+- `per_page` must have a hard max of `100`
+- timeline endpoints use cursor pagination
+- kanban endpoints must support per-group item caps
+
+### Search Semantics
+
+CRM-local search should cover:
+
+- record title
+- description
+- external ref
+- linked contact name
+- linked company name or domain
+
+If custom fields are marked searchable in the field catalog, query services may include them.
+
+Do not force CRM search into the existing global `SearchService` in v1. Add global search integration later through a dedicated CRM search adapter.
+
+### Kanban Semantics
+
+Kanban should be a grouped projection, not a separate persistence model.
+
+Rules:
+
+- group by stage for deals
+- each group returns items plus total count
+- support per-group pagination or item caps
+- do not return unbounded records for every stage in one request
+
+## Idempotency, Concurrency, and Reliability
+
+Reliability is a hard requirement.
+
+### Required Patterns
+
+- every CRM table is account-scoped
+- writes happen in explicit services
+- transitions happen in dedicated services
+- multi-record writes use transactions
+- unique conflicts return typed 409 errors where appropriate
+
+### Entity-Level Idempotency
+
+`Crm::Deal` and `Crm::Task` should support:
+
+- `external_ref`
+- `idempotency_key`
+
+Rules:
+
+- uniqueness is enforced per account
+- values are optional
+- these fields support imports, hooks, retry-safe requests, and future integrations
+
+### Optimistic Locking
+
+Add `lock_version` to:
+
+- `Crm::Deal`
+- `Crm::Task`
+
+Rules:
+
+- update and transition services should honor optimistic locking
+- stale writes return `STALE_RECORD`
+- UI can retry by reloading the latest record
+
+### Transition Safety
+
+Stage and status changes should:
+
+- lock the record being transitioned
+- validate same-account target config
+- create one event row inside the same transaction
+
+### Callback Discipline
+
+Do not attach CRM side effects to callbacks on:
+
+- `Contact`
+- `Conversation`
+- `Company`
+
+If CRM must react to changes elsewhere, do it through explicit services or background listeners after commit.
+
+## Indexing and Persistence Contract
+
+Recommended indexes:
+
+- pipelines:
+  - unique on `account_id, code`
+  - unique partial default index on `account_id` where `default = true`
+- stages:
+  - unique on `pipeline_id, code`
+  - index on `account_id, pipeline_id, position`
+- deals:
+  - unique partial on `account_id, external_ref` where `external_ref is not null`
+  - unique partial on `account_id, idempotency_key` where `idempotency_key is not null`
+  - partial index on `account_id, pipeline_id, stage_id, owner_id, expected_close_on` where `archived_at is null`
+  - index on `account_id, company_id`
+  - index on `account_id, team_id`
+  - index on `account_id, originating_conversation_id`
+  - optional GIN on `custom_attributes`
+- deal contacts:
+  - unique on `deal_id, contact_id`
+  - unique partial on `deal_id` where `primary = true`
+  - index on `account_id, contact_id`
+- task statuses:
+  - unique on `account_id, code`
+  - unique partial default index on `account_id` where `default = true and category = 'open'`
+- tasks:
+  - unique partial on `account_id, external_ref` where `external_ref is not null`
+  - unique partial on `account_id, idempotency_key` where `idempotency_key is not null`
+  - partial index on `account_id, status_id, assignee_id, due_at` where `archived_at is null`
+  - index on `account_id, deal_id`
+  - index on `account_id, team_id`
+  - optional GIN on `custom_attributes`
+- comments:
+  - index on `account_id, commentable_type, commentable_id, created_at`
+- events:
+  - index on `account_id, eventable_type, eventable_id, created_at`
+- field definitions:
+  - unique on `account_id, entity_kind, key`
+  - index on `account_id, entity_kind, active, position`
+
+Notes:
+
+- GIN on `custom_attributes` is useful for flexible filtering, but hot fields should be promoted to first-class columns if query pressure justifies it
+- if free-text `q` becomes hot, add targeted trigram indexes rather than one oversized generic search query
+
+## Bootstrap and Defaults
+
+CRM settings should not rely on manual SQL or ad hoc seeds.
+
+Add an idempotent bootstrap service, for example:
+
+- `Crm::Bootstrap::AccountService`
+
+Responsibilities:
+
+- create a default deal pipeline when `crm_deals` is enabled and the account has none
+- create default stages for that pipeline
+- create default task statuses when `crm_tasks` is enabled and the account has none
+- remain safe to call multiple times
+
+Suggested default deal stages:
+
+- `new`
+- `qualified`
+- `proposal`
+- `won`
+- `lost`
+
+Suggested default task statuses:
+
+- `todo`
+- `in_progress`
+- `done`
+
+Bootstrap should be feature-aware and idempotent. It must not run heavy logic on every request.
+
+## Events, Integrations, and Automation
+
+### Internal Domain Events
+
+After successful commits, emit domain events such as:
 
 - `crm.deal.created`
 - `crm.deal.updated`
 - `crm.deal.stage_changed`
 - `crm.deal.archived`
-- `crm.deal.contacts_changed`
 - `crm.task.created`
 - `crm.task.updated`
 - `crm.task.status_changed`
-- `crm.task.assignees_changed`
 - `crm.task.archived`
+- `crm.field_definition.updated`
 
-### Правила публикации событий
+Rules:
 
-- событие публикуется только после успешного commit
-- payload события должен содержать ids и snapshot полей, а не тяжелые ActiveRecord объекты
-- событие не должно ломать основной request, если downstream listener временно недоступен
-- request path не должен синхронно ждать внешние CRM/webhook adapters
+- publish after commit
+- payloads contain ids and typed snapshots, not AR objects
+- outbound hooks and listeners must be async
+- request latency must not depend on downstream webhooks
 
-### Интеграция с существующим проектом
+### External Integrations
 
-- CRM internal events можно потом связать с `Integrations::Hook` или отдельным webhook layer
-- в v1 это не должно быть обязательным условием для CRUD операций
-- если webhook/export появится позже, он должен подписываться на domain events, а не внедряться в модели через прямые callbacks
+Incoming external upsert/import flows should use the same write services as first-party flows whenever possible.
 
-## Политики и доступ
+Rules:
 
-### Базовое правило для v1
+- no parallel second write path
+- prefer `external_ref` and `idempotency_key`
+- new provider integrations go under `Integrations::Crm::*`
 
-Нельзя автоматически выводить CRM permissions из conversation permissions.
+## Reporting Readiness
 
-Это разные домены:
+CRM v1 does not need to ship a full reporting product, but the schema must be reporting-grade.
 
-- переписка отвечает за communication visibility
-- CRM отвечает за business entity visibility
+That is why the following remain first-class fields:
 
-### Практичный v1
+- deal pipeline and stage
+- deal amount and currency
+- deal owner and team
+- deal expected close date and closed date
+- task status
+- task assignee and creator
+- task due date and completed date
 
-Для первой итерации:
+Custom fields may participate in filtered views, but cross-account reporting must not depend on every important metric living only in JSON.
 
-- `administrator` получает полный CRUD
-- `agent` получает чтение и изменение deals/tasks внутри account
-- изменение pipeline/stage/task status configuration доступно только administrator
+## Explicit Anti-Patterns
 
-Отдельно:
+Do not do the following:
 
-- вложенные conversations/messages внутри deal timeline дополнительно режутся существующей conversation permission-моделью
+- do not introduce `crm_v3` as the main rollout flag
+- do not repurpose `crm_v2` into "new CRM runtime"
+- do not store deals as conversation metadata
+- do not model tasks as a serialized array on deals
+- do not overload `Note` for deal or task comments
+- do not extend `CustomAttributeDefinition` for CRM v1
+- do not derive CRM access from conversation permissions
+- do not use `AccountUser` ids in owner or assignee fields
+- do not make `company_id` mandatory
+- do not bypass existing conversation permission filtering when showing CRM timelines
+- do not add CRM write side effects into `Contact` or `Conversation` callbacks
 
-### Custom roles
+## Suggested Delivery Order
 
-Текущая custom role модель знает:
+### Phase 1: Settings Foundation
 
-- `conversation_manage`
-- `conversation_unassigned_manage`
-- `conversation_participating_manage`
-- `contact_manage`
-- `report_manage`
-- `knowledge_base_manage`
+- feature flags
+- policies
+- pipelines and stages
+- task statuses
+- field definitions
+- bootstrap service
 
-В v1 CRM не должен гадать, что `contact_manage == deal_manage`.
+### Phase 2: Deals
 
-Поэтому есть два безопасных пути:
+- deal model and joins
+- create, update, transition, archive
+- index, show, kanban
+- payload builder
+- base policy scope
 
-1. На старте не привязывать CRM к custom role permissions и жить на `administrator/agent`
-2. Добавить новые permissions отдельно:
-   - `crm_deal_view`
-   - `crm_deal_manage`
-   - `crm_task_view`
-   - `crm_task_manage`
-   - `crm_pipeline_view`
-   - `crm_pipeline_manage`
+### Phase 3: Tasks
 
-Для надежности лучше выбрать один из этих путей явно и зафиксировать до начала frontend.
+- task model
+- create, update, change status, archive
+- list and calendar projections
+- standalone and deal-linked task behavior
 
-Для гармоничной интеграции с текущим проектом нужен второй вариант.
+### Phase 4: Timeline and Collaboration
 
-Причина:
+- comments
+- events
+- deal timeline with filtered conversation context
+- task timeline
 
-- в проекте уже есть нативная permission-модель на `AccountUser.permissions`
-- custom roles уже отдаются во frontend
-- dashboard routes уже умеют скрываться по `meta.permissions`
-- значит CRM лучше встроить в эту же модель, а не вводить отдельную capability-систему с нуля
+### Phase 5: Automation and Imports
 
-## Role, permission и interface gating
+- outbound events
+- inbound upsert/import flows
+- UI polish
+- global search integration if justified
 
-### Базовый принцип
+## Test Contract
 
-Для CRM должны работать три уровня включения:
+Minimum required coverage:
 
-1. `feature flag`
-2. `permission`
-3. `policy`
+- model specs for validation, scoping, enum behavior, and unique constraints
+- policy specs for administrators, plain agents, and custom-role agents
+- service specs for create, update, transition, archive, bootstrap, and idempotency
+- request specs for payload shape, permission failures, feature-disabled failures, and conflict errors
+- query specs for filtering, pagination, search, and timeline composition
 
-Это дает неразрушающую схему:
-
-- feature flag включает или выключает CRM для account целиком
-- permission определяет, какие модули, экраны и действия видит пользователь
-- policy окончательно проверяет доступ на backend
-
-### Что уже есть в проекте и что нужно reuse
-
-В текущем проекте уже существует подход:
-
-- `AccountUser#permissions`
-- `resource.account_users[].permissions` в user payload
-- `currentAccount.permissions` на frontend
-- `route.meta.permissions`
-- `hasPermissions()` / `routeIsAccessibleFor()` в dashboard helper layer
-
-Следовательно, CRM должен reuse именно этот механизм.
-
-Нельзя вводить отдельную параллельную логику вида:
-
-- `crm_capabilities_v2`
-- отдельный специальный auth store только для CRM
-- frontend-only флаги без backend permission source
-
-### Recommended CRM permissions
-
-Для shared CRM v1 лучше ввести явные permissions:
-
-- `crm_deal_view`
-- `crm_deal_manage`
-- `crm_task_view`
-- `crm_task_manage`
-- `crm_pipeline_view`
-- `crm_pipeline_manage`
-
-Семантика:
-
-- `*_view` дает доступ к маршрутам, спискам, detail screen, timeline, календарю и kanban
-- `*_manage` дает мутации: create, update, transition, comment create, assign, status change
-
-### Safe default behavior
-
-Чтобы не ломать текущий проект, поведение должно быть таким:
-
-- `administrator` сохраняет полный доступ
-- обычный `agent` сохраняет operational CRM access
-- `custom_role` получает доступ к CRM только при наличии явных `crm_*` permissions
-
-Это важно, потому что текущий frontend helper использует OR-семантику по `permissions`, а custom role пользователь не наследует строку `'agent'`.
-
-Значит CRM routes и UI actions должны описываться так, чтобы:
-
-- admin и agent продолжали работать без миграции текущих аккаунтов
-- custom roles получали CRM только по явному разрешению
-
-### Permission matrix
-
-Рекомендуемая матрица:
-
-- `administrator`
-  - полный доступ к deals, tasks, pipelines
-- `agent`
-  - view/manage deals
-  - view/manage tasks
-  - без pipeline/stage configuration
-- `custom_role` + `crm_deal_view`
-  - видит deals module и deal detail
-- `custom_role` + `crm_deal_manage`
-  - может изменять сделки, stage, owner, comments
-- `custom_role` + `crm_task_view`
-  - видит tasks module и task detail
-- `custom_role` + `crm_task_manage`
-  - может создавать и изменять задачи
-- `custom_role` + `crm_pipeline_view`
-  - видит pipeline configuration screens
-- `custom_role` + `crm_pipeline_manage`
-  - может изменять pipeline/stage settings
-
-### Backend policy rules
-
-Политики должны быть совместимы с текущей моделью ролей:
-
-- `administrator` всегда проходит
-- `agent` проходит для operational CRM actions
-- `custom_role` проходит только при наличии соответствующего `crm_*` permission
-
-Разделение по сущностям:
-
-- `DealPolicy#index/show`
-  - `administrator`
-  - `agent`
-  - `custom_role` с `crm_deal_view` или `crm_deal_manage`
-- `DealPolicy#create/update/transition/comment`
-  - `administrator`
-  - `agent`
-  - `custom_role` с `crm_deal_manage`
-- `TaskPolicy#index/show`
-  - `administrator`
-  - `agent`
-  - `custom_role` с `crm_task_view` или `crm_task_manage`
-- `TaskPolicy#create/update/assign/change_status/comment`
-  - `administrator`
-  - `agent`
-  - `custom_role` с `crm_task_manage`
-- `PipelinePolicy#index/show`
-  - `administrator`
-  - `agent` только если нужен operational read
-  - `custom_role` с `crm_pipeline_view` или `crm_pipeline_manage`
-- `PipelinePolicy#create/update/destroy`
-  - `administrator`
-  - `custom_role` с `crm_pipeline_manage`
-
-### Action-level policy matrix
-
-Ниже должна быть зафиксирована action-level семантика, чтобы backend и frontend интерпретировали права одинаково:
-
-| Action | administrator | agent | custom role |
-| --- | --- | --- | --- |
-| `deals#index` | yes | yes | `crm_deal_view` or `crm_deal_manage` |
-| `deals#show` | yes | yes | `crm_deal_view` or `crm_deal_manage` |
-| `deals#create` | yes | yes | `crm_deal_manage` |
-| `deals#update` | yes | yes | `crm_deal_manage` |
-| `deals#transition` | yes | yes | `crm_deal_manage` |
-| `deals/contacts#create` | yes | yes | `crm_deal_manage` |
-| `deals/contacts#destroy` | yes | yes | `crm_deal_manage` |
-| `deals/comments#index` | yes | yes | `crm_deal_view` or `crm_deal_manage` |
-| `deals/comments#create` | yes | yes | `crm_deal_manage` |
-| `deals/comments#update` | yes | yes | `crm_deal_manage` |
-| `deals/comments#destroy` | yes | yes | `crm_deal_manage` |
-| `deals/timeline#index` | yes | yes | `crm_deal_view` or `crm_deal_manage` |
-| `tasks#index` | yes | yes | `crm_task_view` or `crm_task_manage` |
-| `tasks#show` | yes | yes | `crm_task_view` or `crm_task_manage` |
-| `tasks#create` | yes | yes | `crm_task_manage` |
-| `tasks#update` | yes | yes | `crm_task_manage` |
-| `tasks#change_status` | yes | yes | `crm_task_manage` |
-| `tasks#assign` | yes | yes | `crm_task_manage` |
-| `tasks/comments#index` | yes | yes | `crm_task_view` or `crm_task_manage` |
-| `tasks/comments#create` | yes | yes | `crm_task_manage` |
-| `tasks/comments#update` | yes | yes | `crm_task_manage` |
-| `tasks/comments#destroy` | yes | yes | `crm_task_manage` |
-| `pipelines#index` | yes | optional read | `crm_pipeline_view` or `crm_pipeline_manage` |
-| `pipelines#create` | yes | no | `crm_pipeline_manage` |
-| `pipelines#update` | yes | no | `crm_pipeline_manage` |
-| `pipelines#destroy` | yes | no | `crm_pipeline_manage` |
-| `stages#create` | yes | no | `crm_pipeline_manage` |
-| `stages#update` | yes | no | `crm_pipeline_manage` |
-| `stages#destroy` | yes | no | `crm_pipeline_manage` |
-| `task_statuses#index` | yes | optional read | `crm_pipeline_view` or `crm_pipeline_manage` |
-| `task_statuses#create` | yes | no | `crm_pipeline_manage` |
-| `task_statuses#update` | yes | no | `crm_pipeline_manage` |
-| `task_statuses#destroy` | yes | no | `crm_pipeline_manage` |
-
-### Frontend route and interface gating
-
-Чтобы это было гармонично с текущим dashboard, CRM frontend должен reuse существующий route permission pattern:
-
-- route-level visibility через `meta.permissions`
-- sidebar visibility через те же permission arrays
-- page actions и buttons через `currentAccount.permissions`
-
-Примеры route meta для будущих CRM экранов:
-
-- deals list/detail:
-  - `['administrator', 'agent', 'crm_deal_view', 'crm_deal_manage']`
-- tasks list/detail:
-  - `['administrator', 'agent', 'crm_task_view', 'crm_task_manage']`
-- pipeline settings:
-  - `['administrator', 'crm_pipeline_view', 'crm_pipeline_manage']`
-
-Почему так:
-
-- `administrator` и `agent` продолжают работать как раньше
-- `custom_role` пользователь попадет на route только если в `currentAccount.permissions` есть нужный `crm_*`
-- это полностью совпадает с уже существующим `routeIsAccessibleFor()`
-
-### Interface gating beyond routes
-
-Одних route permissions недостаточно.
-
-Нужно отдельно скрывать:
-
-- sidebar items
-- page tabs
-- create buttons
-- edit forms
-- transition actions
-- assign actions
-- pipeline settings actions
-
-Правило:
-
-- `view` permission открывает модуль и readonly surfaces
-- `manage` permission открывает mutating actions
-
-### Почему это не ломает текущий проект
-
-Потому что схема additive:
-
-- новые `crm_*` permissions просто добавляются в custom role permission list
-- существующие users без custom role продолжают жить на `administrator/agent`
-- текущий permission helper, route helper и user payload не требуют замены
-- backend policies просто добавляют новый домен, не меняя действующую conversation/contact access модель
-
-### Mermaid: feature/permission/policy flow
-
-```mermaid
-flowchart TD
-    A[Account has CRM feature flag?] -->|No| B[Hide module and reject backend access]
-    A -->|Yes| C[Resolve currentAccount.permissions]
-    C --> D{Route/UI requires permission?}
-    D -->|No match| E[Hide route or action]
-    D -->|Match| F[Allow route rendering]
-    F --> G[Request hits backend]
-    G --> H{Policy allows action?}
-    H -->|No| I[403 forbidden]
-    H -->|Yes| J[Execute CRM logic]
-```
-
-### Mermaid: role access cases
-
-```mermaid
-flowchart LR
-    Admin[administrator] --> Full[Full CRM access]
-    Agent[agent] --> Ops[Operational deals/tasks access]
-    CustomView[custom_role + crm_*_view] --> Read[Visible readonly CRM surfaces]
-    CustomManage[custom_role + crm_*_manage] --> Write[Mutating CRM actions]
-    CustomNone[custom_role without crm permissions] --> Hidden[CRM hidden]
-```
-
-## Feature flags и rollout
-
-Новый backend нужно включать по account-level feature flags, а не скрывать только через frontend.
-
-Рекомендуемые флаги:
-
-- `crm_deals`
-- `crm_tasks`
-- `crm_pipelines`
-
-Правила rollout:
-
-- миграции только additive
-- nullable внешние ключи на старте
-- дефолтные pipelines и task statuses можно seed'ить только при явном включении функции
-- mixed-state accounts должны поддерживаться во время rollout
-- нельзя переиспользовать существующие `crm`, `crm_v2`, `crm_integration` флаги как runtime-флаги нового shared CRM
-
-## Compatibility contract для текущего проекта
-
-Новый CRM backend должен внедряться как строго additive слой.
-
-Это значит:
-
-- не меняются текущие semantics у `Contact`, `Conversation`, `Message`, `Note`, `Company`
-- не меняются существующие contact/conversation routes и payload contracts
-- не переиспользуется `crm_v2` как флаг нового deals/tasks runtime
-- не добавляются обязательные CRM callbacks в текущие communication core сущности
-- не добавляется скрытая бизнес-логика CRM в existing contact update flows
-- не меняется текущая permission-модель conversations, contacts и reports
-- не ломается enterprise overlay и текущий custom role flow
-
-### Что считается безопасной интеграцией
-
-Безопасным для текущего проекта считается такой rollout:
-
-- новые таблицы и индексы создаются отдельно
-- новые routes живут только под `/api/v1/accounts/:account_id/crm/...`
-- новые permissions добавляются только как additive entries в existing permission list
-- новые feature flags включаются явно по account и по умолчанию выключены
-- новые sidebar items, routes и actions появляются только при совпадении feature flag и permission
-- существующие accounts без CRM feature flags не получают изменений в поведении
-- существующие API consumers не обязаны обрабатывать новые CRM payloads
-
-### Что нельзя делать при реализации
-
-Чтобы не ломать текущий проект, нельзя:
-
-- превращать `Conversation` в источник истины для сделки
-- менять текущие contact filters ради CRM semantics
-- расширять `Note` до deal/task note через side effects в existing model
-- внедрять required foreign keys из старых сущностей в новые CRM таблицы на старте
-- добавлять cross-domain callbacks вида `after_save Contact => mutate deals/tasks`
-- автосоздавать CRM данные для всех account'ов без явного feature rollout
-- делать frontend-only gating без backend policy и feature checks
-
-### Что можно добавлять без риска
-
-Можно безопасно добавлять:
-
-- новые CRM модели в `app/models/crm/`
-- новые account-scoped services в `app/services/crm/`
-- новые API endpoints в `api/v1/accounts/crm`
-- новые payload builders для CRM responses
-- новые policy classes для CRM домена
-- новые request specs и service specs без переписывания старых flow
-
-### Принцип расширяемости
-
-Если позже появятся:
-
-- полноценная company linkage logic
-- CRM labels для deals/tasks
-- relation layer beyond `task.deal_id`
-- automation и reminders
-- reporting и forecasting
-
-это должно добавляться как новые слои поверх v1, а не через переписывание уже существующих contact/conversation primitives.
-
-## Миграции и ограничения данных
-
-Обязательные ограничения:
-
-- все CRM сущности account-scoped
-- все cross-links должны валидироваться на принадлежность одному `account_id`
-- `stage.pipeline_id` должен совпадать с `deal.pipeline_id`
-- `owner_id`, `creator_id`, assignees должны принадлежать текущему account
-- `team_id` должен принадлежать текущему account
-- `deal_id` у задачи должен принадлежать текущему account
-- `currency` хранить как трехбуквенный код
-- деньги хранить в minor units, не в `decimal`
-- `win_probability` ограничить диапазоном `0..100`
-- уникальные индексы для `code` в рамках account или pipeline
-
-Отдельно:
-
-- `TaskStatus` должен быть account-scoped, а не “у каждой компании свой набор статусов”
-- `Company` в v1 CRM не является источником workflow-логики
-
-## Порядок реализации backend
-
-### Phase 0. Foundation
-
-- принять решение по namespace `Crm`
-- добавить feature flags
-- добавить `Api::V1::Accounts::Crm::BaseController`
-- подготовить routes namespace
-- добавить общий `Crm::PayloadBuilder` или набор payload builders
-
-### Phase 1. Pipeline + Deal core
-
-- `Pipeline`
-- `Stage`
-- `Deal`
-- `DealContact`
-- `DealEvent`
-- `DealComment`
-- `DealFieldDefinition`
-- optional `team_id` как native shared ownership hook
-- nullable `company_id` только как future hook без бизнес-логики
-- CRUD + transition endpoints
-
-### Phase 2. Deal timeline
-
-- `Crm::Deals::TimelineQuery`
-- permission-safe aggregation conversations/messages
-- pagination
-- initial payload builders для карточки сделки
-
-### Phase 3. Task core
-
-- `Task`
-- `TaskStatus`
-- `TaskAssignee`
-- `TaskComment`
-- `TaskEvent`
-- `TaskFieldDefinition`
-- optional `deal_id`
-- optional `team_id`
-- standalone tasks + optional deal relation
-- CRUD + status change + assignment endpoints
-
-### Phase 3.5. View queries
-
-- `Deals::IndexQuery` для `list/kanban/calendar`
-- `Tasks::IndexQuery` для `list/kanban/calendar`
-- базовые filters по owner/team/stage/status/date
-- подготовка response shape для frontend without extra endpoints explosion
-
-### Phase 4. Hardening
-
-- policy refinement
-- custom role integration
-- reporting hooks
-- background reminders
-- advanced filters
-
-## Тестирование
-
-Минимум для каждого слоя:
-
-- model specs для validations и associations
-- service specs для `Upsert`, `Transition`, `TimelineQuery`
-- query specs для `IndexQuery`
-- request specs для account-scoped API
-- policy specs для CRM policies
-
-Ожидаемые тестовые поверхности:
-
-- `spec/models/crm/...`
-- `spec/services/crm/...`
-- `spec/requests/api/v1/accounts/crm/...`
-- `spec/policies/...`
-
-Сделочный timeline нельзя выпускать без тестов на:
-
-- account scoping
-- permission filtering conversations
-- pagination
-- dedupe контактов через `deal_contacts`
-
-Index queries нельзя выпускать без тестов на:
-
-- list pagination
-- kanban grouping
-- calendar range filtering
-- owner/team filters
-- `deal_id` filter для задач
-
-Отдельно обязательны request specs на:
-
-- feature-disabled account получает `403 FEATURE_DISABLED`
-- custom role без нужного `crm_*` получает `403 FORBIDDEN`
-- custom role с `crm_*_view` видит readonly endpoints, но не mutation endpoints
-- archived deals/tasks не попадают в default index
-- `crm_v2` и legacy CRM flags не влияют на новый deals/tasks runtime
-
-## Что должно остаться за следующим шагом
-
-Этот документ намеренно не фиксирует:
-
-- sidebar routes
-- dashboard страницы
-- Pinia stores
-- формы
-- composer в карточке сделки
-- kanban UX
-
-Следующий документ должен отдельно описать frontend поверх этого backend-контракта.
-
-## Явная граница v1 и следующих фаз
-
-### Входит в v1
-
-- pipelines и stages для сделок
-- deals, deal contacts, deal comments, deal events
-- permission-safe deal timeline
-- task statuses, tasks, task assignees, task comments, task events
-- list, kanban, calendar query layer
-- custom fields для deals и tasks
-- feature flags, permissions, policies, rollout contract
-- archive semantics вместо risky hard delete
-
-### Не входит в v1
-
-- company-driven workflow logic
-- labels subsystem для deals/tasks
-- generic relation engine beyond `task.deal_id`
-- automation rules, reminders orchestration, SLA
-- recurring tasks
-- workload balancing
-- forecasting, revenue analytics, dashboards
-- public webhook contracts для CRM
-- frontend UX specification
-
-### Может идти сразу после v1
-
-- company linkage logic
-- CRM labels
-- richer reporting
-- background reminders
-- automation triggers from CRM domain events
-
-## Короткий итог
-
-Самый нативный и надежный путь для `onelink` сейчас такой:
-
-- строить CRM как новый shared backend-модуль в `app/`
-- переиспользовать `Contact`, `Company`, `Conversation`, `Message`, `Team`
-- не превращать `Conversation` в `Deal`
-- не ломать текущий `CustomAttributeDefinition`
-- использовать уже существующие contact labels и contact attributes как shared customer metadata layer
-- опираться на account-scoped flow, permission model и свежий backend-паттерн из `scheduling`
-- держать `Company` как future hook без логики в v1
-- не вводить generic relation layer там, где пока достаточно прямого `task.deal_id`
-- делать сначала `Pipeline + Deal + Deal timeline`, потом `Task` как standalone сущность с optional связью к `Deal`
+Must-have scenarios:
+
+- cross-account isolation on every relation
+- `crm_v2` continues to behave as before
+- stale update returns `STALE_RECORD`
+- duplicate `external_ref` returns 409
+- duplicate `idempotency_key` returns 409
+- deal timeline respects conversation visibility
+- standalone task and deal-linked task use the same task model correctly
+- custom field validation rejects unknown keys and disallowed contexts
+- archived records stay out of default queries
+- company defaulting from primary contact is safe and not over-eager
+
+## Final Architecture Decision
+
+The native Onelink CRM should be:
+
+- one shared runtime in `app/`
+- separate first-class `Deal` and `Task` aggregates
+- account-scoped and Pundit-authorized
+- feature-gated by capability, not by version-number flags
+- backed by dedicated configuration entities for pipelines, stages, task statuses, and CRM field definitions
+- extensible through a merged field catalog, not through weakening core relations into generic JSON
+- reliable under retries and concurrent edits through idempotency, optimistic locking, and explicit transition services
+
+That shape is the best fit for the current project because it extends the codebase's existing strengths instead of fighting them.

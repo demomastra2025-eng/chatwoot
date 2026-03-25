@@ -157,6 +157,36 @@ Rails.application.routes.draw do
             resources :workday_overrides, only: [:index, :create, :update, :destroy]
             resources :time_offs, only: [:index, :create, :update, :destroy]
           end
+          namespace :crm do
+            resources :pipelines, only: [:index, :show, :create, :update] do
+              resources :stages, only: [:create]
+            end
+            resources :stages, only: [:update]
+            resources :task_statuses, only: [:index, :create, :update]
+            resources :field_definitions, only: [:index, :create, :update, :destroy]
+            resources :deals, only: [:index, :show, :create, :update] do
+              scope module: :deals do
+                resources :comments, only: [:index, :create, :update, :destroy]
+              end
+              member do
+                get :timeline
+                post :transition_stage
+                post :archive
+                post :unarchive
+              end
+            end
+            resources :tasks, only: [:index, :show, :create, :update] do
+              scope module: :tasks do
+                resources :comments, only: [:index, :create, :update, :destroy]
+              end
+              member do
+                get :timeline
+                post :change_status
+                post :archive
+                post :unarchive
+              end
+            end
+          end
           namespace :channels do
             resource :twilio_channel, only: [:create]
           end
@@ -268,6 +298,28 @@ Rails.application.routes.draw do
             end
 
             resource :csat_template, only: [:show, :create], controller: 'inbox_csat_templates'
+          end
+
+          namespace :telephony do
+            resources :calls, only: [:index, :show], param: :call_ref do
+              collection do
+                post :outbound
+              end
+            end
+
+            get :capabilities, to: 'resources#capabilities'
+            get 'resources/summary', to: 'resources#summary'
+            get 'resources/readiness', to: 'resources#readiness'
+            get :applications, to: 'resources#applications'
+            get :numbers, to: 'resources#numbers'
+            get 'numbers/:number_ref', to: 'resources#number'
+            get :trunks, to: 'resources#trunks'
+            get :agents, to: 'resources#agents'
+
+            post 'numbers/:number_ref/route', to: 'routing#update'
+            post 'agents/:agent_ref/enabled', to: 'agents#enabled'
+            post 'ai/toggle', to: 'routing#toggle_ai'
+            post 'webphone/token', to: 'webphone#create'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do
@@ -633,6 +685,10 @@ Rails.application.routes.draw do
       post 'voice/conference_status/:phone', to: 'voice#conference_status', as: :voice_conference_status
     end
   end
+
+  post 'telephony/internal/events', to: 'telephony/bridge_events#create'
+  post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
+  post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
 
   get 'microsoft/callback', to: 'microsoft/callbacks#show'
   get 'google/callback', to: 'google/callbacks#show'

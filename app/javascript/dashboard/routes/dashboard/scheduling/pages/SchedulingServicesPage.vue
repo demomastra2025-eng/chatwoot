@@ -24,6 +24,10 @@ import {
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
+import {
+  buildServicePricePayload,
+  resolveDraftServicePrice,
+} from '../servicePricing';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t } = useI18n();
@@ -162,6 +166,15 @@ const closeDrawer = () => {
   resetForm();
 };
 
+const handlePriceActiveChange = (priceRow, nextActive) => {
+  priceRow.active = nextActive;
+  priceRow.price = resolveDraftServicePrice({
+    active: nextActive,
+    basePrice: serviceForm.basePrice,
+    price: priceRow.price,
+  });
+};
+
 const saveService = async () => {
   try {
     await referencesStore.saveService({
@@ -175,14 +188,7 @@ const saveService = async () => {
       name: serviceForm.name,
       prices: serviceForm.prices
         .filter(price => price.active || price.price)
-        .map(price => ({
-          active: price.active,
-          compensation_percent: toNumeric(price.compensationPercent) || 0,
-          compensation_type: price.compensationType,
-          compensation_value: toNumeric(price.compensationValue) || 0,
-          price: toNumeric(price.price) || 0,
-          resource_id: price.resourceId,
-        })),
+        .map(price => buildServicePricePayload(price, serviceForm.basePrice)),
       service_type: serviceForm.serviceType,
     });
     useAlert(t('SCHEDULING.SERVICES.SUCCESS_SAVE'));
@@ -465,7 +471,10 @@ onMounted(async () => {
                   {{ price.resourceName }}
                 </span>
                 <label class="flex items-center gap-2 text-xs text-n-slate-11">
-                  <Switch v-model="price.active" />
+                  <Switch
+                    v-model="price.active"
+                    @change="handlePriceActiveChange(price, $event)"
+                  />
                   <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
                 </label>
               </div>

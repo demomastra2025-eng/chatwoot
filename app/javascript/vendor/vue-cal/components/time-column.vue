@@ -3,7 +3,11 @@
   .vuecal__all-day-label(v-if="config.allDayEvents")
     slot(name="all-day-label") {{ vuecal.texts.allDay }}
 
-  .vuecal__time-cell(v-for="(time, i) in timeCells" :key="i" :style="{ height: time.height || null }")
+  .vuecal__time-cell(
+    v-for="(time, i) in timeCells"
+    :key="i"
+    :class="time.classes"
+    :style="{ height: time.height || null }")
     slot(
       name="time-cell"
       :index="i"
@@ -40,6 +44,11 @@ const timeCells = computed(() => {
     }
 
     cells.push({
+      classes: {
+        'vuecal__time-cell--half-hour': i % 30 === 0 && i % 60 !== 0,
+        'vuecal__time-cell--hour': i % 60 === 0,
+        'vuecal__time-cell--minor': i % 30 !== 0
+      },
       minutesSum: i, // The sum of hours + minutes in minutes.
       hours,
       minutes: mins,

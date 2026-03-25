@@ -1,5 +1,9 @@
 <script setup>
-defineProps({
+const props = defineProps({
+  borderless: {
+    type: Boolean,
+    default: false,
+  },
   columns: {
     type: Array,
     required: true,
@@ -13,7 +17,10 @@ defineProps({
 
 <template>
   <div
-    class="overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
+    class="overflow-hidden rounded-2xl bg-n-solid-2"
+    :class="
+      props.borderless ? '' : 'outline outline-1 outline-n-container shadow-sm'
+    "
   >
     <div
       class="grid border-b border-n-weak bg-n-surface-2/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-n-slate-10 backdrop-blur"

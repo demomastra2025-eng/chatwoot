@@ -425,9 +425,9 @@ medelement:
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
           'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
           'sync_interval_hours': { 'type': 'integer', 'enum': [1, 2, 3, 4, 6, 8, 12, 24] },
-          'sync_time_of_day': { 'type': 'string', 'pattern': '^([01]\\d|2[0-3]):[0-5]\\d$' },
+          'sync_time_of_day': { 'type': 'string', 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
         },
-      'required': ['organization_id', 'timezone'],
+      'required': ['timezone'],
       'additionalProperties': false,
     }
   settings_form_schema:
@@ -459,12 +459,6 @@ medelement:
         'name': 'enabled',
         'value': true,
         'store': 'status',
-      },
-      {
-        'label': 'Organization ID',
-        'type': 'text',
-        'name': 'organization_id',
-        'validation': 'required',
       },
       {
         'label': 'Timezone',

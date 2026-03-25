@@ -14,6 +14,17 @@
 #  account_id        :bigint           not null
 #  resource_id       :bigint
 #
+# Indexes
+#
+#  idx_scheduling_time_offs_on_account_resource_range  (account_id,resource_id,starts_at,ends_at)
+#  index_scheduling_time_offs_on_account_id            (account_id)
+#  index_scheduling_time_offs_on_resource_id           (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::TimeOff < ApplicationRecord
   belongs_to :account

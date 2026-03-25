@@ -28,7 +28,6 @@ RSpec.describe 'Integration Hooks API', type: :request do
         password: 'super-secret'
       },
       settings: {
-        organization_id: '412849431501753534',
         timezone: 'Asia/Almaty',
         sync_specialists: true,
         sync_receptions: true,
@@ -262,13 +261,38 @@ RSpec.describe 'Integration Hooks API', type: :request do
     end
 
     context 'when it is an authenticated user' do
-      it 'will process the events' do
+      it 'returns unauthorized if agent' do
         post process_event_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
              params: params,
              headers: agent.create_new_auth_token,
              as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it 'returns an error for unsupported hook events' do
+        post process_event_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+             params: params,
+             headers: admin.create_new_auth_token,
+             as: :json
+
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to eq 'No processor found'
+      end
+
+      it 'enqueues a manual medelement sync for admin' do
+        account.enable_features!('scheduling')
+        medelement_hook = create(:integrations_hook, :medelement, account: account)
+        allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+
+        post process_event_api_v1_account_integrations_hook_url(account_id: account.id, id: medelement_hook.id),
+             params: { event: 'sync' },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['message']).to eq 'Medelement sync started'
+        expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(medelement_hook.id)
       end
     end
   end

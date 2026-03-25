@@ -2,30 +2,35 @@
 #
 # Table name: channel_whatsapp_web
 #
-#  id                   :bigint           not null, primary key
-#  connection_state     :string           default("close"), not null
-#  conversation_pending :boolean          default(FALSE), not null
-#  history_lookback_days :integer         default(365), not null
-#  ignore_jids          :jsonb            not null
-#  import_contacts      :boolean          default(TRUE), not null
-#  import_messages      :boolean          default(TRUE), not null
-#  instance_name        :string           not null
-#  last_error           :text
-#  last_synced_at       :datetime
-#  lifecycle_state      :string           default("creating"), not null
-#  phone_number         :string           not null
-#  provider             :string           default("evolution"), not null
-#  provider_config      :jsonb            not null
-#  qr_code              :jsonb            not null
-#  sign_delimiter       :string           default("\\n"), not null
-#  sign_messages        :boolean          default(FALSE), not null
-#  sync_labels          :boolean          default(TRUE), not null
-#  sync_state           :jsonb            not null
-#  webhook_identifier   :string           not null
-#  webhook_secret       :string           not null
-#  created_at           :datetime         not null
-#  updated_at           :datetime         not null
-#  account_id           :integer          not null
+#  id                    :bigint           not null, primary key
+#  connection_state      :string           default("close"), not null
+#  conversation_pending  :boolean          default(FALSE), not null
+#  history_lookback_days :integer          default(365), not null
+#  ignore_jids           :jsonb            not null
+#  import_contacts       :boolean          default(TRUE), not null
+#  import_messages       :boolean          default(TRUE), not null
+#  instance_name         :string           not null
+#  last_error            :text
+#  last_synced_at        :datetime
+#  lifecycle_state       :string           default("creating"), not null
+#  phone_number          :string           not null
+#  provider              :string           default("evolution"), not null
+#  provider_config       :jsonb            not null
+#  qr_code               :jsonb            not null
+#  sign_delimiter        :string           default("\\n"), not null
+#  sign_messages         :boolean          default(FALSE), not null
+#  sync_labels           :boolean          default(TRUE), not null
+#  sync_state            :jsonb            not null
+#  webhook_identifier    :string           not null
+#  webhook_secret        :string           not null
+#  created_at            :datetime         not null
+#  updated_at            :datetime         not null
+#  account_id            :integer          not null
+#
+# Indexes
+#
+#  index_channel_whatsapp_web_on_instance_name       (instance_name) UNIQUE
+#  index_channel_whatsapp_web_on_webhook_identifier  (webhook_identifier) UNIQUE
 #
 
 class Channel::WhatsappWeb < ApplicationRecord

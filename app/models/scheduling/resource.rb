@@ -2,23 +2,34 @@
 #
 # Table name: scheduling_resources
 #
-#  id                 :bigint           not null, primary key
-#  active             :boolean          default(TRUE), not null
-#  color              :string
-#  compensation_type  :string           default("percent"), not null
-#  compensation_value :integer          default(0), not null
-#  compensation_percent :integer         default(0), not null
-#  custom_attributes  :jsonb            not null
-#  description        :text
-#  name               :string           not null
-#  photo_url          :string
-#  slot_duration_min  :integer          default(30), not null
-#  specialty          :string
-#  timezone           :string           default("Asia/Almaty"), not null
-#  created_at         :datetime         not null
-#  updated_at         :datetime         not null
-#  account_id         :bigint           not null
-#  user_id            :bigint
+#  id                   :bigint           not null, primary key
+#  active               :boolean          default(TRUE), not null
+#  color                :string
+#  compensation_percent :integer          default(0), not null
+#  compensation_type    :string           default("percent"), not null
+#  compensation_value   :integer          default(0), not null
+#  custom_attributes    :jsonb            not null
+#  description          :text
+#  name                 :string           not null
+#  photo_url            :string
+#  slot_duration_min    :integer          default(30), not null
+#  specialty            :string
+#  timezone             :string           default("Asia/Almaty"), not null
+#  created_at           :datetime         not null
+#  updated_at           :datetime         not null
+#  account_id           :bigint           not null
+#  user_id              :bigint
+#
+# Indexes
+#
+#  idx_scheduling_resources_on_account_active_name  (account_id,active,name)
+#  index_scheduling_resources_on_account_id         (account_id)
+#  index_scheduling_resources_on_user_id            (user_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (user_id => users.id)
 #
 
 class Scheduling::Resource < ApplicationRecord

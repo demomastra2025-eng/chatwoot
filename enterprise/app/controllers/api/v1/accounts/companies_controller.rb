@@ -46,7 +46,7 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
   private
 
   def resolved_companies
-    @resolved_companies ||= Current.account.companies
+    @resolved_companies ||= Current.account.companies.with_attached_avatar
   end
 
   def set_current_page

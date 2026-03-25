@@ -60,13 +60,13 @@ const navigateToConversation = conversationId => {
   }
 };
 
-const startCall = async inboxId => {
+const startCall = async inbox => {
   if (isInitiatingCall.value) return;
 
   try {
     const response = await store.dispatch('contacts/initiateCall', {
       contactId: props.contactId,
-      inboxId,
+      inboxId: inbox.id,
     });
     const { call_sid: callSid, conversation_id: conversationId } = response;
 
@@ -75,7 +75,8 @@ const startCall = async inboxId => {
     callsStore.addCall({
       callSid,
       conversationId,
-      inboxId,
+      inboxId: inbox.id,
+      provider: inbox.provider,
       callDirection: 'outbound',
     });
 
@@ -93,12 +94,12 @@ const onClick = async () => {
     return;
   }
   const [inbox] = voiceInboxes.value;
-  await startCall(inbox.id);
+  await startCall(inbox);
 };
 
 const onPickInbox = async inbox => {
   dialogRef.value?.close();
-  await startCall(inbox.id);
+  await startCall(inbox);
 };
 </script>
 
@@ -134,11 +135,26 @@ const onPickInbox = async inbox => {
         >
           <div class="flex items-center gap-2">
             <span class="i-ri-phone-fill text-n-slate-10" />
-            <span class="text-sm text-n-slate-12">{{ inbox.name }}</span>
+            <div class="flex flex-col">
+              <span class="text-sm text-n-slate-12">{{ inbox.name }}</span>
+              <span
+                v-if="inbox.provider === 'fonoster'"
+                class="text-xs text-n-slate-10"
+              >
+                {{ $t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER') }}
+              </span>
+            </div>
           </div>
-          <span v-if="inbox.phone_number" class="text-xs text-n-slate-10">
-            {{ inbox.phone_number }}
-          </span>
+          <div class="flex items-center gap-2">
+            <span
+              class="rounded-md bg-n-alpha-2 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-n-slate-11"
+            >
+              {{ inbox.provider }}
+            </span>
+            <span v-if="inbox.phone_number" class="text-xs text-n-slate-10">
+              {{ inbox.phone_number }}
+            </span>
+          </div>
         </button>
       </div>
     </Dialog>

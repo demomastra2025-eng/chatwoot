@@ -41,6 +41,25 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 
+  it 'creates an appointment with prepayment and defaults the payment method' do
+    post path,
+         params: base_params.merge(prepaid_amount: 5_000),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'prepaid_amount')).to eq(5_000)
+    expect(response_body.dig('payload', 'prepaid_payment_method')).to eq('cash')
+    expect(response_body.dig('payload', 'payment_status')).to eq('prepaid')
+
+    appointment = Scheduling::Appointment.find(response_body.dig('payload', 'id'))
+    prepaid_payment = appointment.payments.find_by(payment_kind: 'prepaid')
+
+    expect(prepaid_payment).to be_present
+    expect(prepaid_payment.payment_method).to eq('cash')
+    expect(prepaid_payment.amount).to eq(5_000)
+  end
+
   it 'rejects appointment outside working hours' do
     post path, params: base_params.merge(starts_at: booking_day.change(hour: 8).iso8601, ends_at: booking_day.change(hour: 8, min: 30).iso8601),
                headers: headers, as: :json
@@ -165,6 +184,112 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_amount')).to eq(0)
     expect(Time.iso8601(response_body.dig('payload', 'starts_at'))).to eq(booking_day + 1.hour)
     expect(Time.iso8601(response_body.dig('payload', 'ends_at'))).to eq(booking_day + 90.minutes)
+  end
+
+  it 'keeps the saved service amount when updating an appointment without changing service or specialist' do
+    create(
+      :scheduling_service_price,
+      account: account,
+      service: service,
+      resource: resource,
+      price: 20_000
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    service.prices.find_by!(resource_id: resource.id).update!(price: 30_000)
+
+    put "#{path}/#{appointment.id}",
+        params: {
+          starts_at: (booking_day + 1.hour).iso8601,
+          ends_at: (booking_day + 90.minutes).iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'service_amount')).to eq(20_000)
+    expect(appointment.reload.service_amount).to eq(20_000)
+  end
+
+  it 'keeps a zero service amount when updating an appointment without changing service or specialist' do
+    create(
+      :scheduling_service_price,
+      account: account,
+      service: service,
+      resource: resource,
+      price: 20_000
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 0,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    service.prices.find_by!(resource_id: resource.id).update!(price: 30_000)
+
+    put "#{path}/#{appointment.id}",
+        params: {
+          starts_at: (booking_day + 1.hour).iso8601,
+          ends_at: (booking_day + 90.minutes).iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'service_amount')).to eq(0)
+    expect(appointment.reload.service_amount).to eq(0)
+  end
+
+  it 'clears prepaid payment method and prepaid journal entry when prepayment is removed' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      prepaid_amount: 5_000,
+      prepaid_payment_method: 'kaspi_qr',
+      payment_status: 'prepaid',
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    create(
+      :scheduling_payment,
+      appointment: appointment,
+      account: account,
+      amount: 5_000,
+      payment_method: 'kaspi_qr',
+      payment_kind: 'prepaid'
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { prepaid_amount: 0 },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'prepaid_amount')).to eq(0)
+    expect(response_body.dig('payload', 'prepaid_payment_method')).to be_nil
+    expect(response_body.dig('payload', 'payment_status')).to eq('awaiting_payment')
+
+    appointment.reload
+
+    expect(appointment.prepaid_payment_method).to be_nil
+    expect(appointment.payments.find_by(payment_kind: 'prepaid')).to be_nil
   end
 
   it 'rejects updates to imported Medelement appointments' do

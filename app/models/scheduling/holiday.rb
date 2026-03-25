@@ -12,6 +12,15 @@
 #  updated_at           :datetime         not null
 #  account_id           :bigint           not null
 #
+# Indexes
+#
+#  idx_scheduling_holidays_on_account_date  (account_id,date)
+#  index_scheduling_holidays_on_account_id  (account_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#
 
 class Scheduling::Holiday < ApplicationRecord
   belongs_to :account

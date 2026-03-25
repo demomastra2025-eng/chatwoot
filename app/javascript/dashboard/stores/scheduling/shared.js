@@ -54,6 +54,8 @@ const ERROR_KEY_BY_MESSAGE = {
   'Slot is already occupied': 'SCHEDULING.ERRORS.SLOT_CONFLICT',
   'Total received amount cannot exceed service_amount':
     'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
+  'total received amount cannot exceed service_amount':
+    'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
   'client_name is required': 'SCHEDULING.ERRORS.CLIENT_NAME_REQUIRED',
   'resource_id is required for service prices':
     'SCHEDULING.ERRORS.RESOURCE_REQUIRED_FOR_SERVICE_PRICE',
@@ -69,6 +71,7 @@ const ERROR_FIELD_KEY_BY_NAME = {
   client_name: 'SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME',
   ends_at: 'SCHEDULING.APPOINTMENT_FORM.ENDS_AT',
   from: 'SCHEDULING.KASSA.FROM',
+  prepaid_amount: 'SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT',
   resource_id: 'SCHEDULING.APPOINTMENT_FORM.RESOURCE',
   service_amount: 'SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT',
   starts_at: 'SCHEDULING.APPOINTMENT_FORM.STARTS_AT',

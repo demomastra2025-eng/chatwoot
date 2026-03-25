@@ -245,12 +245,18 @@ export const deriveVisibleMinuteWindow = ({
   }
 
   const startMinute = clampMinute(
-    Math.floor(Math.min(...normalizedRelevantMinutes) / MINUTE_STEP) *
-      MINUTE_STEP
+    Math.min(
+      DEFAULT_VISIBLE_START_MINUTE,
+      Math.floor(Math.min(...normalizedRelevantMinutes) / MINUTE_STEP) *
+        MINUTE_STEP
+    )
   );
   const endMinute = clampMinute(
-    Math.ceil(Math.max(...normalizedRelevantMinutes) / MINUTE_STEP) *
-      MINUTE_STEP
+    Math.max(
+      DEFAULT_VISIBLE_END_MINUTE,
+      Math.ceil(Math.max(...normalizedRelevantMinutes) / MINUTE_STEP) *
+        MINUTE_STEP
+    )
   );
 
   return {

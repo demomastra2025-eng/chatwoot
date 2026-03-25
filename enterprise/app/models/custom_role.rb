@@ -33,6 +33,12 @@ class CustomRole < ApplicationRecord
     conversation_unassigned_manage
     conversation_participating_manage
     contact_manage
+    crm_deal_view
+    crm_deal_manage
+    crm_task_view
+    crm_task_manage
+    crm_settings_view
+    crm_settings_manage
     report_manage
     knowledge_base_manage
   ].freeze

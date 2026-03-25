@@ -137,7 +137,7 @@
   display_name: Linear Integration
   enabled: false
 - name: captain_integration
-  display_name: Captain
+  display_name: AI Agents
   enabled: false
   premium: true
 - name: custom_roles
@@ -177,7 +177,7 @@
   display_name: Notion Integration
   enabled: false
 - name: captain_integration_v2
-  display_name: Captain V2
+  display_name: AI Agents V2
   enabled: false
   premium: true
 - name: whatsapp_embedded_signup
@@ -235,7 +235,7 @@
   enabled: false
   premium: true
 - name: captain_tasks
-  display_name: Captain Tasks
+  display_name: AI Agent Tasks
   enabled: true
 - name: conversation_required_attributes
   display_name: Required Conversation Attributes
@@ -251,3 +251,9 @@
 - name: scheduling_finance
   display_name: Scheduling Finance
   enabled: true
+- name: crm_deals
+  display_name: CRM Deals
+  enabled: false
+- name: crm_tasks
+  display_name: CRM Tasks
+  enabled: false

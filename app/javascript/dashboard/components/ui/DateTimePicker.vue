@@ -46,6 +46,8 @@ import {
   YearPickerRoot,
 } from 'reka-ui';
 
+import TimeWheelPicker from './TimeWheelPicker.vue';
+
 const props = defineProps({
   confirmText: {
     type: String,
@@ -107,6 +109,11 @@ const props = defineProps({
   popupClass: {
     type: String,
     default: '',
+  },
+  timePickerVariant: {
+    type: String,
+    default: 'wheel',
+    validator: value => ['field', 'wheel'].includes(value),
   },
 });
 
@@ -318,10 +325,39 @@ const iconTriggerClasses = computed(() => [
   'reka-date-time-picker__icon-trigger inline-flex size-4 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-n-slate-10 shadow-none outline-none ring-0 transition-colors hover:text-n-slate-12 focus-visible:text-n-slate-12 focus-visible:outline-none focus-visible:ring-0 data-[state=open]:text-n-slate-12',
 ]);
 
+const timePopupWidthClass = computed(() => {
+  if (props.type === 'date') return 'w-[21rem]';
+  if (props.type === 'datetime') {
+    return props.timePickerVariant === 'wheel' ? 'w-[32rem]' : 'w-[29rem]';
+  }
+
+  return props.timePickerVariant === 'wheel' ? 'w-[18rem]' : 'w-[14rem]';
+});
+
 const popupClasses = computed(() => [
-  'reka-date-time-picker__content z-[120] rounded-xl border border-n-container bg-n-alpha-3 p-2 text-n-slate-12 shadow-md backdrop-blur-[100px] dark:bg-n-alpha-3',
-  props.type === 'time' ? 'w-[14rem]' : 'w-[21rem]',
+  'reka-date-time-picker__content z-[120] max-w-[calc(100vw-1rem)] overflow-x-auto rounded-xl border border-n-container bg-n-alpha-3 p-2 text-n-slate-12 shadow-md backdrop-blur-[100px] dark:bg-n-alpha-3',
+  timePopupWidthClass.value,
   props.popupClass,
+]);
+
+const popupContentClasses = computed(() => {
+  if (props.type !== 'datetime') {
+    return 'flex flex-col';
+  }
+
+  return 'flex items-center gap-2';
+});
+
+const popupCalendarPanelClasses = computed(() => {
+  return props.type === 'datetime' ? 'shrink-0' : '';
+});
+
+const popupTimePanelClasses = computed(() => [
+  'shrink-0 self-center',
+  props.type === 'datetime'
+    ? 'border-l border-n-weak pl-2'
+    : 'mt-2 border-t border-n-weak pt-2',
+  props.timePickerVariant === 'wheel' ? 'w-[10rem]' : 'w-[8rem]',
 ]);
 
 const segmentClass = computed(() => [
@@ -330,6 +366,7 @@ const segmentClass = computed(() => [
 
 const popupTimeFieldClasses =
   'inline-flex h-10 w-full items-center overflow-hidden whitespace-nowrap rounded-lg bg-n-alpha-black2 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak transition-all duration-150 focus-within:outline-n-brand data-[invalid]:outline-n-ruby-8 data-[invalid]:hover:outline-n-ruby-9 data-[invalid]:focus-within:outline-n-ruby-9 dark:bg-n-solid-1';
+const useWheelTimePicker = computed(() => props.timePickerVariant === 'wheel');
 
 const pickerNavButtonClasses =
   'flex size-9 items-center justify-center rounded-lg text-n-slate-10 transition-colors hover:bg-n-alpha-2 hover:text-n-slate-12';
@@ -763,268 +800,297 @@ syncModelsFromDate(currentDate.value);
       </DatePickerTrigger>
 
       <DatePickerContent align="start" :side-offset="8" :class="popupClasses">
-        <DatePickerCalendar
-          v-if="calendarPanel === 'day'"
-          v-slot="{ weekDays, grid }"
-          class="flex flex-col gap-3"
-        >
-          <DatePickerHeader class="flex items-center justify-between gap-2">
-            <DatePickerPrev as-child>
-              <button type="button" :class="pickerNavButtonClasses">
-                <span class="i-lucide-chevron-left size-4" aria-hidden="true" />
-              </button>
-            </DatePickerPrev>
+        <div :class="popupContentClasses">
+          <div :class="popupCalendarPanelClasses">
+            <DatePickerCalendar
+              v-if="calendarPanel === 'day'"
+              v-slot="{ weekDays, grid }"
+              class="flex flex-col gap-3"
+            >
+              <DatePickerHeader class="flex items-center justify-between gap-2">
+                <DatePickerPrev as-child>
+                  <button type="button" :class="pickerNavButtonClasses">
+                    <span
+                      class="i-lucide-chevron-left size-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </DatePickerPrev>
 
-            <div class="flex min-w-0 flex-1 items-center justify-center gap-1">
-              <button
-                type="button"
-                :class="pickerModeButtonClasses"
-                :aria-label="t('DATE_TIME_PICKER.MONTH')"
-                @click="openMonthPanel"
-              >
-                {{ monthLabel }}
-              </button>
-              <button
-                type="button"
-                :class="pickerModeButtonClasses"
-                :aria-label="t('DATE_TIME_PICKER.YEAR')"
-                @click="openYearPanel"
-              >
-                {{ calendarYear }}
-              </button>
-            </div>
+                <div
+                  class="flex min-w-0 flex-1 items-center justify-center gap-1"
+                >
+                  <button
+                    type="button"
+                    :class="pickerModeButtonClasses"
+                    :aria-label="t('DATE_TIME_PICKER.MONTH')"
+                    @click="openMonthPanel"
+                  >
+                    {{ monthLabel }}
+                  </button>
+                  <button
+                    type="button"
+                    :class="pickerModeButtonClasses"
+                    :aria-label="t('DATE_TIME_PICKER.YEAR')"
+                    @click="openYearPanel"
+                  >
+                    {{ calendarYear }}
+                  </button>
+                </div>
 
-            <DatePickerNext as-child>
-              <button type="button" :class="pickerNavButtonClasses">
+                <DatePickerNext as-child>
+                  <button type="button" :class="pickerNavButtonClasses">
+                    <span
+                      class="i-lucide-chevron-right size-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </DatePickerNext>
+              </DatePickerHeader>
+
+              <DatePickerGrid
+                v-for="month in grid"
+                :key="month.value.toString()"
+                class="w-full border-separate border-spacing-1"
+              >
+                <DatePickerGridHead>
+                  <DatePickerGridRow>
+                    <DatePickerHeadCell
+                      v-for="day in weekDays"
+                      :key="day"
+                      class="size-9 rounded-lg p-0 text-xs font-medium text-n-slate-10"
+                    >
+                      {{ day }}
+                    </DatePickerHeadCell>
+                  </DatePickerGridRow>
+                </DatePickerGridHead>
+
+                <DatePickerGridBody>
+                  <DatePickerGridRow
+                    v-for="(weekDates, index) in month.rows"
+                    :key="`${month.value.toString()}-${index}`"
+                  >
+                    <DatePickerCell
+                      v-for="weekDate in weekDates"
+                      :key="weekDate.toString()"
+                      :date="weekDate"
+                      class="p-0"
+                    >
+                      <DatePickerCellTrigger
+                        v-slot="slotProps"
+                        as-child
+                        :day="weekDate"
+                        :month="month.value"
+                      >
+                        <button
+                          type="button"
+                          :class="calendarCellClass(slotProps)"
+                          :disabled="
+                            slotProps.disabled || slotProps.unavailable
+                          "
+                        >
+                          {{ slotProps.dayValue }}
+                        </button>
+                      </DatePickerCellTrigger>
+                    </DatePickerCell>
+                  </DatePickerGridRow>
+                </DatePickerGridBody>
+              </DatePickerGrid>
+            </DatePickerCalendar>
+
+            <MonthPickerRoot
+              v-else-if="calendarPanel === 'month'"
+              :model-value="currentCalendarPlaceholder"
+              :placeholder="currentCalendarPlaceholder"
+              :locale="localeCode"
+              @update:model-value="handleMonthPickerChange"
+              @update:placeholder="handlePlaceholderChange"
+            >
+              <template #default="{ grid }">
+                <MonthPickerHeader class="mb-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    :class="pickerNavButtonClasses"
+                    :aria-label="t('DATE_TIME_PICKER.BACK')"
+                    @click="closePickerPanel"
+                  >
+                    <span
+                      class="i-lucide-chevron-left size-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+
+                  <MonthPickerPrev as-child>
+                    <button type="button" :class="pickerNavButtonClasses">
+                      <span class="i-lucide-minus size-4" aria-hidden="true" />
+                    </button>
+                  </MonthPickerPrev>
+
+                  <MonthPickerHeading
+                    v-slot="{ headingValue }"
+                    class="flex-1 text-center text-sm font-medium text-n-slate-12"
+                  >
+                    {{ headingValue }}
+                  </MonthPickerHeading>
+
+                  <MonthPickerNext as-child>
+                    <button type="button" :class="pickerNavButtonClasses">
+                      <span class="i-lucide-plus size-4" aria-hidden="true" />
+                    </button>
+                  </MonthPickerNext>
+                </MonthPickerHeader>
+
+                <MonthPickerGrid
+                  class="w-full border-separate border-spacing-1"
+                >
+                  <MonthPickerGridBody>
+                    <MonthPickerGridRow
+                      v-for="(months, index) in grid.rows"
+                      :key="`${grid.value.toString()}-${index}`"
+                    >
+                      <MonthPickerCell
+                        v-for="monthDate in months"
+                        :key="monthDate.toString()"
+                        :date="monthDate"
+                        class="p-0"
+                      >
+                        <MonthPickerCellTrigger
+                          v-slot="slotProps"
+                          as-child
+                          :month="monthDate"
+                        >
+                          <button
+                            type="button"
+                            :class="pickerGridCellClass(slotProps)"
+                            :disabled="
+                              slotProps.disabled || slotProps.unavailable
+                            "
+                          >
+                            {{ slotProps.monthValue }}
+                          </button>
+                        </MonthPickerCellTrigger>
+                      </MonthPickerCell>
+                    </MonthPickerGridRow>
+                  </MonthPickerGridBody>
+                </MonthPickerGrid>
+              </template>
+            </MonthPickerRoot>
+
+            <YearPickerRoot
+              v-else
+              :model-value="currentCalendarPlaceholder"
+              :placeholder="currentCalendarPlaceholder"
+              :locale="localeCode"
+              @update:model-value="handleYearPickerChange"
+              @update:placeholder="handlePlaceholderChange"
+            >
+              <template #default="{ grid }">
+                <YearPickerHeader class="mb-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    :class="pickerNavButtonClasses"
+                    :aria-label="t('DATE_TIME_PICKER.BACK')"
+                    @click="closePickerPanel"
+                  >
+                    <span
+                      class="i-lucide-chevron-left size-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+
+                  <YearPickerPrev as-child>
+                    <button type="button" :class="pickerNavButtonClasses">
+                      <span class="i-lucide-minus size-4" aria-hidden="true" />
+                    </button>
+                  </YearPickerPrev>
+
+                  <YearPickerHeading
+                    v-slot="{ headingValue }"
+                    class="flex-1 text-center text-sm font-medium text-n-slate-12"
+                  >
+                    {{ headingValue }}
+                  </YearPickerHeading>
+
+                  <YearPickerNext as-child>
+                    <button type="button" :class="pickerNavButtonClasses">
+                      <span class="i-lucide-plus size-4" aria-hidden="true" />
+                    </button>
+                  </YearPickerNext>
+                </YearPickerHeader>
+
+                <YearPickerGrid class="w-full border-separate border-spacing-1">
+                  <YearPickerGridBody>
+                    <YearPickerGridRow
+                      v-for="(years, index) in grid.rows"
+                      :key="`${grid.value.toString()}-${index}`"
+                    >
+                      <YearPickerCell
+                        v-for="yearDate in years"
+                        :key="yearDate.toString()"
+                        :date="yearDate"
+                        class="p-0"
+                      >
+                        <YearPickerCellTrigger
+                          v-slot="slotProps"
+                          as-child
+                          :year="yearDate"
+                        >
+                          <button
+                            type="button"
+                            :class="pickerGridCellClass(slotProps)"
+                            :disabled="
+                              slotProps.disabled || slotProps.unavailable
+                            "
+                          >
+                            {{ slotProps.yearValue }}
+                          </button>
+                        </YearPickerCellTrigger>
+                      </YearPickerCell>
+                    </YearPickerGridRow>
+                  </YearPickerGridBody>
+                </YearPickerGrid>
+              </template>
+            </YearPickerRoot>
+          </div>
+
+          <div v-if="type === 'datetime'" :class="popupTimePanelClasses">
+            <TimeWheelPicker
+              v-if="useWheelTimePicker"
+              :model-value="timePickerModel"
+              :default-placeholder="timeDefaultPlaceholder"
+              :disabled="disabled"
+              :minute-step="normalizedMinuteStep"
+              @update:model-value="handleTimeChange"
+            />
+            <TimeFieldRoot
+              v-else
+              v-slot="{ segments }"
+              :model-value="timePickerModel"
+              :default-placeholder="timeDefaultPlaceholder"
+              :disabled="disabled"
+              granularity="minute"
+              :hour-cycle="24"
+              hide-time-zone
+              :locale="localeCode"
+              :step="{ minute: normalizedMinuteStep }"
+              @update:model-value="handleTimeChange"
+            >
+              <div :class="popupTimeFieldClasses">
                 <span
-                  class="i-lucide-chevron-right size-4"
+                  class="i-lucide-clock-3 mr-2 size-4 shrink-0 text-n-slate-10"
                   aria-hidden="true"
                 />
-              </button>
-            </DatePickerNext>
-          </DatePickerHeader>
-
-          <DatePickerGrid
-            v-for="month in grid"
-            :key="month.value.toString()"
-            class="w-full border-separate border-spacing-1"
-          >
-            <DatePickerGridHead>
-              <DatePickerGridRow>
-                <DatePickerHeadCell
-                  v-for="day in weekDays"
-                  :key="day"
-                  class="size-9 rounded-lg p-0 text-xs font-medium text-n-slate-10"
+                <template
+                  v-for="(segment, index) in segments"
+                  :key="`${segment.part}-${index}`"
                 >
-                  {{ day }}
-                </DatePickerHeadCell>
-              </DatePickerGridRow>
-            </DatePickerGridHead>
-
-            <DatePickerGridBody>
-              <DatePickerGridRow
-                v-for="(weekDates, index) in month.rows"
-                :key="`${month.value.toString()}-${index}`"
-              >
-                <DatePickerCell
-                  v-for="weekDate in weekDates"
-                  :key="weekDate.toString()"
-                  :date="weekDate"
-                  class="p-0"
-                >
-                  <DatePickerCellTrigger
-                    v-slot="slotProps"
-                    as-child
-                    :day="weekDate"
-                    :month="month.value"
-                  >
-                    <button
-                      type="button"
-                      :class="calendarCellClass(slotProps)"
-                      :disabled="slotProps.disabled || slotProps.unavailable"
-                    >
-                      {{ slotProps.dayValue }}
-                    </button>
-                  </DatePickerCellTrigger>
-                </DatePickerCell>
-              </DatePickerGridRow>
-            </DatePickerGridBody>
-          </DatePickerGrid>
-        </DatePickerCalendar>
-
-        <MonthPickerRoot
-          v-else-if="calendarPanel === 'month'"
-          :model-value="currentCalendarPlaceholder"
-          :placeholder="currentCalendarPlaceholder"
-          :locale="localeCode"
-          @update:model-value="handleMonthPickerChange"
-          @update:placeholder="handlePlaceholderChange"
-        >
-          <template #default="{ grid }">
-            <MonthPickerHeader class="mb-3 flex items-center gap-2">
-              <button
-                type="button"
-                :class="pickerNavButtonClasses"
-                :aria-label="t('DATE_TIME_PICKER.BACK')"
-                @click="closePickerPanel"
-              >
-                <span class="i-lucide-chevron-left size-4" aria-hidden="true" />
-              </button>
-
-              <MonthPickerPrev as-child>
-                <button type="button" :class="pickerNavButtonClasses">
-                  <span class="i-lucide-minus size-4" aria-hidden="true" />
-                </button>
-              </MonthPickerPrev>
-
-              <MonthPickerHeading
-                v-slot="{ headingValue }"
-                class="flex-1 text-center text-sm font-medium text-n-slate-12"
-              >
-                {{ headingValue }}
-              </MonthPickerHeading>
-
-              <MonthPickerNext as-child>
-                <button type="button" :class="pickerNavButtonClasses">
-                  <span class="i-lucide-plus size-4" aria-hidden="true" />
-                </button>
-              </MonthPickerNext>
-            </MonthPickerHeader>
-
-            <MonthPickerGrid class="w-full border-separate border-spacing-1">
-              <MonthPickerGridBody>
-                <MonthPickerGridRow
-                  v-for="(months, index) in grid.rows"
-                  :key="`${grid.value.toString()}-${index}`"
-                >
-                  <MonthPickerCell
-                    v-for="monthDate in months"
-                    :key="monthDate.toString()"
-                    :date="monthDate"
-                    class="p-0"
-                  >
-                    <MonthPickerCellTrigger
-                      v-slot="slotProps"
-                      as-child
-                      :month="monthDate"
-                    >
-                      <button
-                        type="button"
-                        :class="pickerGridCellClass(slotProps)"
-                        :disabled="slotProps.disabled || slotProps.unavailable"
-                      >
-                        {{ slotProps.monthValue }}
-                      </button>
-                    </MonthPickerCellTrigger>
-                  </MonthPickerCell>
-                </MonthPickerGridRow>
-              </MonthPickerGridBody>
-            </MonthPickerGrid>
-          </template>
-        </MonthPickerRoot>
-
-        <YearPickerRoot
-          v-else
-          :model-value="currentCalendarPlaceholder"
-          :placeholder="currentCalendarPlaceholder"
-          :locale="localeCode"
-          @update:model-value="handleYearPickerChange"
-          @update:placeholder="handlePlaceholderChange"
-        >
-          <template #default="{ grid }">
-            <YearPickerHeader class="mb-3 flex items-center gap-2">
-              <button
-                type="button"
-                :class="pickerNavButtonClasses"
-                :aria-label="t('DATE_TIME_PICKER.BACK')"
-                @click="closePickerPanel"
-              >
-                <span class="i-lucide-chevron-left size-4" aria-hidden="true" />
-              </button>
-
-              <YearPickerPrev as-child>
-                <button type="button" :class="pickerNavButtonClasses">
-                  <span class="i-lucide-minus size-4" aria-hidden="true" />
-                </button>
-              </YearPickerPrev>
-
-              <YearPickerHeading
-                v-slot="{ headingValue }"
-                class="flex-1 text-center text-sm font-medium text-n-slate-12"
-              >
-                {{ headingValue }}
-              </YearPickerHeading>
-
-              <YearPickerNext as-child>
-                <button type="button" :class="pickerNavButtonClasses">
-                  <span class="i-lucide-plus size-4" aria-hidden="true" />
-                </button>
-              </YearPickerNext>
-            </YearPickerHeader>
-
-            <YearPickerGrid class="w-full border-separate border-spacing-1">
-              <YearPickerGridBody>
-                <YearPickerGridRow
-                  v-for="(years, index) in grid.rows"
-                  :key="`${grid.value.toString()}-${index}`"
-                >
-                  <YearPickerCell
-                    v-for="yearDate in years"
-                    :key="yearDate.toString()"
-                    :date="yearDate"
-                    class="p-0"
-                  >
-                    <YearPickerCellTrigger
-                      v-slot="slotProps"
-                      as-child
-                      :year="yearDate"
-                    >
-                      <button
-                        type="button"
-                        :class="pickerGridCellClass(slotProps)"
-                        :disabled="slotProps.disabled || slotProps.unavailable"
-                      >
-                        {{ slotProps.yearValue }}
-                      </button>
-                    </YearPickerCellTrigger>
-                  </YearPickerCell>
-                </YearPickerGridRow>
-              </YearPickerGridBody>
-            </YearPickerGrid>
-          </template>
-        </YearPickerRoot>
-
-        <div
-          v-if="type === 'datetime'"
-          class="mt-2 border-t border-n-weak pt-2"
-        >
-          <TimeFieldRoot
-            v-slot="{ segments }"
-            :model-value="timePickerModel"
-            :default-placeholder="timeDefaultPlaceholder"
-            :disabled="disabled"
-            granularity="minute"
-            :hour-cycle="24"
-            hide-time-zone
-            :locale="localeCode"
-            :step="{ minute: normalizedMinuteStep }"
-            @update:model-value="handleTimeChange"
-          >
-            <div :class="popupTimeFieldClasses">
-              <span
-                class="i-lucide-clock-3 mr-2 size-4 shrink-0 text-n-slate-10"
-                aria-hidden="true"
-              />
-              <template
-                v-for="(segment, index) in segments"
-                :key="`${segment.part}-${index}`"
-              >
-                <TimeFieldInput :part="segment.part" :class="segmentClass">
-                  {{ segment.value }}
-                </TimeFieldInput>
-              </template>
-            </div>
-          </TimeFieldRoot>
+                  <TimeFieldInput :part="segment.part" :class="segmentClass">
+                    {{ segment.value }}
+                  </TimeFieldInput>
+                </template>
+              </div>
+            </TimeFieldRoot>
+          </div>
         </div>
       </DatePickerContent>
     </DatePickerRoot>
@@ -1077,7 +1143,16 @@ syncModelsFromDate(currentDate.value);
 
       <PopoverPortal>
         <PopoverContent align="start" :side-offset="8" :class="popupClasses">
+          <TimeWheelPicker
+            v-if="useWheelTimePicker"
+            :model-value="timePickerModel"
+            :default-placeholder="timeDefaultPlaceholder"
+            :disabled="disabled"
+            :minute-step="normalizedMinuteStep"
+            @update:model-value="handleTimeChange"
+          />
           <TimeFieldRoot
+            v-else
             v-slot="{ segments }"
             :model-value="timePickerModel"
             :default-placeholder="timeDefaultPlaceholder"
