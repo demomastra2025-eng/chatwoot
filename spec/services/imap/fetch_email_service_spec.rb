@@ -12,7 +12,7 @@ RSpec.describe Imap::FetchEmailService do
     before do
       allow(Rails).to receive(:logger).and_return(logger)
       allow(Net::IMAP).to receive(:new).with(
-        imap_email_channel.imap_address, port: imap_email_channel.imap_port, ssl: true
+        imap_email_channel.imap_address, port: imap_email_channel.imap_port, ssl: imap_email_channel.imap_enable_ssl
       ).and_return(imap)
       allow(imap).to receive(:authenticate).with(
         'PLAIN', imap_email_channel.imap_login, imap_email_channel.imap_password
@@ -61,6 +61,34 @@ RSpec.describe Imap::FetchEmailService do
           expect(imap).to have_received(:search).with(%w[SINCE 25-Oct-2020])
           expect(imap).to have_received(:fetch).with([1], 'BODY.PEEK[HEADER]')
           expect(imap).not_to have_received(:fetch).with(1, 'RFC822')
+        end
+      end
+    end
+
+    context 'when the channel uses plain IMAP without implicit SSL' do
+      let(:imap_email_channel) do
+        create(
+          :channel_email,
+          :imap_email,
+          account: account,
+          imap_address: 'mail.one-link.kz',
+          imap_port: 143,
+          imap_enable_ssl: false
+        )
+      end
+
+      it 'builds the IMAP client without SSL' do
+        travel_to '26.10.2020 10:00'.to_datetime do
+          allow(imap).to receive(:search).with(%w[SINCE 25-Oct-2020]).and_return([])
+          allow(imap).to receive(:logout)
+
+          described_class.new(channel: imap_email_channel).perform
+
+          expect(Net::IMAP).to have_received(:new).with(
+            imap_email_channel.imap_address,
+            port: imap_email_channel.imap_port,
+            ssl: false
+          )
         end
       end
     end

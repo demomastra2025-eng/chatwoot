@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
+import { PAYMENT_METHOD_VALUES } from 'dashboard/routes/dashboard/scheduling/constants';
 import {
   compactPayload,
   extractSchedulingError,
@@ -13,6 +14,28 @@ import {
   getServicePriceForResource,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
+
+const DEFAULT_PREPAID_PAYMENT_METHOD =
+  PAYMENT_METHOD_VALUES.find(value => value === 'cash') ||
+  PAYMENT_METHOD_VALUES[0] ||
+  'cash';
+
+const resolveAmount = value => {
+  if (value === '' || value === null || value === undefined) {
+    return 0;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+};
+
+const normalizePrepaymentForm = form => ({
+  ...form,
+  prepaidPaymentMethod:
+    resolveAmount(form.prepaidAmount) > 0
+      ? form.prepaidPaymentMethod || DEFAULT_PREPAID_PAYMENT_METHOD
+      : '',
+});
 
 const createDefaultForm = () => ({
   appointmentType: 'primary',
@@ -27,6 +50,8 @@ const createDefaultForm = () => ({
   conversationId: '',
   customAttributes: {},
   endsAt: '',
+  prepaidAmount: '',
+  prepaidPaymentMethod: '',
   resourceId: '',
   serviceAmount: '',
   serviceId: '',
@@ -63,6 +88,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
           new Date(state.form.endsAt) <= new Date(state.form.startsAt)
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
             : '',
+        prepaidAmount:
+          resolveAmount(state.form.prepaidAmount) >
+          resolveAmount(state.form.serviceAmount)
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.PREPAID_EXCEEDS_SERVICE_AMOUNT'
+            : '',
         resourceId: !state.form.resourceId
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
           : '',
@@ -95,6 +125,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resourceId: slot.resourceId || defaults.resourceId || '',
           startsAt: toDateTimeInputValue(slot.startsAt),
         };
+        this.form = normalizePrepaymentForm(this.form);
       },
 
       openEdit(appointment) {
@@ -116,13 +147,16 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
           endsAt: toDateTimeInputValue(appointment.endsAt),
+          prepaidAmount: appointment.prepaidAmount ?? '',
+          prepaidPaymentMethod: appointment.prepaidPaymentMethod || '',
           resourceId: appointment.resourceId || '',
-          serviceAmount: appointment.serviceAmount || '',
+          serviceAmount: appointment.serviceAmount ?? '',
           serviceId: appointment.serviceId || '',
           source: appointment.source || 'manual',
           startsAt: toDateTimeInputValue(appointment.startsAt),
           status: appointment.status || 'scheduled',
         };
+        this.form = normalizePrepaymentForm(this.form);
       },
 
       close() {
@@ -131,10 +165,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       updateField(field, value) {
-        this.form = {
+        this.form = normalizePrepaymentForm({
           ...this.form,
           [field]: value,
-        };
+        });
       },
 
       applyContact(contact) {
@@ -156,13 +190,30 @@ export const useSchedulingAppointmentFormStore = defineStore(
           service => Number(service.id) === Number(this.form.serviceId)
         );
         if (!selectedService) return;
+        if (
+          this.mode === 'edit' &&
+          this.selectedAppointment &&
+          Number(this.form.resourceId) ===
+            Number(this.selectedAppointment.resourceId) &&
+          Number(this.form.serviceId) ===
+            Number(this.selectedAppointment.serviceId)
+        ) {
+          return;
+        }
+
+        const nextServiceAmount = getServicePriceForResource(
+          selectedService,
+          this.form.resourceId
+        );
+        if (
+          `${this.form.serviceAmount ?? ''}` === `${nextServiceAmount ?? ''}`
+        ) {
+          return;
+        }
 
         this.form = {
           ...this.form,
-          serviceAmount: getServicePriceForResource(
-            selectedService,
-            this.form.resourceId
-          ),
+          serviceAmount: nextServiceAmount,
         };
       },
 
@@ -195,7 +246,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
             full_name: contact.fullName,
             gender: contact.gender,
             iin: contact.iin || undefined,
-            identifier: contact.identifier,
             phone: contact.phone,
           });
           const { data } = await SchedulingContactsAPI.create(payload);
@@ -211,26 +261,63 @@ export const useSchedulingAppointmentFormStore = defineStore(
         }
       },
 
+      async updateInlineContact(contactId, contact) {
+        this.ui.isCreatingContact = true;
+
+        try {
+          const payload = compactPayload({
+            birth_date: contact.birthDate,
+            company_id: toNumeric(contact.companyId),
+            full_name: contact.fullName,
+            gender: contact.gender,
+            iin: contact.iin || undefined,
+            phone: contact.phone,
+          });
+          const { data } = await SchedulingContactsAPI.update(
+            contactId,
+            payload
+          );
+          const updatedContact = normalizePayload(data);
+          this.contacts = [
+            updatedContact,
+            ...this.contacts.filter(item => item.id !== updatedContact.id),
+          ];
+          this.applyContact(updatedContact);
+          return updatedContact;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isCreatingContact = false;
+        }
+      },
+
       buildPayload() {
+        const normalizedForm = normalizePrepaymentForm(this.form);
+
         return compactPayload({
-          appointment_type: this.form.appointmentType,
-          client_birth_date: this.form.clientBirthDate || undefined,
-          client_comment: this.form.clientComment,
-          client_gender: this.form.clientGender,
-          client_identifier: this.form.clientIdentifier,
-          client_name: this.form.clientName || this.selectedContact?.fullName,
-          client_phone: this.form.clientPhone,
-          company_id: toNumeric(this.form.companyId),
-          contact_id: toNumeric(this.form.contactId),
-          conversation_id: toNumeric(this.form.conversationId),
-          custom_attributes: this.form.customAttributes || {},
-          ends_at: fromDateTimeInputValue(this.form.endsAt),
-          resource_id: toNumeric(this.form.resourceId),
-          service_amount: toNumeric(this.form.serviceAmount) || 0,
-          service_id: toNumeric(this.form.serviceId),
-          source: this.form.source || 'manual',
-          starts_at: fromDateTimeInputValue(this.form.startsAt),
-          status: this.form.status,
+          appointment_type: normalizedForm.appointmentType,
+          client_birth_date: normalizedForm.clientBirthDate || undefined,
+          client_comment: normalizedForm.clientComment,
+          client_gender: normalizedForm.clientGender,
+          client_identifier: normalizedForm.clientIdentifier,
+          client_name:
+            normalizedForm.clientName || this.selectedContact?.fullName,
+          client_phone: normalizedForm.clientPhone,
+          company_id: toNumeric(normalizedForm.companyId),
+          contact_id: toNumeric(normalizedForm.contactId),
+          conversation_id: toNumeric(normalizedForm.conversationId),
+          custom_attributes: normalizedForm.customAttributes || {},
+          ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
+          prepaid_amount: toNumeric(normalizedForm.prepaidAmount) || 0,
+          prepaid_payment_method:
+            normalizedForm.prepaidPaymentMethod || undefined,
+          resource_id: toNumeric(normalizedForm.resourceId),
+          service_amount: toNumeric(normalizedForm.serviceAmount) || 0,
+          service_id: toNumeric(normalizedForm.serviceId),
+          source: normalizedForm.source || 'manual',
+          starts_at: fromDateTimeInputValue(normalizedForm.startsAt),
+          status: normalizedForm.status,
         });
       },
 
@@ -245,8 +332,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
               ? await SchedulingAppointmentsAPI.update(this.recordId, payload)
               : await SchedulingAppointmentsAPI.create(payload);
           const appointment = normalizePayload(response.data);
-          calendarStore.upsertAppointment(appointment);
-          await calendarStore.refresh();
+          calendarStore.syncAppointment(appointment);
+          if (calendarStore.currentView === 'month') {
+            await calendarStore.refresh();
+          }
           this.close();
           return appointment;
         } catch (error) {
@@ -268,8 +357,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
             this.recordId
           );
           const appointment = normalizePayload(data);
-          calendarStore.upsertAppointment(appointment);
-          await calendarStore.refresh();
+          calendarStore.syncAppointment(appointment);
+          if (calendarStore.currentView === 'month') {
+            await calendarStore.refresh();
+          }
           this.close();
           return appointment;
         } catch (error) {

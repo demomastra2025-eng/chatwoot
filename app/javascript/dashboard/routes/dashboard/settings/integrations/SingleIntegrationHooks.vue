@@ -1,6 +1,8 @@
 <script setup>
 import { computed, defineProps, defineEmits } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useStore } from 'vuex';
+import { useAlert } from 'dashboard/composables';
 import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
 import { useBranding } from 'shared/composables/useBranding';
 import BaseSettingsHeader from 'dashboard/routes/dashboard/settings/components/BaseSettingsHeader.vue';
@@ -19,10 +21,14 @@ const { integration, hasConnectedHooks } = useIntegrationHook(
   props.integrationId
 );
 
+const store = useStore();
 const { replaceInstallationName } = useBranding();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const connectedHook = computed(() => integration.value?.hooks?.[0]);
+const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
+const isMedelement = computed(() => props.integrationId === 'medelement');
+const medelementMetadata = computed(() => connectedHook.value?.metadata || {});
 
 const hasCustomLogo = computed(
   () =>
@@ -74,7 +80,36 @@ function humanizeProperty(property) {
     .join(' ');
 }
 
-function formatValue(value) {
+function formatFrequency(hours) {
+  const normalizedHours = Number(hours);
+  if (!normalizedHours) {
+    return '--';
+  }
+
+  if (normalizedHours === 24) {
+    return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.DAILY');
+  }
+
+  if (normalizedHours === 1) {
+    return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.HOURLY');
+  }
+
+  if (locale.value === 'ru') {
+    return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.EVERY_HOURS_RU', {
+      count: normalizedHours,
+    });
+  }
+
+  return t('INTEGRATION_APPS.MEDELEMENT.FREQUENCY.EVERY_HOURS', {
+    count: normalizedHours,
+  });
+}
+
+function formatValue(value, key = null) {
+  if (key === 'sync_interval_hours') {
+    return formatFrequency(value);
+  }
+
   if (typeof value === 'boolean') {
     return value
       ? t('INTEGRATION_APPS.STATUS.ENABLED')
@@ -104,9 +139,45 @@ const hookDetails = computed(() => {
   return visibleProperties.value.map(property => ({
     key: property,
     label: formItemLabelMap.value[property] || humanizeProperty(property),
-    value: formatValue(connectedHook.value.settings?.[property]),
+    value: formatValue(connectedHook.value.settings?.[property], property),
   }));
 });
+
+const medelementScheduleDetails = computed(() => {
+  if (!isMedelement.value || !connectedHook.value) {
+    return [];
+  }
+
+  return [
+    {
+      key: 'next_sync_at',
+      label: t('INTEGRATION_APPS.MEDELEMENT.NEXT_SYNC'),
+      value: medelementMetadata.value.next_sync_at_display || '--',
+    },
+    {
+      key: 'last_scheduled_sync_at',
+      label: t('INTEGRATION_APPS.MEDELEMENT.LAST_SYNC'),
+      value: medelementMetadata.value.last_scheduled_sync_at_display || '--',
+    },
+  ];
+});
+
+async function runSyncNow() {
+  try {
+    const response = await store.dispatch(
+      'integrations/runHookSync',
+      connectedHook.value.id
+    );
+    useAlert(
+      response?.message || t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.SUCCESS')
+    );
+  } catch (error) {
+    const errorMessage =
+      error?.response?.data?.message ||
+      t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR');
+    useAlert(errorMessage);
+  }
+}
 </script>
 
 <template>
@@ -120,6 +191,13 @@ const hookDetails = computed(() => {
     >
       <template #actions>
         <div v-if="hasConnectedHooks" class="flex gap-2">
+          <NextButton
+            v-if="isMedelement && connectedHook?.status"
+            blue
+            :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.BUTTON')"
+            :is-loading="uiFlags.isRunningHookSync"
+            @click="runSyncNow"
+          />
           <NextButton
             faded
             slate
@@ -182,6 +260,24 @@ const hookDetails = computed(() => {
           >
             <div
               v-for="detail in hookDetails"
+              :key="detail.key"
+              class="rounded-md bg-n-alpha-2 px-4 py-3"
+            >
+              <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
+                {{ detail.label }}
+              </p>
+              <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
+                {{ detail.value }}
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-if="medelementScheduleDetails.length"
+            class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2"
+          >
+            <div
+              v-for="detail in medelementScheduleDetails"
               :key="detail.key"
               class="rounded-md bg-n-alpha-2 px-4 py-3"
             >

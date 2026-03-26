@@ -307,17 +307,20 @@
     "REPORTS": "Reports",
     "SETTINGS": "Settings",
     "CONTACTS": "Contacts",
+    "CRM": "CRM",
+    "CRM_DEALS": "Deals",
+    "CRM_TASKS": "Tasks",
     "ACTIVE": "Active",
     "COMPANIES": "Companies",
     "ALL_COMPANIES": "All Companies",
     "SCHEDULING": "Scheduling",
     "SCHEDULING_CALENDAR": "Calendar",
-    "SCHEDULING_RESOURCES": "Resources",
+    "SCHEDULING_RESOURCES": "Specialists",
     "SCHEDULING_SERVICES": "Services",
-    "SCHEDULING_EXCEPTIONS": "Exceptions",
+    "SCHEDULING_EXCEPTIONS": "Breaks",
     "SCHEDULING_KASSA": "Kassa",
-    "CAPTAIN": "Captain",
-    "CAPTAIN_ASSISTANTS": "Assistants",
+    "CAPTAIN": "AI Agents",
+    "CAPTAIN_ASSISTANTS": "AI Agents",
     "CAPTAIN_DOCUMENTS": "Documents",
     "CAPTAIN_RESPONSES": "FAQs",
     "CAPTAIN_TOOLS": "Tools",
@@ -386,15 +389,15 @@
     },
     "DOCS": "Read docs",
     "SECURITY": "Security",
-    "CAPTAIN_AI": "Captain",
+    "CAPTAIN_AI": "AI Agents",
     "CONVERSATION_WORKFLOW": "Conversation Workflow"
   },
   "CAPTAIN_SETTINGS": {
-    "TITLE": "Captain Settings",
-    "DESCRIPTION": "Configure your AI models and features for Captain. Captain follows a credit based billing, you will be charged credits for every action Captain takes based on the model selected.",
-    "LOADING": "Loading Captain configuration...",
-    "LINK_TEXT": "Learn more about Captain Credits",
-    "NOT_ENABLED": "Captain is not enabled for your account. Please upgrade your plan to access Captain features.",
+    "TITLE": "AI Agent Settings",
+    "DESCRIPTION": "Configure your AI models and features for AI Agents. AI Agents use credit-based billing, and credits are charged for each AI action based on the selected model.",
+    "LOADING": "Loading AI Agent configuration...",
+    "LINK_TEXT": "Learn more about AI credits",
+    "NOT_ENABLED": "AI Agents are not enabled for your account. Please upgrade your plan to access AI Agent features.",
     "MODEL_CONFIG": {
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
@@ -406,11 +409,11 @@
         "DESCRIPTION": "Powers smart compose, grammar corrections, tone adjustments, and content enhancement in your message editor."
       },
       "ASSISTANT": {
-        "TITLE": "Assistant",
+        "TITLE": "AI Agent",
         "DESCRIPTION": "Handles automated responses, conversation summaries, and intelligent reply suggestions for customer interactions."
       },
       "COPILOT": {
-        "TITLE": "Co-pilot",
+        "TITLE": "Assistant",
         "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
       }
     },
@@ -433,8 +436,8 @@
       }
     },
     "API": {
-      "SUCCESS": "Captain settings updated successfully.",
-      "ERROR": "Failed to update Captain settings. Please try again."
+      "SUCCESS": "AI Agent settings updated successfully.",
+      "ERROR": "Failed to update AI Agent settings. Please try again."
     }
   },
   "BILLING_SETTINGS": {
@@ -453,12 +456,12 @@
       "BUTTON_TXT": "Go to the billing portal"
     },
     "CAPTAIN": {
-      "TITLE": "Captain",
-      "DESCRIPTION": "Manage usage and credits for Captain AI.",
+      "TITLE": "AI Agents",
+      "DESCRIPTION": "Manage usage and credits for AI Agents.",
       "BUTTON_TXT": "Buy more credits",
       "DOCUMENTS": "Documents",
       "RESPONSES": "Credits",
-      "UPGRADE": "Captain is not available on the free plan, upgrade now to get access to assistants, copilot and more.",
+      "UPGRADE": "AI Agents are not available on the free plan, upgrade now to get access to AI agents, assistants and more.",
       "REFRESH_CREDITS": "Refresh"
     },
     "CHAT_WITH_US": {
@@ -470,7 +473,7 @@
     "TOPUP": {
       "BUY_CREDITS": "Buy more credits",
       "MODAL_TITLE": "Buy AI Credits",
-      "MODAL_DESCRIPTION": "Purchase additional credits for Captain AI.",
+      "MODAL_DESCRIPTION": "Purchase additional credits for AI Agents.",
       "CREDITS": "CREDITS",
       "ONE_TIME": "one-time",
       "POPULAR": "Most Popular",

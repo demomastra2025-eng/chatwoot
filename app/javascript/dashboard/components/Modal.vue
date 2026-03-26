@@ -7,7 +7,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 const { modalType, closeOnBackdropClick, onClose } = defineProps({
   closeOnBackdropClick: { type: Boolean, default: true },
   showCloseButton: { type: Boolean, default: true },
-  onClose: { type: Function, required: true },
+  onClose: { type: Function, default: undefined },
   fullWidth: { type: Boolean, default: false },
   modalType: { type: String, default: 'centered' },
   size: { type: String, default: '' },
@@ -15,6 +15,7 @@ const { modalType, closeOnBackdropClick, onClose } = defineProps({
 
 const emit = defineEmits(['close']);
 const show = defineModel('show', { type: Boolean, default: false });
+let hasWarnedDeprecatedOnClose = false;
 
 const modalClassName = computed(() => {
   const modalClassNameMap = {
@@ -28,14 +29,19 @@ const modalClassName = computed(() => {
 // [TODO] Revisit this logic to use outside click directive
 const mousedDownOnBackdrop = ref(false);
 
-const handleMouseDown = () => {
+const handleMouseDown = event => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('[data-modal-safe-interaction]')) {
+    return;
+  }
+
   mousedDownOnBackdrop.value = true;
 };
 
 const close = () => {
   show.value = false;
   emit('close');
-  onClose();
+  onClose?.();
 };
 
 const onMouseUp = () => {
@@ -58,7 +64,13 @@ useEventListener(document.body, 'mouseup', onMouseUp);
 useEventListener(document, 'keydown', onKeydown);
 
 onMounted(() => {
-  if (import.meta.env.DEV && onClose && typeof onClose === 'function') {
+  if (
+    import.meta.env.DEV &&
+    onClose &&
+    typeof onClose === 'function' &&
+    !hasWarnedDeprecatedOnClose
+  ) {
+    hasWarnedDeprecatedOnClose = true;
     // eslint-disable-next-line no-console
     console.warn(
       "[DEPRECATED] The 'onClose' prop is deprecated. Please use the 'close' event instead."

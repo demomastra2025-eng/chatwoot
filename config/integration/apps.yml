@@ -304,6 +304,23 @@ macrocrm:
           'app_id': { 'type': 'string' },
           'sync_incoming_messages': { 'type': 'boolean' },
           'sync_outgoing_messages': { 'type': 'boolean' },
+          'sync_chat_manager_from_macro': { 'type': 'boolean' },
+          'sync_chat_manager_to_macro': { 'type': 'boolean' },
+          'manager_mappings':
+            {
+              'type': 'array',
+              'items':
+                {
+                  'type': 'object',
+                  'properties':
+                    {
+                      'user_id': { 'type': 'integer' },
+                      'macro_manager_id': { 'type': 'integer' },
+                    },
+                  'required': ['user_id', 'macro_manager_id'],
+                  'additionalProperties': false,
+                },
+            },
         },
       'required': ['app_id'],
       'additionalProperties': false,
@@ -343,5 +360,174 @@ macrocrm:
         'name': 'sync_outgoing_messages',
         'value': true,
       },
+      {
+        'label': 'Assign chat manager from existing MacroCRM deal',
+        'type': 'checkbox',
+        'name': 'sync_chat_manager_from_macro',
+        'value': true,
+      },
+      {
+        'label': 'Send current chat manager to new MacroCRM deals',
+        'type': 'checkbox',
+        'name': 'sync_chat_manager_to_macro',
+        'value': true,
+      },
+      {
+        'label': 'Manager mappings JSON',
+        'type': 'textarea',
+        'name': 'manager_mappings',
+        'validation': 'JSON',
+        'validationName': 'Manager mappings',
+        'placeholder':
+          '[\n  {\n    "user_id": 12,\n    "macro_manager_id": 78731\n  },\n  {\n    "user_id": 18,\n    "macro_manager_id": 79777\n  }\n]',
+        'help': 'Optional. Example: [{"user_id": 12, "macro_manager_id": 78731}]',
+        'validation-messages': { 'JSON': 'Invalid JSON' },
+      },
     ]
-  visible_properties: ['app_id', 'sync_incoming_messages', 'sync_outgoing_messages']
+  visible_properties:
+    [
+      'app_id',
+      'sync_incoming_messages',
+      'sync_outgoing_messages',
+      'sync_chat_manager_from_macro',
+      'sync_chat_manager_to_macro',
+    ]
+
+medelement:
+  id: medelement
+  logo: medelement.png
+  i18n_key: medelement
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  feature_flag: scheduling
+  visible_properties:
+    [
+      'timezone',
+      'sync_interval_hours',
+      'sync_time_of_day',
+      'sync_specialists',
+      'sync_receptions',
+      'sync_patients',
+    ]
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'organization_id': { 'type': 'string' },
+          'timezone': { 'type': 'string' },
+          'sync_specialists': { 'type': 'boolean' },
+          'sync_receptions': { 'type': 'boolean' },
+          'sync_patients': { 'type': 'boolean' },
+          'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
+          'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
+          'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
+          'sync_interval_hours': { 'type': 'integer', 'enum': [1, 2, 3, 4, 6, 8, 12, 24] },
+          'sync_time_of_day': { 'type': 'string', 'pattern': '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
+        },
+      'required': ['timezone'],
+      'additionalProperties': false,
+    }
+  settings_form_schema:
+    [
+      {
+        'label': 'Integrator Key',
+        'type': 'password',
+        'name': 'integrator_key',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Company Login',
+        'type': 'text',
+        'name': 'company_login',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Password',
+        'type': 'password',
+        'name': 'password',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
+        'label': 'Integration enabled',
+        'type': 'checkbox',
+        'name': 'enabled',
+        'value': true,
+        'store': 'status',
+      },
+      {
+        'label': 'Timezone',
+        'type': 'text',
+        'name': 'timezone',
+        'value': 'Asia/Almaty',
+        'validation': 'required',
+      },
+      {
+        'label': 'Sync specialists',
+        'type': 'checkbox',
+        'name': 'sync_specialists',
+        'value': true,
+      },
+      {
+        'label': 'Sync receptions',
+        'type': 'checkbox',
+        'name': 'sync_receptions',
+        'value': true,
+      },
+      {
+        'label': 'Sync patients',
+        'type': 'checkbox',
+        'name': 'sync_patients',
+        'value': true,
+      },
+      {
+        'label': 'Sync frequency',
+        'type': 'select',
+        'name': 'sync_interval_hours',
+        'value': 24,
+        'value_type': 'integer',
+        'validation': 'required',
+        'help': 'Choose how often Medelement sync should run. This uses stable supported intervals.',
+        'options':
+          [
+            { 'label': 'Every hour', 'value': 1 },
+            { 'label': 'Every 2 hours', 'value': 2 },
+            { 'label': 'Every 3 hours', 'value': 3 },
+            { 'label': 'Every 4 hours', 'value': 4 },
+            { 'label': 'Every 6 hours', 'value': 6 },
+            { 'label': 'Every 8 hours', 'value': 8 },
+            { 'label': 'Every 12 hours', 'value': 12 },
+            { 'label': 'Once a day', 'value': 24 },
+          ],
+      },
+      {
+        'label': 'First run time',
+        'type': 'time',
+        'name': 'sync_time_of_day',
+        'value': '06:15',
+        'validation': 'required',
+        'help': 'Runs use the selected integration timezone. For repeated schedules this is the first daily run anchor.',
+      },
+      {
+        'label': 'Days back',
+        'type': 'number',
+        'name': 'receptions_days_back',
+        'value': 3,
+      },
+      {
+        'label': 'Days forward',
+        'type': 'number',
+        'name': 'receptions_days_forward',
+        'value': 70,
+      },
+      {
+        'label': 'Throttle (ms)',
+        'type': 'number',
+        'name': 'throttle_ms',
+        'value': 275,
+      },
+    ]

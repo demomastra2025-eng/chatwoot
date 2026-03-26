@@ -67,6 +67,8 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 const dialogContentRef = ref(null);
 const isOpen = ref(false);
+const clickOutsideIgnore = ['[data-modal-safe-interaction]'];
+const clickOutsideIgnore = ['[data-modal-safe-interaction]'];
 
 const maxWidthClass = computed(() => {
   const classesMap = {
@@ -126,7 +128,10 @@ defineExpose({ open, close });
       ]"
       @close.prevent="handleDialogClose"
     >
-      <OnClickOutside @trigger="handleClickOutside">
+      <OnClickOutside
+        :options="{ ignore: clickOutsideIgnore }"
+        @trigger="handleClickOutside"
+      >
         <form
           ref="dialogContentRef"
           class="flex flex-col w-full h-auto gap-6 p-6 overflow-visible text-start align-middle transition-all duration-300 ease-in-out transform bg-n-alpha-3 backdrop-blur-[100px] shadow-xl rounded-xl"

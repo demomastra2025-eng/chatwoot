@@ -2,7 +2,7 @@ class Api::V1::Accounts::Inboxes::AssignmentPoliciesController < Api::V1::Accoun
   before_action :fetch_inbox
   before_action :fetch_assignment_policy, only: [:create]
   before_action -> { check_authorization(AssignmentPolicy) }
-  before_action :validate_assignment_policy, only: [:show, :destroy]
+  before_action :validate_assignment_policy, only: [:destroy]
 
   def show
     @assignment_policy = @inbox.assignment_policy

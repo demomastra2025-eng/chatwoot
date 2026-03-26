@@ -36,6 +36,12 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
                end
 
     render json: response
+  rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
+    Rails.logger.warn(
+      "#{self.class.name} playground timed out for assistant #{@assistant.id}: #{e.class} - #{e.message}"
+    )
+
+    render json: { response: nil, timed_out: true }
   end
 
   def tools
@@ -59,7 +65,9 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
                                                     :product_name, :feature_faq, :feature_memory, :feature_citation,
                                                     :feature_contact_attributes,
                                                     :welcome_message, :handoff_message, :resolution_message,
-                                                    :instructions, :temperature
+                                                    :instructions, :temperature,
+                                                    :auto_reply_on_last_incoming,
+                                                    :message_collapse_window_seconds, :history_message_limit
                                                   ])
 
     # Handle array parameters separately to allow partial updates

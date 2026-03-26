@@ -12,6 +12,7 @@ import VideoCallButton from '../VideoCallButton.vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { mapGetters } from 'vuex';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import wootConstants from 'dashboard/constants/globals';
 
 export default {
   name: 'ReplyBottomPanel',
@@ -170,6 +171,7 @@ export default {
   data() {
     return {
       ALLOWED_FILE_TYPES,
+      isTogglingCaptain: false,
     };
   },
   computed: {
@@ -178,6 +180,9 @@ export default {
       isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
       uiFlags: 'integrations/getUIFlags',
     }),
+    currentConversation() {
+      return this.$store.getters.getConversationById(this.conversationId) || {};
+    },
     wrapClass() {
       return {
         'is-note-mode': this.isNote,
@@ -269,6 +274,28 @@ export default {
         ? this.$t('CONVERSATION.REPLYBOX.QUOTED_REPLY.DISABLE_TOOLTIP')
         : this.$t('CONVERSATION.REPLYBOX.QUOTED_REPLY.ENABLE_TOOLTIP');
     },
+    showCaptainToggleButton() {
+      if (this.isEditorDisabled) return false;
+      if (this.isNote || this.isOnPrivateNote) return false;
+
+      const isCaptainEnabledOnAccount = this.isFeatureEnabledonAccount(
+        this.accountId,
+        FEATURE_FLAGS.CAPTAIN
+      );
+      if (!isCaptainEnabledOnAccount) return false;
+
+      return !!this.inbox?.captain_assistant?.id;
+    },
+    isCaptainEnabledForConversation() {
+      return (
+        this.currentConversation?.status === wootConstants.STATUS_TYPE.PENDING
+      );
+    },
+    captainToggleTooltip() {
+      return this.isCaptainEnabledForConversation
+        ? this.$t('CONVERSATION.FOOTER.CAPTAIN_DISABLE_TOOLTIP')
+        : this.$t('CONVERSATION.FOOTER.CAPTAIN_ENABLE_TOOLTIP');
+    },
   },
   mounted() {
     ActiveStorage.start();
@@ -283,12 +310,51 @@ export default {
     toggleInsertArticle() {
       this.$emit('toggleInsertArticle');
     },
+    async toggleCaptainForConversation() {
+      if (this.isTogglingCaptain) return;
+      if (!this.showCaptainToggleButton) return;
+
+      this.isTogglingCaptain = true;
+      const currentUser = this.$store.getters.getCurrentUser;
+
+      try {
+        if (this.isCaptainEnabledForConversation) {
+          await this.$store.dispatch('toggleStatus', {
+            conversationId: this.conversationId,
+            status: wootConstants.STATUS_TYPE.OPEN,
+          });
+
+          const assignee = this.currentConversation?.meta?.assignee;
+          const needsAssignmentToCurrentUser =
+            !assignee || assignee.id !== currentUser?.id;
+
+          if (needsAssignmentToCurrentUser && currentUser?.id) {
+            const { avatar_url, ...rest } = currentUser || {};
+            this.$store.dispatch('setCurrentChatAssignee', {
+              conversationId: this.conversationId,
+              assignee: { ...rest, thumbnail: avatar_url },
+            });
+            await this.$store.dispatch('assignAgent', {
+              conversationId: this.conversationId,
+              agentId: currentUser.id,
+            });
+          }
+        } else {
+          await this.$store.dispatch('toggleStatus', {
+            conversationId: this.conversationId,
+            status: wootConstants.STATUS_TYPE.PENDING,
+          });
+        }
+      } finally {
+        this.isTogglingCaptain = false;
+      }
+    },
   },
 };
 </script>
 
 <template>
-  <div class="flex justify-between p-3" :class="wrapClass">
+  <div class="flex justify-between px-3 py-2.5" :class="wrapClass">
     <div class="left-wrap">
       <NextButton
         v-if="!isEditorDisabled"
@@ -350,6 +416,22 @@ export default {
         faded
         sm
         @click="toggleMessageSignature"
+      />
+      <NextButton
+        v-if="showCaptainToggleButton"
+        v-tooltip.top-end="captainToggleTooltip"
+        icon="i-woot-captain"
+        :variant="isCaptainEnabledForConversation ? 'solid' : 'faded'"
+        color="slate"
+        sm
+        :aria-pressed="isCaptainEnabledForConversation"
+        :disabled="isTogglingCaptain"
+        :class="
+          isCaptainEnabledForConversation
+            ? '!bg-n-violet-3 !text-n-violet-9 hover:enabled:!bg-n-violet-4 focus-visible:!bg-n-violet-4 !outline-transparent'
+            : ''
+        "
+        @click="toggleCaptainForConversation"
       />
       <NextButton
         v-if="showQuotedReplyToggle"

@@ -1,23 +1,24 @@
 export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   {
     id: 1,
-    title: 'Chatbot Assistance',
+    title: 'Помощь с выбором тарифа',
     inbox: {
       id: 2,
-      name: 'PaperLayer Website',
+      name: 'Сайт OneLink Казахстан',
       channel_type: 'Channel::WebWidget',
       phone_number: '',
     },
     sender: {
       id: 1,
-      name: 'Alexa Rivera',
+      name: 'Айгерим С.',
     },
-    message: 'Hello! 👋 Need help with our chatbot features? Feel free to ask!',
+    message:
+      'Здравствуйте! Поможем подобрать подходящий тариф и ответим на вопросы по подключению.',
     campaign_status: 'active',
     enabled: true,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://one-link.kz/features/chatbot/',
+      url: 'https://one-link.kz/tariffs',
       time_on_page: 10,
     },
     trigger_only_during_business_hours: true,
@@ -26,23 +27,24 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 2,
-    title: 'Pricing Information Support',
+    title: 'Консультация по WhatsApp',
     inbox: {
       id: 2,
-      name: 'PaperLayer Website',
+      name: 'Сайт OneLink Казахстан',
       channel_type: 'Channel::WebWidget',
       phone_number: '',
     },
     sender: {
       id: 1,
-      name: 'Jamie Lee',
+      name: 'Нурсултан К.',
     },
-    message: 'Hello! 👋 Any questions on pricing? I’m here to help!',
+    message:
+      'Подскажем, как подключить WhatsApp-канал и настроить первую воронку сообщений.',
     campaign_status: 'active',
     enabled: false,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://one-link.kz/pricings',
+      url: 'https://one-link.kz/whatsapp',
       time_on_page: 10,
     },
     trigger_only_during_business_hours: false,
@@ -51,23 +53,24 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 3,
-    title: 'Product Setup Assistance',
+    title: 'Помощь с настройкой канала',
     inbox: {
       id: 2,
-      name: 'PaperLayer Website',
+      name: 'Сайт OneLink Казахстан',
       channel_type: 'Channel::WebWidget',
       phone_number: '',
     },
     sender: {
       id: 1,
-      name: 'Chatwoot',
+      name: 'OneLink',
     },
-    message: 'Hi! Chatwoot here. Need help setting up? Let me know!',
+    message:
+      'Нужна помощь с подключением inbox, распределением операторов или шаблонами? Мы рядом.',
     campaign_status: 'active',
     enabled: false,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://{*.}?one-link.kz/apps/account/*/settings/inboxes/new/',
+      url: 'https://app.one-link.kz/app/accounts/1/settings/inboxes/new/',
       time_on_page: 10,
     },
     trigger_only_during_business_hours: false,
@@ -76,25 +79,25 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 4,
-    title: 'General Assistance Campaign',
+    title: 'Помощь по автоматизации',
     inbox: {
       id: 2,
-      name: 'PaperLayer Website',
+      name: 'Сайт OneLink Казахстан',
       channel_type: 'Channel::WebWidget',
       phone_number: '',
     },
     sender: {
       id: 1,
-      name: 'Chris Barlow',
+      name: 'Данияр Т.',
     },
     message:
-      'Hi there! 👋 I’m here for any questions you may have. Let’s chat!',
+      'Покажем, как настроить автоназначение, рассылки и сценарии под ваш отдел продаж.',
     campaign_status: 'active',
     enabled: true,
     campaign_type: 'ongoing',
     trigger_rules: {
-      url: 'https://siv.com',
-      time_on_page: 200,
+      url: 'https://one-link.kz/automation',
+      time_on_page: 45,
     },
     trigger_only_during_business_hours: false,
     created_at: '2024-10-29T19:54:33.741Z',
@@ -102,19 +105,19 @@ export const ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
 ];
 
-export const ONE_OFF_CAMPAIGN_EMPTY_STATE_CONTENT = [
+export const ONE_OFF_SMS_CAMPAIGN_EMPTY_STATE_CONTENT = [
   {
     id: 1,
-    title: 'Customer Feedback Request',
+    title: 'Напоминание о записи',
     inbox: {
       id: 6,
-      name: 'PaperLayer Mobile',
+      name: 'OneLink SMS Казахстан',
       channel_type: 'Channel::Sms',
-      phone_number: '+29818373149903',
+      phone_number: '+77273445566',
       provider: 'default',
     },
     message:
-      'Hello! Enjoying our product? Share your feedback on G2 and earn a $25 Amazon coupon: https://chwt.app/g2-review',
+      'Здравствуйте! Напоминаем о вашей записи на завтра в 15:00. Если нужно перенести, ответьте на это сообщение.',
     campaign_status: 'active',
     enabled: true,
     campaign_type: 'one_off',
@@ -131,15 +134,16 @@ export const ONE_OFF_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 2,
-    title: 'Welcome New Customer',
+    title: 'Акция для постоянных клиентов',
     inbox: {
       id: 6,
-      name: 'PaperLayer Mobile',
+      name: 'OneLink SMS Казахстан',
       channel_type: 'Channel::Sms',
-      phone_number: '+29818373149903',
+      phone_number: '+77273445566',
       provider: 'default',
     },
-    message: 'Welcome aboard! 🎉 Let us know if you have any questions.',
+    message:
+      'Для вас скидка 10% на повторный заказ до конца недели. Подробности по ссылке: https://one-link.kz/offers',
     campaign_status: 'completed',
     enabled: true,
     campaign_type: 'one_off',
@@ -158,15 +162,16 @@ export const ONE_OFF_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 3,
-    title: 'New Business Welcome',
+    title: 'Оповещение о новом поступлении',
     inbox: {
       id: 6,
-      name: 'PaperLayer Mobile',
+      name: 'OneLink SMS Казахстан',
       channel_type: 'Channel::Sms',
-      phone_number: '+29818373149903',
+      phone_number: '+77273445566',
       provider: 'default',
     },
-    message: 'Hello! We’re excited to have your business with us!',
+    message:
+      'Добрый день! В наличии появились новые модели. Ответьте, если хотите получить подборку.',
     campaign_status: 'active',
     enabled: true,
     campaign_type: 'one_off',
@@ -186,15 +191,16 @@ export const ONE_OFF_CAMPAIGN_EMPTY_STATE_CONTENT = [
   },
   {
     id: 4,
-    title: 'New Member Onboarding',
+    title: 'Подтверждение участия',
     inbox: {
       id: 6,
-      name: 'PaperLayer Mobile',
+      name: 'OneLink SMS Казахстан',
       channel_type: 'Channel::Sms',
-      phone_number: '+29818373149903',
+      phone_number: '+77273445566',
       provider: 'default',
     },
-    message: 'Welcome to the team! Reach out if you have questions.',
+    message:
+      'Спасибо за регистрацию! Мы отправим детали участия и полезные материалы в ближайшее время.',
     campaign_status: 'completed',
     enabled: true,
     campaign_type: 'one_off',
@@ -202,6 +208,109 @@ export const ONE_OFF_CAMPAIGN_EMPTY_STATE_CONTENT = [
     audience: [
       { id: 1, type: 'Label' },
       { id: 3, type: 'Label' },
+      { id: 6, type: 'Label' },
+    ],
+    trigger_rules: {},
+    trigger_only_during_business_hours: false,
+    created_at: '2024-10-29T16:14:10.374Z',
+    updated_at: '2024-10-30T16:15:03.157Z',
+  },
+];
+
+export const ONE_OFF_WHATSAPP_CAMPAIGN_EMPTY_STATE_CONTENT = [
+  {
+    id: 1,
+    title: 'Напоминание в WhatsApp',
+    inbox: {
+      id: 9,
+      name: 'OneLink WhatsApp Казахстан',
+      channel_type: 'Channel::Whatsapp',
+      phone_number: '+77001234567',
+      provider: 'whatsapp_cloud',
+    },
+    message:
+      'Здравствуйте! Напоминаем о встрече завтра в 11:00. Если нужно изменить время, ответьте на это сообщение.',
+    campaign_status: 'active',
+    enabled: true,
+    campaign_type: 'one_off',
+    scheduled_at: 1729775588,
+    audience: [
+      { id: 4, type: 'Label' },
+      { id: 5, type: 'Label' },
+    ],
+    trigger_rules: {},
+    trigger_only_during_business_hours: false,
+    created_at: '2024-10-24T13:13:08.496Z',
+    updated_at: '2024-10-24T13:15:38.698Z',
+  },
+  {
+    id: 2,
+    title: 'Подборка предложений',
+    inbox: {
+      id: 9,
+      name: 'OneLink WhatsApp Казахстан',
+      channel_type: 'Channel::Whatsapp',
+      phone_number: '+77001234567',
+      provider: 'whatsapp_cloud',
+    },
+    message:
+      'Мы подготовили для вас персональные предложения на этой неделе. Напишите, если хотите получить подборку.',
+    campaign_status: 'completed',
+    enabled: true,
+    campaign_type: 'one_off',
+    scheduled_at: 1729732500,
+    audience: [
+      { id: 1, type: 'Label' },
+      { id: 6, type: 'Label' },
+    ],
+    trigger_rules: {},
+    trigger_only_during_business_hours: false,
+    created_at: '2024-10-24T13:14:00.168Z',
+    updated_at: '2024-10-24T13:15:38.707Z',
+  },
+  {
+    id: 3,
+    title: 'Подтверждение заказа',
+    inbox: {
+      id: 9,
+      name: 'OneLink WhatsApp Казахстан',
+      channel_type: 'Channel::Whatsapp',
+      phone_number: '+77001234567',
+      provider: 'whatsapp_cloud',
+    },
+    message:
+      'Ваш заказ принят в обработку. Мы сообщим в WhatsApp, когда он будет готов к выдаче.',
+    campaign_status: 'active',
+    enabled: true,
+    campaign_type: 'one_off',
+    scheduled_at: 1730368440,
+    audience: [
+      { id: 2, type: 'Label' },
+      { id: 3, type: 'Label' },
+    ],
+    trigger_rules: {},
+    trigger_only_during_business_hours: false,
+    created_at: '2024-10-30T07:54:49.915Z',
+    updated_at: '2024-10-30T07:54:49.915Z',
+  },
+  {
+    id: 4,
+    title: 'Запрос обратной связи',
+    inbox: {
+      id: 9,
+      name: 'OneLink WhatsApp Казахстан',
+      channel_type: 'Channel::Whatsapp',
+      phone_number: '+77001234567',
+      provider: 'whatsapp_cloud',
+    },
+    message:
+      'Спасибо, что выбрали нас. Поделитесь впечатлениями о сервисе, ответив на это сообщение.',
+    campaign_status: 'completed',
+    enabled: true,
+    campaign_type: 'one_off',
+    scheduled_at: 1730304840,
+    audience: [
+      { id: 1, type: 'Label' },
       { id: 6, type: 'Label' },
     ],
     trigger_rules: {},

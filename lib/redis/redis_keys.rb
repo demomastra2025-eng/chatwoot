@@ -9,6 +9,8 @@ module Redis::RedisKeys
   # Whether a conversation is muted ?
   CONVERSATION_MUTE_KEY = 'CONVERSATION::%<id>d::MUTED'.freeze
   CONVERSATION_DRAFT_MESSAGE = 'CONVERSATION::%<id>d::DRAFT_MESSAGE'.freeze
+  CAPTAIN_MESSAGE_BUFFER_STATE = 'CAPTAIN_MESSAGE_BUFFER_STATE::%<conversation_id>d'.freeze
+  CAPTAIN_MESSAGE_BUFFER_LOCK = 'CAPTAIN_MESSAGE_BUFFER_LOCK::%<conversation_id>d'.freeze
 
   ## User Keys
   # SSO Auth Tokens
@@ -43,7 +45,9 @@ module Redis::RedisKeys
   TIKTOK_REFRESH_TOKEN_MUTEX = 'TIKTOK_REFRESH_TOKEN_LOCK::%<channel_id>s'.freeze
   SLACK_MESSAGE_MUTEX = 'SLACK_MESSAGE_LOCK::%<conversation_id>s::%<reference_id>s'.freeze
   EMAIL_MESSAGE_MUTEX = 'EMAIL_CHANNEL_LOCK::%<inbox_id>s'.freeze
+  WHATSAPP_WEB_HISTORY_SYNC_MUTEX = 'WHATSAPP_WEB_HISTORY_SYNC_LOCK::%<channel_id>s'.freeze
   CRM_PROCESS_MUTEX = 'CRM_PROCESS_MUTEX::%<hook_id>s'.freeze
+  MEDELEMENT_SYNC_MUTEX = 'MEDELEMENT_SYNC_MUTEX::%<account_id>s'.freeze
 
   ## Auto Assignment Keys
   # Track conversation assignments to agents for rate limiting

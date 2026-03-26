@@ -1,0 +1,41 @@
+post:
+  tags:
+    - Inboxes
+  operationId: disconnectWhatsappWeb
+  summary: Disconnect a WhatsApp Web inbox
+  description: Disconnects the WhatsApp Web runtime session for the inbox.
+  security:
+    - userApiKey: []
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - name: id
+      in: path
+      schema:
+        type: number
+      description: ID of the inbox
+      required: true
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/inbox'
+    '400':
+      description: Invalid inbox type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '401':
+      description: Authentication error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '422':
+      description: Provider runtime error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'

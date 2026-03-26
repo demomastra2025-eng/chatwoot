@@ -14,6 +14,10 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import AccessToken from 'dashboard/routes/dashboard/settings/profile/AccessToken.vue';
+import {
+  createDefaultFlowConfig,
+  cloneFlowConfig,
+} from '../flowBuilder/defaultConfig';
 
 const props = defineProps({
   type: {
@@ -26,6 +30,8 @@ const props = defineProps({
     default: () => ({}),
   },
 });
+
+const emit = defineEmits(['saved']);
 
 const MODAL_TYPES = {
   CREATE: 'create',
@@ -41,6 +47,8 @@ const formState = reactive({
   botName: '',
   botDescription: '',
   botUrl: '',
+  botType: 'webhook',
+  botConfig: createDefaultFlowConfig(),
   botAvatar: null,
   botAvatarUrl: '',
 });
@@ -48,27 +56,46 @@ const formState = reactive({
 const [showAccessToken, toggleAccessToken] = useToggle();
 const accessToken = ref('');
 
-const v$ = useVuelidate(
-  {
-    botName: {
-      required: helpers.withMessage(
-        () => t('AGENT_BOTS.FORM.ERRORS.NAME'),
-        required
-      ),
-    },
-    botUrl: {
-      required: helpers.withMessage(
-        () => t('AGENT_BOTS.FORM.ERRORS.URL'),
-        required
-      ),
-      url: helpers.withMessage(
-        () => t('AGENT_BOTS.FORM.ERRORS.VALID_URL'),
-        url
-      ),
-    },
+const validationRules = computed(() => ({
+  botName: {
+    required: helpers.withMessage(
+      () => t('AGENT_BOTS.FORM.ERRORS.NAME'),
+      required
+    ),
   },
-  formState
-);
+  botUrl:
+    formState.botType === 'webhook'
+      ? {
+          required: helpers.withMessage(
+            () => t('AGENT_BOTS.FORM.ERRORS.URL'),
+            required
+          ),
+          url: helpers.withMessage(
+            () => t('AGENT_BOTS.FORM.ERRORS.VALID_URL'),
+            url
+          ),
+        }
+      : {},
+}));
+
+const v$ = useVuelidate(validationRules, formState);
+
+const isWebhookBot = computed(() => formState.botType === 'webhook');
+
+const botTypeOptions = computed(() => [
+  {
+    value: 'webhook',
+    title: t('AGENT_BOTS.TYPES.WEBHOOK'),
+    description: t('AGENT_BOTS.WEBHOOK.DESCRIPTION'),
+    icon: 'i-lucide-globe',
+  },
+  {
+    value: 'flow_builder',
+    title: t('AGENT_BOTS.TYPES.FLOW_BUILDER'),
+    description: t('AGENT_BOTS.FLOW_BUILDER.DESCRIPTION'),
+    icon: 'i-lucide-workflow',
+  },
+]);
 
 const isLoading = computed(() =>
   props.type === MODAL_TYPES.CREATE
@@ -109,9 +136,10 @@ const botUrlError = computed(() =>
 
 const showAccessTokenInput = computed(
   () =>
-    showAccessToken.value ||
-    props.type === MODAL_TYPES.EDIT ||
-    accessToken.value
+    isWebhookBot.value &&
+    (showAccessToken.value ||
+      props.type === MODAL_TYPES.EDIT ||
+      accessToken.value)
 );
 
 const resetForm = () => {
@@ -119,6 +147,8 @@ const resetForm = () => {
     botName: '',
     botDescription: '',
     botUrl: '',
+    botType: 'webhook',
+    botConfig: createDefaultFlowConfig(),
     botAvatar: null,
     botAvatarUrl: '',
   });
@@ -157,8 +187,9 @@ const handleSubmit = async () => {
   const botData = {
     name: formState.botName,
     description: formState.botDescription,
-    outgoing_url: formState.botUrl,
-    bot_type: 'webhook',
+    outgoing_url: isWebhookBot.value ? formState.botUrl : '',
+    bot_type: formState.botType,
+    bot_config: isWebhookBot.value ? undefined : formState.botConfig,
     avatar: formState.botAvatar,
   };
 
@@ -183,7 +214,7 @@ const handleSubmit = async () => {
     if (isCreate) {
       const { access_token: responseAccessToken, id } = response || {};
 
-      if (id && responseAccessToken) {
+      if (id && responseAccessToken && isWebhookBot.value) {
         accessToken.value = responseAccessToken;
         toggleAccessToken(true);
       } else {
@@ -194,6 +225,7 @@ const handleSubmit = async () => {
       dialogRef.value.close();
     }
 
+    emit('saved', response || props.selectedBot);
     resetForm();
   } catch (error) {
     const errorKey = isCreate
@@ -210,12 +242,15 @@ const initializeForm = () => {
       description,
       outgoing_url: botUrl,
       thumbnail,
+      bot_type: botType,
       bot_config: botConfig,
       access_token: botAccessToken,
     } = props.selectedBot;
     formState.botName = name || '';
     formState.botDescription = description || '';
     formState.botUrl = botUrl || botConfig?.webhook_url || '';
+    formState.botType = botType || 'webhook';
+    formState.botConfig = cloneFlowConfig(botConfig);
     formState.botAvatarUrl = thumbnail || '';
 
     if (botAccessToken && props.type === MODAL_TYPES.EDIT) {
@@ -268,12 +303,14 @@ defineExpose({ dialogRef });
     :description="dialogDescription"
     :show-cancel-button="false"
     :show-confirm-button="false"
+    overflow-y-auto
+    @confirm="handleSubmit"
     @close="closeModal"
   >
-    <form class="flex flex-col gap-4" @submit.prevent="handleSubmit">
+    <div class="flex flex-col gap-4">
       <div
         v-if="!showAccessToken || type === MODAL_TYPES.EDIT"
-        class="flex flex-col gap-4"
+        class="flex max-h-[calc(100vh-14rem)] flex-col gap-4 overflow-y-auto pr-1"
       >
         <div class="mb-2 flex flex-col items-start">
           <span class="mb-2 text-sm font-medium text-n-slate-12">
@@ -308,6 +345,7 @@ defineExpose({ dialogRef });
         />
 
         <Input
+          v-if="isWebhookBot"
           id="bot-url"
           v-model="formState.botUrl"
           :label="$t('AGENT_BOTS.FORM.WEBHOOK_URL.LABEL')"
@@ -316,6 +354,49 @@ defineExpose({ dialogRef });
           :message-type="botUrlError ? 'error' : 'info'"
           @blur="v$.botUrl.$touch()"
         />
+
+        <div class="flex flex-col gap-2">
+          <span class="text-sm font-medium text-n-slate-12">
+            {{ $t('AGENT_BOTS.FORM.TYPE.LABEL') }}
+          </span>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <button
+              v-for="option in botTypeOptions"
+              :key="option.value"
+              type="button"
+              class="rounded-2xl border p-4 text-left transition-all"
+              :class="
+                formState.botType === option.value
+                  ? 'border-n-blue-8 bg-n-blue-2 shadow-sm'
+                  : 'border-n-weak bg-n-surface-2 hover:border-n-blue-6'
+              "
+              @click="formState.botType = option.value"
+            >
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="flex h-8 w-8 items-center justify-center rounded-lg bg-n-alpha-2 text-n-slate-12"
+                  >
+                    <i :class="option.icon" />
+                  </span>
+                  <p class="mb-0 text-sm font-medium text-n-slate-12">
+                    {{ option.title }}
+                  </p>
+                </div>
+                <p class="mb-0 text-xs leading-5 text-n-slate-11">
+                  {{ option.description }}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <p
+          v-if="!isWebhookBot"
+          class="mb-0 rounded-2xl border border-n-blue-5 bg-n-blue-2 px-4 py-3 text-sm text-n-slate-11"
+        >
+          {{ $t('AGENT_BOTS.FLOW_BUILDER.EDITOR_HINT') }}
+        </p>
       </div>
 
       <div v-if="showAccessTokenInput" class="flex flex-col gap-1">
@@ -338,24 +419,26 @@ defineExpose({ dialogRef });
           @on-copy="onCopyToken"
         />
       </div>
-
+    </div>
+    <template #footer>
       <div class="flex items-center justify-end w-full gap-2 px-0 py-2">
         <NextButton
           faded
           slate
-          type="reset"
+          type="button"
           :label="$t('AGENT_BOTS.FORM.CANCEL')"
           @click="onClickClose()"
         />
         <NextButton
           v-if="!showAccessToken"
-          type="submit"
+          type="button"
           data-testid="label-submit"
           :label="confirmButtonLabel"
           :is-loading="isLoading"
           :disabled="v$.$invalid"
+          @click="handleSubmit"
         />
       </div>
-    </form>
+    </template>
   </Dialog>
 </template>

@@ -195,10 +195,9 @@ const isSubmitDisabled = computed(
             :key="permission"
             class="flex items-center"
           >
-            <input
+            <Checkbox
               :id="permission"
               v-model="selectedPermissions"
-              type="checkbox"
               :value="permission"
               name="permissions"
               class="ltr:mr-2 rtl:ml-2"

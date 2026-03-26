@@ -2,20 +2,21 @@
 #
 # Table name: accounts
 #
-#  id                    :integer          not null, primary key
-#  auto_resolve_duration :integer
-#  custom_attributes     :jsonb
-#  domain                :string(100)
-#  feature_flags         :bigint           default(0), not null
-#  internal_attributes   :jsonb            not null
-#  limits                :jsonb
-#  locale                :integer          default("en")
-#  name                  :string           not null
-#  settings              :jsonb
-#  status                :integer          default("active")
-#  support_email         :string(100)
-#  created_at            :datetime         not null
-#  updated_at            :datetime         not null
+#  id                     :integer          not null, primary key
+#  auto_resolve_duration  :integer
+#  custom_attributes      :jsonb
+#  domain                 :string(100)
+#  feature_flags          :bigint           default(0), not null
+#  feature_flags_overflow :jsonb            not null
+#  internal_attributes    :jsonb            not null
+#  limits                 :jsonb
+#  locale                 :integer          default("en")
+#  name                   :string           not null
+#  settings               :jsonb
+#  status                 :integer          default("active")
+#  support_email          :string(100)
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
 #
 # Indexes
 #
@@ -109,6 +110,15 @@ class Account < ApplicationRecord
   has_many :categories, dependent: :destroy_async, class_name: '::Category'
   has_many :contacts, dependent: :destroy_async
   has_many :conversations, dependent: :destroy_async
+  has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
+  has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
+  has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'
+  has_many :crm_field_definitions, dependent: :destroy_async, class_name: '::Crm::FieldDefinition'
+  has_many :crm_deals, dependent: :destroy_async, class_name: '::Crm::Deal'
+  has_many :crm_deal_contacts, dependent: :destroy_async, class_name: '::Crm::DealContact'
+  has_many :crm_tasks, dependent: :destroy_async, class_name: '::Crm::Task'
+  has_many :crm_events, dependent: :destroy_async, class_name: '::Crm::Event'
+  has_many :crm_comments, dependent: :destroy_async, class_name: '::Crm::Comment'
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :custom_attribute_definitions, dependent: :destroy_async
   has_many :custom_filters, dependent: :destroy_async
@@ -148,6 +158,7 @@ class Account < ApplicationRecord
   has_many :web_widgets, dependent: :destroy_async, class_name: '::Channel::WebWidget'
   has_many :webhooks, dependent: :destroy_async
   has_many :whatsapp_channels, dependent: :destroy_async, class_name: '::Channel::Whatsapp'
+  has_many :whatsapp_web_channels, dependent: :destroy_async, class_name: '::Channel::WhatsappWeb'
   has_many :working_hours, dependent: :destroy_async
 
   has_one_attached :contacts_export

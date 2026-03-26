@@ -831,6 +831,10 @@
           "PLACEHOLDER": "Consulta de pedido",
           "ERROR": "Nome da ferramente obrigatória"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Descrição",
           "PLACEHOLDER": "Consulta os detalhes do pedido pelo ID do pedido"
@@ -899,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "O nome do parâmetro é obrigatório"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQs",

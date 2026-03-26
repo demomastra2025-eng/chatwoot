@@ -68,7 +68,7 @@ properties:
         type: string
         description: Type of the channel
         enum:
-          ['web_widget', 'api', 'email', 'line', 'telegram', 'whatsapp', 'sms']
+          ['web_widget', 'api', 'whatsapp_web', 'email', 'line', 'telegram', 'whatsapp', 'sms']
         example: web_widget
       website_url:
         type: string
@@ -86,3 +86,44 @@ properties:
         type: string
         description: A Hex-color string used to customize the widget
         example: '#FF5733'
+      phone_number:
+        type: string
+        description: E.164 phone number for SMS or WhatsApp Web channels
+        example: '+15551234567'
+      conversation_pending:
+        type: boolean
+        description: Start new live inbound WhatsApp Web conversations as pending
+        example: false
+      history_lookback_days:
+        type: integer
+        description: Number of days to import during the initial WhatsApp Web history sync
+        example: 365
+      ignore_jids:
+        type: array
+        description: WhatsApp JIDs that should be ignored by the native WhatsApp Web channel
+        items:
+          type: string
+        example: ['15550001111@s.whatsapp.net']
+      sign_messages:
+        type: boolean
+        description: Prefix outgoing WhatsApp Web message bodies with the agent name
+        example: false
+      sign_delimiter:
+        type: string
+        description: Delimiter inserted between the agent signature and the message body. Use \\n for a newline.
+        example: '\\n'
+      import_contacts:
+        type: boolean
+        description: Enable address book import for WhatsApp Web contact sync
+        example: true
+      import_messages:
+        type: boolean
+        description: Enable history import for WhatsApp Web message sync
+        example: true
+      sync_labels:
+        type: boolean
+        description: Sync WhatsApp labels into Onelink conversation labels
+        example: true
+      provider_config:
+        type: object
+        description: Provider-specific configuration for channels that support it

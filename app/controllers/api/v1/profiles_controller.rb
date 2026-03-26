@@ -46,7 +46,10 @@ class Api::V1::ProfilesController < Api::BaseController
   private
 
   def set_user
-    @user = current_user
+    includes = [:account]
+    includes << :custom_role if ChatwootApp.enterprise?
+
+    @user = current_user.class.includes(account_users: includes).find(current_user.id)
   end
 
   def availability_params

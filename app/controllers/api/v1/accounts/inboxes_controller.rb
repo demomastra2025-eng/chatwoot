@@ -7,9 +7,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :check_authorization, except: [:show]
 
   include Api::V1::Accounts::Concerns::WhatsappHealthManagement
+  before_action :validate_whatsapp_web_channel,
+                only: [:refresh_whatsapp_web_qr, :reconnect_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web,
+                       :whatsapp_web_diagnostics]
 
   def index
-    @inboxes = policy_scope(Current.account.inboxes.order_by_name.includes(:channel, { avatar_attachment: [:blob] }))
+    scope = Current.account.inboxes.order_by_name
+    includes_associations = [:channel, { avatar_attachment: [:blob] }]
+    includes_associations << { captain_inbox: :captain_assistant } if Inbox.reflect_on_association(:captain_inbox)
+
+    @inboxes = policy_scope(scope.includes(*includes_associations))
   end
 
   def show; end
@@ -40,15 +47,18 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
         )
       )
       @inbox.save!
+      sync_voice_telephony!(channel)
     end
   end
 
   def update
-    inbox_params = permitted_params.except(:channel, :csat_config)
-    inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
-    @inbox.update!(inbox_params)
-    update_inbox_working_hours
-    update_channel if channel_update_required?
+    ActiveRecord::Base.transaction do
+      inbox_params = permitted_params.except(:channel, :csat_config)
+      inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
+      @inbox.update!(inbox_params)
+      update_inbox_working_hours
+      update_channel if channel_update_required?
+    end
   end
 
   def agent_bot
@@ -71,6 +81,51 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render status: :ok, json: { message: I18n.t('messages.inbox_deletetion_response') }
   end
 
+  def sync_templates
+
+  def refresh_whatsapp_web_qr
+    if truthy_param?(:status_only)
+      @inbox.channel.sync_connection_state!
+    else
+      @inbox.channel.refresh_qr!
+    end
+
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def reconnect_whatsapp_web
+    @inbox.channel.reconnect!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('reconnect_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def disconnect_whatsapp_web
+    @inbox.channel.disconnect!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('disconnect_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def repair_whatsapp_web
+    @inbox.channel.repair!
+    render :show
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('repair_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def whatsapp_web_diagnostics
+    render json: @inbox.channel.diagnostics
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('whatsapp_web_diagnostics', e)
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
   private
 
   def fetch_inbox
@@ -85,11 +140,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def create_channel
     return unless allowed_channel_types.include?(permitted_params[:channel][:type])
 
-    account_channels_method.create!(permitted_params(channel_type_from_params::EDITABLE_ATTRS)[:channel].except(:type))
+    channel_type_from_params.create!(channel_create_attributes)
   end
 
   def allowed_channel_types
-    %w[web_widget api email line telegram whatsapp sms]
+    %w[web_widget api email line telegram whatsapp whatsapp_web sms]
   end
 
   def update_inbox_working_hours
@@ -119,6 +174,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def reauthorize_and_update_channel(channel_attributes)
     @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
     @inbox.channel.update!(permitted_params(channel_attributes)[:channel])
+    sync_voice_telephony!(@inbox.channel)
   end
 
   def update_channel_feature_flags
@@ -127,6 +183,21 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
     @inbox.channel.selected_feature_flags = permitted_params(Channel::WebWidget::EDITABLE_ATTRS)[:channel][:selected_feature_flags]
     @inbox.channel.save!
+  end
+
+  def sync_voice_telephony!(channel)
+    return unless defined?(Channel::Voice) && channel.is_a?(Channel::Voice)
+    return unless channel.provider == 'fonoster'
+
+    binding = Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
+    return if binding.blank?
+
+    Telephony::RoutingService.new(account: Current.account).update_number_route!(
+      number_binding: binding,
+      attributes: binding.routing_policy.attributes.symbolize_keys.slice(
+        :mode, :ai_app_ref, :operator_agent_ref, :operator_agent_aor, :fallback_mode, :fallback_message
+      )
+    )
   end
 
   def format_csat_config(config)
@@ -138,7 +209,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
         'values' => config.dig('survey_rules', 'values') || []
       },
       'button_text' => config['button_text'] || 'Please rate us',
-      'language' => config['language'] || 'en'
+      'language' => config['language'] || 'ru'
     }
     format_template_config(config, formatted)
     formatted
@@ -146,6 +217,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def format_template_config(config, formatted)
     formatted['template'] = config['template'] if config['template'].present?
+  end
+
+  def log_whatsapp_web_runtime_error(action, error)
+    Rails.logger.error(
+      "[WHATSAPP WEB] #{action} failed for inbox=#{@inbox&.id} channel=#{@inbox&.channel&.id}: #{error.class}: #{error.message}"
+    )
   end
 
   def inbox_attributes
@@ -171,12 +248,42 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'line' => Channel::Line,
       'telegram' => Channel::Telegram,
       'whatsapp' => Channel::Whatsapp,
+      'whatsapp_web' => Channel::WhatsappWeb,
       'sms' => Channel::Sms
     }[permitted_params[:channel][:type]]
   end
 
+  def channel_create_attributes
+    attrs = permitted_params(channel_type_from_params::EDITABLE_ATTRS)[:channel].except(:type).merge(account: Current.account)
+    return attrs unless channel_type_from_params == Channel::WhatsappWeb
+
+    attrs[:provider_config] = whatsapp_web_provider_config(attrs[:provider_config])
+    attrs
+  end
+
+  def whatsapp_web_provider_config(existing_config)
+    config = (existing_config || {}).deep_stringify_keys
+    config['client'] ||= 'onelink'
+    config['service_user'] ||= {
+      'id' => Current.user&.id,
+      'email' => Current.user&.email,
+      'name' => Current.user&.name
+    }.compact
+    config
+  end
+
   def get_channel_attributes(channel_type)
     channel_type.constantize.const_defined?(:EDITABLE_ATTRS) ? channel_type.constantize::EDITABLE_ATTRS.presence : []
+  end
+
+  def validate_whatsapp_web_channel
+    return if @inbox.whatsapp_web?
+
+    render json: { error: 'This action is only available for WhatsApp Web channels' }, status: :bad_request
+  end
+
+  def truthy_param?(key)
+    ActiveModel::Type::Boolean.new.cast(params[key])
   end
 end
 

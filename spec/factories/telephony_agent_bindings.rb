@@ -1,0 +1,13 @@
+FactoryBot.define do
+  factory :telephony_agent_binding, class: 'Telephony::AgentBinding' do
+    account
+    user { create(:user, account: account, role: :agent) }
+    provider { 'fonoster' }
+    agent_ref { SecureRandom.uuid }
+    agent_aor { "sip:#{user.id}@voice.example" }
+    domain_ref { SecureRandom.uuid }
+    credentials_ref { SecureRandom.uuid }
+    enabled { true }
+    metadata { {} }
+  end
+end

@@ -9,6 +9,7 @@ module AutoAssignmentHandler
   private
 
   def run_auto_assignment
+    return if Current.suppress_runtime_events || (respond_to?(:skip_runtime_events) && skip_runtime_events)
     # Assignment V2: Also trigger assignment when conversation is resolved or snoozed,
     # bypassing the open-only condition so the AssignmentJob can redistribute capacity.
     return unless conversation_status_changed_to_open? || conversation_status_changed_to_resolved_or_snoozed?

@@ -23,10 +23,12 @@ class Voice::OutboundCallBuilder
       conversation = create_conversation!(contact_inbox)
       conversation.reload
       conference_sid = Voice::Conference::Name.for(conversation)
-      call_sid = initiate_call!
-      update_conversation!(conversation, call_sid, conference_sid, timestamp)
-      build_voice_message!(conversation, call_sid, conference_sid, timestamp)
-      { conversation: conversation, call_sid: call_sid }
+      call = initiate_call!(conversation)
+      call_sid = call[:call_sid]
+      status = call[:status] || 'ringing'
+      update_conversation!(conversation, call_sid, conference_sid, timestamp, status)
+      build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
+      { conversation: conversation, call_sid: call_sid, call_session: call[:call_session] }
     end
   end
 
@@ -50,18 +52,33 @@ class Voice::OutboundCallBuilder
     )
   end
 
-  def initiate_call!
-    inbox.channel.initiate_call(
-      to: contact.phone_number
-    )[:call_sid]
+  def initiate_call!(conversation)
+    if inbox.channel.provider == 'fonoster'
+      result = Telephony::CallsService.new(account: account).create_outbound!(
+        inbox: inbox,
+        contact: contact,
+        user: user,
+        conversation: conversation
+      )
+
+      {
+        call_sid: result[:call_ref],
+        status: result[:status],
+        call_session: result[:call_session]
+      }
+    else
+      result = inbox.channel.initiate_call(to: contact.phone_number)
+      { call_sid: result[:call_sid], status: result[:status], call_session: nil }
+    end
   end
 
-  def update_conversation!(conversation, call_sid, conference_sid, timestamp)
+  def update_conversation!(conversation, call_sid, conference_sid, timestamp, status)
     attrs = {
       'call_direction' => 'outbound',
-      'call_status' => 'ringing',
+      'call_status' => status,
       'agent_id' => user.id,
       'conference_sid' => conference_sid,
+      'telephony_provider' => inbox.channel.provider,
       'meta' => { 'initiated_at' => timestamp }
     }
 
@@ -72,13 +89,13 @@ class Voice::OutboundCallBuilder
     )
   end
 
-  def build_voice_message!(conversation, call_sid, conference_sid, timestamp)
+  def build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
     Voice::CallMessageBuilder.perform!(
       conversation: conversation,
       direction: 'outbound',
       payload: {
         call_sid: call_sid,
-        status: 'ringing',
+        status: status,
         conference_sid: conference_sid,
         from_number: inbox.channel&.phone_number,
         to_number: contact.phone_number

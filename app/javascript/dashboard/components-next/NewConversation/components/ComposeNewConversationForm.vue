@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { required, requiredIf } from '@vuelidate/validators';
-import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { API_LIKE_INBOX_TYPES, INBOX_TYPES } from 'dashboard/helper/inbox';
 import {
   appendSignature,
   removeSignature,
@@ -78,7 +78,7 @@ const inboxTypes = computed(() => ({
   isTwilio: props.targetInbox?.channelType === INBOX_TYPES.TWILIO,
   isWhatsapp: props.targetInbox?.channelType === INBOX_TYPES.WHATSAPP,
   isWebWidget: props.targetInbox?.channelType === INBOX_TYPES.WEB,
-  isApi: props.targetInbox?.channelType === INBOX_TYPES.API,
+  isApi: API_LIKE_INBOX_TYPES.includes(props.targetInbox?.channelType),
   isEmailOrWebWidget:
     props.targetInbox?.channelType === INBOX_TYPES.EMAIL ||
     props.targetInbox?.channelType === INBOX_TYPES.WEB,

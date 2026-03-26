@@ -102,7 +102,7 @@ export default {
     />
     <!-- the mt-7 handles the label offset -->
     <div class="mt-7">
-      <select
+      <Select
         v-model="thresholdUnitValue"
         class="px-4 py-1.5 min-w-[6.5rem] h-10 text-sm font-medium border-0 rounded-xl hover:cursor-pointer pr-7"
         @change="onThresholdUnitChange"
@@ -114,7 +114,7 @@ export default {
         >
           {{ option.label }}
         </option>
-      </select>
+      </Select>
     </div>
   </div>
 </template>

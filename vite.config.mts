@@ -84,18 +84,55 @@ export default defineConfig({
       : undefined,
   },
   resolve: {
-    alias: {
-      vue: 'vue/dist/vue.esm-bundler.js',
-      components: path.resolve('./app/javascript/dashboard/components'),
-      next: path.resolve('./app/javascript/dashboard/components-next'),
-      v3: path.resolve('./app/javascript/v3'),
-      dashboard: path.resolve('./app/javascript/dashboard'),
-      helpers: path.resolve('./app/javascript/shared/helpers'),
-      shared: path.resolve('./app/javascript/shared'),
-      survey: path.resolve('./app/javascript/survey'),
-      widget: path.resolve('./app/javascript/widget'),
-      assets: path.resolve('./app/javascript/dashboard/assets'),
-    },
+    alias: [
+      {
+        find: /^vue$/,
+        replacement: 'vue/dist/vue.esm-bundler.js',
+      },
+      {
+        find: 'components',
+        replacement: path.resolve('./app/javascript/dashboard/components'),
+      },
+      {
+        find: 'next',
+        replacement: path.resolve('./app/javascript/dashboard/components-next'),
+      },
+      {
+        find: 'v3',
+        replacement: path.resolve('./app/javascript/v3'),
+      },
+      {
+        find: 'dashboard',
+        replacement: path.resolve('./app/javascript/dashboard'),
+      },
+      {
+        find: 'helpers',
+        replacement: path.resolve('./app/javascript/shared/helpers'),
+      },
+      {
+        find: 'shared',
+        replacement: path.resolve('./app/javascript/shared'),
+      },
+      {
+        find: 'survey',
+        replacement: path.resolve('./app/javascript/survey'),
+      },
+      {
+        find: 'widget',
+        replacement: path.resolve('./app/javascript/widget'),
+      },
+      {
+        find: 'assets',
+        replacement: path.resolve('./app/javascript/dashboard/assets'),
+      },
+      {
+        find: /^vue-cal$/,
+        replacement: path.resolve(
+          __dirname,
+          './app/javascript/vendor/vue-cal/index.js'
+        ),
+      },
+    ],
   },
   test: {
     environment: 'jsdom',

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, watch } from 'vue';
 import Input from './Input.vue';
+import Select from '../select/Select.vue';
 import { useI18n } from 'vue-i18n';
 import { DURATION_UNITS } from './constants';
 
@@ -67,7 +68,7 @@ watch(unit, () => {
     :placeholder="t('DURATION_INPUT.PLACEHOLDER')"
     class="flex-grow w-full disabled:"
   />
-  <select
+  <Select
     v-model="unit"
     :disabled="disabled"
     class="mb-0 text-sm disabled:outline-n-weak disabled:opacity-40"
@@ -81,5 +82,5 @@ watch(unit, () => {
     <option :value="DURATION_UNITS.DAYS">
       {{ t('DURATION_INPUT.DAYS') }}
     </option>
-  </select>
+  </Select>
 </template>

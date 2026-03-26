@@ -35,6 +35,12 @@ class VoiceAPI extends ApiClient {
       .get(`${this.baseUrl()}/inboxes/${inboxId}/conference/token`)
       .then(r => r.data);
   }
+
+  getReadiness() {
+    return axios
+      .get(`${this.baseUrl()}/telephony/resources/readiness`)
+      .then(r => r.data);
+  }
 }
 
 export default new VoiceAPI();

@@ -50,6 +50,7 @@ class Campaign < ApplicationRecord
   enum campaign_status: { active: 0, completed: 1 }
 
   has_many :conversations, dependent: :nullify, autosave: true
+  has_many :campaign_deliveries, dependent: :destroy_async
 
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?

@@ -30,6 +30,9 @@ import { domPurifyConfig } from 'shared/helpers/HTMLSanitizer.js';
 
 import { vResizeObserver } from '@vueuse/components';
 import { directive as onClickaway } from 'vue3-click-away';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 
 import 'floating-vue/dist/style.css';
 
@@ -93,6 +96,10 @@ app.use(hljsVuePlugin);
 
 app.component('woot-wizard', WootWizard);
 app.component('fluent-icon', FluentIcon);
+app.component('Checkbox', Checkbox);
+app.component('Radio', Radio);
+// eslint-disable-next-line vue/no-reserved-component-names
+app.component('Select', Select);
 
 app.directive('resize', vResizeObserver);
 app.directive('on-clickaway', onClickaway);

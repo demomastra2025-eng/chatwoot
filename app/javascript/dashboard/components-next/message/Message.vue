@@ -173,10 +173,13 @@ const variant = computed(() => {
     return MESSAGE_VARIANTS.AGENT;
   }
 
+  const senderType = props.sender?.type ?? props.senderType;
+  const hasExternalSenderName = !!props.additionalAttributes?.senderName;
   const isBot =
-    props.sender?.type === SENDER_TYPES.AGENT_BOT ||
-    props.senderType === SENDER_TYPES.AGENT_BOT ||
-    (!props.sender && !props.additionalAttributes?.senderName);
+    (!props.sender && !hasExternalSenderName) ||
+    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
+      senderType
+    );
   if (isBot && props.messageType === MESSAGE_TYPES.OUTGOING) {
     return MESSAGE_VARIANTS.BOT;
   }

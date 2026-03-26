@@ -44,7 +44,9 @@ module RequestExceptionHandler
   end
 
   def render_record_invalid(exception)
-    log_handled_error(exception)
+    logger.info(
+      "Handled record invalid: #{exception.record.class} #{exception.record.errors.full_messages.join(', ')}"
+    )
     render json: {
       message: exception.record.errors.full_messages.join(', '),
       attributes: exception.record.errors.attribute_names

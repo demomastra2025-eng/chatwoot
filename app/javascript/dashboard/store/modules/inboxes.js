@@ -25,6 +25,8 @@ export const state = {
   },
 };
 
+const whatsappWebRefreshRequests = new Map();
+
 export const getters = {
   getInboxes($state) {
     return $state.records;
@@ -350,6 +352,72 @@ export const actions = {
       await InboxesAPI.syncTemplates(inboxId);
     } catch (error) {
       throw new Error(error);
+    }
+  },
+  refreshWhatsappWebQr: async ({ commit }, payload) => {
+    const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
+    const isStatusOnly =
+      typeof payload === 'object' && payload?.statusOnly === true;
+    const requestPayload =
+      typeof payload === 'object' && payload !== null
+        ? {
+            status_only: isStatusOnly,
+          }
+        : {};
+    const requestKey = `${inboxId}:${isStatusOnly ? 'status' : 'refresh'}`;
+
+    if (whatsappWebRefreshRequests.has(requestKey)) {
+      return whatsappWebRefreshRequests.get(requestKey);
+    }
+
+    const request = InboxesAPI.refreshWhatsappWebQr(inboxId, requestPayload)
+      .then(response => {
+        commit(types.default.EDIT_INBOXES, response.data);
+        return response.data;
+      })
+      .catch(error => {
+        throw new Error(error?.response?.data?.error || error.message);
+      })
+      .finally(() => {
+        whatsappWebRefreshRequests.delete(requestKey);
+      });
+
+    whatsappWebRefreshRequests.set(requestKey, request);
+    return request;
+  },
+  reconnectWhatsappWeb: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.reconnectWhatsappWeb(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  disconnectWhatsappWeb: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.disconnectWhatsappWeb(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  repairWhatsappWeb: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.repairWhatsappWeb(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  getWhatsappWebDiagnostics: async (_, inboxId) => {
+    try {
+      const response = await InboxesAPI.getWhatsappWebDiagnostics(inboxId);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
     }
   },
   createCSATTemplate: async (_, { inboxId, template }) => {

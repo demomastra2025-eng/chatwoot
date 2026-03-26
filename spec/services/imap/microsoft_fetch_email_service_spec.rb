@@ -14,7 +14,7 @@ RSpec.describe Imap::MicrosoftFetchEmailService do
       allow(Rails).to receive(:logger).and_return(logger)
 
       allow(Net::IMAP).to receive(:new).with(
-        microsoft_channel.imap_address, port: microsoft_channel.imap_port, ssl: true
+        microsoft_channel.imap_address, port: microsoft_channel.imap_port, ssl: microsoft_channel.imap_enable_ssl
       ).and_return(imap)
       allow(imap).to receive(:authenticate).with(
         'XOAUTH2', microsoft_channel.imap_login, microsoft_channel.provider_config['access_token']

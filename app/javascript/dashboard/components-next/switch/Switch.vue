@@ -1,5 +1,13 @@
 <script setup>
+import { SwitchRoot, SwitchThumb } from 'reka-ui';
 import { useI18n } from 'vue-i18n';
+
+const props = defineProps({
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
+});
 
 const emit = defineEmits(['change']);
 
@@ -10,33 +18,23 @@ const modelValue = defineModel({
   default: false,
 });
 
-const updateValue = () => {
-  modelValue.value = !modelValue.value;
-  emit('change', !modelValue.value);
+const updateValue = value => {
+  modelValue.value = value;
+  emit('change', value);
 };
 </script>
 
 <template>
-  <button
-    type="button"
-    class="group relative h-4 rounded-full w-7 flex-shrink-0 select-none focus:outline-none focus:ring-1 focus:ring-n-brand focus:ring-offset-n-slate-2 focus:ring-offset-2 transition-colors duration-200 ease-in-out"
-    :class="modelValue ? 'bg-n-brand' : 'bg-n-slate-6'"
-    role="switch"
-    :aria-checked="modelValue"
-    @click="updateValue"
+  <SwitchRoot
+    v-bind="$attrs"
+    :model-value="modelValue"
+    :disabled="props.disabled"
+    class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-n-slate-6 p-0.5 shadow-sm transition-colors duration-200 ease-out outline-none focus-visible:ring-1 focus-visible:ring-n-brand focus-visible:ring-offset-2 focus-visible:ring-offset-n-slate-2 data-[state=checked]:bg-n-brand-solid disabled:cursor-not-allowed disabled:opacity-60"
+    @update:model-value="updateValue"
   >
     <span class="sr-only">{{ t('SWITCH.TOGGLE') }}</span>
-    <span
-      class="absolute top-1/2 ltr:left-0.5 rtl:right-0.5 -translate-y-1/2 transition-transform duration-[350ms] ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-      :class="
-        modelValue
-          ? 'ltr:translate-x-3 rtl:-translate-x-3 group-active:ltr:translate-x-[6px] rtl:group-active:-translate-x-[6px]'
-          : 'ltr:translate-x-0 rtl:translate-x-0'
-      "
-    >
-      <span
-        class="block h-3 w-3 rounded-full bg-n-background shadow-md transition-[width] duration-[180ms] ease-in-out group-active:w-[18px]"
-      />
-    </span>
-  </button>
+    <SwitchThumb
+      class="block size-4 rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
+    />
+  </SwitchRoot>
 </template>

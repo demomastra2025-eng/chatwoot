@@ -77,8 +77,13 @@ class Scheduling::Appointments::FinanceSyncService
   def compute_expense_amount
     return 0 if appointment.compensation_type_snapshot.blank?
     return appointment.compensation_value_snapshot.to_i if appointment.compensation_type_snapshot == 'fixed'
+    return appointment.compensation_value_snapshot.to_i + percentage_expense_amount if appointment.compensation_type_snapshot == 'fixed_plus_percent'
 
     ((appointment.service_amount.to_i * appointment.compensation_value_snapshot.to_i) / 100.0).round
+  end
+
+  def percentage_expense_amount
+    ((appointment.service_amount.to_i * appointment.compensation_percent_snapshot.to_i) / 100.0).round
   end
 
   def derive_payment_status(service_amount, prepaid_amount, settlement_amount, requested_status = nil)

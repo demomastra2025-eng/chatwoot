@@ -1,4 +1,4 @@
-import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { API_LIKE_INBOX_TYPES, INBOX_TYPES } from 'dashboard/helper/inbox';
 
 export const INBOX_FEATURES = {
   REPLY_TO: 'replyTo',
@@ -15,7 +15,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TIKTOK,
-    INBOX_TYPES.API,
+    ...API_LIKE_INBOX_TYPES,
   ],
   [INBOX_FEATURES.REPLY_TO_OUTGOING]: [
     INBOX_TYPES.WEB,
@@ -23,7 +23,7 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
     INBOX_TYPES.TIKTOK,
-    INBOX_TYPES.API,
+    ...API_LIKE_INBOX_TYPES,
   ],
 };
 
@@ -42,7 +42,7 @@ export default {
       return this.isAnEmailChannel && this.inbox.provider === 'google';
     },
     isAPIInbox() {
-      return this.channelType === INBOX_TYPES.API;
+      return API_LIKE_INBOX_TYPES.includes(this.channelType);
     },
     isATwitterInbox() {
       return this.channelType === INBOX_TYPES.TWITTER;

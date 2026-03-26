@@ -33,8 +33,13 @@ class Scheduling::Appointments::UpsertService
     duration_min = resolve_duration_min(starts_at: starts_at, ends_at: ends_at)
 
     service_snapshot = resolve_service_snapshot(resource: resource, service: service)
-    service_amount = resolve_service_amount(service_snapshot[:resolved_price])
+    service_amount = resolve_service_amount(
+      resource: resource,
+      service: service,
+      resolved_price: service_snapshot[:resolved_price]
+    )
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
+    prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
 
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
@@ -69,8 +74,9 @@ class Scheduling::Appointments::UpsertService
       service_amount: service_amount,
       compensation_type_snapshot: service_snapshot[:compensation_type_snapshot],
       compensation_value_snapshot: service_snapshot[:compensation_value_snapshot],
+      compensation_percent_snapshot: service_snapshot[:compensation_percent_snapshot],
       prepaid_amount: prepaid_amount,
-      prepaid_payment_method: resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method),
+      prepaid_payment_method: prepaid_payment_method,
       settlement_amount: settlement_amount,
       settlement_payment_method: resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method),
       payment_status: derive_payment_status(
@@ -81,6 +87,14 @@ class Scheduling::Appointments::UpsertService
       ),
       custom_attributes: resolve_custom_attributes
     )
+  end
+
+  def resolve_prepaid_payment_method(prepaid_amount)
+    return nil if prepaid_amount.to_i <= 0
+
+    resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method) ||
+      resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method) ||
+      'cash'
   end
 
   def availability_service
@@ -209,17 +223,27 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_resource!
-    return account.scheduling_resources.find(params[:resource_id]) if params.key?(:resource_id)
+    if params.key?(:resource_id)
+      return appointment.resource if keep_current_resource?(params[:resource_id])
+
+      resource = account.scheduling_resources.find(params[:resource_id])
+      ensure_resource_available_for_scheduling!(resource)
+      return resource
+    end
+
     return appointment.resource if appointment.resource.present?
 
     raise ActiveRecord::RecordNotFound, 'resource not found'
   end
 
-  def resolve_service_amount(resolved_price)
+  def resolve_service_amount(resource:, service:, resolved_price:)
     return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
-    return resolved_price if resolved_price.present? && pricing_link_changed?
+    return 0 if service.blank?
+    pricing_changed = pricing_link_changed?(resource: resource, service: service)
+    return resolved_price if resolved_price.present? && pricing_changed
 
     current_amount = appointment.service_amount.to_i
+    return current_amount if appointment.persisted? && !pricing_changed
     return current_amount if current_amount.positive?
     return resolved_price if resolved_price.present?
 
@@ -234,7 +258,8 @@ class Scheduling::Appointments::UpsertService
         service_type_snapshot: nil,
         service_duration_min_snapshot: nil,
         compensation_type_snapshot: resource.compensation_type,
-        compensation_value_snapshot: resource.compensation_value
+        compensation_value_snapshot: resource.compensation_value,
+        compensation_percent_snapshot: resource.compensation_percent
       }
     end
 
@@ -263,6 +288,11 @@ class Scheduling::Appointments::UpsertService
                          else
                            resource.compensation_value
                          end
+    compensation_percent = if price&.active? && price.price.to_i.positive?
+                             price.compensation_percent
+                           else
+                             resource.compensation_percent
+                           end
 
     {
       resolved_price: resolved_price,
@@ -270,7 +300,8 @@ class Scheduling::Appointments::UpsertService
       service_type_snapshot: service.service_type,
       service_duration_min_snapshot: service.duration_min,
       compensation_type_snapshot: compensation_type,
-      compensation_value_snapshot: compensation_value
+      compensation_value_snapshot: compensation_value,
+      compensation_percent_snapshot: compensation_percent
     }
   end
 
@@ -284,8 +315,27 @@ class Scheduling::Appointments::UpsertService
     text
   end
 
-  def pricing_link_changed?
-    appointment.new_record? || params.key?(:resource_id) || params.key?(:service_id)
+  def pricing_link_changed?(resource:, service:)
+    return true if appointment.new_record?
+
+    appointment.resource_id != resource.id ||
+      appointment.service_id != service&.id
+  end
+
+  def keep_current_resource?(resource_id)
+    appointment.persisted? &&
+      appointment.resource.present? &&
+      appointment.resource_id == resource_id.to_i
+  end
+
+  def ensure_resource_available_for_scheduling!(resource)
+    return if resource.active? && !resource.deleted_from_scheduling?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING',
+      message: 'Specialist is not available for scheduling',
+      status: :unprocessable_content
+    )
   end
 
   def validate_availability!

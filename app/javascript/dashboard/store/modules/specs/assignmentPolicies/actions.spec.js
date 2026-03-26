@@ -263,6 +263,15 @@ describe('#actions', () => {
       expect(result).toEqual(camelCasedData);
     });
 
+    it('returns null when inbox has no linked policy', async () => {
+      axios.get.mockResolvedValue({ data: null });
+
+      const result = await actions.getInboxPolicy({}, { inboxId: 1 });
+
+      expect(camelcaseKeys).not.toHaveBeenCalled();
+      expect(result).toBeNull();
+    });
+
     it('throws error if API fails', async () => {
       axios.get.mockRejectedValue(new Error('Not found'));
 

@@ -3,10 +3,12 @@ import { useVuelidate } from '@vuelidate/core';
 import { required, minLength, email } from '@vuelidate/validators';
 import { useAlert } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
 
 export default {
   components: {
     NextButton,
+    Radio,
   },
   props: {
     show: {
@@ -112,10 +114,9 @@ export default {
             v-if="currentChat.meta.sender && currentChat.meta.sender.email"
             class="flex items-center gap-2"
           >
-            <input
+            <Radio
               id="contact"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="contact"
             />
@@ -124,10 +125,9 @@ export default {
             }}</label>
           </div>
           <div v-if="currentChat.meta.assignee" class="flex items-center gap-2">
-            <input
+            <Radio
               id="assignee"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="assignee"
             />
@@ -136,10 +136,9 @@ export default {
             }}</label>
           </div>
           <div class="flex items-center gap-2">
-            <input
+            <Radio
               id="other_email_address"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="other_email_address"
             />

@@ -9,17 +9,28 @@ export const buildInboxData = inboxParams => {
   Object.keys(inboxProperties).forEach(key => {
     formData.append(key, inboxProperties[key]);
   });
-  const { selectedFeatureFlags, ...channelParams } = channel;
-  // selectedFeatureFlags needs to be empty when creating a website channel
-  if (selectedFeatureFlags) {
-    if (selectedFeatureFlags.length) {
-      selectedFeatureFlags.forEach(featureFlag => {
-        formData.append(`channel[selected_feature_flags][]`, featureFlag);
+  const {
+    selectedFeatureFlags,
+    ignore_jids: ignoreJidsSnakeCase,
+    ignoreJids,
+    ...channelParams
+  } = channel;
+  const arrayFields = [
+    ['selected_feature_flags', selectedFeatureFlags],
+    ['ignore_jids', ignoreJidsSnakeCase || ignoreJids],
+  ];
+
+  arrayFields.forEach(([fieldName, value]) => {
+    if (!Array.isArray(value)) return;
+
+    if (value.length) {
+      value.forEach(entry => {
+        formData.append(`channel[${fieldName}][]`, entry);
       });
     } else {
-      formData.append('channel[selected_feature_flags][]', '');
+      formData.append(`channel[${fieldName}][]`, '');
     }
-  }
+  });
   Object.keys(channelParams).forEach(key => {
     formData.append(`channel[${key}]`, channel[key]);
   });

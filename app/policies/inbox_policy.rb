@@ -65,4 +65,24 @@ class InboxPolicy < ApplicationPolicy
   def health?
     @account_user.administrator?
   end
+
+  def refresh_whatsapp_web_qr?
+    @account_user.administrator?
+  end
+
+  def reconnect_whatsapp_web?
+    @account_user.administrator?
+  end
+
+  def disconnect_whatsapp_web?
+    @account_user.administrator?
+  end
+
+  def repair_whatsapp_web?
+    @account_user.administrator?
+  end
+
+  def whatsapp_web_diagnostics?
+    @account_user.administrator?
+  end
 end

@@ -3,6 +3,11 @@ import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDistanceToNow } from 'date-fns';
 import { useAlert } from 'dashboard/composables';
+import { useMapGetter } from 'dashboard/composables/store';
+import { useRoute, useRouter } from 'vue-router';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { CRM_DEAL_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import CompanyForm from 'dashboard/components-next/Companies/CompanyForm/CompanyForm.vue';
@@ -10,7 +15,6 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
-import Policy from 'dashboard/components/policy.vue';
 import { useCompaniesStore } from 'dashboard/stores/companies';
 
 const props = defineProps({
@@ -27,7 +31,14 @@ const props = defineProps({
 const emit = defineEmits(['toggle', 'deleted']);
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const companiesStore = useCompaniesStore();
+const { checkPermissions } = usePolicy();
+const accountId = useMapGetter('getCurrentAccountId');
+const isFeatureEnabledonAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
+);
 
 const companyFormRef = ref(null);
 const deleteDialogRef = ref(null);
@@ -38,12 +49,20 @@ const isUpdating = computed(() => uiFlags.value.updatingItem);
 const displayName = computed(() => props.name || t('COMPANIES.UNNAMED'));
 const avatarSource = computed(() => props.avatarUrl || null);
 const isFormInvalid = computed(() => companyFormRef.value?.isFormInvalid);
+const canDeleteCompany = computed(() => checkPermissions(['administrator']));
+const canCreateCrmDeal = computed(() => {
+  return (
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
+    checkPermissions(['administrator', CRM_DEAL_MANAGE_PERMISSION])
+  );
+});
 
 const getInitialCompanyData = () => ({
   id: props.id,
   name: props.name,
   domain: props.domain,
   description: props.description,
+  updatedAt: props.updatedAt,
 });
 
 watch(
@@ -85,6 +104,7 @@ const handleFormUpdate = updatedData => {
 const handleToggle = () => {
   emit('toggle');
   companyData.value = getInitialCompanyData();
+  companyFormRef.value?.resetToCompany(companyData.value);
 };
 
 const updateCompany = async () => {
@@ -110,12 +130,28 @@ const deleteCompany = async () => {
     useAlert(t('COMPANIES.FORM.ERROR.DELETE'));
   }
 };
+
+const createDealForCompany = () => {
+  router.push({
+    name: 'crm_deals_index',
+    params: { accountId: route.params.accountId },
+    query: {
+      action: 'new',
+      companyId: props.id,
+      companyName: props.name || undefined,
+      source: 'company',
+    },
+  });
+};
 </script>
 
 <template>
   <div class="relative">
     <CardLayout layout="row">
-      <div class="flex items-center justify-start flex-1 gap-4">
+      <div
+        class="flex items-center justify-start flex-1 gap-4 min-w-0 cursor-pointer"
+        @click="handleToggle"
+      >
         <Avatar
           :username="displayName"
           :src="avatarSource"
@@ -166,7 +202,7 @@ const deleteCompany = async () => {
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 cursor-pointer" @click="handleToggle">
         <span
           v-if="formattedUpdatedAt"
           class="inline-flex items-center gap-1.5 text-sm text-n-slate-11 flex-shrink-0"
@@ -179,7 +215,7 @@ const deleteCompany = async () => {
           color="slate"
           size="xs"
           :class="{ 'rotate-180': isExpanded }"
-          @click="handleToggle"
+          @click.stop="handleToggle"
         />
       </div>
 
@@ -199,36 +235,35 @@ const deleteCompany = async () => {
                 :company-data="companyData"
                 @update="handleFormUpdate"
               />
-              <div>
+              <div class="flex flex-wrap items-center justify-between gap-3">
                 <Button
-                  :label="t('COMPANIES.ACTIONS.SAVE')"
+                  v-if="canCreateCrmDeal"
+                  :label="t('CRM.DEALS.NEW_DEAL')"
                   size="sm"
-                  :is-loading="isUpdating"
-                  :disabled="isUpdating || isFormInvalid"
-                  @click="updateCompany"
+                  color="slate"
+                  @click="createDealForCompany"
                 />
-              </div>
-            </div>
-
-            <Policy :permissions="['administrator']">
-              <div class="flex flex-col gap-4 p-6 border-t border-n-strong">
-                <div class="flex flex-col gap-2">
-                  <h6 class="text-base font-medium text-n-slate-12">
-                    {{ t('COMPANIES.DETAILS.DELETE_SECTION.TITLE') }}
-                  </h6>
-                  <span class="text-sm text-n-slate-11">
-                    {{ t('COMPANIES.DETAILS.DELETE_SECTION.DESCRIPTION') }}
-                  </span>
-                </div>
-                <div>
+                <div class="flex items-center gap-2 ml-auto">
                   <Button
-                    :label="t('COMPANIES.ACTIONS.DELETE')"
+                    :label="t('COMPANIES.ACTIONS.SAVE')"
+                    size="sm"
+                    :is-loading="isUpdating"
+                    :disabled="isUpdating || isFormInvalid"
+                    @click="updateCompany"
+                  />
+                  <Button
+                    v-if="canDeleteCompany"
+                    icon="i-lucide-trash"
+                    variant="ghost"
                     color="ruby"
+                    size="sm"
+                    :title="t('COMPANIES.ACTIONS.DELETE')"
+                    :aria-label="t('COMPANIES.ACTIONS.DELETE')"
                     @click="openDeleteDialog"
                   />
                 </div>
               </div>
-            </Policy>
+            </div>
           </div>
         </div>
       </template>

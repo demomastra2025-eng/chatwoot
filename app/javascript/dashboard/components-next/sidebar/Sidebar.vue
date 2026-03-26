@@ -63,6 +63,20 @@ const hasAdvancedAssignment = computed(() => {
   );
 });
 
+const hasCrmRuntime = computed(() => {
+  return (
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) ||
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS)
+  );
+});
+
+const hasCompanies = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.COMPANIES
+  );
+});
+
 const toggleShortcutModalFn = show => {
   if (show) {
     emit('openKeyShortcutModal');
@@ -449,22 +463,32 @@ const menuItems = computed(() => {
         },
       ],
     },
+    ...(hasCompanies.value
+      ? [
+          {
+            name: 'Companies',
+            label: t('SIDEBAR.COMPANIES'),
+            icon: 'i-lucide-building-2',
+            to: accountScopedRoute(
+              'companies_dashboard_index',
+              {},
+              { page: 1, search: undefined }
+            ),
+            activeOn: ['companies_dashboard_index'],
+          },
+        ]
+      : []),
     {
-      name: 'Companies',
-      label: t('SIDEBAR.COMPANIES'),
-      icon: 'i-lucide-building-2',
-      children: [
-        {
-          name: 'All Companies',
-          label: t('SIDEBAR.ALL_COMPANIES'),
-          to: accountScopedRoute(
-            'companies_dashboard_index',
-            {},
-            { page: 1, search: undefined }
-          ),
-          activeOn: ['companies_dashboard_index'],
-        },
-      ],
+      name: 'CRM',
+      label: t('SIDEBAR.CRM'),
+      icon: 'i-lucide-briefcase-business',
+      to: accountScopedRoute('crm_deals_index'),
+    },
+    {
+      name: 'CRM Tasks',
+      label: t('SIDEBAR.CRM_TASKS'),
+      icon: 'i-lucide-list-todo',
+      to: accountScopedRoute('crm_tasks_index'),
     },
     {
       name: 'Scheduling',
@@ -672,6 +696,16 @@ const menuItems = computed(() => {
           ],
           to: accountScopedRoute('settings_inbox_list'),
         },
+        ...(hasCrmRuntime.value
+          ? [
+              {
+                name: 'Settings CRM',
+                label: t('SIDEBAR.CRM'),
+                icon: 'i-lucide-briefcase-business',
+                to: accountScopedRoute('crm_settings_index'),
+              },
+            ]
+          : []),
         {
           name: 'Settings Labels',
           label: t('SIDEBAR.LABELS'),

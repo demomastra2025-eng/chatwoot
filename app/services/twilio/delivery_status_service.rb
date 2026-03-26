@@ -7,15 +7,24 @@ class Twilio::DeliveryStatusService
 
     return unless supported_status?
 
-    process_statuses if message.present?
+    process_statuses
   end
 
   private
 
   def process_statuses
+    process_message_status if message.present?
+    process_campaign_delivery_status if campaign_delivery.present?
+  end
+
+  def process_message_status
     @message.status = status
     @message.external_error = external_error if error_occurred?
     @message.save!
+  end
+
+  def process_campaign_delivery_status
+    campaign_delivery.mark_status!(status: status, error_message: external_error)
   end
 
   def supported_status?
@@ -57,6 +66,12 @@ class Twilio::DeliveryStatusService
     return unless params[:MessageSid]
 
     @message ||= twilio_channel.inbox.messages.find_by(source_id: params[:MessageSid])
+  end
+
+  def campaign_delivery
+    return unless params[:MessageSid]
+
+    @campaign_delivery ||= CampaignDelivery.find_by(provider_message_id: params[:MessageSid], inbox_id: twilio_channel.inbox.id)
   end
 
   def log_channel_not_found

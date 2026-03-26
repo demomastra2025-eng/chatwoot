@@ -179,7 +179,7 @@ export default {
             :label="$t('GENERAL_SETTINGS.FORM.LANGUAGE.LABEL')"
             :error-message="$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR')"
           >
-            <select v-model="locale" class="!mb-0 text-sm">
+            <Select v-model="locale" class="!mb-0 text-sm">
               <option
                 v-for="lang in languagesSortedByCode"
                 :key="lang.iso_639_1_code"
@@ -187,7 +187,7 @@ export default {
               >
                 {{ lang.name }}
               </option>
-            </select>
+            </Select>
           </WithLabel>
           <WithLabel
             v-if="featureCustomReplyDomainEnabled"

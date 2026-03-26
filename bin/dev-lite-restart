@@ -9,6 +9,41 @@ APP_PORTS=(3000 3036)
 RESTART_INFRA="${RESTART_INFRA:-0}"
 PREPARE_DB="${PREPARE_DB:-0}"
 CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
+DEV_LITE_FILTER_NOISE="${DEV_LITE_FILTER_NOISE:-1}"
+LOG_DIR="${ONELINK_DEV_LITE_LOG_DIR:-${ROOT_DIR}/logs}"
+TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
+LOG_FILE="${ONELINK_DEV_LITE_LOG_FILE:-${LOG_DIR}/onelink-dev-lite-${TIMESTAMP}.log}"
+
+filter_dev_lite_noise() {
+  while IFS= read -r line; do
+    case "$line" in
+      *"the attribute \`version\` is obsolete"* ) continue ;;
+      *"/.well-known/appspecific/com.chrome.devtools.json"* ) continue ;;
+      *'Rack app ("GET /mini-profiler-resources/includes.js'* ) continue ;;
+      *'DEPRECATION WARNING: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.'* ) continue ;;
+      *'More info: https://sass-lang.com/d/legacy-js-api'* ) continue ;;
+      *'`defineEmits` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineExpose` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineProps` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineModel` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineOptions` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'::v-deep usage as a combinator has been deprecated.'* ) continue ;;
+      *'ActionController::RoutingError (No route matches [GET] "/.well-known/appspecific/com.chrome.devtools.json"):'* ) continue ;;
+    esac
+
+    printf '%s\n' "$line"
+  done
+}
+
+mkdir -p "$LOG_DIR"
+ln -sfn "$LOG_FILE" "$LOG_DIR/onelink-dev-lite-latest.log"
+if [[ "$DEV_LITE_FILTER_NOISE" == "1" ]]; then
+  exec > >(filter_dev_lite_noise | tee -a "$LOG_FILE") 2>&1
+else
+  exec > >(tee -a "$LOG_FILE") 2>&1
+fi
+
+echo "Logging Onelink dev-lite output to $LOG_FILE"
 
 log() {
   printf '[dev-lite-restart] %s\n' "$*"
@@ -169,6 +204,8 @@ bootstrap_enterprise() {
 }
 
 start_app() {
+  export DISABLE_MINI_PROFILER="${DISABLE_MINI_PROFILER:-1}"
+  export SASS_SILENCE_DEPRECATIONS="${SASS_SILENCE_DEPRECATIONS:-legacy-js-api}"
   log "Starting Rails + Vite (dev lite)"
   exec foreman start -f ./Procfile.dev-lite
 }

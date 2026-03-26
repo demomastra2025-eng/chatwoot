@@ -1,0 +1,184 @@
+require 'rails_helper'
+
+RSpec.describe WhatsappWeb::IncomingMessageService do
+  around do |example|
+    with_modified_env(
+      'EVOLUTION_API_URL' => 'https://evolution.example.com',
+      'EVOLUTION_API_KEY' => 'test-api-key',
+      'FRONTEND_URL' => 'https://app.example.com'
+    ) do
+      example.run
+    end
+  end
+
+  after do
+    Redis::Alfred.scan_each(match: 'MESSAGE_SOURCE_KEY::*') do |key|
+      Redis::Alfred.delete(key)
+    end
+  end
+
+  describe '#perform' do
+    let(:channel) { create(:channel_whatsapp_web) }
+    let(:inbox) { channel.inbox }
+    let(:contact) { create(:contact, account: inbox.account, phone_number: '+15551234567') }
+    let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567') }
+    let(:conversation) { create(:conversation, account: inbox.account, inbox: inbox, contact: contact, contact_inbox: contact_inbox) }
+    let(:base_payload) do
+      {
+        key: {
+          id: 'REPLY_MESSAGE_ID',
+          remoteJid: '15551234567@s.whatsapp.net'
+        },
+        pushName: 'Reply Author',
+        message: {
+          conversation: 'This is a reply'
+        }
+      }.with_indifferent_access
+    end
+
+    let!(:original_message) do
+      create(:message, account: inbox.account, inbox: inbox, conversation: conversation, source_id: 'ORIGINAL_MESSAGE_ID')
+    end
+
+    it 'maps top-level contextInfo replies to in_reply_to' do
+      described_class.new(inbox: inbox, params: base_payload.deep_merge(contextInfo: { stanzaId: 'ORIGINAL_MESSAGE_ID' })).perform
+
+      reply_message = conversation.messages.find_by(source_id: 'REPLY_MESSAGE_ID')
+      expect(reply_message.content_attributes['in_reply_to']).to eq(original_message.id)
+      expect(reply_message.content_attributes['in_reply_to_external_id']).to eq('ORIGINAL_MESSAGE_ID')
+    end
+
+    it 'maps nested message.contextInfo replies to in_reply_to' do
+      params = base_payload.deep_merge(
+        message: {
+          conversation: 'Nested reply',
+          contextInfo: { stanzaId: 'ORIGINAL_MESSAGE_ID' }
+        }
+      )
+
+      described_class.new(inbox: inbox, params: params).perform
+
+      reply_message = conversation.messages.find_by(source_id: 'REPLY_MESSAGE_ID')
+      expect(reply_message.content).to eq('Nested reply')
+      expect(reply_message.content_attributes['in_reply_to']).to eq(original_message.id)
+      expect(reply_message.content_attributes['in_reply_to_external_id']).to eq('ORIGINAL_MESSAGE_ID')
+    end
+
+    it 'starts a new conversation as pending when the channel is configured that way' do
+      pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+
+      described_class.new(
+        inbox: pending_channel.inbox,
+        params: {
+          key: {
+            id: 'pending-message-1',
+            remoteJid: '15557654321@s.whatsapp.net'
+          },
+          pushName: 'Pending Author',
+          message: {
+            conversation: 'Need help'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(pending_channel.inbox.conversations.last.status).to eq('pending')
+    end
+
+    it 'creates outgoing echo messages for mobile text sends' do
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'OUTGOING_TEXT_1',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          message: {
+            extendedTextMessage: {
+              text: 'Sent from the phone'
+            }
+          }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      outgoing_message = conversation.messages.find_by(source_id: 'OUTGOING_TEXT_1')
+      expect(outgoing_message).to be_present
+      expect(outgoing_message.message_type).to eq('outgoing')
+      expect(outgoing_message.status).to eq('delivered')
+      expect(outgoing_message.sender).to be_nil
+      expect(outgoing_message.content).to eq('Sent from the phone')
+      expect(outgoing_message.content_attributes['external_echo']).to eq(true)
+    end
+
+    it 'creates outgoing echo media messages for mobile sends' do
+      image_base64 = Base64.strict_encode64(File.binread(Rails.root.join('spec/assets/avatar.png')))
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'OUTGOING_MEDIA_1',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          message: {
+            imageMessage: {
+              caption: 'Phone photo',
+              mimetype: 'image/png',
+              fileName: 'avatar.png'
+            },
+            base64: image_base64
+          }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      outgoing_message = conversation.messages.find_by(source_id: 'OUTGOING_MEDIA_1')
+      expect(outgoing_message).to be_present
+      expect(outgoing_message.message_type).to eq('outgoing')
+      expect(outgoing_message.content).to eq('Phone photo')
+      expect(outgoing_message.content_attributes['external_echo']).to eq(true)
+      expect(outgoing_message.attachments.size).to eq(1)
+      expect(outgoing_message.attachments.first.file_type).to eq('image')
+      expect(outgoing_message.attachments.first.file.attached?).to be(true)
+    end
+
+    it 'creates outgoing echo document messages with captions from the mobile client' do
+      document_base64 = Base64.strict_encode64(File.binread(Rails.root.join('spec/fixtures/files/sample.pdf')))
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'OUTGOING_DOCUMENT_1',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          message: {
+            documentWithCaptionMessage: {
+              message: {
+                documentMessage: {
+                  caption: 'Contract draft',
+                  mimetype: 'application/pdf',
+                  fileName: 'sample.pdf'
+                }
+              }
+            },
+            base64: document_base64
+          }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      outgoing_message = conversation.messages.find_by(source_id: 'OUTGOING_DOCUMENT_1')
+      expect(outgoing_message).to be_present
+      expect(outgoing_message.message_type).to eq('outgoing')
+      expect(outgoing_message.content).to eq('Contract draft')
+      expect(outgoing_message.content_attributes['external_echo']).to eq(true)
+      expect(outgoing_message.attachments.size).to eq(1)
+      expect(outgoing_message.attachments.first.file_type).to eq('file')
+      expect(outgoing_message.attachments.first.file.attached?).to be(true)
+    end
+  end
+end

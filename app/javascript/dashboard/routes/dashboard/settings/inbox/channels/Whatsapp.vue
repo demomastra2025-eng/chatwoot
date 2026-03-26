@@ -16,6 +16,7 @@ const PROVIDER_TYPES = {
   WHATSAPP: 'whatsapp',
   TWILIO: 'twilio',
   WHATSAPP_CLOUD: 'whatsapp_cloud',
+  WHATSAPP_WEB: 'whatsapp_web',
   WHATSAPP_EMBEDDED: 'whatsapp_embedded',
   WHATSAPP_MANUAL: 'whatsapp_manual',
   THREE_SIXTY_DIALOG: '360dialog',
@@ -47,9 +48,26 @@ const availableProviders = computed(() => [
     description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
     icon: 'i-woot-twilio',
   },
+  {
+    key: PROVIDER_TYPES.WHATSAPP_WEB,
+    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.TITLE'),
+    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WHATSAPP_WEB.DESCRIPTION'),
+    icon: 'i-woot-whatsapp',
+  },
 ]);
 
 const selectProvider = providerValue => {
+  if (providerValue === PROVIDER_TYPES.WHATSAPP_WEB) {
+    router.push({
+      name: 'settings_inboxes_page_channel',
+      params: {
+        ...route.params,
+        sub_page: PROVIDER_TYPES.WHATSAPP_WEB,
+      },
+    });
+    return;
+  }
+
   router.push({
     name: route.name,
     params: route.params,

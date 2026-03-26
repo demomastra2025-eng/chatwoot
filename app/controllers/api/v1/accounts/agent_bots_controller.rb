@@ -42,10 +42,21 @@ class Api::V1::Accounts::AgentBotsController < Api::V1::Accounts::BaseController
   end
 
   def permitted_params
-    params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url, :bot_type, bot_config: {})
+    permitted = params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url, :bot_type, bot_config: {})
+    permitted[:bot_config] = parsed_bot_config if params[:bot_config].present?
+    permitted
   end
 
   def process_avatar_from_url
     ::Avatar::AvatarFromUrlJob.perform_later(@agent_bot, params[:avatar_url]) if params[:avatar_url].present?
+  end
+
+  def parsed_bot_config
+    return params[:bot_config].to_unsafe_h if params[:bot_config].is_a?(ActionController::Parameters)
+    return JSON.parse(params[:bot_config]) if params[:bot_config].is_a?(String)
+
+    params[:bot_config]
+  rescue JSON::ParserError
+    {}
   end
 end

@@ -1,7 +1,16 @@
 <script setup>
+import { computed, getCurrentInstance, useAttrs } from 'vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
-defineProps({
+defineOptions({
+  inheritAttrs: false,
+});
+
+const props = defineProps({
+  id: {
+    type: String,
+    default: '',
+  },
   options: {
     type: Array,
     default: () => [],
@@ -35,26 +44,56 @@ defineProps({
   },
 });
 
-const modelValue = defineModel({
-  type: [String, Number, Boolean],
+const emit = defineEmits(['change', 'blur', 'focus']);
+
+const { uid } = getCurrentInstance();
+const attrs = useAttrs();
+
+const modelValue = defineModel('modelValue', {
+  type: [String, Number, Boolean, Array, Object],
   default: '',
 });
+
+const inputId = computed(() => props.id || `select-${uid}`);
+const selectAttrs = computed(() => {
+  const { class: _class, style: _style, ...rest } = attrs;
+  return rest;
+});
+const hasStructuredOptions = computed(
+  () => props.groups.length > 0 || props.options.length > 0
+);
+const wrapperClasses = computed(() => [
+  'relative',
+  hasStructuredOptions.value ? ['w-fit', attrs.class] : '',
+]);
+const selectClasses = computed(() => [
+  'appearance-none rounded-lg border-0 bg-n-surface-1 !mb-0 py-2 pl-3 pr-10 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] transition-all duration-200',
+  !props.error && !props.disabled
+    ? 'outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand'
+    : '',
+  props.error && !props.disabled ? 'outline-n-red-9 focus:outline-n-red-9' : '',
+  props.disabled
+    ? 'cursor-not-allowed bg-n-slate-2 opacity-60 outline-n-weak'
+    : '',
+  hasStructuredOptions.value ? 'w-full' : '',
+  !hasStructuredOptions.value ? attrs.class : '',
+]);
 </script>
 
 <template>
-  <div class="w-fit relative">
+  <div :class="wrapperClasses">
     <select
+      :id="inputId"
       v-model="modelValue"
+      v-bind="selectAttrs"
       :disabled="disabled"
-      class="appearance-none bg-none rounded-lg border-0 outline-1 outline -outline-offset-1 transition-all duration-200 bg-n-surface-1 !mb-0 py-2 px-3 pr-10 text-sm"
-      :class="{
-        'outline-n-weak hover:outline-n-slate-6 focus:outline-n-blue-9':
-          !error && !disabled,
-        'outline-n-red-9 focus:outline-n-red-9': error && !disabled,
-        'outline-n-weak bg-n-slate-2 cursor-not-allowed opacity-60': disabled,
-      }"
+      :class="selectClasses"
+      :style="attrs.style"
+      @change="emit('change', $event)"
+      @blur="emit('blur', $event)"
+      @focus="emit('focus', $event)"
     >
-      <option v-if="placeholder" value="" disabled>
+      <option v-if="placeholder && hasStructuredOptions" value="" disabled>
         {{ placeholder }}
       </option>
       <template v-if="groups.length">
@@ -73,7 +112,7 @@ const modelValue = defineModel({
           </option>
         </optgroup>
       </template>
-      <template v-else>
+      <template v-else-if="options.length">
         <option
           v-for="option in options"
           :key="option.value"
@@ -83,9 +122,10 @@ const modelValue = defineModel({
           {{ option.label }}
         </option>
       </template>
+      <slot v-else />
     </select>
     <div
-      class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none"
+      class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
     >
       <Icon
         icon="i-lucide-chevron-down"

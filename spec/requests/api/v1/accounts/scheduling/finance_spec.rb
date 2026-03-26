@@ -65,4 +65,23 @@ RSpec.describe 'Scheduling Finance API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('VALIDATION_ERROR')
   end
+
+  it 'includes fixed plus percent compensation in generated expenses' do
+    appointment.update!(
+      payment_status: 'awaiting_payment',
+      settlement_amount: 0,
+      settlement_payment_method: nil,
+      compensation_type_snapshot: 'fixed_plus_percent',
+      compensation_value_snapshot: 4_000,
+      compensation_percent_snapshot: 10
+    )
+
+    post "/api/v1/accounts/#{account.id}/scheduling/appointments/#{appointment.id}/payments",
+         params: { amount: 20_000, payment_method: 'cash' },
+         headers: admin.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.expense.amount).to eq(6_000)
+  end
 end

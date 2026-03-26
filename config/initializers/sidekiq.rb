@@ -1,6 +1,7 @@
 require Rails.root.join('lib/redis/config')
 
 schedule_file = 'config/schedule.yml'
+enable_sidekiq_cron = ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SIDEKIQ_CRON', true))
 
 Sidekiq.configure_client do |config|
   config.redis = Redis::Config.app
@@ -36,5 +37,9 @@ end
 Rails.application.reloader.to_prepare do
   # TODO: Switch to `load_from_hash!(..., source: 'schedule')` once we have a
   # safe cleanup path for YAML-backed cron jobs already persisted in Redis.
-  Sidekiq::Cron::Job.load_from_hash YAML.load_file(schedule_file) if File.exist?(schedule_file) && Sidekiq.server?
+  next unless enable_sidekiq_cron
+  next unless File.exist?(schedule_file) && Sidekiq.server?
+
+  Sidekiq::Cron::Job.load_from_hash YAML.load_file(schedule_file)
+  Integrations::Medelement::CronScheduleService.sync_all!
 end

@@ -22,6 +22,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  groupName: {
+    type: String,
+    default: '',
+  },
   authType: {
     type: String,
     default: 'none',
@@ -76,9 +80,17 @@ const authTypeLabel = computed(() => {
 <template>
   <CardLayout class="relative">
     <div class="flex relative justify-between w-full gap-1">
-      <span class="text-base text-n-slate-12 line-clamp-1 font-medium">
-        {{ title }}
-      </span>
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-base text-n-slate-12 line-clamp-1 font-medium">
+          {{ title }}
+        </span>
+        <span
+          v-if="groupName"
+          class="shrink-0 rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
+        >
+          {{ groupName }}
+        </span>
+      </div>
       <div class="flex items-center gap-2">
         <Policy
           v-on-clickaway="() => toggleDropdown(false)"

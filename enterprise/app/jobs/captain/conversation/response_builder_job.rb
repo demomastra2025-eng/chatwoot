@@ -3,10 +3,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
 
-  def perform(conversation, assistant)
+  def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil)
     @conversation = conversation
     @inbox = conversation.inbox
     @assistant = assistant
+    @buffer_token = buffer_token
+    @expected_last_message_id = expected_last_message_id
+
+    return unless current_buffer_state_valid?
 
     return unless conversation_pending?
 
@@ -45,25 +49,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_response
+    return unless current_buffer_state_valid?
     return unless conversation_pending?
 
-    if handoff_requested?
-      process_action('handoff')
-    else
-      ActiveRecord::Base.transaction do
+    ActiveRecord::Base.transaction do
+      if handoff_requested?
+        process_action('handoff')
+      else
         create_messages
         Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
         account.increment_response_usage
       end
     end
+
+    clear_buffer_state_if_current
   end
 
   def collect_previous_messages
-    @conversation
-      .messages
-      .where(message_type: [:incoming, :outgoing])
-      .where(private: false)
-      .map do |message|
+    messages = if history_message_limit.positive?
+                 conversation_messages_scope.reorder(created_at: :desc).limit(history_message_limit).to_a.reverse
+               else
+                 conversation_messages_scope.to_a
+               end
+
+    messages.map do |message|
       message_hash = {
         content: prepare_multimodal_message_content(message),
         role: determine_role(message)
@@ -74,6 +83,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
       message_hash
     end
+  end
+
+  def conversation_messages_scope
+    @conversation
+      .messages
+      .where(message_type: [:incoming, :outgoing])
+      .where(private: false)
+  end
+
+  def history_message_limit
+    @assistant.history_message_limit_value
   end
 
   def determine_role(message)
@@ -138,7 +158,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def handle_error(error)
     log_error(error)
+    return true unless current_buffer_state_valid?
+
     process_action('handoff') if conversation_pending?
+    clear_buffer_state_if_current
     true
   end
 
@@ -153,5 +176,50 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def conversation_pending?
     status = Conversation.uncached { Conversation.where(id: @conversation.id).pick(:status) }
     status == 'pending' || status == Conversation.statuses[:pending]
+  end
+
+  def current_buffer_state_valid?
+    return false unless conversation_eligible_for_response?
+
+    current_last_incoming_message_id = @conversation.reload.messages.incoming.last&.id
+
+    if @buffer_token.blank?
+      return true if @expected_last_message_id.blank?
+
+      return current_last_incoming_message_id.to_i == @expected_last_message_id.to_i
+    end
+
+    state = current_buffer_state
+    return false if state.blank?
+
+    state['token'] == @buffer_token &&
+      state['last_message_id'].to_i == @expected_last_message_id.to_i &&
+      current_last_incoming_message_id.to_i == @expected_last_message_id.to_i
+  end
+
+  def clear_buffer_state_if_current
+    return if @buffer_token.blank?
+
+    state = current_buffer_state
+    return unless state.present? && state['token'] == @buffer_token
+
+    Redis::Alfred.delete(buffer_state_key)
+  end
+
+  def current_buffer_state
+    raw_state = Redis::Alfred.get(buffer_state_key)
+    return if raw_state.blank?
+
+    JSON.parse(raw_state)
+  rescue JSON::ParserError
+    nil
+  end
+
+  def buffer_state_key
+    format(::Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: @conversation.id)
+  end
+
+  def conversation_eligible_for_response?
+    conversation_pending? && @conversation.inbox.captain_assistant&.id == @assistant.id
   end
 end

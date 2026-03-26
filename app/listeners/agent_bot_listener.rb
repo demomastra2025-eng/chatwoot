@@ -59,14 +59,23 @@ class AgentBotListener < BaseListener
   end
 
   def process_message_event(method_name, agent_bot, message, _event)
-    # Only webhook bots are supported
-    payload = message.webhook_data.merge(event: method_name)
-    process_webhook_bot_event(agent_bot, payload)
+    if agent_bot.flow_builder?
+      process_flow_builder_event(agent_bot, message)
+    else
+      payload = message.webhook_data.merge(event: method_name)
+      process_webhook_bot_event(agent_bot, payload)
+    end
   end
 
   def process_webhook_bot_event(agent_bot, payload)
     return if agent_bot.outgoing_url.blank?
 
     AgentBots::WebhookJob.perform_later(agent_bot.outgoing_url, payload)
+  end
+
+  def process_flow_builder_event(agent_bot, message)
+    return unless message.incoming?
+
+    AgentBots::FlowBuilder::RunnerService.new(agent_bot: agent_bot, message: message).perform
   end
 end

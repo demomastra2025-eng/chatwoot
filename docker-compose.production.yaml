@@ -1,3 +1,9 @@
+#
+# Production Docker stack for Onelink.
+# If Evolution API runs in a separate compose project, keep both stacks on the
+# same external SHARED_SERVICES_NETWORK so `evolution-api`, `chatwoot-postgres`,
+# and `chatwoot-redis` resolve across compose projects.
+#
 x-base: &base
     build:
       context: .
@@ -28,6 +34,11 @@ services:
       - CW_AUTO_PREPARE_DB=${CW_AUTO_PREPARE_DB:-true}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+    networks:
+      default:
+      shared-services:
+        aliases:
+          - chatwoot-app
     restart: always
 
   sidekiq:
@@ -42,6 +53,9 @@ services:
       - CW_AUTO_PREPARE_DB=false
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
+    networks:
+      - default
+      - shared-services
     restart: always
 
   postgres:
@@ -55,18 +69,38 @@ services:
       - POSTGRES_DB=${POSTGRES_DATABASE:-chatwoot_production}
       - POSTGRES_USER=${POSTGRES_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-replace_with_strong_postgres_password}
+    networks:
+      default:
+      shared-services:
+        # Reused by evolution-api/.env.example for DATABASE_CONNECTION_URI and
+        # CHATWOOT_IMPORT_DATABASE_CONNECTION_URI in the shared Docker network.
+        aliases:
+          - chatwoot-postgres
 
   redis:
     image: redis:alpine
     restart: always
-    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
+    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\" --appendonly yes"]
     env_file: .env
     volumes:
       - redis_data:/data
     ports:
       - '127.0.0.1:6379:6379'
+    networks:
+      default:
+      shared-services:
+        # Reused by evolution-api/.env.example for CACHE_REDIS_URI in the
+        # shared Docker network.
+        aliases:
+          - chatwoot-redis
 
 volumes:
   storage_data:
   postgres_data:
   redis_data:
+
+networks:
+  shared-services:
+    # External network shared with evolution-api/docker-compose.production.yaml.
+    name: ${SHARED_SERVICES_NETWORK:-dokploy-network}
+    external: true

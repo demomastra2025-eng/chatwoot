@@ -1,5 +1,10 @@
 <script>
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+
 export default {
+  components: {
+    Radio,
+  },
   props: {
     name: {
       type: String,
@@ -27,11 +32,11 @@ export default {
     <div class="radio-group">
       <div v-for="item in items" :key="item.id" class="radio-group-item">
         <label class="radio-group-item-label">
-          <input
+          <Radio
             class="radio-input"
             :name="`${name} -radio-input`"
-            type="radio"
-            :checked="item.checked"
+            :model-value="item.checked ? item.id : null"
+            :value="item.id"
             @change="action({ ...item, checked: true })"
           />
           <span>{{ item.title }}</span>

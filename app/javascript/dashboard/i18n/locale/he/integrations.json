@@ -831,6 +831,10 @@
           "PLACEHOLDER": "בדיקת הזמנה",
           "ERROR": "שם הכלי נדרש"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "תיאור",
           "PLACEHOLDER": "בודק פרטי הזמנה לפי מזהה הזמנה"
@@ -899,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "שם הפרמטר נדרש"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "שאלות נפוצות",

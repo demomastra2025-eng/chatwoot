@@ -126,7 +126,7 @@ describe('#Inbox Helpers', () => {
       describe('fill variant', () => {
         it('returns WhatsApp icon for Twilio WhatsApp number', () => {
           expect(getInboxIconByType(INBOX_TYPES.TWILIO, 'whatsapp')).toBe(
-            'i-ri-whatsapp-fill'
+            'i-ri-whatsapp-fill channel-icon-neutral'
           );
         });
 
@@ -147,7 +147,7 @@ describe('#Inbox Helpers', () => {
         it('returns WhatsApp line icon for Twilio WhatsApp number', () => {
           expect(
             getInboxIconByType(INBOX_TYPES.TWILIO, 'whatsapp', 'line')
-          ).toBe('i-woot-whatsapp');
+          ).toBe('i-woot-whatsapp channel-icon-neutral');
         });
 
         it('returns SMS line icon for regular Twilio number', () => {

@@ -125,16 +125,16 @@ const handleCreateAssistant = () => {
             <BackButton v-if="backUrl" :back-url="backUrl" />
             <div
               v-if="showAssistantSwitcher && !showPaywall"
-              class="flex items-center gap-2"
+              class="flex items-center gap-2 min-w-0"
             >
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
                 <span
                   v-if="!isFetchingAssistants"
-                  class="text-xl font-medium truncate text-n-slate-12"
+                  class="min-w-0 text-xl font-medium truncate text-n-slate-12"
                 >
                   {{ activeAssistantName }}
                 </span>
-                <div class="relative group">
+                <div class="relative group shrink-0">
                   <OnClickOutside
                     @trigger="showAssistantSwitcherDropdown = false"
                   >
@@ -155,10 +155,18 @@ const handleCreateAssistant = () => {
                       v-if="showAssistantSwitcherDropdown"
                       class="absolute ltr:left-0 rtl:right-0 top-9"
                       @close="showAssistantSwitcherDropdown = false"
-                      @create-assistant="handleCreateAssistant"
                     />
                   </OnClickOutside>
                 </div>
+                <Button
+                  :label="t('CAPTAIN.ASSISTANT_SWITCHER.NEW_ASSISTANT')"
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="slate"
+                  size="sm"
+                  class="shrink-0"
+                  @click="handleCreateAssistant"
+                />
               </div>
             </div>
             <div class="flex items-center gap-4">

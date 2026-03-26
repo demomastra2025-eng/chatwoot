@@ -47,6 +47,8 @@ class Contact < ApplicationRecord
   include Labelable
   include LlmFormattable
 
+  attr_accessor :skip_runtime_events
+
   validates :account_id, presence: true
   validates :email, allow_blank: true, uniqueness: { scope: [:account_id], case_sensitive: false },
                     format: { with: Devise.email_regexp, message: I18n.t('errors.contacts.email.invalid') }
@@ -197,6 +199,7 @@ class Contact < ApplicationRecord
   private
 
   def ip_lookup
+    return if runtime_events_suppressed?
     return unless account.feature_enabled?('ip_lookup')
 
     ContactIpLookupJob.perform_later(self)
@@ -234,10 +237,14 @@ class Contact < ApplicationRecord
   end
 
   def dispatch_create_event
+    return if runtime_events_suppressed?
+
     Rails.configuration.dispatcher.dispatch(CONTACT_CREATED, Time.zone.now, contact: self)
   end
 
   def dispatch_update_event
+    return if runtime_events_suppressed?
+
     Rails.configuration.dispatcher.dispatch(CONTACT_UPDATED, Time.zone.now, contact: self, changed_attributes: previous_changes)
   end
 
@@ -249,6 +256,10 @@ class Contact < ApplicationRecord
       Time.zone.now,
       contact_data: push_event_data.merge(account_id: account_id)
     )
+  end
+
+  def runtime_events_suppressed?
+    skip_runtime_events || Current.suppress_runtime_events
   end
 end
 Contact.include_mod_with('Concerns::Contact')

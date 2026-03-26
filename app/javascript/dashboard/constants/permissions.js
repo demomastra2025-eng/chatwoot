@@ -3,6 +3,12 @@ export const AVAILABLE_CUSTOM_ROLE_PERMISSIONS = [
   'conversation_unassigned_manage',
   'conversation_participating_manage',
   'contact_manage',
+  'crm_deal_view',
+  'crm_deal_manage',
+  'crm_task_view',
+  'crm_task_manage',
+  'crm_settings_view',
+  'crm_settings_manage',
   'report_manage',
   'knowledge_base_manage',
 ];
@@ -28,6 +34,13 @@ export const CONTACT_PERMISSIONS = 'contact_manage';
 export const REPORTS_PERMISSIONS = 'report_manage';
 
 export const PORTAL_PERMISSIONS = 'knowledge_base_manage';
+
+export const CRM_DEAL_VIEW_PERMISSION = 'crm_deal_view';
+export const CRM_DEAL_MANAGE_PERMISSION = 'crm_deal_manage';
+export const CRM_TASK_VIEW_PERMISSION = 'crm_task_view';
+export const CRM_TASK_MANAGE_PERMISSION = 'crm_task_manage';
+export const CRM_SETTINGS_VIEW_PERMISSION = 'crm_settings_view';
+export const CRM_SETTINGS_MANAGE_PERMISSION = 'crm_settings_manage';
 
 export const ASSIGNEE_TYPE_TAB_PERMISSIONS = {
   me: {

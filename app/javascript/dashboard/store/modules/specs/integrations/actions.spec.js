@@ -157,4 +157,25 @@ describe('#actions', () => {
       ]);
     });
   });
+
+  describe('#runHookSync', () => {
+    it('sends correct actions if API is success', async () => {
+      const data = { message: 'queued' };
+      axios.post.mockResolvedValue({ data });
+      await expect(actions.runHookSync({ commit }, 2)).resolves.toEqual(data);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true }],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: false }],
+      ]);
+    });
+
+    it('sends correct actions if API is error', async () => {
+      axios.post.mockRejectedValue(errorMessage);
+      await expect(actions.runHookSync({ commit }, 2)).rejects.toThrow(Error);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true }],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: false }],
+      ]);
+    });
+  });
 });

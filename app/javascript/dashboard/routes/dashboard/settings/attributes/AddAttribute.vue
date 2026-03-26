@@ -179,11 +179,11 @@ export default {
         <div class="w-full">
           <label :class="{ error: v$.attributeModel.$error }">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.MODEL.LABEL') }}
-            <select v-model="attributeModel">
+            <Select v-model="attributeModel">
               <option v-for="model in models" :key="model.id" :value="model.id">
                 {{ model.option }}
               </option>
-            </select>
+            </Select>
             <span v-if="v$.attributeModel.$error" class="message">
               {{ $t('ATTRIBUTES_MGMT.ADD.FORM.MODEL.ERROR') }}
             </span>
@@ -226,11 +226,11 @@ export default {
           </label>
           <label :class="{ error: v$.attributeType.$error }">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.LABEL') }}
-            <select v-model="attributeType">
+            <Select v-model="attributeType">
               <option v-for="type in types" :key="type.id" :value="type.id">
                 {{ type.option }}
               </option>
-            </select>
+            </Select>
             <span v-if="v$.attributeType.$error" class="message">
               {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.ERROR') }}
             </span>
@@ -260,10 +260,9 @@ export default {
             </label>
           </div>
           <div v-if="isAttributeTypeText">
-            <input
+            <Checkbox
               v-model="regexEnabled"
-              type="checkbox"
-              @input="toggleRegexEnabled"
+              @change="toggleRegexEnabled"
             />
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}
           </div>

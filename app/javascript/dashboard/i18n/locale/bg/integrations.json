@@ -831,6 +831,10 @@
           "PLACEHOLDER": "Order Lookup",
           "ERROR": "Tool name is required"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Описание",
           "PLACEHOLDER": "Looks up order details by order ID"
@@ -899,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQs",

@@ -89,8 +89,8 @@ export default {
         @blur="v$.description.$touch"
       />
       <div class="w-full flex items-center gap-2">
-        <input v-model="state.allowAutoAssign" type="checkbox" :value="true" />
-        <label for="conversation_creation">
+        <Checkbox id="allow-auto-assign" v-model="state.allowAutoAssign" />
+        <label for="allow-auto-assign">
           {{ $t('TEAMS_SETTINGS.FORM.AUTO_ASSIGN.LABEL') }}
         </label>
       </div>

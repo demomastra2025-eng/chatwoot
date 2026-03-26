@@ -13,7 +13,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def show
-    render_payload(Scheduling::PayloadBuilder.resource(@resource))
+    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
   def create
@@ -22,12 +22,13 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def update
-    @resource.update!(resource_params)
-    render_payload(Scheduling::PayloadBuilder.resource(@resource))
+    @scheduling_resource.update!(resource_params)
+    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
   def destroy
-    @resource.destroy!
+    ensure_destroyable_resource!
+    @scheduling_resource.archive_from_scheduling!
     head :no_content
   end
 
@@ -44,6 +45,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       :slot_duration_min,
       :compensation_type,
       :compensation_value,
+      :compensation_percent,
       :active,
       :user_id,
       custom_attributes: {}
@@ -51,6 +53,24 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def set_resource
-    @resource = Current.account.scheduling_resources.find(params[:id])
+    @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
+  end
+
+  def ensure_destroyable_resource!
+    if @scheduling_resource.custom_attributes['medelement_specialist_code'].present?
+      raise Scheduling::Error.new(
+        code: 'RESOURCE_READ_ONLY',
+        message: 'Imported Medelement specialists cannot be deleted',
+        status: :unprocessable_content
+      )
+    end
+
+    return unless @scheduling_resource.appointments.exists?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_HAS_APPOINTMENTS',
+      message: 'Specialist with appointments cannot be deleted',
+      status: :unprocessable_content
+    )
   end
 end

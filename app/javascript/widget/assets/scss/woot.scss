@@ -2,11 +2,13 @@
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
-@import 'shared/assets/fonts/widget_fonts';
+@import 'shared/assets/fonts/geist';
 @import 'views/conversation';
 
 html,
 body {
+  font-family: 'Geist', -apple-system, system-ui, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Tahoma, Arial, sans-serif;
   @apply antialiased h-full;
 }
 
@@ -104,10 +106,14 @@ select:not(.reset-base) {
 }
 
 p code {
+  font-family: 'Geist Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo',
+    'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', monospace;
   @apply bg-n-slate-3 dark:bg-n-alpha-2 text-n-slate-11 text-sm inline-block rounded py-px px-1;
 }
 
 pre {
+  font-family: 'Geist Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo',
+    'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', monospace;
   @apply bg-n-slate-3 dark:bg-n-alpha-2 text-n-slate-11 overflow-y-auto rounded-md p-2 mt-1 mb-2 block leading-[1.5] whitespace-pre-wrap;
 
   code {

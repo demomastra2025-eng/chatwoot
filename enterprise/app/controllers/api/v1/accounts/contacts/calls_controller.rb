@@ -21,6 +21,11 @@ class Api::V1::Accounts::Contacts::CallsController < Api::V1::Accounts::BaseCont
       call_sid: result[:call_sid],
       conference_sid: conversation.additional_attributes['conference_sid']
     }
+  rescue Telephony::Error, ArgumentError => e
+    render json: {
+      message: e.message,
+      code: e.respond_to?(:code) ? e.code : 'VALIDATION_ERROR'
+    }, status: :unprocessable_content
   end
 
   private

@@ -27,7 +27,7 @@ export default {
       port: '',
       login: '',
       password: '',
-      isSSLEnabled: true,
+      isSSLEnabled: false,
     };
   },
   validations: {
@@ -43,11 +43,27 @@ export default {
     inbox() {
       this.setDefaults();
     },
+    port(newPort) {
+      this.isSSLEnabled = this.resolveSslPreference(newPort, this.isSSLEnabled);
+    },
   },
   mounted() {
     this.setDefaults();
   },
   methods: {
+    resolveSslPreference(port, currentValue = false) {
+      const numericPort = Number(port);
+
+      if (numericPort === 143) {
+        return false;
+      }
+
+      if (numericPort === 993) {
+        return true;
+      }
+
+      return currentValue;
+    },
     setDefaults() {
       const {
         imap_enabled,
@@ -62,7 +78,7 @@ export default {
       this.port = imap_port;
       this.login = imap_login;
       this.password = imap_password;
-      this.isSSLEnabled = imap_enable_ssl;
+      this.isSSLEnabled = this.resolveSslPreference(imap_port, imap_enable_ssl);
     },
     async updateInbox() {
       try {
@@ -76,7 +92,10 @@ export default {
             imap_port: this.port,
             imap_login: this.login,
             imap_password: this.password,
-            imap_enable_ssl: this.isSSLEnabled,
+            imap_enable_ssl: this.resolveSslPreference(
+              this.port,
+              this.isSSLEnabled
+            ),
           },
         };
 
@@ -146,15 +165,6 @@ export default {
           type="password"
           @blur="v$.password.$touch"
         />
-        <label for="toggle-enable-ssl">
-          <input
-            v-model="isSSLEnabled"
-            type="checkbox"
-            class="ltr:mr-2 rtl:ml-2"
-            name="toggle-enable-ssl"
-          />
-          {{ $t('INBOX_MGMT.IMAP.ENABLE_SSL') }}
-        </label>
       </div>
       <NextButton
         type="submit"

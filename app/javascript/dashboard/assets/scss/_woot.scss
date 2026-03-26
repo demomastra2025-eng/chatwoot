@@ -3,8 +3,7 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
-@import 'shared/assets/fonts/InterDisplay/inter-display';
-@import 'shared/assets/fonts/inter';
+@import 'shared/assets/fonts/geist';
 
 // Next Colors
 @import 'next-colors';
@@ -18,7 +17,7 @@
 html,
 body {
   font-family:
-    'Inter',
+    'Geist',
     -apple-system,
     system-ui,
     BlinkMacSystemFont,
@@ -55,7 +54,119 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' fill='none' rx='16' ry='16' stroke='%23343434' stroke-width='2' stroke-dasharray='6, 8' stroke-dashoffset='0' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
+@layer base {
+  :root {
+    --channel-icon-website: 37 99 235;
+    --channel-icon-api: 99 102 241;
+    --channel-icon-facebook: 0 132 255;
+    --channel-icon-twitter: 29 155 240;
+    --channel-icon-whatsapp: 37 211 102;
+    --channel-icon-sms: 14 165 233;
+    --channel-icon-email: 37 99 235;
+    --channel-icon-gmail: 234 67 53;
+    --channel-icon-outlook: 0 120 212;
+    --channel-icon-telegram: 34 158 217;
+    --channel-icon-line: 6 199 85;
+    --channel-icon-instagram: 228 64 95;
+    --channel-icon-tiktok: 0 0 0;
+    --channel-icon-voice: 249 115 22;
+    --channel-icon-twilio: 242 47 70;
+  }
+}
+
 @layer utilities {
+  // Keep channel icons on their service color even when containers apply neutral text utilities.
+  .i-woot-website,
+  .i-ri-global-fill,
+  .i-ri-global-line {
+    color: rgb(var(--channel-icon-website)) !important;
+  }
+
+  .i-woot-api,
+  .i-ri-cloudy-fill,
+  .i-ri-cloudy-line {
+    color: rgb(var(--channel-icon-api)) !important;
+  }
+
+  .i-woot-messenger,
+  .i-ri-messenger-fill,
+  .i-ri-messenger-line,
+  .brand-facebook-outline {
+    color: rgb(var(--channel-icon-facebook)) !important;
+  }
+
+  .i-ri-twitter-x-fill,
+  .i-ri-twitter-x-line,
+  .brand-twitter-outline {
+    color: rgb(var(--channel-icon-twitter)) !important;
+  }
+
+  .i-woot-whatsapp,
+  .i-ri-whatsapp-fill,
+  .i-ri-whatsapp-line,
+  .brand-whatsapp-outline {
+    color: rgb(var(--channel-icon-whatsapp)) !important;
+  }
+
+  .i-woot-sms,
+  .brand-sms-outline {
+    color: rgb(var(--channel-icon-sms)) !important;
+  }
+
+  .i-woot-mail,
+  .i-ri-mail-fill,
+  .i-ri-mail-line {
+    color: rgb(var(--channel-icon-email)) !important;
+  }
+
+  .i-woot-gmail {
+    color: rgb(var(--channel-icon-gmail)) !important;
+  }
+
+  .i-woot-outlook {
+    color: rgb(var(--channel-icon-outlook)) !important;
+  }
+
+  .i-woot-telegram,
+  .i-ri-telegram-fill,
+  .i-ri-telegram-line,
+  .brand-telegram-outline {
+    color: rgb(var(--channel-icon-telegram)) !important;
+  }
+
+  .i-woot-line,
+  .i-ri-line-fill,
+  .i-ri-line-line,
+  .brand-line-outline {
+    color: rgb(var(--channel-icon-line)) !important;
+  }
+
+  .i-woot-instagram,
+  .i-ri-instagram-fill,
+  .i-ri-instagram-line,
+  .brand-instagram-outline {
+    color: rgb(var(--channel-icon-instagram)) !important;
+  }
+
+  .i-woot-tiktok,
+  .i-ri-tiktok-fill,
+  .i-ri-tiktok-line,
+  .brand-tiktok-outline {
+    color: rgb(var(--channel-icon-tiktok)) !important;
+  }
+
+  .i-woot-twilio {
+    color: rgb(var(--channel-icon-twilio)) !important;
+  }
+
+  .channel-icon-voice {
+    color: rgb(var(--channel-icon-voice)) !important;
+  }
+
+  .channel-icon-neutral {
+    color: inherit !important;
+  }
+
   /* Hide scrollbar for Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {
     display: none;

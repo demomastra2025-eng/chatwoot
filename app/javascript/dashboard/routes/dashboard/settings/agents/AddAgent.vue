@@ -124,11 +124,11 @@ const addAgent = async () => {
       <div class="w-full">
         <label :class="{ error: v$.selectedRoleId.$error }">
           {{ $t('AGENT_MGMT.ADD.FORM.AGENT_TYPE.LABEL') }}
-          <select v-model="selectedRoleId" @change="v$.selectedRoleId.$touch">
+          <Select v-model="selectedRoleId" @change="v$.selectedRoleId.$touch">
             <option v-for="role in roles" :key="role.id" :value="role.id">
               {{ role.label }}
             </option>
-          </select>
+          </Select>
           <span v-if="v$.selectedRoleId.$error" class="message">
             {{ $t('AGENT_MGMT.ADD.FORM.AGENT_TYPE.ERROR') }}
           </span>

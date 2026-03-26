@@ -159,6 +159,18 @@ RSpec.describe Captain::CustomTool, type: :model do
 
       expect(tool.slug).to eq('custom_fetch_order_status_details')
     end
+
+    it 'transliterates Cyrillic titles into stable ASCII slugs' do
+      tool = create(:captain_custom_tool, account: account, title: 'Получить персонажей')
+
+      expect(tool.slug).to eq('custom_poluchit_personazhey')
+    end
+
+    it 'falls back to a safe slug body when title cannot be transliterated' do
+      tool = create(:captain_custom_tool, account: account, title: '你好')
+
+      expect(tool.slug).to eq('custom_tool')
+    end
   end
 
   describe 'factory' do

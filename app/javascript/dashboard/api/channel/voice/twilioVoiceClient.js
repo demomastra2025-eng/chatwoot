@@ -3,26 +3,48 @@ import VoiceAPI from './voiceAPIClient';
 
 const createCallDisconnectedEvent = () => new CustomEvent('call:disconnected');
 
-class TwilioVoiceClient extends EventTarget {
+class WebphoneClient extends EventTarget {
   constructor() {
     super();
     this.device = null;
     this.activeConnection = null;
     this.initialized = false;
     this.inboxId = null;
+    this.sessionConfig = null;
   }
 
   async initializeDevice(inboxId) {
     this.destroyDevice();
 
     const response = await VoiceAPI.getToken(inboxId);
-    const { token, account_id } = response || {};
-    if (!token) throw new Error('Invalid token');
+    const {
+      token,
+      account_id: accountId,
+      provider = 'fonoster',
+      calling_supported: callingSupported = provider === 'twilio',
+    } = response || {};
+
+    this.sessionConfig = response || {};
+    this.inboxId = inboxId;
+
+    if (!callingSupported) {
+      this.initialized = true;
+      return {
+        provider,
+        callingSupported: false,
+      };
+    }
+
+    if (provider !== 'twilio' || !token) {
+      throw new Error(
+        'Browser calling is not configured for this voice provider'
+      );
+    }
 
     this.device = new Device(token, {
       allowIncomingWhileBusy: true,
       disableAudioContextSounds: true,
-      appParams: { account_id },
+      appParams: { account_id: accountId },
     });
 
     this.device.removeAllListeners();
@@ -39,9 +61,11 @@ class TwilioVoiceClient extends EventTarget {
     });
 
     this.initialized = true;
-    this.inboxId = inboxId;
-
-    return this.device;
+    return {
+      provider,
+      callingSupported: true,
+      device: this.device,
+    };
   }
 
   get hasActiveConnection() {
@@ -66,9 +90,10 @@ class TwilioVoiceClient extends EventTarget {
     this.device = null;
     this.initialized = false;
     this.inboxId = null;
+    this.sessionConfig = null;
   }
 
-  async joinClientCall({ to, conversationId }) {
+  async joinClientCall({ to, conversationId, callRef }) {
     if (!this.device || !this.initialized || !to) return null;
     if (this.activeConnection) return this.activeConnection;
 
@@ -76,6 +101,7 @@ class TwilioVoiceClient extends EventTarget {
       To: to,
       is_agent: 'true',
       conversation_id: conversationId,
+      call_ref: callRef,
     };
 
     const connection = await this.device.connect({ params });
@@ -92,4 +118,4 @@ class TwilioVoiceClient extends EventTarget {
   };
 }
 
-export default new TwilioVoiceClient();
+export default new WebphoneClient();

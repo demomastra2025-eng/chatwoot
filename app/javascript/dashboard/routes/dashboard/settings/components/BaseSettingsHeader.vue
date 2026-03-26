@@ -77,7 +77,7 @@ const helpURL = getHelpUrlForFeature(props.featureName);
           {{ linkText }}
           <Icon
             icon="i-lucide-chevron-right"
-            class="flex-shrink-0 text-n-blue-11 size-4"
+            class="flex-shrink-0 text-n-brand size-4"
           />
         </a>
       </CustomBrandPolicyWrapper>

@@ -46,6 +46,8 @@ class Inbox < ApplicationRecord
   include AccountCacheRevalidator
   include InboxAgentAvailability
 
+  API_CHANNEL_TYPES = %w[Channel::Api].freeze
+
   # Not allowing characters:
   validates :name, presence: true
   validates :account_id, presence: true
@@ -135,7 +137,11 @@ class Inbox < ApplicationRecord
   end
 
   def api?
-    channel_type == 'Channel::Api'
+    API_CHANNEL_TYPES.include?(channel_type)
+  end
+
+  def whatsapp_web?
+    channel_type == 'Channel::WhatsappWeb'
   end
 
   def email?
@@ -173,6 +179,12 @@ class Inbox < ApplicationRecord
 
   def inbox_type
     channel.name
+  end
+
+  def display_channel_type
+    return 'Channel::WhatsappWeb' if whatsapp_web?
+
+    channel_type
   end
 
   def webhook_data
@@ -242,7 +254,7 @@ class Inbox < ApplicationRecord
   end
 
   def check_channel_type?
-    ['Channel::Email', 'Channel::Api', 'Channel::WebWidget'].include?(channel_type)
+    ['Channel::Email', 'Channel::WebWidget', *API_CHANNEL_TYPES].include?(channel_type)
   end
 end
 

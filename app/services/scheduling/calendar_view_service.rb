@@ -70,7 +70,7 @@ class Scheduling::CalendarViewService
 
   def resources
     @resources ||= begin
-      scope = account.scheduling_resources.includes(:work_rules, :break_rules).ordered
+      scope = account.scheduling_resources.not_deleted_from_scheduling.includes(:work_rules, :break_rules).ordered
       scope = scope.where(id: @resource_ids) if @resource_ids.present?
       scope.to_a
     end

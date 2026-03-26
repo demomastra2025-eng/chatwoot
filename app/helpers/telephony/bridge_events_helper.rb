@@ -1,0 +1,2 @@
+module Telephony::BridgeEventsHelper
+end

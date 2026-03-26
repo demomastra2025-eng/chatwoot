@@ -209,6 +209,38 @@
         "SUCCESS_MESSAGE": "Campaign deleted successfully",
         "ERROR_MESSAGE": "There was an error. Please try again."
       }
+    },
+    "ANALYTICS": {
+      "TITLE": "Campaign analytics",
+      "DESCRIPTION": "Review native delivery outcomes for this campaign.",
+      "CLOSE": "Close",
+      "SUCCESS_RATE": "Success rate",
+      "DELIVERIES_TITLE": "Recent deliveries",
+      "DELIVERIES_SUBTITLE": "The latest delivery attempts tracked for this campaign.",
+      "SUMMARY_TITLE": "Summary",
+      "SUMMARY_SUBTITLE": "A compact view of the campaign funnel.",
+      "ERRORS_TITLE": "Top errors",
+      "ERRORS_SUBTITLE": "Most common delivery failures and skip reasons.",
+      "ERRORS_COUNT": "{count} deliveries",
+      "NO_ERRORS": "No delivery errors recorded.",
+      "UNAVAILABLE": "Analytics are not available yet for this campaign.",
+      "STATS": {
+        "SUBMITTED": "Submitted",
+        "DELIVERED": "Delivered",
+        "READ": "Read",
+        "FAILED": "Failed or skipped"
+      },
+      "TABLE": {
+        "CONTACT": "Contact",
+        "STATUS": "Status",
+        "PROVIDER": "Provider",
+        "UPDATED": "Updated"
+      },
+      "SUMMARY": {
+        "AUDIENCE": "Audience size",
+        "FAILED": "Failed / skipped",
+        "READ": "Read confirmations"
+      }
     }
   }
 }

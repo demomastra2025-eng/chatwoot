@@ -10,6 +10,7 @@
 #  client_identifier             :string
 #  client_name                   :string           not null
 #  client_phone                  :string
+#  compensation_percent_snapshot :integer          default(0), not null
 #  compensation_type_snapshot    :string
 #  compensation_value_snapshot   :integer
 #  custom_attributes             :jsonb            not null
@@ -39,6 +40,30 @@
 #  resource_id                   :bigint           not null
 #  service_id                    :bigint
 #
+# Indexes
+#
+#  idx_scheduling_appointments_on_account_external_ref     (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
+#  idx_scheduling_appointments_on_account_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  idx_scheduling_appointments_on_account_resource_range   (account_id,resource_id,starts_at,ends_at)
+#  idx_scheduling_appointments_on_account_starts_at        (account_id,starts_at)
+#  index_scheduling_appointments_on_account_id             (account_id)
+#  index_scheduling_appointments_on_company_id             (company_id)
+#  index_scheduling_appointments_on_contact_id             (contact_id)
+#  index_scheduling_appointments_on_conversation_id        (conversation_id)
+#  index_scheduling_appointments_on_created_by_id          (created_by_id)
+#  index_scheduling_appointments_on_resource_id            (resource_id)
+#  index_scheduling_appointments_on_service_id             (service_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (company_id => companies.id)
+#  fk_rails_...  (contact_id => contacts.id)
+#  fk_rails_...  (conversation_id => conversations.id)
+#  fk_rails_...  (created_by_id => users.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#  fk_rails_...  (service_id => scheduling_services.id)
+#
 
 class Scheduling::Appointment < ApplicationRecord
   belongs_to :account
@@ -64,6 +89,7 @@ class Scheduling::Appointment < ApplicationRecord
   validates :compensation_type_snapshot, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }, allow_blank: true
   validates :duration_min, inclusion: { in: 5..720 }
   validates :service_amount, :prepaid_amount, :settlement_amount, numericality: { greater_than_or_equal_to: 0, only_integer: true }
+  validates :compensation_percent_snapshot, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
   validate :ends_after_starts
@@ -71,6 +97,7 @@ class Scheduling::Appointment < ApplicationRecord
   validate :payment_methods_present_for_positive_amounts
   validate :associations_belong_to_account
   validate :compensation_snapshot_percent_within_range
+  validate :combined_compensation_snapshot_percent_within_range
 
   scope :ordered, -> { order(:starts_at, :id) }
   scope :active_statuses, -> { where.not(status: 'cancelled') }
@@ -114,6 +141,13 @@ class Scheduling::Appointment < ApplicationRecord
     return if compensation_value_snapshot.to_i.between?(0, 100)
 
     errors.add(:compensation_value_snapshot, 'must be between 0 and 100 for percent compensation')
+  end
+
+  def combined_compensation_snapshot_percent_within_range
+    return unless compensation_type_snapshot == 'fixed_plus_percent'
+    return if compensation_percent_snapshot.to_i.between?(0, 100)
+
+    errors.add(:compensation_percent_snapshot, 'must be between 0 and 100 for fixed plus percent compensation')
   end
 
   def ends_after_starts

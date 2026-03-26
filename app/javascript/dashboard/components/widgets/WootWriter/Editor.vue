@@ -915,7 +915,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
 @import '@chatwoot/prosemirror-schema/src/styles/base.scss';
 
 .ProseMirror-menubar-wrapper {
-  @apply flex flex-col gap-3;
+  @apply flex flex-col gap-2.5;
 
   .ProseMirror-menubar {
     min-height: 1.25rem !important;
@@ -977,7 +977,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
 }
 
 .ProseMirror-woot-style {
-  @apply overflow-auto min-h-[5rem] max-h-[7.5rem];
+  @apply overflow-auto min-h-[4.5rem] max-h-[7.5rem];
 }
 
 .ProseMirror-prompt-backdrop::backdrop {

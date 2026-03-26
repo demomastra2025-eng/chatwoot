@@ -12,22 +12,20 @@ defineProps({
 </script>
 
 <template>
-  <header
-    class="flex flex-col gap-4 px-6 py-5 border-b bg-n-solid-2 border-n-weak"
-  >
+  <header class="bg-n-surface-1 px-5 pb-2 pt-4">
     <div
-      class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+      class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
     >
       <div class="flex flex-col gap-1">
-        <h1 class="mb-0 text-2xl font-semibold text-n-slate-12">
+        <h1 class="mb-0 text-lg font-semibold text-n-slate-12">
           {{ title }}
         </h1>
-        <p v-if="description" class="mb-0 text-sm text-n-slate-11">
+        <p v-if="description" class="mb-0 text-xs text-n-slate-11">
           {{ description }}
         </p>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 self-start md:self-auto">
         <slot name="actions" />
       </div>
     </div>

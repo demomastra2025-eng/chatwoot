@@ -11,6 +11,9 @@ import App from '../v3/App.vue';
 import router, { initalizeRouter } from '../v3/views/index';
 import store from '../v3/store';
 import FluentIcon from 'shared/components/FluentIcon/DashboardIcon.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 // import { emitter } from '../shared/helpers/mitt';
 
 // [VITE] This was added in https://github.com/chatwoot/chatwoot/commit/b57063a8b83c86819bd285f481298d7cd38ad50e
@@ -32,6 +35,10 @@ app.use(router);
 // Vue.use(VueI18n);
 // Vue.prototype.$emitter = emitter;
 app.component('fluent-icon', FluentIcon);
+app.component('Checkbox', Checkbox);
+app.component('Radio', Radio);
+// eslint-disable-next-line vue/no-reserved-component-names
+app.component('Select', Select);
 
 if (window.errorLoggingConfig) {
   Sentry.init({

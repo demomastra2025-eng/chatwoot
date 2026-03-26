@@ -1,0 +1,278 @@
+{
+  "CRM": {
+    "GENERAL": {
+      "ACTIVE": "Active",
+      "ARCHIVE": "Archive",
+      "ARCHIVED": "Archived",
+      "CONVERSATION_SOURCE": "Keeps the inbox conversation as source context",
+      "CREATE": "Create",
+      "DEFAULT": "Default",
+      "EMPTY_VALUE": "—",
+      "INACTIVE": "Inactive",
+      "LINKED_CONVERSATION": "Linked conversation",
+      "NO": "No",
+      "SAVE": "Save",
+      "UNARCHIVE": "Unarchive",
+      "YES": "Yes"
+    },
+    "VIEWS": {
+      "BOARD": "Board",
+      "LIST": "List"
+    },
+    "FILTERS": {
+      "APPLY": "Apply filters",
+      "DESCRIPTION": "Refine runtime records without leaving the native dashboard workflow.",
+      "INCLUDE_ARCHIVED": "Include archived",
+      "SEARCH": "Search",
+      "SEARCH_PLACEHOLDER": "Search by title",
+      "SHORT_DESCRIPTION": "Quick filter",
+      "TITLE": "Filters"
+    },
+    "CUSTOM_FIELDS": {
+      "DESCRIPTION": "Managed CRM fields are stored separately from core workflow columns.",
+      "TITLE": "Custom Fields"
+    },
+    "TIMELINE": {
+      "ADD_COMMENT": "Add comment",
+      "COMMENT": "Comment",
+      "COMMENT_PLACEHOLDER": "Add internal context for your team",
+      "CONVERSATION": "Conversation #{id}",
+      "DESCRIPTION": "Events, comments, and related runtime context appear here.",
+      "EMPTY": "No timeline activity yet",
+      "EVENT_RECORDED": "Activity recorded",
+      "LOADING": "Loading timeline...",
+      "POST_COMMENT": "Post comment",
+      "TITLE": "Timeline",
+      "UNKNOWN_CONTACT": "Unknown contact"
+    },
+    "ERRORS": {
+      "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
+      "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
+      "FEATURE_DISABLED": "CRM is not enabled for this account.",
+      "GENERIC": "Something went wrong while working with CRM.",
+      "LOAD_TITLE": "Unable to load CRM data",
+      "NOT_FOUND": "The requested CRM record could not be found.",
+      "STALE_RECORD": "This record changed in another request. Refresh and try again.",
+      "VALIDATION_ERROR": "Please fix the form errors and try again."
+    },
+    "DEALS": {
+      "CREATE_TITLE": "Create deal",
+      "DESCRIPTION": "Track opportunities without leaving the account dashboard.",
+      "DRAWER_DESCRIPTION": "Keep ownership, contacts, and stage movement in one place.",
+      "EDIT_TITLE": "Edit deal",
+      "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
+      "EMPTY_TITLE": "No deals yet",
+      "BOARD": {
+        "EMPTY_COLUMN": "No deals in this stage"
+      },
+      "FORM": {
+        "AMOUNT": "Amount",
+        "BASICS": "Deal details",
+        "BASICS_DESCRIPTION": "Deal title, owner, pipeline, and commercial context.",
+        "COMPANY": "Company",
+        "CONTACTS": "Contacts",
+        "CURRENCY": "Currency",
+        "DESCRIPTION": "Description",
+        "EXPECTED_CLOSE_ON": "Expected close date",
+        "EXTERNAL_REF": "External reference",
+        "OWNER": "Owner",
+        "PIPELINE": "Pipeline",
+        "PRIMARY_CONTACT": "Primary contact",
+        "RELATIONSHIPS": "Relationships",
+        "RELATIONSHIPS_DESCRIPTION": "Attach existing contacts and a company when available.",
+        "STAGE": "Stage",
+        "TEAM": "Team",
+        "TITLE": "Title",
+        "WIN_PROBABILITY": "Win probability"
+      },
+      "NEW_DEAL": "New deal",
+      "PREFILL": {
+        "CONVERSATION_GENERIC": "Opportunity from conversation #{conversationId}",
+        "CONVERSATION_WITH_CONTACT": "Opportunity for {contactName}",
+        "COMPANY": "Opportunity for {companyName}"
+      },
+      "SUCCESS_ARCHIVED": "Deal archived",
+      "SUCCESS_CREATED": "Deal created",
+      "SUCCESS_UNARCHIVED": "Deal restored",
+      "SUCCESS_UPDATED": "Deal updated",
+      "TABLE": {
+        "AMOUNT": "Amount",
+        "OWNER": "Owner",
+        "STAGE": "Stage",
+        "TITLE": "Deal",
+        "UPDATED": "Updated"
+      },
+      "TITLE": "Deals"
+    },
+    "TASKS": {
+      "CREATE_TITLE": "Create task",
+      "DESCRIPTION": "Run standalone work and deal-linked follow-ups from one surface.",
+      "DRAWER_DESCRIPTION": "Status changes and task context stay in the same native drawer.",
+      "EDIT_TITLE": "Edit task",
+      "EMPTY_DESCRIPTION": "Create your first CRM task to organize follow-ups and internal work.",
+      "EMPTY_TITLE": "No tasks yet",
+      "CALENDAR": {
+        "EMPTY": "No scheduled CRM tasks in this calendar range.",
+        "NO_TASKS_DAY": "No scheduled tasks on this day"
+      },
+      "BOARD": {
+        "EMPTY_COLUMN": "No tasks in this status"
+      },
+      "FORM": {
+        "ASSIGNEE": "Assignee",
+        "BASICS": "Task details",
+        "BASICS_DESCRIPTION": "Define ownership, schedule, and linkage to an optional deal.",
+        "DEAL": "Linked deal",
+        "DESCRIPTION": "Description",
+        "DUE_AT": "Due at",
+        "EXTERNAL_REF": "External reference",
+        "PRIORITY": "Priority",
+        "START_AT": "Start at",
+        "STATUS": "Status",
+        "TEAM": "Team",
+        "TITLE": "Title"
+      },
+      "NEW_TASK": "New task",
+      "PREFILL": {
+        "CONVERSATION_GENERIC": "Follow up conversation #{conversationId}",
+        "CONVERSATION_WITH_CONTACT": "Follow up with {contactName}"
+      },
+      "PRIORITY": {
+        "high": "High",
+        "low": "Low",
+        "medium": "Medium",
+        "none": "None",
+        "urgent": "Urgent"
+      },
+      "SUCCESS_ARCHIVED": "Task archived",
+      "SUCCESS_CREATED": "Task created",
+      "SUCCESS_UNARCHIVED": "Task restored",
+      "SUCCESS_UPDATED": "Task updated",
+      "TABLE": {
+        "ASSIGNEE": "Assignee",
+        "DEAL": "Deal",
+        "DUE_AT": "Due",
+        "STATUS": "Status",
+        "TITLE": "Task"
+      },
+      "TITLE": "Tasks"
+    },
+    "SETTINGS": {
+      "DESCRIPTION": "Configure pipelines, statuses, and managed fields using the same dashboard settings shell.",
+      "FIELD_TABS": {
+        "DEALS": "Deals",
+        "TASKS": "Tasks"
+      },
+      "FIELDS": {
+        "ADD": "Add field",
+        "ALL_CONTEXTS": "All contexts",
+        "CONTEXTS": {
+          "deal_task": "Deal tasks",
+          "standalone_task": "Standalone tasks"
+        },
+        "CREATE_TITLE": "Create field",
+        "DELETE_CONFIRM": "Delete this field definition?",
+        "DESCRIPTION": "Managed custom fields extend CRM entities without changing core schema columns.",
+        "EDIT_TITLE": "Edit field",
+        "FORM": {
+          "ACTIVE": "Field is active",
+          "BASICS": "Field basics",
+          "BASICS_DESCRIPTION": "Core metadata that defines how the field behaves in runtime forms.",
+          "CONTEXTS": "Task contexts",
+          "DEFAULT_VALUE": "Default value",
+          "DESCRIPTION": "Description",
+          "ENTITY": "Entity",
+          "KEY": "Key",
+          "LABEL": "Label",
+          "MAX": "Max",
+          "MIN": "Min",
+          "OPTIONS": "Options",
+          "OPTIONS_PLACEHOLDER": "One option per line",
+          "POSITION": "Position",
+          "REGEX": "Regex",
+          "REQUIRED": "Field is required",
+          "RULES": "Validation rules",
+          "RULES_DESCRIPTION": "Optional rules for numeric limits, regex checks, and task contexts.",
+          "TYPE": "Type"
+        },
+        "SUCCESS_DELETE": "Field deleted",
+        "SUCCESS_SAVE": "Field saved",
+        "TABLE": {
+          "CONTEXT": "Context",
+          "KEY": "Key",
+          "LABEL": "Label",
+          "REQUIRED": "Required",
+          "TYPE": "Type"
+        },
+        "TITLE": "Managed fields"
+      },
+      "LOADING": "Loading CRM settings...",
+      "PIPELINES": {
+        "ADD": "Add pipeline",
+        "CREATE_TITLE": "Create pipeline",
+        "DESCRIPTION": "Pipelines and stages drive the native deal board and transition rules.",
+        "EDIT_TITLE": "Edit pipeline",
+        "FORM": {
+          "ACTIVE": "Pipeline is active",
+          "CODE": "Code",
+          "DEFAULT": "Default pipeline",
+          "NAME": "Name",
+          "POSITION": "Position"
+        },
+        "SUCCESS_SAVE": "Pipeline saved",
+        "TABLE": {
+          "DEFAULT": "Default",
+          "NAME": "Pipeline",
+          "STAGES": "Stages",
+          "STATUS": "Status"
+        },
+        "TITLE": "Pipelines"
+      },
+      "STAGES": {
+        "CREATE_TITLE": "Create stage",
+        "EDIT_TITLE": "Edit stage",
+        "FORM": {
+          "ACTIVE": "Stage is active",
+          "CODE": "Code",
+          "NAME": "Name",
+          "OUTCOME": "Outcome",
+          "PIPELINE": "Pipeline",
+          "POSITION": "Position"
+        },
+        "OUTCOMES": {
+          "lost": "Lost",
+          "open": "Open",
+          "won": "Won"
+        },
+        "SUCCESS_SAVE": "Stage saved"
+      },
+      "TASK_STATUSES": {
+        "ADD": "Add status",
+        "CATEGORIES": {
+          "done": "Done",
+          "open": "Open"
+        },
+        "CREATE_TITLE": "Create task status",
+        "DESCRIPTION": "Statuses shape the CRM task board and completion lifecycle.",
+        "EDIT_TITLE": "Edit task status",
+        "FORM": {
+          "ACTIVE": "Status is active",
+          "CATEGORY": "Category",
+          "CODE": "Code",
+          "DEFAULT": "Default status",
+          "NAME": "Name",
+          "POSITION": "Position"
+        },
+        "SUCCESS_SAVE": "Task status saved",
+        "TABLE": {
+          "CATEGORY": "Category",
+          "DEFAULT": "Default",
+          "NAME": "Status",
+          "STATUS": "Status"
+        },
+        "TITLE": "Task statuses"
+      },
+      "TITLE": "CRM Settings"
+    }
+  }
+}

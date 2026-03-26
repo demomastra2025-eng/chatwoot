@@ -92,6 +92,8 @@ describe Whatsapp::OneoffCampaignService do
         expect(whatsapp_channel).to receive(:send_template).exactly(3).times
 
         described_class.new(campaign: campaign).perform
+        expect(campaign.campaign_deliveries.count).to eq(3)
+        expect(campaign.campaign_deliveries.pluck(:status).uniq).to eq(['submitted'])
       end
 
       it 'skips contacts without phone numbers' do
@@ -101,6 +103,7 @@ describe Whatsapp::OneoffCampaignService do
         expect(whatsapp_channel).not_to receive(:send_template)
 
         described_class.new(campaign: campaign).perform
+        expect(campaign.campaign_deliveries.find_by(contact: contact_without_phone).status).to eq('skipped')
       end
 
       it 'uses template processor service to process templates' do
@@ -153,6 +156,7 @@ describe Whatsapp::OneoffCampaignService do
         expect(whatsapp_channel).not_to receive(:send_template)
 
         described_class.new(campaign: campaign).perform
+        expect(campaign.campaign_deliveries.find_by(contact: contact).status).to eq('skipped')
       end
     end
 
@@ -174,6 +178,8 @@ describe Whatsapp::OneoffCampaignService do
 
         described_class.new(campaign: campaign).perform
         expect(campaign.reload.completed?).to be true
+        expect(campaign.campaign_deliveries.find_by(contact: contact_error).status).to eq('failed')
+        expect(campaign.campaign_deliveries.find_by(contact: contact_success).status).to eq('submitted')
       end
     end
   end

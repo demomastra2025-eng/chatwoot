@@ -40,7 +40,7 @@ export default {
   },
   watch: {
     activeAgentBot() {
-      this.selectedAgentBotId = this.activeAgentBot.id;
+      this.selectedAgentBotId = this.activeAgentBot?.id || null;
     },
   },
   mounted() {

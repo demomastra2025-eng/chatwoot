@@ -75,7 +75,7 @@ watch(
             :value="`${item.name}-required`"
             :disabled="!item['enabled']"
             class="m-0"
-            @click="handlePreChatFieldOptions($event, 'required', item)"
+            @change="handlePreChatFieldOptions($event, 'required', item)"
           />
         </td>
         <td

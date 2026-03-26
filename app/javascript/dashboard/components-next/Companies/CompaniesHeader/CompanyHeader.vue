@@ -10,7 +10,7 @@ defineProps({
   headerTitle: { type: String, required: true },
   showCreateButton: { type: Boolean, default: true },
   createButtonLabel: { type: String, default: '' },
-  activeSort: { type: String, default: 'last_activity_at' },
+  activeSort: { type: String, default: 'name' },
   activeOrdering: { type: String, default: '' },
 });
 
