@@ -10,6 +10,7 @@ RESTART_INFRA="${RESTART_INFRA:-0}"
 PREPARE_DB="${PREPARE_DB:-0}"
 CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
 DEV_LITE_FILTER_NOISE="${DEV_LITE_FILTER_NOISE:-1}"
+USE_EXISTING_INFRA="${USE_EXISTING_INFRA:-auto}"
 DATABASE_PREPARED=0
 LOG_DIR="${ONELINK_DEV_LITE_LOG_DIR:-${ROOT_DIR}/logs}"
 TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
@@ -65,6 +66,87 @@ env_value() {
   fi
 
   printf '%s' "$default_value"
+}
+
+postgres_host() {
+  env_value POSTGRES_HOST 127.0.0.1
+}
+
+postgres_port() {
+  env_value POSTGRES_PORT 5432
+}
+
+postgres_user() {
+  env_value POSTGRES_USERNAME postgres
+}
+
+postgres_database() {
+  env_value POSTGRES_DATABASE chatwoot_dev
+}
+
+postgres_password() {
+  env_value POSTGRES_PASSWORD ''
+}
+
+redis_url() {
+  env_value REDIS_URL redis://:redis@127.0.0.1:6379/0
+}
+
+redis_host() {
+  REDIS_URL_VALUE="$(redis_url)" ruby -ruri -e 'uri = URI(ENV.fetch("REDIS_URL_VALUE")); puts(uri.host || "127.0.0.1")'
+}
+
+redis_port() {
+  REDIS_URL_VALUE="$(redis_url)" ruby -ruri -e 'uri = URI(ENV.fetch("REDIS_URL_VALUE")); puts(uri.port || 6379)'
+}
+
+tcp_reachable() {
+  nc -z "$1" "$2" >/dev/null 2>&1
+}
+
+run_pg_ruby() {
+  local ruby_script="$1"
+  shift || true
+
+  PGHOST="$(postgres_host)" \
+  PGPORT="$(postgres_port)" \
+  PGDATABASE="$(postgres_database)" \
+  PGUSER="$(postgres_user)" \
+  PGPASSWORD="$(postgres_password)" \
+    bundle exec ruby -rpg -e "$ruby_script" "$@"
+}
+
+run_pg_admin_ruby() {
+  local ruby_script="$1"
+  shift || true
+
+  PGHOST="$(postgres_host)" \
+  PGPORT="$(postgres_port)" \
+  PGDATABASE=postgres \
+  PGUSER="$(postgres_user)" \
+  PGPASSWORD="$(postgres_password)" \
+    bundle exec ruby -rpg -e "$ruby_script" "$@"
+}
+
+use_existing_infra() {
+  case "$USE_EXISTING_INFRA" in
+    1|true|TRUE|yes|YES)
+      return 0
+      ;;
+    0|false|FALSE|no|NO)
+      return 1
+      ;;
+    auto)
+      if tcp_reachable "$(postgres_host)" "$(postgres_port)" && tcp_reachable "$(redis_host)" "$(redis_port)"; then
+        return 0
+      fi
+      return 1
+      ;;
+    *)
+      log "Unsupported USE_EXISTING_INFRA value: ${USE_EXISTING_INFRA} (expected auto|1|0)"
+      exit 1
+      ;;
+  esac
 }
 
 ensure_rbenv() {
@@ -142,12 +224,19 @@ start_infra() {
 }
 
 wait_for_postgres() {
-  local db_name db_user attempts
-  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
-  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  local attempts
   attempts=60
 
-  until docker compose exec -T postgres pg_isready -U "$db_user" -d "$db_name" >/dev/null 2>&1; do
+  until run_pg_ruby '
+    conn = PG.connect(
+      host: ENV.fetch("PGHOST"),
+      port: ENV.fetch("PGPORT"),
+      dbname: ENV.fetch("PGDATABASE"),
+      user: ENV.fetch("PGUSER"),
+      password: ENV["PGPASSWORD"]
+    )
+    conn.close
+  ' >/dev/null 2>&1; do
     attempts=$((attempts - 1))
     if (( attempts == 0 )); then
       log "Postgres did not become ready in time"
@@ -158,19 +247,12 @@ wait_for_postgres() {
 }
 
 wait_for_redis() {
-  local redis_password attempts
-  local redis_cmd
-  redis_password="$(env_value REDIS_PASSWORD redis)"
+  local redis_host_value redis_port_value attempts
+  redis_host_value="$(redis_host)"
+  redis_port_value="$(redis_port)"
   attempts=30
-  redis_cmd=(docker compose exec -T redis redis-cli)
 
-  if [[ -n "$redis_password" ]]; then
-    redis_cmd+=(-a "$redis_password")
-  fi
-
-  redis_cmd+=(ping)
-
-  until [[ "$("${redis_cmd[@]}" 2>/dev/null | tail -n 1)" == "PONG" ]]; do
+  until tcp_reachable "$redis_host_value" "$redis_port_value"; do
     attempts=$((attempts - 1))
     if (( attempts == 0 )); then
       log "Redis did not become ready in time"
@@ -181,41 +263,66 @@ wait_for_redis() {
 }
 
 database_needs_prepare() {
-  local db_name db_user table_exists
-  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
-  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  local table_exists
   table_exists="$(
-    docker compose exec -T postgres \
-      psql -U "$db_user" -d "$db_name" -tAc \
-      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ar_internal_metadata' LIMIT 1;" \
-      2>/dev/null | tr -d '[:space:]' || true
+    run_pg_ruby '
+      conn = PG.connect(
+        host: ENV.fetch("PGHOST"),
+        port: ENV.fetch("PGPORT"),
+        dbname: ENV.fetch("PGDATABASE"),
+        user: ENV.fetch("PGUSER"),
+        password: ENV["PGPASSWORD"]
+      )
+      result = conn.exec("SELECT 1 AS present FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_name = '\''ar_internal_metadata'\'' LIMIT 1")
+      puts result[0]["present"] unless result.ntuples.zero?
+      conn.close
+    ' 2>/dev/null | tr -d '[:space:]' || true
   )"
 
   [[ "$table_exists" != "1" ]]
 }
 
 database_has_partial_schema_artifacts() {
-  local db_name db_user schema_count
-  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
-  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  local schema_count
   schema_count="$(
-    docker compose exec -T postgres \
-      psql -U "$db_user" -d "$db_name" -tAc \
-      "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name IN ('agent_transport', 'evolution_api', 'mastra_agent');" \
-      2>/dev/null | tr -d '[:space:]' || true
+    run_pg_ruby '
+      conn = PG.connect(
+        host: ENV.fetch("PGHOST"),
+        port: ENV.fetch("PGPORT"),
+        dbname: ENV.fetch("PGDATABASE"),
+        user: ENV.fetch("PGUSER"),
+        password: ENV["PGPASSWORD"]
+      )
+      result = conn.exec("SELECT COUNT(*) AS count FROM information_schema.schemata WHERE schema_name IN ('\''agent_transport'\'', '\''evolution_api'\'', '\''mastra_agent'\'')")
+      puts result[0]["count"] unless result.ntuples.zero?
+      conn.close
+    ' 2>/dev/null | tr -d '[:space:]' || true
   )"
 
   [[ "$schema_count" != "0" && -n "$schema_count" ]]
 }
 
 reset_database() {
-  local db_name db_user
-  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
-  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  local db_name
+  db_name="$(postgres_database)"
 
   log "Resetting partially initialized database ${db_name}"
-  docker compose exec -T postgres dropdb --if-exists -U "$db_user" "$db_name"
-  docker compose exec -T postgres createdb -U "$db_user" "$db_name"
+  run_pg_admin_ruby '
+    db_name = ARGV.fetch(0)
+    conn = PG.connect(
+      host: ENV.fetch("PGHOST"),
+      port: ENV.fetch("PGPORT"),
+      dbname: ENV.fetch("PGDATABASE"),
+      user: ENV.fetch("PGUSER"),
+      password: ENV["PGPASSWORD"]
+    )
+    quoted_name = conn.quote_ident(db_name)
+    escaped_name = conn.escape_literal(db_name)
+    conn.exec("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{escaped_name} AND pid <> pg_backend_pid()")
+    conn.exec("DROP DATABASE IF EXISTS #{quoted_name}")
+    conn.exec("CREATE DATABASE #{quoted_name}")
+    conn.close
+  ' "$db_name"
 }
 
 prepare_database() {
@@ -261,9 +368,15 @@ main() {
   cd "$ROOT_DIR"
   ensure_rbenv
   ensure_dependencies
-  ensure_docker
   stop_listeners
-  start_infra
+
+  if use_existing_infra; then
+    log "Using existing postgres and redis from .env"
+  else
+    ensure_docker
+    start_infra
+  fi
+
   wait_for_postgres
   wait_for_redis
   prepare_database
