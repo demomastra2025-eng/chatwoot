@@ -68,7 +68,6 @@ const dialogRef = ref(null);
 const dialogContentRef = ref(null);
 const isOpen = ref(false);
 const clickOutsideIgnore = ['[data-modal-safe-interaction]'];
-const clickOutsideIgnore = ['[data-modal-safe-interaction]'];
 
 const maxWidthClass = computed(() => {
   const classesMap = {
