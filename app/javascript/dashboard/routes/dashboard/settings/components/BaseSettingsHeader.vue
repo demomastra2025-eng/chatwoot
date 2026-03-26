@@ -99,14 +99,15 @@ const helpURL = getHelpUrlForFeature(props.featureName);
         v-if="searchPlaceholder"
         v-model="searchQuery"
         :placeholder="searchPlaceholder"
-        class="group w-56 min-w-0 hidden sm:flex [&>input]:ltr:!pl-8 [&>input]:rtl:!pr-8 [&>input]:!rounded-[0.625rem]"
+        class="group w-56 min-w-0 hidden sm:flex"
+        custom-input-class="ltr:!pr-8 rtl:!pl-8 !rounded-[0.625rem]"
         size="sm"
         type="search"
       >
-        <template #prefix>
+        <template #suffix>
           <Icon
             icon="i-lucide-search"
-            class="absolute top-1/2 -translate-y-1/2 text-n-slate-11 group-focus-within:text-n-brand size-3.5 ltr:left-2.5 rtl:right-2.5"
+            class="absolute top-1/2 -translate-y-1/2 text-n-slate-11 group-focus-within:text-n-brand size-3.5 ltr:right-2.5 rtl:left-2.5"
           />
         </template>
       </Input>

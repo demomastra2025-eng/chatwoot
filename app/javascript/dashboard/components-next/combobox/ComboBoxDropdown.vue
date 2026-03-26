@@ -79,14 +79,14 @@ defineExpose({
       <div class="border-b border-n-weak pb-2">
         <div class="relative flex items-center">
           <span
-            class="pointer-events-none absolute inset-y-0 left-3 my-auto inline-flex size-4 items-center justify-center i-lucide-search text-n-slate-10"
+            class="pointer-events-none absolute inset-y-0 right-3 left-auto my-auto inline-flex size-4 items-center justify-center i-lucide-search text-n-slate-10 rtl:right-auto rtl:left-3"
           />
           <input
             ref="searchInput"
             :value="searchValue"
-            type="search"
+            type="text"
             :placeholder="searchPlaceholder || t('COMBOBOX.SEARCH_PLACEHOLDER')"
-            class="reset-base h-10 w-full rounded-xl border-none bg-n-alpha-black2 py-2 pl-10 pr-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak focus:outline-n-brand"
+            class="reset-base h-10 w-full appearance-none rounded-xl border-none bg-n-alpha-black2 py-2 pl-5 pr-10 text-sm text-n-slate-12 outline outline-1 outline-n-weak focus:outline-n-brand rtl:pr-5 rtl:pl-10"
             @input="onInputSearch"
           />
         </div>

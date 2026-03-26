@@ -63,15 +63,15 @@ const emit = defineEmits([
             type="search"
             :placeholder="$t('CONTACTS_LAYOUT.HEADER.SEARCH_PLACEHOLDER')"
             :custom-input-class="[
-              'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pl-8 !py-1 rtl:!pr-8',
+              'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pr-8 !py-1 rtl:!pl-8',
             ]"
             class="w-full"
             @input="emit('search', $event.target.value)"
           >
-            <template #prefix>
+            <template #suffix>
               <Icon
                 icon="i-lucide-search"
-                class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:left-2 rtl:right-2"
+                class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:right-2 rtl:left-2"
               />
             </template>
           </Input>

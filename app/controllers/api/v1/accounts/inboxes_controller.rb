@@ -81,8 +81,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render status: :ok, json: { message: I18n.t('messages.inbox_deletetion_response') }
   end
 
-  def sync_templates
-
   def refresh_whatsapp_web_qr
     if truthy_param?(:status_only)
       @inbox.channel.sync_connection_state!
@@ -126,6 +124,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     log_whatsapp_web_runtime_error('whatsapp_web_diagnostics', e)
     render json: { error: e.message }, status: :unprocessable_entity
   end
+
   private
 
   def fetch_inbox

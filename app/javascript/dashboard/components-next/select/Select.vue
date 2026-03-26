@@ -2,10 +2,6 @@
 import { computed, getCurrentInstance, useAttrs } from 'vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
-defineOptions({
-  inheritAttrs: false,
-});
-
 const props = defineProps({
   id: {
     type: String,
@@ -46,13 +42,17 @@ const props = defineProps({
 
 const emit = defineEmits(['change', 'blur', 'focus']);
 
-const { uid } = getCurrentInstance();
-const attrs = useAttrs();
-
 const modelValue = defineModel('modelValue', {
   type: [String, Number, Boolean, Array, Object],
   default: '',
 });
+
+defineOptions({
+  inheritAttrs: false,
+});
+
+const { uid } = getCurrentInstance();
+const attrs = useAttrs();
 
 const inputId = computed(() => props.id || `select-${uid}`);
 const selectAttrs = computed(() => {
@@ -67,7 +67,7 @@ const wrapperClasses = computed(() => [
   hasStructuredOptions.value ? ['w-fit', attrs.class] : '',
 ]);
 const selectClasses = computed(() => [
-  'appearance-none rounded-lg border-0 bg-n-surface-1 !mb-0 py-2 pl-3 pr-10 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] transition-all duration-200',
+  'appearance-none [background-image:none] rounded-lg border-0 bg-n-surface-1 !mb-0 py-2 pl-3 pr-10 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] transition-all duration-200',
   !props.error && !props.disabled
     ? 'outline-n-weak hover:outline-n-slate-6 focus:outline-n-brand'
     : '',

@@ -128,14 +128,16 @@ const hasNoUsedAttributes = computed(() => usedAttributes.value.length === 0);
     </div>
     <div class="flex flex-col gap-3">
       <div v-if="!hasNoUnusedAttributes" class="relative">
-        <span class="absolute i-lucide-search size-3.5 top-2 left-3" />
+        <span
+          class="absolute i-lucide-search size-3.5 top-2 ltr:right-3 rtl:left-3"
+        />
         <input
           v-model="searchQuery"
           type="search"
           :placeholder="
             t('CONTACTS_LAYOUT.SIDEBAR.ATTRIBUTES.SEARCH_PLACEHOLDER')
           "
-          class="w-full h-8 py-2 pl-10 pr-2 text-sm reset-base outline-none border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12"
+          class="w-full h-8 py-2 text-sm reset-base outline-none border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12 ltr:pl-2 rtl:pr-2 ltr:pr-10 rtl:pl-10"
         />
       </div>
       <div

@@ -88,6 +88,16 @@ onUnmounted(() => {
     }"
   >
     <div class="flex items-center w-full h-[3.25rem] px-4 gap-2">
+      <input
+        ref="searchInput"
+        v-model="searchQuery"
+        type="search"
+        class="reset-base outline-none w-full m-0 bg-transparent border-transparent shadow-none text-n-slate-12 dark:text-n-slate-12 active:border-transparent active:shadow-none hover:border-transparent hover:shadow-none focus:border-transparent focus:shadow-none placeholder:text-n-slate-10 text-base"
+        :placeholder="$t('SEARCH.INPUT_PLACEHOLDER')"
+        @focus="onFocus"
+        @blur="onBlur"
+        @input="onInput"
+      />
       <div class="flex items-center">
         <fluent-icon
           icon="search"
@@ -99,16 +109,6 @@ onUnmounted(() => {
           }"
         />
       </div>
-      <input
-        ref="searchInput"
-        v-model="searchQuery"
-        type="search"
-        class="reset-base outline-none w-full m-0 bg-transparent border-transparent shadow-none text-n-slate-12 dark:text-n-slate-12 active:border-transparent active:shadow-none hover:border-transparent hover:shadow-none focus:border-transparent focus:shadow-none placeholder:text-n-slate-10 text-base"
-        :placeholder="$t('SEARCH.INPUT_PLACEHOLDER')"
-        @focus="onFocus"
-        @blur="onBlur"
-        @input="onInput"
-      />
       <span class="text-sm text-n-slate-10 flex-shrink-0">
         {{ $t('SEARCH.PLACEHOLDER_KEYBINDING') }}
       </span>

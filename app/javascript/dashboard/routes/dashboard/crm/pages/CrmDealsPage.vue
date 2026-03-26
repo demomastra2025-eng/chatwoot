@@ -1159,15 +1159,15 @@ onMounted(async () => {
             type="search"
             :label="$t('CRM.FILTERS.SEARCH')"
             :model-value="filterDraft.q"
-            custom-input-class="ltr:!pl-8 rtl:!pr-8"
+            custom-input-class="ltr:!pr-8 rtl:!pl-8"
             :placeholder="$t('CRM.FILTERS.SEARCH_PLACEHOLDER')"
             @enter="applyFilters"
             @update:model-value="filterDraft.q = $event"
           >
-            <template #prefix>
+            <template #suffix>
               <Icon
                 icon="i-lucide-search"
-                class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:left-2 rtl:right-2"
+                class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
               />
             </template>
           </Input>

@@ -133,7 +133,9 @@ onMounted(() => {
       class="sticky top-0 bg-n-alpha-3 backdrop-blur-sm pt-2 z-20"
     >
       <div class="relative">
-        <span class="absolute i-lucide-search size-3.5 top-2 left-3" />
+        <span
+          class="absolute i-lucide-search size-3.5 top-2 ltr:right-3 rtl:left-3"
+        />
         <input
           ref="searchInput"
           v-model="searchQuery"
@@ -141,7 +143,7 @@ onMounted(() => {
           :placeholder="
             searchPlaceholder || t('DROPDOWN_MENU.SEARCH_PLACEHOLDER')
           "
-          class="reset-base w-full h-8 py-2 pl-10 pr-2 text-sm focus:outline-none border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12"
+          class="reset-base w-full h-8 border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 py-2 text-sm text-n-slate-12 focus:outline-none [appearance:textfield] [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none ltr:pl-3.5 rtl:pr-3.5 ltr:pr-10 rtl:pl-10"
           @input="handleSearchInput"
         />
       </div>
