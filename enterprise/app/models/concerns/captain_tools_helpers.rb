@@ -71,6 +71,12 @@ module Concerns::CaptainToolsHelpers
     return [] if text.blank?
 
     tool_matches = text.scan(TOOL_REFERENCE_REGEX)
-    tool_matches.flatten.uniq
+    tool_matches.flatten.map { |tool_id| normalize_tool_id(tool_id) }.uniq
+  end
+
+  private
+
+  def normalize_tool_id(tool_id)
+    tool_id.to_s.gsub(/\\(.)/, '\1')
   end
 end

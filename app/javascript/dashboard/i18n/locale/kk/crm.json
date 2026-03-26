@@ -1,0 +1,278 @@
+{
+  "CRM": {
+    "GENERAL": {
+      "ACTIVE": "Белсенді",
+      "ARCHIVE": "Мұрағатқа жіберу",
+      "ARCHIVED": "Мұрағатта",
+      "CONVERSATION_SOURCE": "Арнадағы диалогты бастапқы контекст ретінде сақтайды",
+      "CREATE": "Құру",
+      "DEFAULT": "Әдепкі",
+      "EMPTY_VALUE": "—",
+      "INACTIVE": "Белсенді емес",
+      "LINKED_CONVERSATION": "Байланысты диалог",
+      "NO": "Жоқ",
+      "SAVE": "Сақтау",
+      "UNARCHIVE": "Қалпына келтіру",
+      "YES": "Иә"
+    },
+    "VIEWS": {
+      "BOARD": "Тақта",
+      "LIST": "Тізім"
+    },
+    "FILTERS": {
+      "APPLY": "Сүзгілерді қолдану",
+      "DESCRIPTION": "Негізгі интерфейстен шықпай, жұмыс жазбаларын нақтылаңыз.",
+      "INCLUDE_ARCHIVED": "Мұрағатталғандарын қосу",
+      "SEARCH": "Іздеу",
+      "SEARCH_PLACEHOLDER": "Атауы бойынша іздеу",
+      "SHORT_DESCRIPTION": "Жылдам сүзгі",
+      "TITLE": "Сүзгілер"
+    },
+    "CUSTOM_FIELDS": {
+      "DESCRIPTION": "CRM басқарылатын өрістері негізгі жұмыс бағандарынан бөлек сақталады.",
+      "TITLE": "Пайдаланушы өрістері"
+    },
+    "TIMELINE": {
+      "ADD_COMMENT": "Пікір қосу",
+      "COMMENT": "Пікір",
+      "COMMENT_PLACEHOLDER": "Командаңыз үшін ішкі контекст қосыңыз",
+      "CONVERSATION": "Диалог #{id}",
+      "DESCRIPTION": "Мұнда оқиғалар, пікірлер және байланысты жұмыс контексті көрсетіледі.",
+      "EMPTY": "Таймлайнда әлі белсенділік жоқ",
+      "EVENT_RECORDED": "Оқиға тіркелді",
+      "LOADING": "Таймлайн жүктелуде...",
+      "POST_COMMENT": "Пікірді жариялау",
+      "TITLE": "Таймлайн",
+      "UNKNOWN_CONTACT": "Белгісіз контакт"
+    },
+    "ERRORS": {
+      "DUPLICATE_EXTERNAL_REF": "Мұндай сыртқы сілтеме CRM-де бұрыннан бар.",
+      "DUPLICATE_IDEMPOTENCY_KEY": "Бұл идемпотенттік кілт бұрын қолданылған.",
+      "FEATURE_DISABLED": "Бұл аккаунт үшін CRM қосылмаған.",
+      "GENERIC": "CRM-пен жұмыс істеу кезінде қате пайда болды.",
+      "LOAD_TITLE": "CRM деректерін жүктеу мүмкін болмады",
+      "NOT_FOUND": "Сұралған CRM жазбасы табылмады.",
+      "STALE_RECORD": "Жазба басқа сұрауда өзгертілген. Жаңартып, қайта көріңіз.",
+      "VALIDATION_ERROR": "Формадағы қателерді түзетіп, қайта көріңіз."
+    },
+    "DEALS": {
+      "CREATE_TITLE": "Мәміле құру",
+      "DESCRIPTION": "Мүмкіндіктерді аккаунт интерфейсінен шықпай жүргізіңіз.",
+      "DRAWER_DESCRIPTION": "Иесін, контактілерді және кезең қозғалысын бір жерде ұстаңыз.",
+      "EDIT_TITLE": "Мәмілені өңдеу",
+      "EMPTY_DESCRIPTION": "Құбырдағы қозғалысты бақылау үшін алғашқы мәмілені құрыңыз.",
+      "EMPTY_TITLE": "Әзірге мәмілелер жоқ",
+      "BOARD": {
+        "EMPTY_COLUMN": "Бұл кезеңде мәмілелер жоқ"
+      },
+      "FORM": {
+        "AMOUNT": "Сома",
+        "BASICS": "Мәміле деректері",
+        "BASICS_DESCRIPTION": "Мәміле атауы, иесі, құбыры және коммерциялық контекст.",
+        "COMPANY": "Компания",
+        "CONTACTS": "Контактілер",
+        "CURRENCY": "Валюта",
+        "DESCRIPTION": "Сипаттама",
+        "EXPECTED_CLOSE_ON": "Жоспарланған жабылу күні",
+        "EXTERNAL_REF": "Сыртқы сілтеме",
+        "OWNER": "Иесі",
+        "PIPELINE": "Құбыр",
+        "PRIMARY_CONTACT": "Негізгі контакт",
+        "RELATIONSHIPS": "Байланыстар",
+        "RELATIONSHIPS_DESCRIPTION": "Бар болса, қолданыстағы контактілер мен компанияны тіркеңіз.",
+        "STAGE": "Кезең",
+        "TEAM": "Команда",
+        "TITLE": "Атауы",
+        "WIN_PROBABILITY": "Жеңіс ықтималдығы"
+      },
+      "NEW_DEAL": "Жаңа мәміле",
+      "PREFILL": {
+        "CONVERSATION_GENERIC": "Диалогтан мәміле #{conversationId}",
+        "CONVERSATION_WITH_CONTACT": "{contactName} үшін мәміле",
+        "COMPANY": "{companyName} үшін мәміле"
+      },
+      "SUCCESS_ARCHIVED": "Мәміле мұрағатқа жіберілді",
+      "SUCCESS_CREATED": "Мәміле құрылды",
+      "SUCCESS_UNARCHIVED": "Мәміле қалпына келтірілді",
+      "SUCCESS_UPDATED": "Мәміле жаңартылды",
+      "TABLE": {
+        "AMOUNT": "Сома",
+        "OWNER": "Иесі",
+        "STAGE": "Кезең",
+        "TITLE": "Мәміле",
+        "UPDATED": "Жаңартылды"
+      },
+      "TITLE": "Мәмілелер"
+    },
+    "TASKS": {
+      "CREATE_TITLE": "Міндет құру",
+      "DESCRIPTION": "Жеке жұмыстар мен мәмілеге байланған follow-up міндеттерін бір жерден жүргізіңіз.",
+      "DRAWER_DESCRIPTION": "Күй өзгерістері мен міндет контексті бір drawer ішінде қалады.",
+      "EDIT_TITLE": "Міндетті өңдеу",
+      "EMPTY_DESCRIPTION": "Follow-up және ішкі жұмысты ұйымдастыру үшін алғашқы CRM міндетін құрыңыз.",
+      "EMPTY_TITLE": "Әзірге міндеттер жоқ",
+      "CALENDAR": {
+        "EMPTY": "Бұл күнтізбе аралығында жоспарланған CRM міндеттері жоқ.",
+        "NO_TASKS_DAY": "Бұл күнге міндеттер жоспарланбаған"
+      },
+      "BOARD": {
+        "EMPTY_COLUMN": "Бұл күйде міндеттер жоқ"
+      },
+      "FORM": {
+        "ASSIGNEE": "Орындаушы",
+        "BASICS": "Міндет деректері",
+        "BASICS_DESCRIPTION": "Иесін, кестесін және қажет болса мәмілемен байланысын анықтаңыз.",
+        "DEAL": "Байланысты мәміле",
+        "DESCRIPTION": "Сипаттама",
+        "DUE_AT": "Мерзімі",
+        "EXTERNAL_REF": "Сыртқы сілтеме",
+        "PRIORITY": "Басымдық",
+        "START_AT": "Басталуы",
+        "STATUS": "Күйі",
+        "TEAM": "Команда",
+        "TITLE": "Атауы"
+      },
+      "NEW_TASK": "Жаңа міндет",
+      "PREFILL": {
+        "CONVERSATION_GENERIC": "Диалог бойынша follow-up #{conversationId}",
+        "CONVERSATION_WITH_CONTACT": "{contactName} контактісімен follow-up"
+      },
+      "PRIORITY": {
+        "high": "Жоғары",
+        "low": "Төмен",
+        "medium": "Орташа",
+        "none": "Жоқ",
+        "urgent": "Шұғыл"
+      },
+      "SUCCESS_ARCHIVED": "Міндет мұрағатқа жіберілді",
+      "SUCCESS_CREATED": "Міндет құрылды",
+      "SUCCESS_UNARCHIVED": "Міндет қалпына келтірілді",
+      "SUCCESS_UPDATED": "Міндет жаңартылды",
+      "TABLE": {
+        "ASSIGNEE": "Орындаушы",
+        "DEAL": "Мәміле",
+        "DUE_AT": "Мерзімі",
+        "STATUS": "Күйі",
+        "TITLE": "Міндет"
+      },
+      "TITLE": "Міндеттер"
+    },
+    "SETTINGS": {
+      "DESCRIPTION": "Құбырларды, күйлерді және басқарылатын өрістерді сол бір баптаулар бөлімінде реттеңіз.",
+      "FIELD_TABS": {
+        "DEALS": "Мәмілелер",
+        "TASKS": "Міндеттер"
+      },
+      "FIELDS": {
+        "ADD": "Өріс қосу",
+        "ALL_CONTEXTS": "Барлық контексттер",
+        "CONTEXTS": {
+          "deal_task": "Мәміле міндеттері",
+          "standalone_task": "Жеке міндеттер"
+        },
+        "CREATE_TITLE": "Өріс құру",
+        "DELETE_CONFIRM": "Осы өріс анықтамасын жою керек пе?",
+        "DESCRIPTION": "Басқарылатын пайдаланушы өрістері CRM мәндерін негізгі схема бағандарын өзгертпей кеңейтеді.",
+        "EDIT_TITLE": "Өрісті өңдеу",
+        "FORM": {
+          "ACTIVE": "Өріс белсенді",
+          "BASICS": "Өрістің негізгі параметрлері",
+          "BASICS_DESCRIPTION": "Өрістің жұмыс формаларындағы мінез-құлқын анықтайтын негізгі метадеректер.",
+          "CONTEXTS": "Міндет контексттері",
+          "DEFAULT_VALUE": "Әдепкі мән",
+          "DESCRIPTION": "Сипаттама",
+          "ENTITY": "Мән",
+          "KEY": "Кілт",
+          "LABEL": "Белгі",
+          "MAX": "Макс.",
+          "MIN": "Мин.",
+          "OPTIONS": "Опциялар",
+          "OPTIONS_PLACEHOLDER": "Әр жолға бір опция",
+          "POSITION": "Позиция",
+          "REGEX": "Regex",
+          "REQUIRED": "Өріс міндетті",
+          "RULES": "Валидация ережелері",
+          "RULES_DESCRIPTION": "Сандық шектеулерге, regex тексерулеріне және міндет контексттеріне арналған қосымша ережелер.",
+          "TYPE": "Түрі"
+        },
+        "SUCCESS_DELETE": "Өріс жойылды",
+        "SUCCESS_SAVE": "Өріс сақталды",
+        "TABLE": {
+          "CONTEXT": "Контекст",
+          "KEY": "Кілт",
+          "LABEL": "Белгі",
+          "REQUIRED": "Міндетті",
+          "TYPE": "Түрі"
+        },
+        "TITLE": "Басқарылатын өрістер"
+      },
+      "LOADING": "CRM баптаулары жүктелуде...",
+      "PIPELINES": {
+        "ADD": "Құбыр қосу",
+        "CREATE_TITLE": "Құбыр құру",
+        "DESCRIPTION": "Құбырлар мен кезеңдер мәміле тақтасы мен ауысу ережелерін басқарады.",
+        "EDIT_TITLE": "Құбырды өңдеу",
+        "FORM": {
+          "ACTIVE": "Құбыр белсенді",
+          "CODE": "Код",
+          "DEFAULT": "Әдепкі құбыр",
+          "NAME": "Атауы",
+          "POSITION": "Позиция"
+        },
+        "SUCCESS_SAVE": "Құбыр сақталды",
+        "TABLE": {
+          "DEFAULT": "Әдепкі",
+          "NAME": "Құбыр",
+          "STAGES": "Кезеңдер",
+          "STATUS": "Күйі"
+        },
+        "TITLE": "Құбырлар"
+      },
+      "STAGES": {
+        "CREATE_TITLE": "Кезең құру",
+        "EDIT_TITLE": "Кезеңді өңдеу",
+        "FORM": {
+          "ACTIVE": "Кезең белсенді",
+          "CODE": "Код",
+          "NAME": "Атауы",
+          "OUTCOME": "Нәтиже",
+          "PIPELINE": "Құбыр",
+          "POSITION": "Позиция"
+        },
+        "OUTCOMES": {
+          "lost": "Жоғалды",
+          "open": "Ашық",
+          "won": "Ұтты"
+        },
+        "SUCCESS_SAVE": "Кезең сақталды"
+      },
+      "TASK_STATUSES": {
+        "ADD": "Күй қосу",
+        "CATEGORIES": {
+          "done": "Аяқталды",
+          "open": "Ашық"
+        },
+        "CREATE_TITLE": "Міндет күйін құру",
+        "DESCRIPTION": "Күйлер CRM міндеттер тақтасы мен аяқталу циклін қалыптастырады.",
+        "EDIT_TITLE": "Міндет күйін өңдеу",
+        "FORM": {
+          "ACTIVE": "Күй белсенді",
+          "CATEGORY": "Санат",
+          "CODE": "Код",
+          "DEFAULT": "Әдепкі күй",
+          "NAME": "Атауы",
+          "POSITION": "Позиция"
+        },
+        "SUCCESS_SAVE": "Міндет күйі сақталды",
+        "TABLE": {
+          "CATEGORY": "Санат",
+          "DEFAULT": "Әдепкі",
+          "NAME": "Күй",
+          "STATUS": "Күй"
+        },
+        "TITLE": "Міндет күйлері"
+      },
+      "TITLE": "CRM баптаулары"
+    }
+  }
+}

@@ -1,14 +1,15 @@
 <script setup>
-import { reactive, computed, ref, nextTick } from 'vue';
+import { reactive, computed, ref, nextTick, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
-import { minLength, requiredIf, url } from '@vuelidate/validators';
-import { useMapGetter } from 'dashboard/composables/store';
+import { requiredIf } from '@vuelidate/validators';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   assistantId: {
@@ -19,9 +20,21 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel']);
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const UPLOADABLE_FILE_EXTENSIONS = ['pdf', 'docx', 'doc', 'odt', 'rtf', 'xlsx', 'xls'];
+const DEFAULT_IMPORT_PROFILE = {
+  sitemap: 'include',
+  includePaths: '',
+  excludePaths: '',
+  maxPages: 100,
+  maxDiscoveryDepth: 4,
+  allowSubdomains: false,
+  ignoreQueryParameters: true,
+  onlyMainContent: true,
+};
 
 const { t } = useI18n();
+const store = useStore();
 
 const formState = {
   uiFlags: useMapGetter('captainDocuments/getUIFlags'),
@@ -30,98 +43,311 @@ const formState = {
 const initialState = {
   name: '',
   url: '',
-  documentType: 'url',
-  pdfFile: null,
+  documentType: 'single_page',
+  uploadedFile: null,
+  importProfile: { ...DEFAULT_IMPORT_PROFILE },
+  previewLinks: [],
+  selectedUrls: [],
 };
 
 const state = reactive({ ...initialState });
 const fileInputRef = ref(null);
 
+const requiresUrl = computed(() => state.documentType !== 'file_upload');
+const requiresPreviewSelection = computed(
+  () => state.documentType === 'selected_pages'
+);
+const supportsAdvancedSettings = computed(() =>
+  ['site_import', 'selected_pages'].includes(state.documentType)
+);
+
 const validationRules = {
   url: {
-    required: requiredIf(() => state.documentType === 'url'),
-    url: requiredIf(() => state.documentType === 'url' && url),
-    minLength: requiredIf(() => state.documentType === 'url' && minLength(1)),
+    required: requiredIf(() => requiresUrl.value),
   },
-  pdfFile: {
-    required: requiredIf(() => state.documentType === 'pdf'),
+  uploadedFile: {
+    required: requiredIf(() => state.documentType === 'file_upload'),
   },
 };
 
-const documentTypeOptions = [
-  { value: 'url', label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.URL') },
-  { value: 'pdf', label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.PDF') },
-];
+const documentTypeOptions = computed(() => [
+  {
+    value: 'single_page',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.SINGLE_PAGE'),
+  },
+  {
+    value: 'site_import',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.SITE_IMPORT'),
+  },
+  {
+    value: 'selected_pages',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.SELECTED_PAGES'),
+  },
+  {
+    value: 'pdf_url',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.PDF_URL'),
+  },
+  {
+    value: 'file_url',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.FILE_URL'),
+  },
+  {
+    value: 'file_upload',
+    label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.FILE_UPLOAD'),
+  },
+]);
 
 const v$ = useVuelidate(validationRules, state);
 
 const isLoading = computed(() => formState.uiFlags.value.creatingItem);
+const isPreviewing = computed(() => formState.uiFlags.value.previewingItem);
 
-const hasPdfFileError = computed(() => v$.value.pdfFile.$error);
+const hasUploadedFileError = computed(() => v$.value.uploadedFile.$error);
+const hasSelectedPages = computed(() => state.selectedUrls.length > 0);
 
-const getErrorMessage = (field, errorKey) => {
-  return v$.value[field].$error
-    ? t(`CAPTAIN.DOCUMENTS.FORM.${errorKey}.ERROR`)
-    : '';
-};
+const previewSummary = computed(() => {
+  if (!state.previewLinks.length) return '';
+
+  return t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.PREVIEW_COUNT', {
+    count: state.previewLinks.length,
+  });
+});
+
+const profileHelpText = computed(() => {
+  if (state.documentType === 'site_import') {
+    return t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.SITE_IMPORT_HELP');
+  }
+
+  if (state.documentType === 'selected_pages') {
+    return t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.SELECTED_PAGES_HELP');
+  }
+
+  return '';
+});
+
+const modeHint = computed(() => {
+  if (state.documentType === 'pdf_url') {
+    return t('CAPTAIN.DOCUMENTS.FORM.MODE_HINTS.PDF_URL');
+  }
+
+  if (state.documentType === 'file_url') {
+    return t('CAPTAIN.DOCUMENTS.FORM.MODE_HINTS.FILE_URL');
+  }
+
+  if (state.documentType === 'file_upload') {
+    return t('CAPTAIN.DOCUMENTS.FORM.MODE_HINTS.FILE_UPLOAD');
+  }
+
+  return '';
+});
+
+const selectedPagesError = computed(() =>
+  requiresPreviewSelection.value && !hasSelectedPages.value
+    ? t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.ERROR')
+    : ''
+);
 
 const formErrors = computed(() => ({
-  url: getErrorMessage('url', 'URL'),
-  pdfFile: getErrorMessage('pdfFile', 'PDF_FILE'),
+  url:
+    v$.value.url.$error && requiresUrl.value
+      ? t('CAPTAIN.DOCUMENTS.FORM.URL.ERROR')
+      : '',
+  uploadedFile:
+    v$.value.uploadedFile.$error && state.documentType === 'file_upload'
+      ? t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.ERROR')
+      : '',
+  selectedPages: selectedPagesError.value,
 }));
+
+const urlPlaceholder = computed(() => {
+  if (state.documentType === 'pdf_url') {
+    return t('CAPTAIN.DOCUMENTS.FORM.URL.PDF_PLACEHOLDER');
+  }
+
+  if (state.documentType === 'file_url') {
+    return t('CAPTAIN.DOCUMENTS.FORM.URL.FILE_PLACEHOLDER');
+  }
+
+  return t('CAPTAIN.DOCUMENTS.FORM.URL.PLACEHOLDER');
+});
+
+const urlInputMessage = computed(() => {
+  if (formErrors.value.url) return formErrors.value.url;
+  if (state.documentType === 'file_url') {
+    return t('CAPTAIN.DOCUMENTS.FORM.URL.FILE_HELP');
+  }
+
+  return '';
+});
+
+watch(
+  () => state.documentType,
+  nextMode => {
+    state.previewLinks = [];
+    state.selectedUrls = [];
+    if (nextMode !== 'file_upload') {
+      state.uploadedFile = null;
+      if (fileInputRef.value) fileInputRef.value.value = '';
+    }
+  }
+);
+
+watch(
+  () => state.url,
+  () => {
+    if (requiresPreviewSelection.value) {
+      state.previewLinks = [];
+      state.selectedUrls = [];
+    }
+  }
+);
 
 const handleCancel = () => emit('cancel');
 
 const handleFileChange = event => {
   const file = event.target.files[0];
-  if (file) {
-    if (file.type !== 'application/pdf') {
-      useAlert(t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.INVALID_TYPE'));
-      event.target.value = '';
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      // 10MB
-      useAlert(t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.TOO_LARGE'));
-      event.target.value = '';
-      return;
-    }
-    state.pdfFile = file;
-    state.name = file.name.replace(/\.pdf$/i, '');
+  if (!file) return;
+
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+  if (!UPLOADABLE_FILE_EXTENSIONS.includes(extension)) {
+    useAlert(t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.INVALID_TYPE'));
+    event.target.value = '';
+    return;
   }
+
+  if (file.size > MAX_FILE_SIZE) {
+    useAlert(t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.TOO_LARGE'));
+    event.target.value = '';
+    return;
+  }
+
+  state.uploadedFile = file;
+  state.name = file.name.replace(/\.[^.]+$/i, '');
 };
 
 const openFileDialog = () => {
-  // Use nextTick to ensure the ref is available
   nextTick(() => {
-    if (fileInputRef.value) {
-      fileInputRef.value.click();
-    }
+    fileInputRef.value?.click();
   });
 };
 
-const prepareDocumentDetails = () => {
-  const formData = new FormData();
-  formData.append('document[assistant_id]', props.assistantId);
+const splitCommaValues = value =>
+  value
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
 
-  if (state.documentType === 'url') {
-    formData.append('document[external_link]', state.url);
-    formData.append('document[name]', state.name || state.url);
+const buildImportProfile = () => ({
+  sitemap: state.importProfile.sitemap || 'include',
+  include_paths: splitCommaValues(state.importProfile.includePaths),
+  exclude_paths: splitCommaValues(state.importProfile.excludePaths),
+  max_pages: Number(state.importProfile.maxPages) || 100,
+  max_discovery_depth: Number(state.importProfile.maxDiscoveryDepth) || 4,
+  allow_subdomains: state.importProfile.allowSubdomains,
+  ignore_query_parameters: state.importProfile.ignoreQueryParameters,
+  only_main_content: state.importProfile.onlyMainContent,
+});
+
+const normalizePreviewLinks = payload =>
+  payload.map(item => ({
+    url: item.url,
+    title: item.title || '',
+    description: item.description || '',
+  }));
+
+const toggleUrlSelection = url => {
+  if (state.selectedUrls.includes(url)) {
+    state.selectedUrls = state.selectedUrls.filter(item => item !== url);
   } else {
-    formData.append('document[pdf_file]', state.pdfFile);
+    state.selectedUrls = [...state.selectedUrls, url];
+  }
+};
+
+const selectAllPreviewLinks = checked => {
+  state.selectedUrls = checked ? state.previewLinks.map(item => item.url) : [];
+};
+
+const handlePreviewSelectedPages = async () => {
+  const isFormValid = await v$.value.$validate();
+  if (!isFormValid || !state.url) return;
+
+  try {
+    const response = await store.dispatch('captainDocuments/preview', {
+      document: {
+        assistant_id: props.assistantId,
+        external_link: state.url,
+        source_mode: state.documentType,
+        import_profile: buildImportProfile(),
+      },
+    });
+
+    state.previewLinks = normalizePreviewLinks(response.payload || []);
+    state.selectedUrls = state.previewLinks.map(item => item.url);
+  } catch (error) {
+    useAlert(
+      error?.response?.data?.message ||
+        t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.PREVIEW_ERROR')
+    );
+  }
+};
+
+const prepareDocumentDetails = () => {
+  if (state.documentType === 'file_upload') {
+    const formData = new FormData();
+    const extension = state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
+    formData.append('document[assistant_id]', props.assistantId);
+    if (extension === 'pdf') {
+      formData.append('document[pdf_file]', state.uploadedFile);
+    } else {
+      formData.append('document[source_file]', state.uploadedFile);
+      formData.append('document[source_mode]', 'file_upload');
+    }
     formData.append(
       'document[name]',
-      state.name || state.pdfFile.name.replace('.pdf', '')
+      state.name || state.uploadedFile.name.replace(/\.[^.]+$/i, '')
     );
-    // No need to send external_link for PDF - it's auto-generated in the backend
+    return formData;
   }
 
-  return formData;
+  return {
+    document: {
+      assistant_id: props.assistantId,
+      name: state.name || state.url,
+      external_link: state.url,
+      source_mode: state.documentType,
+      import_profile: buildImportProfile(),
+      ...(state.documentType === 'selected_pages'
+        ? { selected_urls: state.selectedUrls }
+        : {}),
+    },
+  };
 };
 
 const handleSubmit = async () => {
   const isFormValid = await v$.value.$validate();
   if (!isFormValid) {
+    return;
+  }
+
+  if (
+    requiresUrl.value &&
+    (() => {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(state.url);
+        return false;
+      } catch {
+        return true;
+      }
+    })()
+  ) {
+    useAlert(t('CAPTAIN.DOCUMENTS.FORM.URL.ERROR'));
+    return;
+  }
+
+  if (requiresPreviewSelection.value && !hasSelectedPages.value) {
+    useAlert(t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.ERROR'));
     return;
   }
 
@@ -146,65 +372,220 @@ const handleSubmit = async () => {
       />
     </div>
 
+    <p class="m-0 text-sm text-n-slate-11">
+      {{
+        t(
+          `CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.${state.documentType.toUpperCase()}`
+        )
+      }}
+    </p>
+
+    <div
+      v-if="modeHint"
+      class="rounded-xl border border-n-brand/20 bg-n-brand/5 px-4 py-3"
+    >
+      <p class="m-0 text-sm text-n-slate-12">
+        {{ modeHint }}
+      </p>
+    </div>
+
     <Input
-      v-if="state.documentType === 'url'"
+      v-if="requiresUrl"
       v-model="state.url"
       :label="t('CAPTAIN.DOCUMENTS.FORM.URL.LABEL')"
-      :placeholder="t('CAPTAIN.DOCUMENTS.FORM.URL.PLACEHOLDER')"
-      :message="formErrors.url"
+      :placeholder="urlPlaceholder"
+      :message="urlInputMessage"
       :message-type="formErrors.url ? 'error' : 'info'"
     />
 
-    <div v-if="state.documentType === 'pdf'" class="flex flex-col gap-2">
+    <div v-if="supportsAdvancedSettings" class="rounded-xl bg-n-alpha-2 p-4">
+      <div class="mb-3">
+        <p class="m-0 text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.TITLE') }}
+        </p>
+        <p class="mt-1 mb-0 text-xs text-n-slate-11">
+          {{ profileHelpText }}
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Input
+          v-model="state.importProfile.includePaths"
+          :label="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.INCLUDE_PATHS')"
+          :placeholder="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.PATHS_PLACEHOLDER')"
+        />
+        <Input
+          v-model="state.importProfile.excludePaths"
+          :label="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.EXCLUDE_PATHS')"
+          :placeholder="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.PATHS_PLACEHOLDER')"
+        />
+        <Input
+          v-model="state.importProfile.maxPages"
+          type="number"
+          min="1"
+          :label="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.MAX_PAGES')"
+        />
+        <Input
+          v-model="state.importProfile.maxDiscoveryDepth"
+          type="number"
+          min="1"
+          :label="t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.MAX_DEPTH')"
+        />
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+          <div>
+            <p class="m-0 text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.ALLOW_SUBDOMAINS') }}
+            </p>
+          </div>
+          <Switch v-model="state.importProfile.allowSubdomains" />
+        </div>
+        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+          <div>
+            <p class="m-0 text-sm font-medium text-n-slate-12">
+              {{
+                t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.IGNORE_QUERY_PARAMETERS')
+              }}
+            </p>
+          </div>
+          <Switch v-model="state.importProfile.ignoreQueryParameters" />
+        </div>
+        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+          <div>
+            <p class="m-0 text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.ONLY_MAIN_CONTENT') }}
+            </p>
+          </div>
+          <Switch v-model="state.importProfile.onlyMainContent" />
+        </div>
+      </div>
+    </div>
+
+    <div v-if="state.documentType === 'selected_pages'" class="space-y-3">
+      <Button
+        type="button"
+        color="slate"
+        variant="outline"
+        class="w-full"
+        :label="t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.PREVIEW_ACTION')"
+        :is-loading="isPreviewing"
+        :disabled="isPreviewing"
+        @click="handlePreviewSelectedPages"
+      />
+
+      <div
+        v-if="state.previewLinks.length"
+        class="rounded-xl border border-n-weak bg-n-background p-4"
+      >
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <p class="m-0 text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.PREVIEW_TITLE') }}
+            </p>
+            <p class="mt-1 mb-0 text-xs text-n-slate-11">
+              {{ previewSummary }}
+            </p>
+          </div>
+          <Button
+            type="button"
+            color="slate"
+            variant="ghost"
+            size="sm"
+            :label="
+              hasSelectedPages
+                ? t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.CLEAR_SELECTION')
+                : t('CAPTAIN.DOCUMENTS.FORM.SELECTED_PAGES.SELECT_ALL')
+            "
+            @click="selectAllPreviewLinks(!hasSelectedPages)"
+          />
+        </div>
+
+        <div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+          <label
+            v-for="item in state.previewLinks"
+            :key="item.url"
+            class="flex cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-n-alpha-2 p-3 transition-all hover:border-n-brand/20 hover:bg-n-brand/5"
+          >
+            <input
+              class="mt-1 size-4 rounded border-n-weak text-n-brand focus:ring-n-brand"
+              type="checkbox"
+              :checked="state.selectedUrls.includes(item.url)"
+              @change="toggleUrlSelection(item.url)"
+            />
+            <div class="min-w-0 flex-1">
+              <p class="m-0 text-sm font-medium text-n-slate-12">
+                {{ item.title || item.url }}
+              </p>
+              <p class="mt-1 mb-0 truncate text-xs text-n-slate-11">
+                {{ item.url }}
+              </p>
+              <p
+                v-if="item.description"
+                class="mt-1 mb-0 line-clamp-2 text-xs text-n-slate-11"
+              >
+                {{ item.description }}
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <p v-if="formErrors.selectedPages" class="mt-3 mb-0 text-xs text-n-ruby-9">
+          {{ formErrors.selectedPages }}
+        </p>
+      </div>
+    </div>
+
+    <div v-if="state.documentType === 'file_upload'" class="flex flex-col gap-2">
       <label class="text-sm font-medium text-n-slate-12">
-        {{ t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.LABEL') }}
+        {{ t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.LABEL') }}
       </label>
       <div class="relative">
         <input
           ref="fileInputRef"
           type="file"
-          accept=".pdf"
+          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls"
           class="hidden"
           @change="handleFileChange"
         />
         <Button
           type="button"
-          :color="hasPdfFileError ? 'ruby' : 'slate'"
-          :variant="hasPdfFileError ? 'outline' : 'solid'"
-          class="!w-full !h-auto !justify-between !py-4"
+          :color="hasUploadedFileError ? 'ruby' : 'slate'"
+          :variant="hasUploadedFileError ? 'outline' : 'solid'"
+          class="!h-auto !w-full !justify-between !py-4"
           @click="openFileDialog"
         >
           <template #default>
-            <div class="flex gap-2 items-center">
+            <div class="flex items-center gap-2">
               <div
-                class="flex justify-center items-center w-10 h-10 rounded-lg bg-n-slate-3"
+                class="flex h-10 w-10 items-center justify-center rounded-lg bg-n-slate-3"
               >
-                <i class="text-xl i-ph-file-pdf text-n-slate-11" />
+                <i class="i-ph-file text-xl text-n-slate-11" />
               </div>
-              <div class="flex flex-col flex-1 gap-1 items-start">
+              <div class="flex flex-1 flex-col items-start gap-1">
                 <p class="m-0 text-sm font-medium text-n-slate-12">
                   {{
-                    state.pdfFile
-                      ? state.pdfFile.name
-                      : t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.CHOOSE_FILE')
+                    state.uploadedFile
+                      ? state.uploadedFile.name
+                      : t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.CHOOSE_FILE')
                   }}
                 </p>
                 <p class="m-0 text-xs text-n-slate-11">
                   {{
-                    state.pdfFile
-                      ? `${(state.pdfFile.size / 1024 / 1024).toFixed(2)} MB`
-                      : t('CAPTAIN.DOCUMENTS.FORM.PDF_FILE.HELP_TEXT')
+                    state.uploadedFile
+                      ? `${(state.uploadedFile.size / 1024 / 1024).toFixed(2)} MB`
+                      : t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.HELP_TEXT')
                   }}
                 </p>
               </div>
             </div>
-
             <i class="i-lucide-upload text-n-slate-11" />
           </template>
         </Button>
       </div>
-      <p v-if="formErrors.pdfFile" class="text-xs text-n-ruby-9">
-        {{ formErrors.pdfFile }}
+      <p v-if="formErrors.uploadedFile" class="text-xs text-n-ruby-9">
+        {{ formErrors.uploadedFile }}
       </p>
     </div>
 
@@ -214,7 +595,7 @@ const handleSubmit = async () => {
       :placeholder="t('CAPTAIN.DOCUMENTS.FORM.NAME.PLACEHOLDER')"
     />
 
-    <div class="flex gap-3 justify-between items-center w-full">
+    <div class="flex w-full items-center justify-between gap-3">
       <Button
         type="button"
         variant="faded"
@@ -228,7 +609,7 @@ const handleSubmit = async () => {
         :label="t('CAPTAIN.FORM.CREATE')"
         class="w-full"
         :is-loading="isLoading"
-        :disabled="isLoading"
+        :disabled="isLoading || (requiresPreviewSelection && !hasSelectedPages)"
       />
     </div>
   </form>

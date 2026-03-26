@@ -32,6 +32,7 @@ RSpec.describe 'Inboxes API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(JSON.parse(response.body, symbolize_names: true)[:payload].size).to eq(2)
       end
 
@@ -95,6 +96,7 @@ RSpec.describe 'Inboxes API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(JSON.parse(response.body, symbolize_names: true)[:id]).to eq(inbox.id)
       end
 
@@ -383,6 +385,7 @@ RSpec.describe 'Inboxes API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(response.body).to include('test.com')
       end
 
@@ -404,6 +407,44 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include('API Inbox')
+      end
+
+      it 'creates a whatsapp web inbox when administrator' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: {
+                 channel: {
+                   type: 'whatsapp_web',
+                   phone_number: '+77066318623',
+                   conversation_pending: true,
+                   history_lookback_days: 90,
+                   ignore_jids: ['15550001111@s.whatsapp.net'],
+                   sign_messages: true,
+                   sign_delimiter: '\\n--\\n',
+                   import_contacts: true,
+                   import_messages: true,
+                   sync_labels: false
+                 }
+               },
+               as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['name']).to eq('77066318623')
+          expect(response.parsed_body['channel_type']).to eq('Channel::WhatsappWeb')
+          expect(response.parsed_body['phone_number']).to eq('+77066318623')
+          expect(response.parsed_body['conversation_pending']).to be(true)
+          expect(response.parsed_body['history_lookback_days']).to eq(90)
+          expect(response.parsed_body['ignore_jids']).to eq(['15550001111@s.whatsapp.net'])
+          expect(response.parsed_body['sign_messages']).to be(true)
+          expect(response.parsed_body['sign_delimiter']).to eq('\\n--\\n')
+          expect(response.parsed_body['sync_labels']).to be(false)
+          expect(response.parsed_body.dig('additional_attributes', 'evolution', 'instance_name')).to be_present
+        end
       end
 
       it 'creates a line inbox when administrator' do
@@ -444,6 +485,81 @@ RSpec.describe 'Inboxes API', type: :request do
     end
   end
 
+  describe 'WhatsApp Web lifecycle endpoints' do
+    around do |example|
+      with_modified_env(
+        'EVOLUTION_API_URL' => 'https://evolution.example.com',
+        'EVOLUTION_API_KEY' => 'test-api-key',
+        'FRONTEND_URL' => 'https://app.example.com'
+      ) do
+        example.run
+      end
+    end
+
+    let(:admin) { create(:user, account: account, role: :administrator) }
+    let(:channel) { create(:channel_whatsapp_web, account: account) }
+    let(:inbox) { channel.inbox }
+
+    describe 'POST /api/v1/accounts/:account_id/inboxes/:id/refresh_whatsapp_web_qr' do
+      it 'syncs status when called with status_only' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
+          instance.update!(lifecycle_state: 'connected', connection_state: 'open', last_synced_at: Time.current)
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('connected')
+      end
+    end
+
+    describe 'POST /api/v1/accounts/:account_id/inboxes/:id/reconnect_whatsapp_web' do
+      it 'reconnects the runtime session' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:reconnect!) do |instance|
+          instance.update!(lifecycle_state: 'waiting_for_qr', connection_state: 'connecting', last_synced_at: Time.current)
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/reconnect_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('waiting_for_qr')
+      end
+    end
+
+    describe 'GET /api/v1/accounts/:account_id/inboxes/:id/whatsapp_web_diagnostics' do
+      it 'returns provider diagnostics' do
+        allow_any_instance_of(Channel::WhatsappWeb).to receive(:diagnostics).and_return(
+          counts: { messages_missing_provider_message_id: 1 },
+          samples: { provisional_contacts: [] }
+        )
+
+        get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/whatsapp_web_diagnostics",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('counts', 'messages_missing_provider_message_id')).to eq(1)
+      end
+    end
+
+    describe 'POST /api/v1/accounts/:account_id/inboxes/:id/disconnect_whatsapp_web' do
+      it 'rejects non-whatsapp-web inboxes' do
+        non_whatsapp_inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{non_whatsapp_inbox.id}/disconnect_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:bad_request)
+      end
+    end
+  end
+
   describe 'PATCH /api/v1/accounts/{account.id}/inboxes/:id' do
     let(:inbox) { create(:inbox, account: account) }
 
@@ -478,6 +594,7 @@ RSpec.describe 'Inboxes API', type: :request do
               as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(inbox.reload.enable_auto_assignment).to be_falsey
         expect(inbox.reload.portal_id).to eq(portal.id)
         expect(response.parsed_body['name']).to eq 'new test inbox'
@@ -515,6 +632,73 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(whatsapp_inbox.reload.enable_auto_assignment).to be_falsey
         expect(whatsapp_channel.reload.provider_config['api_key']).to eq('new_key')
         expect(whatsapp_channel.reload).not_to be_reauthorization_required
+      end
+
+      it 'rejects runtime identity updates for whatsapp web inboxes' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+          whatsapp_web_inbox = whatsapp_web_channel.inbox
+
+          patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_web_inbox.id}",
+                headers: admin.create_new_auth_token,
+                params: { channel: { phone_number: '+15550001111' } },
+                as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['message']).to include('Phone number cannot be changed after the inbox is created')
+          expect(response.parsed_body['attributes']).to include('phone_number')
+          expect(whatsapp_web_channel.reload.phone_number).not_to eq('+15550001111')
+        end
+      end
+
+      it 'updates native whatsapp web settings when administrator' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+          whatsapp_web_inbox = whatsapp_web_channel.inbox
+
+          patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_web_inbox.id}",
+                headers: admin.create_new_auth_token,
+                params: {
+                  channel: {
+                    conversation_pending: true,
+                    history_lookback_days: 120,
+                    ignore_jids: %w[15550001111@s.whatsapp.net 15550002222@s.whatsapp.net],
+                    sign_messages: true,
+                    sign_delimiter: '\\n--\\n',
+                    import_contacts: false,
+                    import_messages: false,
+                    sync_labels: false
+                  }
+                },
+                as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['conversation_pending']).to be(true)
+          expect(response.parsed_body['history_lookback_days']).to eq(120)
+          expect(response.parsed_body['ignore_jids']).to eq(%w[15550001111@s.whatsapp.net 15550002222@s.whatsapp.net])
+          expect(response.parsed_body['sign_messages']).to be(true)
+          expect(response.parsed_body['sign_delimiter']).to eq('\\n--\\n')
+          expect(response.parsed_body['import_contacts']).to be(false)
+          expect(response.parsed_body['import_messages']).to be(false)
+          expect(response.parsed_body['sync_labels']).to be(false)
+
+          whatsapp_web_channel.reload
+          expect(whatsapp_web_channel.conversation_pending).to be(true)
+          expect(whatsapp_web_channel.history_lookback_days).to eq(120)
+          expect(whatsapp_web_channel.ignore_jids).to eq(%w[15550001111@s.whatsapp.net 15550002222@s.whatsapp.net])
+          expect(whatsapp_web_channel.sign_messages).to be(true)
+          expect(whatsapp_web_channel.import_contacts).to be(false)
+          expect(whatsapp_web_channel.import_messages).to be(false)
+          expect(whatsapp_web_channel.sync_labels).to be(false)
+        end
       end
 
       it 'updates twitter inbox when administrator' do
@@ -631,10 +815,14 @@ RSpec.describe 'Inboxes API', type: :request do
 
       it 'updates smtp configuration with starttls encryption' do
         smtp_connection = double
+        allow(smtp_connection).to receive(:open_timeout=).and_return(10)
         allow(smtp_connection).to receive(:start).and_return(true)
         allow(smtp_connection).to receive(:finish).and_return(true)
         allow(smtp_connection).to receive(:respond_to?).and_return(true)
-        allow(smtp_connection).to receive(:enable_starttls_auto).and_return(true)
+        expect(smtp_connection).to receive(:enable_starttls_auto) do |context|
+          expect(context.verify_mode).to eq(OpenSSL::SSL::VERIFY_PEER)
+          expect(context.verify_hostname).to be(true)
+        end
         allow(Net::SMTP).to receive(:new).and_return(smtp_connection)
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{email_inbox.id}",
@@ -661,10 +849,14 @@ RSpec.describe 'Inboxes API', type: :request do
 
       it 'updates smtp configuration with ssl/tls encryption' do
         smtp_connection = double
+        allow(smtp_connection).to receive(:open_timeout=).and_return(10)
         allow(smtp_connection).to receive(:start).and_return(true)
         allow(smtp_connection).to receive(:finish).and_return(true)
         allow(smtp_connection).to receive(:respond_to?).and_return(true)
-        allow(smtp_connection).to receive(:enable_tls).and_return(true)
+        expect(smtp_connection).to receive(:enable_tls) do |context|
+          expect(context.verify_mode).to eq(OpenSSL::SSL::VERIFY_NONE)
+          expect(context.verify_hostname).to be(false)
+        end
         allow(Net::SMTP).to receive(:new).and_return(smtp_connection)
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{email_inbox.id}",
@@ -691,6 +883,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
       it 'updates smtp configuration with authentication mechanism' do
         smtp_connection = double
+        allow(smtp_connection).to receive(:open_timeout=).and_return(10)
         allow(smtp_connection).to receive(:start).and_return(true)
         allow(smtp_connection).to receive(:finish).and_return(true)
         allow(smtp_connection).to receive(:respond_to?).and_return(true)

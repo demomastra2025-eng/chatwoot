@@ -273,7 +273,8 @@
     "FILE_BUBBLE": {
       "DOWNLOAD": "Download",
       "UPLOADING": "Uploading...",
-      "INSTAGRAM_STORY_UNAVAILABLE": "This story is no longer available."
+      "INSTAGRAM_STORY_UNAVAILABLE": "This story is no longer available.",
+      "INSTAGRAM_STORY_REPLY": "Hekayənizə cavab verildi:"
     },
     "LOCATION_BUBBLE": {
       "SEE_ON_MAP": "See on map"
@@ -378,7 +379,9 @@
       "INFO_SHORT": "Automatically mark offline when you aren't using the app."
     },
     "DOCS": "Read docs",
-    "SECURITY": "Security"
+    "SECURITY": "Security",
+    "CAPTAIN_AI": "Kapitan",
+    "CONVERSATION_WORKFLOW": "Söhbət İş Axını"
   },
   "BILLING_SETTINGS": {
     "TITLE": "Billing",
@@ -555,7 +558,10 @@
         "FEATURES": [
           "Assign by conversations evenly or by available capacity",
           "Add fair distribution rules to avoid overloading any agent",
-          "Add inboxes to a policy - one policy per inbox"
+          "Add inboxes to a policy - one policy per inbox",
+          "Söhbətləri bərabər və ya mövcud tutuma görə təyin edin",
+          "Hər hansı bir agentin yüklənməsinin qarşısını almaq üçün ədalətli paylama qaydaları əlavə edin",
+          "Siyasətə daxilolmaları əlavə edin - hər daxilolma üçün bir siyasət"
         ]
       },
       "AGENT_CAPACITY_POLICY": {
@@ -564,7 +570,10 @@
         "FEATURES": [
           "Define maximum conversations per inbox",
           "Create exceptions based on labels and time",
-          "Add agents to a policy - one policy per agent"
+          "Add agents to a policy - one policy per agent",
+          "Hər daxilolma üçün maksimum söhbətləri təyin edin",
+          "Etiketlərə və vaxta əsaslanan istisnalar yaradın",
+          "Siyasətə agentlər əlavə edin - hər agent üçün bir siyasət"
         ]
       }
     },
@@ -591,7 +600,8 @@
         "CREATE_BUTTON": "Create policy",
         "API": {
           "SUCCESS_MESSAGE": "Assignment policy created successfully",
-          "ERROR_MESSAGE": "Failed to create assignment policy"
+          "ERROR_MESSAGE": "Failed to create assignment policy",
+          "INBOX_LINKED": "Gələn qutu siyasətə qoşuldu"
         }
       },
       "EDIT": {
@@ -618,6 +628,12 @@
             "SUCCESS_MESSAGE": "Inbox removed from policy successfully",
             "ERROR_MESSAGE": "Failed to remove inbox from policy"
           }
+        },
+        "INBOX_LINK_PROMPT": {
+          "TITLE": "Gələn qutunu siyasətə qoşun",
+          "DESCRIPTION": "Bu gələn qutunu təyin etmə siyasətinə qoşmaq istəyirsiniz?",
+          "LINK_BUTTON": "Gələn qutunu qoş",
+          "CANCEL_BUTTON": "Keç"
         }
       },
       "FORM": {
@@ -643,7 +659,9 @@
           },
           "BALANCED": {
             "LABEL": "Balanced",
-            "DESCRIPTION": "Assign conversations based on available capacity."
+            "DESCRIPTION": "Assign conversations based on available capacity.",
+            "PREMIUM_MESSAGE": "Tarazlı təyinat və agent tutumu idarəçiliyinə daxil olmaq üçün yüksəltmə edin.",
+            "PREMIUM_BADGE": "Premium"
           }
         },
         "ASSIGNMENT_PRIORITY": {
@@ -729,6 +747,20 @@
             "SUCCESS_MESSAGE": "Agent removed from policy successfully",
             "ERROR_MESSAGE": "Failed to remove agent from policy"
           }
+        },
+        "INBOX_LIMIT_API": {
+          "ADD": {
+            "SUCCESS_MESSAGE": "Gələn qutu limiti uğurla əlavə edildi",
+            "ERROR_MESSAGE": "Gələn qutu limiti əlavə etmək mümkün olmadı"
+          },
+          "UPDATE": {
+            "SUCCESS_MESSAGE": "Gələn qutu limiti uğurla yeniləndi",
+            "ERROR_MESSAGE": "Gələn qutu limitini yeniləmək mümkün olmadı"
+          },
+          "DELETE": {
+            "SUCCESS_MESSAGE": "Gələn qutu limiti uğurla silindi",
+            "ERROR_MESSAGE": "Gələn qutu limitini silmək mümkün olmadı"
+          }
         }
       },
       "FORM": {
@@ -791,6 +823,106 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "CAPTAIN_SETTINGS": {
+    "TITLE": "Kapitan Ayarları",
+    "DESCRIPTION": "Kapitan üçün AI modellərinizi və xüsusiyyətlərinizi konfiqurasiya edin. Kapitan kredit əsaslı ödəniş sistemi ilə işləyir, seçilmiş modelə əsasən Kapitanın hər hərəkəti üçün kreditlər hesablanacaq.",
+    "LOADING": "Captain konfiqurasiyası yüklənir...",
+    "LINK_TEXT": "Captain Krediti haqqında daha çox məlumat əldə edin",
+    "NOT_ENABLED": "Captain hesabınız üçün aktiv deyil. Captain xüsusiyyətlərinə daxil olmaq üçün planınızı yüksəldin.",
+    "MODEL_CONFIG": {
+      "TITLE": "Model Konfiqurasiyası",
+      "DESCRIPTION": "Fərqli xüsusiyyətlər üçün AI modellərini seçin.",
+      "SELECT_MODEL": "Model seçin",
+      "CREDITS_PER_MESSAGE": "{credits} kredit/mesaj",
+      "COMING_SOON": "Tezliklə",
+      "EDITOR": {
+        "TITLE": "Redaktor xüsusiyyətləri",
+        "DESCRIPTION": "Mesaj redaktorunuzda ağıllı yazı, qrammatika düzəlişləri, ton tənzimləmələri və məzmunun təkmilləşdirilməsini təmin edir."
+      },
+      "ASSISTANT": {
+        "TITLE": "Köməkçi",
+        "DESCRIPTION": "Avtomatlaşdırılmış cavablar, söhbət xülasələri və müştəri qarşılıqlı əlaqələri üçün ağıllı cavab təkliflərini idarə edir."
+      },
+      "COPILOT": {
+        "TITLE": "Kopilot",
+        "DESCRIPTION": "Söhbətlər zamanı real vaxtda kontekstual təkliflər, bilik bazası tövsiyələri və proaktiv anlayışlar təqdim edir."
+      }
+    },
+    "FEATURES": {
+      "TITLE": "Xüsusiyyətlər",
+      "DESCRIPTION": "AI ilə işləyən xüsusiyyətləri aktivləşdirin və ya deaktiv edin.",
+      "AUDIO_TRANSCRIPTION": {
+        "TITLE": "Səs Yazısı",
+        "DESCRIPTION": "Səs mesajlarını və zəng yazılarını avtomatik olaraq axtarıla bilən mətn transkriptlərinə çevirin."
+      },
+      "HELP_CENTER_SEARCH": {
+        "TITLE": "Kömək Mərkəzi Axtarış İndeksləşdirilməsi",
+        "DESCRIPTION": "Kömək mərkəzi məqalələrinizdə kontekstə uyğun axtarış üçün AI istifadə edin."
+      },
+      "LABEL_SUGGESTION": {
+        "TITLE": "Etiket Tövsiyəsi",
+        "DESCRIPTION": "Məzmun analizi və kontekstə əsaslanaraq söhbətlər üçün avtomatik olaraq uyğun etiketlər və təqlər təklif edin.",
+        "MODEL_TITLE": "Etiket Tövsiyəsi Modeli",
+        "MODEL_DESCRIPTION": "Söhbətləri təhlil etmək və uyğun etiketlər təklif etmək üçün istifadə olunacaq AI modelini seçin"
+      }
+    },
+    "API": {
+      "SUCCESS": "Captain parametrləri uğurla yeniləndi.",
+      "ERROR": "Captain parametrlərini yeniləmək alınmadı. Zəhmət olmasa, yenidən cəhd edin."
+    }
+  },
+  "CONVERSATION_WORKFLOW": {
+    "INDEX": {
+      "HEADER": {
+        "TITLE": "Söhbət İş Axınları",
+        "DESCRIPTION": "Söhbətin həlli üçün qaydaları və tələb olunan sahələri tənzimləyin."
+      }
+    },
+    "REQUIRED_ATTRIBUTES": {
+      "TITLE": "Həll zamanı tələb olunan atributlar",
+      "DESCRIPTION": "Söhbət həll edilərkən, agentlərdən bu atributları doldurmaları tələb olunacaq, əgər hələ doldurmayıblarsa.",
+      "NO_ATTRIBUTES": "Hələ atribut əlavə edilməyib",
+      "ADD": {
+        "TITLE": "Atribut əlavə et",
+        "SEARCH_PLACEHOLDER": "Atributlarda axtar"
+      },
+      "SAVE": {
+        "SUCCESS": "Tələb olunan atributlar yeniləndi",
+        "ERROR": "Tələb olunan atributlar yenilənə bilmədi, zəhmət olmasa yenidən cəhd edin"
+      },
+      "MODAL": {
+        "TITLE": "Söhbəti həll et",
+        "DESCRIPTION": "Zəhmət olmasa bu söhbəti həll etməzdən əvvəl aşağıdakı xüsusi atributları doldurun",
+        "ACTIONS": {
+          "RESOLVE": "Söhbəti həll et",
+          "CANCEL": "Ləğv et"
+        },
+        "PLACEHOLDERS": {
+          "TEXT": "Qeyd yazın...",
+          "NUMBER": "Rəqəm daxil edin",
+          "LINK": "Link əlavə edin",
+          "DATE": "Tarix seçin",
+          "LIST": "Seçim seçin"
+        },
+        "CHECKBOX": {
+          "YES": "Bəli",
+          "NO": "Xeyr"
+        }
+      },
+      "PAYWALL": {
+        "TITLE": "Tələb olunan atributlardan istifadə etmək üçün yüksəldin",
+        "AVAILABLE_ON": "Tələb olunan söhbət atributları xüsusiyyəti Biznes və Enterprise planlarında mövcuddur.",
+        "UPGRADE_PROMPT": "Söhbətin həllindən əvvəl agentlərin tələb olunan atributları doldurmasını təmin etmək üçün planınızı yüksəldin.",
+        "UPGRADE_NOW": "İndi yüksəlt",
+        "CANCEL_ANYTIME": "Planınızı istənilən vaxt dəyişə və ya ləğv edə bilərsiniz"
+      },
+      "ENTERPRISE_PAYWALL": {
+        "AVAILABLE_ON": "Lazımi söhbət atributları funksiyası ödənişli planlarda mövcuddur.",
+        "UPGRADE_PROMPT": "Söhbətin həlli öncəsi tələb olunan atributların tətbiqi üçün ödənişli plana yüksəldin.",
+        "ASK_ADMIN": "Yeniləmə üçün administratorunuzla əlaqə saxlayın."
+      }
     }
   }
 }

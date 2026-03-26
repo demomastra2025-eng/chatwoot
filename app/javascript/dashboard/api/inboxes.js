@@ -33,6 +33,29 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.post(`${this.url}/${inboxId}/sync_templates`);
   }
 
+  refreshWhatsappWebQr(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/refresh_whatsapp_web_qr`,
+      payload
+    );
+  }
+
+  reconnectWhatsappWeb(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/reconnect_whatsapp_web`);
+  }
+
+  disconnectWhatsappWeb(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/disconnect_whatsapp_web`);
+  }
+
+  repairWhatsappWeb(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/repair_whatsapp_web`);
+  }
+
+  getWhatsappWebDiagnostics(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/whatsapp_web_diagnostics`);
+  }
+
   createCSATTemplate(inboxId, template) {
     return axios.post(`${this.url}/${inboxId}/csat_template`, {
       template,
@@ -41,6 +64,12 @@ class Inboxes extends CacheEnabledApiClient {
 
   getCSATTemplateStatus(inboxId) {
     return axios.get(`${this.url}/${inboxId}/csat_template`);
+  }
+
+  analyzeCSATTemplateUtility(inboxId, template) {
+    return axios.post(`${this.url}/${inboxId}/csat_template/analyze`, {
+      template,
+    });
   }
 }
 

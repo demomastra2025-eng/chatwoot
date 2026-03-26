@@ -1,64 +1,68 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Tools::FirecrawlParserJob, type: :job do
+  let(:assistant) { create(:captain_assistant) }
+
   describe '#perform' do
-    let(:assistant) { create(:captain_assistant) }
     let(:payload) do
       {
-        markdown: 'Launch Week I is here! 🚀',
+        markdown: 'Updated markdown',
         metadata: {
-          'title' => 'Home - Firecrawl',
-          'ogTitle' => 'Firecrawl',
-          'url' => 'https://www.firecrawl.dev/'
+          url: 'https://example.com/docs/page-1',
+          title: 'Page 1'
         }
       }
     end
 
-    it 'creates a new document when one does not exist' do
+    it 'creates a derived document for a source document' do
+      source_document = create(
+        :captain_document,
+        assistant: assistant,
+        external_link: 'https://example.com/docs',
+        metadata: {
+          'firecrawl' => {
+            'mode' => 'site_import',
+            'sync' => { 'status' => 'processing', 'pages_total' => 2 }
+          }
+        }
+      )
+
       expect do
-        described_class.perform_now(assistant_id: assistant.id, payload: payload)
+        described_class.perform_now(
+          assistant_id: assistant.id,
+          payload: payload,
+          source_document_id: source_document.id
+        )
       end.to change(assistant.documents, :count).by(1)
 
-      document = assistant.documents.last
-      expect(document).to have_attributes(
-        content: payload[:markdown],
-        name: payload[:metadata]['title'],
-        external_link: 'https://www.firecrawl.dev',
-        status: 'available'
-      )
+      derived_document = assistant.documents.order(:created_at).last
+      expect(derived_document.metadata.dig('firecrawl', 'root_document_id')).to eq(source_document.id)
+      expect(source_document.reload.pages_processed).to eq(1)
     end
 
-    it 'updates existing document when one exists' do
-      existing_document = create(:captain_document,
-                                 assistant: assistant,
-                                 account: assistant.account,
-                                 external_link: 'https://www.firecrawl.dev',
-                                 content: 'old content',
-                                 name: 'old title',
-                                 status: :in_progress)
+    it 'skips unchanged pages during delta refresh' do
+      source_document = create(
+        :captain_document,
+        assistant: assistant,
+        external_link: 'https://example.com/docs',
+        metadata: {
+          'firecrawl' => {
+            'mode' => 'site_import',
+            'sync' => { 'refresh_mode' => 'delta', 'status' => 'processing', 'pages_total' => 1 }
+          }
+        }
+      )
 
       expect do
-        described_class.perform_now(assistant_id: assistant.id, payload: payload)
+        described_class.perform_now(
+          assistant_id: assistant.id,
+          payload: payload.merge(changeTracking: { changeStatus: 'same' }),
+          source_document_id: source_document.id
+        )
       end.not_to change(assistant.documents, :count)
 
-      existing_document.reload
-      # Payload URL ends with '/', but we persist the canonical URL without it.
-      expect(existing_document).to have_attributes(
-        external_link: 'https://www.firecrawl.dev',
-        content: payload[:markdown],
-        name: payload[:metadata]['title'],
-        status: 'available'
-      )
-    end
-
-    context 'when an error occurs' do
-      it 'raises an error with a descriptive message' do
-        allow(Captain::Assistant).to receive(:find).and_raise(ActiveRecord::RecordNotFound)
-
-        expect do
-          described_class.perform_now(assistant_id: -1, payload: payload)
-        end.to raise_error(/Failed to parse FireCrawl data/)
-      end
+      expect(source_document.reload.pages_processed).to eq(1)
+      expect(source_document.metadata.dig('firecrawl', 'sync', 'same_urls')).to include('https://example.com/docs/page-1')
     end
   end
 end

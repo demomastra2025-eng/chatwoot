@@ -2,25 +2,39 @@
 #
 # Table name: scheduling_resources
 #
-#  id                 :bigint           not null, primary key
-#  active             :boolean          default(TRUE), not null
-#  color              :string
-#  compensation_type  :string           default("percent"), not null
-#  compensation_value :integer          default(0), not null
-#  custom_attributes  :jsonb            not null
-#  description        :text
-#  name               :string           not null
-#  photo_url          :string
-#  slot_duration_min  :integer          default(30), not null
-#  specialty          :string
-#  timezone           :string           default("Asia/Almaty"), not null
-#  created_at         :datetime         not null
-#  updated_at         :datetime         not null
-#  account_id         :bigint           not null
-#  user_id            :bigint
+#  id                   :bigint           not null, primary key
+#  active               :boolean          default(TRUE), not null
+#  color                :string
+#  compensation_percent :integer          default(0), not null
+#  compensation_type    :string           default("percent"), not null
+#  compensation_value   :integer          default(0), not null
+#  custom_attributes    :jsonb            not null
+#  description          :text
+#  name                 :string           not null
+#  photo_url            :string
+#  slot_duration_min    :integer          default(30), not null
+#  specialty            :string
+#  timezone             :string           default("Asia/Almaty"), not null
+#  created_at           :datetime         not null
+#  updated_at           :datetime         not null
+#  account_id           :bigint           not null
+#  user_id              :bigint
+#
+# Indexes
+#
+#  idx_scheduling_resources_on_account_active_name  (account_id,active,name)
+#  index_scheduling_resources_on_account_id         (account_id)
+#  index_scheduling_resources_on_user_id            (user_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (user_id => users.id)
 #
 
 class Scheduling::Resource < ApplicationRecord
+  DELETED_FROM_SCHEDULING_KEY = 'deleted_from_scheduling'.freeze
+
   belongs_to :account
   belongs_to :user, optional: true
 
@@ -35,12 +49,28 @@ class Scheduling::Resource < ApplicationRecord
   validates :slot_duration_min, inclusion: { in: 5..720 }
   validates :compensation_type, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }
   validates :compensation_value, numericality: { greater_than_or_equal_to: 0, only_integer: true }
+  validates :compensation_percent, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validate :valid_timezone
   validate :compensation_percent_within_range
+  validate :combined_compensation_percent_within_range
   validate :user_belongs_to_account
 
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
+  scope :not_deleted_from_scheduling,
+        -> { where.not("custom_attributes @> ?", { DELETED_FROM_SCHEDULING_KEY => true }.to_json) }
+  scope :available_for_scheduling, -> { active.not_deleted_from_scheduling }
+
+  def deleted_from_scheduling?
+    ActiveModel::Type::Boolean.new.cast(custom_attributes[DELETED_FROM_SCHEDULING_KEY])
+  end
+
+  def archive_from_scheduling!
+    update!(
+      active: false,
+      custom_attributes: custom_attributes.to_h.merge(DELETED_FROM_SCHEDULING_KEY => true)
+    )
+  end
 
   private
 
@@ -49,6 +79,13 @@ class Scheduling::Resource < ApplicationRecord
     return if compensation_value.to_i.between?(0, 100)
 
     errors.add(:compensation_value, 'must be between 0 and 100 for percent compensation')
+  end
+
+  def combined_compensation_percent_within_range
+    return unless compensation_type == 'fixed_plus_percent'
+    return if compensation_percent.to_i.between?(0, 100)
+
+    errors.add(:compensation_percent, 'must be between 0 and 100 for fixed plus percent compensation')
   end
 
   def valid_timezone

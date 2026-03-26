@@ -6,9 +6,11 @@ import {
   compactPayload,
   extractSchedulingError,
   normalizePayload,
-  removeRecord,
   upsertRecord,
 } from './shared';
+
+const isDeletedFromScheduling = resource =>
+  !!resource?.customAttributes?.deletedFromScheduling;
 
 export const useSchedulingReferencesStore = defineStore(
   'schedulingReferences',
@@ -32,7 +34,9 @@ export const useSchedulingReferencesStore = defineStore(
 
     getters: {
       activeResources: state =>
-        state.resources.filter(resource => resource.active),
+        state.resources.filter(
+          resource => resource.active && !isDeletedFromScheduling(resource)
+        ),
       activeServices: state => state.services.filter(service => service.active),
     },
 
@@ -77,7 +81,20 @@ export const useSchedulingReferencesStore = defineStore(
 
         try {
           await SchedulingResourcesAPI.delete(resourceId);
-          this.resources = removeRecord(this.resources, resourceId);
+          this.resources = this.resources.map(resource => {
+            if (Number(resource.id) !== Number(resourceId)) {
+              return resource;
+            }
+
+            return {
+              ...resource,
+              active: false,
+              customAttributes: {
+                ...(resource.customAttributes || {}),
+                deletedFromScheduling: true,
+              },
+            };
+          });
         } catch (error) {
           this.ui.error = extractSchedulingError(error);
           throw error;

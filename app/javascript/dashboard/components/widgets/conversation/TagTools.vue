@@ -20,7 +20,24 @@ const selectedIndex = ref(0);
 const filteredTools = computed(() => {
   const search = props.searchKey?.trim().toLowerCase() || '';
 
-  return tools.value.filter(tool => tool.title.toLowerCase().includes(search));
+  return [...tools.value]
+    .filter(tool => {
+      const titleMatches = tool.title.toLowerCase().includes(search);
+      const groupMatches = (tool.group_name || '').toLowerCase().includes(
+        search
+      );
+      return titleMatches || groupMatches;
+    })
+    .sort((leftTool, rightTool) => {
+      const leftGroup = leftTool.group_name || 'zzzzzzzz';
+      const rightGroup = rightTool.group_name || 'zzzzzzzz';
+      const groupComparison = leftGroup.localeCompare(rightGroup);
+      if (groupComparison !== 0) {
+        return groupComparison;
+      }
+
+      return leftTool.title.localeCompare(rightTool.title);
+    });
 });
 
 const adjustScroll = () => {};

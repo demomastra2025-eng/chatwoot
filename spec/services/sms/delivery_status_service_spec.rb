@@ -77,6 +77,34 @@ describe Sms::DeliveryStatusService do
           described_class.new(params: params, inbox: sms_channel.inbox).perform
           expect(conversation.reload.messages.last.status).to eq('sent')
         end
+
+        it 'updates matching campaign delivery records when the provider callback arrives' do
+          delivery = create(
+            :campaign_delivery,
+            campaign: create(:campaign, account: account, inbox: sms_channel.inbox),
+            account: account,
+            inbox: sms_channel.inbox,
+            contact: contact,
+            provider: 'bandwidth_sms',
+            provider_message_id: 'campaign-message-1',
+            status: 'submitted'
+          )
+
+          params = {
+            time: '2022-02-02T23:14:05.309Z',
+            type: 'message-failed',
+            to: sms_channel.phone_number,
+            description: 'Undeliverable',
+            errorCode: 995,
+            message: {
+              'id': 'campaign-message-1'
+            }
+          }
+
+          described_class.new(params: params, inbox: sms_channel.inbox).perform
+          expect(delivery.reload.status).to eq('failed')
+          expect(delivery.reload.error_message).to eq('995 - Undeliverable')
+        end
       end
     end
   end

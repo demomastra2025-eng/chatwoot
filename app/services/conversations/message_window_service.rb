@@ -16,7 +16,7 @@ class Conversations::MessageWindowService
 
   def messaging_window
     case @conversation.inbox.channel_type
-    when 'Channel::Api'
+    when *Inbox::API_CHANNEL_TYPES
       api_messaging_window
     when 'Channel::FacebookPage'
       messenger_messaging_window

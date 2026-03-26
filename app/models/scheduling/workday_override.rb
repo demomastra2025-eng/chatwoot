@@ -15,6 +15,18 @@
 #  account_id         :bigint           not null
 #  resource_id        :bigint           not null
 #
+# Indexes
+#
+#  idx_scheduling_workday_overrides_on_account_date   (account_id,date)
+#  idx_scheduling_workday_overrides_on_resource_date  (resource_id,date) UNIQUE
+#  index_scheduling_workday_overrides_on_account_id   (account_id)
+#  index_scheduling_workday_overrides_on_resource_id  (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::WorkdayOverride < ApplicationRecord
   include Scheduling::MinuteRangeValidatable
@@ -26,6 +38,7 @@ class Scheduling::WorkdayOverride < ApplicationRecord
 
   validates :date, presence: true, uniqueness: { scope: :resource_id }
   validate :break_interval_is_valid
+  validate :resource_is_available_for_scheduling_setup
 
   scope :ordered, -> { order(:date, :resource_id, :id) }
 
@@ -50,6 +63,12 @@ class Scheduling::WorkdayOverride < ApplicationRecord
     return if break_end_minute.to_i > break_start_minute.to_i
 
     errors.add(:break_end_minute, 'must be greater than break_start_minute')
+  end
+
+  def resource_is_available_for_scheduling_setup
+    return if resource.blank? || !resource.deleted_from_scheduling?
+
+    errors.add(:resource_id, 'is not available for scheduling')
   end
 
   def sync_account_id

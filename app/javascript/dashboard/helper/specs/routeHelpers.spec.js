@@ -49,6 +49,40 @@ describe('#defaultRedirectPage', () => {
     expect(defaultRedirectPage(to, permissions)).toBe('accounts/2/dashboard');
   });
 
+  it('should return crm deals route for crm-only users when crm deals are enabled', () => {
+    const permissions = ['crm_deal_view'];
+    const user = {
+      accounts: [
+        {
+          id: 2,
+          features: { crm_deals: true },
+          permissions,
+          status: 'active',
+        },
+      ],
+    };
+    expect(defaultRedirectPage(to, permissions, user)).toBe(
+      'accounts/2/crm/deals'
+    );
+  });
+
+  it('should return crm settings route for crm settings users when crm runtime is enabled', () => {
+    const permissions = ['crm_settings_view'];
+    const user = {
+      accounts: [
+        {
+          id: 2,
+          features: { crm_tasks: true },
+          permissions,
+          status: 'active',
+        },
+      ],
+    };
+    expect(defaultRedirectPage(to, permissions, user)).toBe(
+      'accounts/2/settings/crm'
+    );
+  });
+
   it('should return dashboard route for users with administrator role', () => {
     const permissions = ['administrator'];
     expect(defaultRedirectPage(to, permissions)).toBe('accounts/2/dashboard');

@@ -19,6 +19,12 @@ describe('scheduling helpers', () => {
     expect(nextDate.toISOString()).toBe('2026-03-23T00:00:00.000Z');
   });
 
+  it('shifts kanban view by two weeks', () => {
+    const nextDate = shiftAnchorDate('kanban', '2026-03-09T00:00:00.000Z', 1);
+
+    expect(nextDate.toISOString()).toBe('2026-03-23T00:00:00.000Z');
+  });
+
   it('derives a visible minute window from rules and appointments', () => {
     const window = deriveVisibleMinuteWindow({
       appointments: [
@@ -46,8 +52,22 @@ describe('scheduling helpers', () => {
     });
 
     expect(window).toEqual({
-      endMinute: 1200,
-      startMinute: 300,
+      endMinute: 1320,
+      startMinute: 390,
+    });
+  });
+
+  it('falls back to the default day timeline window when there is no data', () => {
+    const window = deriveVisibleMinuteWindow({
+      appointments: [],
+      columns: [],
+      workRules: [],
+      workdayOverrides: [],
+    });
+
+    expect(window).toEqual({
+      endMinute: 1320,
+      startMinute: 420,
     });
   });
 

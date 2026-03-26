@@ -269,7 +269,7 @@ defineExpose({ open, close });
       <div class="mb-6">
         <label :class="{ error: errors.event_name }">
           {{ $t('AUTOMATION.ADD.FORM.EVENT.LABEL') }}
-          <select
+          <Select
             v-model="automation.event_name"
             class="m-0"
             @change="onEventChange()"
@@ -281,7 +281,7 @@ defineExpose({ open, close });
             >
               {{ event.value }}
             </option>
-          </select>
+          </Select>
           <span v-if="errors.event_name" class="message">
             {{ $t('AUTOMATION.ADD.FORM.EVENT.ERROR') }}
           </span>

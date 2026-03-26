@@ -9,6 +9,53 @@ APP_PORTS=(3000 3036)
 RESTART_INFRA="${RESTART_INFRA:-0}"
 PREPARE_DB="${PREPARE_DB:-0}"
 CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
+DEV_LITE_FILTER_NOISE="${DEV_LITE_FILTER_NOISE:-1}"
+USE_EXISTING_INFRA="${USE_EXISTING_INFRA:-auto}"
+DATABASE_PREPARED=0
+LOG_DIR="${ONELINK_DEV_LITE_LOG_DIR:-${ROOT_DIR}/logs}"
+TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
+LOG_FILE="${ONELINK_DEV_LITE_LOG_FILE:-${LOG_DIR}/onelink-dev-lite-${TIMESTAMP}.log}"
+
+filter_dev_lite_noise() {
+  while IFS= read -r line; do
+    case "$line" in
+      *"the attribute \`version\` is obsolete"* ) continue ;;
+      *"/.well-known/appspecific/com.chrome.devtools.json"* ) continue ;;
+      *'Rack app ("GET /mini-profiler-resources/includes.js'* ) continue ;;
+      *'DEPRECATION WARNING: The legacy JS API is deprecated and will be removed in Dart Sass 2.0.0.'* ) continue ;;
+      *'More info: https://sass-lang.com/d/legacy-js-api'* ) continue ;;
+      *'`defineEmits` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineExpose` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineProps` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineModel` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'`defineOptions` is a compiler macro and no longer needs to be imported.'* ) continue ;;
+      *'::v-deep usage as a combinator has been deprecated.'* ) continue ;;
+      *'ActionController::RoutingError (No route matches [GET] "/.well-known/appspecific/com.chrome.devtools.json"):'* ) continue ;;
+      *"Exception 'Errno::ENOTDIR' at <internal:dir>:184 - Not a directory @ dir_initialize - ${ROOT_DIR}/"* ) continue ;;
+      *"bootsnap/load_path_cache/path.rb:"* ) continue ;;
+      *"visit_ActiveRecord_Relation_QueryAttribute"* ) continue ;;
+      *"visit_ActiveModel_Attribute_WithCastValue"* ) continue ;;
+      *"Exception 'ThreadError' at <internal:thread_sync>:18 - queue empty"* ) continue ;;
+      *"Exception 'Errno::ECONNRESET' at <internal:io>:63 - Connection reset by peer"* ) continue ;;
+      *"Exception 'EOFError' at <internal:io>:63 - end of file reached"* ) continue ;;
+      *"Exception 'EOFError' at "*"/puma/client.rb:257 - EOFError"* ) continue ;;
+      *"Exception 'Puma::ConnectionError' at "*"/puma/client.rb:250 - Connection error detected during read"* ) continue ;;
+      *"Exception 'Puma::ConnectionError' at "*"/puma/client.rb:297 - Puma::ConnectionError"* ) continue ;;
+    esac
+
+    printf '%s\n' "$line"
+  done
+}
+
+mkdir -p "$LOG_DIR"
+ln -sfn "$LOG_FILE" "$LOG_DIR/onelink-dev-lite-latest.log"
+if [[ "$DEV_LITE_FILTER_NOISE" == "1" ]]; then
+  exec > >(filter_dev_lite_noise | tee -a "$LOG_FILE") 2>&1
+else
+  exec > >(tee -a "$LOG_FILE") 2>&1
+fi
+
+echo "Logging Onelink dev-lite output to $LOG_FILE"
 
 log() {
   printf '[dev-lite-restart] %s\n' "$*"
@@ -29,6 +76,118 @@ env_value() {
   fi
 
   printf '%s' "$default_value"
+}
+
+resolve_realpath() {
+  ruby -rpathname -e 'puts Pathname.new(ARGV.fetch(0)).realpath' "$1"
+}
+
+postgres_host() {
+  env_value POSTGRES_HOST 127.0.0.1
+}
+
+postgres_port() {
+  env_value POSTGRES_PORT 5432
+}
+
+postgres_user() {
+  env_value POSTGRES_USERNAME postgres
+}
+
+postgres_database() {
+  env_value POSTGRES_DATABASE chatwoot_dev
+}
+
+postgres_password() {
+  env_value POSTGRES_PASSWORD ''
+}
+
+redis_url() {
+  env_value REDIS_URL redis://:redis@127.0.0.1:6379/0
+}
+
+redis_host() {
+  REDIS_URL_VALUE="$(redis_url)" ruby -ruri -e 'uri = URI(ENV.fetch("REDIS_URL_VALUE")); puts(uri.host || "127.0.0.1")'
+}
+
+redis_port() {
+  REDIS_URL_VALUE="$(redis_url)" ruby -ruri -e 'uri = URI(ENV.fetch("REDIS_URL_VALUE")); puts(uri.port || 6379)'
+}
+
+tcp_reachable() {
+  nc -z "$1" "$2" >/dev/null 2>&1
+}
+
+run_pg_ruby() {
+  local ruby_script="$1"
+  shift || true
+
+  PGHOST="$(postgres_host)" \
+  PGPORT="$(postgres_port)" \
+  PGDATABASE="$(postgres_database)" \
+  PGUSER="$(postgres_user)" \
+  PGPASSWORD="$(postgres_password)" \
+    bundle exec ruby -rpg -e "$ruby_script" "$@"
+}
+
+run_pg_admin_ruby() {
+  local ruby_script="$1"
+  shift || true
+
+  PGHOST="$(postgres_host)" \
+  PGPORT="$(postgres_port)" \
+  PGDATABASE=postgres \
+  PGUSER="$(postgres_user)" \
+  PGPASSWORD="$(postgres_password)" \
+    bundle exec ruby -rpg -e "$ruby_script" "$@"
+}
+
+use_existing_infra() {
+  case "$USE_EXISTING_INFRA" in
+    1|true|TRUE|yes|YES)
+      return 0
+      ;;
+    0|false|FALSE|no|NO)
+      return 1
+      ;;
+    auto)
+      if tcp_reachable "$(postgres_host)" "$(postgres_port)" && tcp_reachable "$(redis_host)" "$(redis_port)"; then
+        return 0
+      fi
+      return 1
+      ;;
+    *)
+      log "Unsupported USE_EXISTING_INFRA value: ${USE_EXISTING_INFRA} (expected auto|1|0)"
+      exit 1
+      ;;
+  esac
+}
+
+configure_active_storage_root() {
+  local env_file shared_env_file shared_repo_root shared_storage_root
+
+  if [[ -n "${ACTIVE_STORAGE_ROOT:-}" ]]; then
+    return 0
+  fi
+
+  env_file="${ROOT_DIR}/.env"
+  if [[ ! -L "$env_file" ]]; then
+    return 0
+  fi
+
+  shared_env_file="$(resolve_realpath "$env_file" 2>/dev/null || true)"
+  if [[ -z "$shared_env_file" ]]; then
+    return 0
+  fi
+
+  shared_repo_root="$(dirname "$shared_env_file")"
+  shared_storage_root="${shared_repo_root}/storage"
+  if [[ ! -d "$shared_storage_root" ]]; then
+    return 0
+  fi
+
+  export ACTIVE_STORAGE_ROOT="$shared_storage_root"
+  log "Using shared Active Storage root ${ACTIVE_STORAGE_ROOT}"
 }
 
 ensure_rbenv() {
@@ -106,12 +265,19 @@ start_infra() {
 }
 
 wait_for_postgres() {
-  local db_name db_user attempts
-  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
-  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  local attempts
   attempts=60
 
-  until docker compose exec -T postgres pg_isready -U "$db_user" -d "$db_name" >/dev/null 2>&1; do
+  until run_pg_ruby '
+    conn = PG.connect(
+      host: ENV.fetch("PGHOST"),
+      port: ENV.fetch("PGPORT"),
+      dbname: ENV.fetch("PGDATABASE"),
+      user: ENV.fetch("PGUSER"),
+      password: ENV["PGPASSWORD"]
+    )
+    conn.close
+  ' >/dev/null 2>&1; do
     attempts=$((attempts - 1))
     if (( attempts == 0 )); then
       log "Postgres did not become ready in time"
@@ -122,19 +288,12 @@ wait_for_postgres() {
 }
 
 wait_for_redis() {
-  local redis_password attempts
-  local redis_cmd
-  redis_password="$(env_value REDIS_PASSWORD redis)"
+  local redis_host_value redis_port_value attempts
+  redis_host_value="$(redis_host)"
+  redis_port_value="$(redis_port)"
   attempts=30
-  redis_cmd=(docker compose exec -T redis redis-cli)
 
-  if [[ -n "$redis_password" ]]; then
-    redis_cmd+=(-a "$redis_password")
-  fi
-
-  redis_cmd+=(ping)
-
-  until [[ "$("${redis_cmd[@]}" 2>/dev/null | tail -n 1)" == "PONG" ]]; do
+  until tcp_reachable "$redis_host_value" "$redis_port_value"; do
     attempts=$((attempts - 1))
     if (( attempts == 0 )); then
       log "Redis did not become ready in time"
@@ -144,12 +303,83 @@ wait_for_redis() {
   done
 }
 
+database_needs_prepare() {
+  local table_exists
+  table_exists="$(
+    run_pg_ruby '
+      conn = PG.connect(
+        host: ENV.fetch("PGHOST"),
+        port: ENV.fetch("PGPORT"),
+        dbname: ENV.fetch("PGDATABASE"),
+        user: ENV.fetch("PGUSER"),
+        password: ENV["PGPASSWORD"]
+      )
+      result = conn.exec("SELECT 1 AS present FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_name = '\''ar_internal_metadata'\'' LIMIT 1")
+      puts result[0]["present"] unless result.ntuples.zero?
+      conn.close
+    ' 2>/dev/null | tr -d '[:space:]' || true
+  )"
+
+  [[ "$table_exists" != "1" ]]
+}
+
+database_has_partial_schema_artifacts() {
+  local schema_count
+  schema_count="$(
+    run_pg_ruby '
+      conn = PG.connect(
+        host: ENV.fetch("PGHOST"),
+        port: ENV.fetch("PGPORT"),
+        dbname: ENV.fetch("PGDATABASE"),
+        user: ENV.fetch("PGUSER"),
+        password: ENV["PGPASSWORD"]
+      )
+      result = conn.exec("SELECT COUNT(*) AS count FROM information_schema.schemata WHERE schema_name IN ('\''agent_transport'\'', '\''evolution_api'\'', '\''mastra_agent'\'')")
+      puts result[0]["count"] unless result.ntuples.zero?
+      conn.close
+    ' 2>/dev/null | tr -d '[:space:]' || true
+  )"
+
+  [[ "$schema_count" != "0" && -n "$schema_count" ]]
+}
+
+reset_database() {
+  local db_name
+  db_name="$(postgres_database)"
+
+  log "Resetting partially initialized database ${db_name}"
+  run_pg_admin_ruby '
+    db_name = ARGV.fetch(0)
+    conn = PG.connect(
+      host: ENV.fetch("PGHOST"),
+      port: ENV.fetch("PGPORT"),
+      dbname: ENV.fetch("PGDATABASE"),
+      user: ENV.fetch("PGUSER"),
+      password: ENV["PGPASSWORD"]
+    )
+    quoted_name = conn.quote_ident(db_name)
+    escaped_name = conn.escape_literal(db_name)
+    conn.exec("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{escaped_name} AND pid <> pg_backend_pid()")
+    conn.exec("DROP DATABASE IF EXISTS #{quoted_name}")
+    conn.exec("CREATE DATABASE #{quoted_name}")
+    conn.close
+  ' "$db_name"
+}
+
 prepare_database() {
   if [[ "$PREPARE_DB" == "1" ]]; then
     log "Preparing database"
     bundle exec rake db:chatwoot_prepare
+    DATABASE_PREPARED=1
+  elif database_needs_prepare; then
+    if database_has_partial_schema_artifacts; then
+      reset_database
+    fi
+    log "Database is not initialized yet, running db:chatwoot_prepare"
+    bundle exec rake db:chatwoot_prepare
+    DATABASE_PREPARED=1
   else
-    log "Skipping database prepare (set PREPARE_DB=1 to run it)"
+    log "Skipping database prepare (set PREPARE_DB=1 to force it)"
   fi
 }
 
@@ -159,7 +389,7 @@ bootstrap_enterprise() {
     return 0
   fi
 
-  if [[ "$PREPARE_DB" == "1" ]]; then
+  if [[ "$DATABASE_PREPARED" == "1" ]]; then
     log "Enterprise bootstrap already applied via db:chatwoot_prepare"
     return 0
   fi
@@ -169,6 +399,8 @@ bootstrap_enterprise() {
 }
 
 start_app() {
+  export DISABLE_MINI_PROFILER="${DISABLE_MINI_PROFILER:-1}"
+  export SASS_SILENCE_DEPRECATIONS="${SASS_SILENCE_DEPRECATIONS:-legacy-js-api}"
   log "Starting Rails + Vite (dev lite)"
   exec foreman start -f ./Procfile.dev-lite
 }
@@ -177,9 +409,16 @@ main() {
   cd "$ROOT_DIR"
   ensure_rbenv
   ensure_dependencies
-  ensure_docker
   stop_listeners
-  start_infra
+
+  if use_existing_infra; then
+    log "Using existing postgres and redis from .env"
+    configure_active_storage_root
+  else
+    ensure_docker
+    start_infra
+  fi
+
   wait_for_postgres
   wait_for_redis
   prepare_database

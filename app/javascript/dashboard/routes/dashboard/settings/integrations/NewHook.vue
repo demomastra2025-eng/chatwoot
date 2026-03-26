@@ -65,10 +65,21 @@ export default {
     },
     formItems() {
       return (this.integration.settings_form_schema || []).map(item => {
-        if (this.isEditing && item.store === 'access_token') {
-          return { ...item, validation: '' };
+        const normalizedItem = {
+          ...item,
+          placeholder:
+            typeof item.placeholder === 'string'
+              ? item.placeholder.replace(/\\n/g, '\n')
+              : item.placeholder,
+        };
+
+        if (
+          this.isEditing &&
+          ['access_token', 'secret_settings'].includes(item.store)
+        ) {
+          return { ...normalizedItem, validation: '' };
         }
-        return item;
+        return normalizedItem;
       });
     },
     isIntegrationDialogflow() {
@@ -104,7 +115,7 @@ export default {
           return this.hook.status;
         }
 
-        if (item.store === 'access_token') {
+        if (item.store === 'access_token' || item.store === 'secret_settings') {
           return '';
         }
 
@@ -114,6 +125,10 @@ export default {
             item.name
           )
         ) {
+          if (item.validation?.includes('JSON')) {
+            return JSON.stringify(this.hook.settings[item.name], null, 2);
+          }
+
           return this.hook.settings[item.name];
         }
       }
@@ -160,12 +175,37 @@ export default {
           return acc;
         }
 
+        if (formItem?.store === 'secret_settings') {
+          if (this.values[key]) {
+            hookPayload.secret_settings ||= {};
+            hookPayload.secret_settings[key] = this.values[key];
+          }
+          return acc;
+        }
+
         if (formItem?.store === 'status') {
           hookPayload.status = this.values[key] ? 'enabled' : 'disabled';
           return acc;
         }
 
-        acc[key] = this.values[key];
+        if (formItem?.validation?.includes('JSON') && !this.values[key]) {
+          return acc;
+        }
+
+        let value = this.values[key];
+
+        if (formItem?.value_type === 'integer' && value !== '') {
+          value = Number(value);
+        }
+
+        if (
+          (value === '' || value === null || value === undefined) &&
+          !formItem?.validation?.includes('required')
+        ) {
+          return acc;
+        }
+
+        acc[key] = value;
         return acc;
       }, {});
 
@@ -178,9 +218,10 @@ export default {
           item.validation?.includes('JSON') &&
           hookPayload.settings[item.name]
         ) {
-          hookPayload.settings[item.name] = JSON.parse(
-            hookPayload.settings[item.name]
-          );
+          hookPayload.settings[item.name] =
+            typeof hookPayload.settings[item.name] === 'string'
+              ? JSON.parse(hookPayload.settings[item.name])
+              : hookPayload.settings[item.name];
         }
       });
 
@@ -206,7 +247,11 @@ export default {
         this.alertMessage = this.$t('INTEGRATION_APPS.ADD.API.SUCCESS_MESSAGE');
         this.onClose();
       } catch (error) {
-        const errorMessage = error?.response?.data?.message;
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.response?.data?.errors?.[0] ||
+          error?.message;
         this.alertMessage =
           errorMessage || this.$t('INTEGRATION_APPS.ADD.API.ERROR_MESSAGE');
       } finally {

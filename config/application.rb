@@ -41,9 +41,8 @@ module Chatwoot
     config.eager_load_paths << Rails.root.join('lib')
     config.eager_load_paths << Rails.root.join('enterprise/lib')
     config.eager_load_paths << Rails.root.join('enterprise/listeners')
-    # rubocop:disable Rails/FilePath
-    config.eager_load_paths += Dir["#{Rails.root}/enterprise/app/**"]
-    # rubocop:enable Rails/FilePath
+    # Avoid adding view/template files to the load path; Bootsnap and Zeitwerk expect directories here.
+    config.eager_load_paths += Dir.glob(Rails.root.join('enterprise/app/**').to_s).select { |path| File.directory?(path) }
     # Add enterprise views to the view paths
     config.paths['app/views'].unshift('enterprise/app/views')
 
@@ -61,9 +60,8 @@ module Chatwoot
     # Custom chatwoot configurations
     config.x = config_for(:app).with_indifferent_access
 
-    # https://stackoverflow.com/questions/72970170/upgrading-to-rails-6-1-6-1-causes-psychdisallowedclass-tried-to-load-unspecif
-    # https://discuss.rubyonrails.org/t/cve-2022-32224-possible-rce-escalation-bug-with-serialized-columns-in-active-record/81017
-    # FIX ME : fixes breakage of installation config. we need to migrate.
+    # Legacy installation config rows still contain YAML payloads, so keep the
+    # permitted class list until that data is fully normalized.
     config.active_record.yaml_column_permitted_classes = [ActiveSupport::HashWithIndifferentAccess]
 
     # Disable PDF/video preview generation as we don't use them

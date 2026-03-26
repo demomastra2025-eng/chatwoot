@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Ativado",
-        "DISABLED": "Desativado"
+        "DISABLED": "Desativado",
+        "ENABLED_DESCRIPTION": "Quando um contado enviar mensagem novamente, a conversa anterior será reaberta.",
+        "DISABLED_DESCRIPTION": "Uma nova conversa será criada toda vez que a anterior estiver resolvida."
       },
       "ENABLE_HMAC": {
         "LABEL": "Ativar"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Em tempo real"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Configuração do Webhook",
+        "DESCRIPTION": "A URL do webhook é obrigatória para que sua conta do WhatsApp Business receba mensagens dos clientes",
+        "ACTION_REQUIRED": "Webhook não configurado",
+        "REGISTER_BUTTON": "Cadastrar Webhook",
+        "REGISTER_SUCCESS": "Webhook cadastrado com sucesso",
+        "REGISTER_ERROR": "Falha ao cadastrar webhook. Por favor, tente novamente.",
+        "CONFIGURED_SUCCESS": "Webhook configurado com sucesso",
+        "URL_MISMATCH": "Incompatibilidade na URL do webhook"
       }
     },
     "SETTINGS": "Configurações",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Domínios permitidos",
         "SUBTITLE": "Adicione coringa ou domínios separados por vírgula (deixe em branco para permitir todos), ex: *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Insira domínios separados por vírgula (ex: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Insira domínios separados por vírgula (ex: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Restrinja quais sites podem incorporar seu widget de chat. Por segurança, adicione apenas domínios que você possui e confia. Adicione um ou mais domínios separados por vírgulas. Deixe em branco para permitir todos os domínios (não recomendado para produção)."
       },
       "INBOX_AGENTS": "Agentes",
       "INBOX_AGENTS_SUB_TEXT": "Adicionar ou remover agentes dessa caixa de entrada",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Sincronize manualmente os modelos de mensagens do WhatsApp para atualizar seus modelos disponíveis.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sincronizar Modelos",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Sincronização de modelos iniciada com sucesso. Pode demorar alguns minutos para atualizar.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Atualizar configurações do Formulário Pre Chat"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Atualizar configurações do Formulário Pre Chat",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Ativar widget em aplicativos móveis",
+        "SUBTITLE": "Marque esta opção se você incorporar o widget em aplicativos iOS ou Android. Aplicativos móveis não enviam informações de domínio, então serão bloqueados pelas restrições de domínio, a menos que isso esteja ativado."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Validação de identidade",
+        "DESCRIPTION": "Verifique a autenticidade do usuário gerando tokens seguros. Isso evita que usuários não autorizados se passem por outras pessoas no seu chat.",
+        "SECRET_KEY": "Chave secreta",
+        "VIEW_DOCS": "Ver documentação",
+        "REQUIRE_LABEL": "Exigir validação de identidade para todas as conversas",
+        "REQUIRE_DESCRIPTION": "Quando ativado, os usuários devem fornecer um token de identidade válido para iniciar conversas. Solicitações sem tokens válidos serão rejeitadas."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Centro de Ajuda",
       "PLACEHOLDER": "Selecionar Centro de Ajuda",
       "SELECT_PLACEHOLDER": "Selecionar Centro de Ajuda",
       "REMOVE": "Remover Centro de Ajuda",
-      "SUB_TEXT": "Anexe um Centro de Ajuda com a caixa de entrada"
+      "SUB_TEXT": "Anexe um Centro de Ajuda com a caixa de entrada",
+      "NONE": "Nenhuma"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Limite de atribuição automática",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "Configurações de CSAT atualizadas com sucesso",
         "ERROR_MESSAGE": "Não foi possível atualizar as configurações do CSAT. Por favor, tente novamente mais tarde."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "Verificar adequação em utilidade",
+        "HELPER_NOTE": "Verifique esta mensagem antes do envio para melhorar a adequação à categoria Utilidade. O sistema cria um modelo CSAT dedicado com botões para coleta de avaliação e o envia como Utilidade; a Meta ainda pode reclassificá-lo como Marketing com base no conteúdo.",
+        "RESULT_LABEL": "Previsão de categoria da Meta",
+        "GUIDANCE_NOTE": "Esta é uma verificação orientativa, não uma garantia de aprovação pela Meta.",
+        "SUGGESTION_LABEL": "Reescrita sugerida adequada para Utilidade",
+        "APPLY": "Usar esta sugestão",
+        "ERROR_MESSAGE": "Não foi possível analisar a mensagem. Por favor, tente novamente.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "Provável Utilidade",
+          "LIKELY_MARKETING": "Provável Marketing",
+          "UNCLEAR": "Precisa de esclarecimento"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Indisponível",
         "HOURS": "horas",
         "VALIDATION_ERROR": "Hora inicial deve ser antes de hora de fechamento.",
-        "CHOOSE": "Selecione"
+        "CHOOSE": "Selecione",
+        "DAY": "Dia",
+        "AVAILABILITY": "Disponibilidade"
       },
       "ALL_DAY": "O dia todo"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Padrão",
           "EXPANDED_BUBBLE": "Balão Expandido"
-        }
+        },
+        "WIDGET_BUBBLE": "Bolha"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Padrão",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voz"
+    },
+    "COUNT": "{n} caixa de entrada | {n} caixas de entrada",
+    "SEARCH_PLACEHOLDER": "Pesquisar caixas de entrada...",
+    "NO_RESULTS": "Nenhuma caixa de entrada encontrada correspondente à sua busca",
+    "CHANNEL_PREFERENCES": "Preferências do Canal",
+    "WIDGET_FEATURES": "Recursos do widget",
+    "ASSIGNMENT": {
+      "TITLE": "Atribuição de conversa",
+      "DESCRIPTION": "Atribua automaticamente as conversas recebidas aos agentes disponíveis com base nas políticas de atribuição",
+      "ENABLE_AUTO_ASSIGNMENT": "Ativar atribuição automática de conversas",
+      "DEFAULT_RULES_TITLE": "Regras de atribuição padrão",
+      "DEFAULT_RULES_DESCRIPTION": "Utilizando o comportamento de atribuição padrão para todas as conversas",
+      "DEFAULT_RULE_1": "Conversas criadas mais antigas primeiro",
+      "DEFAULT_RULE_2": "Distribuição em rodízio",
+      "CUSTOMIZE_WITH_POLICY": "Personalizar com política de atribuição",
+      "USING_POLICY": "Utilizando política de atribuição personalizada para esta caixa de entrada",
+      "CUSTOMIZE_POLICY": "Personalizar com política de atribuição",
+      "DELETE_POLICY": "Excluir política",
+      "POLICY_LABEL": "Política de atribuição",
+      "ASSIGNMENT_ORDER_LABEL": "Ordem de Atribuição",
+      "ASSIGNMENT_METHOD_LABEL": "Método de Atribuição",
+      "POLICY_STATUS": {
+        "ACTIVE": "Ativo",
+        "INACTIVE": "Inativa"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "Criado recentemente",
+        "LONGEST_WAITING": "Maior tempo de espera"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "Rodízio",
+        "BALANCED": "Atribuição equilibrada"
+      },
+      "UPGRADE_PROMPT": "Políticas de atribuição personalizadas estão disponíveis no plano Business",
+      "UPGRADE_TO_BUSINESS": "Atualizar para o Business",
+      "DEFAULT_POLICY_LINKED": "Política padrão vinculada",
+      "DEFAULT_POLICY_DESCRIPTION": "Vincule uma política de atribuição personalizada para definir como as conversas serão atribuídas aos agentes nesta caixa de entrada.",
+      "LINK_EXISTING_POLICY": "Vincular política existente",
+      "CREATE_NEW_POLICY": "Criar nova política",
+      "NO_POLICIES": "Nenhuma política de atribuição encontrada",
+      "VIEW_ALL_POLICIES": "Ver todas as políticas",
+      "CURRENT_BEHAVIOR": "Atualmente utilizando o comportamento de atribuição padrão:",
+      "LINK_SUCCESS": "Política de atribuição vinculada com sucesso",
+      "LINK_ERROR": "Falha ao vincular a política de atribuição"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "Excluir política de atribuição?",
+      "DELETE_CONFIRM_MESSAGE": "Tem certeza de que deseja remover esta política de atribuição desta caixa de entrada? A caixa de entrada voltará às regras de atribuição padrão.",
+      "CANCEL": "Cancelar",
+      "CONFIRM_DELETE": "Excluir",
+      "DELETE_SUCCESS": "Política de atribuição removida com sucesso",
+      "DELETE_ERROR": "Falha ao remover a política de atribuição"
     }
   }
 }

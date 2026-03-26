@@ -3,10 +3,12 @@ import { useVuelidate } from '@vuelidate/core';
 import { required, minLength, email } from '@vuelidate/validators';
 import { useAlert } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Radio from 'dashboard/components-next/radio/Radio.vue';
 
 export default {
   components: {
     NextButton,
+    Radio,
   },
   props: {
     show: {
@@ -85,7 +87,12 @@ export default {
         useAlert(this.$t('EMAIL_TRANSCRIPT.SEND_EMAIL_SUCCESS'));
         this.onCancel();
       } catch (error) {
-        useAlert(this.$t('EMAIL_TRANSCRIPT.SEND_EMAIL_ERROR'));
+        const status = error?.response?.status;
+        if (status === 402) {
+          useAlert(this.$t('EMAIL_TRANSCRIPT.SEND_EMAIL_PAYMENT_REQUIRED'));
+        } else {
+          useAlert(this.$t('EMAIL_TRANSCRIPT.SEND_EMAIL_ERROR'));
+        }
       } finally {
         this.isSubmitting = false;
       }
@@ -95,7 +102,7 @@ export default {
 </script>
 
 <template>
-  <woot-modal v-model:show="localShow" :on-close="onCancel">
+  <woot-modal v-model:show="localShow" @close="onCancel">
     <div class="flex flex-col h-auto overflow-auto">
       <woot-modal-header
         :header-title="$t('EMAIL_TRANSCRIPT.TITLE')"
@@ -107,10 +114,9 @@ export default {
             v-if="currentChat.meta.sender && currentChat.meta.sender.email"
             class="flex items-center gap-2"
           >
-            <input
+            <Radio
               id="contact"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="contact"
             />
@@ -119,10 +125,9 @@ export default {
             }}</label>
           </div>
           <div v-if="currentChat.meta.assignee" class="flex items-center gap-2">
-            <input
+            <Radio
               id="assignee"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="assignee"
             />
@@ -131,10 +136,9 @@ export default {
             }}</label>
           </div>
           <div class="flex items-center gap-2">
-            <input
+            <Radio
               id="other_email_address"
               v-model="selectedType"
-              type="radio"
               name="selectedType"
               value="other_email_address"
             />

@@ -1,6 +1,7 @@
 class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseController
   before_action :fetch_inbox
   before_action :validate_whatsapp_channel
+  before_action :validate_captain_enabled, only: [:analyze]
 
   def show
     service = CsatTemplateManagementService.new(@inbox)
@@ -24,6 +25,23 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
     render json: { error: 'Template parameters are required' }, status: :unprocessable_content
   end
 
+  def analyze
+    template_params = extract_template_params
+    return render_missing_message_error if template_params[:message].blank?
+
+    result = CsatTemplateUtilityAnalysisService.new(
+      account: Current.account,
+      inbox: @inbox,
+      message: template_params[:message],
+      button_text: template_params[:button_text],
+      language: template_params[:language]
+    ).perform
+
+    render json: result
+  rescue ActionController::ParameterMissing
+    render json: { error: 'Template parameters are required' }, status: :unprocessable_entity
+  end
+
   private
 
   def fetch_inbox
@@ -44,6 +62,12 @@ class Api::V1::Accounts::InboxCsatTemplatesController < Api::V1::Accounts::BaseC
 
   def render_missing_message_error
     render json: { error: 'Message is required' }, status: :unprocessable_content
+  end
+
+  def validate_captain_enabled
+    return if Current.account.feature_enabled?('captain_integration')
+
+    render json: { error: 'Captain is required for template analysis' }, status: :forbidden
   end
 
   def render_template_creation_result(result)

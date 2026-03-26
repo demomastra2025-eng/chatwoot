@@ -310,6 +310,9 @@
     "ACTIVE": "Active",
     "COMPANIES": "Companies",
     "ALL_COMPANIES": "All Companies",
+    "CRM": "CRM",
+    "CRM_DEALS": "Мәмілелер",
+    "CRM_TASKS": "Міндеттер",
     "SCHEDULING": "Жазбалар",
     "SCHEDULING_CALENDAR": "Күнтізбе",
     "SCHEDULING_RESOURCES": "Ресурстар",
@@ -372,11 +375,11 @@
     "REPORTS_OVERVIEW": "Overview",
     "REAUTHORIZE": "Your inbox connection has expired, please reconnect\n to continue receiving and sending messages",
     "HELP_CENTER": {
-      "TITLE": "Your Page",
-      "ARTICLES": "Articles",
-      "CATEGORIES": "Categories",
-      "LOCALES": "Locales",
-      "SETTINGS": "Settings"
+      "TITLE": "Ваша страница",
+      "ARTICLES": "Статьи",
+      "CATEGORIES": "Категории",
+      "LOCALES": "Языки",
+      "SETTINGS": "Настройки"
     },
     "CHANNELS": "Channels",
     "SET_AUTO_OFFLINE": {

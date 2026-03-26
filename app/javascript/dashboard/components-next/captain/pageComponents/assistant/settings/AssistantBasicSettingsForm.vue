@@ -7,6 +7,7 @@ import { required, minLength } from '@vuelidate/validators';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
   assistant: {
@@ -27,6 +28,7 @@ const initialState = {
     conversationFaqs: false,
     memories: false,
     citations: false,
+    contactAttributes: false,
   },
 };
 
@@ -59,6 +61,7 @@ const updateStateFromAssistant = assistant => {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
+    contactAttributes: config.feature_contact_attributes || false,
   };
 };
 
@@ -79,6 +82,7 @@ const handleBasicInfoUpdate = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
+      feature_contact_attributes: state.features.contactAttributes,
     },
   };
 
@@ -127,16 +131,20 @@ watch(
       </label>
       <div class="flex flex-col gap-2">
         <label class="flex items-center gap-2">
-          <input v-model="state.features.conversationFaqs" type="checkbox" />
+          <Checkbox v-model="state.features.conversationFaqs" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
         </label>
         <label class="flex items-center gap-2">
-          <input v-model="state.features.memories" type="checkbox" />
+          <Checkbox v-model="state.features.memories" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
         </label>
         <label class="flex items-center gap-2">
-          <input v-model="state.features.citations" type="checkbox" />
+          <Checkbox v-model="state.features.citations" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+        </label>
+        <label class="flex items-center gap-2">
+          <input v-model="state.features.contactAttributes" type="checkbox" />
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONTACT_ATTRIBUTES') }}
         </label>
       </div>
     </div>

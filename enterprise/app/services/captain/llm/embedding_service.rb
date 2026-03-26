@@ -2,6 +2,7 @@ class Captain::Llm::EmbeddingService
   include Integrations::LlmInstrumentation
 
   class EmbeddingsError < StandardError; end
+  VECTOR_DIMENSIONS = 1536
 
   def initialize(account_id: nil)
     Llm::Config.initialize!
@@ -17,7 +18,7 @@ class Captain::Llm::EmbeddingService
     return [] if content.blank?
 
     instrument_embedding_call(instrumentation_params(content, model)) do
-      RubyLLM.embed(content, model: model).vectors
+      RubyLLM.embed(content, model: model, dimensions: embedding_dimensions_for(model)).vectors
     end
   rescue RubyLLM::Error => e
     Rails.logger.error "Embedding API Error: #{e.message}"
@@ -34,5 +35,11 @@ class Captain::Llm::EmbeddingService
       feature_name: 'embedding',
       account_id: @account_id
     }
+  end
+
+  def embedding_dimensions_for(model)
+    return unless model.to_s.start_with?('text-embedding-3-')
+
+    VECTOR_DIMENSIONS
   end
 end

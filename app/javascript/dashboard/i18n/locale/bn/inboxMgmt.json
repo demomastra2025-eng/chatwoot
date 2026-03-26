@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Enabled",
-        "DISABLED": "Disabled"
+        "DISABLED": "Disabled",
+        "ENABLED_DESCRIPTION": "কোনো কন্টাক্ট আবার বার্তা পাঠালে, পূর্বের কথোপকথনটি পুনরায় খোলা হবে।.",
+        "DISABLED_DESCRIPTION": "প্রতিবার পূর্বের কথোপকথন সমাধান হলে একটি নতুন কথোপকথন তৈরি হবে।."
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook কনফিগারেশন",
+        "DESCRIPTION": "আপনার WhatsApp Business Account-এ গ্রাহকদের কাছ থেকে বার্তা পেতে Webhook URL প্রয়োজন।",
+        "ACTION_REQUIRED": "Webhook কনফিগার করা হয়নি",
+        "REGISTER_BUTTON": "Webhook নিবন্ধন করুন",
+        "REGISTER_SUCCESS": "Webhook সফলভাবে নিবন্ধিত হয়েছে",
+        "REGISTER_ERROR": "Webhook নিবন্ধন করতে ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।.",
+        "CONFIGURED_SUCCESS": "ওয়েবহুক সফলভাবে কনফিগার করা হয়েছে",
+        "URL_MISMATCH": "ওয়েবহুক URL মেলেনি"
       }
     },
     "SETTINGS": "Settings",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "কোন ওয়েবসাইট আপনার চ্যাট উইজেট এম্বেড করতে পারবে তা সীমাবদ্ধ করুন। নিরাপত্তার জন্য, শুধুমাত্র আপনি মালিক এবং বিশ্বাস করেন এমন ডোমেইন যোগ করুন। কমা দিয়ে আলাদা করে এক বা একাধিক ডোমেইন যোগ করুন। সব ডোমেইন অনুমোদন করতে ফাঁকা রাখুন (প্রোডাকশনের জন্য এটি সুপারিশ করা হয় না)।."
       },
       "INBOX_AGENTS": "Agents",
       "INBOX_AGENTS_SUB_TEXT": "Add or remove agents from this inbox",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "মোবাইল অ্যাপে উইজেট সক্রিয় করুন",
+        "SUBTITLE": "আপনি যদি উইজেটটি iOS বা Android অ্যাপে এম্বেড করেন, তাহলে এটি চেক করুন। মোবাইল অ্যাপ ডোমেইন তথ্য পাঠায় না, তাই এটি সক্রিয় না থাকলে ডোমেইন সীমাবদ্ধতার কারণে ব্লক হয়ে যাবে।."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "পরিচয় যাচাইকরণ",
+        "DESCRIPTION": "নিরাপদ টোকেন তৈরি করে ব্যবহারকারীর সত্যতা যাচাই করুন। এটি অনুমোদনহীন ব্যবহারকারীদের আপনার চ্যাটে অন্যদের ছদ্মবেশ ধারণ করা থেকে রক্ষা করে।.",
+        "SECRET_KEY": "সিক্রেট কী",
+        "VIEW_DOCS": "ডকুমেন্টেশন দেখুন",
+        "REQUIRE_LABEL": "সব কথোপকথনের জন্য পরিচয় যাচাই বাধ্যতামূলক করুন",
+        "REQUIRE_DESCRIPTION": "এটি সক্রিয় করলে, ব্যবহারকারীদের কথোপকথন শুরু করতে একটি বৈধ পরিচয় টোকেন প্রদান করতে হবে। বৈধ টোকেন ছাড়া অনুরোধগুলি প্রত্যাখ্যান করা হবে।."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Help Center",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "কিছুই না"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "ইউটিলিটি ফিট যাচাই করুন",
+        "HELPER_NOTE": "ইউটিলিটি ফিট উন্নত করতে জমা দেওয়ার আগে এই বার্তাটি যাচাই করুন। সিস্টেমটি রিপোর্টিংয়ের জন্য বোতামসহ একটি নির্দিষ্ট CSAT টেমপ্লেট তৈরি করে এবং এটিকে ইউটিলিটি হিসেবে জমা দেয়; তবে বিষয়বস্তুর উপর ভিত্তি করে Meta এটিকে মার্কেটিং হিসেবেও পুনঃশ্রেণিবদ্ধ করতে পারে।.",
+        "RESULT_LABEL": "Meta ক্যাটাগরি পূর্বাভাস",
+        "GUIDANCE_NOTE": "এটি একটি দিকনির্দেশনা যাচাই, Meta অনুমোদনের নিশ্চয়তা নয়।.",
+        "SUGGESTION_LABEL": "প্রস্তাবিত নিরাপদ পুনর্লিখন",
+        "APPLY": "এই পুনর্লিখন ব্যবহার করুন",
+        "ERROR_MESSAGE": "বার্তাটি বিশ্লেষণ করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "সম্ভবত ইউটিলিটি",
+          "LIKELY_MARKETING": "সম্ভবত মার্কেটিং",
+          "UNCLEAR": "স্পষ্টতা প্রয়োজন"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Unavailable",
         "HOURS": "hours",
         "VALIDATION_ERROR": "Starting time should be before closing time.",
-        "CHOOSE": "Choose"
+        "CHOOSE": "Choose",
+        "DAY": "দিন",
+        "AVAILABILITY": "উপস্থিতি"
       },
       "ALL_DAY": "All-Day"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Standard",
           "EXPANDED_BUBBLE": "Expanded Bubble"
-        }
+        },
+        "WIDGET_BUBBLE": "বাবল"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Default",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} ইনবক্স | {n} ইনবক্সসমূহ",
+    "SEARCH_PLACEHOLDER": "ইনবক্স অনুসন্ধান করুন...",
+    "NO_RESULTS": "আপনার অনুসন্ধানের সাথে মিলে যাওয়া কোনো ইনবক্স পাওয়া যায়নি",
+    "CHANNEL_PREFERENCES": "চ্যানেল পছন্দসমূহ",
+    "WIDGET_FEATURES": "উইজেট ফিচারসমূহ",
+    "ASSIGNMENT": {
+      "TITLE": "কথোপকথন বরাদ্দ",
+      "DESCRIPTION": "বরাদ্দ নীতিমালা অনুযায়ী আগত কথোপকথন স্বয়ংক্রিয়ভাবে উপলব্ধ এজেন্টদের মধ্যে ভাগ করে দিন",
+      "ENABLE_AUTO_ASSIGNMENT": "স্বয়ংক্রিয় কথোপকথন বরাদ্দ সক্রিয় করুন",
+      "DEFAULT_RULES_TITLE": "ডিফল্ট বরাদ্দ নিয়মাবলী",
+      "DEFAULT_RULES_DESCRIPTION": "সব কথোপকথনের জন্য ডিফল্ট বরাদ্দ আচরণ ব্যবহার করা হচ্ছে",
+      "DEFAULT_RULE_1": "সবচেয়ে আগে তৈরি হওয়া কথোপকথন আগে",
+      "DEFAULT_RULE_2": "রাউন্ড রবিন বিতরণ",
+      "CUSTOMIZE_WITH_POLICY": "অ্যাসাইনমেন্ট নীতিমালা দিয়ে কাস্টমাইজ করুন",
+      "USING_POLICY": "এই ইনবক্সের জন্য কাস্টম অ্যাসাইনমেন্ট নীতিমালা ব্যবহার করা হচ্ছে",
+      "CUSTOMIZE_POLICY": "অ্যাসাইনমেন্ট নীতিমালা দিয়ে কাস্টমাইজ করুন",
+      "DELETE_POLICY": "নীতি মুছুন",
+      "POLICY_LABEL": "অ্যাসাইনমেন্ট নীতি",
+      "ASSIGNMENT_ORDER_LABEL": "অ্যাসাইনমেন্টের ক্রম",
+      "ASSIGNMENT_METHOD_LABEL": "অ্যাসাইনমেন্ট পদ্ধতি",
+      "POLICY_STATUS": {
+        "ACTIVE": "সক্রিয়",
+        "INACTIVE": "নিষ্ক্রিয়"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "সর্বপ্রথম তৈরি",
+        "LONGEST_WAITING": "সর্বাধিক অপেক্ষমাণ"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "রাউন্ড রবিন",
+        "BALANCED": "সুষম অ্যাসাইনমেন্ট"
+      },
+      "UPGRADE_PROMPT": "কাস্টম অ্যাসাইনমেন্ট নীতিমালা শুধুমাত্র বিজনেস প্ল্যানে উপলব্ধ",
+      "UPGRADE_TO_BUSINESS": "বিজনেস প্ল্যানে আপগ্রেড করুন",
+      "DEFAULT_POLICY_LINKED": "ডিফল্ট নীতিমালা সংযুক্ত হয়েছে",
+      "DEFAULT_POLICY_DESCRIPTION": "এই ইনবক্সে এজেন্টদের কাছে কথোপকথন কীভাবে অ্যাসাইন হবে তা কাস্টমাইজ করতে একটি কাস্টম অ্যাসাইনমেন্ট নীতিমালা সংযুক্ত করুন।.",
+      "LINK_EXISTING_POLICY": "বিদ্যমান নীতিমালা সংযুক্ত করুন",
+      "CREATE_NEW_POLICY": "নতুন নীতি তৈরি করুন",
+      "NO_POLICIES": "কোনো অ্যাসাইনমেন্ট নীতি পাওয়া যায়নি",
+      "VIEW_ALL_POLICIES": "সব নীতি দেখুন",
+      "CURRENT_BEHAVIOR": "বর্তমানে ডিফল্ট অ্যাসাইনমেন্ট আচরণ ব্যবহার করা হচ্ছে:",
+      "LINK_SUCCESS": "অ্যাসাইনমেন্ট নীতি সফলভাবে সংযুক্ত হয়েছে",
+      "LINK_ERROR": "অ্যাসাইনমেন্ট নীতি সংযুক্ত করতে ব্যর্থ হয়েছে"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "অ্যাসাইনমেন্ট নীতি মুছে ফেলবেন?",
+      "DELETE_CONFIRM_MESSAGE": "আপনি কি নিশ্চিত যে আপনি এই ইনবক্স থেকে অ্যাসাইনমেন্ট নীতি সরাতে চান? ইনবক্সটি ডিফল্ট অ্যাসাইনমেন্ট নিয়মে ফিরে যাবে।.",
+      "CANCEL": "বাতিল করুন",
+      "CONFIRM_DELETE": "মুছে ফেলুন",
+      "DELETE_SUCCESS": "অ্যাসাইনমেন্ট নীতি সফলভাবে অপসারণ করা হয়েছে",
+      "DELETE_ERROR": "অ্যাসাইনমেন্ট নীতি অপসারণে ব্যর্থ হয়েছে"
     }
   }
 }

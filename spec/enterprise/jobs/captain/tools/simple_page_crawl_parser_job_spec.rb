@@ -30,6 +30,33 @@ RSpec.describe Captain::Tools::SimplePageCrawlParserJob, type: :job do
         expect(document.status).to eq('available')
       end
 
+      it 'creates a derived hidden document when a source document is provided' do
+        source_document = create(
+          :captain_document,
+          assistant: assistant,
+          external_link: 'https://example.com',
+          metadata: {
+            'firecrawl' => {
+              'mode' => 'site_import',
+              'source_document' => true,
+              'sync' => { 'status' => 'processing', 'pages_total' => 2 }
+            }
+          }
+        )
+
+        expect do
+          described_class.perform_now(
+            assistant_id: assistant.id,
+            page_link: page_link,
+            source_document_id: source_document.id
+          )
+        end.to change(assistant.documents, :count).by(1)
+
+        derived_document = assistant.documents.order(:created_at).last
+        expect(derived_document.metadata.dig('firecrawl', 'root_document_id')).to eq(source_document.id)
+        expect(source_document.reload.pages_processed).to eq(1)
+      end
+
       it 'updates existing document if one exists' do
         existing_document = create(:captain_document,
                                    assistant: assistant,
@@ -75,6 +102,32 @@ RSpec.describe Captain::Tools::SimplePageCrawlParserJob, type: :job do
         expect do
           described_class.perform_now(assistant_id: assistant.id, page_link: page_link)
         end.to raise_error("Failed to parse data: #{page_link} Failed to fetch")
+      end
+
+      it 'stores the failed page on the source document' do
+        source_document = create(
+          :captain_document,
+          assistant: assistant,
+          external_link: 'https://example.com',
+          metadata: {
+            'firecrawl' => {
+              'mode' => 'site_import',
+              'sync' => {}
+            }
+          }
+        )
+
+        begin
+          described_class.perform_now(
+            assistant_id: assistant.id,
+            page_link: page_link,
+            source_document_id: source_document.id
+          )
+        rescue StandardError
+          nil
+        end
+
+        expect(source_document.reload.failed_urls).to include('https://example.com/page')
       end
     end
 

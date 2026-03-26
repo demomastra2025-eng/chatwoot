@@ -860,6 +860,16 @@
       "FROM_DOCUMENT": "From document",
       "NO_CONTENT": "No generated content available. Upload a PDF document to get started.",
       "LOADING": "Loading generated content..."
+    },
+    "REORDER_ARTICLE": {
+      "API": {
+        "ERROR_MESSAGE": "مضامین کو دوبارہ ترتیب دینے میں ناکامی۔ دوبارہ کوشش کریں۔."
+      }
+    },
+    "REORDER_CATEGORY": {
+      "API": {
+        "ERROR_MESSAGE": "زمرے کو دوبارہ ترتیب دینے میں ناکامی۔ دوبارہ کوشش کریں۔."
+      }
     }
   }
 }

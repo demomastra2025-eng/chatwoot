@@ -1,4 +1,6 @@
 <script setup>
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+
 defineProps({
   active: {
     type: Boolean,
@@ -32,21 +34,19 @@ defineProps({
   >
     <div class="flex flex-col gap-2 items-center w-full rounded-t-[5px]">
       <div class="grid grid-cols-[1fr_auto] items-center w-full gap-1">
-        <div
-          class="overflow-hidden text-base font-medium text-n-slate-12 text-left"
-        >
+        <div class="overflow-hidden text-heading-2 text-n-slate-12 text-start">
           <span class="block truncate">{{ title }}</span>
         </div>
-        <input
-          :checked="active"
-          type="radio"
+        <Radio
+          :model-value="active ? title : null"
           :name="`hotkey-${title}`"
-          class="shadow cursor-pointer grid place-items-center border-2 border-n-strong appearance-none rounded-full w-5 h-5 checked:bg-n-brand-solid before:content-[''] before:bg-n-brand-solid before:border-4 before:rounded-full before:border-n-strong checked:before:w-[18px] checked:before:h-[18px] checked:border checked:border-n-brand-solid"
+          :value="title"
+          aria-hidden="true"
+          class="pointer-events-none"
+          tabindex="-1"
         />
       </div>
-      <span
-        class="text-n-slate-12 text-sm line-clamp-2 leading-[1.4] text-start"
-      >
+      <span class="text-n-slate-11 line-clamp-2 text-body-para text-start">
         {{ description }}
       </span>
     </div>

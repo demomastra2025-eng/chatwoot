@@ -79,7 +79,7 @@ const handleSendMessage = template => {
       <div class="relative w-full">
         <Icon
           icon="i-lucide-search"
-          class="absolute size-3.5 top-2 ltr:left-3 rtl:right-3"
+          class="absolute size-3.5 top-2 ltr:right-3 rtl:left-3"
         />
         <input
           v-model="searchQuery"
@@ -89,7 +89,7 @@ const handleSendMessage = template => {
               'COMPOSE_NEW_CONVERSATION.FORM.WHATSAPP_OPTIONS.SEARCH_PLACEHOLDER'
             )
           "
-          class="w-full h-8 py-2 ltr:pl-10 rtl:pr-10 ltr:pr-2 rtl:pl-2 text-sm reset-base outline-none border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12"
+          class="w-full h-8 py-2 ltr:pl-2 rtl:pr-2 ltr:pr-10 rtl:pl-10 text-sm reset-base outline-none border-none rounded-lg bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12"
         />
       </div>
       <div

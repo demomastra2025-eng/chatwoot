@@ -4,6 +4,9 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables';
+import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import DocumentCard from 'dashboard/components-next/captain/assistant/DocumentCard.vue';
@@ -17,6 +20,7 @@ import LimitBanner from 'dashboard/components-next/captain/pageComponents/docume
 
 const route = useRoute();
 const store = useStore();
+const { t } = useI18n();
 
 const { isOnChatwootCloud } = useAccount();
 const uiFlags = useMapGetter('captainDocuments/getUIFlags');
@@ -65,8 +69,50 @@ const handleAction = ({ action, id }) => {
       handleDelete();
     } else if (action === 'viewRelatedQuestions') {
       handleShowRelatedDocument();
+    } else if (action === 'resync') {
+      handleResync(id);
+    } else if (action === 'refreshChangedOnly') {
+      handleRefreshChangedOnly(id);
+    } else if (action === 'retryFailed') {
+      handleRetryFailed(id);
     }
   });
+};
+
+const handleResync = async id => {
+  try {
+    await store.dispatch('captainDocuments/resync', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.RESYNC.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.RESYNC.ERROR_MESSAGE')
+    );
+  }
+};
+
+const handleRefreshChangedOnly = async id => {
+  try {
+    await store.dispatch('captainDocuments/refreshChangedOnly', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.DELTA_SYNC.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.DELTA_SYNC.ERROR_MESSAGE')
+    );
+  }
+};
+
+const handleRetryFailed = async id => {
+  try {
+    await store.dispatch('captainDocuments/retryFailed', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.RETRY_FAILED.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.RETRY_FAILED.ERROR_MESSAGE')
+    );
+  }
 };
 
 const fetchDocuments = (page = 1) => {
@@ -136,7 +182,16 @@ onMounted(() => {
           :key="doc.id"
           :name="doc.name || doc.external_link"
           :external-link="doc.external_link"
+          :display-url="doc.display_url"
           :assistant="doc.assistant"
+          :source-mode="doc.source_mode"
+          :sync-status="doc.sync_status"
+          :refresh-mode="doc.refresh_mode"
+          :pages-processed="doc.pages_processed"
+          :pages-total="doc.pages_total"
+          :failed-urls-count="doc.failed_urls_count"
+          :last-error="doc.last_error"
+          :last-synced-at="doc.last_synced_at"
           :created-at="doc.created_at"
           @action="handleAction"
         />

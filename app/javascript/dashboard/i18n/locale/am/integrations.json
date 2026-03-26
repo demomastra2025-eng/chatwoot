@@ -13,7 +13,8 @@
         "CANCEL": "Cancel",
         "SUBMIT": "Connect Store"
       },
-      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
+      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Integrations",
     "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
@@ -101,7 +102,18 @@
           "YES": "Yes, Delete ",
           "NO": "No, Keep it"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "ምስጢር",
+        "COPY": "ምስጢሩን ወደ ክሊፕቦርድ ቅዳ",
+        "COPY_SUCCESS": "ምስጢሩ ወደ ክሊፕቦርድ ተቀድሷል",
+        "TOGGLE": "የምስጢሩን ማየት አሳይ/ደብቅ",
+        "CREATED_DESC": "የድር ማስተካከያዎ ተፈጥሯል። የድር ማስተካከያ ፊርማዎችን ለማረጋገጥ በታች ያለውን ምስጢር ይጠቀሙ። እባክዎን አሁን ይቅዱት — በኋላም በድር ማስተካከያ አርትዕ ቅጽ ውስጥ ማግኘት ይችላሉ።",
+        "DONE": "ተጠናቀቀ"
+      },
+      "COUNT": "{n} የድር ማስተካከያ | {n} የድር ማስተካከያዎች",
+      "SEARCH_PLACEHOLDER": "የድር ማስተካከያዎችን ፈልጉ...",
+      "NO_RESULTS": "የፈለጉትን የድር ማስተካከያዎች አልተገኙም"
     },
     "SLACK": {
       "DELETE": "Delete",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "There was an error updating the integration, please try again",
       "UPDATE_SUCCESS": "The channel is connected successfully",
-      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again"
+      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Click here to join",
@@ -145,7 +158,11 @@
         "EXPAND": "Expand",
         "MAKE_FRIENDLY": "Change message tone to friendly",
         "MAKE_FORMAL": "Use formal tone",
-        "SIMPLIFY": "Simplify"
+        "SIMPLIFY": "Simplify",
+        "CONFIDENT": "እምነታማ ቃላት ይጠቀሙ",
+        "PROFESSIONAL": "ሙያዊ ቃላት ይጠቀሙ",
+        "CASUAL": "ቀላል ቃላት ይጠቀሙ",
+        "STRAIGHTFORWARD": "ቀላል ድምፅ ተጠቀም"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -184,7 +201,25 @@
         "GENERATING": "Generating...",
         "CANCEL": "Cancel"
       },
-      "GENERATE_ERROR": "There was an error processing the content, please verify your OpenAI API key and try again"
+      "GENERATE_ERROR": "There was an error processing the content, please verify your OpenAI API key and try again",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "መልስ አሻሽል",
+        "IMPROVE_REPLY_SELECTION": "ምርጫውን አሻሽል",
+        "CHANGE_TONE": {
+          "TITLE": "ድምፅ ቀይር",
+          "OPTIONS": {
+            "PROFESSIONAL": "ሙያዊ",
+            "CASUAL": "ቀላል ቋንቋ",
+            "STRAIGHTFORWARD": "ቀጥታ ቃል",
+            "CONFIDENT": "እምነታማ",
+            "FRIENDLY": "ደስታ ያለው"
+          }
+        },
+        "GRAMMAR": "አንተኛነትን እና ስህተትን አስተካክል",
+        "SUGGESTION": "መልስ አሳስብ",
+        "SUMMARIZE": "ውይይቱን አጠቃላይ አድርግ",
+        "ASK_COPILOT": "Copilot ጠይቅ"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
@@ -206,7 +241,8 @@
         "LOADING": "Fetching dashboard apps...",
         "TABLE_HEADER": {
           "NAME": "Name",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "እርምጃዎች"
         },
         "EDIT_TOOLTIP": "Edit app",
         "DELETE_TOOLTIP": "Delete app"
@@ -240,7 +276,10 @@
         "MESSAGE": "Are you sure to delete the app - {appName}?",
         "API_SUCCESS": "Dashboard app deleted successfully",
         "API_ERROR": "We couldn't delete the app. Please try again later"
-      }
+      },
+      "COUNT": "{n} የዳሽቦርድ መተግበሪያ | {n} የዳሽቦርድ መተግበሪያዎች",
+      "SEARCH_PLACEHOLDER": "የዳሽቦርድ መተግበሪያዎችን ይፈልጉ...",
+      "NO_RESULTS": "በፍለጋዎ የሚስማሙ የዳሽቦርድ መተግበሪያዎች አልተገኙም"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear workspace is not connected. Request your administrator to connect a workspace to use this integration.",
         "DESCRIPTION": "Linear workspace is not connected. Click the button below to connect your workspace to use this integration.",
         "BUTTON_TEXT": "Connect Linear workspace"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "Deleting this integration will remove access to your Notion workspace and stop all related functionality.",
         "CONFIRM": "Yes, delete",
         "CANCEL": "Cancel"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "አገናኞችን ፈልግ...",
+    "NO_RESULTS": "የፈለጉትን አገናኝቶች አልተገኙም"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Upgrade your plan to get access to our assistants, copilot and more.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "ASK_ADMIN": "Please reach out to your administrator for the upgrade.",
+      "AVAILABLE_ON": "Captain AI በኢንተርፕራይዝ እቅዶች ብቻ ይገኛል።"
     },
     "BANNER": {
       "RESPONSES": "You've used over 80% of your response limit. To continue using Captain AI, please upgrade.",
@@ -483,7 +527,8 @@
           "TITLE": "Features",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
-          "ALLOW_CITATIONS": "Include source citations in responses"
+          "ALLOW_CITATIONS": "Include source citations in responses",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {
@@ -786,6 +831,10 @@
           "PLACEHOLDER": "Order Lookup",
           "ERROR": "Tool name is required"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Description",
           "PLACEHOLDER": "Looks up order details by order ID"
@@ -854,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQs",

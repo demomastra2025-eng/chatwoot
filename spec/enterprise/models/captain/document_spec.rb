@@ -32,6 +32,36 @@ RSpec.describe Captain::Document, type: :model do
         expect(pdf_document).to be_valid
       end
 
+      it 'allows remote PDF urls without an uploaded file' do
+        remote_pdf = build(:captain_document, assistant: assistant, account: account, external_link: 'https://example.com/file.pdf')
+        expect(remote_pdf).to be_valid
+      end
+
+      it 'allows supported remote file urls in file url mode' do
+        remote_file = build(
+          :captain_document,
+          assistant: assistant,
+          account: account,
+          external_link: 'https://example.com/report.xlsx',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(remote_file).to be_valid
+      end
+
+      it 'rejects unsupported remote file urls in file url mode when an extension is present' do
+        remote_file = build(
+          :captain_document,
+          assistant: assistant,
+          account: account,
+          external_link: 'https://example.com/report.html',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(remote_file).not_to be_valid
+        expect(remote_file.errors[:external_link]).to include(I18n.t('captain.documents.remote_file_url_error'))
+      end
+
       it 'validates PDF file size' do
         doc = build(:captain_document, assistant: assistant, account: account)
         doc.pdf_file.attach(
@@ -58,6 +88,28 @@ RSpec.describe Captain::Document, type: :model do
       it 'returns false for non-PDF documents' do
         doc = build(:captain_document, external_link: 'https://example.com')
         expect(doc.pdf_document?).to be false
+      end
+    end
+
+    describe '#remote_file_url?' do
+      it 'returns true for supported office file urls' do
+        doc = build(
+          :captain_document,
+          external_link: 'https://example.com/document.docx',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(doc.remote_file_url?).to be true
+      end
+
+      it 'returns false for unsupported file urls' do
+        doc = build(
+          :captain_document,
+          external_link: 'https://example.com/document.txt',
+          metadata: { 'firecrawl' => { 'mode' => 'file_url' } }
+        )
+
+        expect(doc.remote_file_url?).to be false
       end
     end
 
@@ -91,6 +143,46 @@ RSpec.describe Captain::Document, type: :model do
 
         expect(pdf_document.external_link).to start_with('PDF: test_')
       end
+    end
+  end
+
+  describe 'file upload support' do
+    let(:uploaded_file_document) do
+      build(:captain_document, assistant: assistant, account: account).tap do |doc|
+        doc.source_file.attach(
+          io: StringIO.new('Spreadsheet content'),
+          filename: 'report.xlsx',
+          content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+      end
+    end
+
+    it 'allows supported uploaded office files without external link' do
+      uploaded_file_document.external_link = nil
+
+      expect(uploaded_file_document).to be_valid
+    end
+
+    it 'sets source mode to file_upload for uploaded office files' do
+      expect(uploaded_file_document.source_mode).to eq('file_upload')
+    end
+
+    it 'rejects unsupported uploaded file types' do
+      document = build(:captain_document, assistant: assistant, account: account)
+      document.source_file.attach(
+        io: StringIO.new('Text file content'),
+        filename: 'notes.txt',
+        content_type: 'text/plain'
+      )
+
+      expect(document).not_to be_valid
+      expect(document.errors[:source_file]).to include(I18n.t('captain.documents.file_upload_format_error'))
+    end
+
+    it 'returns a blob display URL for uploaded office files' do
+      uploaded_file_document.save!
+
+      expect(uploaded_file_document.display_url).to be_present
     end
   end
 
@@ -248,6 +340,41 @@ RSpec.describe Captain::Document, type: :model do
       expect do
         document.destroy!
       end.not_to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
+    end
+  end
+
+  describe 'firecrawl source documents' do
+    it 'filters derived documents out of source_documents scope' do
+      source_document = create(:captain_document, assistant: assistant, account: account)
+      derived_document = create(
+        :captain_document,
+        assistant: assistant,
+        account: account,
+        metadata: {
+          'firecrawl' => { 'root_document_id' => source_document.id }
+        }
+      )
+
+      expect(described_class.source_documents).to include(source_document)
+      expect(described_class.source_documents).not_to include(derived_document)
+    end
+
+    it 'destroys derived documents when source document is removed' do
+      source_document = create(:captain_document, assistant: assistant, account: account)
+      derived_document = create(
+        :captain_document,
+        assistant: assistant,
+        account: account,
+        metadata: {
+          'firecrawl' => { 'root_document_id' => source_document.id }
+        }
+      )
+
+      expect do
+        source_document.destroy!
+      end.to change(described_class, :count).by(-2)
+
+      expect { derived_document.reload }.to raise_error(ActiveRecord::RecordNotFound)
     end
   end
 end

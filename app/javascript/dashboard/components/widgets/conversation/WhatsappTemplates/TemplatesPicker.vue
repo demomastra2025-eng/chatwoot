@@ -75,12 +75,16 @@ const refreshTemplates = async () => {
       <div
         class="flex flex-1 gap-1 items-center px-2.5 py-0 rounded-lg bg-n-alpha-black2 outline outline-1 outline-n-weak hover:outline-n-slate-6 dark:hover:outline-n-slate-6 focus-within:outline-n-brand dark:focus-within:outline-n-brand"
       >
-        <fluent-icon icon="search" class="text-n-slate-12" size="16" />
         <input
           v-model="query"
           type="search"
           :placeholder="t('WHATSAPP_TEMPLATES.PICKER.SEARCH_PLACEHOLDER')"
           class="reset-base w-full h-9 bg-transparent text-n-slate-12 !text-sm !outline-0"
+        />
+        <fluent-icon
+          icon="search"
+          class="text-n-slate-12 flex-shrink-0"
+          size="16"
         />
       </div>
       <button

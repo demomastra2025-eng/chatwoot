@@ -9,7 +9,7 @@ defineProps({
 
 <template>
   <div
-    class="flex flex-col justify-between flex-1 h-full m-0 overflow-auto bg-n-surface-1"
+    class="flex flex-1 flex-col w-full h-full min-h-0 m-0 overflow-y-auto bg-n-surface-1"
   >
     <router-view v-slot="{ Component }">
       <keep-alive v-if="keepAlive">

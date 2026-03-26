@@ -1,0 +1,47 @@
+post:
+  tags:
+    - Inboxes
+  operationId: refreshWhatsappWebQr
+  summary: Refresh WhatsApp Web QR or sync status
+  description: Refreshes the QR code for a WhatsApp Web inbox. Pass `status_only=true` to sync runtime state without forcing a new QR refresh.
+  security:
+    - userApiKey: []
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - name: id
+      in: path
+      schema:
+        type: number
+      description: ID of the inbox
+      required: true
+    - name: status_only
+      in: query
+      schema:
+        type: boolean
+      description: Sync the provider status without requesting a new QR code
+      required: false
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/inbox'
+    '400':
+      description: Invalid inbox type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '401':
+      description: Authentication error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'
+    '422':
+      description: Provider runtime error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/bad_request_error'

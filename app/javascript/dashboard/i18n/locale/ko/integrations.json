@@ -13,7 +13,8 @@
         "CANCEL": "취소",
         "SUBMIT": "Connect Store"
       },
-      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
+      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
+      "HEADER": "Shopify"
     },
     "HEADER": "통합",
     "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
@@ -101,7 +102,18 @@
           "YES": "예, 삭제합니다. ",
           "NO": "아니요, 유지합니다."
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "Secret",
+        "COPY": "시크릿을 클립보드에 복사",
+        "COPY_SUCCESS": "시크릿이 클립보드에 복사되었습니다",
+        "TOGGLE": "시크릿 표시 전환",
+        "CREATED_DESC": "Your webhook has been created. Use the secret below to verify webhook signatures. Please copy it now — you can also find it later in the webhook edit form.",
+        "DONE": "Done"
+      },
+      "COUNT": "{n}개의 웹훅 | {n}개의 웹훅",
+      "SEARCH_PLACEHOLDER": "웹훅 검색...",
+      "NO_RESULTS": "검색과 일치하는 웹훅이 없습니다"
     },
     "SLACK": {
       "DELETE": "삭제",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "There was an error updating the integration, please try again",
       "UPDATE_SUCCESS": "The channel is connected successfully",
-      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again"
+      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Click here to join",
@@ -145,7 +158,11 @@
         "EXPAND": "Expand",
         "MAKE_FRIENDLY": "Change message tone to friendly",
         "MAKE_FORMAL": "Use formal tone",
-        "SIMPLIFY": "Simplify"
+        "SIMPLIFY": "Simplify",
+        "CONFIDENT": "자신감 있는 톤 사용",
+        "PROFESSIONAL": "전문적인 톤 사용",
+        "CASUAL": "캐주얼한 톤 사용",
+        "STRAIGHTFORWARD": "직설적인 톤 사용"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -184,7 +201,25 @@
         "GENERATING": "Generating...",
         "CANCEL": "취소"
       },
-      "GENERATE_ERROR": "There was an error processing the content, please try again"
+      "GENERATE_ERROR": "There was an error processing the content, please try again",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "답장 개선",
+        "IMPROVE_REPLY_SELECTION": "선택 항목 개선",
+        "CHANGE_TONE": {
+          "TITLE": "톤 변경",
+          "OPTIONS": {
+            "PROFESSIONAL": "전문적",
+            "CASUAL": "캐주얼",
+            "STRAIGHTFORWARD": "직설적",
+            "CONFIDENT": "자신감 있는",
+            "FRIENDLY": "친근한"
+          }
+        },
+        "GRAMMAR": "문법 및 맞춤법 수정",
+        "SUGGESTION": "답장 제안",
+        "SUMMARIZE": "대화 요약",
+        "ASK_COPILOT": "Copilot에게 질문"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "삭제",
@@ -206,7 +241,8 @@
         "LOADING": "Fetching dashboard apps...",
         "TABLE_HEADER": {
           "NAME": "이름",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "액션"
         },
         "EDIT_TOOLTIP": "Edit app",
         "DELETE_TOOLTIP": "Delete app"
@@ -240,7 +276,10 @@
         "MESSAGE": "Are you sure to delete the app - {appName}?",
         "API_SUCCESS": "Dashboard app deleted successfully",
         "API_ERROR": "We couldn't delete the app. Please try again later"
-      }
+      },
+      "COUNT": "{n}개의 대시보드 앱 | {n}개의 대시보드 앱",
+      "SEARCH_PLACEHOLDER": "대시보드 앱 검색...",
+      "NO_RESULTS": "검색과 일치하는 대시보드 앱이 없습니다"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear workspace is not connected. Request your administrator to connect a workspace to use this integration.",
         "DESCRIPTION": "Linear workspace is not connected. Click the button below to connect your workspace to use this integration.",
         "BUTTON_TEXT": "Connect Linear workspace"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "Deleting this integration will remove access to your Notion workspace and stop all related functionality.",
         "CONFIRM": "Yes, delete",
         "CANCEL": "취소"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "통합 검색...",
+    "NO_RESULTS": "검색과 일치하는 통합이 없습니다"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Upgrade your plan to get access to our assistants, copilot and more.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "ASK_ADMIN": "Please reach out to your administrator for the upgrade.",
+      "AVAILABLE_ON": "Captain AI는 Enterprise 요금제에서만 사용할 수 있습니다."
     },
     "BANNER": {
       "RESPONSES": "You've used over 80% of your response limit. To continue using Captain AI, please upgrade.",
@@ -483,7 +527,8 @@
           "TITLE": "특징",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
-          "ALLOW_CITATIONS": "Include source citations in responses"
+          "ALLOW_CITATIONS": "Include source citations in responses",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {
@@ -786,6 +831,10 @@
           "PLACEHOLDER": "Order Lookup",
           "ERROR": "Tool name is required"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "내용",
           "PLACEHOLDER": "Looks up order details by order ID"
@@ -854,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQs",

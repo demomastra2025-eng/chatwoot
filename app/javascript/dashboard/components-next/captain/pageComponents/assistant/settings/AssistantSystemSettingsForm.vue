@@ -8,6 +8,8 @@ import { useAccount } from 'dashboard/composables/useAccount';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   assistant: {
@@ -30,6 +32,9 @@ const initialState = {
   resolutionMessage: '',
   instructions: '',
   temperature: 1,
+  autoReplyOnLastIncoming: false,
+  messageCollapseWindowSeconds: 0,
+  historyMessageLimit: 0,
 };
 
 const state = reactive({ ...initialState });
@@ -58,6 +63,20 @@ const updateStateFromAssistant = assistant => {
   state.resolutionMessage = config.resolution_message;
   state.instructions = config.instructions;
   state.temperature = config.temperature || 1;
+  state.autoReplyOnLastIncoming = config.auto_reply_on_last_incoming || false;
+  state.messageCollapseWindowSeconds = Number(
+    config.message_collapse_window_seconds || 0
+  );
+  state.historyMessageLimit = Number(config.history_message_limit || 0);
+};
+
+const normalizeNonNegativeInteger = value => {
+  const normalizedValue = Number(value);
+  if (!Number.isFinite(normalizedValue) || normalizedValue <= 0) {
+    return 0;
+  }
+
+  return Math.floor(normalizedValue);
 };
 
 const handleSystemMessagesUpdate = async () => {
@@ -81,6 +100,13 @@ const handleSystemMessagesUpdate = async () => {
       handoff_message: state.handoffMessage,
       resolution_message: state.resolutionMessage,
       temperature: state.temperature || 1,
+      auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
+      message_collapse_window_seconds: normalizeNonNegativeInteger(
+        state.messageCollapseWindowSeconds
+      ),
+      history_message_limit: normalizeNonNegativeInteger(
+        state.historyMessageLimit
+      ),
     },
   };
 
@@ -149,6 +175,61 @@ watch(
       <p class="text-sm text-n-slate-11 italic">
         {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.DESCRIPTION') }}
       </p>
+    </div>
+
+    <div class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <h4 class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
+        </h4>
+        <p class="text-sm text-n-slate-11 mt-0.5">
+          {{
+            t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.DESCRIPTION')
+          }}
+        </p>
+      </div>
+      <div class="flex-shrink-0">
+        <Switch
+          v-model="state.autoReplyOnLastIncoming"
+          class="data-[state=checked]:!bg-n-violet-9"
+        />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <Input
+        v-model="state.messageCollapseWindowSeconds"
+        type="number"
+        min="0"
+        :label="
+          t('CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL')
+        "
+        :placeholder="
+          t(
+            'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+          )
+        "
+        :message="
+          t(
+            'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
+          )
+        "
+        message-type="info"
+      />
+
+      <Input
+        v-model="state.historyMessageLimit"
+        type="number"
+        min="0"
+        :label="t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL')"
+        :placeholder="
+          t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
+        "
+        :message="
+          t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
+        "
+        message-type="info"
+      />
     </div>
 
     <div>

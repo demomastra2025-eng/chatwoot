@@ -1,11 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { format } from 'date-fns';
 import { useI18n } from 'vue-i18n';
 
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
-import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
@@ -17,18 +16,21 @@ import SchedulingErrorState from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
-import SchedulingSectionCard from 'dashboard/components-next/Scheduling/SchedulingSectionCard.vue';
+import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { toDateTimeInputValue } from '../helpers';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const referencesStore = useSchedulingReferencesStore();
+const localeCode = computed(
+  () => locale.value?.replace(/_/g, '-') || undefined
+);
 
-const activeTab = ref('holidays');
+const activeTab = ref('workday_overrides');
 const drawerOpen = ref(false);
 const drawerType = ref('holiday');
 
@@ -62,16 +64,41 @@ const timeOffForm = reactive({
 });
 
 const tabOptions = computed(() => [
-  { label: t('SCHEDULING.EXCEPTIONS.HOLIDAYS_TAB'), value: 'holidays' },
   {
     label: t('SCHEDULING.EXCEPTIONS.OVERRIDES_TAB'),
     value: 'workday_overrides',
   },
   { label: t('SCHEDULING.EXCEPTIONS.TIME_OFF_TAB'), value: 'time_offs' },
+  { label: t('SCHEDULING.EXCEPTIONS.HOLIDAYS_TAB'), value: 'holidays' },
 ]);
 
+const activeTabIndex = computed(() =>
+  Math.max(
+    tabOptions.value.findIndex(option => option.value === activeTab.value),
+    0
+  )
+);
+
+const selectableResources = computed(() => {
+  const activeResources = referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  );
+  const selectedResourceIds = [overrideForm.resourceId, timeOffForm.resourceId]
+    .map(Number)
+    .filter(Boolean);
+
+  const extraResources = referencesStore.resources.filter(resource => {
+    return (
+      selectedResourceIds.includes(resource.id) &&
+      !activeResources.some(item => item.id === resource.id)
+    );
+  });
+
+  return [...activeResources, ...extraResources];
+});
+
 const resourceOptions = computed(() =>
-  referencesStore.resources.map(resource => ({
+  selectableResources.value.map(resource => ({
     label: resource.name,
     value: resource.id,
   }))
@@ -117,49 +144,71 @@ const currentRows = computed(() => {
 const currentColumns = computed(() => {
   if (activeTab.value === 'holidays') {
     return [
-      { key: 'date', label: t('SCHEDULING.GENERAL.DATE'), width: '140px' },
-      { key: 'title', label: t('SCHEDULING.GENERAL.TITLE'), width: '1.4fr' },
+      { key: 'date', label: t('SCHEDULING.GENERAL.DATE'), width: '128px' },
+      { key: 'title', label: t('SCHEDULING.GENERAL.TITLE'), width: '1.15fr' },
       {
         key: 'recurring',
-        label: t('SCHEDULING.EXCEPTIONS.RECURRING'),
-        width: '120px',
+        label: t('SCHEDULING.EXCEPTIONS.RECURRING_TABLE'),
+        width: '92px',
       },
       {
         key: 'workingDayOverride',
-        label: t('SCHEDULING.EXCEPTIONS.WORKING_DAY_OVERRIDE'),
-        width: '180px',
+        label: t('SCHEDULING.EXCEPTIONS.WORKING_DAY_OVERRIDE_TABLE'),
+        width: '100px',
       },
-      { key: 'actions', label: '', width: '140px', align: 'end' },
+      { key: 'actions', label: '', width: '84px', align: 'end' },
     ];
   }
 
   if (activeTab.value === 'workday_overrides') {
     return [
-      { key: 'date', label: t('SCHEDULING.GENERAL.DATE'), width: '140px' },
+      { key: 'date', label: t('SCHEDULING.GENERAL.DATE'), width: '128px' },
       {
         key: 'resource',
         label: t('SCHEDULING.GENERAL.RESOURCE'),
         width: '1fr',
       },
-      { key: 'hours', label: t('SCHEDULING.EXCEPTIONS.HOURS'), width: '160px' },
-      { key: 'break', label: t('SCHEDULING.EXCEPTIONS.BREAK'), width: '180px' },
-      { key: 'actions', label: '', width: '140px', align: 'end' },
+      { key: 'hours', label: t('SCHEDULING.EXCEPTIONS.HOURS'), width: '124px' },
+      { key: 'break', label: t('SCHEDULING.EXCEPTIONS.BREAK'), width: '1.1fr' },
+      { key: 'actions', label: '', width: '84px', align: 'end' },
     ];
   }
 
   return [
     { key: 'resource', label: t('SCHEDULING.GENERAL.RESOURCE'), width: '1fr' },
-    { key: 'kind', label: t('SCHEDULING.GENERAL.TYPE'), width: '160px' },
-    { key: 'startsAt', label: t('SCHEDULING.GENERAL.START'), width: '180px' },
-    { key: 'endsAt', label: t('SCHEDULING.GENERAL.END'), width: '180px' },
-    { key: 'actions', label: '', width: '140px', align: 'end' },
+    { key: 'kind', label: t('SCHEDULING.GENERAL.TYPE'), width: '132px' },
+    { key: 'period', label: t('SCHEDULING.GENERAL.DATE'), width: '1.2fr' },
+    { key: 'actions', label: '', width: '84px', align: 'end' },
   ];
 });
 
-const formatDate = value =>
-  value ? format(new Date(value), 'yyyy-MM-dd') : '—';
-const formatDateTime = value =>
-  value ? format(new Date(value), 'yyyy-MM-dd HH:mm') : '—';
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(referencesStore.ui.error)
+);
+
+const formatDate = value => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat(localeCode.value, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(value));
+};
+
+const formatDateTime = value => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat(localeCode.value, {
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+};
 
 const minuteToTime = minute => {
   if (minute === null || minute === undefined || minute === '') return '—';
@@ -321,7 +370,7 @@ const saveCurrentForm = async () => {
     closeDrawer();
     useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -336,7 +385,7 @@ const deleteCurrentRow = async row => {
     }
     useAlert(t('SCHEDULING.EXCEPTIONS.SUCCESS_DELETE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -368,12 +417,26 @@ onMounted(async () => {
 
 <template>
   <section class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-n-surface-1">
-    <SchedulingPageHeader
-      :title="$t('SCHEDULING.NAV.EXCEPTIONS')"
-      :description="$t('SCHEDULING.EXCEPTIONS.DESCRIPTION')"
-    />
+    <SchedulingPageHeader :title="$t('SCHEDULING.NAV.EXCEPTIONS')">
+      <template #actions>
+        <Button
+          size="sm"
+          icon="i-lucide-plus"
+          :label="addActionLabel"
+          @click="
+            openDrawerForTab(
+              activeTab === 'holidays'
+                ? 'holiday'
+                : activeTab === 'workday_overrides'
+                  ? 'override'
+                  : 'time_off'
+            )
+          "
+        />
+      </template>
+    </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-6 p-6">
+    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
       <div
         v-if="
           referencesStore.ui.isLoadingExceptions ||
@@ -387,7 +450,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="referencesStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="referencesStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="
           Promise.all([
             referencesStore.loadResources({ include_inactive: true }),
@@ -396,123 +459,116 @@ onMounted(async () => {
         "
       />
 
-      <SchedulingSectionCard
-        v-else
-        :title="$t('SCHEDULING.EXCEPTIONS.LIST_TITLE')"
-        :description="$t('SCHEDULING.EXCEPTIONS.LIST_DESCRIPTION')"
-      >
-        <template #headerActions>
-          <Button
-            size="sm"
-            icon="i-lucide-plus"
-            :label="addActionLabel"
-            @click="
-              openDrawerForTab(
-                activeTab === 'holidays'
-                  ? 'holiday'
-                  : activeTab === 'workday_overrides'
-                    ? 'override'
-                    : 'time_off'
-              )
-            "
-          />
-        </template>
+      <div v-else class="flex flex-col gap-5">
+        <TabBar
+          active-text-class="text-n-slate-12 scale-100"
+          :tabs="tabOptions"
+          :initial-active-tab="activeTabIndex"
+          @tab-changed="activeTab = $event.value"
+        />
 
-        <div class="flex flex-col gap-5">
-          <TabBar
-            :tabs="tabOptions"
-            :initial-active-tab="
-              activeTab === 'holidays'
-                ? 0
-                : activeTab === 'workday_overrides'
-                  ? 1
-                  : 2
-            "
-            @tab-changed="activeTab = $event.value"
-          />
+        <SchedulingEmptyState
+          v-if="currentRows.length === 0"
+          :title="$t('SCHEDULING.EXCEPTIONS.EMPTY_TITLE')"
+          :description="$t('SCHEDULING.EXCEPTIONS.EMPTY_DESCRIPTION')"
+        />
 
-          <SchedulingEmptyState
-            v-if="currentRows.length === 0"
-            :title="$t('SCHEDULING.EXCEPTIONS.EMPTY_TITLE')"
-            :description="$t('SCHEDULING.EXCEPTIONS.EMPTY_DESCRIPTION')"
-          />
+        <SchedulingRecordTable
+          v-else
+          :columns="currentColumns"
+          :rows="currentRows"
+        >
+          <template #cell-date="{ row }">
+            {{ formatDate(row.date) }}
+          </template>
 
-          <SchedulingRecordTable
-            v-else
-            :columns="currentColumns"
-            :rows="currentRows"
-          >
-            <template #cell-date="{ row }">
-              {{ formatDate(row.date) }}
-            </template>
+          <template #cell-recurring="{ row }">
+            <div class="flex justify-center">
+              <span
+                class="size-4"
+                :class="
+                  row.recurringYearly
+                    ? 'i-lucide-check text-n-teal-11'
+                    : 'i-lucide-minus text-n-slate-10'
+                "
+              />
+            </div>
+          </template>
 
-            <template #cell-recurring="{ row }">
-              {{
-                row.recurringYearly
-                  ? $t('SCHEDULING.GENERAL.YES')
-                  : $t('SCHEDULING.GENERAL.NO')
-              }}
-            </template>
+          <template #cell-workingDayOverride="{ row }">
+            <div class="flex justify-center">
+              <span
+                class="size-4"
+                :class="
+                  row.workingDayOverride
+                    ? 'i-lucide-check text-n-teal-11'
+                    : 'i-lucide-minus text-n-slate-10'
+                "
+              />
+            </div>
+          </template>
 
-            <template #cell-workingDayOverride="{ row }">
-              {{
-                row.workingDayOverride
-                  ? $t('SCHEDULING.GENERAL.YES')
-                  : $t('SCHEDULING.GENERAL.NO')
-              }}
-            </template>
-
-            <template #cell-resource="{ row }">
+          <template #cell-resource="{ row }">
+            <span class="block truncate">
               {{ resourceName(row.resourceId) }}
-            </template>
+            </span>
+          </template>
 
-            <template #cell-hours="{ row }">
-              {{ formatMinuteRange(row.startMinute, row.endMinute) }}
-            </template>
+          <template #cell-hours="{ row }">
+            {{ formatMinuteRange(row.startMinute, row.endMinute) }}
+          </template>
 
-            <template #cell-break="{ row }">
+          <template #cell-break="{ row }">
+            <span class="block truncate">
               {{ formatBreakLabel(row) }}
-            </template>
+            </span>
+          </template>
 
-            <template #cell-kind="{ row }">
-              {{ timeOffKindLabel(row.kind) }}
-            </template>
+          <template #cell-kind="{ row }">
+            {{ timeOffKindLabel(row.kind) }}
+          </template>
 
-            <template #cell-startsAt="{ row }">
-              {{ formatDateTime(row.startsAt) }}
-            </template>
-
-            <template #cell-endsAt="{ row }">
-              {{ formatDateTime(row.endsAt) }}
-            </template>
-
-            <template #cell-actions="{ row }">
-              <div class="flex items-center justify-end gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  color="slate"
-                  :label="$t('SCHEDULING.GENERAL.EDIT')"
-                  @click="
-                    activeTab === 'holidays'
-                      ? editHoliday(row)
-                      : activeTab === 'workday_overrides'
-                        ? editOverride(row)
-                        : editTimeOff(row)
-                  "
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  color="ruby"
-                  :label="$t('SCHEDULING.GENERAL.DELETE')"
-                  @click="deleteCurrentRow(row)"
-                />
+          <template #cell-period="{ row }">
+            <div class="min-w-0 leading-5">
+              <div class="truncate">
+                {{ formatDateTime(row.startsAt) }}
               </div>
-            </template>
-          </SchedulingRecordTable>
-        </div>
-      </SchedulingSectionCard>
+              <div class="truncate text-xs text-n-slate-11">
+                {{ formatDateTime(row.endsAt) }}
+              </div>
+            </div>
+          </template>
+
+          <template #cell-actions="{ row }">
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-pencil"
+                :aria-label="$t('SCHEDULING.GENERAL.EDIT')"
+                :title="$t('SCHEDULING.GENERAL.EDIT')"
+                @click="
+                  activeTab === 'holidays'
+                    ? editHoliday(row)
+                    : activeTab === 'workday_overrides'
+                      ? editOverride(row)
+                      : editTimeOff(row)
+                "
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="deleteCurrentRow(row)"
+              />
+            </div>
+          </template>
+        </SchedulingRecordTable>
+      </div>
     </div>
 
     <SchedulingDrawer
@@ -539,20 +595,12 @@ onMounted(async () => {
           :label="$t('SCHEDULING.GENERAL.TITLE')"
         />
         <label class="flex items-center gap-3 text-sm text-n-slate-12">
-          <input
-            v-model="holidayForm.recurringYearly"
-            type="checkbox"
-            class="accent-blue-600"
-          />
-          {{ $t('SCHEDULING.EXCEPTIONS.RECURRING') }}
+          <Checkbox v-model="holidayForm.recurringYearly" />
+          <span>{{ $t('SCHEDULING.EXCEPTIONS.RECURRING') }}</span>
         </label>
         <label class="flex items-center gap-3 text-sm text-n-slate-12">
-          <input
-            v-model="holidayForm.workingDayOverride"
-            type="checkbox"
-            class="accent-blue-600"
-          />
-          {{ $t('SCHEDULING.EXCEPTIONS.WORKING_DAY_OVERRIDE') }}
+          <Checkbox v-model="holidayForm.workingDayOverride" />
+          <span>{{ $t('SCHEDULING.EXCEPTIONS.WORKING_DAY_OVERRIDE') }}</span>
         </label>
       </SchedulingFormFieldGroup>
 
@@ -561,7 +609,7 @@ onMounted(async () => {
         :title="$t('SCHEDULING.EXCEPTIONS.OVERRIDE_FORM_TITLE')"
         :description="$t('SCHEDULING.EXCEPTIONS.OVERRIDE_FORM_DESCRIPTION')"
       >
-        <ComboBox
+        <SchedulingSelectField
           :model-value="overrideForm.resourceId"
           :options="resourceOptions"
           :placeholder="$t('SCHEDULING.GENERAL.RESOURCE')"
@@ -605,13 +653,13 @@ onMounted(async () => {
         :title="$t('SCHEDULING.EXCEPTIONS.TIME_OFF_FORM_TITLE')"
         :description="$t('SCHEDULING.EXCEPTIONS.TIME_OFF_FORM_DESCRIPTION')"
       >
-        <ComboBox
+        <SchedulingSelectField
           :model-value="timeOffForm.resourceId"
           :options="resourceOptions"
           :placeholder="$t('SCHEDULING.GENERAL.RESOURCE')"
           @update:model-value="timeOffForm.resourceId = $event"
         />
-        <ComboBox
+        <SchedulingSelectField
           :model-value="timeOffForm.kind"
           :options="timeOffKindOptions"
           :placeholder="$t('SCHEDULING.GENERAL.TYPE')"

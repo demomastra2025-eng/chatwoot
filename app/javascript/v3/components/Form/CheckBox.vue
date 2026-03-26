@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import BaseCheckbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
   isChecked: {
@@ -21,11 +22,10 @@ const checked = computed({
 </script>
 
 <template>
-  <input
+  <BaseCheckbox
     :id="value"
     v-model="checked"
-    type="checkbox"
     :value="value"
-    class="flex-shrink-0 mt-0.5 border-n-strong border bg-n-slate-2 checked:border-none checked:bg-n-brand-solid shadow-sm appearance-none rounded-[4px] w-4 h-4 focus:ring-1 after:content-[''] after:text-n-brand-contrast checked:after:content-['✓'] after:flex after:items-center after:justify-center after:text-center after:text-xs after:font-bold after:relative"
+    class="mt-0.5 flex-shrink-0"
   />
 </template>

@@ -1,4 +1,6 @@
 <script setup>
+import Radio from 'dashboard/components-next/radio/Radio.vue';
+
 defineProps({
   credits: {
     type: Number,
@@ -48,12 +50,11 @@ const formatAmount = (amount, currency) => {
       isSelected ? 'border-woot-500' : 'border-n-weak hover:border-n-strong',
     ]"
   >
-    <input
-      type="radio"
+    <Radio
       :name="name"
       :value="credits"
-      :checked="isSelected"
-      class="sr-only"
+      :model-value="isSelected ? credits : null"
+      sr-only
       @change="emit('select')"
     />
     <span

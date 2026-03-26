@@ -6,6 +6,8 @@ import { vOnClickOutside } from '@vueuse/components';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 
 const emit = defineEmits(['close', 'assign']);
 
@@ -65,11 +67,18 @@ const handleAssign = () => {
           v-model="query"
           type="search"
           :placeholder="t('BULK_ACTION.SEARCH_INPUT_PLACEHOLDER')"
-          icon-left="i-lucide-search"
+          custom-input-class="ltr:!pr-8 rtl:!pl-8"
           size="sm"
           class="w-full"
           :aria-label="t('BULK_ACTION.SEARCH_INPUT_PLACEHOLDER')"
-        />
+        >
+          <template #suffix>
+            <Icon
+              icon="i-lucide-search"
+              class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
+            />
+          </template>
+        </Input>
       </header>
       <ul
         v-if="hasLabels"
@@ -92,9 +101,8 @@ const handleAssign = () => {
           <label
             class="items-center rounded-md cursor-pointer flex py-1 px-2.5 hover:bg-n-slate-3 dark:hover:bg-n-solid-3 has-[:checked]:bg-n-slate-2"
           >
-            <input
+            <Checkbox
               v-model="selectedLabels"
-              type="checkbox"
               :value="label.title"
               class="my-0 ltr:mr-2.5 rtl:ml-2.5"
               :aria-label="label.title"

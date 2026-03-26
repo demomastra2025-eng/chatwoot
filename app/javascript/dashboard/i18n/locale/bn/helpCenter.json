@@ -860,6 +860,16 @@
       "FROM_DOCUMENT": "From document",
       "NO_CONTENT": "No generated content available. Upload a PDF document to get started.",
       "LOADING": "Loading generated content..."
+    },
+    "REORDER_ARTICLE": {
+      "API": {
+        "ERROR_MESSAGE": "আর্টিকেল পুনরায় সাজানো যাচ্ছে না। আবার চেষ্টা করুন।."
+      }
+    },
+    "REORDER_CATEGORY": {
+      "API": {
+        "ERROR_MESSAGE": "বিভাগ পুনরায় সাজানো যাচ্ছে না। আবার চেষ্টা করুন।."
+      }
     }
   }
 }

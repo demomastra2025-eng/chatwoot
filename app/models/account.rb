@@ -2,20 +2,21 @@
 #
 # Table name: accounts
 #
-#  id                    :integer          not null, primary key
-#  auto_resolve_duration :integer
-#  custom_attributes     :jsonb
-#  domain                :string(100)
-#  feature_flags         :bigint           default(0), not null
-#  internal_attributes   :jsonb            not null
-#  limits                :jsonb
-#  locale                :integer          default("en")
-#  name                  :string           not null
-#  settings              :jsonb
-#  status                :integer          default("active")
-#  support_email         :string(100)
-#  created_at            :datetime         not null
-#  updated_at            :datetime         not null
+#  id                     :integer          not null, primary key
+#  auto_resolve_duration  :integer
+#  custom_attributes      :jsonb
+#  domain                 :string(100)
+#  feature_flags          :bigint           default(0), not null
+#  feature_flags_overflow :jsonb            not null
+#  internal_attributes    :jsonb            not null
+#  limits                 :jsonb
+#  locale                 :integer          default("en")
+#  name                   :string           not null
+#  settings               :jsonb
+#  status                 :integer          default("active")
+#  support_email          :string(100)
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
 #
 # Indexes
 #
@@ -41,6 +42,7 @@ class Account < ApplicationRecord
         'audio_transcriptions': { 'type': %w[boolean null] },
         'auto_resolve_label': { 'type': %w[string null] },
         'keep_pending_on_bot_failure': { 'type': %w[boolean null] },
+        'captain_auto_resolve_mode': { 'type': %w[string null], 'enum': ['evaluated', 'legacy', 'disabled', nil] },
         'conversation_required_attributes': {
           'type': %w[array null],
           'items': { 'type': 'string' }
@@ -84,12 +86,16 @@ class Account < ApplicationRecord
   validates_with JsonSchemaValidator,
                  schema: SETTINGS_PARAMS_SCHEMA,
                  attribute_resolver: ->(record) { record.settings }
+  validate :validate_reporting_timezone
 
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
   store_accessor :settings, :audio_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features
+  store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
+  store_accessor :settings, :captain_auto_resolve_mode
+  include AccountCaptainAutoResolve
 
   has_many :account_users, dependent: :destroy_async
   has_many :agent_bot_inboxes, dependent: :destroy_async
@@ -104,6 +110,15 @@ class Account < ApplicationRecord
   has_many :categories, dependent: :destroy_async, class_name: '::Category'
   has_many :contacts, dependent: :destroy_async
   has_many :conversations, dependent: :destroy_async
+  has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
+  has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
+  has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'
+  has_many :crm_field_definitions, dependent: :destroy_async, class_name: '::Crm::FieldDefinition'
+  has_many :crm_deals, dependent: :destroy_async, class_name: '::Crm::Deal'
+  has_many :crm_deal_contacts, dependent: :destroy_async, class_name: '::Crm::DealContact'
+  has_many :crm_tasks, dependent: :destroy_async, class_name: '::Crm::Task'
+  has_many :crm_events, dependent: :destroy_async, class_name: '::Crm::Event'
+  has_many :crm_comments, dependent: :destroy_async, class_name: '::Crm::Comment'
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :custom_attribute_definitions, dependent: :destroy_async
   has_many :custom_filters, dependent: :destroy_async
@@ -143,6 +158,7 @@ class Account < ApplicationRecord
   has_many :web_widgets, dependent: :destroy_async, class_name: '::Channel::WebWidget'
   has_many :webhooks, dependent: :destroy_async
   has_many :whatsapp_channels, dependent: :destroy_async, class_name: '::Channel::Whatsapp'
+  has_many :whatsapp_web_channels, dependent: :destroy_async, class_name: '::Channel::WhatsappWeb'
   has_many :working_hours, dependent: :destroy_async
 
   has_one_attached :contacts_export
@@ -221,6 +237,12 @@ class Account < ApplicationRecord
 
   def validate_limit_keys
     # method overridden in enterprise module
+  end
+
+  def validate_reporting_timezone
+    return if reporting_timezone.blank? || ActiveSupport::TimeZone[reporting_timezone].present?
+
+    errors.add(:reporting_timezone, I18n.t('errors.account.reporting_timezone.invalid'))
   end
 
   def remove_account_sequences

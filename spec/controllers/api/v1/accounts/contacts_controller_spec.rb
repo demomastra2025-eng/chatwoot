@@ -45,6 +45,7 @@ RSpec.describe 'Contacts API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         response_body = response.parsed_body
         contact_emails = response_body['payload'].pluck('email')
         contact_inboxes_source_ids = response_body['payload'].flat_map { |c| c['contact_inboxes'].pluck('source_id') }
@@ -331,6 +332,7 @@ RSpec.describe 'Contacts API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(response.body).to include(contact2.email)
         expect(response.body).not_to include(contact1.email)
       end
@@ -443,6 +445,7 @@ RSpec.describe 'Contacts API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(response.body).to include(contact2.email)
         expect(response.body).to include(contact1.email)
       end
@@ -497,6 +500,7 @@ RSpec.describe 'Contacts API', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(response.body).to include(contact.name)
       end
     end
@@ -537,6 +541,31 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         # only the inboxes which agent has access to are shown
         expect(response.parsed_body['payload'].pluck('inbox').pluck('id')).to eq([twilio_whatsapp_inbox.id])
+      end
+
+      it 'returns whatsapp web inboxes via the native service flow' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+          whatsapp_web_inbox = whatsapp_web_channel.inbox
+          create(:inbox_member, user: agent, inbox: whatsapp_web_inbox)
+          contact.update!(phone_number: '+15551234567')
+
+          get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/contactable_inboxes",
+              headers: agent.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['payload']).to include(
+            {
+              'source_id' => '15551234567',
+              'inbox' => hash_including('id' => whatsapp_web_inbox.id)
+            }
+          )
+        end
       end
     end
   end
@@ -620,6 +649,7 @@ RSpec.describe 'Contacts API', type: :request do
               as: :json
 
         expect(response).to have_http_status(:success)
+        expect(response).to conform_schema(200)
         expect(contact.reload.name).to eq('Test Blub')
         # custom attributes are merged properly without overwriting existing ones
         expect(contact.custom_attributes).to eq({ 'test' => 'new test', 'test1' => 'test1', 'test2' => 'test2' })

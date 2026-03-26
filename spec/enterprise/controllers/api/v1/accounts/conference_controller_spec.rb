@@ -103,6 +103,27 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
         expect(response).to have_http_status(:unprocessable_content)
       end
     end
+
+    context 'when the voice inbox uses fonoster' do
+      let(:voice_channel) { create(:channel_voice, :fonoster, account: account) }
+
+      before { create(:inbox_member, inbox: voice_inbox, user: agent) }
+
+      it 'returns a non-browser join payload and sets the identifier' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
+             headers: agent.create_new_auth_token,
+             params: { conversation_id: conversation.display_id, call_sid: 'CALL123' }
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body['provider']).to eq('fonoster')
+        expect(body['join_supported']).to eq(false)
+        expect(body['using_webrtc']).to eq(false)
+        expect(body['call_ref']).to eq('CALL123')
+        expect(conference_service).not_to have_received(:ensure_conference_sid)
+        expect(conversation.reload.identifier).to eq('CALL123')
+      end
+    end
   end
 
   describe 'DELETE /conference' do
@@ -136,6 +157,22 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
                params: { conversation_id: other_conversation.display_id }
 
         expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    context 'when the voice inbox uses fonoster' do
+      let(:voice_channel) { create(:channel_voice, :fonoster, account: account) }
+
+      before { create(:inbox_member, inbox: voice_inbox, user: agent) }
+
+      it 'returns a lightweight success payload without ending a browser conference' do
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
+               headers: agent.create_new_auth_token,
+               params: { conversation_id: conversation.display_id }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body['provider']).to eq('fonoster')
+        expect(conference_service).not_to have_received(:end_conference)
       end
     end
   end

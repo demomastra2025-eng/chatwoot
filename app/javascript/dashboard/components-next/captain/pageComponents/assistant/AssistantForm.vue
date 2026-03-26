@@ -8,6 +8,8 @@ import { useMapGetter } from 'dashboard/composables/store';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   mode: {
@@ -36,6 +38,9 @@ const initialState = {
   featureFaq: false,
   featureMemory: false,
   featureCitation: false,
+  autoReplyOnLastIncoming: false,
+  messageCollapseWindowSeconds: 0,
+  historyMessageLimit: 0,
 };
 
 const state = reactive({ ...initialState });
@@ -64,6 +69,15 @@ const formErrors = computed(() => ({
 
 const handleCancel = () => emit('cancel');
 
+const normalizeNonNegativeInteger = value => {
+  const normalizedValue = Number(value);
+  if (!Number.isFinite(normalizedValue) || normalizedValue <= 0) {
+    return 0;
+  }
+
+  return Math.floor(normalizedValue);
+};
+
 const prepareAssistantDetails = () => ({
   name: state.name,
   description: state.description,
@@ -72,6 +86,11 @@ const prepareAssistantDetails = () => ({
     feature_faq: state.featureFaq,
     feature_memory: state.featureMemory,
     feature_citation: state.featureCitation,
+    auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
+    message_collapse_window_seconds: normalizeNonNegativeInteger(
+      state.messageCollapseWindowSeconds
+    ),
+    history_message_limit: normalizeNonNegativeInteger(state.historyMessageLimit),
   },
 });
 
@@ -96,6 +115,11 @@ const updateStateFromAssistant = assistant => {
     featureFaq: config.feature_faq || false,
     featureMemory: config.feature_memory || false,
     featureCitation: config.feature_citation || false,
+    autoReplyOnLastIncoming: config.auto_reply_on_last_incoming || false,
+    messageCollapseWindowSeconds: Number(
+      config.message_collapse_window_seconds || 0
+    ),
+    historyMessageLimit: Number(config.history_message_limit || 0),
   });
 };
 
@@ -142,26 +166,81 @@ watch(
       </legend>
 
       <label class="flex items-center gap-2">
-        <input v-model="state.featureFaq" type="checkbox" />
+        <Checkbox v-model="state.featureFaq" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
         </span>
       </label>
 
       <label class="flex items-center gap-2">
-        <input v-model="state.featureMemory" type="checkbox" />
+        <Checkbox v-model="state.featureMemory" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
         </span>
       </label>
 
       <label class="flex items-center gap-2">
-        <input v-model="state.featureCitation" type="checkbox" />
+        <Checkbox v-model="state.featureCitation" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
         </span>
       </label>
     </fieldset>
+
+    <div class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <h4 class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
+        </h4>
+        <p class="text-sm text-n-slate-11 mt-0.5">
+          {{
+            t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.DESCRIPTION')
+          }}
+        </p>
+      </div>
+      <div class="flex-shrink-0">
+        <Switch
+          v-model="state.autoReplyOnLastIncoming"
+          class="data-[state=checked]:!bg-n-violet-9"
+        />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <Input
+        v-model="state.messageCollapseWindowSeconds"
+        type="number"
+        min="0"
+        :label="
+          t('CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL')
+        "
+        :placeholder="
+          t(
+            'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+          )
+        "
+        :message="
+          t(
+            'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
+          )
+        "
+        message-type="info"
+      />
+
+      <Input
+        v-model="state.historyMessageLimit"
+        type="number"
+        min="0"
+        :label="t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL')"
+        :placeholder="
+          t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
+        "
+        :message="
+          t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
+        "
+        message-type="info"
+      />
+    </div>
 
     <div class="flex items-center justify-between w-full gap-3">
       <Button

@@ -45,62 +45,68 @@ module ConversationReplyMailerHelper
   end
 
   def base_smtp_settings(domain)
-    {
+    Email::SmtpConfiguration.build_delivery_settings(
+      base_settings: {
       address: domain,
       port: 587,
       user_name: @channel.imap_login,
       password: @channel.provider_config['access_token'],
       domain: domain,
-      tls: false,
-      enable_starttls_auto: true,
       openssl_verify_mode: 'none',
       open_timeout: 15,
       read_timeout: 15,
       authentication: 'xoauth2'
-    }
+      },
+      ssl_enabled: false,
+      starttls_enabled: true,
+      openssl_verify_mode: 'none'
+    )
   end
 
   def set_delivery_method
     return unless @inbox.inbox_type == 'Email' && @channel.smtp_enabled
 
-    smtp_settings = {
+    smtp_settings = Email::SmtpConfiguration.build_delivery_settings(
+      base_settings: {
       address: @channel.smtp_address,
       port: @channel.smtp_port,
       user_name: @channel.smtp_login,
       password: @channel.smtp_password,
       domain: @channel.smtp_domain,
-      tls: @channel.smtp_enable_ssl_tls,
-      enable_starttls_auto: @channel.smtp_enable_starttls_auto,
       openssl_verify_mode: @channel.smtp_openssl_verify_mode,
       authentication: @channel.smtp_authentication
-    }
+      },
+      ssl_enabled: @channel.smtp_enable_ssl_tls,
+      starttls_enabled: @channel.smtp_enable_ssl_tls ? false : @channel.smtp_enable_starttls_auto,
+      openssl_verify_mode: @channel.smtp_openssl_verify_mode
+    )
 
     @options[:delivery_method] = :smtp
     @options[:delivery_method_options] = smtp_settings
   end
 
-  def email_smtp_enabled
+  def email_smtp_enabled?
     @inbox.inbox_type == 'Email' && @channel.smtp_enabled
   end
 
-  def email_imap_enabled
+  def email_imap_enabled?
     @inbox.inbox_type == 'Email' && @channel.imap_enabled
   end
 
-  def email_oauth_enabled
+  def email_oauth_enabled?
     @inbox.inbox_type == 'Email' && (@channel.microsoft? || @channel.google?)
   end
 
   def email_from
     return Email::FromBuilder.new(inbox: @inbox, message: current_message).build if @account.feature_enabled?(:reply_mailer_migration)
 
-    email_oauth_enabled || email_smtp_enabled ? channel_email_with_name : from_email_with_name
+    email_oauth_enabled? || email_smtp_enabled? ? channel_email_with_name : from_email_with_name
   end
 
   def email_reply_to
     return Email::ReplyToBuilder.new(inbox: @inbox, message: current_message).build if @account.feature_enabled?(:reply_mailer_migration)
 
-    email_imap_enabled ? @channel.email : reply_email
+    email_imap_enabled? ? @channel.email : reply_email
   end
 
   # Use channel email domain in case of account email domain is not set for custom message_id and in_reply_to

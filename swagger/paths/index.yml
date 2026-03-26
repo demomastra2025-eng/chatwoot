@@ -214,6 +214,7 @@ x-scheduling-resource-schema: &scheduling_resource_schema
     slot_duration_min: { type: integer }
     compensation_type: { type: string, nullable: true }
     compensation_value: { type: integer, nullable: true }
+    compensation_percent: { type: integer, nullable: true }
     active: { type: boolean }
     custom_attributes:
       type: object
@@ -241,6 +242,7 @@ x-scheduling-service-schema: &scheduling_service_schema
           price: { type: integer }
           compensation_type: { type: string, nullable: true }
           compensation_value: { type: integer, nullable: true }
+          compensation_percent: { type: integer, nullable: true }
           active: { type: boolean }
 
 x-scheduling-contact-schema: &scheduling_contact_schema
@@ -388,7 +390,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     paid_by_id: { type: integer, nullable: true }
 
 # Accounts
-/api/v1/accounts/{id}:
+/api/v1/accounts/{account_id}:
   parameters:
     - $ref: '#/components/parameters/account_id'
   get:
@@ -543,6 +545,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               slot_duration_min: { type: integer }
               compensation_type: { type: string }
               compensation_value: { type: integer }
+              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -622,6 +625,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               slot_duration_min: { type: integer }
               compensation_type: { type: string }
               compensation_value: { type: integer }
+              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -1020,6 +1024,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                     price: { type: integer }
                     compensation_type: { type: string }
                     compensation_value: { type: integer }
+                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -1106,6 +1111,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                     price: { type: integer }
                     compensation_type: { type: string }
                     compensation_value: { type: integer }
+                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -2291,6 +2297,12 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     - $ref: '#/components/parameters/conversation_id'
   post:
     $ref: ./application/conversation/toggle_priority.yml
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_typing_status:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  post:
+    $ref: ./application/conversation/toggle_typing_status.yml
 
 /api/v1/accounts/{account_id}/conversations/{conversation_id}/custom_attributes:
   parameters:
@@ -2331,16 +2343,22 @@ x-scheduling-expense-schema: &scheduling_expense_schema
 # Inboxes
 /api/v1/accounts/{account_id}/inboxes:
   $ref: ./application/inboxes/index.yml
-/api/v1/accounts/{account_id}/inboxes/{id}/:
-  $ref: ./application/inboxes/show.yml
-/api/v1/accounts/{account_id}/inboxes/:
-  $ref: ./application/inboxes/create.yml
 /api/v1/accounts/{account_id}/inboxes/{id}:
   $ref: ./application/inboxes/update.yml
 /api/v1/accounts/{account_id}/inboxes/{id}/agent_bot:
   $ref: ./application/inboxes/get_agent_bot.yml
 /api/v1/accounts/{account_id}/inboxes/{id}/set_agent_bot:
   $ref: ./application/inboxes/set_agent_bot.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/refresh_whatsapp_web_qr:
+  $ref: ./application/inboxes/refresh_whatsapp_web_qr.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/reconnect_whatsapp_web:
+  $ref: ./application/inboxes/reconnect_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/disconnect_whatsapp_web:
+  $ref: ./application/inboxes/disconnect_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/repair_whatsapp_web:
+  $ref: ./application/inboxes/repair_whatsapp_web.yml
+/api/v1/accounts/{account_id}/inboxes/{id}/whatsapp_web_diagnostics:
+  $ref: ./application/inboxes/whatsapp_web_diagnostics.yml
 
 # Inbox Members
 /api/v1/accounts/{account_id}/inbox_members/{inbox_id}:
@@ -2359,6 +2377,30 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     $ref: ./application/inboxes/inbox_members/update.yml
   delete:
     $ref: ./application/inboxes/inbox_members/delete.yml
+
+# Labels
+/api/v1/accounts/{account_id}/labels:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/labels/index.yml
+  post:
+    $ref: ./application/labels/create.yml
+/api/v1/accounts/{account_id}/labels/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: number
+      description: ID of the label
+  get:
+    $ref: ./application/labels/show.yml
+  patch:
+    $ref: ./application/labels/update.yml
+  delete:
+    $ref: ./application/labels/delete.yml
 
 # Messages
 /api/v1/accounts/{account_id}/conversations/{conversation_id}/messages:

@@ -13,7 +13,8 @@
         "CANCEL": "Annulla",
         "SUBMIT": "Connetti Store"
       },
-      "ERROR": "Si è verificato un errore nella connessione a Shopify. Si prega di riprovare o contattare il supporto se il problema persiste."
+      "ERROR": "Si è verificato un errore nella connessione a Shopify. Si prega di riprovare o contattare il supporto se il problema persiste.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Integrazioni",
     "DESCRIPTION": "OneLink si integra con più strumenti e servizi per migliorare l'efficienza del tuo team. Esplora l'elenco qui sotto per configurare le tue app preferite.",
@@ -101,7 +102,18 @@
           "YES": "Sì, Elimina ",
           "NO": "No, Conserva"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "Secret",
+        "COPY": "Copia secret negli appunti",
+        "COPY_SUCCESS": "Secret copiato negli appunti",
+        "TOGGLE": "Cambia visibilità secret",
+        "CREATED_DESC": "Il tuo webhook è stato creato. Usa il secret qui sotto per verificare le signature del webhook. Per favore copialo ora — lo puoi ritrovare più tardi nel modulo di modifica webhook.",
+        "DONE": "Fatto"
+      },
+      "COUNT": "{n} webhook | {n} webhook",
+      "SEARCH_PLACEHOLDER": "Cerca webhook...",
+      "NO_RESULTS": "Nessun webhook trovato corrispondente alla tua ricerca"
     },
     "SLACK": {
       "DELETE": "Elimina",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "Si è verificato un errore durante l'aggiornamento dell'integrazione, riprova",
       "UPDATE_SUCCESS": "Il canale è connesso con successo",
-      "FAILED_TO_FETCH_CHANNELS": "Si è verificato un errore nel recupero dei canali da Slack, per favore riprova"
+      "FAILED_TO_FETCH_CHANNELS": "Si è verificato un errore nel recupero dei canali da Slack, per favore riprova",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Clicca qui per unirti",
@@ -145,7 +158,11 @@
         "EXPAND": "Espandi",
         "MAKE_FRIENDLY": "Cambia il tono del messaggio in amichevole",
         "MAKE_FORMAL": "Usa un tono formale",
-        "SIMPLIFY": "Semplifica"
+        "SIMPLIFY": "Semplifica",
+        "CONFIDENT": "Usa un tono sicuro",
+        "PROFESSIONAL": "Usa un tono professionale",
+        "CASUAL": "Usa un tono informale",
+        "STRAIGHTFORWARD": "Usa un tono diretto"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Contenuti in bozza",
@@ -184,7 +201,25 @@
         "GENERATING": "Generazione...",
         "CANCEL": "Annulla"
       },
-      "GENERATE_ERROR": "Si è verificato un errore nell'elaborazione del contenuto, verifica la tua chiave API OpenAI e riprova"
+      "GENERATE_ERROR": "Si è verificato un errore nell'elaborazione del contenuto, verifica la tua chiave API OpenAI e riprova",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "Migliora la risposta",
+        "IMPROVE_REPLY_SELECTION": "Migliora il testo selezionato",
+        "CHANGE_TONE": {
+          "TITLE": "Cambia tono",
+          "OPTIONS": {
+            "PROFESSIONAL": "Professionale",
+            "CASUAL": "Informale",
+            "STRAIGHTFORWARD": "Diretto",
+            "CONFIDENT": "Sicuro",
+            "FRIENDLY": "Amichevole"
+          }
+        },
+        "GRAMMAR": "Correggi grammatica e ortografia",
+        "SUGGESTION": "Suggerisci una risposta",
+        "SUMMARIZE": "Riassumi la conversazione",
+        "ASK_COPILOT": "Chiedi a Copilot"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "Elimina",
@@ -206,7 +241,8 @@
         "LOADING": "Caricamento app dashboard...",
         "TABLE_HEADER": {
           "NAME": "Nome",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "Azioni"
         },
         "EDIT_TOOLTIP": "Modifica app",
         "DELETE_TOOLTIP": "Elimina app"
@@ -240,7 +276,10 @@
         "MESSAGE": "Sei sicuro di voler eliminare l'app - {appName}?",
         "API_SUCCESS": "App dashboard cancellata con successo",
         "API_ERROR": "Non è stato possibile eliminare l'app. Riprova più tardi"
-      }
+      },
+      "COUNT": "{n} app dashboard | {n} app dashboard",
+      "SEARCH_PLACEHOLDER": "Cerca app dashboard...",
+      "NO_RESULTS": "Nessuna app dashboard trovata corrispondente alla tua ricerca"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Crea/collega issue Linear",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Il workspace di Linear non è connesso. Richiedi all'amministratore di connettere un workspace per utilizzare questa integrazione.",
         "DESCRIPTION": "Il workspace di Linear non è connesso. Fai clic sul pulsante qui sotto per collegare il workspace per utilizzare questa integrazione.",
         "BUTTON_TEXT": "Connetti workspace Linear"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "L'eliminazione di questa integrazione rimuoverà l'accesso al tuo workspace Notion e interromperà tutte le funzionalità correlate.",
         "CONFIRM": "Sì, elimina",
         "CANCEL": "Annulla"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "Cerca integrazioni...",
+    "NO_RESULTS": "Nessuna integrazione trovata corrispondente alla tua ricerca"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Aggiorna il tuo piano per ottenere l'accesso ai nostri assistenti, copilot e altro ancora.",
-      "ASK_ADMIN": "Contatta il tuo amministratore per l'aggiornamento."
+      "ASK_ADMIN": "Contatta il tuo amministratore per l'aggiornamento.",
+      "AVAILABLE_ON": "Captain AI è disponibile solo nei piani Enterprise."
     },
     "BANNER": {
       "RESPONSES": "Hai usato oltre l'80% del tuo limite di risposte. Per continuare a utilizzare Captain AI, per favore aggiorna.",
@@ -483,7 +527,8 @@
           "TITLE": "Funzionalità",
           "ALLOW_CONVERSATION_FAQS": "Genera FAQ dalle conversazioni risolte",
           "ALLOW_MEMORIES": "Salva memorie e dettagli chiave dalle interazioni con i clienti.",
-          "ALLOW_CITATIONS": "Includi citazioni alle fonti nelle risposte"
+          "ALLOW_CITATIONS": "Includi citazioni alle fonti nelle risposte",
+          "ALLOW_CONTACT_ATTRIBUTES": "Consenti accesso alle informazioni di contatto"
         }
       },
       "EDIT": {
@@ -786,6 +831,10 @@
           "PLACEHOLDER": "Ricerca Ordini",
           "ERROR": "Nome strumento richiesto"
         },
+        "GROUP_NAME": {
+          "LABEL": "Group (Optional)",
+          "PLACEHOLDER": "Orders"
+        },
         "DESCRIPTION": {
           "LABEL": "Descrizione",
           "PLACEHOLDER": "Cerca i dettagli di un ordine tramite l'ID ordine"
@@ -854,7 +903,8 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Nome del parametro richiesto"
         }
-      }
+      },
+      "UNGROUPED": "Ungrouped"
     },
     "RESPONSES": {
       "HEADER": "FAQ",

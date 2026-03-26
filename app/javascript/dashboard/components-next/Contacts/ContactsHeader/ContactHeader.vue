@@ -36,9 +36,9 @@ const emit = defineEmits([
 </script>
 
 <template>
-  <header class="sticky top-0 z-10">
+  <header class="sticky top-0 z-10 px-6">
     <div
-      class="flex items-start sm:items-center justify-between w-full py-6 px-6 gap-2 mx-auto max-w-[60rem]"
+      class="flex items-start sm:items-center justify-between w-full py-6 gap-2 mx-auto max-w-5xl"
     >
       <span class="text-xl font-medium truncate text-n-slate-12">
         {{ headerTitle }}
@@ -49,7 +49,9 @@ const emit = defineEmits([
             v-if="companyFilterOptions.length"
             :model-value="companyFilterValue"
             :options="companyFilterOptions"
-            :placeholder="$t('CONTACTS_LAYOUT.HEADER.COMPANY_FILTER.PLACEHOLDER')"
+            :placeholder="
+              $t('CONTACTS_LAYOUT.HEADER.COMPANY_FILTER.PLACEHOLDER')
+            "
             :search-placeholder="
               $t('CONTACTS_LAYOUT.HEADER.COMPANY_FILTER.SEARCH_PLACEHOLDER')
             "
@@ -61,15 +63,15 @@ const emit = defineEmits([
             type="search"
             :placeholder="$t('CONTACTS_LAYOUT.HEADER.SEARCH_PLACEHOLDER')"
             :custom-input-class="[
-              'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pl-8 !py-1 rtl:!pr-8',
+              'h-8 [&:not(.focus)]:!border-transparent bg-n-alpha-2 dark:bg-n-solid-1 ltr:!pr-8 !py-1 rtl:!pl-8',
             ]"
             class="w-full"
             @input="emit('search', $event.target.value)"
           >
-            <template #prefix>
+            <template #suffix>
               <Icon
                 icon="i-lucide-search"
-                class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:left-2 rtl:right-2"
+                class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:right-2 rtl:left-2"
               />
             </template>
           </Input>

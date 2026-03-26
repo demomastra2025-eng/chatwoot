@@ -1,2 +1,2 @@
-backend: bin/rails s -p 3000
+backend: ACTIVE_JOB_QUEUE_ADAPTER=${ACTIVE_JOB_QUEUE_ADAPTER:-async} bin/rails s -p 3000
 vite: VITE_RUBY_HOST=127.0.0.1 bin/vite dev

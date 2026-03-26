@@ -1,7 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { format } from 'date-fns';
-import DatePicker from 'vue-datepicker-next';
+
+import DateTimePicker from 'dashboard/components/ui/DateTimePicker.vue';
 
 const props = defineProps({
   modelValue: {
@@ -37,6 +38,11 @@ const props = defineProps({
   minuteStep: {
     type: Number,
     default: 5,
+  },
+  timePickerVariant: {
+    type: String,
+    default: 'wheel',
+    validator: value => ['field', 'wheel'].includes(value),
   },
 });
 
@@ -83,15 +89,12 @@ const formatModelValue = value => {
   return format(value, "yyyy-MM-dd'T'HH:mm");
 };
 
-const pickerValue = computed({
-  get: () => parseModelValue(props.modelValue),
-  set: value => emit('update:modelValue', formatModelValue(value)),
-});
+const pickerValue = computed(() => parseModelValue(props.modelValue));
 
 const displayFormat = computed(() => {
   if (props.type === 'date') return 'DD.MM.YYYY';
   if (props.type === 'time') return 'HH:mm';
-  return 'DD.MM.YYYY HH:mm';
+  return 'DD.MM.YYYY - HH:mm';
 });
 
 const messageClass = computed(() => {
@@ -107,17 +110,14 @@ const messageClass = computed(() => {
 });
 
 const inputClass = computed(() => {
-  const stateClass =
-    props.messageType === 'error'
-      ? 'outline-n-ruby-8 dark:outline-n-ruby-8 hover:outline-n-ruby-9 dark:hover:outline-n-ruby-9'
-      : 'outline-n-weak dark:outline-n-weak hover:outline-n-slate-6 dark:hover:outline-n-slate-6 focus-within:outline-n-brand dark:focus-within:outline-n-brand';
-
-  return [
-    'scheduling-date-time-field__input',
-    'block w-full h-10 reset-base text-sm !mb-0 outline outline-1 border-none border-0 outline-offset-[-1px] rounded-lg bg-n-alpha-black2 placeholder:text-n-slate-10 dark:placeholder:text-n-slate-10 disabled:cursor-not-allowed disabled:opacity-50 text-n-slate-12 transition-all duration-500 ease-in-out',
-    stateClass,
-  ].join(' ');
+  return props.messageType === 'error'
+    ? 'scheduling-date-time-field__input scheduling-date-time-field__input--error'
+    : 'scheduling-date-time-field__input';
 });
+
+const handleChange = value => {
+  emit('update:modelValue', formatModelValue(value));
+};
 </script>
 
 <template>
@@ -126,18 +126,17 @@ const inputClass = computed(() => {
       {{ label }}
     </label>
 
-    <DatePicker
-      v-model:value="pickerValue"
+    <DateTimePicker
+      :value="pickerValue"
       :type="type"
       :format="displayFormat"
       :minute-step="minuteStep"
-      :editable="false"
-      :clearable="false"
-      :confirm="type !== 'time'"
+      :time-picker-variant="timePickerVariant"
       :disabled="disabled"
       :placeholder="placeholder"
       :input-class="inputClass"
       popup-class="scheduling-date-time-field__popup"
+      @change="handleChange"
     />
 
     <p
@@ -150,25 +149,14 @@ const inputClass = computed(() => {
   </div>
 </template>
 
-<style scoped>
-:deep(.mx-datepicker) {
-  width: 100%;
+<style scoped lang="scss">
+:deep(.scheduling-date-time-field__input--error) {
+  outline-color: rgb(var(--n-ruby-8)) !important;
 }
 
-:deep(.mx-input-wrapper) {
-  width: 100%;
-}
-
-:deep(.scheduling-date-time-field__input) {
-  padding: 0.625rem 0.75rem;
-}
-
-:deep(.mx-input-wrapper .mx-icon-calendar),
-:deep(.mx-input-wrapper .mx-icon-clock) {
-  color: rgb(var(--n-slate-10));
-}
-
-:deep(.scheduling-date-time-field__popup) {
-  z-index: 120;
+:deep(.scheduling-date-time-field__input--error:hover),
+:deep(.scheduling-date-time-field__input--error:focus),
+:deep(.scheduling-date-time-field__input--error[data-state='open']) {
+  outline-color: rgb(var(--n-ruby-9)) !important;
 }
 </style>

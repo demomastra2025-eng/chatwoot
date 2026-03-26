@@ -3,6 +3,9 @@
     "FETCHING": "Fetching Integrations",
     "NO_HOOK_CONFIGURED": "There are no {integrationId} integrations configured in this account.",
     "HEADER": "Applications",
+    "COUNT": "{n} integration | {n} integrations",
+    "SEARCH_PLACEHOLDER": "Search...",
+    "NO_RESULTS": "No results found matching your search",
     "STATUS": {
       "ENABLED": "Enabled",
       "DISABLED": "Disabled"
@@ -31,6 +34,7 @@
     "LIST": {
       "FETCHING": "Fetching integration hooks",
       "INBOX": "Inbox",
+      "ACTIONS": "Actions",
       "DELETE": {
         "BUTTON_TEXT": "Delete"
       }
@@ -54,6 +58,20 @@
     },
     "DISCONNECT": {
       "BUTTON_TEXT": "Disconnect"
+    },
+    "MEDELEMENT": {
+      "NEXT_SYNC": "Next scheduled sync",
+      "LAST_SYNC": "Last scheduled sync",
+      "FREQUENCY": {
+        "HOURLY": "Every hour",
+        "EVERY_HOURS": "Every {count} hours",
+        "DAILY": "Once a day"
+      },
+      "RUN_SYNC": {
+        "BUTTON": "Run sync now",
+        "SUCCESS": "Medelement sync has been queued. Imported data may appear in a few minutes.",
+        "ERROR": "Could not start Medelement sync. Please try again later."
+      }
     },
     "SIDEBAR_DESCRIPTION": {
       "DIALOGFLOW": "Dialogflow is a natural language processing platform for building conversational interfaces. Integrating it with {installationName} lets bots handle queries first and transfer them to agents when needed. It helps qualify leads and reduce agent workload by answering FAQs. To add Dialogflow, create a Service Account in Google Console and share the credentials. Refer to the docs for details"

@@ -2,7 +2,13 @@
 import * as MutationHelpers from 'shared/helpers/vuex/mutationHelpers';
 import * as types from '../mutation-types';
 import IntegrationsAPI from '../../api/integrations';
-import { throwErrorMessage } from 'dashboard/store/utils/api';
+import {
+  parseAPIErrorResponse,
+  throwErrorMessage,
+} from 'dashboard/store/utils/api';
+
+const normalizeApiError = error =>
+  Object.assign(new Error(parseAPIErrorResponse(error)), error);
 
 const state = {
   records: [],
@@ -14,6 +20,7 @@ const state = {
     isCreatingHook: false,
     isUpdatingHook: false,
     isDeletingHook: false,
+    isRunningHookSync: false,
     isCreatingSlack: false,
     isUpdatingSlack: false,
     isFetchingSlackChannels: false,
@@ -111,7 +118,7 @@ export const actions = {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isFetchingItem: false });
     } catch (error) {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isFetchingItem: false });
-      throw new Error(error);
+      throw normalizeApiError(error);
     }
   },
   createHook: async ({ commit }, hookData) => {
@@ -122,7 +129,7 @@ export const actions = {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isCreatingHook: false });
     } catch (error) {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isCreatingHook: false });
-      throw new Error(error);
+      throw normalizeApiError(error);
     }
   },
   updateHook: async ({ commit }, { hookId, hookData }) => {
@@ -133,7 +140,7 @@ export const actions = {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false });
     } catch (error) {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isUpdatingHook: false });
-      throw new Error(error);
+      throw normalizeApiError(error);
     }
   },
   deleteHook: async ({ commit }, { appId, hookId }) => {
@@ -144,7 +151,20 @@ export const actions = {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isDeletingHook: false });
     } catch (error) {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isDeletingHook: false });
-      throw new Error(error);
+      throw normalizeApiError(error);
+    }
+  },
+  runHookSync: async ({ commit }, hookId) => {
+    commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true });
+    try {
+      const response = await IntegrationsAPI.runHookSync(hookId);
+      return response.data;
+    } catch (error) {
+      throw error;
+    } finally {
+      commit(types.default.SET_INTEGRATIONS_UI_FLAG, {
+        isRunningHookSync: false,
+      });
     }
   },
 };

@@ -14,6 +14,17 @@
 #  account_id        :bigint           not null
 #  resource_id       :bigint
 #
+# Indexes
+#
+#  idx_scheduling_time_offs_on_account_resource_range  (account_id,resource_id,starts_at,ends_at)
+#  index_scheduling_time_offs_on_account_id            (account_id)
+#  index_scheduling_time_offs_on_resource_id           (resource_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (resource_id => scheduling_resources.id)
+#
 
 class Scheduling::TimeOff < ApplicationRecord
   belongs_to :account
@@ -23,6 +34,7 @@ class Scheduling::TimeOff < ApplicationRecord
 
   validates :kind, :starts_at, :ends_at, presence: true
   validate :ends_after_starts
+  validate :resource_is_available_for_scheduling_setup
 
   scope :ordered, -> { order(:starts_at, :id) }
 
@@ -33,6 +45,12 @@ class Scheduling::TimeOff < ApplicationRecord
     return if ends_at > starts_at
 
     errors.add(:ends_at, 'must be after starts_at')
+  end
+
+  def resource_is_available_for_scheduling_setup
+    return if resource.blank? || !resource.deleted_from_scheduling?
+
+    errors.add(:resource_id, 'is not available for scheduling')
   end
 
   def sync_account_id

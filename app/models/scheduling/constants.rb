@@ -4,7 +4,7 @@ module Scheduling::Constants
   PAYMENT_METHODS = %w[kaspi_transfer kaspi_qr cash bank_transfer card other].freeze
   PAYMENT_STATUSES = %w[awaiting_payment prepaid paid cancelled].freeze
   EXPENSE_STATUSES = %w[unpaid paid].freeze
-  COMPENSATION_TYPES = %w[percent fixed].freeze
+  COMPENSATION_TYPES = %w[percent fixed fixed_plus_percent].freeze
   PAYMENT_KINDS = %w[prepaid payment adjustment].freeze
   DEFAULT_TIMEZONE = 'Asia/Almaty'.freeze
   SLOT_STEP_MINUTES = 5

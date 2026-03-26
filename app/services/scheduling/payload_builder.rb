@@ -31,6 +31,7 @@ module Scheduling::PayloadBuilder
       service_amount: appointment.service_amount,
       compensation_type_snapshot: appointment.compensation_type_snapshot,
       compensation_value_snapshot: appointment.compensation_value_snapshot,
+      compensation_percent_snapshot: appointment.compensation_percent_snapshot,
       prepaid_amount: appointment.prepaid_amount,
       prepaid_payment_method: appointment.prepaid_payment_method,
       settlement_amount: appointment.settlement_amount,
@@ -153,6 +154,7 @@ module Scheduling::PayloadBuilder
       slot_duration_min: resource.slot_duration_min,
       compensation_type: resource.compensation_type,
       compensation_value: resource.compensation_value,
+      compensation_percent: resource.compensation_percent,
       active: resource.active,
       custom_attributes: resource.custom_attributes,
       created_at: resource.created_at&.iso8601,
@@ -188,6 +190,7 @@ module Scheduling::PayloadBuilder
       price: price.price,
       compensation_type: price.compensation_type,
       compensation_value: price.compensation_value,
+      compensation_percent: price.compensation_percent,
       active: price.active,
       created_at: price.created_at&.iso8601,
       updated_at: price.updated_at&.iso8601

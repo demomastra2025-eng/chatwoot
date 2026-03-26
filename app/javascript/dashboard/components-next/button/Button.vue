@@ -107,7 +107,7 @@ const STYLE_CONFIG = {
       outline: 'text-n-brand outline-n-brand',
       ghost:
         'text-n-brand hover:enabled:bg-n-alpha-2 focus-visible:bg-n-alpha-2 outline-transparent',
-      link: 'text-n-blue-11 dark:text-n-blue-10 hover:enabled:underline focus-visible:underline outline-transparent',
+      link: 'text-n-brand hover:enabled:underline focus-visible:underline outline-transparent',
     },
     ruby: {
       solid:

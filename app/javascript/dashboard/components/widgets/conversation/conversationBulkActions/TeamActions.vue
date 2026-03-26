@@ -54,13 +54,13 @@ export default {
             <div
               class="flex items-center justify-between h-8 gap-2 agent-list-search"
             >
-              <fluent-icon icon="search" class="search-icon" size="16" />
               <input
                 v-model="query"
                 type="search"
                 :placeholder="$t('BULK_ACTION.SEARCH_INPUT_PLACEHOLDER')"
                 class="reset-base !outline-0 !text-sm agent--search_input"
               />
+              <fluent-icon icon="search" class="search-icon" size="16" />
             </div>
           </li>
           <template v-if="filteredTeams.length">

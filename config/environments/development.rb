@@ -32,7 +32,7 @@ Rails.application.configure do
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = ENV.fetch('ACTIVE_STORAGE_SERVICE', 'local').to_sym
 
-  config.active_job.queue_adapter = :sidekiq
+  config.active_job.queue_adapter = ENV.fetch('ACTIVE_JOB_QUEUE_ADAPTER', 'sidekiq').to_sym
 
   Rails.application.routes.default_url_options = { host: ENV['FRONTEND_URL'] }
 
@@ -62,6 +62,9 @@ Rails.application.configure do
 
   # Disable host check during development
   config.hosts = nil
+
+  # Barnes targets a local StatsD agent on the foreman-assigned PORT, which is not present in dev-lite.
+  config.barnes[:statsd] = nil
   
   # GitHub Codespaces configuration
   if ENV['CODESPACES']

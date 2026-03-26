@@ -29,7 +29,7 @@ const handleSubmit = () => {
 </script>
 
 <template>
-  <div class="flex justify-between items-center p-3 pt-0">
+  <div class="flex justify-between items-center px-3 pb-2.5 pt-0">
     <NextButton
       :label="t('GENERAL.DISCARD')"
       slate

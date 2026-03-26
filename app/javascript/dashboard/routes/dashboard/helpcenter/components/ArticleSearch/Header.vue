@@ -55,7 +55,7 @@ useKeyboardEvents(keyboardEvents);
 
     <div class="relative">
       <div
-        class="absolute ltr:left-0 rtl:right-0 w-8 top-0.5 h-8 flex justify-center items-center"
+        class="absolute ltr:right-0 rtl:left-0 w-8 top-0.5 h-8 flex justify-center items-center"
       >
         <fluent-icon icon="search" class="" size="18" />
       </div>
@@ -63,7 +63,7 @@ useKeyboardEvents(keyboardEvents);
         ref="searchInputRef"
         type="text"
         :placeholder="$t('HELP_CENTER.ARTICLE_SEARCH.PLACEHOLDER')"
-        class="block w-full !h-9 ltr:!pl-8 rtl:!pr-8 dark:!bg-n-slate-2 !border-n-weak !bg-n-slate-2 text-sm rounded-md leading-8 text-n-slate-12 shadow-sm ring-2 ring-transparent ring-n-weak border border-solid placeholder:text-n-slate-10 focus:border-n-brand focus:ring-n-brand !mb-0"
+        class="block w-full !h-9 ltr:!pr-8 rtl:!pl-8 dark:!bg-n-slate-2 !border-n-weak !bg-n-slate-2 text-sm rounded-md leading-8 text-n-slate-12 shadow-sm ring-2 ring-transparent ring-n-weak border border-solid placeholder:text-n-slate-10 focus:border-n-brand focus:ring-n-brand !mb-0"
         :value="searchQuery"
         @input="onInput"
       />

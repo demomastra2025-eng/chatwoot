@@ -36,11 +36,20 @@ class Captain::Assistant < ApplicationRecord
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :destroy_async
 
-  store_accessor :config, :temperature, :feature_faq, :feature_memory, :product_name
+  store_accessor :config, :temperature, :feature_faq, :feature_memory, :product_name,
+                 :message_collapse_window_seconds, :history_message_limit,
+                 :auto_reply_on_last_incoming
+  store_accessor :config, :feature_contact_attributes
 
   validates :name, presence: true
   validates :description, presence: true
   validates :account_id, presence: true
+  validates :message_collapse_window_seconds,
+            numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+            allow_blank: true
+  validates :history_message_limit,
+            numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+            allow_blank: true
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -85,6 +94,18 @@ class Captain::Assistant < ApplicationRecord
     }
   end
 
+  def message_collapse_window_seconds_value
+    config_integer_value('message_collapse_window_seconds')
+  end
+
+  def history_message_limit_value
+    config_integer_value('history_message_limit')
+  end
+
+  def auto_reply_on_last_incoming_enabled?
+    config['auto_reply_on_last_incoming'] == true
+  end
+
   private
 
   def agent_name
@@ -106,7 +127,7 @@ class Captain::Assistant < ApplicationRecord
       scenarios: scenarios.enabled.map do |scenario|
         {
           title: scenario.title,
-          key: scenario.title.parameterize.underscore,
+          key: scenario.handoff_key,
           description: scenario.description
         }
       end,
@@ -117,5 +138,10 @@ class Captain::Assistant < ApplicationRecord
 
   def default_avatar_url
     "#{ENV.fetch('FRONTEND_URL', nil)}/assets/images/dashboard/captain/logo.svg"
+  end
+
+  def config_integer_value(key)
+    value = config[key]
+    value.present? ? value.to_i : 0
   end
 end

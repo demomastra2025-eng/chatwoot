@@ -14,6 +14,7 @@ describe('#integrationAPI', () => {
     expect(integrationAPI).toHaveProperty('updateSlack');
     expect(integrationAPI).toHaveProperty('listAllSlackChannels');
     expect(integrationAPI).toHaveProperty('deleteHook');
+    expect(integrationAPI).toHaveProperty('runHookSync');
   });
   describe('API calls', () => {
     const originalAxios = window.axios;
@@ -82,6 +83,13 @@ describe('#integrationAPI', () => {
       integrationAPI.deleteHook(2);
       expect(axiosMock.delete).toHaveBeenCalledWith(
         '/api/v1/integrations/hooks/2'
+      );
+    });
+
+    it('#runHookSync', () => {
+      integrationAPI.runHookSync(2);
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/integrations/hooks/2/run_sync'
       );
     });
   });

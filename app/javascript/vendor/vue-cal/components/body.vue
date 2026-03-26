@@ -1,0 +1,178 @@
+<template lang="pug">
+.vuecal__body(ref="bodyEl" :style="bodyStyles")
+  transition(name="vuecal-shrink")
+    .vuecal__time-at-cursor(
+      v-if="config.timeAtCursor && (cursorXPercent !== null || cursorYPercent !== null)"
+      :style="timeAtCursor.style")
+      label {{ timeAtCursor.time }}
+  VueCalCell(
+    v-for="(date, i) in view.cellDates"
+    :key="i"
+    :start="date.start"
+    :end="date.end"
+    :index="i")
+    template(v-if="$slots.cell" #cell="params")
+      slot(name="cell" v-bind="params")
+    template(v-if="$slots['cell-date']" #cell-date="params")
+      slot(name="cell-date" v-bind="params")
+    template(v-if="$slots['cell-content']" #cell-content="params")
+      slot(name="cell-content" v-bind="params")
+    template(v-if="$slots['cell-events']" #cell-events="params")
+      slot(name="cell-events" v-bind="params")
+    template(v-if="$slots[`event.${view.id}`]" #[`event.${view.id}`]="params")
+      slot(:name="`event.${view.id}`" v-bind="params")
+    template(v-if="$slots['event.all-day']" #event.all-day="params")
+      slot(name="event.all-day" v-bind="params")
+    template(v-if="$slots.event" #event="params")
+      slot(name="event" v-bind="params")
+    template(v-if="$slots['event-count']" #event-count="params")
+      slot(name="event-count" v-bind="params")
+    template(v-if="$slots['now-line']" #now-line="params")
+      slot(name="now-line" v-bind="params")
+</template>
+
+<script setup>
+import { computed, inject, onBeforeUnmount, onMounted, ref, reactive } from 'vue'
+import { percentageToMinutes, pxToPercentage } from '../utils/conversions.js'
+import VueCalCell from './cell.vue'
+
+const vuecal = inject('vuecal')
+const { view, config, dateUtils, touch: globalTouchState, eventsManager } = vuecal
+
+const bodyEl = ref(null)
+const cursorXPercent = ref(null)
+const cursorYPercent = ref(null)
+
+// Use resizing state from events composable.
+const { resizeState } = eventsManager
+
+// These CSS variables must stay at this level and not at the root, because they need to be "dead"
+// and frozen with the animated container when leaving in a vue transition, for a successful smooth
+// transition. In other terms, there can be 2 vuecal__scrollable elements that are animated with
+// different values of these CSS variables at the same time. Beautiful :)
+const bodyStyles = computed(() => ({
+  '--vuecal-grid-columns': view.cols,
+  '--vuecal-grid-rows': view.rows,
+  '--vuecal-body-max-height': config.time ? `${config.timeCellHeight * (config.timeTo - config.timeFrom) / config.timeStep}px` : null
+}))
+
+// Computes the time at the current cursor position.
+const timeAtCursor = computed(() => {
+  const isHzl = config.horizontal
+  const cursorPercent = isHzl ? cursorXPercent.value : cursorYPercent.value
+  const time = dateUtils.formatTime(percentageToMinutes(cursorPercent, config), config.twelveHour ? 'h:mm{am}' : 'HH:mm')
+  return {
+    style: { [isHzl ? 'left' : 'top']: `${cursorPercent}%` },
+    time
+  }
+})
+
+const onBodyMousemove = e => {
+  if (view.isMonth || view.isYear || view.isYears) return
+
+  // When resizing an event horizontally, update the current hovered cell from the body element,
+  // so there is only one event listener and no need for cell coordinates calculation.
+  const needsResizeCellUpdate = globalTouchState.isResizingEvent && config.editableEvents.resizeX
+
+  // Skip all DOM work when nothing needs updating (common case when timeAtCursor is off).
+  if (!config.timeAtCursor && !needsResizeCellUpdate) return
+
+  const domEvent = e.touches?.[0] || e // Handle click or touch event.
+  const { clientX, clientY } = domEvent
+
+  if (needsResizeCellUpdate) resizeState.cellEl = getCellUnderMouse(clientX, clientY)
+
+  if (config.timeAtCursor) {
+    const { top, left } = bodyEl.value.getBoundingClientRect()
+    if (config.horizontal) cursorXPercent.value = (clientX - left) * 100 / bodyEl.value.clientWidth
+    else cursorYPercent.value = pxToPercentage(clientY - top, bodyEl.value)
+  }
+}
+
+const onBodyMouseleave = () => {
+  cursorXPercent.value = null
+  cursorYPercent.value = null
+}
+
+/**
+ * Get the cell element that the mouse is currently over.
+ *
+ * @param {number} mouseX - The mouse X position in document coordinates
+ * @param {number} mouseY - The mouse Y position in document coordinates
+ * @returns {HTMLElement|null} - The cell element or null if not over a cell
+ */
+const getCellUnderMouse = (mouseX, mouseY) => {
+  // Use elementFromPoint for better performance as it's optimized by the browser.
+  const element = document.elementFromPoint(mouseX, mouseY)
+  // Check if the element or its parent is a cell.
+  return element?.closest('.vuecal__cell') || null
+}
+
+onMounted(() => {
+  bodyEl.value.addEventListener('mousemove', onBodyMousemove)
+  bodyEl.value.addEventListener('touchmove', onBodyMousemove)
+  bodyEl.value.addEventListener('mouseleave', onBodyMouseleave)
+  bodyEl.value.addEventListener('touchend', onBodyMouseleave)
+})
+
+onBeforeUnmount(() => {
+  if (bodyEl.value) {
+    bodyEl.value.removeEventListener('mousemove', onBodyMousemove)
+    bodyEl.value.removeEventListener('touchmove', onBodyMousemove)
+    bodyEl.value.removeEventListener('mouseleave', onBodyMouseleave)
+    bodyEl.value.removeEventListener('touchend', onBodyMouseleave)
+  }
+})
+</script>
+
+<style lang="scss">
+.vuecal__body {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--vuecal-grid-columns), 1fr);
+  grid-template-rows: repeat(var(--vuecal-grid-rows), 1fr);
+  height: 100%;
+}
+
+.vuecal__time-at-cursor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--vuecal-border-color);
+  pointer-events: none;
+  z-index: 10;
+
+  label {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 100%;
+    transform: translateY(-50%);
+    margin-right: 4px;
+    padding: 0 3px;
+    font-size: 0.7rem;
+    letter-spacing: -0.04em;
+    backdrop-filter: blur(10px);
+    border-radius: 99em;
+  }
+
+  .vuecal--horizontal & {
+    left: auto;
+    right: auto;
+    top: 0;
+    bottom: 0;
+    border-top: none;
+    border-left: 1px dashed var(--vuecal-border-color);
+
+    label {
+      top: auto;
+      bottom: 100%;
+      right: auto;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-right: 0;
+      margin-bottom: 4px;
+    }
+  }
+}
+</style>

@@ -73,9 +73,19 @@ const resetForm = () => {
   Object.assign(state, defaultState);
 };
 
+const resetToCompany = company => {
+  if (!company && props.isNewCompany) {
+    resetForm();
+    return;
+  }
+
+  syncState(company);
+};
+
 defineExpose({
   state,
   resetForm,
+  resetToCompany,
   isFormInvalid,
 });
 </script>

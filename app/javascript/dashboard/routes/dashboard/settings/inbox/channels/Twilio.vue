@@ -170,10 +170,9 @@ export default {
 
     <div class="max-w-[65%] w-full messagingServiceHelptext">
       <label for="useMessagingService">
-        <input
+        <Checkbox
           id="useMessagingService"
           v-model="useMessagingService"
-          type="checkbox"
           class="checkbox"
         />
         {{
@@ -200,10 +199,9 @@ export default {
     </div>
     <div class="max-w-[65%] w-full messagingServiceHelptext">
       <label for="useAPIKey">
-        <input
+        <Checkbox
           id="useAPIKey"
           v-model="useAPIKey"
-          type="checkbox"
           class="checkbox"
         />
         {{ $t('INBOX_MGMT.ADD.TWILIO.API_KEY.USE_API_KEY') }}

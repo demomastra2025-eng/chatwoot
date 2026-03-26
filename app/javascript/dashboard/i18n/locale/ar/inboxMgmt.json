@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "مفعل",
-        "DISABLED": "معطّل"
+        "DISABLED": "معطّل",
+        "ENABLED_DESCRIPTION": "When a contact messages again, the previous conversation will be reopened.",
+        "DISABLED_DESCRIPTION": "A new conversation will be created each time after the previous one is resolved."
       },
       "ENABLE_HMAC": {
         "LABEL": "تفعيل"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "مباشر"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook Configuration",
+        "DESCRIPTION": "Webhook URL is required for your WhatsApp Business Account to receive messages from customers",
+        "ACTION_REQUIRED": "Webhook not configured",
+        "REGISTER_BUTTON": "Register Webhook",
+        "REGISTER_SUCCESS": "Webhook registered successfully",
+        "REGISTER_ERROR": "Failed to register webhook. Please try again.",
+        "CONFIGURED_SUCCESS": "Webhook configured successfully",
+        "URL_MISMATCH": "Webhook URL mismatch"
       }
     },
     "SETTINGS": "الإعدادات",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Restrict which websites can embed your chat widget. For security, only add domains you own and trust. Add one or more domains separated by commas. Leave blank to allow all domains (not recommended for production)."
       },
       "INBOX_AGENTS": "وكيل الدعم",
       "INBOX_AGENTS_SUB_TEXT": "إضافة أو إزالة وكلاء من صندوق الوارد هذا",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Enable widget in mobile apps",
+        "SUBTITLE": "Check this if you embed the widget in iOS or Android apps. Mobile apps don't send domain information, so they would be blocked by domain restrictions unless this is enabled."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Identity Validation",
+        "DESCRIPTION": "Verify user authenticity by generating secure tokens. This prevents unauthorized users from impersonating others in your chat.",
+        "SECRET_KEY": "Secret Key",
+        "VIEW_DOCS": "View documentation",
+        "REQUIRE_LABEL": "Require identity validation for all conversations",
+        "REQUIRE_DESCRIPTION": "When enabled, users must provide a valid identity token to start conversations. Requests without valid tokens will be rejected."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "مركز المساعدة",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "لا شيء"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "حد الإسناد التلقائي",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "Check utility fit",
+        "HELPER_NOTE": "Check this message before submission to improve Utility fit. The system creates a dedicated CSAT template with buttons for reporting and submits it as Utility; Meta may still reclassify it as Marketing based on content.",
+        "RESULT_LABEL": "Meta category prediction",
+        "GUIDANCE_NOTE": "This is a guidance check, not a guarantee of Meta approval.",
+        "SUGGESTION_LABEL": "Suggested utility-safe rewrite",
+        "APPLY": "Use this rewrite",
+        "ERROR_MESSAGE": "Couldn't analyze the message. Please try again.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "Likely Utility",
+          "LIKELY_MARKETING": "Likely Marketing",
+          "UNCLEAR": "Needs clarification"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "غير متوفر",
         "HOURS": "ساعات",
         "VALIDATION_ERROR": "يجب أن يكون وقت البدء قبل وقت الإغلاق.",
-        "CHOOSE": "اختر"
+        "CHOOSE": "اختر",
+        "DAY": "اليوم",
+        "AVAILABILITY": "التوفر"
       },
       "ALL_DAY": "جميع الأيام"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "عادي",
           "EXPANDED_BUBBLE": "ايقونت اللايف شات العرضية"
-        }
+        },
+        "WIDGET_BUBBLE": "Bubble"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "افتراضي",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} inbox | {n} inboxes",
+    "SEARCH_PLACEHOLDER": "Search inboxes...",
+    "NO_RESULTS": "No inboxes found matching your search",
+    "CHANNEL_PREFERENCES": "Channel Preferences",
+    "WIDGET_FEATURES": "Widget features",
+    "ASSIGNMENT": {
+      "TITLE": "تعيين المحادثة",
+      "DESCRIPTION": "تعيين المحادثات الواردة تلقائياً إلى الوكلاء المتاحين استناداً إلى سياسات التعيين",
+      "ENABLE_AUTO_ASSIGNMENT": "تمكين تعيين المحادثة تلقائياً",
+      "DEFAULT_RULES_TITLE": "قواعد التعيين الافتراضية",
+      "DEFAULT_RULES_DESCRIPTION": "استخدام سلوك التعيين الافتراضي لجميع المحادثات",
+      "DEFAULT_RULE_1": "المحادثات التي تم إنشاؤها أولاً",
+      "DEFAULT_RULE_2": "توزيع الجدولة الدائرية (Round robin)",
+      "CUSTOMIZE_WITH_POLICY": "Customize with assignment policy",
+      "USING_POLICY": "استخدام سياسة التعيين المخصصة لهذه القناة",
+      "CUSTOMIZE_POLICY": "التخصيص وفقًا لسياسة التعيين",
+      "DELETE_POLICY": "حذف سياسة",
+      "POLICY_LABEL": "سياسة التعيين",
+      "ASSIGNMENT_ORDER_LABEL": "ترتيب التعيين",
+      "ASSIGNMENT_METHOD_LABEL": "طريقة التعيين",
+      "POLICY_STATUS": {
+        "ACTIVE": "مفعل",
+        "INACTIVE": "غير نشط"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "تم إنشاؤها في وقت سابق",
+        "LONGEST_WAITING": "أطول انتظار"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "Round robin",
+        "BALANCED": "تعيين متوازن"
+      },
+      "UPGRADE_PROMPT": "سياسة التعيين المخصصة متاحى في الخطة (Business) ",
+      "UPGRADE_TO_BUSINESS": "الترقية إلى (Business)",
+      "DEFAULT_POLICY_LINKED": "السياسة الافتراضية المرتبطة",
+      "DEFAULT_POLICY_DESCRIPTION": "ربط سياسة تعيين مخصصة لتخصيص كيفية تعيين المحادثات إلى الوكلاء في هذه القناه",
+      "LINK_EXISTING_POLICY": "ربط السياسة الحالية",
+      "CREATE_NEW_POLICY": "إنشاء سياسة جديدة",
+      "NO_POLICIES": "لم يتم العثور على سياسات التعيين",
+      "VIEW_ALL_POLICIES": "عرض جميع السياسات",
+      "CURRENT_BEHAVIOR": "حاليا يستخدم سلوك التعيين الافتراضي:",
+      "LINK_SUCCESS": "تم ربط سياسة التعيين بنجاح",
+      "LINK_ERROR": "فشل في ربط سياسة التعيين"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "حذف سياسة التعيين؟",
+      "DELETE_CONFIRM_MESSAGE": "هل أنت متأكد من أنك تريد إزالة سياسة التعيين هذه من صندوق الوارد هذا؟ صندوق الوارد سوف يعود إلى قواعد التعيين الافتراضية.",
+      "CANCEL": "إلغاء",
+      "CONFIRM_DELETE": "حذف",
+      "DELETE_SUCCESS": "تمت إزالة سياسة التعيين بنجاح",
+      "DELETE_ERROR": "فشل في إزالة سياسة التعيين"
     }
   }
 }

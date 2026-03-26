@@ -25,12 +25,12 @@
   }
 
   .mx-input {
-    @apply h-[2.5rem] flex border border-solid border-n-weak rounded-md shadow-none;
+    @apply h-[2.5rem] flex border border-solid border-n-weak dark:border-n-strong rounded-md shadow-none bg-n-alpha-black2 dark:bg-n-solid-1 text-n-slate-12;
   }
 
   .mx-input:disabled,
   .mx-input[readonly] {
-    @apply bg-n-background cursor-pointer;
+    @apply bg-n-background dark:bg-n-solid-1 cursor-pointer;
   }
 
   .mx-icon-calendar {

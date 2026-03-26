@@ -72,6 +72,42 @@ RSpec.describe 'Campaigns API', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/{account.id}/campaigns/:id/analytics' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:inbox) { create(:inbox, account: account) }
+    let!(:campaign) { create(:campaign, account: account, inbox: inbox) }
+    let!(:delivered_delivery) do
+      create(:campaign_delivery, campaign: campaign, account: account, inbox: inbox, status: 'delivered', provider: 'twilio_sms')
+    end
+    let!(:failed_delivery) do
+      create(
+        :campaign_delivery,
+        campaign: campaign,
+        account: account,
+        inbox: inbox,
+        status: 'failed',
+        provider: 'twilio_sms',
+        error_message: '30008 - Unknown error'
+      )
+    end
+
+    it 'returns native delivery analytics for one-off campaigns' do
+      get "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/analytics",
+          headers: administrator.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+
+      body = JSON.parse(response.body, symbolize_names: true)
+
+      expect(body[:audience_size]).to eq(2)
+      expect(body[:totals][:delivered]).to eq(1)
+      expect(body[:totals][:failed]).to eq(1)
+      expect(body[:errors].first[:message]).to eq('30008 - Unknown error')
+      expect(body[:deliveries].pluck(:status)).to include('delivered', 'failed')
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/campaigns' do
     let(:inbox) { create(:inbox, account: account) }
 

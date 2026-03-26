@@ -52,6 +52,7 @@
     },
     "SUBMIT": "Создать новый workspace",
     "HAVE_AN_ACCOUNT": "Уже есть workspace?",
-    "GET_STARTED": "Начните работу с OneLink"
+    "GET_STARTED": "Начните работу с OneLink",
+    "TERMS_ACCEPT": "Создавая учетную запись, вы соглашаетесь с нашими <a href=\"https://www.chatwoot.com/terms\">Т и С</a> и <a href=\"https://www.chatwoot.com/privacy-policy\">политикой конфиденциальности</a>"
   }
 }

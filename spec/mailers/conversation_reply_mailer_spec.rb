@@ -9,6 +9,25 @@ RSpec.describe ConversationReplyMailer do
     let(:class_instance) { described_class.new }
     let(:email_channel) { create(:channel_email, account: account) }
 
+    def localized_reply_subject(conversation)
+      "[##{conversation.display_id}] #{I18n.t('conversations.reply.email_subject')}"
+    end
+
+    def localized_friendly_header(sender_name:, business_name:, from_email:)
+      I18n.t(
+        'conversations.reply.email.header.friendly_name',
+        sender_name: sender_name,
+        business_name: business_name,
+        from_email: from_email
+      )
+    end
+
+    def localized_friendly_display_name(sender_name:, business_name:, from_email:)
+      Mail::Address.new(
+        localized_friendly_header(sender_name: sender_name, business_name: business_name, from_email: from_email)
+      ).display_name
+    end
+
     before do
       allow(described_class).to receive(:new).and_return(class_instance)
       allow(class_instance).to receive(:smtp_config_set_or_development?).and_return(true)
@@ -50,7 +69,7 @@ RSpec.describe ConversationReplyMailer do
       let(:cc_mail) { described_class.reply_with_summary(cc_message.conversation, message.id).deliver_now }
 
       it 'renders the default subject' do
-        expect(mail.subject).to eq("[##{message.conversation.display_id}] New messages on this conversation")
+        expect(mail.subject).to eq(localized_reply_subject(message.conversation))
       end
 
       it 'renders the subject in conversation as reply' do
@@ -87,7 +106,15 @@ RSpec.describe ConversationReplyMailer do
       let(:mail) { described_class.reply_with_summary(message.conversation, message.id).deliver_now }
 
       it 'has correct name' do
-        expect(mail[:from].display_names).to eq(["#{message.sender.available_name} from #{message.conversation.inbox.sanitized_name}"])
+        expect(mail[:from].display_names).to eq(
+          [
+            localized_friendly_display_name(
+              sender_name: message.sender.available_name,
+              business_name: message.conversation.inbox.sanitized_name,
+              from_email: message.conversation.account.support_email
+            )
+          ]
+        )
       end
     end
 
@@ -109,7 +136,7 @@ RSpec.describe ConversationReplyMailer do
       end
 
       it 'renders the default subject' do
-        expect(mail.subject).to eq("[##{message_2.conversation.display_id}] New messages on this conversation")
+        expect(mail.subject).to eq(localized_reply_subject(message_2.conversation))
       end
 
       it 'renders the subject in conversation' do
@@ -236,7 +263,7 @@ RSpec.describe ConversationReplyMailer do
       let(:mail) { described_class.email_reply(message).deliver_now }
 
       it 'renders the subject' do
-        expect(mail.subject).to eq("[##{message.conversation.display_id}] New messages on this conversation")
+        expect(mail.subject).to eq(localized_reply_subject(message.conversation))
       end
 
       it 'renders the body' do
@@ -263,7 +290,7 @@ RSpec.describe ConversationReplyMailer do
         it 'uses outgoing_content for CSAT message body' do
           with_modified_env 'FRONTEND_URL' => 'https://one-link.kz' do
             mail = described_class.email_reply(csat_message).deliver_now
-            expect(mail.decoded).to include csat_message.outgoing_content
+            expect(mail.decoded.gsub("\r\n", "\n")).to include(csat_message.outgoing_content.strip)
           end
         end
       end
@@ -464,21 +491,64 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings[:port]).to eq 587
       end
 
+      it 'overrides global SSL defaults with inbox SMTP transport settings' do
+        original_smtp_settings = ActionMailer::Base.smtp_settings.dup
+        ActionMailer::Base.smtp_settings = original_smtp_settings.merge(
+          address: 'mail.one-link.kz',
+          port: 465,
+          ssl: true,
+          enable_starttls_auto: false
+        )
+
+        mail = described_class.email_reply(message)
+
+        expect(mail.delivery_method.settings[:address]).to eq 'smtp.gmail.com'
+        expect(mail.delivery_method.settings[:port]).to eq 587
+        expect(mail.delivery_method.settings[:ssl]).to be false
+        expect(mail.delivery_method.settings[:tls]).to be false
+        expect(mail.delivery_method.settings[:enable_starttls_auto]).to be true
+        expect(mail.delivery_method.settings[:tls_verify]).to be false
+        expect(mail.delivery_method.settings[:ssl_context_params]).to eq(
+          verify_mode: OpenSSL::SSL::VERIFY_NONE,
+          verify_hostname: false
+        )
+      ensure
+        ActionMailer::Base.smtp_settings = original_smtp_settings
+      end
+
       it 'renders sender name in the from address' do
         mail = described_class.email_reply(message)
-        expect(mail['from'].value).to eq "#{message.sender.available_name} from #{smtp_channel.inbox.sanitized_name} <#{smtp_channel.email}>"
+        expect(mail['from'].value).to eq(
+          localized_friendly_header(
+            sender_name: message.sender.available_name,
+            business_name: smtp_channel.inbox.sanitized_name,
+            from_email: smtp_channel.email
+          )
+        )
       end
 
       it 'renders sender name even when assignee is not present' do
         conversation.update(assignee_id: nil)
         mail = described_class.email_reply(message)
-        expect(mail['from'].value).to eq "#{message.sender.available_name} from #{smtp_channel.inbox.sanitized_name} <#{smtp_channel.email}>"
+        expect(mail['from'].value).to eq(
+          localized_friendly_header(
+            sender_name: message.sender.available_name,
+            business_name: smtp_channel.inbox.sanitized_name,
+            from_email: smtp_channel.email
+          )
+        )
       end
 
       it 'renders assignee name in the from address when sender_name not available' do
         message.update(sender_id: nil)
         mail = described_class.email_reply(message)
-        expect(mail['from'].value).to eq "#{conversation.assignee.available_name} from #{smtp_channel.inbox.sanitized_name} <#{smtp_channel.email}>"
+        expect(mail['from'].value).to eq(
+          localized_friendly_header(
+            sender_name: conversation.assignee.available_name,
+            business_name: smtp_channel.inbox.sanitized_name,
+            from_email: smtp_channel.email
+          )
+        )
       end
 
       it 'renders inbox name as sender and assignee or business_name not present' do
@@ -486,7 +556,13 @@ RSpec.describe ConversationReplyMailer do
         conversation.update(assignee_id: nil)
 
         mail = described_class.email_reply(message)
-        expect(mail['from'].value).to eq "Notifications from #{smtp_channel.inbox.sanitized_name} <#{smtp_channel.email}>"
+        expect(mail['from'].value).to eq(
+          localized_friendly_header(
+            sender_name: I18n.t('conversations.reply.email.header.notifications'),
+            business_name: smtp_channel.inbox.sanitized_name,
+            from_email: smtp_channel.email
+          )
+        )
       end
 
       context 'when friendly name enabled' do
@@ -502,7 +578,13 @@ RSpec.describe ConversationReplyMailer do
 
           mail = described_class.email_reply(message)
 
-          expect(mail['from'].value).to eq "Notifications from #{conversation.inbox.sanitized_name} <#{smtp_channel.email}>"
+          expect(mail['from'].value).to eq(
+            localized_friendly_header(
+              sender_name: I18n.t('conversations.reply.email.header.notifications'),
+              business_name: conversation.inbox.sanitized_name,
+              from_email: smtp_channel.email
+            )
+          )
         end
 
         it 'renders sender name as sender and assignee nil and business_name present' do
@@ -512,7 +594,11 @@ RSpec.describe ConversationReplyMailer do
           mail = described_class.email_reply(message)
 
           expect(mail['from'].value).to eq(
-            "Notifications from #{conversation.inbox.business_name} <#{smtp_channel.email}>"
+            localized_friendly_header(
+              sender_name: I18n.t('conversations.reply.email.header.notifications'),
+              business_name: conversation.inbox.business_name,
+              from_email: smtp_channel.email
+            )
           )
         end
 
@@ -521,7 +607,13 @@ RSpec.describe ConversationReplyMailer do
           conversation.update(assignee_id: agent.id)
 
           mail = described_class.email_reply(message)
-          expect(mail['from'].value).to eq "#{agent.available_name} from #{conversation.inbox.business_name} <#{smtp_channel.email}>"
+          expect(mail['from'].value).to eq(
+            localized_friendly_header(
+              sender_name: agent.available_name,
+              business_name: conversation.inbox.business_name,
+              from_email: smtp_channel.email
+            )
+          )
         end
 
         it 'renders sender name as sender and assignee and business_name present' do
@@ -530,7 +622,13 @@ RSpec.describe ConversationReplyMailer do
           conversation.update(assignee_id: agent.id)
 
           mail = described_class.email_reply(message)
-          expect(mail['from'].value).to eq "#{agent_2.available_name} from #{conversation.inbox.business_name} <#{smtp_channel.email}>"
+          expect(mail['from'].value).to eq(
+            localized_friendly_header(
+              sender_name: agent_2.available_name,
+              business_name: conversation.inbox.business_name,
+              from_email: smtp_channel.email
+            )
+          )
         end
       end
 
@@ -575,6 +673,29 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings[:address]).to eq 'smtp.office365.com'
         expect(mail.delivery_method.settings[:port]).to eq 587
       end
+
+      it 'disables inherited SSL for oauth smtp delivery' do
+        original_smtp_settings = ActionMailer::Base.smtp_settings.dup
+        ActionMailer::Base.smtp_settings = original_smtp_settings.merge(
+          address: 'mail.one-link.kz',
+          port: 465,
+          ssl: true,
+          enable_starttls_auto: false
+        )
+
+        mail = described_class.email_reply(message)
+
+        expect(mail.delivery_method.settings[:ssl]).to be false
+        expect(mail.delivery_method.settings[:tls]).to be false
+        expect(mail.delivery_method.settings[:enable_starttls_auto]).to be true
+        expect(mail.delivery_method.settings[:tls_verify]).to be false
+        expect(mail.delivery_method.settings[:ssl_context_params]).to eq(
+          verify_mode: OpenSSL::SSL::VERIFY_NONE,
+          verify_hostname: false
+        )
+      ensure
+        ActionMailer::Base.smtp_settings = original_smtp_settings
+      end
     end
 
     context 'when smtp enabled for google email channel' do
@@ -590,6 +711,30 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings.empty?).to be false
         expect(mail.delivery_method.settings[:address]).to eq 'smtp.gmail.com'
         expect(mail.delivery_method.settings[:port]).to eq 587
+      end
+
+      it 'uses inbox oauth smtp when global smtp config is unavailable' do
+        allow(class_instance).to receive(:smtp_config_set_or_development?).and_return(false)
+
+        mail = described_class.email_reply(message)
+
+        expect(mail).not_to be_nil
+        expect(mail.delivery_method.settings[:address]).to eq 'smtp.gmail.com'
+        expect(mail.delivery_method.settings[:port]).to eq 587
+      end
+    end
+
+    context 'when oauth provider is set but imap is disabled' do
+      let(:google_channel) do
+        create(:channel_email, imap_enabled: false, account: account, provider: 'google', provider_config: { access_token: 'access_token' })
+      end
+      let(:conversation) { create(:conversation, assignee: agent, inbox: google_channel.inbox, account: account).reload }
+      let(:message) { create(:message, conversation: conversation, account: account, message_type: 'outgoing', content: 'Outgoing Message 2') }
+
+      it 'does not build the mail without global smtp' do
+        allow(class_instance).to receive(:smtp_config_set_or_development?).and_return(false)
+
+        expect(described_class.email_reply(message).deliver_now).to be_nil
       end
     end
 
@@ -656,13 +801,23 @@ RSpec.describe ConversationReplyMailer do
 
       it 'sets reply to email to be based on the domain' do
         reply_to_email = "reply+#{message.conversation.uuid}@#{conversation.account.domain}"
-        reply_to = "#{message.sender.available_name} from #{conversation.inbox.sanitized_name} <#{reply_to_email}>"
+        reply_to = localized_friendly_header(
+          sender_name: message.sender.available_name,
+          business_name: conversation.inbox.sanitized_name,
+          from_email: reply_to_email
+        )
         expect(mail['REPLY-TO'].value).to eq(reply_to)
         expect(mail.reply_to).to eq([reply_to_email])
       end
 
       it 'sets the from email to be the support email' do
-        expect(mail['FROM'].value).to eq("#{conversation.messages.last.sender.available_name} from Inbox <#{conversation.account.support_email}>")
+        expect(mail['FROM'].value).to eq(
+          localized_friendly_header(
+            sender_name: conversation.messages.last.sender.available_name,
+            business_name: conversation.inbox.sanitized_name,
+            from_email: conversation.account.support_email
+          )
+        )
         expect(mail.from).to eq([conversation.account.support_email])
       end
 

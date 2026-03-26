@@ -655,7 +655,7 @@ const countries = [
   },
   {
     name: 'Kazakhstan',
-    dial_code: '+77',
+    dial_code: '+7',
     emoji: '🇰🇿',
     id: 'KZ',
   },

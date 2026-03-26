@@ -110,12 +110,12 @@ const handleClickOutside = () => {
         <Input
           v-model="searchValue"
           :placeholder="searchPlaceholder"
-          custom-input-class="bg-transparent !outline-none w-full ltr:!pl-10 rtl:!pr-10 h-10"
+          custom-input-class="bg-transparent !outline-none w-full ltr:!pr-10 rtl:!pl-10 h-10"
         >
-          <template #prefix>
+          <template #suffix>
             <Icon
               icon="i-lucide-search"
-              class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:left-3 rtl:right-3"
+              class="absolute -translate-y-1/2 text-n-slate-11 size-4 top-1/2 ltr:right-3 rtl:left-3"
             />
           </template>
         </Input>

@@ -30,13 +30,25 @@ module Enterprise::MessageTemplates::HookExecutionService
   private
 
   def schedule_captain_response
-    job_args = [conversation, conversation.inbox.captain_assistant]
+    assistant = conversation.inbox.captain_assistant
+    job_args = [conversation, assistant]
+    attachment_wait_time = message.attachments.blank? ? 0.seconds : calculate_attachment_wait_time
 
-    if message.attachments.blank?
-      Captain::Conversation::ResponseBuilderJob.perform_later(*job_args)
+    if assistant.message_collapse_window_seconds_value.zero?
+      if attachment_wait_time.zero?
+        Captain::Conversation::ResponseBuilderJob.perform_later(*job_args, expected_last_message_id: message.id)
+      else
+        Captain::Conversation::ResponseBuilderJob
+          .set(wait: attachment_wait_time)
+          .perform_later(*job_args, expected_last_message_id: message.id)
+      end
     else
-      wait_time = calculate_attachment_wait_time
-      Captain::Conversation::ResponseBuilderJob.set(wait: wait_time).perform_later(*job_args)
+      Captain::Conversation::BufferedResponseSchedulerService.new(
+        conversation: conversation,
+        assistant: assistant,
+        message: message,
+        attachment_wait_time: attachment_wait_time
+      ).perform
     end
   end
 

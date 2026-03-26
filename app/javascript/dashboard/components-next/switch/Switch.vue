@@ -1,5 +1,13 @@
 <script setup>
+import { SwitchRoot, SwitchThumb } from 'reka-ui';
 import { useI18n } from 'vue-i18n';
+
+const props = defineProps({
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
+});
 
 const emit = defineEmits(['change']);
 
@@ -10,31 +18,23 @@ const modelValue = defineModel({
   default: false,
 });
 
-const updateValue = () => {
-  modelValue.value = !modelValue.value;
-  emit('change', !modelValue.value);
+const updateValue = value => {
+  modelValue.value = value;
+  emit('change', value);
 };
 </script>
 
 <template>
-  <button
-    type="button"
-    class="relative h-4 transition-colors duration-200 ease-in-out rounded-full w-7 focus:outline-none focus:ring-1 focus:ring-n-brand focus:ring-offset-n-slate-2 focus:ring-offset-2 flex-shrink-0"
-    :class="
-      modelValue ? 'bg-n-brand-solid' : 'bg-n-slate-6 disabled:bg-n-slate-6/60'
-    "
-    role="switch"
-    :aria-checked="modelValue"
-    @click="updateValue"
+  <SwitchRoot
+    v-bind="$attrs"
+    :model-value="modelValue"
+    :disabled="props.disabled"
+    class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-n-slate-6 p-0.5 shadow-sm transition-colors duration-200 ease-out outline-none focus-visible:ring-1 focus-visible:ring-n-brand focus-visible:ring-offset-2 focus-visible:ring-offset-n-slate-2 data-[state=checked]:bg-n-brand-solid disabled:cursor-not-allowed disabled:opacity-60"
+    @update:model-value="updateValue"
   >
     <span class="sr-only">{{ t('SWITCH.TOGGLE') }}</span>
-    <span
-      class="absolute top-0.5 left-0.5 h-3 w-3 transform rounded-full shadow-sm transition-transform duration-200 ease-out"
-      :class="
-        modelValue
-          ? 'translate-x-3 bg-n-background'
-          : 'translate-x-0 bg-n-background'
-      "
+    <SwitchThumb
+      class="block size-4 rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
     />
-  </button>
+  </SwitchRoot>
 </template>

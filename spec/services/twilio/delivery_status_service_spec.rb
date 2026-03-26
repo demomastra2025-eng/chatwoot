@@ -108,6 +108,31 @@ describe Twilio::DeliveryStatusService do
         expect(conversation.reload.messages.last.status).to eq('failed')
         expect(conversation.reload.messages.last.external_error).to eq('Error code: 30008')
       end
+
+      it 'updates matching campaign delivery records even without a native message' do
+        delivery = create(
+          :campaign_delivery,
+          account: account,
+          inbox: twilio_channel.inbox,
+          campaign: create(:campaign, account: account, inbox: twilio_channel.inbox),
+          contact: contact,
+          provider: 'twilio_sms',
+          provider_message_id: 'SM-campaign-1',
+          status: 'submitted'
+        )
+
+        params = {
+          SmsSid: 'SMxx',
+          From: '+12345',
+          AccountSid: 'ACxxx',
+          MessagingServiceSid: twilio_channel.messaging_service_sid,
+          MessageSid: 'SM-campaign-1',
+          MessageStatus: 'delivered'
+        }
+
+        described_class.new(params: params).perform
+        expect(delivery.reload.status).to eq('delivered')
+      end
     end
   end
 end

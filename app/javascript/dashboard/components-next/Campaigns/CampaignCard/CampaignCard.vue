@@ -42,9 +42,13 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  showAnalytics: {
+    type: Boolean,
+    default: false,
+  },
 });
 
-const emit = defineEmits(['edit', 'delete']);
+const emit = defineEmits(['edit', 'delete', 'analytics']);
 
 const { t } = useI18n();
 
@@ -124,6 +128,14 @@ const inboxIcon = computed(() => {
         color="slate"
         icon="i-lucide-sliders-vertical"
         @click="emit('edit')"
+      />
+      <Button
+        v-if="showAnalytics"
+        variant="faded"
+        size="sm"
+        color="slate"
+        icon="i-lucide-chart-column"
+        @click="emit('analytics')"
       />
       <Button
         variant="faded"

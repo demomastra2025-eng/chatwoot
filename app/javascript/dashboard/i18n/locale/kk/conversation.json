@@ -288,14 +288,18 @@
       "COPILOT": "Copilot"
     },
     "VOICE_WIDGET": {
-      "INCOMING_CALL": "Incoming call",
-      "OUTGOING_CALL": "Outgoing call",
-      "CALL_IN_PROGRESS": "Call in progress",
-      "NOT_ANSWERED_YET": "Not answered yet",
-      "HANDLED_IN_ANOTHER_TAB": "Being handled in another tab",
-      "REJECT_CALL": "Reject",
-      "JOIN_CALL": "Join call",
-      "END_CALL": "End call"
+      "INCOMING_CALL": "Кіріс қоңырау",
+      "OUTGOING_CALL": "Шығыс қоңырау",
+      "HANDLED_OUTSIDE_BROWSER": "Браузерден тыс өңделеді",
+      "CALL_IN_PROGRESS": "Қоңырау жүріп жатыр",
+      "NOT_ANSWERED_YET": "Әлі жауап берілген жоқ",
+      "HANDLED_IN_ANOTHER_TAB": "Басқа қойындыда өңделіп жатыр",
+      "BROWSER_CALLING_UNAVAILABLE": "Бұл желі үшін браузердегі қоңырау қолжетімсіз. Диалог ашылады.",
+      "REJECT_CALL": "Қабылдамау",
+      "JOIN_CALL": "Қоңырауға қосылу",
+      "END_CALL": "Қоңырауды аяқтау",
+      "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
+      "DEFAULT_INBOX_NAME": "Клиенттерді қолдау"
     }
   },
   "EMAIL_TRANSCRIPT": {
@@ -361,6 +365,11 @@
       "MACROS": "Macros",
       "LINEAR_ISSUES": "Linked Linear Issues",
       "SHOPIFY_ORDERS": "Shopify Orders"
+    },
+    "CRM_ACTIONS": {
+      "CREATE_DEAL": "Мәміле құру",
+      "CREATE_TASK": "Міндет құру",
+      "TITLE": "CRM"
     },
     "SHOPIFY": {
       "ORDER_ID": "Order #{id}",

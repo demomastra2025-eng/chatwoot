@@ -31,7 +31,7 @@ export default {
     <label for="dropdown-select">
       {{ label }}
     </label>
-    <select
+    <Select
       id="dropdown-select"
       v-model="value"
       name="dropdown-select"
@@ -40,6 +40,6 @@ export default {
       <option v-for="option in options" :key="option.key">
         {{ option.value }}
       </option>
-    </select>
+    </Select>
   </div>
 </template>

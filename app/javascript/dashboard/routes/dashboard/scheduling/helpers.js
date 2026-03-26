@@ -20,6 +20,10 @@ import {
 } from './constants';
 
 const WEEK_STARTS_ON = 1;
+const normalizeLocale = locale => locale?.replace(/_/g, '-') || undefined;
+
+const formatLocalizedDate = (value, locale, options) =>
+  new Intl.DateTimeFormat(normalizeLocale(locale), options).format(value);
 
 export const toDate = value => {
   if (value instanceof Date) return value;
@@ -49,6 +53,7 @@ export const buildCalendarRange = (view, anchorDate) => {
         to: endOfWeek(endOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
       };
     case 'list':
+    case 'kanban':
       return {
         from: startOfDay(date),
         to: endOfDay(addDays(date, 13)),
@@ -71,6 +76,7 @@ export const shiftAnchorDate = (view, anchorDate, direction) => {
     case 'month':
       return addMonths(date, direction);
     case 'list':
+    case 'kanban':
       return addDays(date, direction * 14);
     case 'week':
     default:
@@ -78,22 +84,33 @@ export const shiftAnchorDate = (view, anchorDate, direction) => {
   }
 };
 
-export const formatCalendarTitle = (view, anchorDate) => {
+export const formatCalendarTitle = (view, anchorDate, locale) => {
   const { from, to } = buildCalendarRange(view, anchorDate);
 
   if (view === 'day') {
-    return format(from, 'EEEE, d MMMM yyyy');
+    return formatLocalizedDate(from, locale, {
+      day: 'numeric',
+      month: 'long',
+      weekday: 'long',
+      year: 'numeric',
+    });
   }
 
   if (view === 'month') {
-    return format(from, 'MMMM yyyy');
+    return formatLocalizedDate(from, locale, {
+      month: 'long',
+      year: 'numeric',
+    });
   }
 
-  if (view === 'list') {
-    return `${format(from, 'd MMM')} - ${format(to, 'd MMM yyyy')}`;
-  }
-
-  return `${format(from, 'd MMM')} - ${format(to, 'd MMM yyyy')}`;
+  return `${formatLocalizedDate(from, locale, {
+    day: 'numeric',
+    month: 'short',
+  })} - ${formatLocalizedDate(to, locale, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })}`;
 };
 
 export const buildDayListForView = (view, anchorDate) => {
@@ -176,7 +193,7 @@ export const deriveVisibleMinuteWindow = ({
   columns,
   workRules,
   workdayOverrides,
-  appointments,
+  appointments = [],
 }) => {
   const relevantMinutes = [];
 
@@ -188,7 +205,13 @@ export const deriveVisibleMinuteWindow = ({
     });
 
     if (override) {
-      relevantMinutes.push(override.startMinute, override.endMinute);
+      if (
+        Number.isFinite(override.startMinute) &&
+        Number.isFinite(override.endMinute) &&
+        override.endMinute > override.startMinute
+      ) {
+        relevantMinutes.push(override.startMinute, override.endMinute);
+      }
       return;
     }
 
@@ -212,7 +235,9 @@ export const deriveVisibleMinuteWindow = ({
     );
   });
 
-  if (relevantMinutes.length === 0) {
+  const normalizedRelevantMinutes = relevantMinutes.filter(Number.isFinite);
+
+  if (normalizedRelevantMinutes.length === 0) {
     return {
       startMinute: DEFAULT_VISIBLE_START_MINUTE,
       endMinute: DEFAULT_VISIBLE_END_MINUTE,
@@ -220,15 +245,23 @@ export const deriveVisibleMinuteWindow = ({
   }
 
   const startMinute = clampMinute(
-    Math.floor((Math.min(...relevantMinutes) - 60) / 60) * 60
+    Math.min(
+      DEFAULT_VISIBLE_START_MINUTE,
+      Math.floor(Math.min(...normalizedRelevantMinutes) / MINUTE_STEP) *
+        MINUTE_STEP
+    )
   );
   const endMinute = clampMinute(
-    Math.ceil((Math.max(...relevantMinutes) + 60) / 60) * 60
+    Math.max(
+      DEFAULT_VISIBLE_END_MINUTE,
+      Math.ceil(Math.max(...normalizedRelevantMinutes) / MINUTE_STEP) *
+        MINUTE_STEP
+    )
   );
 
   return {
-    startMinute: Math.min(startMinute, DEFAULT_VISIBLE_START_MINUTE),
-    endMinute: Math.max(endMinute, DEFAULT_VISIBLE_END_MINUTE),
+    startMinute,
+    endMinute: Math.max(endMinute, startMinute + MINUTE_STEP),
   };
 };
 

@@ -7,27 +7,36 @@ import AgentsAPI from 'dashboard/api/agents';
 import { useAlert } from 'dashboard/composables';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingColorPicker from 'dashboard/components-next/Scheduling/SchedulingColorPicker.vue';
+import SchedulingDurationInput from 'dashboard/components-next/Scheduling/SchedulingDurationInput.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
+import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import SchedulingSectionCard from 'dashboard/components-next/Scheduling/SchedulingSectionCard.vue';
+import SchedulingPercentInput from 'dashboard/components-next/Scheduling/SchedulingPercentInput.vue';
+import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
   COMPENSATION_TYPE_VALUES,
   RESOURCE_COLORS,
   WEEKDAY_VALUES,
 } from '../constants';
 import {
-  extractSchedulingError,
+  formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
+import {
+  getUnavailableResourceColors,
+  pickResourceColor,
+} from '../resourceColors';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t } = useI18n();
@@ -39,10 +48,13 @@ const scheduleDrawerOpen = ref(false);
 const scheduleTab = ref('work');
 const activeResource = ref(null);
 const accountUsers = ref([]);
+const resourceDeleteDialogRef = ref(null);
+const resourcePendingDelete = ref(null);
 
 const resourceForm = reactive({
   active: true,
   color: RESOURCE_COLORS[0],
+  compensationPercent: 0,
   compensationType: 'percent',
   compensationValue: 40,
   description: '',
@@ -81,6 +93,7 @@ const staffOptions = computed(() =>
 
 const compensationTypeLabels = computed(() => ({
   fixed: t('SCHEDULING.COMPENSATION.fixed'),
+  fixed_plus_percent: t('SCHEDULING.COMPENSATION.fixed_plus_percent'),
   percent: t('SCHEDULING.COMPENSATION.percent'),
 }));
 
@@ -101,10 +114,77 @@ const compensationTypeOptions = computed(() =>
   }))
 );
 
+const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+
+const pageErrorDescription = computed(() =>
+  formatErrorMessage(referencesStore.ui.error)
+);
+
+const resourceCards = computed(() =>
+  referencesStore.resources.filter(
+    resource => !resource.customAttributes?.deletedFromScheduling
+  )
+);
+
 const weekDayLabel = weekday => weekDayLabels.value[weekday] || `${weekday}`;
 
-const compensationTypeLabel = type => {
-  return compensationTypeLabels.value[type] || type;
+const defaultResourceColor = () =>
+  pickResourceColor(resourceCards.value, RESOURCE_COLORS);
+
+const unavailableStandardColors = computed(
+  () =>
+    new Set(
+      getUnavailableResourceColors(
+        resourceCards.value,
+        RESOURCE_COLORS,
+        resourceForm.id
+      )
+    )
+);
+
+const isStandardColorDisabled = color => {
+  const normalizedColor = String(color || '')
+    .trim()
+    .toUpperCase();
+
+  return (
+    unavailableStandardColors.value.has(normalizedColor) &&
+    resourceForm.color?.toUpperCase() !== normalizedColor
+  );
+};
+
+const standardColorAriaLabel = color => {
+  const suffix = isStandardColorDisabled(color)
+    ? `, ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`
+    : '';
+
+  return `${t('SCHEDULING.RESOURCES.COLOR')} ${color}${suffix}`;
+};
+
+const standardColorTitle = color => {
+  if (!isStandardColorDisabled(color)) {
+    return color;
+  }
+
+  return `${color} · ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`;
+};
+
+const compensationPrimaryLabel = type => {
+  if (type === 'percent') return t('SCHEDULING.COMPENSATION.percent_value');
+
+  return t('SCHEDULING.COMPENSATION.fixed_value');
+};
+
+const compensationSummary = resource => {
+  if (resource.compensationType === 'fixed_plus_percent') {
+    return `${resource.compensationValue} ₸ + ${resource.compensationPercent}%`;
+  }
+
+  if (resource.compensationType === 'percent') {
+    return `${resource.compensationValue}%`;
+  }
+
+  return `${resource.compensationValue} ₸`;
 };
 
 const timeToMinute = value => {
@@ -123,7 +203,8 @@ const minuteToTime = minute => {
 const resetResourceForm = () => {
   Object.assign(resourceForm, {
     active: true,
-    color: RESOURCE_COLORS[0],
+    color: defaultResourceColor(),
+    compensationPercent: 0,
     compensationType: 'percent',
     compensationValue: 40,
     description: '',
@@ -154,7 +235,141 @@ const buildDefaultBreakRules = () =>
     weekday,
   }));
 
-const resourceCards = computed(() => referencesStore.resources);
+let scheduleRowSequence = 0;
+
+const nextScheduleRowKey = () => {
+  const rowKey = `schedule-row-${scheduleRowSequence}`;
+  scheduleRowSequence += 1;
+  return rowKey;
+};
+
+const createScheduleRow = rule => {
+  const nextRule = {
+    active: false,
+    endMinute: 18 * 60,
+    startMinute: 9 * 60,
+    title: '',
+    ...rule,
+  };
+
+  return {
+    ...nextRule,
+    rowKey: nextScheduleRowKey(),
+    endMinuteText: minuteToTime(nextRule.endMinute),
+    startMinuteText: minuteToTime(nextRule.startMinute),
+  };
+};
+
+const sortScheduleRows = rows => {
+  return [...rows].sort((left, right) => {
+    if (left.weekday !== right.weekday) {
+      return left.weekday - right.weekday;
+    }
+
+    const leftMinute = timeToMinute(
+      left.startMinuteText || minuteToTime(left.startMinute)
+    );
+    const rightMinute = timeToMinute(
+      right.startMinuteText || minuteToTime(right.startMinute)
+    );
+
+    return (leftMinute ?? 0) - (rightMinute ?? 0);
+  });
+};
+
+const defaultScheduleRuleForType = (type, weekday) => {
+  if (type === 'work') {
+    return {
+      active: false,
+      endMinute: 18 * 60,
+      startMinute: 9 * 60,
+      weekday,
+    };
+  }
+
+  return {
+    active: false,
+    endMinute: 14 * 60,
+    startMinute: 13 * 60,
+    title: '',
+    weekday,
+  };
+};
+
+const buildScheduleRows = (type, rules) => {
+  return WEEKDAY_VALUES.flatMap(weekday => {
+    const weekdayRules = sortScheduleRows(
+      rules.filter(item => item.weekday === weekday)
+    );
+
+    if (!weekdayRules.length) {
+      return [createScheduleRow(defaultScheduleRuleForType(type, weekday))];
+    }
+
+    return weekdayRules.map(rule => createScheduleRow(rule));
+  });
+};
+
+const scheduleRulesForType = type => {
+  return type === 'work' ? scheduleForm.workRules : scheduleForm.breakRules;
+};
+
+const replaceScheduleRules = (type, rows) => {
+  if (type === 'work') {
+    scheduleForm.workRules = rows;
+    return;
+  }
+
+  scheduleForm.breakRules = rows;
+};
+
+const addScheduleRule = (type, weekday) => {
+  const rows = scheduleRulesForType(type);
+  const weekdayRows = rows.filter(row => row.weekday === weekday);
+  const lastWeekdayRow = weekdayRows[weekdayRows.length - 1];
+  const defaultRule = defaultScheduleRuleForType(type, weekday);
+  const nextRow = createScheduleRow({
+    ...defaultRule,
+    active: true,
+    endMinute:
+      timeToMinute(
+        lastWeekdayRow?.endMinuteText || minuteToTime(lastWeekdayRow?.endMinute)
+      ) ?? defaultRule.endMinute,
+    startMinute:
+      timeToMinute(
+        lastWeekdayRow?.startMinuteText ||
+          minuteToTime(lastWeekdayRow?.startMinute)
+      ) ?? defaultRule.startMinute,
+    title: lastWeekdayRow?.title ?? defaultRule.title,
+  });
+
+  replaceScheduleRules(type, sortScheduleRows([...rows, nextRow]));
+};
+
+const removeScheduleRule = (type, rowKey) => {
+  const rows = scheduleRulesForType(type);
+  const targetRow = rows.find(row => row.rowKey === rowKey);
+
+  if (!targetRow) return;
+
+  const weekdayRows = rows.filter(row => row.weekday === targetRow.weekday);
+  if (weekdayRows.length === 1) {
+    replaceScheduleRules(
+      type,
+      rows.map(row =>
+        row.rowKey === rowKey
+          ? createScheduleRow(defaultScheduleRuleForType(type, row.weekday))
+          : row
+      )
+    );
+    return;
+  }
+
+  replaceScheduleRules(
+    type,
+    rows.filter(row => row.rowKey !== rowKey)
+  );
+};
 
 const linkedUser = resource => {
   return accountUsersById.value[resource.userId] || null;
@@ -169,10 +384,7 @@ const roleLabel = resource => linkedUser(resource)?.role || '';
 const handleUserSelection = userId => {
   resourceForm.userId = userId;
   const user = accountUsersById.value[userId];
-
-  if (user?.thumbnail && !resourceForm.photoUrl) {
-    resourceForm.photoUrl = user.thumbnail;
-  }
+  resourceForm.photoUrl = user?.thumbnail || '';
 };
 
 const loadAccountUsers = async () => {
@@ -193,12 +405,16 @@ const openEditResource = resource => {
   Object.assign(resourceForm, {
     active: resource.active,
     color: resource.color || RESOURCE_COLORS[0],
+    compensationPercent: resource.compensationPercent || 0,
     compensationType: resource.compensationType || 'percent',
     compensationValue: resource.compensationValue || 0,
     description: resource.description || '',
     id: resource.id,
     name: resource.name,
-    photoUrl: resource.photoUrl || '',
+    photoUrl:
+      accountUsersById.value[resource.userId]?.thumbnail ||
+      resource.photoUrl ||
+      '',
     slotDurationMin: resource.slotDurationMin || 30,
     specialty: resource.specialty || '',
     timezone: resource.timezone || 'Asia/Almaty',
@@ -217,6 +433,7 @@ const saveResource = async () => {
     await referencesStore.saveResource({
       active: resourceForm.active,
       color: resourceForm.color,
+      compensation_percent: toNumeric(resourceForm.compensationPercent),
       compensation_type: resourceForm.compensationType,
       compensation_value: toNumeric(resourceForm.compensationValue),
       description: resourceForm.description,
@@ -231,7 +448,7 @@ const saveResource = async () => {
     closeResourceDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -240,6 +457,7 @@ const toggleResourceActive = async resource => {
     await referencesStore.saveResource({
       active: !resource.active,
       color: resource.color,
+      compensation_percent: resource.compensationPercent,
       compensation_type: resource.compensationType,
       compensation_value: resource.compensationValue,
       description: resource.description,
@@ -253,36 +471,29 @@ const toggleResourceActive = async resource => {
     });
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
-const deleteResource = async resource => {
+const openDeleteResourceDialog = resource => {
+  resourcePendingDelete.value = resource;
+  resourceDeleteDialogRef.value?.open();
+};
+
+const closeDeleteResourceDialog = () => {
+  resourcePendingDelete.value = null;
+};
+
+const deleteResource = async () => {
+  if (!resourcePendingDelete.value) return;
+
   try {
-    await referencesStore.deleteResource(resource.id);
+    await referencesStore.deleteResource(resourcePendingDelete.value.id);
+    resourceDeleteDialogRef.value?.close();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_DELETE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
-};
-
-const buildScheduleRows = rules => {
-  return WEEKDAY_VALUES.map(weekday => {
-    const rule = rules.find(item => item.weekday === weekday);
-    const nextRule = rule || {
-      active: false,
-      endMinute: 18 * 60,
-      startMinute: 9 * 60,
-      title: '',
-      weekday,
-    };
-
-    return {
-      ...nextRule,
-      endMinuteText: minuteToTime(nextRule.endMinute),
-      startMinuteText: minuteToTime(nextRule.startMinute),
-    };
-  });
 };
 
 const openScheduleEditor = async resource => {
@@ -296,9 +507,11 @@ const openScheduleEditor = async resource => {
   ]);
 
   scheduleForm.workRules = buildScheduleRows(
+    'work',
     workRules.length ? workRules : buildDefaultWorkRules()
   );
   scheduleForm.breakRules = buildScheduleRows(
+    'break',
     breakRules.length ? breakRules : buildDefaultBreakRules()
   );
 };
@@ -346,7 +559,7 @@ const saveSchedule = async () => {
     closeScheduleDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(extractSchedulingError(error).message);
+    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -360,10 +573,7 @@ onMounted(async () => {
 
 <template>
   <section class="flex flex-col flex-1 min-h-0 overflow-y-auto bg-n-surface-1">
-    <SchedulingPageHeader
-      :title="$t('SCHEDULING.NAV.RESOURCES')"
-      :description="$t('SCHEDULING.RESOURCES.DESCRIPTION')"
-    >
+    <SchedulingPageHeader :title="$t('SCHEDULING.NAV.RESOURCES')">
       <template #actions>
         <Button
           size="sm"
@@ -374,7 +584,7 @@ onMounted(async () => {
       </template>
     </SchedulingPageHeader>
 
-    <div class="flex flex-col gap-6 p-6">
+    <div class="flex flex-col gap-4 px-5 pb-5 pt-3">
       <div
         v-if="referencesStore.ui.isLoadingResources"
         class="flex justify-center py-16"
@@ -385,7 +595,7 @@ onMounted(async () => {
       <SchedulingErrorState
         v-else-if="referencesStore.ui.error"
         :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
-        :description="referencesStore.ui.error.message"
+        :description="pageErrorDescription"
         @retry="
           Promise.all([
             referencesStore.loadResources({ include_inactive: true }),
@@ -402,166 +612,162 @@ onMounted(async () => {
         @action="openCreateResource"
       />
 
-      <SchedulingSectionCard
-        v-else
-        :title="$t('SCHEDULING.RESOURCES.LIST_TITLE')"
-        :description="$t('SCHEDULING.RESOURCES.LIST_DESCRIPTION')"
-      >
-        <div class="grid gap-4 xl:grid-cols-2">
-          <article
-            v-for="resource in resourceCards"
-            :key="resource.id"
-            class="relative overflow-hidden rounded-[28px] outline outline-1 outline-n-container bg-n-surface-1 shadow-sm"
-          >
-            <div
-              class="h-20"
-              :style="{
-                background: `linear-gradient(135deg, ${resource.color || RESOURCE_COLORS[0]} 0%, ${resource.color || RESOURCE_COLORS[0]}cc 100%)`,
-              }"
-            />
-
-            <div class="relative flex flex-col gap-4 px-5 pb-5 -mt-8">
-              <div class="flex items-start justify-between gap-4">
-                <div class="flex items-start gap-3 min-w-0">
-                  <Avatar
-                    :name="resource.name"
-                    :src="profilePhoto(resource)"
-                    :size="64"
-                    rounded-full
-                    class="shadow-sm outline outline-4 outline-n-surface-1"
+      <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <article
+          v-for="resource in resourceCards"
+          :key="resource.id"
+          class="flex min-h-[15rem] flex-col gap-3 rounded-2xl bg-n-solid-2 p-4 outline outline-1 outline-n-container shadow-sm"
+        >
+          <div class="flex items-start gap-3">
+            <div class="flex min-w-0 items-start gap-3">
+              <Avatar
+                :name="resource.name"
+                :src="profilePhoto(resource)"
+                :size="52"
+                rounded-full
+              />
+              <div class="min-w-0">
+                <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
+                  {{ resource.name }}
+                </h3>
+                <div
+                  class="mt-1 flex items-center gap-1.5 text-xs text-n-slate-11"
+                >
+                  <span
+                    class="inline-block size-2.5 shrink-0 rounded-full"
+                    :style="{
+                      backgroundColor: resource.color || RESOURCE_COLORS[0],
+                    }"
                   />
-                  <div class="flex flex-col min-w-0 gap-1 pt-8">
-                    <h3 class="mb-0 text-base font-semibold text-n-slate-12">
-                      {{ resource.name }}
-                    </h3>
-                    <p class="mb-0 text-sm text-n-slate-11">
-                      {{
-                        resource.specialty ||
-                        $t('SCHEDULING.RESOURCES.NO_SPECIALTY')
-                      }}
-                    </p>
-                    <div class="flex flex-wrap items-center gap-2 text-xs">
-                      <span
-                        class="inline-flex items-center px-2 py-1 rounded-full bg-n-alpha-black2 text-n-slate-11"
-                      >
-                        {{ resource.timezone }}
-                      </span>
-                      <span
-                        class="inline-flex items-center px-2 py-1 rounded-full bg-n-alpha-black2 text-n-slate-11"
-                      >
-                        {{ resource.slotDurationMin }}
-                        {{ $t('SCHEDULING.GENERAL.MINUTES') }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <span
-                  class="mt-3 px-2 py-1 text-xs rounded-full"
-                  :class="
-                    resource.active
-                      ? 'bg-n-teal-4 text-n-teal-11'
-                      : 'bg-n-slate-4 text-n-slate-11'
-                  "
-                >
-                  {{
-                    resource.active
-                      ? $t('SCHEDULING.GENERAL.ACTIVE')
-                      : $t('SCHEDULING.GENERAL.INACTIVE')
-                  }}
-                </span>
-              </div>
-
-              <div class="grid gap-3 md:grid-cols-2">
-                <div
-                  class="p-3 rounded-2xl bg-n-alpha-black2 text-sm text-n-slate-11"
-                >
-                  <p
-                    class="mb-1 text-xs font-semibold uppercase text-n-slate-10"
-                  >
-                    {{ $t('SCHEDULING.RESOURCES.LINKED_USER') }}
-                  </p>
-                  <p class="mb-0 font-medium text-n-slate-12">
-                    {{ linkedUser(resource)?.name || '—' }}
-                  </p>
-                  <p v-if="roleLabel(resource)" class="mb-0 text-xs">
-                    {{ roleLabel(resource) }}
+                  <p class="mb-0 truncate">
+                    {{
+                      resource.specialty ||
+                      $t('SCHEDULING.RESOURCES.NO_SPECIALTY')
+                    }}
                   </p>
                 </div>
-
-                <div
-                  class="p-3 rounded-2xl bg-n-alpha-black2 text-sm text-n-slate-11"
-                >
-                  <p
-                    class="mb-1 text-xs font-semibold uppercase text-n-slate-10"
-                  >
-                    {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-                  </p>
-                  <p class="mb-0 font-medium text-n-slate-12">
-                    {{ compensationTypeLabel(resource.compensationType) }}
-                  </p>
-                  <p class="mb-0 text-xs">
-                    {{ resource.compensationValue }}
-                  </p>
-                </div>
-              </div>
-
-              <p
-                v-if="resource.description"
-                class="mb-0 text-sm leading-6 text-n-slate-11"
-              >
-                {{ resource.description }}
-              </p>
-
-              <span
-                class="inline-flex items-center gap-2 text-xs text-n-slate-11"
-              >
-                <span
-                  class="inline-block rounded-full size-3"
-                  :style="{
-                    backgroundColor: resource.color || RESOURCE_COLORS[0],
-                  }"
-                />
-                {{ resource.color || RESOURCE_COLORS[0] }}
-              </span>
-
-              <div class="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="faded"
-                  color="slate"
-                  :label="$t('SCHEDULING.GENERAL.EDIT')"
-                  @click="openEditResource(resource)"
-                />
-                <Button
-                  size="sm"
-                  variant="faded"
-                  color="slate"
-                  :label="$t('SCHEDULING.RESOURCES.EDIT_SCHEDULE')"
-                  @click="openScheduleEditor(resource)"
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  color="slate"
-                  :label="
-                    resource.active
-                      ? $t('SCHEDULING.GENERAL.DEACTIVATE')
-                      : $t('SCHEDULING.GENERAL.ACTIVATE')
-                  "
-                  @click="toggleResourceActive(resource)"
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  color="ruby"
-                  :label="$t('SCHEDULING.GENERAL.DELETE')"
-                  @click="deleteResource(resource)"
-                />
               </div>
             </div>
-          </article>
-        </div>
-      </SchedulingSectionCard>
+          </div>
+
+          <div class="grid gap-2 text-sm">
+            <div
+              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
+            >
+              <span class="text-xs text-n-slate-10">
+                {{ $t('SCHEDULING.RESOURCES.LINKED_USER') }}
+              </span>
+              <div class="min-w-0 text-right">
+                <p class="mb-0 truncate text-sm font-medium text-n-slate-12">
+                  {{ linkedUser(resource)?.name || '—' }}
+                </p>
+                <p
+                  v-if="roleLabel(resource)"
+                  class="mb-0 truncate text-[11px] text-n-slate-11"
+                >
+                  {{ roleLabel(resource) }}
+                </p>
+              </div>
+            </div>
+
+            <div
+              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
+            >
+              <span class="text-xs text-n-slate-10">
+                {{ $t('SCHEDULING.RESOURCES.SLOT_DURATION') }}
+              </span>
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ resource.slotDurationMin }}
+                {{ $t('SCHEDULING.GENERAL.MINUTES') }}
+              </span>
+            </div>
+
+            <div
+              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
+            >
+              <span class="text-xs text-n-slate-10">
+                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
+              </span>
+              <span class="truncate text-sm font-medium text-n-slate-12">
+                {{ compensationSummary(resource) }}
+              </span>
+            </div>
+          </div>
+
+          <p
+            v-if="resource.description"
+            class="mb-0 max-h-10 overflow-hidden text-xs leading-5 text-n-slate-11"
+          >
+            {{ resource.description }}
+          </p>
+
+          <div class="mt-auto flex items-center justify-between gap-3">
+            <div class="inline-flex items-center">
+              <span
+                class="rounded-full border border-solid bg-n-alpha-black2 px-2 py-1 text-[11px] font-medium"
+                :class="
+                  resource.active
+                    ? 'bg-n-teal-3 border-n-teal-4 text-n-teal-11'
+                    : 'border-n-strong text-n-slate-10'
+                "
+              >
+                {{
+                  resource.active
+                    ? $t('SCHEDULING.GENERAL.ACTIVE')
+                    : $t('SCHEDULING.GENERAL.INACTIVE')
+                }}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-pencil"
+                :aria-label="$t('SCHEDULING.GENERAL.EDIT')"
+                :title="$t('SCHEDULING.GENERAL.EDIT')"
+                @click="openEditResource(resource)"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-calendar-days"
+                :aria-label="$t('SCHEDULING.RESOURCES.EDIT_SCHEDULE')"
+                :title="$t('SCHEDULING.RESOURCES.EDIT_SCHEDULE')"
+                @click="openScheduleEditor(resource)"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-power"
+                :aria-label="
+                  resource.active
+                    ? $t('SCHEDULING.GENERAL.DEACTIVATE')
+                    : $t('SCHEDULING.GENERAL.ACTIVATE')
+                "
+                :title="
+                  resource.active
+                    ? $t('SCHEDULING.GENERAL.DEACTIVATE')
+                    : $t('SCHEDULING.GENERAL.ACTIVATE')
+                "
+                @click="toggleResourceActive(resource)"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="openDeleteResourceDialog(resource)"
+              />
+            </div>
+          </div>
+        </article>
+      </div>
     </div>
 
     <SchedulingDrawer
@@ -583,6 +789,13 @@ onMounted(async () => {
           :title="$t('SCHEDULING.RESOURCES.BASIC')"
           :description="$t('SCHEDULING.RESOURCES.BASIC_DESCRIPTION')"
         >
+          <template #headerActions>
+            <label class="flex items-center gap-2 text-sm text-n-slate-12">
+              <Switch v-model="resourceForm.active" />
+              <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
+            </label>
+          </template>
+
           <div class="grid gap-4 md:grid-cols-2">
             <Input
               v-model="resourceForm.name"
@@ -592,39 +805,66 @@ onMounted(async () => {
               v-model="resourceForm.specialty"
               :label="$t('SCHEDULING.RESOURCES.SPECIALTY')"
             />
-            <ComboBox
-              :model-value="resourceForm.userId"
-              :options="staffOptions"
-              :placeholder="$t('SCHEDULING.RESOURCES.LINKED_USER')"
-              @update:model-value="handleUserSelection($event)"
-            />
-            <Input
-              v-model="resourceForm.photoUrl"
-              :label="$t('SCHEDULING.RESOURCES.PHOTO_URL')"
-            />
-            <Input
-              v-model="resourceForm.timezone"
-              :label="$t('SCHEDULING.RESOURCES.TIMEZONE')"
-            />
-            <Input
+            <SchedulingDurationInput
               v-model="resourceForm.slotDurationMin"
-              type="number"
               min="5"
               :label="$t('SCHEDULING.RESOURCES.SLOT_DURATION')"
             />
-            <ComboBox
-              :model-value="resourceForm.compensationType"
-              :options="compensationTypeOptions"
-              :placeholder="$t('SCHEDULING.RESOURCES.COMPENSATION')"
-              @update:model-value="resourceForm.compensationType = $event"
-            />
-            <Input
+          </div>
+
+          <div class="grid gap-2">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('SCHEDULING.RESOURCES.LINKED_USER') }}
+            </span>
+            <div class="grid gap-4 md:max-w-md">
+              <SchedulingSelectField
+                :model-value="resourceForm.userId"
+                :options="staffOptions"
+                :placeholder="$t('SCHEDULING.RESOURCES.LINKED_USER')"
+                @update:model-value="handleUserSelection($event)"
+              />
+            </div>
+          </div>
+
+          <div
+            class="grid gap-4 md:items-end"
+            :class="
+              resourceForm.compensationType === 'fixed_plus_percent'
+                ? 'md:grid-cols-[minmax(0,1fr)_112px_88px]'
+                : resourceForm.compensationType === 'percent'
+                  ? 'md:grid-cols-[minmax(0,1fr)_88px]'
+                  : 'md:grid-cols-[minmax(0,1fr)_112px]'
+            "
+          >
+            <div class="grid gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
+              </span>
+              <SchedulingSelectField
+                :model-value="resourceForm.compensationType"
+                :options="compensationTypeOptions"
+                :placeholder="$t('SCHEDULING.RESOURCES.COMPENSATION')"
+                @update:model-value="resourceForm.compensationType = $event"
+              />
+            </div>
+            <SchedulingPercentInput
+              v-if="resourceForm.compensationType === 'percent'"
               v-model="resourceForm.compensationValue"
-              type="number"
+              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
+            />
+            <SchedulingMoneyInput
+              v-else
+              v-model="resourceForm.compensationValue"
               min="0"
-              :label="$t('SCHEDULING.GENERAL.VALUE')"
+              :label="compensationPrimaryLabel(resourceForm.compensationType)"
+            />
+            <SchedulingPercentInput
+              v-if="resourceForm.compensationType === 'fixed_plus_percent'"
+              v-model="resourceForm.compensationPercent"
+              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
             />
           </div>
+
           <div class="grid gap-3">
             <span class="text-sm font-medium text-n-slate-12">
               {{ $t('SCHEDULING.RESOURCES.COLOR') }}
@@ -634,45 +874,49 @@ onMounted(async () => {
                 v-for="color in RESOURCE_COLORS"
                 :key="color"
                 type="button"
-                class="size-8 rounded-full border transition-transform hover:scale-105"
-                :class="
+                class="relative size-8 rounded-full border-2 transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:scale-100"
+                :class="[
                   resourceForm.color?.toUpperCase() === color.toUpperCase()
                     ? 'ring-2 ring-offset-2 ring-offset-n-surface-1 ring-n-slate-8 border-n-slate-9'
-                    : 'border-n-container'
-                "
+                    : 'border-n-container',
+                  isStandardColorDisabled(color)
+                    ? 'grayscale saturate-0 border-n-slate-8 shadow-inner'
+                    : '',
+                ]"
                 :style="{ backgroundColor: color }"
-                :aria-label="`${$t('SCHEDULING.RESOURCES.COLOR')} ${color}`"
-                :title="color"
+                :disabled="isStandardColorDisabled(color)"
+                :aria-label="standardColorAriaLabel(color)"
+                :title="standardColorTitle(color)"
                 @click="resourceForm.color = color"
-              />
+              >
+                <span
+                  v-if="isStandardColorDisabled(color)"
+                  class="pointer-events-none absolute inset-0 rounded-full bg-n-surface-1/55"
+                  aria-hidden="true"
+                />
+                <span
+                  v-if="isStandardColorDisabled(color)"
+                  class="pointer-events-none absolute inset-0 flex items-center justify-center text-n-slate-12"
+                  aria-hidden="true"
+                >
+                  <span class="size-4 i-lucide-slash" />
+                </span>
+              </button>
             </div>
-            <Input
-              v-model="resourceForm.color"
-              type="color"
-              :label="$t('SCHEDULING.RESOURCES.CUSTOM_COLOR')"
-            />
+            <div class="grid gap-2 md:max-w-xs">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('SCHEDULING.RESOURCES.CUSTOM_COLOR') }}
+              </span>
+              <SchedulingColorPicker v-model="resourceForm.color" />
+            </div>
           </div>
-          <p class="mb-0 text-xs text-n-slate-11">
-            {{ $t('SCHEDULING.RESOURCES.LINKED_USER_HELP') }}
-          </p>
-          <label class="flex items-center gap-3 text-sm text-n-slate-12">
-            <input
-              v-model="resourceForm.active"
-              type="checkbox"
-              class="accent-blue-600"
-            />
-            {{ $t('SCHEDULING.GENERAL.ACTIVE') }}
-          </label>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup
-          :title="$t('SCHEDULING.GENERAL.NOTES')"
-          :description="$t('SCHEDULING.RESOURCES.DESCRIPTION_HELP')"
-        >
+        <SchedulingFormFieldGroup>
           <TextArea
             v-model="resourceForm.description"
             auto-height
-            :label="$t('SCHEDULING.GENERAL.DESCRIPTION')"
+            :label="$t('SCHEDULING.GENERAL.COMMENTS')"
           />
         </SchedulingFormFieldGroup>
       </div>
@@ -693,6 +937,7 @@ onMounted(async () => {
     >
       <div class="flex flex-col gap-6">
         <TabBar
+          active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"
           :initial-active-tab="scheduleTab === 'work' ? 0 : 1"
           @tab-changed="scheduleTab = $event.value"
@@ -701,19 +946,15 @@ onMounted(async () => {
         <div v-if="scheduleTab === 'work'" class="flex flex-col gap-4">
           <div
             v-for="rule in scheduleForm.workRules"
-            :key="`work-${rule.weekday}`"
-            class="grid items-center gap-4 p-4 rounded-2xl bg-n-alpha-black2 md:grid-cols-[160px_100px_1fr_1fr]"
+            :key="rule.rowKey"
+            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
             <label class="flex items-center gap-2 text-sm text-n-slate-11">
-              <input
-                v-model="rule.active"
-                type="checkbox"
-                class="accent-blue-600"
-              />
-              {{ $t('SCHEDULING.GENERAL.ACTIVE') }}
+              <Switch v-model="rule.active" />
+              <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
             <SchedulingDateTimeField
               v-model="rule.startMinuteText"
@@ -725,25 +966,41 @@ onMounted(async () => {
               type="time"
               :label="$t('SCHEDULING.GENERAL.END')"
             />
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-plus"
+                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
+                :title="$t('SCHEDULING.GENERAL.CREATE')"
+                @click="addScheduleRule('work', rule.weekday)"
+              />
+              <Button
+                size="xs"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="removeScheduleRule('work', rule.rowKey)"
+              />
+            </div>
           </div>
         </div>
 
         <div v-else class="flex flex-col gap-4">
           <div
             v-for="rule in scheduleForm.breakRules"
-            :key="`break-${rule.weekday}`"
-            class="grid items-center gap-4 p-4 rounded-2xl bg-n-alpha-black2 md:grid-cols-[160px_100px_1fr_1fr_1.2fr]"
+            :key="rule.rowKey"
+            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
             <label class="flex items-center gap-2 text-sm text-n-slate-11">
-              <input
-                v-model="rule.active"
-                type="checkbox"
-                class="accent-blue-600"
-              />
-              {{ $t('SCHEDULING.GENERAL.ACTIVE') }}
+              <Switch v-model="rule.active" />
+              <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
             <SchedulingDateTimeField
               v-model="rule.startMinuteText"
@@ -759,9 +1016,45 @@ onMounted(async () => {
               v-model="rule.title"
               :label="$t('SCHEDULING.RESOURCES.BREAK_TITLE')"
             />
+            <div class="flex items-center justify-end gap-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                color="slate"
+                icon="i-lucide-plus"
+                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
+                :title="$t('SCHEDULING.GENERAL.CREATE')"
+                @click="addScheduleRule('break', rule.weekday)"
+              />
+              <Button
+                size="xs"
+                variant="ghost"
+                color="ruby"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                :title="$t('SCHEDULING.GENERAL.DELETE')"
+                @click="removeScheduleRule('break', rule.rowKey)"
+              />
+            </div>
           </div>
         </div>
       </div>
     </SchedulingDrawer>
+
+    <Dialog
+      ref="resourceDeleteDialogRef"
+      width="md"
+      type="alert"
+      :title="$t('SCHEDULING.RESOURCES.DELETE_TITLE')"
+      :description="
+        $t('SCHEDULING.RESOURCES.DELETE_DESCRIPTION', {
+          name: resourcePendingDelete?.name || '',
+        })
+      "
+      :confirm-button-label="$t('SCHEDULING.RESOURCES.DELETE_CONFIRM')"
+      :is-loading="referencesStore.ui.isSaving"
+      @close="closeDeleteResourceDialog"
+      @confirm="deleteResource"
+    />
   </section>
 </template>

@@ -3,6 +3,7 @@
 FactoryBot.define do
   factory :channel_voice, class: 'Channel::Voice' do
     sequence(:phone_number) { |n| "+155512345#{n.to_s.rjust(2, '0')}" }
+    provider { 'twilio' }
     provider_config do
       {
         account_sid: "AC#{SecureRandom.hex(16)}",
@@ -16,6 +17,23 @@ FactoryBot.define do
 
     after(:create) do |channel_voice|
       create(:inbox, channel: channel_voice, account: channel_voice.account)
+    end
+
+    trait :fonoster do
+      provider { 'fonoster' }
+      provider_config do
+        {
+          number_ref: SecureRandom.uuid,
+          app_ref: SecureRandom.uuid,
+          trunk_ref: SecureRandom.uuid,
+          routing_mode: 'operator',
+          operator_agent_aor: "sip:agent-#{SecureRandom.hex(4)}@example.test"
+        }
+      end
+
+      after(:create) do |channel_voice|
+        Telephony::NumberBinding.sync_from_voice_channel!(channel_voice)
+      end
     end
   end
 end

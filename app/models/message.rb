@@ -25,6 +25,7 @@
 # Indexes
 #
 #  idx_messages_account_content_created                 (account_id,content_type,created_at)
+#  idx_messages_unique_inbox_source_id                  (inbox_id,source_id) UNIQUE WHERE (source_id IS NOT NULL)
 #  index_messages_on_account_created_type               (account_id,created_at,message_type)
 #  index_messages_on_account_id                         (account_id)
 #  index_messages_on_account_id_and_inbox_id            (account_id,inbox_id)
@@ -81,6 +82,9 @@ class Message < ApplicationRecord
 
   # when you have a temperory id in your frontend and want it echoed back via action cable
   attr_accessor :echo_id
+  # Transient flag used to skip waiting_since clearing for specific bot/system messages.
+  attr_accessor :preserve_waiting_since
+  attr_accessor :skip_runtime_events
 
   enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
   enum content_type: {
@@ -125,7 +129,7 @@ class Message < ApplicationRecord
 
   belongs_to :account
   belongs_to :inbox
-  belongs_to :conversation, touch: true
+  belongs_to :conversation
   belongs_to :sender, polymorphic: true, optional: true
 
   has_many :attachments, dependent: :destroy, autosave: true, before_add: :validate_attachments_limit
@@ -174,7 +178,7 @@ class Message < ApplicationRecord
       additional_attributes: additional_attributes,
       content_attributes: content_attributes,
       content_type: content_type,
-      content: outgoing_content,
+      content: webhook_content,
       conversation: conversation.webhook_data,
       created_at: created_at,
       id: id,
@@ -191,6 +195,11 @@ class Message < ApplicationRecord
   # Method to get content with survey URL for outgoing channel delivery
   def outgoing_content
     MessageContentPresenter.new(self).outgoing_content
+  end
+
+  # Raw content with survey URL (no markdown rendering) for webhook consumers
+  def webhook_content
+    MessageContentPresenter.new(self).webhook_content
   end
 
   def email_notifiable_message?
@@ -308,34 +317,51 @@ class Message < ApplicationRecord
   end
 
   def execute_after_create_commit_callbacks
+    if runtime_events_suppressed?
+      set_conversation_activity
+      update_contact_activity(runtime_events: false)
+      return
+    end
+
     # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
     reopen_conversation
+    mark_pending_conversation_as_open_for_human_response
     set_conversation_activity
     dispatch_create_events
     send_reply
     execute_message_template_hooks
-    update_contact_activity
+    update_contact_activity(runtime_events: true)
   end
 
-  def update_contact_activity
-    sender.update(last_activity_at: DateTime.now) if sender.is_a?(Contact)
+  def update_contact_activity(runtime_events: true)
+    return unless sender.is_a?(Contact)
+
+    if runtime_events
+      sender.update(last_activity_at: DateTime.now)
+    else
+      sender.update_columns(last_activity_at: Time.current, updated_at: Time.current)
+    end
   end
 
   def update_waiting_since
-    waiting_present = conversation.waiting_since.present?
+    clear_waiting_since_on_outgoing_response if conversation.waiting_since.present? && !private
+    set_waiting_since_on_incoming_message
+  end
 
-    if waiting_present && !private
-      if human_response?
-        Rails.configuration.dispatcher.dispatch(
-          REPLY_CREATED, Time.zone.now, waiting_since: conversation.waiting_since, message: self
-        )
-        conversation.update(waiting_since: nil)
-      elsif bot_response?
-        # Bot responses also clear waiting_since (simpler than checking on next customer message)
-        conversation.update(waiting_since: nil)
-      end
+  def clear_waiting_since_on_outgoing_response
+    if human_response?
+      Rails.configuration.dispatcher.dispatch(
+        REPLY_CREATED, Time.zone.now, waiting_since: conversation.waiting_since, message: self
+      )
+      conversation.update(waiting_since: nil)
+      return
     end
 
+    # Bot responses also clear waiting_since (simpler than checking on next customer message)
+    conversation.update(waiting_since: nil) if bot_response? && !preserve_waiting_since
+  end
+
+  def set_waiting_since_on_incoming_message
     # Set waiting_since when customer sends a message (if currently blank)
     conversation.update(waiting_since: created_at) if incoming? && conversation.waiting_since.blank?
   end
@@ -368,6 +394,7 @@ class Message < ApplicationRecord
   end
 
   def dispatch_update_event
+    return if runtime_events_suppressed?
     # ref: https://github.com/rails/rails/issues/44500
     # we want to skip the update event if the message is not updated
     return if previous_changes.blank?
@@ -376,6 +403,8 @@ class Message < ApplicationRecord
   end
 
   def send_reply
+    return unless outgoing?
+
     # FIXME: Giving it few seconds for the attachment to be uploaded to the service
     # active storage attaches the file only after commit
     attachments.blank? ? ::SendReplyJob.perform_later(id) : ::SendReplyJob.set(wait: 2.seconds).perform_later(id)
@@ -388,6 +417,18 @@ class Message < ApplicationRecord
     conversation.open! if conversation.snoozed?
 
     reopen_resolved_conversation if conversation.resolved?
+  end
+
+  def mark_pending_conversation_as_open_for_human_response
+    return unless captain_pending_conversation?
+    return unless human_response?
+    return if private?
+
+    conversation.open!
+  end
+
+  def captain_pending_conversation?
+    false
   end
 
   def reopen_resolved_conversation
@@ -416,12 +457,20 @@ class Message < ApplicationRecord
 
   def set_conversation_activity
     # rubocop:disable Rails/SkipsModelValidations
-    conversation.update_columns(last_activity_at: created_at)
+    conversation.update_columns(last_activity_at: created_at, updated_at: Time.current)
     # rubocop:enable Rails/SkipsModelValidations
   end
 
   def reindex_for_search
     reindex(mode: :async)
+  end
+
+  def runtime_events_suppressed?
+    skip_runtime_events || imported_history_message? || Current.suppress_runtime_events
+  end
+
+  def imported_history_message?
+    content_attributes.to_h['imported_history'] == true
   end
 end
 

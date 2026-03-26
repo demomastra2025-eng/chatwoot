@@ -49,6 +49,10 @@ export default {
       type: Number,
       default: () => 0,
     },
+    editorContent: {
+      type: String,
+      default: undefined,
+    },
   },
   emits: ['setReplyMode', 'togglePopout', 'executeCopilotAction'],
   setup(props, { emit }) {
@@ -73,8 +77,8 @@ export default {
     const { captainTasksEnabled } = useCaptain();
     const showCopilotMenu = ref(false);
 
-    const handleCopilotAction = actionKey => {
-      emit('executeCopilotAction', actionKey);
+    const handleCopilotAction = (actionKey, data) => {
+      emit('executeCopilotAction', actionKey, data || props.editorContent);
       showCopilotMenu.value = false;
     };
 
@@ -142,7 +146,7 @@ export default {
 
 <template>
   <div
-    class="flex justify-between gap-2 h-[3.25rem] items-center ltr:pl-3 ltr:pr-2 rtl:pr-3 rtl:pl-2"
+    class="flex justify-between gap-2 h-12 items-center ltr:pl-3 ltr:pr-2 rtl:pr-3 rtl:pl-2"
   >
     <EditorModeToggle
       :mode="mode"
@@ -174,6 +178,8 @@ export default {
           v-if="showCopilotMenu"
           v-on-click-outside="handleClickOutside"
           :has-selection="false"
+          :editor-content="editorContent"
+          :conversation-id="conversationId"
           class="ltr:right-0 rtl:left-0 bottom-full mb-2"
           @execute-copilot-action="handleCopilotAction"
         />

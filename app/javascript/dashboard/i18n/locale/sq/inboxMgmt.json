@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Enabled",
-        "DISABLED": "Disabled"
+        "DISABLED": "Disabled",
+        "ENABLED_DESCRIPTION": "Kur një kontakt dërgon mesazh përsëri, biseda e mëparshme do të rihapet.",
+        "DISABLED_DESCRIPTION": "Do të krijohet një bisedë e re çdo herë pasi të jetë zgjidhur ajo e mëparshmja."
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook Configuration",
+        "DESCRIPTION": "Webhook URL është i nevojshëm për Llogarinë tuaj të Biznesit në WhatsApp që të marrë mesazhe nga klientët",
+        "ACTION_REQUIRED": "Webhook not configured",
+        "REGISTER_BUTTON": "Register Webhook",
+        "REGISTER_SUCCESS": "Webhook registered successfully",
+        "REGISTER_ERROR": "Failed to register webhook. Please try again.",
+        "CONFIGURED_SUCCESS": "Webhook configured successfully",
+        "URL_MISMATCH": "Webhook URL mismatch"
       }
     },
     "SETTINGS": "Settings",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Restrict which websites can embed your chat widget. For security, only add domains you own and trust. Add one or more domains separated by commas. Leave blank to allow all domains (not recommended for production)."
       },
       "INBOX_AGENTS": "Agents",
       "INBOX_AGENTS_SUB_TEXT": "Add or remove agents from this inbox",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sinkronizo shabllonet",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Enable widget in mobile apps",
+        "SUBTITLE": "Check this if you embed the widget in iOS or Android apps. Mobile apps don't send domain information, so they would be blocked by domain restrictions unless this is enabled."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Identity Validation",
+        "DESCRIPTION": "Verify user authenticity by generating secure tokens. This prevents unauthorized users from impersonating others in your chat.",
+        "SECRET_KEY": "Çelësi Sekret",
+        "VIEW_DOCS": "View documentation",
+        "REQUIRE_LABEL": "Require identity validation for all conversations",
+        "REQUIRE_DESCRIPTION": "When enabled, users must provide a valid identity token to start conversations. Requests without valid tokens will be rejected."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Help Center",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "Asnjë"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "Kontrollo përshtatshmërinë e dobisë",
+        "HELPER_NOTE": "Check this message before submission to improve Utility fit. The system creates a dedicated CSAT template with buttons for reporting and submits it as Utility; Meta may still reclassify it as Marketing based on content.",
+        "RESULT_LABEL": "Parashikimi i kategorisë Meta",
+        "GUIDANCE_NOTE": "Kjo është një kontroll udhëzues, jo një garanci për miratimin nga Meta.",
+        "SUGGESTION_LABEL": "Riformulim i sugjeruar i sigurt për përdorim",
+        "APPLY": "Përdor këtë riformulim",
+        "ERROR_MESSAGE": "Nuk mund të analizohej mesazhi. Ju lutemi provoni përsëri.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "Përdorim i mundshëm",
+          "LIKELY_MARKETING": "Marketing i mundshëm",
+          "UNCLEAR": "Kërkon sqarim"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Unavailable",
         "HOURS": "hours",
         "VALIDATION_ERROR": "Starting time should be before closing time.",
-        "CHOOSE": "Choose"
+        "CHOOSE": "Choose",
+        "DAY": "Ditë",
+        "AVAILABILITY": "Availability"
       },
       "ALL_DAY": "All-Day"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Standard",
           "EXPANDED_BUBBLE": "Expanded Bubble"
-        }
+        },
+        "WIDGET_BUBBLE": "Flluskë"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Default",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} kutia postare | {n} kuti postare",
+    "SEARCH_PLACEHOLDER": "Kërko kutitë postare...",
+    "NO_RESULTS": "Nuk u gjetën kuti postare që përputhen me kërkimin tuaj",
+    "CHANNEL_PREFERENCES": "Preferencat e kanalit",
+    "WIDGET_FEATURES": "Widget features",
+    "ASSIGNMENT": {
+      "TITLE": "Caktimi i Bisedave",
+      "DESCRIPTION": "Caktoni automatikisht bisedat hyrëse agjentëve në dispozicion bazuar në politikat e caktimit",
+      "ENABLE_AUTO_ASSIGNMENT": "Aktivizo caktimin automatik të bisedave",
+      "DEFAULT_RULES_TITLE": "Rregullat e paracaktuara të caktimit",
+      "DEFAULT_RULES_DESCRIPTION": "Duke përdorur sjelljen e paracaktuar të caktimit për të gjitha bisedat",
+      "DEFAULT_RULE_1": "Së pari bisedat më të hershme të krijuara",
+      "DEFAULT_RULE_2": "Shpërndarje rrethore",
+      "CUSTOMIZE_WITH_POLICY": "Përshtat me politikën e caktimit",
+      "USING_POLICY": "Using custom assignment policy for this inbox",
+      "CUSTOMIZE_POLICY": "Përshtat me politikën e caktimit",
+      "DELETE_POLICY": "Fshi politikën",
+      "POLICY_LABEL": "Politika e caktimit",
+      "ASSIGNMENT_ORDER_LABEL": "Renditja e Detyrës",
+      "ASSIGNMENT_METHOD_LABEL": "Metoda e Detyrimit",
+      "POLICY_STATUS": {
+        "ACTIVE": "Aktiv",
+        "INACTIVE": "Joaktiv"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "Krijuar më herët",
+        "LONGEST_WAITING": "Duke pritur më gjatë"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "Rrotullim i barabartë",
+        "BALANCED": "Caktim i balancuar"
+      },
+      "UPGRADE_PROMPT": "Politikat e personalizuara të caktimit janë të disponueshme në planin Business",
+      "UPGRADE_TO_BUSINESS": "Upgrade to Business",
+      "DEFAULT_POLICY_LINKED": "Politika e paracaktuar e lidhur",
+      "DEFAULT_POLICY_DESCRIPTION": "Lidheni një politikë të personalizuar caktimi për të përshtatur mënyrën se si bisedat caktohen agjentëve në këtë inbox.",
+      "LINK_EXISTING_POLICY": "Lidh politikën ekzistuese",
+      "CREATE_NEW_POLICY": "Krijo politikë të re",
+      "NO_POLICIES": "Nuk u gjetën politika caktimi",
+      "VIEW_ALL_POLICIES": "Shiko të gjitha politikat",
+      "CURRENT_BEHAVIOR": "Aktualisht përdoret sjellja e paracaktuar e caktimit:",
+      "LINK_SUCCESS": "Politika e caktimit u lidh me sukses",
+      "LINK_ERROR": "Dështoi lidhja e politikës së caktimit"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "Fshini politikën e caktimit?",
+      "DELETE_CONFIRM_MESSAGE": "Jeni i sigurt që dëshironi të hiqni këtë politikë caktimi nga kjo kuti postare? Kuti postare do të kthehet te rregullat e paracaktuara të caktimit.",
+      "CANCEL": "Anulo",
+      "CONFIRM_DELETE": "Fshi",
+      "DELETE_SUCCESS": "Politika e caktimit u hoq me sukses",
+      "DELETE_ERROR": "Dështoi heqja e politikës së caktimit"
     }
   }
 }

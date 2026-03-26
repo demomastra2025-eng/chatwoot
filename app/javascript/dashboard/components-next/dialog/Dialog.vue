@@ -67,6 +67,7 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 const dialogContentRef = ref(null);
 const isOpen = ref(false);
+const clickOutsideIgnore = ['[data-modal-safe-interaction]'];
 
 const maxWidthClass = computed(() => {
   const classesMap = {
@@ -96,6 +97,17 @@ const close = () => {
   isOpen.value = false;
 };
 
+// Only close if the close event originated from this dialog,
+// not from a child dialog (e.g. ProseMirror prompt) bubbling up.
+const handleDialogClose = e => e.target === dialogRef.value && close();
+
+// Only close on click-outside if this dialog is the topmost one.
+// If another dialog (e.g. ProseMirror prompt) is open on top, ignore.
+const handleClickOutside = () => {
+  const dialogs = document.querySelectorAll('dialog[open]');
+  if (dialogs[dialogs.length - 1] === dialogRef.value) close();
+};
+
 const confirm = () => {
   emit('confirm');
 };
@@ -113,9 +125,12 @@ defineExpose({ open, close });
         positionClass,
         overflowYAuto ? 'overflow-y-auto' : 'overflow-visible',
       ]"
-      @close="close"
+      @close.prevent="handleDialogClose"
     >
-      <OnClickOutside @trigger="close">
+      <OnClickOutside
+        :options="{ ignore: clickOutsideIgnore }"
+        @trigger="handleClickOutside"
+      >
         <form
           ref="dialogContentRef"
           class="flex flex-col w-full h-auto gap-6 p-6 overflow-visible text-start align-middle transition-all duration-300 ease-in-out transform bg-n-alpha-3 backdrop-blur-[100px] shadow-xl rounded-xl"

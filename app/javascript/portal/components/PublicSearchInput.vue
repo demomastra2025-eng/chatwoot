@@ -39,7 +39,6 @@ const onBlur = e => {
       'border-slate-50 dark:border-slate-800 shadow-sm': !isFocused,
     }"
   >
-    <FluentIcon icon="search" />
     <input
       :value="searchTerm"
       type="text"
@@ -50,5 +49,6 @@ const onBlur = e => {
       @focus="onFocus"
       @blur="onBlur"
     />
+    <FluentIcon icon="search" />
   </div>
 </template>

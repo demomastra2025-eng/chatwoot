@@ -104,48 +104,53 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative flex flex-col min-w-0 gap-1">
+  <div class="flex flex-col min-w-0 gap-1">
     <label
       v-if="label"
       :for="uniqueId"
-      class="mb-0.5 text-sm font-medium text-n-slate-12"
+      class="mb-0.5 text-heading-3 text-n-slate-12"
     >
       {{ label }}
     </label>
-    <!-- Added prefix slot to allow adding icons to the input -->
-    <slot name="prefix" />
-    <input
-      :id="uniqueId"
-      v-bind="$attrs"
-      ref="inputRef"
-      :value="modelValue"
-      :class="[
-        customInputClass,
-        inputOutlineClass,
-        sizeClass,
-        {
-          error: messageType === 'error',
-          focus: isFocused,
-        },
-      ]"
-      :type="type"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      :min="['date', 'datetime-local', 'time'].includes(type) ? min : undefined"
-      :max="
-        ['date', 'datetime-local', 'time', 'number'].includes(type)
-          ? max
-          : undefined
-      "
-      class="block w-full reset-base text-sm !mb-0 outline outline-1 border-none border-0 outline-offset-[-1px] rounded-lg bg-n-alpha-black2 file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-n-slate-10 dark:placeholder:text-n-slate-10 disabled:cursor-not-allowed disabled:opacity-50 text-n-slate-12 transition-all duration-500 ease-in-out [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-      @input="handleInput"
-      @focus="handleFocus"
-      @blur="handleBlur"
-      @keyup.enter="handleEnter"
-    />
+    <div class="relative min-w-0">
+      <!-- Added prefix slot to allow adding icons to the input -->
+      <slot name="prefix" />
+      <input
+        :id="uniqueId"
+        v-bind="$attrs"
+        ref="inputRef"
+        :value="modelValue"
+        :class="[
+          customInputClass,
+          inputOutlineClass,
+          sizeClass,
+          {
+            error: messageType === 'error',
+            focus: isFocused,
+          },
+        ]"
+        :type="type"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        :min="
+          ['date', 'datetime-local', 'time'].includes(type) ? min : undefined
+        "
+        :max="
+          ['date', 'datetime-local', 'time', 'number'].includes(type)
+            ? max
+            : undefined
+        "
+        class="block w-full reset-base text-sm !mb-0 outline outline-1 border-none border-0 outline-offset-[-1px] rounded-lg bg-n-alpha-black2 file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-n-slate-10 dark:placeholder:text-n-slate-10 disabled:cursor-not-allowed disabled:opacity-50 text-n-slate-12 transition-all duration-500 ease-in-out [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
+        @input="handleInput"
+        @focus="handleFocus"
+        @blur="handleBlur"
+        @keyup.enter="handleEnter"
+      />
+      <slot name="suffix" />
+    </div>
     <p
       v-if="message"
-      class="min-w-0 mt-1 mb-0 text-xs truncate transition-all duration-500 ease-in-out"
+      class="min-w-0 mt-1 mb-0 text-label-small truncate transition-all duration-500 ease-in-out"
       :class="messageClass"
     >
       {{ message }}

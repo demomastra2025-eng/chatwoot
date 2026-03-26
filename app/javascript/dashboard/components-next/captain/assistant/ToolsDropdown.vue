@@ -47,7 +47,15 @@ watch(
       class="flex flex-col gap-1 rounded-md py-2 px-2 cursor-pointer hover:bg-n-alpha-black2"
       @click="onItemClick(idx)"
     >
-      <span class="text-n-slate-12 font-medium text-sm">{{ tool.title }}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-n-slate-12 font-medium text-sm">{{ tool.title }}</span>
+        <span
+          v-if="tool.group_name"
+          class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+        >
+          {{ tool.group_name }}
+        </span>
+      </div>
       <span class="text-n-slate-11 text-sm">{{ tool.description }}</span>
     </div>
   </div>

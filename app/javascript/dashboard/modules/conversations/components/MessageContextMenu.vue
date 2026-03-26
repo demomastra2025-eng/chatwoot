@@ -162,7 +162,7 @@ export default {
     <woot-modal
       v-if="isCannedResponseModalOpen && enabledOptions['cannedResponse']"
       v-model:show="isCannedResponseModalOpen"
-      :on-close="hideCannedResponseModal"
+      @close="hideCannedResponseModal"
     >
       <AddCannedModal
         :response-content="plainTextContent"

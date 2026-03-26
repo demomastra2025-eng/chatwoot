@@ -21,6 +21,7 @@ export default {
     PRIORITY_DESC: 'priority_desc',
     WAITING_SINCE_ASC: 'waiting_since_asc',
     WAITING_SINCE_DESC: 'waiting_since_desc',
+    PRIORITY_DESC_CREATED_AT_ASC: 'priority_desc_created_at_asc',
   },
   ARTICLE_STATUS_TYPES: {
     DRAFT: 0,
@@ -32,8 +33,7 @@ export default {
     EXPANDED: 'expanded',
   },
   DOCS_URL: 'https://one-link.kz/docs/product/',
-  HELP_CENTER_DOCS_URL:
-    'https://one-link.kz/docs/product/others/help-center',
+  HELP_CENTER_DOCS_URL: 'https://one-link.kz/docs/product/others/help-center',
   TESTIMONIAL_URL:
     'https://testimonials.cdn.chatwoot.com/testimonial-content.json',
   WHATSAPP_EMBEDDED_SIGNUP_DOCS_URL:

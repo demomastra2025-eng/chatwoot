@@ -15,6 +15,7 @@ import UpdateActions from './UpdateActions.vue';
 import LabelActions from './LabelActions.vue';
 import TeamActions from './TeamActions.vue';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 export default {
   components: {
     AgentSelector,
@@ -23,6 +24,7 @@ export default {
     TeamActions,
     CustomSnoozeModal,
     NextButton,
+    Checkbox,
   },
   props: {
     conversations: {
@@ -100,6 +102,8 @@ export default {
     onCmdSnoozeConversation(snoozeType) {
       if (snoozeType === wootConstants.SNOOZE_OPTIONS.UNTIL_CUSTOM_TIME) {
         this.showCustomTimeSnoozeModal = true;
+      } else if (typeof snoozeType === 'number') {
+        this.updateConversations('snoozed', snoozeType);
       } else {
         this.updateConversations('snoozed', findSnoozeTime(snoozeType) || null);
       }
@@ -157,11 +161,10 @@ export default {
   <div class="bulk-action__container">
     <div class="flex items-center justify-between">
       <label class="flex items-center justify-between bulk-action__panel">
-        <input
-          type="checkbox"
+        <Checkbox
+          :model-value="allConversationsSelected"
           class="checkbox"
-          :checked="allConversationsSelected"
-          :indeterminate.prop="!allConversationsSelected"
+          :indeterminate="!allConversationsSelected"
           @change="selectAll($event)"
         />
         <span>
@@ -251,7 +254,7 @@ export default {
     </div>
     <woot-modal
       v-model:show="showCustomTimeSnoozeModal"
-      :on-close="hideCustomSnoozeModal"
+      @close="hideCustomSnoozeModal"
     >
       <CustomSnoozeModal
         @close="hideCustomSnoozeModal"

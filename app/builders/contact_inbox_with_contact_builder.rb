@@ -3,7 +3,7 @@
 # for contact inbox logic it uses the contact inbox builder
 
 class ContactInboxWithContactBuilder
-  pattr_initialize [:inbox!, :contact_attributes!, :source_id, :hmac_verified]
+  pattr_initialize [:inbox!, :contact_attributes!, :source_id, :hmac_verified, :skip_runtime_events]
 
   def perform
     find_or_create_contact_and_contact_inbox
@@ -20,7 +20,7 @@ class ContactInboxWithContactBuilder
     ActiveRecord::Base.transaction(requires_new: true) do
       build_contact_with_contact_inbox
     end
-    update_contact_avatar(@contact) unless @contact.avatar.attached?
+    update_contact_avatar(@contact) unless skip_runtime_events || @contact.avatar.attached?
     @contact_inbox
   end
 
@@ -49,7 +49,7 @@ class ContactInboxWithContactBuilder
   end
 
   def create_contact
-    account.contacts.create!(
+    contact = account.contacts.new(
       name: contact_attributes[:name] || ::Haikunator.haikunate(1000),
       phone_number: contact_attributes[:phone_number],
       email: contact_attributes[:email],
@@ -57,6 +57,9 @@ class ContactInboxWithContactBuilder
       additional_attributes: contact_attributes[:additional_attributes],
       custom_attributes: contact_attributes[:custom_attributes]
     )
+    contact.skip_runtime_events = skip_runtime_events
+    contact.save!
+    contact
   end
 
   def find_contact

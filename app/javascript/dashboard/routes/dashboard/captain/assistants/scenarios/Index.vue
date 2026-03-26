@@ -43,11 +43,15 @@ const renderInstruction = instruction => () =>
 const scenariosExample = [
   {
     id: 1,
-    title: 'Prospective Buyer',
-    description:
-      'Handle customers who are showing interest in purchasing a license',
-    instruction:
-      'If someone is interested in purchasing a license, ask them for following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n. Once these details are collected, do the following steps\n1. add a private note to with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label "sales" to the contact using [Add Label to Conversation](tool://add_label_to_conversation)\n3. Reply saying "one of us will reach out soon" and provide an estimated timeline for the response and [Handoff to Human](tool://handoff)',
+    title: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.PROSPECTIVE_BUYER.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.PROSPECTIVE_BUYER.DESCRIPTION'
+    ),
+    instruction: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.PROSPECTIVE_BUYER.INSTRUCTION'
+    ),
     tools: ['add_private_note', 'add_label_to_conversation', 'handoff'],
   },
 ];
@@ -95,11 +99,22 @@ const handleRuleHover = (isHovered, id) => {
   hoveredCard.value = isHovered ? id : null;
 };
 
+const normalizeToolId = toolId => toolId?.replace(/\\(.)/g, '$1') || '';
+
 const getToolsFromInstruction = instruction => [
   ...new Set(
-    [...(instruction?.matchAll(/\(tool:\/\/([^)]+)\)/g) ?? [])].map(m => m[1])
+    [...(instruction?.matchAll(/\(tool:\/\/([^)]+)\)/g) ?? [])].map(m =>
+      normalizeToolId(m[1])
+    )
   ),
 ];
+
+const getScenarioErrorMessage = (error, fallbackKey) =>
+  error?.message ||
+  error?.response?.data?.message ||
+  error?.response?.data?.error ||
+  error?.response?.message ||
+  t(fallbackKey);
 
 const updateScenario = async scenario => {
   try {
@@ -111,9 +126,10 @@ const updateScenario = async scenario => {
     });
     useAlert(t('CAPTAIN.ASSISTANTS.SCENARIOS.API.UPDATE.SUCCESS'));
   } catch (error) {
-    const errorMessage =
-      error?.response?.message ||
-      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.UPDATE.ERROR');
+    const errorMessage = getScenarioErrorMessage(
+      error,
+      'CAPTAIN.ASSISTANTS.SCENARIOS.API.UPDATE.ERROR'
+    );
     useAlert(errorMessage);
   }
 };
@@ -126,9 +142,10 @@ const deleteScenario = async id => {
     });
     useAlert(t('CAPTAIN.ASSISTANTS.SCENARIOS.API.DELETE.SUCCESS'));
   } catch (error) {
-    const errorMessage =
-      error?.response?.message ||
-      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.DELETE.ERROR');
+    const errorMessage = getScenarioErrorMessage(
+      error,
+      'CAPTAIN.ASSISTANTS.SCENARIOS.API.DELETE.ERROR'
+    );
     useAlert(errorMessage);
   }
 };
@@ -157,9 +174,10 @@ const addScenario = async scenario => {
     });
     useAlert(t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.SUCCESS'));
   } catch (error) {
-    const errorMessage =
-      error?.response?.message ||
-      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR');
+    const errorMessage = getScenarioErrorMessage(
+      error,
+      'CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR'
+    );
     useAlert(errorMessage);
   }
 };
@@ -174,9 +192,10 @@ const addAllExampleScenarios = async () => {
     });
     useAlert(t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.SUCCESS'));
   } catch (error) {
-    const errorMessage =
-      error?.response?.message ||
-      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR');
+    const errorMessage = getScenarioErrorMessage(
+      error,
+      'CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR'
+    );
     useAlert(errorMessage);
   }
 };
@@ -191,7 +210,7 @@ onMounted(() => {
 
 <template>
   <PageLayout
-    :header-title="$t('CAPTAIN.DOCUMENTS.HEADER')"
+    :header-title="$t('CAPTAIN.ASSISTANTS.SCENARIOS.TITLE')"
     :is-fetching="isFetching"
     :show-know-more="false"
     :show-pagination-footer="false"

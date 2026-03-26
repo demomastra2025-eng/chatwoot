@@ -4,6 +4,7 @@ export const INBOX_TYPES = {
   TWITTER: 'Channel::TwitterProfile',
   TWILIO: 'Channel::TwilioSms',
   WHATSAPP: 'Channel::Whatsapp',
+  WHATSAPP_WEB: 'Channel::WhatsappWeb',
   API: 'Channel::Api',
   EMAIL: 'Channel::Email',
   TELEGRAM: 'Channel::Telegram',
@@ -14,39 +15,47 @@ export const INBOX_TYPES = {
   VOICE: 'Channel::Voice',
 };
 
+export const API_LIKE_INBOX_TYPES = [INBOX_TYPES.API, INBOX_TYPES.WHATSAPP_WEB];
+
 export const TWILIO_CHANNEL_MEDIUM = {
   WHATSAPP: 'whatsapp',
   SMS: 'sms',
 };
+
+export const CHANNEL_ICON_NEUTRAL_CLASS = 'channel-icon-neutral';
+
+const withNeutralChannelColor = icon => `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
 
 const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.WEB]: 'i-ri-global-fill',
   [INBOX_TYPES.FB]: 'i-ri-messenger-fill',
   [INBOX_TYPES.TWITTER]: 'i-ri-twitter-x-fill',
   [INBOX_TYPES.WHATSAPP]: 'i-ri-whatsapp-fill',
+  [INBOX_TYPES.WHATSAPP_WEB]: 'i-ri-whatsapp-fill',
   [INBOX_TYPES.API]: 'i-ri-cloudy-fill',
   [INBOX_TYPES.EMAIL]: 'i-ri-mail-fill',
   [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-fill',
   [INBOX_TYPES.LINE]: 'i-ri-line-fill',
   [INBOX_TYPES.INSTAGRAM]: 'i-ri-instagram-fill',
   [INBOX_TYPES.TIKTOK]: 'i-ri-tiktok-fill',
-  [INBOX_TYPES.VOICE]: 'i-ri-phone-fill',
+  [INBOX_TYPES.VOICE]: 'i-ri-phone-fill channel-icon-voice',
 };
 
 const DEFAULT_ICON_FILL = 'i-ri-chat-1-fill';
 
 const INBOX_ICON_MAP_LINE = {
-  [INBOX_TYPES.WEB]: 'i-ri-global-line',
-  [INBOX_TYPES.FB]: 'i-ri-messenger-line',
-  [INBOX_TYPES.TWITTER]: 'i-ri-twitter-x-line',
-  [INBOX_TYPES.WHATSAPP]: 'i-ri-whatsapp-line',
-  [INBOX_TYPES.API]: 'i-ri-cloudy-line',
-  [INBOX_TYPES.EMAIL]: 'i-ri-mail-line',
-  [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-line',
-  [INBOX_TYPES.LINE]: 'i-ri-line-line',
-  [INBOX_TYPES.INSTAGRAM]: 'i-ri-instagram-line',
-  [INBOX_TYPES.TIKTOK]: 'i-ri-tiktok-line',
-  [INBOX_TYPES.VOICE]: 'i-ri-phone-line',
+  [INBOX_TYPES.WEB]: 'i-woot-website',
+  [INBOX_TYPES.FB]: 'i-woot-messenger',
+  [INBOX_TYPES.TWITTER]: 'i-woot-x',
+  [INBOX_TYPES.WHATSAPP]: 'i-woot-whatsapp',
+  [INBOX_TYPES.WHATSAPP_WEB]: 'i-woot-whatsapp',
+  [INBOX_TYPES.API]: 'i-woot-api',
+  [INBOX_TYPES.EMAIL]: 'i-woot-mail',
+  [INBOX_TYPES.TELEGRAM]: 'i-woot-telegram',
+  [INBOX_TYPES.LINE]: 'i-woot-line',
+  [INBOX_TYPES.INSTAGRAM]: 'i-woot-instagram',
+  [INBOX_TYPES.VOICE]: 'i-woot-voice',
+  [INBOX_TYPES.TIKTOK]: 'i-woot-tiktok',
 };
 
 const DEFAULT_ICON_LINE = 'i-ri-chat-1-line';
@@ -85,6 +94,9 @@ export const getReadableInboxByType = (type, phoneNumber) => {
     case INBOX_TYPES.WHATSAPP:
       return 'whatsapp';
 
+    case INBOX_TYPES.WHATSAPP_WEB:
+      return 'whatsapp_web';
+
     case INBOX_TYPES.API:
       return 'api';
 
@@ -122,6 +134,7 @@ export const getInboxClassByType = (type, phoneNumber) => {
         : 'brand-sms';
 
     case INBOX_TYPES.WHATSAPP:
+    case INBOX_TYPES.WHATSAPP_WEB:
       return 'brand-whatsapp';
 
     case INBOX_TYPES.API:
@@ -157,8 +170,8 @@ export const getInboxIconByType = (type, medium, variant = 'fill') => {
     variant === 'fill' ? DEFAULT_ICON_FILL : DEFAULT_ICON_LINE;
 
   // Special case for Twilio (whatsapp and sms)
-  if (type === INBOX_TYPES.TWILIO && medium === 'whatsapp') {
-    return iconMap[INBOX_TYPES.WHATSAPP];
+  if (type === INBOX_TYPES.TWILIO && medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP) {
+    return withNeutralChannelColor(iconMap[INBOX_TYPES.WHATSAPP]);
   }
 
   return iconMap[type] ?? defaultIcon;

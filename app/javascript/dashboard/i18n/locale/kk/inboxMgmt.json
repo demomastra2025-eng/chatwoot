@@ -240,7 +240,7 @@
         },
         "SELECT_PROVIDER": {
           "TITLE": "Select your API provider",
-          "DESCRIPTION": "Choose your WhatsApp provider. You can connect directly through Meta which requires no setup, or connect through Twilio using your account credentials."
+          "DESCRIPTION": "WhatsApp-ты қосу тәсілін таңдаңыз. Meta арқылы тікелей, Twilio арқылы немесе QR-кодпен WhatsApp Web арқылы қосуға болады."
         },
         "INBOX_NAME": {
           "LABEL": "Inbox Name",
@@ -313,44 +313,116 @@
         }
       },
       "VOICE": {
-        "TITLE": "Voice Channel",
-        "DESC": "Integrate Twilio Voice and start supporting your customers via phone calls.",
+        "TITLE": "Қоңыраулар",
+        "DESC": "Кіріс және шығыс қоңыраулар үшін провайдерді таңдап, нөмірлерді қосыңыз.",
+        "SELECT_PROVIDER": {
+          "CHANGE_ACTION": "Провайдерді өзгерту"
+        },
+        "PROVIDERS": {
+          "KAZAKHSTAN": "Fonoster",
+          "KAZAKHSTAN_DESC": "Қазақстан нөмірлері мен telephony bridge маршрутизациясы үшін Fonoster қолданыңыз.",
+          "TWILIO": "Twilio",
+          "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз."
+        },
         "PHONE_NUMBER": {
-          "LABEL": "Phone Number",
-          "PLACEHOLDER": "Enter your phone number (e.g. +1234567890)",
-          "ERROR": "Please provide a valid phone number in E.164 format (e.g. +1234567890)"
+          "LABEL": "Телефон нөмірі",
+          "PLACEHOLDER": "Телефон нөмірін енгізіңіз (мысалы, +1234567890)",
+          "ERROR": "E.164 форматындағы дұрыс телефон нөмірін енгізіңіз (мысалы, +1234567890)"
+        },
+        "FONOSTER": {
+          "NUMBER_REF": {
+            "LABEL": "Нөмір идентификаторы",
+            "PLACEHOLDER": "Қоңырау нөмірінің идентификаторын енгізіңіз",
+            "REQUIRED": "Нөмір идентификаторы міндетті"
+          },
+          "APP_REF": {
+            "LABEL": "Негізгі қосымша сілтемесі",
+            "PLACEHOLDER": "Маршрутизацияға немесе сыртқы қосымшаға арналған сілтеме",
+            "REQUIRED": "Қолданба маршруты таңдалса, негізгі қосымша сілтемесі міндетті"
+          },
+          "TRUNK_REF": {
+            "LABEL": "Транк сілтемесі",
+            "PLACEHOLDER": "Қосымша транк сілтемесі"
+          },
+          "ROUTING": {
+            "LABEL": "Әдепкі маршрутизация",
+            "MODE": {
+              "OPERATOR": "Оператор",
+              "APP": "Қолданба",
+              "AI": "AI",
+              "REJECT": "Қабылдамау"
+            }
+          },
+          "AI_APP_REF": {
+            "LABEL": "AI қосымшасының сілтемесі",
+            "PLACEHOLDER": "AI қосымшасының сілтемесін енгізіңіз",
+            "REQUIRED": "AI маршруты таңдалса, AI қосымшасының сілтемесі міндетті"
+          },
+          "OPERATOR_AGENT_AOR": {
+            "LABEL": "Оператор агентінің AOR-ы",
+            "PLACEHOLDER": "sip:agent@domain идентификаторын енгізіңіз",
+            "REQUIRED": "Оператор маршруты таңдалса, оператор агентінің AOR-ы міндетті"
+          },
+          "FALLBACK_MESSAGE": {
+            "LABEL": "Қабылдамау хабарламасы",
+            "PLACEHOLDER": "Қоңырау қабылданбағанда ойналатын қосымша хабарлама"
+          }
         },
         "TWILIO": {
           "ACCOUNT_SID": {
-            "LABEL": "Account SID",
-            "PLACEHOLDER": "Enter your Twilio Account SID",
-            "REQUIRED": "Account SID is required"
+            "LABEL": "Аккаунт SID",
+            "PLACEHOLDER": "Twilio аккаунтының SID мәнін енгізіңіз",
+            "REQUIRED": "Аккаунт SID міндетті"
           },
           "AUTH_TOKEN": {
             "LABEL": "Auth Token",
-            "PLACEHOLDER": "Enter your Twilio Auth Token",
-            "REQUIRED": "Auth Token is required"
+            "PLACEHOLDER": "Twilio Auth Token мәнін енгізіңіз",
+            "REQUIRED": "Auth Token міндетті"
           },
           "API_KEY_SID": {
             "LABEL": "API Key SID",
-            "PLACEHOLDER": "Enter your Twilio API Key SID",
-            "REQUIRED": "API Key SID is required"
+            "PLACEHOLDER": "Twilio API Key SID мәнін енгізіңіз",
+            "REQUIRED": "API Key SID міндетті"
           },
           "API_KEY_SECRET": {
             "LABEL": "API Key Secret",
-            "PLACEHOLDER": "Enter your Twilio API Key Secret",
-            "REQUIRED": "API Key Secret is required"
+            "PLACEHOLDER": "Twilio API Key Secret мәнін енгізіңіз",
+            "REQUIRED": "API Key Secret міндетті"
           }
         },
         "CONFIGURATION": {
           "TWILIO_VOICE_URL_TITLE": "Twilio Voice URL",
-          "TWILIO_VOICE_URL_SUBTITLE": "Configure this URL as the Voice URL on your Twilio phone number and TwiML App.",
+          "TWILIO_VOICE_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіз бен TwiML қолданбасындағы Voice URL ретінде баптаңыз.",
           "TWILIO_STATUS_URL_TITLE": "Twilio Status Callback URL",
-          "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number."
+          "TWILIO_STATUS_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіздегі Status Callback URL ретінде баптаңыз.",
+          "FONOSTER_TITLE": "Fonoster байланысы",
+          "FONOSTER_SUBTITLE": "Бұл қоңырау арнасы Onelink telephony bridge және Fonoster маршрутизациясы арқылы басқарылады.",
+          "FONOSTER_READINESS_TITLE": "Fonoster дайындығы",
+          "FONOSTER_READINESS_SUBTITLE": "Осы voice inbox үшін telephony bridge, нөмір binding-і және тиімді маршрут тексеріледі.",
+          "ROUTING_MODE": "Маршрутизация режимі",
+          "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",
+          "AI_APP_REF": "AI қосымшасының сілтемесі",
+          "OPERATOR_AGENT_AOR": "Оператор агентінің AOR-ы",
+          "READY": "Дайын",
+          "ACTION_REQUIRED": "Әрекет қажет",
+          "HEALTHY": "Қалыпты",
+          "ATTENTION_REQUIRED": "Назар қажет",
+          "STATUS": "Күйі",
+          "BRIDGE_HEALTH": "Bridge күйі",
+          "READY_INBOXES": "Дайын inbox саны",
+          "CALL_SURFACE": "Қоңырау беті",
+          "LAST_SYNCED_AT": "Соңғы синхрондау",
+          "NOT_SYNCED": "Әлі синхрондалмаған",
+          "LOADING": "Дайындық тексерістері жүктелуде...",
+          "LOAD_ERROR": "Fonoster дайындығын жүктеу мүмкін болмады.",
+          "REFRESH": "Жаңарту",
+          "WARNINGS_TITLE": "Ескертулер",
+          "NO_WARNINGS": "Бұғаттайтын ескертулер жоқ.",
+          "NO_DATA": "Бұл inbox үшін әзірге дайындық дерегі жоқ."
         },
-        "SUBMIT_BUTTON": "Create Voice Channel",
+        "SUBMIT_BUTTON": "Қоңыраулар арнасын құру",
         "API": {
-          "ERROR_MESSAGE": "We were not able to create the voice channel"
+          "ERROR_MESSAGE": "Қоңыраулар арнасын құру мүмкін болмады"
         }
       },
       "API_CHANNEL": {
@@ -369,6 +441,20 @@
         "SUBMIT_BUTTON": "Create API Channel",
         "API": {
           "ERROR_MESSAGE": "We were not able to save the api channel"
+        }
+      },
+      "WHATSAPP_WEB_CHANNEL": {
+        "TITLE": "WhatsApp Web",
+        "DESC": "WhatsApp нөмірін енгізіңіз. OneLink арна атауын өзі құрады, Evolution webhook-ын баптайды және QR-кодты автоматты түрде сұратады.",
+        "PHONE_NUMBER": {
+          "LABEL": "WhatsApp нөмірі",
+          "SUBTITLE": "Қазақстан нөмірін 77001234567 форматында енгізіңіз. Плюс автоматты түрде қосылады.",
+          "PLACEHOLDER": "77001234567",
+          "ERROR": "77001234567 форматындағы 11 таңбалы Қазақстан нөмірін енгізіңіз"
+        },
+        "SUBMIT_BUTTON": "WhatsApp Web арнасын құру",
+        "API": {
+          "ERROR_MESSAGE": "WhatsApp Web арнасын сақтау мүмкін болмады"
         }
       },
       "EMAIL_CHANNEL": {
@@ -454,6 +540,10 @@
             "TITLE": "WhatsApp",
             "DESCRIPTION": "Support your customers on WhatsApp"
           },
+          "WHATSAPP_WEB": {
+            "TITLE": "WhatsApp Web",
+            "DESCRIPTION": "API арқылы WhatsApp стиліндегі арнайы арнаны жасаңыз"
+          },
           "EMAIL": {
             "TITLE": "Email",
             "DESCRIPTION": "Connect with Gmail, Outlook, or other providers"
@@ -483,14 +573,16 @@
             "DESCRIPTION": "Connect your TikTok account"
           },
           "VOICE": {
-            "TITLE": "Voice",
-            "DESCRIPTION": "Integrate with Twilio Voice"
+            "TITLE": "Қоңыраулар",
+            "DESCRIPTION": "Кіріс және шығыс қоңырауларды баптау"
           }
         }
       },
       "AGENTS": {
         "TITLE": "Employees",
-        "DESC": "Here you can add employees to manage your newly created inbox. Only these selected employees will have access to your inbox. Employees which are not part of this inbox will not be able to see or respond to messages in this inbox when they login. <br> <b>PS:</b> As an administrator, if you need access to all inboxes, you should add yourself as agent to all inboxes that you create.",
+        "DESC": "Here you can add employees to manage your newly created inbox. Only these selected employees will have access to your inbox. Employees who are not part of this inbox will not be able to see or respond to messages in it after they sign in.",
+        "ADMIN_NOTE_LABEL": "PS:",
+        "ADMIN_NOTE": "As an administrator, if you need access to all inboxes, add yourself as an agent to every inbox you create.",
         "VALIDATION_ERROR": "Add at least one agent to your new Inbox",
         "PICK_AGENTS": "Pick employees for the inbox"
       },
@@ -542,6 +634,22 @@
       "MORE_SETTINGS": "More settings",
       "WEBSITE_SUCCESS": "You have successfully finished creating a website channel. Copy the code shown below and paste it on your website. Next time a customer use the live chat, the conversation will automatically appear on your inbox.",
       "WHATSAPP_QR_INSTRUCTION": "Scan the QR code above to quickly test your WhatsApp inbox",
+      "WHATSAPP_WEB": {
+        "TITLE": "WhatsApp Web қосылымы",
+        "DESCRIPTION": "Бұл QR-код дәл осы WhatsApp Web inbox-ына тиесілі. Қосылу Evolution API арқылы жүреді және осы inbox үшін жеке WhatsApp Web сессиясын жасайды.",
+        "SCAN_HINT": "Телефоныңыздағы WhatsApp-ты ашып, Linked Devices бөліміне өтіңіз де, төмендегі QR-кодты сканерлеңіз.",
+        "CONNECTING": "Evolution API-ге қосылып, WhatsApp Web үшін жаңа QR-код сұратып жатырмыз.",
+        "LOADING_TITLE": "WhatsApp Web QR-коды сұратылып жатыр",
+        "LOADING_DESCRIPTION": "Қосылу қадамы аяқталғанша күтіңіз. Evolution API кодты қайтарған сәтте, ол осы жерде автоматты түрде көрсетіледі.",
+        "QR_DESCRIPTION": "Бұл QR-кодты тек осы нақты WhatsApp Web inbox-ын қосу үшін пайдаланыңыз.",
+        "PAIR_CODE_LABEL": "Қосу коды",
+        "PAIR_CODE_DESCRIPTION": "Егер QR-код сканерленбесе, осы кодты телефоныңыздағы WhatsApp ішінде енгізіңіз.",
+        "CONNECTED": "WhatsApp Web әлдеқашан қосылған.",
+        "FAILED": "WhatsApp Web үшін QR-кодты алу мүмкін болмады.",
+        "REQUEST_NEW_QR": "Жаңа QR-код сұрату",
+        "REFRESH_SUCCESS": "WhatsApp Web QR-коды жаңартылды",
+        "REFRESH_ERROR": "WhatsApp Web QR-кодын жаңарту мүмкін болмады"
+      },
       "MESSENGER_QR_INSTRUCTION": "Scan the QR code above to quickly test your Facebook Messenger inbox",
       "TELEGRAM_QR_INSTRUCTION": "Scan the QR code above to quickly test your Telegram inbox"
     },
@@ -746,8 +854,8 @@
       "WHATSAPP_APP_ID_MISSING": "WhatsApp App ID is not configured. Please contact your administrator.",
       "WHATSAPP_CONFIG_ID_MISSING": "WhatsApp Configuration ID is not configured. Please contact your administrator.",
       "WHATSAPP_LOGIN_CANCELLED": "WhatsApp login was cancelled. Please try again.",
-      "WHATSAPP_WEBHOOK_TITLE": "Webhook Verification Token",
-      "WHATSAPP_WEBHOOK_SUBHEADER": "This token is used to verify the authenticity of the webhook endpoint.",
+      "WHATSAPP_WEBHOOK_TITLE": "Webhook растау токені",
+      "WHATSAPP_WEBHOOK_SUBHEADER": "Бұл токен webhook endpoint түпнұсқалығын тексеру үшін қолданылады.",
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
@@ -1091,6 +1199,7 @@
       "TWITTER_PROFILE": "Twitter",
       "TWILIO_SMS": "Twilio SMS",
       "WHATSAPP": "WhatsApp",
+      "WHATSAPP_WEB": "WhatsApp Web",
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",
@@ -1098,7 +1207,7 @@
       "API": "API Channel",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
-      "VOICE": "Voice"
+      "VOICE": "Қоңыраулар"
     }
   }
 }

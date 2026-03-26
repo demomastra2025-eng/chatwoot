@@ -2,7 +2,7 @@ json.id resource.id
 json.avatar_url resource.try(:avatar_url)
 json.channel_id resource.channel_id
 json.name resource.name
-json.channel_type resource.channel_type
+json.channel_type resource.display_channel_type
 json.greeting_enabled resource.greeting_enabled
 json.greeting_message resource.greeting_message
 json.working_hours_enabled resource.working_hours_enabled
@@ -19,6 +19,13 @@ json.allow_messages_after_resolved resource.allow_messages_after_resolved
 json.lock_to_single_conversation resource.lock_to_single_conversation
 json.sender_name_type resource.sender_name_type
 json.business_name resource.business_name
+
+if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present?
+  json.captain_assistant do
+    json.id resource.captain_assistant.id
+    json.name resource.captain_assistant.name
+  end
+end
 
 if resource.portal.present?
   json.help_center do
@@ -118,6 +125,22 @@ if resource.api?
   json.additional_attributes resource.channel.try(:additional_attributes)
 end
 
+if resource.whatsapp_web?
+  json.phone_number resource.channel.try(:phone_number)
+  json.conversation_pending resource.channel.try(:conversation_pending)
+  json.history_lookback_days resource.channel.try(:history_lookback_days)
+  json.ignore_jids resource.channel.try(:ignore_jids)
+  json.sign_messages resource.channel.try(:sign_messages)
+  json.sign_delimiter resource.channel.try(:sign_delimiter)
+  json.import_contacts resource.channel.try(:import_contacts)
+  json.import_messages resource.channel.try(:import_messages)
+  json.sync_labels resource.channel.try(:sync_labels)
+  json.additional_attributes do
+    json.evolution resource.channel.try(:evolution_state_payload)
+  end
+  json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
+end
+
 json.provider resource.channel.try(:provider)
 
 ## Telegram Attributes
@@ -132,6 +155,12 @@ end
 
 ## Voice Channel Attributes
 if resource.channel_type == 'Channel::Voice'
-  json.voice_call_webhook_url resource.channel.try(:voice_call_webhook_url)
-  json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
+  if resource.channel.provider == 'twilio'
+    json.voice_call_webhook_url resource.channel.try(:voice_call_webhook_url)
+    json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
+  end
+
+  if resource.respond_to?(:telephony_number_binding) && resource.telephony_number_binding.present?
+    json.telephony resource.telephony_number_binding.to_telephony_h
+  end
 end

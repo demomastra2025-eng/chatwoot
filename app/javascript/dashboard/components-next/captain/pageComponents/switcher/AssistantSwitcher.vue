@@ -4,10 +4,10 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter, useStore } from 'dashboard/composables/store.js';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 
-const emit = defineEmits(['close', 'createAssistant']);
+const emit = defineEmits(['close']);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -79,20 +79,13 @@ const handleAssistantChange = async assistant => {
 
   emit('close');
 };
-
-const openCreateAssistantDialog = () => {
-  emit('createAssistant');
-  emit('close');
-};
 </script>
 
 <template>
   <div
     class="pt-5 pb-3 bg-n-alpha-3 backdrop-blur-[100px] outline outline-n-container outline-1 z-50 absolute w-[27.5rem] rounded-xl shadow-md flex flex-col gap-4"
   >
-    <div
-      class="flex items-center justify-between gap-4 px-6 pb-3 border-b border-n-alpha-2"
-    >
+    <div class="flex flex-col gap-1 px-6 pb-3 border-b border-n-alpha-2">
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-2">
           <h2 class="text-link text-base font-medium w-fit">
@@ -103,14 +96,6 @@ const openCreateAssistantDialog = () => {
           {{ t('CAPTAIN.ASSISTANT_SWITCHER.SWITCH_ASSISTANT') }}
         </p>
       </div>
-      <Button
-        :label="t('CAPTAIN.ASSISTANT_SWITCHER.NEW_ASSISTANT')"
-        color="slate"
-        icon="i-lucide-plus"
-        size="sm"
-        class="!bg-n-alpha-2 hover:!bg-n-alpha-3"
-        @click="openCreateAssistantDialog"
-      />
     </div>
     <div v-if="assistants.length > 0" class="flex flex-col gap-2 px-4">
       <Button

@@ -15,6 +15,22 @@ class CaptainDocument extends ApiClient {
       },
     });
   }
+
+  preview(data) {
+    return axios.post(`${this.url}/preview`, data);
+  }
+
+  resync(id) {
+    return axios.post(`${this.url}/${id}/resync`);
+  }
+
+  refreshChangedOnly(id) {
+    return axios.post(`${this.url}/${id}/refresh_changed_only`);
+  }
+
+  retryFailed(id) {
+    return axios.post(`${this.url}/${id}/retry_failed`);
+  }
 }
 
 export default new CaptainDocument();

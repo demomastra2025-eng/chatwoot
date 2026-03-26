@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Enabled",
-        "DISABLED": "Disabled"
+        "DISABLED": "Disabled",
+        "ENABLED_DESCRIPTION": "როდესაც კონტაქტი კვლავ მოგვწერს, წინა საუბარი გაიხსნება.",
+        "DISABLED_DESCRIPTION": "ყოველ ჯერზე წინა საუბრის დასრულების შემდეგ ახალი საუბარი შეიქმნება."
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook-ის კონფიგურაცია",
+        "DESCRIPTION": "Webhook URL აუცილებელია თქვენი WhatsApp Business ანგარიშისთვის, რათა მიიღოთ შეტყობინებები მომხმარებლებისგან",
+        "ACTION_REQUIRED": "Webhook არ არის კონფიგურირებული",
+        "REGISTER_BUTTON": "Webhook-ის რეგისტრაცია",
+        "REGISTER_SUCCESS": "Webhook წარმატებით დარეგისტრირდა",
+        "REGISTER_ERROR": "Webhook-ის რეგისტრაცია ვერ მოხერხდა. გთხოვთ, სცადეთ თავიდან.",
+        "CONFIGURED_SUCCESS": "ვებჰუკი წარმატებით კონფიგურირდა",
+        "URL_MISMATCH": "ვებჰუკის URL არ ემთხვევა"
       }
     },
     "SETTINGS": "Settings",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Restrict which websites can embed your chat widget. For security, only add domains you own and trust. Add one or more domains separated by commas. Leave blank to allow all domains (not recommended for production)."
       },
       "INBOX_AGENTS": "Agents",
       "INBOX_AGENTS_SUB_TEXT": "Add or remove agents from this inbox",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Enable widget in mobile apps",
+        "SUBTITLE": "Check this if you embed the widget in iOS or Android apps. Mobile apps don't send domain information, so they would be blocked by domain restrictions unless this is enabled."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Identity Validation",
+        "DESCRIPTION": "Verify user authenticity by generating secure tokens. This prevents unauthorized users from impersonating others in your chat.",
+        "SECRET_KEY": "საიდუმლო გასაღები",
+        "VIEW_DOCS": "View documentation",
+        "REQUIRE_LABEL": "Require identity validation for all conversations",
+        "REQUIRE_DESCRIPTION": "When enabled, users must provide a valid identity token to start conversations. Requests without valid tokens will be rejected."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Help Center",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "არცერთი"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "გამოწერეთ სარგებლიანობის შესაბამისობა",
+        "HELPER_NOTE": "გაგზავნამდე შეამოწმეთ ეს შეტყობინება სარგებლიანობის შესაბამისობის გასაუმჯობესებლად. სისტემა ქმნის სპეციალურ CSAT შაბლონს ანგარიშგებისთვის ღილაკებით და აგზავნის მას როგორც სარგებლიანობას; Meta შესაძლოა კვლავ დაახარისხოს იგი მარკეტინგად შინაარსის მიხედვით.",
+        "RESULT_LABEL": "Meta კატეგორიის პროგნოზი",
+        "GUIDANCE_NOTE": "ეს არის მითითების შემოწმება, არა Meta-ს დამტკიცების გარანტია.",
+        "SUGGESTION_LABEL": "შეთავაზებული უსაფრთხო გადამუშავება",
+        "APPLY": "გამოიყენეთ ეს გადამუშავება",
+        "ERROR_MESSAGE": "შეტყობინების ანალიზი ვერ მოხერხდა. გთხოვთ, სცადეთ თავიდან.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "მომგებიანი გამოყენება",
+          "LIKELY_MARKETING": "მარკეტინგის ალბათობა",
+          "UNCLEAR": "საჭიროა განმარტება"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Unavailable",
         "HOURS": "hours",
         "VALIDATION_ERROR": "Starting time should be before closing time.",
-        "CHOOSE": "Choose"
+        "CHOOSE": "Choose",
+        "DAY": "დღე",
+        "AVAILABILITY": "ხელმისაწვდომობა"
       },
       "ALL_DAY": "All-Day"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Standard",
           "EXPANDED_BUBBLE": "Expanded Bubble"
-        }
+        },
+        "WIDGET_BUBBLE": "ბუშტი"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Default",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} ინბოქსი | {n} ინბოქსი",
+    "SEARCH_PLACEHOLDER": "ინბოქსების ძებნა...",
+    "NO_RESULTS": "ინბოქსები ვერ მოიძებნა თქვენი ძიების მიხედვით",
+    "CHANNEL_PREFERENCES": "არხის პარამეტრები",
+    "WIDGET_FEATURES": "ვიჯეტის ფუნქციები",
+    "ASSIGNMENT": {
+      "TITLE": "შეტყობინებების მინიჭება",
+      "DESCRIPTION": "ავტომატურად მიანიჭეთ შემომავალი შეტყობინებები ხელმისაწვდომ აგენტებს მინიჭების პოლიტიკის მიხედვით",
+      "ENABLE_AUTO_ASSIGNMENT": "ჩართეთ ავტომატური შეტყობინებების მინიჭება",
+      "DEFAULT_RULES_TITLE": "ნაგულისხმევი დანიშვნის წესები",
+      "DEFAULT_RULES_DESCRIPTION": "ყველა საუბრისთვის ნაგულისხმევი დანიშვნის ქცევის გამოყენება",
+      "DEFAULT_RULE_1": "პირველ რიგში ყველაზე ადრინდელი შექმნილი საუბრები",
+      "DEFAULT_RULE_2": "რაუნდ-რობინის პრინციპით განაწილება",
+      "CUSTOMIZE_WITH_POLICY": "დანიშვნის პოლიტიკით მორგება",
+      "USING_POLICY": "ამ ინბოქსისთვის კასტომიზირებული დანიშვნის პოლიტიკის გამოყენება",
+      "CUSTOMIZE_POLICY": "დანიშვნის პოლიტიკის კასტომიზაცია",
+      "DELETE_POLICY": "პოლიტიკის წაშლა",
+      "POLICY_LABEL": "მინიჭების პოლიტიკა",
+      "ASSIGNMENT_ORDER_LABEL": "დანიშვნის თანმიმდევრობა",
+      "ASSIGNMENT_METHOD_LABEL": "დანიშვნის მეთოდი",
+      "POLICY_STATUS": {
+        "ACTIVE": "აქტიური",
+        "INACTIVE": "არააქტიური"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "ყველაზე ადრე შექმნილი",
+        "LONGEST_WAITING": "ყველაზე დიდხანს მოლოდინში"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "რაუნდ-რობინი",
+        "BALANCED": "ბალანსირებული დანიშვნა"
+      },
+      "UPGRADE_PROMPT": "მორგებული დანიშვნის პოლიტიკა ხელმისაწვდომია Business გეგმაზე",
+      "UPGRADE_TO_BUSINESS": "გადაინაცვლეთ Business გეგმაზე",
+      "DEFAULT_POLICY_LINKED": "ნაგულისხმევი პოლიტიკა დაკავშირებულია",
+      "DEFAULT_POLICY_DESCRIPTION": "დააკავშირეთ მორგებული დანიშვნის პოლიტიკა, რათა დაარეგულიროთ როგორ გადანაწილდება საუბრები აგენტებზე ამ ინბოქსში.",
+      "LINK_EXISTING_POLICY": "არსებული პოლიტიკის დაკავშირება",
+      "CREATE_NEW_POLICY": "ახალი პოლიტიკის შექმნა",
+      "NO_POLICIES": "მინიჭების პოლიტიკები ვერ მოიძებნა",
+      "VIEW_ALL_POLICIES": "ყველა პოლიტიკის ნახვა",
+      "CURRENT_BEHAVIOR": "ამჟამად გამოიყენება ნაგულისხმევი დანიშვნის ქცევა:",
+      "LINK_SUCCESS": "დანიშვნის პოლიტიკა წარმატებით დაკავშირებულია",
+      "LINK_ERROR": "მონაწილეობის პოლიტიკის დაკავშირება ვერ მოხერხდა"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "მონაწილეობის პოლიტიკის წაშლა?",
+      "DELETE_CONFIRM_MESSAGE": "დარწმუნებული ხართ, რომ გინდათ ამ მონაწილეობის პოლიტიკის ამოღება ამ ინბოქსიდან? ინბოქსი დაბრუნდება ნაგულისხმევ მონაწილეობის წესებზე.",
+      "CANCEL": "გაუქმება",
+      "CONFIRM_DELETE": "წაშლა",
+      "DELETE_SUCCESS": "დავალების პოლიტიკა წარმატებით წაიშალა",
+      "DELETE_ERROR": "დავალების პოლიტიკის წაშლა ვერ მოხერხდა"
     }
   }
 }

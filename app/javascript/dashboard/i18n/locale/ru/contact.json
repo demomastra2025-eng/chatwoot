@@ -21,7 +21,7 @@
     "CALL_INITIATED": "Звоним контакту…",
     "CALL_FAILED": "Не удалось начать звонок. Попробуйте еще раз.",
     "VOICE_INBOX_PICKER": {
-      "TITLE": "Выберите голосовую почту"
+      "TITLE": "Выберите линию звонков"
     },
     "CONVERSATIONS": {
       "NO_RECORDS_FOUND": "Нет предыдущих диалогов, связанных с этим контактом.",
@@ -165,7 +165,7 @@
       },
       "INBOX": {
         "LABEL": "Через «Входящие»",
-        "PLACEHOLDER": "Выберите источник входящих",
+        "PLACEHOLDER": "Выберите канал",
         "ERROR": "Выберите электронную почту"
       },
       "SUBJECT": {
@@ -469,6 +469,9 @@
           },
           "TWITTER": {
             "PLACEHOLDER": "Добавить Twitter"
+          },
+          "TELEGRAM": {
+            "PLACEHOLDER": "Добавить Telegram"
           }
         }
       },

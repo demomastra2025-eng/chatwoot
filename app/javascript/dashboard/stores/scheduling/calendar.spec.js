@@ -140,4 +140,165 @@ describe('useSchedulingCalendarStore', () => {
       { appointmentId: 9, createdAt: '2026-03-10T08:05:00.000Z', id: 302 },
     ]);
   });
+
+  it('removes synced appointments that no longer match active filters', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.selectedResourceIds = [5];
+    store.statusFilters = ['confirmed'];
+    store.payload = {
+      appointments: [
+        {
+          id: 3,
+          resourceId: 5,
+          startsAt: '2026-03-11T08:00:00.000Z',
+          endsAt: '2026-03-11T08:30:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+      breakRules: [],
+      expenses: [],
+      holidays: [],
+      payments: [],
+      range: { from: null, to: null },
+      resources: [],
+      slots: [],
+      timeOffs: [],
+      workRules: [],
+      workdayOverrides: [],
+    };
+
+    store.syncAppointment({
+      id: 3,
+      resource_id: 9,
+      starts_at: '2026-03-11T08:00:00.000Z',
+      ends_at: '2026-03-11T08:30:00.000Z',
+      status: 'cancelled',
+    });
+
+    expect(store.payload.appointments).toEqual([]);
+  });
+
+  it('keeps synced appointments when they stay inside the active view and filters', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.selectedResourceIds = [5];
+    store.statusFilters = ['confirmed'];
+
+    store.syncAppointment({
+      id: 7,
+      resource_id: 5,
+      starts_at: '2026-03-11T09:00:00.000Z',
+      ends_at: '2026-03-11T09:30:00.000Z',
+      status: 'confirmed',
+    });
+
+    expect(store.payload.appointments).toEqual([
+      {
+        id: 7,
+        resourceId: 5,
+        startsAt: '2026-03-11T09:00:00.000Z',
+        endsAt: '2026-03-11T09:30:00.000Z',
+        status: 'confirmed',
+      },
+    ]);
+  });
+
+  it('ignores stale calendar responses that finish after a newer filtered request', async () => {
+    const store = useSchedulingCalendarStore();
+    let resolveFirstRequest;
+    let resolveSecondRequest;
+
+    showMock
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFirstRequest = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSecondRequest = resolve;
+          })
+      );
+
+    store.selectedResourceIds = [5];
+    const firstRequest = store.fetchCalendar();
+
+    store.selectedResourceIds = [8];
+    const secondRequest = store.fetchCalendar();
+
+    resolveSecondRequest({
+      data: {
+        payload: {
+          appointments: [
+            {
+              id: 8,
+              resource_id: 8,
+              starts_at: '2026-03-11T09:00:00.000Z',
+              ends_at: '2026-03-11T09:30:00.000Z',
+            },
+          ],
+          break_rules: [],
+          expenses: [],
+          holidays: [],
+          payments: [],
+          range: {
+            from: '2026-03-09T00:00:00.000Z',
+            to: '2026-03-16T00:00:00.000Z',
+          },
+          resources: [{ id: 8, name: 'Dr. Eight' }],
+          slots: [],
+          time_offs: [],
+          work_rules: [],
+          workday_overrides: [],
+        },
+      },
+    });
+
+    await secondRequest;
+
+    resolveFirstRequest({
+      data: {
+        payload: {
+          appointments: [
+            {
+              id: 5,
+              resource_id: 5,
+              starts_at: '2026-03-11T08:00:00.000Z',
+              ends_at: '2026-03-11T08:30:00.000Z',
+            },
+          ],
+          break_rules: [],
+          expenses: [],
+          holidays: [],
+          payments: [],
+          range: {
+            from: '2026-03-09T00:00:00.000Z',
+            to: '2026-03-16T00:00:00.000Z',
+          },
+          resources: [{ id: 5, name: 'Dr. Five' }],
+          slots: [],
+          time_offs: [],
+          work_rules: [],
+          workday_overrides: [],
+        },
+      },
+    });
+
+    await firstRequest;
+
+    expect(store.payload.resources).toEqual([{ id: 8, name: 'Dr. Eight' }]);
+    expect(store.payload.appointments).toEqual([
+      {
+        endsAt: '2026-03-11T09:30:00.000Z',
+        id: 8,
+        resourceId: 8,
+        startsAt: '2026-03-11T09:00:00.000Z',
+      },
+    ]);
+  });
 });

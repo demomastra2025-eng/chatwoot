@@ -3,10 +3,12 @@ import wootConstants from 'dashboard/constants/globals';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 export default {
   components: {
     NextButton,
+    Checkbox,
   },
   emits: ['filter'],
 
@@ -176,12 +178,11 @@ export default {
           :key="option.key"
           class="flex items-center px-3 py-2 gap-1.5 h-9"
         >
-          <input
+          <Checkbox
             :id="option.key"
-            type="checkbox"
             :name="option.key"
-            :checked="option.selected"
-            class="m-0 border-[1.5px] shadow border-n-weak appearance-none rounded-[4px] w-4 h-4 dark:bg-n-background focus:ring-1 focus:ring-n-weak dark:focus:ring-n-strong checked:bg-n-brand dark:checked:bg-n-brand after:content-[''] after:text-white checked:after:content-['✓'] after:flex after:items-center after:justify-center checked:border-t checked:border-n-blue-10 checked:border-b-0 checked:border-r-0 checked:border-l-0 after:text-center after:text-xs after:font-bold after:relative after:-top-[1.5px]"
+            :model-value="option.selected"
+            class="m-0"
             @change="updateDisplayOption(option)"
           />
           <label

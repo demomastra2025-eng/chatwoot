@@ -9,15 +9,24 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   def execute(query:)
     Rails.logger.info { "#{self.class.name}: #{query}" }
 
+    responses_scope = assistant.responses.approved
+    return 'No FAQs found for the given query' if responses_scope.none?
+
     translated_query = Captain::Llm::TranslateQueryService
                        .new(account: assistant.account)
                        .translate(query, target_language: assistant.account.locale_english_name)
 
-    responses = assistant.responses.approved.search(translated_query)
+    responses = responses_scope.search(translated_query)
 
     return 'No FAQs found for the given query' if responses.empty?
 
     responses.map { |response| format_response(response) }.join
+  rescue StandardError => e
+    Rails.logger.error do
+      "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
+    end
+
+    'Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.'
   end
 
   private

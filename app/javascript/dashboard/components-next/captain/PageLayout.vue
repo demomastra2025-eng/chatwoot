@@ -117,7 +117,7 @@ const handleCreateAssistant = () => {
 <template>
   <section class="flex flex-col w-full h-full overflow-hidden bg-n-surface-1">
     <header class="sticky top-0 z-10 px-6">
-      <div class="w-full max-w-[60rem] mx-auto">
+      <div class="w-full max-w-5xl mx-auto">
         <div
           class="flex items-start lg:items-center justify-between w-full py-6 lg:py-0 lg:h-20 gap-4 lg:gap-2 flex-col lg:flex-row"
         >
@@ -125,22 +125,24 @@ const handleCreateAssistant = () => {
             <BackButton v-if="backUrl" :back-url="backUrl" />
             <div
               v-if="showAssistantSwitcher && !showPaywall"
-              class="flex items-center gap-2"
+              class="flex items-center gap-2 min-w-0"
             >
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
                 <span
                   v-if="!isFetchingAssistants"
-                  class="text-xl font-medium truncate text-n-slate-12"
+                  class="min-w-0 text-xl font-medium truncate text-n-slate-12"
                 >
                   {{ activeAssistantName }}
                 </span>
-                <div class="relative group">
+                <div class="relative group shrink-0">
                   <OnClickOutside
                     @trigger="showAssistantSwitcherDropdown = false"
                   >
                     <Button
                       icon="i-lucide-chevron-down"
-                      variant="ghost"
+                      :variant="
+                        showAssistantSwitcherDropdown ? 'faded' : 'ghost'
+                      "
                       color="slate"
                       size="xs"
                       :disabled="isFetchingAssistants"
@@ -153,10 +155,18 @@ const handleCreateAssistant = () => {
                       v-if="showAssistantSwitcherDropdown"
                       class="absolute ltr:left-0 rtl:right-0 top-9"
                       @close="showAssistantSwitcherDropdown = false"
-                      @create-assistant="handleCreateAssistant"
                     />
                   </OnClickOutside>
                 </div>
+                <Button
+                  :label="t('CAPTAIN.ASSISTANT_SWITCHER.NEW_ASSISTANT')"
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="slate"
+                  size="sm"
+                  class="shrink-0"
+                  @click="handleCreateAssistant"
+                />
               </div>
             </div>
             <div class="flex items-center gap-4">
@@ -204,7 +214,7 @@ const handleCreateAssistant = () => {
       </div>
     </header>
     <main class="flex-1 px-6 overflow-y-auto">
-      <div class="w-full max-w-[60rem] h-full mx-auto py-4">
+      <div class="w-full max-w-5xl h-full mx-auto py-4">
         <slot v-if="!showPaywall" name="controls" />
         <div
           v-if="isFetching"
@@ -222,11 +232,12 @@ const handleCreateAssistant = () => {
         <slot />
       </div>
     </main>
-    <footer v-if="showPaginationFooter" class="sticky bottom-0 z-10 px-4 pb-4">
+    <footer v-if="showPaginationFooter" class="sticky bottom-0 z-10">
       <PaginationFooter
         :current-page="currentPage"
         :total-items="totalCount"
         :items-per-page="itemsPerPage"
+        class="max-w-[67rem]"
         @update:current-page="handlePageChange"
       />
     </footer>

@@ -5,6 +5,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
   let(:url) { 'https://example.com' }
   let(:webhook_url) { 'https://webhook.example.com/callback' }
   let(:crawl_limit) { 15 }
+  let(:default_api_url) { 'https://api.firecrawl.dev/v2' }
 
   before do
     create(:installation_config, name: 'CAPTAIN_FIRECRAWL_API_KEY', value: api_key)
@@ -23,7 +24,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       end
 
       it 'raises an error' do
-        expect { described_class.new }.to raise_error(ActiveRecord::RecordNotFound)
+        expect { described_class.new }.to raise_error('Missing API key')
       end
     end
 
@@ -33,7 +34,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       end
 
       it 'raises an error' do
-        expect { described_class.new }.to raise_error(NoMethodError)
+        expect { described_class.new }.to raise_error('Missing API key')
       end
     end
 
@@ -46,6 +47,18 @@ RSpec.describe Captain::Tools::FirecrawlService do
         expect { described_class.new }.to raise_error('Missing API key')
       end
     end
+
+    context 'when FIRECRAWL_API_KEY is present in env' do
+      around do |example|
+        ClimateControl.modify FIRECRAWL_API_KEY: 'env-api-key' do
+          example.run
+        end
+      end
+
+      it 'prefers env API key over installation config' do
+        expect(described_class.api_key).to eq('env-api-key')
+      end
+    end
   end
 
   describe '#perform' do
@@ -53,14 +66,18 @@ RSpec.describe Captain::Tools::FirecrawlService do
     let(:expected_payload) do
       {
         url: url,
-        maxDepth: 50,
-        ignoreSitemap: false,
         limit: crawl_limit,
-        webhook: webhook_url,
+        webhook: {
+          url: webhook_url,
+          events: %w[started page completed failed]
+        },
+        sitemap: 'include',
+        crawlEntireDomain: false,
+        allowSubdomains: false,
+        ignoreQueryParameters: true,
         scrapeOptions: {
-          onlyMainContent: false,
-          formats: ['markdown'],
-          excludeTags: ['iframe']
+          onlyMainContent: true,
+          formats: ['markdown']
         }
       }.to_json
     end
@@ -74,7 +91,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
 
     context 'when the API call is successful' do
       before do
-        stub_request(:post, 'https://api.firecrawl.dev/v1/crawl')
+        stub_request(:post, "#{default_api_url}/crawl")
           .with(
             body: expected_payload,
             headers: expected_headers
@@ -85,7 +102,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       it 'makes a POST request with correct parameters' do
         service.perform(url, webhook_url, crawl_limit)
 
-        expect(WebMock).to have_requested(:post, 'https://api.firecrawl.dev/v1/crawl')
+        expect(WebMock).to have_requested(:post, "#{default_api_url}/crawl")
           .with(
             body: expected_payload,
             headers: expected_headers
@@ -95,7 +112,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       it 'uses default crawl limit when not specified' do
         default_payload = expected_payload.gsub(crawl_limit.to_s, '10')
 
-        stub_request(:post, 'https://api.firecrawl.dev/v1/crawl')
+        stub_request(:post, "#{default_api_url}/crawl")
           .with(
             body: default_payload,
             headers: expected_headers
@@ -104,17 +121,32 @@ RSpec.describe Captain::Tools::FirecrawlService do
 
         service.perform(url, webhook_url)
 
-        expect(WebMock).to have_requested(:post, 'https://api.firecrawl.dev/v1/crawl')
+        expect(WebMock).to have_requested(:post, "#{default_api_url}/crawl")
           .with(
             body: default_payload,
             headers: expected_headers
           )
       end
+
+      it 'uses FIRECRAWL_API_URL from env when present' do
+        ClimateControl.modify FIRECRAWL_API_URL: 'https://minio.cloud.vconsult.kz/v2/' do
+          env_service = described_class.new
+
+          stub_request(:post, 'https://minio.cloud.vconsult.kz/v2/crawl')
+            .with(body: expected_payload, headers: expected_headers)
+            .to_return(status: 200, body: '{"status": "success"}')
+
+          env_service.perform(url, webhook_url, crawl_limit)
+
+          expect(WebMock).to have_requested(:post, 'https://minio.cloud.vconsult.kz/v2/crawl')
+            .with(body: expected_payload, headers: expected_headers)
+        end
+      end
     end
 
     context 'when the API call fails' do
       before do
-        stub_request(:post, 'https://api.firecrawl.dev/v1/crawl')
+        stub_request(:post, "#{default_api_url}/crawl")
           .to_raise(StandardError.new('Connection failed'))
       end
 
@@ -126,19 +158,38 @@ RSpec.describe Captain::Tools::FirecrawlService do
 
     context 'when the API returns an error response' do
       before do
-        stub_request(:post, 'https://api.firecrawl.dev/v1/crawl')
+        stub_request(:post, "#{default_api_url}/crawl")
           .to_return(status: 422, body: '{"error": "Invalid URL"}')
       end
 
       it 'makes the request but does not raise an error' do
         expect { service.perform(url, webhook_url, crawl_limit) }.not_to raise_error
 
-        expect(WebMock).to have_requested(:post, 'https://api.firecrawl.dev/v1/crawl')
+        expect(WebMock).to have_requested(:post, "#{default_api_url}/crawl")
           .with(
             body: expected_payload,
             headers: expected_headers
           )
       end
+    end
+  end
+
+  describe '#failed_urls_for_job' do
+    let(:service) { described_class.new }
+
+    it 'returns failed urls from batch scrape errors' do
+      stub_request(:get, "#{default_api_url}/batch/scrape/job-123/errors")
+        .with(headers: { 'Authorization' => "Bearer #{api_key}" })
+        .to_return(
+          status: 200,
+          body: {
+            errors: [{ url: 'https://example.com/fail-1' }],
+            robotsBlocked: ['https://example.com/blocked']
+          }.to_json
+        )
+
+      expect(service.failed_urls_for_job('job-123', 'selected_pages'))
+        .to eq(['https://example.com/fail-1', 'https://example.com/blocked'])
     end
   end
 end
