@@ -7,12 +7,16 @@ import { convertToAttributeSlug } from 'dashboard/helper/commons.js';
 import { ATTRIBUTE_MODELS, ATTRIBUTE_TYPES } from './constants';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import WootSelect from 'dashboard/components-next/select/Select.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 
 export default {
   components: {
+    Checkbox,
     NextButton,
     TagInput,
+    WootSelect,
   },
   props: {
     onClose: {
@@ -171,7 +175,7 @@ export default {
 </script>
 
 <template>
-  <woot-modal v-model:show="show" :on-close="onClose">
+  <woot-modal v-model:show="show" @close="onClose">
     <div class="flex flex-col h-auto overflow-auto">
       <woot-modal-header :header-title="$t('ATTRIBUTES_MGMT.ADD.TITLE')" />
 
@@ -179,11 +183,11 @@ export default {
         <div class="w-full">
           <label :class="{ error: v$.attributeModel.$error }">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.MODEL.LABEL') }}
-            <Select v-model="attributeModel">
+            <WootSelect v-model="attributeModel">
               <option v-for="model in models" :key="model.id" :value="model.id">
                 {{ model.option }}
               </option>
-            </Select>
+            </WootSelect>
             <span v-if="v$.attributeModel.$error" class="message">
               {{ $t('ATTRIBUTES_MGMT.ADD.FORM.MODEL.ERROR') }}
             </span>
@@ -226,11 +230,11 @@ export default {
           </label>
           <label :class="{ error: v$.attributeType.$error }">
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.LABEL') }}
-            <Select v-model="attributeType">
+            <WootSelect v-model="attributeType">
               <option v-for="type in types" :key="type.id" :value="type.id">
                 {{ type.option }}
               </option>
-            </Select>
+            </WootSelect>
             <span v-if="v$.attributeType.$error" class="message">
               {{ $t('ATTRIBUTES_MGMT.ADD.FORM.TYPE.ERROR') }}
             </span>
@@ -260,10 +264,7 @@ export default {
             </label>
           </div>
           <div v-if="isAttributeTypeText">
-            <Checkbox
-              v-model="regexEnabled"
-              @change="toggleRegexEnabled"
-            />
+            <Checkbox v-model="regexEnabled" @change="toggleRegexEnabled" />
             {{ $t('ATTRIBUTES_MGMT.ADD.FORM.ENABLE_REGEX.LABEL') }}
           </div>
           <woot-input

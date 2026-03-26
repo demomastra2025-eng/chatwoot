@@ -189,11 +189,11 @@ onBeforeMount(() => {
       </BaseTable>
     </template>
 
-    <woot-modal v-model:show="showAddPopup" :on-close="hideAddPopup">
+    <woot-modal v-model:show="showAddPopup" @close="hideAddPopup">
       <AddLabel @close="hideAddPopup" />
     </woot-modal>
 
-    <woot-modal v-model:show="showEditPopup" :on-close="hideEditPopup">
+    <woot-modal v-model:show="showEditPopup" @close="hideEditPopup">
       <EditLabel :selected-response="selectedLabel" @close="hideEditPopup" />
     </woot-modal>
 

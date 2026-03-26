@@ -68,6 +68,10 @@ env_value() {
   printf '%s' "$default_value"
 }
 
+resolve_realpath() {
+  ruby -rpathname -e 'puts Pathname.new(ARGV.fetch(0)).realpath' "$1"
+}
+
 postgres_host() {
   env_value POSTGRES_HOST 127.0.0.1
 }
@@ -147,6 +151,33 @@ use_existing_infra() {
       exit 1
       ;;
   esac
+}
+
+configure_active_storage_root() {
+  local env_file shared_env_file shared_repo_root shared_storage_root
+
+  if [[ -n "${ACTIVE_STORAGE_ROOT:-}" ]]; then
+    return 0
+  fi
+
+  env_file="${ROOT_DIR}/.env"
+  if [[ ! -L "$env_file" ]]; then
+    return 0
+  fi
+
+  shared_env_file="$(resolve_realpath "$env_file" 2>/dev/null || true)"
+  if [[ -z "$shared_env_file" ]]; then
+    return 0
+  fi
+
+  shared_repo_root="$(dirname "$shared_env_file")"
+  shared_storage_root="${shared_repo_root}/storage"
+  if [[ ! -d "$shared_storage_root" ]]; then
+    return 0
+  fi
+
+  export ACTIVE_STORAGE_ROOT="$shared_storage_root"
+  log "Using shared Active Storage root ${ACTIVE_STORAGE_ROOT}"
 }
 
 ensure_rbenv() {
@@ -372,6 +403,7 @@ main() {
 
   if use_existing_infra; then
     log "Using existing postgres and redis from .env"
+    configure_active_storage_root
   else
     ensure_docker
     start_infra

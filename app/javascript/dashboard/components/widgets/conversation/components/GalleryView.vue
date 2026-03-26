@@ -172,7 +172,7 @@ onMounted(() => {
       v-model:show="show"
       full-width
       :show-close-button="false"
-      :on-close="onClose"
+      @close="onClose"
     >
       <div
         class="bg-n-background flex flex-col h-[inherit] w-[inherit] overflow-hidden select-none"

@@ -184,10 +184,7 @@ const confirmDeletion = () => {
       </BaseTable>
     </template>
 
-    <woot-modal
-      v-model:show="showCustomRoleModal"
-      :on-close="hideCustomRoleModal"
-    >
+    <woot-modal v-model:show="showCustomRoleModal" @close="hideCustomRoleModal">
       <CustomRoleModal
         :mode="customRoleModalMode"
         :selected-role="selectedRole"

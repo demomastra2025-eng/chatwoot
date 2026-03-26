@@ -246,11 +246,11 @@ const tableHeaders = computed(() => {
         </template>
       </BaseTable>
     </template>
-    <woot-modal v-model:show="showAddPopup" :on-close="hideAddPopup">
+    <woot-modal v-model:show="showAddPopup" @close="hideAddPopup">
       <AddCanned :on-close="hideAddPopup" />
     </woot-modal>
 
-    <woot-modal v-model:show="showEditPopup" :on-close="hideEditPopup">
+    <woot-modal v-model:show="showEditPopup" @close="hideEditPopup">
       <EditCanned
         v-if="showEditPopup"
         :id="activeResponse.id"

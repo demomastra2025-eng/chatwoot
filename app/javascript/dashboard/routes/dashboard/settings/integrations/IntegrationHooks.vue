@@ -149,7 +149,7 @@ export default {
         </div>
       </div>
     </template>
-    <woot-modal v-model:show="showAddHookModal" :on-close="hideAddHookModal">
+    <woot-modal v-model:show="showAddHookModal" @close="hideAddHookModal">
       <NewHook
         :integration-id="integrationId"
         :hook="editableHook"
