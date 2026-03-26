@@ -142,6 +142,36 @@ export default {
     whatsappWebEvolutionState() {
       return this.inbox?.additional_attributes?.evolution || {};
     },
+    whatsappWebQrCode() {
+      return this.whatsappWebEvolutionState.qrcode?.base64 || '';
+    },
+    whatsappWebPairingCode() {
+      return (
+        this.whatsappWebEvolutionState.qrcode?.pairing_code ||
+        this.whatsappWebEvolutionState.qrcode?.pairingCode ||
+        ''
+      );
+    },
+    formattedWhatsappWebPairingCode() {
+      const sanitizedCode = this.whatsappWebPairingCode.replace(/\W/g, '');
+
+      if (!sanitizedCode) {
+        return '';
+      }
+
+      if (sanitizedCode.length <= 4) {
+        return sanitizedCode;
+      }
+
+      return `${sanitizedCode.slice(0, 4)}-${sanitizedCode.slice(4)}`;
+    },
+    shouldShowWhatsappWebQrPreview() {
+      return Boolean(
+        this.isAWhatsAppWebInbox &&
+          this.whatsappWebEvolutionState.status !== 'connected' &&
+          (this.whatsappWebQrCode || this.formattedWhatsappWebPairingCode)
+      );
+    },
     shouldShowWhatsappWebLifecycleSection() {
       return this.isAWhatsAppWebInbox;
     },
@@ -526,8 +556,17 @@ export default {
       }
       return [...selected, current];
     },
+    refreshAvatarUrlOnTabChange(index) {
+      if (
+        this.inbox &&
+        ['inbox-settings', 'widget-builder'].includes(this.tabs[index]?.key)
+      ) {
+        this.avatarUrl = this.inbox.avatar_url;
+      }
+    },
     onTabChange(selectedTabIndex) {
       this.selectedTabIndex = selectedTabIndex;
+      this.refreshAvatarUrlOnTabChange(selectedTabIndex);
       this.updateRouteWithoutRefresh(selectedTabIndex);
       if (this.tabs[selectedTabIndex]?.key === 'inbox-settings') {
         this.syncWhatsappWebStatus();

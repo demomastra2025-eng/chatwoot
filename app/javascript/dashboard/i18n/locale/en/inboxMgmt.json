@@ -696,6 +696,8 @@
         "REPAIR_SUCCESS": "WhatsApp Web repair completed",
         "REPAIR_ERROR": "Unable to repair WhatsApp Web",
         "AUTO_SYNC_HINT": "A silent status sync runs whenever this settings screen opens.",
+        "QR_PREVIEW_TITLE": "Current QR code",
+        "QR_PREVIEW_HINT": "Scan this code in Linked Devices to reconnect this existing WhatsApp Web channel.",
         "NATIVE_SETTINGS": "Native channel settings",
         "SETTING_ENABLED": "Enabled",
         "SETTING_DISABLED": "Disabled",

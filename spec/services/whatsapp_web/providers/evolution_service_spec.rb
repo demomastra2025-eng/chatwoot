@@ -30,6 +30,22 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service.refresh_qr!).to eq(channel)
       expect(service).to have_received(:provision!)
     end
+
+    it 'stores a provider error when Evolution refuses to generate another QR code' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connect/#{channel.instance_name}")
+        .and_return(
+          'message' => 'QR code limit reached, please login again',
+          'statusCode' => 500
+        )
+
+      expect(service.refresh_qr!).to eq(channel)
+      expect(channel.reload.lifecycle_state).to eq('failed')
+      expect(channel.connection_state).to eq('refused')
+      expect(channel.last_error).to eq('QR code limit reached, please login again | status code: 500')
+    end
   end
 
   describe '#provision!' do
@@ -107,6 +123,25 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.reload.connection_state).to eq('open')
       expect(channel.lifecycle_state).to eq('connected')
       expect(channel.qr_code).to eq({})
+    end
+
+    it 'preserves the last provider error when status sync only reports a refused state' do
+      service = described_class.new(channel: channel)
+      channel.update!(
+        lifecycle_state: 'failed',
+        connection_state: 'refused',
+        last_error: 'QR code limit reached, please login again | status code: 500'
+      )
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'refused' } })
+
+      service.sync_connection_state!
+
+      expect(channel.reload.last_error).to eq('QR code limit reached, please login again | status code: 500')
+      expect(channel.connection_state).to eq('refused')
+      expect(channel.lifecycle_state).to eq('failed')
     end
   end
 
