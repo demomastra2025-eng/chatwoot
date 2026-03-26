@@ -10,6 +10,7 @@ RESTART_INFRA="${RESTART_INFRA:-0}"
 PREPARE_DB="${PREPARE_DB:-0}"
 CW_BOOTSTRAP_ENTERPRISE="${CW_BOOTSTRAP_ENTERPRISE:-1}"
 DEV_LITE_FILTER_NOISE="${DEV_LITE_FILTER_NOISE:-1}"
+DATABASE_PREPARED=0
 LOG_DIR="${ONELINK_DEV_LITE_LOG_DIR:-${ROOT_DIR}/logs}"
 TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
 LOG_FILE="${ONELINK_DEV_LITE_LOG_FILE:-${LOG_DIR}/onelink-dev-lite-${TIMESTAMP}.log}"
@@ -179,12 +180,58 @@ wait_for_redis() {
   done
 }
 
+database_needs_prepare() {
+  local db_name db_user table_exists
+  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
+  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  table_exists="$(
+    docker compose exec -T postgres \
+      psql -U "$db_user" -d "$db_name" -tAc \
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ar_internal_metadata' LIMIT 1;" \
+      2>/dev/null | tr -d '[:space:]' || true
+  )"
+
+  [[ "$table_exists" != "1" ]]
+}
+
+database_has_partial_schema_artifacts() {
+  local db_name db_user schema_count
+  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
+  db_user="$(env_value POSTGRES_USERNAME postgres)"
+  schema_count="$(
+    docker compose exec -T postgres \
+      psql -U "$db_user" -d "$db_name" -tAc \
+      "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name IN ('agent_transport', 'evolution_api', 'mastra_agent');" \
+      2>/dev/null | tr -d '[:space:]' || true
+  )"
+
+  [[ "$schema_count" != "0" && -n "$schema_count" ]]
+}
+
+reset_database() {
+  local db_name db_user
+  db_name="$(env_value POSTGRES_DATABASE chatwoot_dev)"
+  db_user="$(env_value POSTGRES_USERNAME postgres)"
+
+  log "Resetting partially initialized database ${db_name}"
+  docker compose exec -T postgres dropdb --if-exists -U "$db_user" "$db_name"
+  docker compose exec -T postgres createdb -U "$db_user" "$db_name"
+}
+
 prepare_database() {
   if [[ "$PREPARE_DB" == "1" ]]; then
     log "Preparing database"
     bundle exec rake db:chatwoot_prepare
+    DATABASE_PREPARED=1
+  elif database_needs_prepare; then
+    if database_has_partial_schema_artifacts; then
+      reset_database
+    fi
+    log "Database is not initialized yet, running db:chatwoot_prepare"
+    bundle exec rake db:chatwoot_prepare
+    DATABASE_PREPARED=1
   else
-    log "Skipping database prepare (set PREPARE_DB=1 to run it)"
+    log "Skipping database prepare (set PREPARE_DB=1 to force it)"
   fi
 }
 
@@ -194,7 +241,7 @@ bootstrap_enterprise() {
     return 0
   fi
 
-  if [[ "$PREPARE_DB" == "1" ]]; then
+  if [[ "$DATABASE_PREPARED" == "1" ]]; then
     log "Enterprise bootstrap already applied via db:chatwoot_prepare"
     return 0
   fi
