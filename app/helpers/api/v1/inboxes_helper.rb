@@ -74,30 +74,17 @@ module Api::V1::InboxesHelper
   def set_enable_starttls_auto(channel_data, smtp)
     return unless smtp.respond_to?(:enable_starttls_auto)
 
-    if channel_data[:smtp_openssl_verify_mode]
-      context = enable_openssl_mode(channel_data[:smtp_openssl_verify_mode])
-      smtp.enable_starttls_auto(context)
-    else
-      smtp.enable_starttls_auto
-    end
+    smtp.enable_starttls_auto(smtp_ssl_context(channel_data))
   end
 
   def set_enable_tls(channel_data, smtp)
     return unless smtp.respond_to?(:enable_tls)
 
-    if channel_data[:smtp_openssl_verify_mode]
-      context = enable_openssl_mode(channel_data[:smtp_openssl_verify_mode])
-      smtp.enable_tls(context)
-    else
-      smtp.enable_tls
-    end
+    smtp.enable_tls(smtp_ssl_context(channel_data))
   end
 
-  def enable_openssl_mode(smtp_openssl_verify_mode)
-    openssl_verify_mode = "OpenSSL::SSL::VERIFY_#{smtp_openssl_verify_mode.upcase}".constantize if smtp_openssl_verify_mode.is_a?(String)
-    context = Net::SMTP.default_ssl_context
-    context.verify_mode = openssl_verify_mode
-    context
+  def smtp_ssl_context(channel_data)
+    Email::SmtpConfiguration.ssl_context(channel_data[:smtp_openssl_verify_mode])
   end
 
   def validate_limit

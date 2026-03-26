@@ -464,6 +464,31 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings[:port]).to eq 587
       end
 
+      it 'overrides global SSL defaults with inbox SMTP transport settings' do
+        original_smtp_settings = ActionMailer::Base.smtp_settings.dup
+        ActionMailer::Base.smtp_settings = original_smtp_settings.merge(
+          address: 'mail.one-link.kz',
+          port: 465,
+          ssl: true,
+          enable_starttls_auto: false
+        )
+
+        mail = described_class.email_reply(message)
+
+        expect(mail.delivery_method.settings[:address]).to eq 'smtp.gmail.com'
+        expect(mail.delivery_method.settings[:port]).to eq 587
+        expect(mail.delivery_method.settings[:ssl]).to be false
+        expect(mail.delivery_method.settings[:tls]).to be false
+        expect(mail.delivery_method.settings[:enable_starttls_auto]).to be true
+        expect(mail.delivery_method.settings[:tls_verify]).to be false
+        expect(mail.delivery_method.settings[:ssl_context_params]).to eq(
+          verify_mode: OpenSSL::SSL::VERIFY_NONE,
+          verify_hostname: false
+        )
+      ensure
+        ActionMailer::Base.smtp_settings = original_smtp_settings
+      end
+
       it 'renders sender name in the from address' do
         mail = described_class.email_reply(message)
         expect(mail['from'].value).to eq "#{message.sender.available_name} from #{smtp_channel.inbox.sanitized_name} <#{smtp_channel.email}>"
@@ -574,6 +599,29 @@ RSpec.describe ConversationReplyMailer do
         expect(mail.delivery_method.settings.empty?).to be false
         expect(mail.delivery_method.settings[:address]).to eq 'smtp.office365.com'
         expect(mail.delivery_method.settings[:port]).to eq 587
+      end
+
+      it 'disables inherited SSL for oauth smtp delivery' do
+        original_smtp_settings = ActionMailer::Base.smtp_settings.dup
+        ActionMailer::Base.smtp_settings = original_smtp_settings.merge(
+          address: 'mail.one-link.kz',
+          port: 465,
+          ssl: true,
+          enable_starttls_auto: false
+        )
+
+        mail = described_class.email_reply(message)
+
+        expect(mail.delivery_method.settings[:ssl]).to be false
+        expect(mail.delivery_method.settings[:tls]).to be false
+        expect(mail.delivery_method.settings[:enable_starttls_auto]).to be true
+        expect(mail.delivery_method.settings[:tls_verify]).to be false
+        expect(mail.delivery_method.settings[:ssl_context_params]).to eq(
+          verify_mode: OpenSSL::SSL::VERIFY_NONE,
+          verify_hostname: false
+        )
+      ensure
+        ActionMailer::Base.smtp_settings = original_smtp_settings
       end
     end
 

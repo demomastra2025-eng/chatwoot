@@ -122,10 +122,10 @@ const fetchAssignmentPolicy = async () => {
   isLoadingPolicy.value = true;
   try {
     const response = await assignmentPoliciesAPI.getInboxPolicy(props.inbox.id);
-    assignmentPolicy.value = response.data;
+    assignmentPolicy.value = response.data ?? null;
   } catch (error) {
-    // No policy attached, which is fine
     assignmentPolicy.value = null;
+    useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
   } finally {
     isLoadingPolicy.value = false;
   }

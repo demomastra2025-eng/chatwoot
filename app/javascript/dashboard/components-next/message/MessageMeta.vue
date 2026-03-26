@@ -18,6 +18,7 @@ const {
   isATwilioChannel,
   isAWebWidgetInbox,
   isAWhatsAppChannel,
+  isAWhatsAppWebChannel,
   isAnEmailChannel,
   isAnInstagramChannel,
   isATiktokChannel,
@@ -57,6 +58,7 @@ const isSent = computed(() => {
 
   if (
     isAWhatsAppChannel.value ||
+    isAWhatsAppWebChannel.value ||
     isATwilioChannel.value ||
     isAFacebookInbox.value ||
     isASmsInbox.value ||
@@ -78,6 +80,7 @@ const isDelivered = computed(() => {
 
   if (
     isAWhatsAppChannel.value ||
+    isAWhatsAppWebChannel.value ||
     isATwilioChannel.value ||
     isASmsInbox.value ||
     isAFacebookInbox.value ||
@@ -101,6 +104,7 @@ const isRead = computed(() => {
 
   if (
     isAWhatsAppChannel.value ||
+    isAWhatsAppWebChannel.value ||
     isATwilioChannel.value ||
     isAFacebookInbox.value ||
     isAnInstagramChannel.value ||

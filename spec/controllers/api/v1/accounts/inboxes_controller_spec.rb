@@ -814,7 +814,10 @@ RSpec.describe 'Inboxes API', type: :request do
         allow(smtp_connection).to receive(:start).and_return(true)
         allow(smtp_connection).to receive(:finish).and_return(true)
         allow(smtp_connection).to receive(:respond_to?).and_return(true)
-        allow(smtp_connection).to receive(:enable_starttls_auto).and_return(true)
+        expect(smtp_connection).to receive(:enable_starttls_auto) do |context|
+          expect(context.verify_mode).to eq(OpenSSL::SSL::VERIFY_PEER)
+          expect(context.verify_hostname).to be(true)
+        end
         allow(Net::SMTP).to receive(:new).and_return(smtp_connection)
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{email_inbox.id}",
@@ -844,7 +847,10 @@ RSpec.describe 'Inboxes API', type: :request do
         allow(smtp_connection).to receive(:start).and_return(true)
         allow(smtp_connection).to receive(:finish).and_return(true)
         allow(smtp_connection).to receive(:respond_to?).and_return(true)
-        allow(smtp_connection).to receive(:enable_tls).and_return(true)
+        expect(smtp_connection).to receive(:enable_tls) do |context|
+          expect(context.verify_mode).to eq(OpenSSL::SSL::VERIFY_NONE)
+          expect(context.verify_hostname).to be(false)
+        end
         allow(Net::SMTP).to receive(:new).and_return(smtp_connection)
 
         patch "/api/v1/accounts/#{account.id}/inboxes/#{email_inbox.id}",

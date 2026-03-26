@@ -148,7 +148,7 @@ export const actions = {
   getInboxPolicy: async function getInboxPolicy(_, { inboxId }) {
     try {
       const response = await AssignmentPoliciesAPI.getInboxPolicy(inboxId);
-      return camelcaseKeys(response.data);
+      return response.data ? camelcaseKeys(response.data) : null;
     } catch (error) {
       throwErrorMessage(error);
       throw error;
