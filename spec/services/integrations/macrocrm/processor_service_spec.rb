@@ -139,6 +139,50 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
+  context 'when the existing MacroCRM deal has no manager' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [{ 'id' => 5767119, 'status' => 10 }] }
+      )
+      allow(client).to receive(:add_note)
+    end
+
+    it 'does not change the conversation assignee' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect(client).to have_received(:add_note).with(
+        estate_id: 5767119,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
+  context 'when the existing MacroCRM deal has no manager but Onelink already assigned the conversation' do
+    let!(:onelink_assignee) { create(:user, account: account, role: :agent) }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: onelink_assignee)
+      conversation.update!(assignee: onelink_assignee)
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5044369, 'name' => 'Аманжол' } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
+        { 'buys' => [{ 'id' => 5767119, 'status' => 10 }] }
+      )
+      allow(client).to receive(:add_note)
+    end
+
+    it 'keeps the existing Onelink assignee unchanged' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect(conversation.reload.assignee).to eq(onelink_assignee)
+    end
+  end
+
   context 'when the contact has both inactive and active deals' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
     let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
@@ -196,7 +240,7 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
-  context 'when a local assignee is mapped for new deals' do
+  context 'when a local assignee is present for new deals' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
     let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
 
@@ -213,20 +257,18 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       allow(client).to receive(:create_estate_buy).with(
         name: 'Аманжол',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       ).and_return({ 'estate' => { 'id' => 4321 } })
       allow(client).to receive(:add_note)
     end
 
-    it 'passes the mapped MacroCRM manager id when creating a new deal' do
-      perform
+    it 'creates the new deal without manager_id and keeps the local assignee unchanged' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
 
       expect(client).to have_received(:create_estate_buy).with(
         name: 'Аманжол',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       )
     end
   end
@@ -284,20 +326,18 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       allow(client).to receive(:create_estate_buy).with(
         name: 'Аманжол',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       ).and_return({ 'estate' => { 'id' => 4321 } })
       allow(client).to receive(:add_note)
     end
 
-    it 'creates a new deal and uses the local manager mapping' do
-      perform
+    it 'creates a new deal without manager_id' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
 
       expect(client).to have_received(:create_estate_buy).with(
         name: 'Аманжол',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       )
       expect(client).to have_received(:add_note).with(
         estate_id: 4321,
@@ -319,21 +359,18 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       allow(client).to receive(:create_estate_buy).with(
         name: 'Ahan',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       ).and_return({ 'estate' => { 'id' => 4321 } })
       allow(client).to receive(:add_note)
     end
 
-    it 'assigns the fallback local agent and uses its manager mapping' do
-      perform
+    it 'creates the deal without assigning a fallback local agent' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
 
-      expect(conversation.reload.assignee).to eq(mapped_agent)
       expect(client).to have_received(:create_estate_buy).with(
         name: 'Ahan',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       )
     end
   end
@@ -357,22 +394,18 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
       allow(client).to receive(:create_estate_buy).with(
         name: 'Ahan',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       ).and_return({ 'estate' => { 'id' => 4321 } })
       allow(client).to receive(:add_note)
     end
 
-    it 'uses the agent fallback instead of the administrator' do
-      perform
+    it 'does not pick any fallback assignee when creating the deal' do
+      expect { perform }.not_to change { conversation.reload.assignee_id }
 
-      expect(conversation.reload.assignee).to eq(mapped_agent)
-      expect(conversation.reload.assignee).not_to eq(mapped_admin)
       expect(client).to have_received(:create_estate_buy).with(
         name: 'Ahan',
         phone: '+77001234567',
-        message: 'Здравствуйте, хочу узнать о квартирах',
-        manager_id: 78731
+        message: 'Здравствуйте, хочу узнать о квартирах'
       )
     end
   end

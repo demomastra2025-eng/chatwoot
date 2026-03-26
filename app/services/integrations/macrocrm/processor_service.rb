@@ -53,10 +53,6 @@ class Integrations::Macrocrm::ProcessorService
     hook.settings.fetch('sync_chat_manager_from_macro', true)
   end
 
-  def sync_chat_manager_to_macro?
-    hook.settings.fetch('sync_chat_manager_to_macro', true)
-  end
-
   def find_contact
     response = client.find_contact(phone: phone)
     return response['contact'] if response['contact'].present?
@@ -89,13 +85,13 @@ class Integrations::Macrocrm::ProcessorService
   end
 
   def create_estate_id(contact_name: nil)
+    # New MacroCRM deals are created without manager_id so Onelink routing
+    # remains the source of truth until MacroCRM has an explicit manager.
     payload = {
       name: contact_name.presence || name,
       phone: phone,
       message: text
     }
-    manager_id = macro_manager_id_for_new_estate
-    payload[:manager_id] = manager_id if manager_id.present?
 
     response = client.create_estate_buy(**payload)
     response.dig('estate', 'id').presence || raise(Integrations::Macrocrm::Client::ApiError, 'MacroCRM estate id missing in create response')
@@ -155,42 +151,6 @@ class Integrations::Macrocrm::ProcessorService
     assign_conversation_to(user)
   end
 
-  def macro_manager_id_for_new_estate
-    return unless sync_chat_manager_to_macro?
-
-    user = local_chat_manager
-    return if user.blank?
-    return unless macrocrm_assignable_agent?(user)
-
-    manager_id = manager_mapping_for_user(user)&.dig(:macro_manager_id)
-    manager_id ||= user.custom_attributes&.dig('macrocrm_manager_id')
-    return manager_id.to_i if manager_id.present?
-
-    Rails.logger.warn("[MacroCRM] Missing manager mapping for user ##{user.id} on hook ##{hook.id}")
-    nil
-  end
-
-  def local_chat_manager
-    current_assignee = message.conversation.assignee
-    return current_assignee if assignable_to_conversation?(current_assignee)
-
-    fallback_assignee = fallback_local_chat_manager
-    return if fallback_assignee.blank?
-
-    assign_conversation_to(fallback_assignee) unless message.conversation.assignee_id == fallback_assignee.id
-    fallback_assignee
-  end
-
-  def fallback_local_chat_manager
-    candidates = if message.conversation.team.present?
-                   message.conversation.team.members.select { |user| macrocrm_assignable_agent?(user) }
-                 else
-                   message.conversation.inbox.members.select { |user| macrocrm_assignable_agent?(user) }
-                 end
-
-    candidates.compact.sort_by { |user| user.name.to_s.downcase }.first
-  end
-
   def assignable_to_conversation?(user)
     return false if user.blank?
     return false if message.conversation.team.present? && message.conversation.team.members.exclude?(user)
@@ -216,10 +176,6 @@ class Integrations::Macrocrm::ProcessorService
     end
 
     nil
-  end
-
-  def manager_mapping_for_user(user)
-    manager_mappings.find { |item| item[:user_id] == user.id }
   end
 
   def manager_mappings

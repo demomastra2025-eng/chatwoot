@@ -2,6 +2,7 @@
 
 ## 2026-03-26
 
+- fix(macrocrm): create new WhatsApp deals without `manager_id` and stop fallback Chatwoot assignment overrides so Onelink routing remains the source of truth unless MacroCRM explicitly returns a manager
 - fix(medelement): continue sync past invalid reception rows, keep their external refs out of cleanup deletions, and log skipped rows instead of aborting the whole import
 - fix(medelement): add database-level unique indexes for Medelement patient and specialist codes so contact/resource dedupe is enforced beyond application logic
 
