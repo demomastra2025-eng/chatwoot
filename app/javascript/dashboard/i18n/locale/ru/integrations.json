@@ -13,7 +13,8 @@
         "CANCEL": "Отменить",
         "SUBMIT": "Подключить магазин"
       },
-      "ERROR": "Произошла ошибка при подключении к Shopify. Попробуйте еще раз или свяжитесь с поддержкой, если проблема повторится."
+      "ERROR": "Произошла ошибка при подключении к Shopify. Попробуйте еще раз или свяжитесь с поддержкой, если проблема повторится.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Интеграции",
     "DESCRIPTION": "OneLink интегрируется с несколькими инструментами и сервисами, чтобы повысить эффективность вашей команды. Изучите список ниже, чтобы настроить ваши любимые приложения.",
@@ -101,7 +102,18 @@
           "YES": "Да, удалить ",
           "NO": "Нет, не удалять"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "Secret",
+        "COPY": "Copy secret to clipboard",
+        "COPY_SUCCESS": "Secret copied to clipboard",
+        "TOGGLE": "Toggle secret visibility",
+        "CREATED_DESC": "Your webhook has been created. Use the secret below to verify webhook signatures. Please copy it now — you can also find it later in the webhook edit form.",
+        "DONE": "Done"
+      },
+      "COUNT": "{n} webhook | {n} webhooks",
+      "SEARCH_PLACEHOLDER": "Search webhooks...",
+      "NO_RESULTS": "No webhooks found matching your search"
     },
     "SLACK": {
       "DELETE": "Удалить",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "Произошла ошибка при обновлении интеграции, пожалуйста, попробуйте еще раз",
       "UPDATE_SUCCESS": "Канал успешно подключен",
-      "FAILED_TO_FETCH_CHANNELS": "Произошла ошибка при получении каналов из Slack, попробуйте еще раз"
+      "FAILED_TO_FETCH_CHANNELS": "Произошла ошибка при получении каналов из Slack, попробуйте еще раз",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Нажмите, чтобы присоединиться",
@@ -228,7 +241,8 @@
         "LOADING": "Загрузка приложений...",
         "TABLE_HEADER": {
           "NAME": "Имя",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "Действия"
         },
         "EDIT_TOOLTIP": "Редактировать приложение",
         "DELETE_TOOLTIP": "Удалить приложение"
@@ -262,7 +276,10 @@
         "MESSAGE": "Вы уверены, что хотите удалить приложение - {appName}?",
         "API_SUCCESS": "Приложение успешно удалено",
         "API_ERROR": "Не удалось удалить приложение. Повторите попытку позже"
-      }
+      },
+      "COUNT": "{n} dashboard app | {n} dashboard apps",
+      "SEARCH_PLACEHOLDER": "Search dashboard apps...",
+      "NO_RESULTS": "No dashboard apps found matching your search"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Создать/Связать Задачу",
@@ -356,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear workspace не подключено. Попросите администратора подключить рабочую область, чтобы использовать эту интеграцию.",
         "DESCRIPTION": "Linear workspace не подключено. Нажмите на кнопку ниже, чтобы подключить рабочую область, чтобы использовать эту интеграцию.",
         "BUTTON_TEXT": "Подключить Linear workspace"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -364,8 +382,11 @@
         "MESSAGE": "Удаление этой интеграции приведет к удалению доступа к вашему проекту Notion и остановит все связанные функции.",
         "CONFIRM": "Да, удалить",
         "CANCEL": "Отменить"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "Search integrations...",
+    "NO_RESULTS": "No integrations found matching your search"
   },
   "CAPTAIN": {
     "NAME": "Капитан",
@@ -506,7 +527,8 @@
           "TITLE": "Возможности",
           "ALLOW_CONVERSATION_FAQS": "Создать FAQ из решённых диалогов",
           "ALLOW_MEMORIES": "Сохраняйте ключевые детали в виде воспоминаний о взаимодействии с клиентами.",
-          "ALLOW_CITATIONS": "Включить цитаты источника в ответы"
+          "ALLOW_CITATIONS": "Включить цитаты источника в ответы",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {

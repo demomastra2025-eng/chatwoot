@@ -13,7 +13,8 @@
         "CANCEL": "Cancel",
         "SUBMIT": "Connect Store"
       },
-      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
+      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Integrations",
     "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
@@ -101,7 +102,18 @@
           "YES": "Yes, Delete ",
           "NO": "No, Keep it"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "საიდუმლო",
+        "COPY": "საიდუმლოს კოპირება კლიპბორდზე",
+        "COPY_SUCCESS": "საიდუმლო კლიპბორდზე გადაწერილია",
+        "TOGGLE": "საიდუმლოს ხილვადობის გადართვა",
+        "CREATED_DESC": "თქვენი webhook შექმნილია. გამოიყენეთ ქვემოთ მოცემული საიდუმლო webhook-ის ხელმოწერების დასადასტურებლად. გთხოვთ, ახლა გადაწერეთ — მოგვიანებით შეგიძლიათ იპოვოთ იგი webhook-ის რედაქტირების ფორმაში.",
+        "DONE": "მზადაა"
+      },
+      "COUNT": "{n} webhook | {n} webhook-ები",
+      "SEARCH_PLACEHOLDER": "ვებჰუქების ძიება...",
+      "NO_RESULTS": "თქვენი ძიების შესაბამისი ვებჰუქები ვერ მოიძებნა"
     },
     "SLACK": {
       "DELETE": "Delete",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "There was an error updating the integration, please try again",
       "UPDATE_SUCCESS": "The channel is connected successfully",
-      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again"
+      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Click here to join",
@@ -145,7 +158,11 @@
         "EXPAND": "Expand",
         "MAKE_FRIENDLY": "Change message tone to friendly",
         "MAKE_FORMAL": "Use formal tone",
-        "SIMPLIFY": "Simplify"
+        "SIMPLIFY": "Simplify",
+        "CONFIDENT": "გამოიყენეთ თავდაჯერებული ტონი",
+        "PROFESSIONAL": "გამოიყენეთ პროფესიონალური ტონი",
+        "CASUAL": "გამოიყენეთ არაფორმალური ტონი",
+        "STRAIGHTFORWARD": "გამოიყენეთ პირდაპირი ტონი"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -184,7 +201,25 @@
         "GENERATING": "Generating...",
         "CANCEL": "Cancel"
       },
-      "GENERATE_ERROR": "There was an error processing the content, please try again"
+      "GENERATE_ERROR": "There was an error processing the content, please try again",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "უპრობლემოდ გააუმჯობესეთ პასუხი",
+        "IMPROVE_REPLY_SELECTION": "აუმჯობესეთ არჩევანი",
+        "CHANGE_TONE": {
+          "TITLE": "ტონის შეცვლა",
+          "OPTIONS": {
+            "PROFESSIONAL": "პროფესიონალური",
+            "CASUAL": "არაოფიციალური",
+            "STRAIGHTFORWARD": "მარტივი და გასაგები",
+            "CONFIDENT": "რწმუნებული",
+            "FRIENDLY": "მეგობრული"
+          }
+        },
+        "GRAMMAR": "გრამატიკისა და მართლწერის გამოსწორება",
+        "SUGGESTION": "პასუხის შეთავაზება",
+        "SUMMARIZE": "შეხვედრის შეჯამება",
+        "ASK_COPILOT": "კოპილოტს ჰკითხე"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
@@ -206,7 +241,8 @@
         "LOADING": "Fetching dashboard apps...",
         "TABLE_HEADER": {
           "NAME": "Name",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "მოქმედებები"
         },
         "EDIT_TOOLTIP": "Edit app",
         "DELETE_TOOLTIP": "Delete app"
@@ -240,7 +276,10 @@
         "MESSAGE": "Are you sure to delete the app - {appName}?",
         "API_SUCCESS": "Dashboard app deleted successfully",
         "API_ERROR": "We couldn't delete the app. Please try again later"
-      }
+      },
+      "COUNT": "{n} დაფის აპლიკაცია | {n} დაფის აპლიკაციები",
+      "SEARCH_PLACEHOLDER": "დაფის აპლიკაციების ძებნა...",
+      "NO_RESULTS": "თქვენი ძიების შესაბამისი დაფის აპლიკაციები ვერ მოიძებნა"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear workspace is not connected. Request your administrator to connect a workspace to use this integration.",
         "DESCRIPTION": "Linear workspace is not connected. Click the button below to connect your workspace to use this integration.",
         "BUTTON_TEXT": "Connect Linear workspace"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "Deleting this integration will remove access to your Notion workspace and stop all related functionality.",
         "CONFIRM": "Yes, delete",
         "CANCEL": "Cancel"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "ინტეგრაციების ძიება...",
+    "NO_RESULTS": "ინტეგრაციები ვერ მოიძებნა თქვენი ძიების მიხედვით"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Upgrade your plan to get access to our assistants, copilot and more.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "ASK_ADMIN": "Please reach out to your administrator for the upgrade.",
+      "AVAILABLE_ON": "Captain AI ხელმისაწვდომია მხოლოდ Enterprise გეგმებში."
     },
     "BANNER": {
       "RESPONSES": "You've used over 80% of your response limit. To continue using Captain AI, please upgrade.",
@@ -483,7 +527,8 @@
           "TITLE": "Features",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
-          "ALLOW_CITATIONS": "Include source citations in responses"
+          "ALLOW_CITATIONS": "Include source citations in responses",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {

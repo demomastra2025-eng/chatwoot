@@ -13,7 +13,8 @@
         "CANCEL": "Cancel",
         "SUBMIT": "Connect Store"
       },
-      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
+      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Integrations",
     "DESCRIPTION": "OneLink integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.",
@@ -101,7 +102,18 @@
           "YES": "Yes, Delete ",
           "NO": "No, Keep it"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "গোপন কোড",
+        "COPY": "গোপন কোড ক্লিপবোর্ডে কপি করুন",
+        "COPY_SUCCESS": "গোপন কোড ক্লিপবোর্ডে কপি হয়েছে",
+        "TOGGLE": "গোপন কোডের দৃশ্যমানতা টগল করুন",
+        "CREATED_DESC": "আপনার ওয়েবহুক তৈরি হয়েছে। ওয়েবহুক স্বাক্ষর যাচাই করতে নিচের গোপন কোডটি ব্যবহার করুন। দয়া করে এখনই এটি কপি করুন — আপনি পরে ওয়েবহুক সম্পাদনা ফর্মেও এটি খুঁজে পাবেন।.",
+        "DONE": "সম্পন্ন"
+      },
+      "COUNT": "{n} ওয়েবহুক | {n} ওয়েবহুক",
+      "SEARCH_PLACEHOLDER": "ওয়েবহুক খুঁজুন...",
+      "NO_RESULTS": "আপনার অনুসন্ধানের সাথে মিলে যাওয়া কোনো ওয়েবহুক পাওয়া যায়নি"
     },
     "SLACK": {
       "DELETE": "Delete",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "There was an error updating the integration, please try again",
       "UPDATE_SUCCESS": "The channel is connected successfully",
-      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again"
+      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Click here to join",
@@ -145,7 +158,11 @@
         "EXPAND": "Expand",
         "MAKE_FRIENDLY": "Change message tone to friendly",
         "MAKE_FORMAL": "Use formal tone",
-        "SIMPLIFY": "Simplify"
+        "SIMPLIFY": "Simplify",
+        "CONFIDENT": "আত্মবিশ্বাসী টোন ব্যবহার করুন",
+        "PROFESSIONAL": "পেশাদার টোন ব্যবহার করুন",
+        "CASUAL": "স্বচ্ছন্দ টোন ব্যবহার করুন",
+        "STRAIGHTFORWARD": "সরল টোন ব্যবহার করুন"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -184,7 +201,25 @@
         "GENERATING": "Generating...",
         "CANCEL": "Cancel"
       },
-      "GENERATE_ERROR": "There was an error processing the content, please verify your OpenAI API key and try again"
+      "GENERATE_ERROR": "There was an error processing the content, please verify your OpenAI API key and try again",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "উত্তর উন্নত করুন",
+        "IMPROVE_REPLY_SELECTION": "নির্বাচন উন্নত করুন",
+        "CHANGE_TONE": {
+          "TITLE": "টোন পরিবর্তন করুন",
+          "OPTIONS": {
+            "PROFESSIONAL": "পেশাদার",
+            "CASUAL": "স্বাভাবিক",
+            "STRAIGHTFORWARD": "সরল",
+            "CONFIDENT": "আত্মবিশ্বাসী",
+            "FRIENDLY": "বন্ধুত্বপূর্ণ"
+          }
+        },
+        "GRAMMAR": "ব্যাকরণ ও বানান ঠিক করুন",
+        "SUGGESTION": "উত্তরের পরামর্শ দিন",
+        "SUMMARIZE": "আলাপচারিতার সারাংশ দিন",
+        "ASK_COPILOT": "Copilot-কে জিজ্ঞাসা করুন"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
@@ -206,7 +241,8 @@
         "LOADING": "Fetching dashboard apps...",
         "TABLE_HEADER": {
           "NAME": "Name",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "কর্ম"
         },
         "EDIT_TOOLTIP": "Edit app",
         "DELETE_TOOLTIP": "Delete app"
@@ -240,7 +276,10 @@
         "MESSAGE": "Are you sure to delete the app - {appName}?",
         "API_SUCCESS": "Dashboard app deleted successfully",
         "API_ERROR": "We couldn't delete the app. Please try again later"
-      }
+      },
+      "COUNT": "{n} ড্যাশবোর্ড অ্যাপ | {n} ড্যাশবোর্ড অ্যাপ",
+      "SEARCH_PLACEHOLDER": "ড্যাশবোর্ড অ্যাপ খুঁজুন...",
+      "NO_RESULTS": "আপনার অনুসন্ধানের সাথে মিলে যাওয়া কোনো ড্যাশবোর্ড অ্যাপ পাওয়া যায়নি"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear workspace is not connected. Request your administrator to connect a workspace to use this integration.",
         "DESCRIPTION": "Linear workspace is not connected. Click the button below to connect your workspace to use this integration.",
         "BUTTON_TEXT": "Connect Linear workspace"
-      }
+      },
+      "HEADER": "লিনিয়ার"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "Deleting this integration will remove access to your Notion workspace and stop all related functionality.",
         "CONFIRM": "Yes, delete",
         "CANCEL": "Cancel"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "ইন্টিগ্রেশন খুঁজুন...",
+    "NO_RESULTS": "আপনার অনুসন্ধানের সাথে মিলে যাওয়া কোনো ইন্টিগ্রেশন পাওয়া যায়নি"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Upgrade your plan to get access to our assistants, copilot and more.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "ASK_ADMIN": "Please reach out to your administrator for the upgrade.",
+      "AVAILABLE_ON": "Captain AI শুধুমাত্র এন্টারপ্রাইজ প্ল্যানে উপলব্ধ।."
     },
     "BANNER": {
       "RESPONSES": "You've used over 80% of your response limit. To continue using Captain AI, please upgrade.",
@@ -483,7 +527,8 @@
           "TITLE": "Features",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
-          "ALLOW_CITATIONS": "Include source citations in responses"
+          "ALLOW_CITATIONS": "Include source citations in responses",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {

@@ -860,6 +860,16 @@
       "FROM_DOCUMENT": "From document",
       "NO_CONTENT": "No generated content available. Upload a PDF document to get started.",
       "LOADING": "Loading generated content..."
+    },
+    "REORDER_ARTICLE": {
+      "API": {
+        "ERROR_MESSAGE": "Հոդվածները վերադասավորել հնարավոր չէ։ Խնդրում ենք փորձել կրկին։"
+      }
+    },
+    "REORDER_CATEGORY": {
+      "API": {
+        "ERROR_MESSAGE": "Կատեգորիաները վերադասավորել հնարավոր չէ։ Խնդրում ենք փորձել կրկին։"
+      }
     }
   }
 }

@@ -86,6 +86,9 @@
         "YES": "Да, удалить ",
         "NO": "Нет, не удалять "
       }
-    }
+    },
+    "COUNT": "{n} custom role | {n} custom roles",
+    "SEARCH_PLACEHOLDER": "Search custom roles...",
+    "NO_RESULTS": "No custom roles found matching your search"
   }
 }

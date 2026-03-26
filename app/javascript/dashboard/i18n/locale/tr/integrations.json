@@ -13,7 +13,8 @@
         "CANCEL": "İptal Et",
         "SUBMIT": "Connect Store"
       },
-      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
+      "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
+      "HEADER": "Shopify"
     },
     "HEADER": "Entegrasyonlar",
     "DESCRIPTION": "OneLink, ekibinizin verimliliğini artırmak için birden fazla araç ve hizmetle entegre olur. Favori uygulamalarınızı yapılandırmak için aşağıdaki listeyi inceleyin.",
@@ -101,7 +102,18 @@
           "YES": "Evet, Sil ",
           "NO": "Hayır, Kalsın"
         }
-      }
+      },
+      "SECRET": {
+        "LABEL": "Secret",
+        "COPY": "Copy secret to clipboard",
+        "COPY_SUCCESS": "Secret copied to clipboard",
+        "TOGGLE": "Toggle secret visibility",
+        "CREATED_DESC": "Your webhook has been created. Use the secret below to verify webhook signatures. Please copy it now — you can also find it later in the webhook edit form.",
+        "DONE": "Done"
+      },
+      "COUNT": "{n} webhook | {n} webhooks",
+      "SEARCH_PLACEHOLDER": "Search webhooks...",
+      "NO_RESULTS": "No webhooks found matching your search"
     },
     "SLACK": {
       "DELETE": "Sil",
@@ -124,7 +136,8 @@
       },
       "UPDATE_ERROR": "Entegrasyonu güncelleme hatası oluştu, lütfen tekrar deneyin",
       "UPDATE_SUCCESS": "Kanal başarıyla bağlandı",
-      "FAILED_TO_FETCH_CHANNELS": "Slack'ten kanallar alınırken bir hata oluştu, lütfen tekrar deneyin"
+      "FAILED_TO_FETCH_CHANNELS": "Slack'ten kanallar alınırken bir hata oluştu, lütfen tekrar deneyin",
+      "HEADER": "Slack"
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Katılmak için buraya tıkla",
@@ -145,7 +158,11 @@
         "EXPAND": "Genişlet",
         "MAKE_FRIENDLY": "Mesaj tonunu dostça yap",
         "MAKE_FORMAL": "Resmi ton kullan",
-        "SIMPLIFY": "Basitleştir"
+        "SIMPLIFY": "Basitleştir",
+        "CONFIDENT": "Use confident tone",
+        "PROFESSIONAL": "Use professional tone",
+        "CASUAL": "Use casual tone",
+        "STRAIGHTFORWARD": "Use straightforward tone"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Taslak içeriği",
@@ -184,7 +201,25 @@
         "GENERATING": "Oluşturuluyor...",
         "CANCEL": "İptal Et"
       },
-      "GENERATE_ERROR": "İçerik işlenirken bir hata oluştu, lütfen tekrar deneyin"
+      "GENERATE_ERROR": "İçerik işlenirken bir hata oluştu, lütfen tekrar deneyin",
+      "REPLY_OPTIONS": {
+        "IMPROVE_REPLY": "Improve reply",
+        "IMPROVE_REPLY_SELECTION": "Improve the selection",
+        "CHANGE_TONE": {
+          "TITLE": "Change tone",
+          "OPTIONS": {
+            "PROFESSIONAL": "Profesyonel",
+            "CASUAL": "Casual",
+            "STRAIGHTFORWARD": "Straightforward",
+            "CONFIDENT": "Confident",
+            "FRIENDLY": "Dostça"
+          }
+        },
+        "GRAMMAR": "Fix grammar & spelling",
+        "SUGGESTION": "Suggest a reply",
+        "SUMMARIZE": "Summarize the conversation",
+        "ASK_COPILOT": "Copilot'a sor"
+      }
     },
     "DELETE": {
       "BUTTON_TEXT": "Sil",
@@ -206,7 +241,8 @@
         "LOADING": "Panel uygulamaları alınıyor...",
         "TABLE_HEADER": {
           "NAME": "İsim",
-          "ENDPOINT": "Endpoint"
+          "ENDPOINT": "Endpoint",
+          "ACTIONS": "Hareketler"
         },
         "EDIT_TOOLTIP": "Uygulamayı Düzenle",
         "DELETE_TOOLTIP": "Uygulamayı Sil"
@@ -240,7 +276,10 @@
         "MESSAGE": "Uygulamayı silmek istediğinizden emin misiniz - {appName}?",
         "API_SUCCESS": "Panel uygulaması başarıyla silindi",
         "API_ERROR": "Uygulamayı silemedik. Lütfen daha sonra tekrar deneyin"
-      }
+      },
+      "COUNT": "{n} dashboard app | {n} dashboard apps",
+      "SEARCH_PLACEHOLDER": "Search dashboard apps...",
+      "NO_RESULTS": "No dashboard apps found matching your search"
     },
     "LINEAR": {
       "ADD_OR_LINK_BUTTON": "Create/Link Linear Issue",
@@ -334,7 +373,8 @@
         "AGENT_DESCRIPTION": "Linear çalışma alanı bağlı değil. Bu entegrasyonu kullanmak için yöneticinizden bir çalışma alanı bağlamasını isteyin.",
         "DESCRIPTION": "Linear çalışma alanı bağlı değil. Bu entegrasyonu kullanmak için çalışma alanınızı bağlamak üzere aşağıdaki düğmeye tıklayın.",
         "BUTTON_TEXT": "Linear çalışma alanını bağlayın"
-      }
+      },
+      "HEADER": "Linear"
     },
     "NOTION": {
       "DELETE": {
@@ -342,8 +382,11 @@
         "MESSAGE": "Bu entegrasyonu silmek, Notion çalışma alanınıza erişimi kaldıracak ve ilgili tüm işlevleri durduracaktır.",
         "CONFIRM": "Evet, sil",
         "CANCEL": "İptal Et"
-      }
-    }
+      },
+      "HEADER": "Notion"
+    },
+    "SEARCH_PLACEHOLDER": "Search integrations...",
+    "NO_RESULTS": "No integrations found matching your search"
   },
   "CAPTAIN": {
     "NAME": "Captain",
@@ -407,7 +450,8 @@
     },
     "ENTERPRISE_PAYWALL": {
       "UPGRADE_PROMPT": "Asistanlarımıza, Copilot'a ve daha fazlasına erişim sağlamak için planınızı yükseltin.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "ASK_ADMIN": "Please reach out to your administrator for the upgrade.",
+      "AVAILABLE_ON": "Captain AI yalnızca Enterprise planlarında mevcuttur."
     },
     "BANNER": {
       "RESPONSES": "You've used over 80% of your response limit. To continue using Captain AI, please upgrade.",
@@ -483,7 +527,8 @@
           "TITLE": "Özellikleri",
           "ALLOW_CONVERSATION_FAQS": "Çözümlenmiş konuşmalardan SSS oluştur",
           "ALLOW_MEMORIES": "Müşteri etkileşimlerinden önemli detayları anı olarak yakala.",
-          "ALLOW_CITATIONS": "Yanıtlara kaynak alıntıları ekle"
+          "ALLOW_CITATIONS": "Yanıtlara kaynak alıntıları ekle",
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         }
       },
       "EDIT": {

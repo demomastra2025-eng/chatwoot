@@ -469,6 +469,9 @@
           },
           "TWITTER": {
             "PLACEHOLDER": "Добавить Twitter"
+          },
+          "TELEGRAM": {
+            "PLACEHOLDER": "Добавить Telegram"
           }
         }
       },

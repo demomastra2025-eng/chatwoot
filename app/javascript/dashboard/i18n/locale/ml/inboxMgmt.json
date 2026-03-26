@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "പ്രവർത്തനക്ഷമമാക്കി",
-        "DISABLED": "പ്രവർത്തനരഹിതമാക്കി"
+        "DISABLED": "പ്രവർത്തനരഹിതമാക്കി",
+        "ENABLED_DESCRIPTION": "ഒരു കോൺടാക്ട് വീണ്ടും സന്ദേശം അയച്ചാൽ, മുൻപ് ഉണ്ടായിരുന്ന സംഭാഷണം വീണ്ടും തുറക്കും.",
+        "DISABLED_DESCRIPTION": "മുൻപ് പരിഹരിച്ച ശേഷം ഓരോ തവണയും പുതിയൊരു സംഭാഷണം സൃഷ്ടിക്കും."
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook ക്രമീകരണം",
+        "DESCRIPTION": "ഉപഭോക്താക്കളിൽ നിന്ന് സന്ദേശങ്ങൾ സ്വീകരിക്കാൻ നിങ്ങളുടെ WhatsApp ബിസിനസ് അക്കൗണ്ടിന് Webhook URL ആവശ്യമാണ്",
+        "ACTION_REQUIRED": "Webhook ക്രമീകരിച്ചിട്ടില്ല",
+        "REGISTER_BUTTON": "Webhook രജിസ്റ്റർ ചെയ്യുക",
+        "REGISTER_SUCCESS": "Webhook വിജയകരമായി രജിസ്റ്റർ ചെയ്തു",
+        "REGISTER_ERROR": "Webhook രജിസ്റ്റർ ചെയ്യാൻ പരാജയപ്പെട്ടു. ദയവായി വീണ്ടും ശ്രമിക്കുക.",
+        "CONFIGURED_SUCCESS": "Webhook വിജയകരമായി ക്രമീകരിച്ചു",
+        "URL_MISMATCH": "Webhook URL പൊരുത്തക്കേട്"
       }
     },
     "SETTINGS": "ക്രമീകരണങ്ങൾ",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Restrict which websites can embed your chat widget. For security, only add domains you own and trust. Add one or more domains separated by commas. Leave blank to allow all domains (not recommended for production)."
       },
       "INBOX_AGENTS": "ഏജന്റുമാർ",
       "INBOX_AGENTS_SUB_TEXT": "ഈ ഇൻ‌ബോക്സിൽ നിന്ന് ഏജന്റുമാരെ ചേർക്കുക അല്ലെങ്കിൽ നീക്കംചെയ്യുക",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Enable widget in mobile apps",
+        "SUBTITLE": "Check this if you embed the widget in iOS or Android apps. Mobile apps don't send domain information, so they would be blocked by domain restrictions unless this is enabled."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Identity Validation",
+        "DESCRIPTION": "Verify user authenticity by generating secure tokens. This prevents unauthorized users from impersonating others in your chat.",
+        "SECRET_KEY": "രഹസ്യ കീ",
+        "VIEW_DOCS": "View documentation",
+        "REQUIRE_LABEL": "Require identity validation for all conversations",
+        "REQUIRE_DESCRIPTION": "When enabled, users must provide a valid identity token to start conversations. Requests without valid tokens will be rejected."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Help Center",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "ഒന്നുമില്ല"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "ഉപയോഗയോഗ്യത പരിശോധിക്കുക",
+        "HELPER_NOTE": "സബ്മിഷൻ ചെയ്യുന്നതിന് മുമ്പ് ഈ സന്ദേശം പരിശോധിച്ച് Utility യുടെ അനുയോജ്യത മെച്ചപ്പെടുത്തുക. സിസ്റ്റം റിപ്പോർട്ടിംഗിനുള്ള ബട്ടണുകളോടുകൂടിയ ഒരു പ്രത്യേക CSAT ടെംപ്ലേറ്റ് സൃഷ്ടിച്ച് അത് Utility ആയി സമർപ്പിക്കും; ഉള്ളടക്കത്തിന്റെ അടിസ്ഥാനത്തിൽ Meta അത് Marketing ആയി പുന: വർഗ്ഗീകരിക്കാം.",
+        "RESULT_LABEL": "മെറ്റാ വിഭാഗ പ്രവചനം",
+        "GUIDANCE_NOTE": "ഇത് ഒരു മാർഗ്ഗനിർദ്ദേശ പരിശോധനയാണ്, മെറ്റാ അംഗീകാരം ഉറപ്പാക്കുന്നില്ല.",
+        "SUGGESTION_LABEL": "സൂചിപ്പിച്ച ഉപയോഗയോഗ്യ സുരക്ഷിത പുനഃരചനം",
+        "APPLY": "ഈ പുനഃരചനം ഉപയോഗിക്കുക",
+        "ERROR_MESSAGE": "സന്ദേശം വിശകലനം ചെയ്യാൻ കഴിഞ്ഞില്ല. ദയവായി വീണ്ടും ശ്രമിക്കുക.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "സാധ്യതയുള്ള ഉപകാരപ്രദം",
+          "LIKELY_MARKETING": "സാധ്യതയുള്ള മാർക്കറ്റിംഗ്",
+          "UNCLEAR": "വിവരണം ആവശ്യമാണ്"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Unavailable",
         "HOURS": "hours",
         "VALIDATION_ERROR": "Starting time should be before closing time.",
-        "CHOOSE": "Choose"
+        "CHOOSE": "Choose",
+        "DAY": "ദിവസം",
+        "AVAILABILITY": "ലഭ്യത"
       },
       "ALL_DAY": "All-Day"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Standard",
           "EXPANDED_BUBBLE": "Expanded Bubble"
-        }
+        },
+        "WIDGET_BUBBLE": "ബബിൾ"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Default",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} ഇൻബോക്സ് | {n} ഇൻബോക്സുകൾ",
+    "SEARCH_PLACEHOLDER": "ഇൻബോക്സുകൾ തിരയുക...",
+    "NO_RESULTS": "നിങ്ങളുടെ തിരച്ചിലുമായി പൊരുത്തപ്പെടുന്ന ഇൻബോക്സുകൾ കണ്ടെത്തിയില്ല",
+    "CHANNEL_PREFERENCES": "ചാനൽ മുൻഗണനകൾ",
+    "WIDGET_FEATURES": "വിഡ്ജറ്റ് സവിശേഷതകൾ",
+    "ASSIGNMENT": {
+      "TITLE": "സംവാദ നിയോഗം",
+      "DESCRIPTION": "നിയോഗ നയങ്ങളുടെ അടിസ്ഥാനത്തിൽ ലഭ്യമായ ഏജന്റുകൾക്ക് സ്വയം വരവു വരുന്ന സംവാദങ്ങൾ നിയോഗിക്കുക",
+      "ENABLE_AUTO_ASSIGNMENT": "സ്വയംസംവാദ നിയോഗം സജീവമാക്കുക",
+      "DEFAULT_RULES_TITLE": "ഡിഫോൾട്ട് അസൈൻമെന്റ് നിയമങ്ങൾ",
+      "DEFAULT_RULES_DESCRIPTION": "എല്ലാ സംഭാഷണങ്ങൾക്കും ഡിഫോൾട്ട് അസൈൻമെന്റ് പെരുമാറ്റം ഉപയോഗിക്കുന്നു",
+      "DEFAULT_RULE_1": "ആദ്യമേ സൃഷ്ടിച്ച സംഭാഷണങ്ങൾ ആദ്യം",
+      "DEFAULT_RULE_2": "റൗണ്ട് റോബിൻ വിതരണം",
+      "CUSTOMIZE_WITH_POLICY": "അസൈൻമെന്റ് നയം ഉപയോഗിച്ച് ഇഷ്ടാനുസൃതമാക്കുക",
+      "USING_POLICY": "ഈ ഇൻബോക്സിനായി ഇഷ്ടാനുസൃത നിയോഗ നയം ഉപയോഗിക്കുന്നു",
+      "CUSTOMIZE_POLICY": "നിയോഗ നയത്തോടെ ഇഷ്ടാനുസൃതമാക്കുക",
+      "DELETE_POLICY": "നയം ഇല്ലാതാക്കുക",
+      "POLICY_LABEL": "നിയോഗ നയം",
+      "ASSIGNMENT_ORDER_LABEL": "നിയോഗ ക്രമം",
+      "ASSIGNMENT_METHOD_LABEL": "നിയുക്തി രീതി",
+      "POLICY_STATUS": {
+        "ACTIVE": "സജീവമാണ്",
+        "INACTIVE": "സജീവമല്ല"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "ഏറ്റവും പഴക്കം ചെന്നത്",
+        "LONGEST_WAITING": "ഏറ്റവും കൂടുതൽ കാത്തിരിപ്പ്"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "റൗണ്ട് റോബിൻ",
+        "BALANCED": "സമതുലിതമായ നിയോഗം"
+      },
+      "UPGRADE_PROMPT": "കസ്റ്റം നിയോഗ നയങ്ങൾ ബിസിനസ് പ്ലാനിൽ ലഭ്യമാണ്",
+      "UPGRADE_TO_BUSINESS": "ബിസിനസിലേക്ക് അപ്ഗ്രേഡ് ചെയ്യുക",
+      "DEFAULT_POLICY_LINKED": "ഡിഫോൾട്ട് നയം ബന്ധിപ്പിച്ചു",
+      "DEFAULT_POLICY_DESCRIPTION": "ഈ ഇൻബോക്സിലെ ഏജന്റുകൾക്ക് സംഭാഷണങ്ങൾ എങ്ങനെ നിയോഗിക്കപ്പെടുമെന്ന് ഇഷ്ടാനുസൃതമാക്കാൻ ഒരു കസ്റ്റം നിയോഗ നയം ബന്ധിപ്പിക്കുക.",
+      "LINK_EXISTING_POLICY": "ഇതുവരെ ഉള്ള നയം ബന്ധിപ്പിക്കുക",
+      "CREATE_NEW_POLICY": "പുതിയ നയം സൃഷ്ടിക്കുക",
+      "NO_POLICIES": "നിർദ്ദേശ നയങ്ങൾ കണ്ടെത്തിയില്ല",
+      "VIEW_ALL_POLICIES": "എല്ലാ നയങ്ങളും കാണുക",
+      "CURRENT_BEHAVIOR": "ഇപ്പോൾ ഡിഫോൾട്ട് നിർദ്ദേശ പെരുമാറ്റം ഉപയോഗിക്കുന്നു:",
+      "LINK_SUCCESS": "അസൈൻമെന്റ് നയം വിജയകരമായി ബന്ധിപ്പിച്ചു",
+      "LINK_ERROR": "അസൈൻമെന്റ് നയം ബന്ധിപ്പിക്കാൻ പരാജയപ്പെട്ടു"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "അസൈൻമെന്റ് നയം ഇല്ലാതാക്കണോ?",
+      "DELETE_CONFIRM_MESSAGE": "ഈ ഇൻബോക്സിൽ നിന്നുള്ള അസൈൻമെന്റ് നയം നീക്കംചെയ്യാൻ നിങ്ങൾക്ക് ഉറപ്പുണ്ടോ? ഇൻബോക്സ് ഡിഫോൾട്ട് അസൈൻമെന്റ് നിയമങ്ങളിലേക്ക് മടങ്ങും.",
+      "CANCEL": "റദ്ദാക്കുക",
+      "CONFIRM_DELETE": "ഇല്ലാതാക്കുക",
+      "DELETE_SUCCESS": "അസൈൻമെന്റ് നയം വിജയകരമായി നീക്കംചെയ്തു",
+      "DELETE_ERROR": "അസൈൻമെന്റ് നയം നീക്കം ചെയ്യാൻ പരാജയപ്പെട്ടു"
     }
   }
 }

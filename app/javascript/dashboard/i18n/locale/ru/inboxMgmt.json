@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Включено",
-        "DISABLED": "Выключено"
+        "DISABLED": "Выключено",
+        "ENABLED_DESCRIPTION": "Когда контакт напишет снова, предыдущий диалог будет открыт повторно.",
+        "DISABLED_DESCRIPTION": "После завершения предыдущего диалога при каждом новом сообщении контакта будет создаваться новый диалог."
       },
       "ENABLE_HMAC": {
         "LABEL": "Включить"
@@ -678,6 +680,16 @@
           "SANDBOX": "Песочница",
           "LIVE": "Онлайн"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook Configuration",
+        "DESCRIPTION": "Webhook URL is required for your WhatsApp Business Account to receive messages from customers",
+        "ACTION_REQUIRED": "Webhook not configured",
+        "REGISTER_BUTTON": "Register Webhook",
+        "REGISTER_SUCCESS": "Webhook registered successfully",
+        "REGISTER_ERROR": "Failed to register webhook. Please try again.",
+        "CONFIGURED_SUCCESS": "Webhook configured successfully",
+        "URL_MISMATCH": "Webhook URL mismatch"
       }
     },
     "SETTINGS": "Настройки",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Разрешенные домены",
         "SUBTITLE": "Добавьте подстановочные или обычные домены, разделенные запятыми (оставьте пустым, чтобы разрешить всем), например *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Введите домены, разделенные запятыми (например: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Введите домены, разделенные запятыми (например: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Ограничение того, какие сайты могут встраивать виджет чата. Для безопасности добавьте только домены, которые вы владеете и доверяете. Добавьте один или несколько доменов, разделенных запятыми. Оставьте пустым, чтобы разрешить все домены (не рекомендуется для производства)."
       },
       "INBOX_AGENTS": "Сотрудники",
       "INBOX_AGENTS_SUB_TEXT": "Добавляйте или удаляйте сотрудников из этого канала",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Вручную синхронизируйте шаблоны сообщений из WhatsApp, чтобы обновить доступные шаблоны.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Синхронизировать шаблоны",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Синхронизация шаблонов успешно запущена. Обновление может занять несколько минут.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Обновить настройки формы для чата"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Обновить настройки формы для чата",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Включить виджет в мобильных приложениях",
+        "SUBTITLE": "Установите флажок, если вы вставьте виджет в приложения iOS или Android. Мобильные приложения не посылают информацию о домене, поэтому они будут заблокированы ограничениями домена, если это не включено."
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Проверка личности",
+        "DESCRIPTION": "Проверяйте подлинность пользователей, генерируя безопасные токены. Это не позволит неавторизованным пользователям выдавать себя за других участников вашего чата.",
+        "SECRET_KEY": "Секретный ключ",
+        "VIEW_DOCS": "Посмотреть документацию",
+        "REQUIRE_LABEL": "Требовать подтверждение личности для всех разговоров",
+        "REQUIRE_DESCRIPTION": "Если эта функция включена, для начала разговора пользователи должны предоставить действительный токен идентификации. Запросы без действительных токенов будут отклонены."
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Ваша страница",
       "PLACEHOLDER": "Выберите справочный центр",
       "SELECT_PLACEHOLDER": "Выберите справочный центр",
       "REMOVE": "Удалить справочный центр",
-      "SUB_TEXT": "Прикрепить справочный центр с помощью папки \"Входящие\""
+      "SUB_TEXT": "Прикрепить справочный центр с помощью папки \"Входящие\"",
+      "NONE": "Ничего"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Авто распределение лимита",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "Настройки CSAT успешно обновлены",
         "ERROR_MESSAGE": "Не удалось обновить CSAT настройки. Повторите попытку позже."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "Проверить соответствие категории Utility",
+        "HELPER_NOTE": "Проверьте сообщение перед отправкой, чтобы повысить вероятность категории Utility. Система создаёт отдельный CSAT-шаблон с кнопками для отчётности и отправляет его на одобрение как Utility; в зависимости от содержания Meta всё равно может переклассифицировать его в Marketing.",
+        "RESULT_LABEL": "Прогноз категории Meta",
+        "GUIDANCE_NOTE": "Это лишь подсказка и не гарантирует одобрение Meta.",
+        "SUGGESTION_LABEL": "Предлагаемая формулировка для категории Utility",
+        "APPLY": "Использовать этот вариант",
+        "ERROR_MESSAGE": "Не удалось проанализировать сообщение. Пожалуйста, попробуйте ещё раз.",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "Вероятно Utility",
+          "LIKELY_MARKETING": "Вероятно Marketing",
+          "UNCLEAR": "Нужны уточнения"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Я не работаю в этот день",
         "HOURS": "часы",
         "VALIDATION_ERROR": "Время начала должно предшествовать времени окончания.",
-        "CHOOSE": "Выбрать"
+        "CHOOSE": "Выбрать",
+        "DAY": "День",
+        "AVAILABILITY": "Доступность"
       },
       "ALL_DAY": "Весь день"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Стандартный",
           "EXPANDED_BUBBLE": "Расширенная рамка сообщений"
-        }
+        },
+        "WIDGET_BUBBLE": "Пузырёк"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "По умолчанию",
@@ -1099,6 +1142,11 @@
       "CONFIRM_DELETE": "Удалить",
       "DELETE_SUCCESS": "Политика назначения успешно удалена",
       "DELETE_ERROR": "Не удалось удалить политику назначения"
-    }
+    },
+    "COUNT": "Найдено источников: {n}",
+    "SEARCH_PLACEHOLDER": "Поиск источников...",
+    "NO_RESULTS": "Не найдено источников, соответствующих вашему запросу",
+    "CHANNEL_PREFERENCES": "Настройки канала",
+    "WIDGET_FEATURES": "Функции виджета"
   }
 }

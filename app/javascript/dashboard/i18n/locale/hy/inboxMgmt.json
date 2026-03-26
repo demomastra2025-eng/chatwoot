@@ -590,7 +590,9 @@
       },
       "LOCK_TO_SINGLE_CONVERSATION": {
         "ENABLED": "Enabled",
-        "DISABLED": "Disabled"
+        "DISABLED": "Disabled",
+        "ENABLED_DESCRIPTION": "Երբ կոնտակտը կրկին հաղորդագրություն է ուղարկում, նախորդ զրույցը կվերաբացվի։",
+        "DISABLED_DESCRIPTION": "Նոր զրույց կստեղծվի յուրաքանչյուր անգամ նախորդը լուծվելուց հետո։"
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
@@ -678,6 +680,16 @@
           "SANDBOX": "Sandbox",
           "LIVE": "Live"
         }
+      },
+      "WEBHOOK": {
+        "TITLE": "Webhook-ի կարգավորում",
+        "DESCRIPTION": "Webhook URL-ը անհրաժեշտ է ձեր WhatsApp Business հաշվի համար՝ հաճախորդներից հաղորդագրություններ ստանալու համար",
+        "ACTION_REQUIRED": "Webhook-ը կարգավորված չէ",
+        "REGISTER_BUTTON": "Գրանցել Webhook",
+        "REGISTER_SUCCESS": "Webhook-ը հաջողությամբ գրանցվեց",
+        "REGISTER_ERROR": "Webhook-ի գրանցումը ձախողվեց։ Խնդրում ենք փորձել կրկին։",
+        "CONFIGURED_SUCCESS": "Webhook-ը հաջողությամբ կարգավորվեց",
+        "URL_MISMATCH": "Webhook URL-ի անհամապատասխանություն"
       }
     },
     "SETTINGS": "Settings",
@@ -694,7 +706,8 @@
       "ALLOWED_DOMAINS": {
         "TITLE": "Allowed Domains",
         "SUBTITLE": "Add wildcard or regular domains separated by commas (leave blank to allow all), e.g. *.OneLink.dev, OneLink.com.",
-        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
+        "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)",
+        "DESCRIPTION": "Սահմանափակեք, թե որ կայքերն են կարողանում տեղադրել ձեր զրույցի վիջեթը: Անվտանգության համար ավելացրեք միայն այն դոմեյնները, որոնք պատկանում են ձեզ և որոնց վստահում եք: Ավելացրեք մեկ կամ ավելի դոմեյններ՝ բաժանված ստորակետերով: Թողեք դատարկ՝ թույլ տալու բոլոր դոմեյնները (չի խորհուրդրվում արտադրության համար)։"
       },
       "INBOX_AGENTS": "Agents",
       "INBOX_AGENTS_SUB_TEXT": "Add or remove agents from this inbox",
@@ -752,14 +765,27 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
-      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
+      "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
+      "ALLOW_MOBILE_WEBVIEW": {
+        "LABEL": "Միացնել վիջեթը շարժական հավելվածներում",
+        "SUBTITLE": "Մշակեք այս տարբերակը, եթե վիջեթը տեղադրում եք iOS կամ Android հավելվածներում։ Շարժական հավելվածները չեն ուղարկում դոմեյնի տեղեկություններ, ուստի դրանք կարգելափակվեն դոմեյնների սահմանափակումների կողմից, եթե այս տարբերակը միացված չէ։"
+      },
+      "IDENTITY_VALIDATION": {
+        "TITLE": "Հայտնության հաստատում",
+        "DESCRIPTION": "Հաստատեք օգտվողի իսկությունը՝ ստեղծելով անվտանգ տոկեններ։ Սա կանխում է չարտոնված օգտվողների կողմից ուրիշների անվան տակ զրույցներ վարելը։",
+        "SECRET_KEY": "Գաղտնի բանալի",
+        "VIEW_DOCS": "Դիտել փաստաթղթերը",
+        "REQUIRE_LABEL": "Պահանջել հայտնության հաստատում բոլոր զրույցների համար",
+        "REQUIRE_DESCRIPTION": "Երբ ակտիվացված է, օգտատերերը պետք է տրամադրեն վավեր ինքնության տոկեն՝ զրույց սկսելու համար։ Հարցումները, որոնք չունեն վավեր տոկեններ, մերժվելու են։"
+      }
     },
     "HELP_CENTER": {
       "LABEL": "Help Center",
       "PLACEHOLDER": "Select Help Center",
       "SELECT_PLACEHOLDER": "Select Help Center",
       "REMOVE": "Remove Help Center",
-      "SUB_TEXT": "Attach a Help Center with the inbox"
+      "SUB_TEXT": "Attach a Help Center with the inbox",
+      "NONE": "Ոչ մեկը"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",
@@ -852,6 +878,20 @@
       "API": {
         "SUCCESS_MESSAGE": "CSAT settings updated successfully",
         "ERROR_MESSAGE": "We couldn't update CSAT settings. Please try again later."
+      },
+      "UTILITY_ANALYZER": {
+        "ACTION": "Ստուգել օգտակարության համապատասխանությունը",
+        "HELPER_NOTE": "Նախքան ուղարկումը ստուգեք այս հաղորդագրությունը՝ օգտակարության համապատասխանությունը բարելավելու համար։ Համակարգը ստեղծում է հատուկ CSAT ձևանմուշ՝ զեկուցման կոճակներով և ուղարկում որպես օգտակարություն։ Meta-ն կարող է այն դեռ դասակարգել որպես մարքեթինգ՝ հիմնվելով բովանդակության վրա։",
+        "RESULT_LABEL": "Meta կատեգորիայի կանխատեսում",
+        "GUIDANCE_NOTE": "Սա ուղղորդիչ ստուգում է, ոչ Meta-ի հաստատման երաշխիք։",
+        "SUGGESTION_LABEL": "Առաջարկվող օգտակարության անվտանգ վերագրանցում",
+        "APPLY": "Օգտագործել այս վերագրանցումը",
+        "ERROR_MESSAGE": "Հաղորդագրությունը վերլուծել հնարավոր չեղավ։ Խնդրում ենք փորձել կրկին։",
+        "CLASSIFICATION": {
+          "LIKELY_UTILITY": "Հավանական օգտակարություն",
+          "LIKELY_MARKETING": "Հավանական մարքեթինգ",
+          "UNCLEAR": "Պետք է հստակեցում"
+        }
       }
     },
     "BUSINESS_HOURS": {
@@ -868,7 +908,9 @@
         "UNAVAILABLE": "Unavailable",
         "HOURS": "hours",
         "VALIDATION_ERROR": "Starting time should be before closing time.",
-        "CHOOSE": "Choose"
+        "CHOOSE": "Choose",
+        "DAY": "Օր",
+        "AVAILABILITY": "Հասանելիություն"
       },
       "ALL_DAY": "All-Day"
     },
@@ -998,7 +1040,8 @@
         "WIDGET_BUBBLE_TYPE": {
           "STANDARD": "Standard",
           "EXPANDED_BUBBLE": "Expanded Bubble"
-        }
+        },
+        "WIDGET_BUBBLE": "Փուչիկ"
       },
       "WIDGET_SCREEN": {
         "DEFAULT": "Default",
@@ -1052,6 +1095,58 @@
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
+    },
+    "COUNT": "{n} մուտք | {n} մուտքեր",
+    "SEARCH_PLACEHOLDER": "Փնտրել մուտքեր...",
+    "NO_RESULTS": "Ձեր որոնմանը համապատասխանող մուտքեր չեն գտնվել",
+    "CHANNEL_PREFERENCES": "Անվճարների նախապատվություններ",
+    "WIDGET_FEATURES": "Վիջեթի հնարավորություններ",
+    "ASSIGNMENT": {
+      "TITLE": "Հաղորդակցության հանձնարարում",
+      "DESCRIPTION": "Ավտոմատ կերպով նշանակեք ներթափանցող զրույցները հասանելի գործակալներին՝ հիմնվելով նշանակման քաղաքականությունների վրա",
+      "ENABLE_AUTO_ASSIGNMENT": "Միացնել զրույցների ավտոմատ նշանակումը",
+      "DEFAULT_RULES_TITLE": "Նախնական նշանակման կանոններ",
+      "DEFAULT_RULES_DESCRIPTION": "Օգտագործել նախնական նշանակման վարքագիծը բոլոր զրույցների համար",
+      "DEFAULT_RULE_1": "Առաջին հերթին՝ ամենահին ստեղծված զրույցները",
+      "DEFAULT_RULE_2": "Շրջանաձև բաշխում",
+      "CUSTOMIZE_WITH_POLICY": "Անհատականացնել նշանակման քաղաքականությամբ",
+      "USING_POLICY": "Այս մուտքի համար օգտագործվում է անհատական նշանակման քաղաքականություն",
+      "CUSTOMIZE_POLICY": "Անհատականացնել նշանակման քաղաքականությամբ",
+      "DELETE_POLICY": "Ջնջել քաղաքականությունը",
+      "POLICY_LABEL": "Վերաբաշխման քաղաքականություն",
+      "ASSIGNMENT_ORDER_LABEL": "Վերաբաշխման կարգ",
+      "ASSIGNMENT_METHOD_LABEL": "Վերաբաշխման մեթոդ",
+      "POLICY_STATUS": {
+        "ACTIVE": "Ակտիվ",
+        "INACTIVE": "Անգործուն"
+      },
+      "PRIORITY": {
+        "EARLIEST_CREATED": "Ավելի վաղ ստեղծված",
+        "LONGEST_WAITING": "Ամենաերկար սպասող"
+      },
+      "METHOD": {
+        "ROUND_ROBIN": "Շրջանաձև հերթափոխ",
+        "BALANCED": "Համաչափ հանձնարարում"
+      },
+      "UPGRADE_PROMPT": "Հատուկ հանձնարարումների քաղաքականությունները հասանելի են Բիզնես պլանում",
+      "UPGRADE_TO_BUSINESS": "Թարմացնել դեպի Business",
+      "DEFAULT_POLICY_LINKED": "Նախնական քաղաքականությունը կապված է",
+      "DEFAULT_POLICY_DESCRIPTION": "Կապեք հարմարեցված նշանակման քաղաքականություն՝ հարմարեցնելու, թե ինչպես են զրույցները նշանակվում գործակալներին այս մուտքի արկղում։",
+      "LINK_EXISTING_POLICY": "Կապել գոյություն ունեցող քաղաքականությունը",
+      "CREATE_NEW_POLICY": "Ստեղծել նոր քաղաքականություն",
+      "NO_POLICIES": "Առանձնացման քաղաքականություններ չեն գտնվել",
+      "VIEW_ALL_POLICIES": "Դիտել բոլոր քաղաքականությունները",
+      "CURRENT_BEHAVIOR": "Ընթացիկ օգտագործվում է նախնական առանձնացման վարքագիծը:",
+      "LINK_SUCCESS": "Առանձնացման քաղաքականությունը հաջողությամբ կապվեց",
+      "LINK_ERROR": "Չհաջողվեց կապել առանձնացման քաղաքականությունը"
+    },
+    "ASSIGNMENT_POLICY": {
+      "DELETE_CONFIRM_TITLE": "Հեռացնել նշանակման քաղաքականությունը:",
+      "DELETE_CONFIRM_MESSAGE": "Համոզվա՞ծ եք, որ ցանկանում եք հեռացնել այս նշանակման քաղաքականությունը այս մուտքի արկղից: Մուտքի արկղը կվերադառնա նախնական նշանակման կանոններին։",
+      "CANCEL": "Չեղարկել",
+      "CONFIRM_DELETE": "Հեռացնել",
+      "DELETE_SUCCESS": "Նշանակման քաղաքականությունը հաջողությամբ հեռացվեց",
+      "DELETE_ERROR": "Չհաջողվեց հեռացնել նշանակման քաղաքականությունը"
     }
   }
 }

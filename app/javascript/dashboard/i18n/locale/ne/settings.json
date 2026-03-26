@@ -273,7 +273,8 @@
     "FILE_BUBBLE": {
       "DOWNLOAD": "डाउनलोड",
       "UPLOADING": "अपलोड गर्दै...",
-      "INSTAGRAM_STORY_UNAVAILABLE": "This story is no longer available."
+      "INSTAGRAM_STORY_UNAVAILABLE": "This story is no longer available.",
+      "INSTAGRAM_STORY_REPLY": "तपाईंको स्टोरीमा जवाफ दिइयो:"
     },
     "LOCATION_BUBBLE": {
       "SEE_ON_MAP": "See on map"
@@ -378,7 +379,9 @@
       "INFO_SHORT": "Automatically mark offline when you aren't using the app."
     },
     "DOCS": "Read docs",
-    "SECURITY": "Security"
+    "SECURITY": "Security",
+    "CAPTAIN_AI": "Captain",
+    "CONVERSATION_WORKFLOW": "वार्ता कार्यप्रवाह"
   },
   "BILLING_SETTINGS": {
     "TITLE": "Billing",
@@ -555,7 +558,10 @@
         "FEATURES": [
           "Assign by conversations evenly or by available capacity",
           "Add fair distribution rules to avoid overloading any agent",
-          "Add inboxes to a policy - one policy per inbox"
+          "Add inboxes to a policy - one policy per inbox",
+          "कुराकानीहरू समान रूपमा वा उपलब्ध क्षमताअनुसार नियुक्त गर्नुहोस्।",
+          "कुनै पनि एजेन्टलाई अत्यधिक भार नपरोस् भनेर निष्पक्ष वितरण नियमहरू थप्नुहोस्।",
+          "नीतिमा इनबक्सहरू थप्नुहोस् - एक नीतिमा एक इनबक्स।"
         ]
       },
       "AGENT_CAPACITY_POLICY": {
@@ -564,7 +570,10 @@
         "FEATURES": [
           "Define maximum conversations per inbox",
           "Create exceptions based on labels and time",
-          "Add agents to a policy - one policy per agent"
+          "Add agents to a policy - one policy per agent",
+          "प्रति इनबक्स अधिकतम कुराकानीहरू परिभाषित गर्नुहोस्।",
+          "लेबल र समयको आधारमा अपवादहरू सिर्जना गर्नुहोस्",
+          "नीतिमा एजेन्टहरू थप्नुहोस् - प्रति एजेन्ट एक नीति"
         ]
       }
     },
@@ -591,7 +600,8 @@
         "CREATE_BUTTON": "Create policy",
         "API": {
           "SUCCESS_MESSAGE": "Assignment policy created successfully",
-          "ERROR_MESSAGE": "Failed to create assignment policy"
+          "ERROR_MESSAGE": "Failed to create assignment policy",
+          "INBOX_LINKED": "इनबक्स नीति सँग जडान गरिएको छ"
         }
       },
       "EDIT": {
@@ -618,6 +628,12 @@
             "SUCCESS_MESSAGE": "Inbox removed from policy successfully",
             "ERROR_MESSAGE": "Failed to remove inbox from policy"
           }
+        },
+        "INBOX_LINK_PROMPT": {
+          "TITLE": "इनबक्सलाई नीतिसँग जडान गर्नुहोस्",
+          "DESCRIPTION": "के तपाईं यो इनबक्सलाई असाइनमेन्ट नीतिसँग जडान गर्न चाहनुहुन्छ?",
+          "LINK_BUTTON": "इनबक्स जडान गर्नुहोस्",
+          "CANCEL_BUTTON": "छोड्नुहोस्"
         }
       },
       "FORM": {
@@ -643,7 +659,9 @@
           },
           "BALANCED": {
             "LABEL": "Balanced",
-            "DESCRIPTION": "Assign conversations based on available capacity."
+            "DESCRIPTION": "Assign conversations based on available capacity.",
+            "PREMIUM_MESSAGE": "सन्तुलित असाइनमेन्ट र एजेन्ट क्षमता व्यवस्थापन पहुँच गर्न अपग्रेड गर्नुहोस्।",
+            "PREMIUM_BADGE": "प्रिमियम"
           }
         },
         "ASSIGNMENT_PRIORITY": {
@@ -729,6 +747,20 @@
             "SUCCESS_MESSAGE": "Agent removed from policy successfully",
             "ERROR_MESSAGE": "Failed to remove agent from policy"
           }
+        },
+        "INBOX_LIMIT_API": {
+          "ADD": {
+            "SUCCESS_MESSAGE": "इनबक्स सीमा सफलतापूर्वक थपियो",
+            "ERROR_MESSAGE": "इनबक्स सीमा थप्न असफल भयो"
+          },
+          "UPDATE": {
+            "SUCCESS_MESSAGE": "इनबक्स सीमा सफलतापूर्वक अद्यावधिक गरियो",
+            "ERROR_MESSAGE": "इनबक्स सीमा अद्यावधिक गर्न असफल भयो"
+          },
+          "DELETE": {
+            "SUCCESS_MESSAGE": "इनबक्स सीमा सफलतापूर्वक हटाइयो",
+            "ERROR_MESSAGE": "इनबक्स सीमा हटाउन असफल भयो"
+          }
         }
       },
       "FORM": {
@@ -791,6 +823,106 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "CAPTAIN_SETTINGS": {
+    "TITLE": "Captain सेटिङहरू",
+    "DESCRIPTION": "Captain का लागि तपाईंका AI मोडेल र सुविधाहरू कन्फिगर गर्नुहोस्। Captain क्रेडिटमा आधारित बिलिङमा चल्छ, चयन गरिएको मोडेलअनुसार Captain ले प्रत्येक कार्य गर्दा तपाईंको क्रेडिट कटौती हुनेछ।",
+    "LOADING": "Captain कन्फिगरेसन लोड हुँदैछ...",
+    "LINK_TEXT": "Captain क्रेडिटबारे थप जान्नुहोस्",
+    "NOT_ENABLED": "तपाईंको खातामा Captain सक्षम गरिएको छैन। Captain सुविधाहरू प्रयोग गर्न योजना स्तरोन्नति गर्नुहोस्।",
+    "MODEL_CONFIG": {
+      "TITLE": "मोडेल कन्फिगरेसन",
+      "DESCRIPTION": "विभिन्न सुविधाहरूका लागि AI मोडेलहरू छान्नुहोस्।",
+      "SELECT_MODEL": "मोडेल छान्नुहोस्",
+      "CREDITS_PER_MESSAGE": "{credits} credit/message",
+      "COMING_SOON": "छिट्टै आउँदैछ",
+      "EDITOR": {
+        "TITLE": "सम्पादक सुविधाहरू",
+        "DESCRIPTION": "तपाईंको सन्देश सम्पादकमा स्मार्ट कम्पोज, व्याकरण सुधार, टोन मिलाउने र सामग्री सुधारको लागि प्रयोग हुन्छ।"
+      },
+      "ASSISTANT": {
+        "TITLE": "सहायक",
+        "DESCRIPTION": "ग्राहक संवादका लागि स्वचालित जवाफ, संवाद सारांश, र बुद्धिमान सुझावहरू व्यवस्थापन गर्छ।"
+      },
+      "COPILOT": {
+        "TITLE": "को-पाइलट",
+        "DESCRIPTION": "संवादको क्रममा वास्तविक समय सन्दर्भ सुझाव, ज्ञान आधार सिफारिस, र सक्रिय जानकारी प्रदान गर्छ।"
+      }
+    },
+    "FEATURES": {
+      "TITLE": "फिचरहरू",
+      "DESCRIPTION": "एआई-सञ्चालित फिचरहरू सक्षम वा अक्षम गर्नुहोस्।",
+      "AUDIO_TRANSCRIPTION": {
+        "TITLE": "अडियो ट्रान्सक्रिप्सन",
+        "DESCRIPTION": "आवाज सन्देश र कल रेकर्डिङलाई स्वचालित रूपमा खोज्न मिल्ने पाठमा रूपान्तरण गर्नुहोस्।"
+      },
+      "HELP_CENTER_SEARCH": {
+        "TITLE": "हेल्प सेन्टर खोज अनुक्रमणिका",
+        "DESCRIPTION": "तपाईंका हेल्प सेन्टर लेखहरूमा सन्दर्भअनुसार खोजका लागि एआई प्रयोग गर्नुहोस्।"
+      },
+      "LABEL_SUGGESTION": {
+        "TITLE": "लेबल सुझाव",
+        "DESCRIPTION": "सामग्री विश्लेषण र सन्दर्भका आधारमा संवादका लागि उपयुक्त लेबल र ट्यागहरू स्वचालित रूपमा सुझाव दिनुहोस्।",
+        "MODEL_TITLE": "लेबल सुझाव मोडेल",
+        "MODEL_DESCRIPTION": "संवाद विश्लेषण र उपयुक्त लेबल सुझावका लागि प्रयोग हुने एआई मोडेल चयन गर्नुहोस्"
+      }
+    },
+    "API": {
+      "SUCCESS": "Captain सेटिङहरू सफलतापूर्वक अद्यावधिक गरियो।",
+      "ERROR": "Captain सेटिङहरू अद्यावधिक गर्न असफल। कृपया फेरि प्रयास गर्नुहोस्।"
+    }
+  },
+  "CONVERSATION_WORKFLOW": {
+    "INDEX": {
+      "HEADER": {
+        "TITLE": "वार्ता कार्यप्रवाहहरू",
+        "DESCRIPTION": "वार्ता समाधानका लागि नियम र आवश्यक फिल्डहरू सेट गर्नुहोस्।"
+      }
+    },
+    "REQUIRED_ATTRIBUTES": {
+      "TITLE": "समाधानमा आवश्यक विशेषताहरू",
+      "DESCRIPTION": "वार्ता समाधान गर्दा, यी विशेषताहरू नभरिएको भए एजेन्टलाई भर्न अनुरोध गरिनेछ।",
+      "NO_ATTRIBUTES": "अहिलेसम्म कुनै विशेषता थपिएको छैन",
+      "ADD": {
+        "TITLE": "विशेषता थप्नुहोस्",
+        "SEARCH_PLACEHOLDER": "विशेषता खोज्नुहोस्"
+      },
+      "SAVE": {
+        "SUCCESS": "आवश्यक विवरणहरू अपडेट गरियो",
+        "ERROR": "आवश्यक विवरणहरू अपडेट गर्न सकिएन, कृपया फेरि प्रयास गर्नुहोस्"
+      },
+      "MODAL": {
+        "TITLE": "संवाद समाधान गर्नुहोस्",
+        "DESCRIPTION": "यो संवाद समाधान गर्नु अघि तलका अनुकूल विवरणहरू भर्नुहोस्",
+        "ACTIONS": {
+          "RESOLVE": "संवाद समाधान गर्नुहोस्",
+          "CANCEL": "रद्द गर्नुहोस्"
+        },
+        "PLACEHOLDERS": {
+          "TEXT": "नोट लेख्नुहोस्...",
+          "NUMBER": "संख्या लेख्नुहोस्",
+          "LINK": "लिङ्क थप्नुहोस्",
+          "DATE": "मिति छान्नुहोस्",
+          "LIST": "विकल्प छान्नुहोस्"
+        },
+        "CHECKBOX": {
+          "YES": "हो",
+          "NO": "होइन"
+        }
+      },
+      "PAYWALL": {
+        "TITLE": "आवश्यक विशेषता प्रयोग गर्न योजना स्तरोन्नति गर्नुहोस्",
+        "AVAILABLE_ON": "आवश्यक संवाद विशेषता सुविधा Business र Enterprise योजनामा उपलब्ध छ।",
+        "UPGRADE_PROMPT": "संवाद टुंग्याउनु अघि एजेन्टलाई आवश्यक विशेषता भर्न अनुरोध गर्न योजना स्तरोन्नति गर्नुहोस्।",
+        "UPGRADE_NOW": "अहिले स्तरोन्नति गर्नुहोस्",
+        "CANCEL_ANYTIME": "तपाईंले आफ्नो योजना जुनसुकै बेला परिवर्तन वा रद्द गर्न सक्नुहुन्छ"
+      },
+      "ENTERPRISE_PAYWALL": {
+        "AVAILABLE_ON": "आवश्यक संवाद विशेषता सुविधा भुक्तानी योजना मा उपलब्ध छ।",
+        "UPGRADE_PROMPT": "संवाद टुंग्याउनु अघि आवश्यक विशेषता लागू गर्न भुक्तानी योजना मा स्तरोन्नति गर्नुहोस्।",
+        "ASK_ADMIN": "अपग्रेडका लागि कृपया आफ्नो प्रशासकलाई सम्पर्क गर्नुहोस्।"
+      }
     }
   }
 }

@@ -860,6 +860,16 @@
       "FROM_DOCUMENT": "From document",
       "NO_CONTENT": "No generated content available. Upload a PDF document to get started.",
       "LOADING": "Loading generated content..."
+    },
+    "REORDER_ARTICLE": {
+      "API": {
+        "ERROR_MESSAGE": "Ni mogoče spremeniti vrstnega reda člankov. Poskusite znova."
+      }
+    },
+    "REORDER_CATEGORY": {
+      "API": {
+        "ERROR_MESSAGE": "Ni mogoče spremeniti vrstnega reda kategorij. Poskusite znova."
+      }
     }
   }
 }

@@ -860,6 +860,16 @@
       "FROM_DOCUMENT": "From document",
       "NO_CONTENT": "No generated content available. Upload a PDF document to get started.",
       "LOADING": "Loading generated content..."
+    },
+    "REORDER_ARTICLE": {
+      "API": {
+        "ERROR_MESSAGE": "Hindi maisaayos muli ang mga artikulo. Pakisubukang muli."
+      }
+    },
+    "REORDER_CATEGORY": {
+      "API": {
+        "ERROR_MESSAGE": "Hindi maisaayos muli ang mga kategorya. Pakisubukang muli."
+      }
     }
   }
 }
