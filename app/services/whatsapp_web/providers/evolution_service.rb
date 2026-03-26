@@ -120,7 +120,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state,
-      last_error: nil,
+      last_error: runtime_error_for_state(normalized_state, channel.last_error),
       last_synced_at: Time.current
     }
     attributes[:qr_code] = {} if %w[open close refused].include?(normalized_state)
@@ -267,12 +267,27 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def sync_from_runtime_response!(response)
     qr_payload = normalized_qr_payload(response)
     runtime_state = response.dig('instance', 'state') || response.dig('instance', 'status')
+    runtime_error = runtime_error_message(response)
+
+    if qr_payload.blank? && runtime_state.blank? && runtime_error.present?
+      channel.update!(
+        connection_state: 'refused',
+        lifecycle_state: 'failed',
+        qr_code: {},
+        last_error: runtime_error,
+        last_synced_at: Time.current,
+        sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      )
+      return
+    end
+
     runtime_state ||= qr_payload.present? ? 'connecting' : nil
+    normalized_state = normalized_connection_state(runtime_state)
 
     attributes = {
-      connection_state: normalized_connection_state(runtime_state),
+      connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(runtime_state, qr_payload.present?),
-      last_error: nil,
+      last_error: runtime_error_for_state(normalized_state, runtime_error),
       last_synced_at: Time.current
     }
 
@@ -349,6 +364,45 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return 'refused' if value == 'refused'
 
     'unknown'
+  end
+
+  def runtime_error_message(payload)
+    merged_runtime_message(
+      payload['message'],
+      payload['status'],
+      payload['error'].is_a?(String) ? payload['error'] : nil,
+      labeled_runtime_value('status code', payload['statusCode'])
+    )
+  end
+
+  def runtime_error_for_state(normalized_state, runtime_error)
+    return nil if %w[open connecting].include?(normalized_state)
+
+    runtime_error.presence || channel.last_error.presence || default_terminal_state_message(normalized_state)
+  end
+
+  def default_terminal_state_message(normalized_state)
+    case normalized_state
+    when 'refused'
+      'Evolution connection refused'
+    when 'close'
+      'Evolution connection closed'
+    else
+      'Evolution connection unavailable'
+    end
+  end
+
+  def merged_runtime_message(*messages)
+    messages.filter_map do |message|
+      value = message.to_s.strip
+      value.presence
+    end.uniq.presence&.join(' | ')
+  end
+
+  def labeled_runtime_value(label, value)
+    return if value.blank?
+
+    "#{label}: #{value}"
   end
 
   def pending_echo_jobs_snapshot

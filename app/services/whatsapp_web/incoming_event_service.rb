@@ -57,7 +57,16 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_qrcode_update
-    qrcode = event_data[:qrcode].to_h.deep_stringify_keys
+    qrcode = normalized_qrcode_payload
+
+    if qrcode.blank?
+      mark_runtime_failure!(
+        connection_state: 'refused',
+        error_message: runtime_error_message(event_data) || 'QR code generation failed'
+      )
+      return
+    end
+
     channel.update!(
       qr_code: qrcode,
       lifecycle_state: 'qr_ready',
@@ -72,17 +81,18 @@ class WhatsappWeb::IncomingEventService
 
   def process_connection_update
     state = event_data[:state] || event_data[:status]
+    normalized_state = normalize_connection_state(state)
     attributes = {
-      connection_state: normalize_connection_state(state),
+      connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state),
-      last_error: nil,
+      last_error: connection_update_error_message(normalized_state),
       last_synced_at: Time.current
     }
 
     if state.to_s == 'open'
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
-    elsif %w[refused close].include?(normalize_connection_state(state))
+    elsif %w[refused close].include?(normalized_state)
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
     end
@@ -96,11 +106,7 @@ class WhatsappWeb::IncomingEventService
       connection_state: 'close',
       lifecycle_state: 'failed',
       qr_code: {},
-      last_error: [
-        event_data[:status],
-        event_data[:disconnectionReasonCode],
-        event_data[:disconnectionObject]
-      ].compact.join(' | '),
+      last_error: runtime_error_message(event_data) || 'Provider reported a terminal WhatsApp Web failure',
       last_synced_at: Time.current,
       sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
     )
@@ -279,6 +285,74 @@ class WhatsappWeb::IncomingEventService
     else
       'disconnected'
     end
+  end
+
+  def normalized_qrcode_payload
+    raw_qrcode = event_data[:qrcode]
+    return {} unless raw_qrcode.respond_to?(:to_h)
+
+    raw_qrcode.to_h.deep_stringify_keys
+             .slice('instance', 'pairingCode', 'pairing_code', 'code', 'base64')
+             .compact
+             .presence || {}
+  end
+
+  def connection_update_error_message(normalized_state)
+    return nil if %w[open connecting].include?(normalized_state)
+
+    provider_message = runtime_error_message(event_data)
+    fallback_message = normalized_state == 'refused' ? 'Connection refused' : 'Connection closed'
+
+    merged_runtime_message(
+      normalized_state == 'refused' ? channel.last_error : nil,
+      provider_message.presence || channel.last_error.presence || fallback_message
+    )
+  end
+
+  def runtime_error_message(payload)
+    data = payload.to_h.with_indifferent_access
+
+    merged_runtime_message(
+      data[:message],
+      data[:status],
+      data[:error].is_a?(String) ? data[:error] : nil,
+      labeled_runtime_value('status reason', data[:statusReason]),
+      labeled_runtime_value('status code', data[:statusCode]),
+      labeled_runtime_value('disconnection reason', data[:disconnectionReasonCode]),
+      stringify_runtime_value(data[:disconnectionObject])
+    )
+  end
+
+  def merged_runtime_message(*messages)
+    messages.flatten.filter_map do |message|
+      value = message.to_s.strip
+      value.presence
+    end.uniq.presence&.join(' | ')
+  end
+
+  def labeled_runtime_value(label, value)
+    return if value.blank?
+
+    "#{label}: #{value}"
+  end
+
+  def stringify_runtime_value(value)
+    return if value.blank?
+
+    value.is_a?(String) ? value : value.to_json
+  rescue StandardError
+    value.to_s
+  end
+
+  def mark_runtime_failure!(connection_state:, error_message:)
+    channel.update!(
+      connection_state: connection_state,
+      lifecycle_state: 'failed',
+      qr_code: {},
+      last_error: error_message,
+      last_synced_at: Time.current,
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+    )
   end
 
   def extract_text_from_payload(payload)

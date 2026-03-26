@@ -128,6 +128,36 @@ export default {
     whatsappWebEvolutionState() {
       return this.inbox?.additional_attributes?.evolution || {};
     },
+    whatsappWebQrCode() {
+      return this.whatsappWebEvolutionState.qrcode?.base64 || '';
+    },
+    whatsappWebPairingCode() {
+      return (
+        this.whatsappWebEvolutionState.qrcode?.pairing_code ||
+        this.whatsappWebEvolutionState.qrcode?.pairingCode ||
+        ''
+      );
+    },
+    formattedWhatsappWebPairingCode() {
+      const sanitizedCode = this.whatsappWebPairingCode.replace(/\W/g, '');
+
+      if (!sanitizedCode) {
+        return '';
+      }
+
+      if (sanitizedCode.length <= 4) {
+        return sanitizedCode;
+      }
+
+      return `${sanitizedCode.slice(0, 4)}-${sanitizedCode.slice(4)}`;
+    },
+    shouldShowWhatsappWebQrPreview() {
+      return Boolean(
+        this.isAWhatsAppWebInbox &&
+        this.whatsappWebEvolutionState.status !== 'connected' &&
+        (this.whatsappWebQrCode || this.formattedWhatsappWebPairingCode)
+      );
+    },
     shouldShowWhatsappWebLifecycleSection() {
       return this.isAWhatsAppWebInbox;
     },
@@ -1157,6 +1187,56 @@ export default {
               <p class="mt-3 text-sm text-n-slate-10">
                 {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.AUTO_SYNC_HINT') }}
               </p>
+            </div>
+
+            <div
+              v-if="shouldShowWhatsappWebQrPreview"
+              class="rounded-xl border border-n-strong p-4 lg:col-span-2"
+            >
+              <p class="mb-2 text-sm font-medium text-n-slate-12">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_TITLE') }}
+              </p>
+              <p class="text-sm text-n-slate-11">
+                {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_HINT') }}
+              </p>
+
+              <div
+                class="mt-4 flex flex-col items-center gap-4 lg:flex-row lg:items-start"
+              >
+                <div
+                  v-if="whatsappWebQrCode"
+                  class="rounded-lg shadow outline-1 outline-n-strong outline"
+                >
+                  <img
+                    :src="whatsappWebQrCode"
+                    :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
+                    class="rounded-lg size-48"
+                  />
+                </div>
+
+                <div
+                  v-if="formattedWhatsappWebPairingCode"
+                  class="w-full max-w-sm rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-6 py-4 text-center"
+                >
+                  <p
+                    class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
+                  >
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL') }}
+                  </p>
+                  <p
+                    class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
+                  >
+                    {{ formattedWhatsappWebPairingCode }}
+                  </p>
+                  <p class="mt-2 text-sm text-n-slate-10">
+                    {{
+                      $t(
+                        'INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_DESCRIPTION'
+                      )
+                    }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 

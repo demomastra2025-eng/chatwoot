@@ -33,6 +33,26 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       end
     end
 
+    it 'marks the channel failed when qrcode.updated contains a provider error payload' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'qrcode.updated',
+          data: {
+            message: 'QR code limit reached, please login again',
+            statusCode: 500
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.lifecycle_state).to eq('failed')
+      expect(channel.connection_state).to eq('refused')
+      expect(channel.qr_code).to eq({})
+      expect(channel.qr_generated_at).to be_nil
+      expect(channel.last_error).to eq('QR code limit reached, please login again | status code: 500')
+    end
+
     it 'dispatches inbound message upserts to the message service' do
       service = instance_double(WhatsappWeb::IncomingMessageService, perform: true)
 
@@ -312,6 +332,27 @@ RSpec.describe WhatsappWeb::IncomingEventService do
           }.with_indifferent_access
         ).perform
       end.not_to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob)
+    end
+
+    it 'keeps provider error details when the runtime moves from qr failure into refused' do
+      channel.update!(last_error: 'QR code limit reached, please login again | status code: 500')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          data: {
+            state: 'refused',
+            statusReason: 428
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(channel.reload.last_error).to eq(
+        'QR code limit reached, please login again | status code: 500 | status reason: 428'
+      )
+      expect(channel.connection_state).to eq('refused')
+      expect(channel.lifecycle_state).to eq('failed')
     end
 
     it 'clears qr state when the runtime reports a terminal failure' do
