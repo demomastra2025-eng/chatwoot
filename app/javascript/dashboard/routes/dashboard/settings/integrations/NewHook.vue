@@ -198,6 +198,13 @@ export default {
           value = Number(value);
         }
 
+        if (
+          (value === '' || value === null || value === undefined) &&
+          !formItem?.validation?.includes('required')
+        ) {
+          return acc;
+        }
+
         acc[key] = value;
         return acc;
       }, {});
@@ -240,7 +247,11 @@ export default {
         this.alertMessage = this.$t('INTEGRATION_APPS.ADD.API.SUCCESS_MESSAGE');
         this.onClose();
       } catch (error) {
-        const errorMessage = error?.response?.data?.message;
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.response?.data?.errors?.[0] ||
+          error?.message;
         this.alertMessage =
           errorMessage || this.$t('INTEGRATION_APPS.ADD.API.ERROR_MESSAGE');
       } finally {

@@ -1,4 +1,5 @@
 class Integrations::Medelement::ReceptionsSyncService
+  InvalidReceptionError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
 
   def initialize(account:, client:, configuration:)
@@ -12,8 +13,9 @@ class Integrations::Medelement::ReceptionsSyncService
     resource_map = medelement_resource_map
     snapshot = build_snapshot(resource_map)
     contacts_by_patient_code = synced_contacts(snapshot)
-    desired_external_refs = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
-    cleanup_missing_appointments!(desired_external_refs)
+    sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
+    cleanup_missing_appointments!(sync_result[:desired_external_refs])
+    log_sync_summary(sync_result)
   end
 
   private
@@ -130,26 +132,76 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def sync_reception(reception, resource, contacts_by_patient_code)
+    import_context = import_context_for(reception)
+
     importer.upsert!(
       resource: resource,
       contact: contacts_by_patient_code[reception['PATIENT_CODE'].to_s],
       reception: reception,
-      import_context: {
-        starts_at: parse_time(reception['STARTTIME']),
-        ends_at: parse_time(reception['ENDTIME']),
-        specialist_code: reception['specialistCode']
-      }
+      import_context: import_context
     )
   end
 
   def sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
-    snapshot.each_with_object(Set.new) do |reception, desired_external_refs|
+    snapshot.each_with_object({ desired_external_refs: Set.new, imported_count: 0, skipped_count: 0 }) do |reception, result|
       resource = resource_map[reception['specialistCode'].to_s]
       next if skipped_reception?(reception, resource)
 
-      sync_reception(reception, resource, contacts_by_patient_code)
-      desired_external_refs << importer.external_ref_for(reception['RECEPTION_CODE'])
+      result[:desired_external_refs] << external_ref_for(reception)
+
+      begin
+        sync_reception(reception, resource, contacts_by_patient_code)
+        result[:imported_count] += 1
+      rescue InvalidReceptionError, ActiveRecord::RecordInvalid, Scheduling::Error => e
+        result[:skipped_count] += 1
+        log_skipped_reception(reception, resource, e)
+      end
     end
+  end
+
+  def external_ref_for(reception)
+    importer.external_ref_for(reception['RECEPTION_CODE'].to_s)
+  end
+
+  def import_context_for(reception)
+    starts_at = parse_time(reception['STARTTIME'])
+    ends_at = parse_time(reception['ENDTIME'])
+
+    validate_import_context!(reception, starts_at, ends_at)
+
+    {
+      starts_at: starts_at,
+      ends_at: ends_at,
+      specialist_code: reception['specialistCode']
+    }
+  end
+
+  def log_skipped_reception(reception, resource, error)
+    Rails.logger.warn(
+      "[MEDELEMENT::RECEPTIONS_SYNC] Skipping reception #{reception['RECEPTION_CODE']} " \
+      "for account=#{account.id} resource_id=#{resource.id} specialist_code=#{reception['specialistCode']} " \
+      "patient_code=#{reception['PATIENT_CODE']} reason=#{error.class}: #{error.message}"
+    )
+  end
+
+  def log_sync_summary(sync_result)
+    return if sync_result[:skipped_count].zero?
+
+    Rails.logger.warn(
+      "[MEDELEMENT::RECEPTIONS_SYNC] Completed with skipped receptions for account=#{account.id} " \
+      "imported=#{sync_result[:imported_count]} skipped=#{sync_result[:skipped_count]}"
+    )
+  end
+
+  def validate_import_context!(reception, starts_at, ends_at)
+    reception_code = reception['RECEPTION_CODE'].to_s
+
+    raise InvalidReceptionError, 'missing reception code' if reception_code.blank?
+    raise InvalidReceptionError, 'missing start time' if starts_at.blank?
+    raise InvalidReceptionError, 'missing end time' if ends_at.blank?
+    return if ends_at > starts_at
+
+    raise InvalidReceptionError, "invalid time range #{reception['STARTTIME']}..#{reception['ENDTIME']}"
   end
 
   def synced_contacts(snapshot)

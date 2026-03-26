@@ -98,4 +98,36 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       expect(imported_appointment.ends_at.iso8601).to eq('2026-03-21T04:20:00Z')
     end
   end
+
+  it 'skips invalid receptions without aborting the whole sync or deleting known imported refs' do
+    existing_invalid_import = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'medelement',
+      external_ref: 'medelement:reception:broken',
+      starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 10, 0, 0),
+      ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 10, 20, 0),
+      client_name: 'Imported invalid placeholder'
+    )
+
+    allow(client).to receive(:get_receptions).and_return(
+      [
+        reception_payload.first,
+        reception_payload.first.merge(
+          'RECEPTION_CODE' => 'broken',
+          'STARTTIME' => '2026-03-21 11:00:00',
+          'ENDTIME' => '2026-03-21 11:00:00'
+        )
+      ]
+    )
+
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      expect { service.perform }.not_to raise_error
+
+      expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:broken').id).to eq(existing_invalid_import.id)
+      expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:975592971773905133')).to be_present
+      expect(account.scheduling_appointments.where(source: 'medelement').count).to eq(2)
+    end
+  end
 end

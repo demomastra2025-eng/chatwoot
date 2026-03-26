@@ -403,7 +403,6 @@ medelement:
   feature_flag: scheduling
   visible_properties:
     [
-      'organization_id',
       'timezone',
       'sync_interval_hours',
       'sync_time_of_day',

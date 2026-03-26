@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-03-26
+
+- fix(medelement): continue sync past invalid reception rows, keep their external refs out of cleanup deletions, and log skipped rows instead of aborting the whole import
+- fix(medelement): add database-level unique indexes for Medelement patient and specialist codes so contact/resource dedupe is enforced beyond application logic
+
 ## 2026-03-23
 
 - fix(medelement): seed imported specialists with a business-hours default schedule of Mon-Fri `09:00-18:00`, Sat `09:00-15:00`, Sun off, and upgrade existing legacy `24/7` auto-seeded Medelement schedules in place
