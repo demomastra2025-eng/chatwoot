@@ -41,9 +41,8 @@ module Chatwoot
     config.eager_load_paths << Rails.root.join('lib')
     config.eager_load_paths << Rails.root.join('enterprise/lib')
     config.eager_load_paths << Rails.root.join('enterprise/listeners')
-    # rubocop:disable Rails/FilePath
-    config.eager_load_paths += Dir["#{Rails.root}/enterprise/app/**"]
-    # rubocop:enable Rails/FilePath
+    # Avoid adding view/template files to the load path; Bootsnap and Zeitwerk expect directories here.
+    config.eager_load_paths += Dir.glob(Rails.root.join('enterprise/app/**').to_s).select { |path| File.directory?(path) }
     # Add enterprise views to the view paths
     config.paths['app/views'].unshift('enterprise/app/views')
 

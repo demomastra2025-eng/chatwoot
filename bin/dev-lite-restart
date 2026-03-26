@@ -31,6 +31,16 @@ filter_dev_lite_noise() {
       *'`defineOptions` is a compiler macro and no longer needs to be imported.'* ) continue ;;
       *'::v-deep usage as a combinator has been deprecated.'* ) continue ;;
       *'ActionController::RoutingError (No route matches [GET] "/.well-known/appspecific/com.chrome.devtools.json"):'* ) continue ;;
+      *"Exception 'Errno::ENOTDIR' at <internal:dir>:184 - Not a directory @ dir_initialize - ${ROOT_DIR}/"* ) continue ;;
+      *"bootsnap/load_path_cache/path.rb:"* ) continue ;;
+      *"visit_ActiveRecord_Relation_QueryAttribute"* ) continue ;;
+      *"visit_ActiveModel_Attribute_WithCastValue"* ) continue ;;
+      *"Exception 'ThreadError' at <internal:thread_sync>:18 - queue empty"* ) continue ;;
+      *"Exception 'Errno::ECONNRESET' at <internal:io>:63 - Connection reset by peer"* ) continue ;;
+      *"Exception 'EOFError' at <internal:io>:63 - end of file reached"* ) continue ;;
+      *"Exception 'EOFError' at "*"/puma/client.rb:257 - EOFError"* ) continue ;;
+      *"Exception 'Puma::ConnectionError' at "*"/puma/client.rb:250 - Connection error detected during read"* ) continue ;;
+      *"Exception 'Puma::ConnectionError' at "*"/puma/client.rb:297 - Puma::ConnectionError"* ) continue ;;
     esac
 
     printf '%s\n' "$line"

@@ -62,6 +62,9 @@ Rails.application.configure do
 
   # Disable host check during development
   config.hosts = nil
+
+  # Barnes targets a local StatsD agent on the foreman-assigned PORT, which is not present in dev-lite.
+  config.barnes[:statsd] = nil
   
   # GitHub Codespaces configuration
   if ENV['CODESPACES']
