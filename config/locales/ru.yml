@@ -3,7 +3,9 @@ ru:
   activerecord:
     errors:
       messages:
+        blank: не может быть пустым
         record_invalid: "Ошибка валидации: %{errors}"
+        taken: уже используется
   hello: Привет мир
   inbox:
     reauthorization:
@@ -23,6 +25,9 @@ ru:
     inbox_deletetion_response: Ваш запрос на удаление входящих сообщений будет обработан через некоторое время.
     reset_password: Запрос на сброс пароля успешно отправлен. Если такой email существует, на него придет письмо с инструкциями.
   errors:
+    messages:
+      blank: не может быть пустым
+      taken: уже используется
     validations:
       presence: не должен быть пустым
     webhook:

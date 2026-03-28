@@ -1,5 +1,10 @@
 ---
 kk:
+  activerecord:
+    errors:
+      messages:
+        blank: бос болмауы керек
+        taken: бұрыннан бар
   hello: Hello world
   inbox:
     reauthorization:
@@ -17,6 +22,9 @@ kk:
     saml_not_available: SAML authentication is not available in this installation.
     inbox_deletetion_response: Your inbox deletion request will be processed in some time.
   errors:
+    messages:
+      blank: бос болмауы керек
+      taken: бұрыннан бар
     validations:
       presence: must not be blank
     webhook:
