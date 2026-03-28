@@ -70,6 +70,7 @@ defineExpose({ dialogRef });
   <Dialog
     ref="dialogRef"
     width="2xl"
+    :render-on-open-only="false"
     :title="$t(`${i18nKey}.TITLE`)"
     :description="$t('CAPTAIN.CUSTOM_TOOLS.FORM_DESCRIPTION')"
     :show-cancel-button="false"

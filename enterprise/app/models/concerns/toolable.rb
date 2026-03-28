@@ -114,8 +114,10 @@ module Concerns::Toolable
   end
 
   def parse_response_body(body)
+    return body if body.blank?
+
     JSON.parse(body)
-  rescue JSON::ParserError
+  rescue JSON::ParserError, TypeError
     body
   end
 end

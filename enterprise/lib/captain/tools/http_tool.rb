@@ -209,15 +209,21 @@ class Captain::Tools::HttpTool < Agents::Tool
   end
 
   def build_http_request(uri, body)
-    if @custom_tool.http_method == 'POST'
-      request = Net::HTTP::Post.new(uri.request_uri)
-      if body
-        request.body = body
-        request['Content-Type'] = 'application/json'
-      end
-    else
-      request = Net::HTTP::Get.new(uri.request_uri)
+    method = @custom_tool.http_method
+    raise ToolConfigurationError, "unsupported HTTP method #{method}" unless Captain::CustomTool::HTTP_METHODS.include?(method)
+
+    request = Net::HTTPGenericRequest.new(
+      method,
+      Captain::CustomTool::REQUEST_BODY_HTTP_METHODS.include?(method),
+      method != 'HEAD',
+      uri.request_uri
+    )
+
+    if body.present? && request.request_body_permitted?
+      request.body = body
+      request['Content-Type'] = 'application/json'
     end
+
     request
   end
 

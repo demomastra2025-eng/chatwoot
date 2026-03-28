@@ -58,6 +58,10 @@ const props = defineProps({
     default: 'center',
     validator: value => ['center', 'top'].includes(value),
   },
+  renderOnOpenOnly: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['confirm', 'close']);
@@ -87,14 +91,25 @@ const positionClass = computed(() =>
 );
 
 const open = () => {
+  if (isOpen.value) {
+    return;
+  }
+
   isOpen.value = true;
   dialogRef.value?.showModal();
 };
 
 const close = () => {
-  emit('close');
-  dialogRef.value?.close();
+  if (!isOpen.value) {
+    return;
+  }
+
   isOpen.value = false;
+  emit('close');
+
+  if (dialogRef.value?.open) {
+    dialogRef.value.close();
+  }
 };
 
 const confirm = () => {
@@ -116,7 +131,10 @@ defineExpose({ open, close });
       ]"
       @close="close"
     >
-      <OnClickOutside :options="{ ignore: clickOutsideIgnore }" @trigger="close">
+      <OnClickOutside
+        :options="{ ignore: clickOutsideIgnore }"
+        @trigger="close"
+      >
         <form
           ref="dialogContentRef"
           class="flex flex-col w-full h-auto gap-6 p-6 overflow-visible text-start align-middle transition-all duration-300 ease-in-out transform bg-n-alpha-3 backdrop-blur-[100px] shadow-xl rounded-xl"
@@ -133,7 +151,7 @@ defineExpose({ open, close });
               </p>
             </slot>
           </div>
-          <slot v-if="isOpen" />
+          <slot v-if="isOpen || !renderOnOpenOnly" />
           <!-- Dialog content will be injected here -->
           <slot name="footer">
             <div

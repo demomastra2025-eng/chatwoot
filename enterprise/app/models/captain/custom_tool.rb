@@ -42,6 +42,8 @@ class Captain::CustomTool < ApplicationRecord
     PARAM_SOURCE_CONTEXT,
     PARAM_SOURCE_FIXED
   ].freeze
+  HTTP_METHODS = %w[GET POST PUT PATCH DELETE HEAD OPTIONS].freeze
+  REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
   PARAM_TYPES = %w[string number boolean array object].freeze
   PARAM_NAME_FORMAT = /\A[a-zA-Z_][a-zA-Z0-9_]*\z/
   CYRILLIC_TRANSLITERATION_MAP = {
@@ -74,7 +76,7 @@ class Captain::CustomTool < ApplicationRecord
 
   belongs_to :account
 
-  enum :http_method, %w[GET POST].index_by(&:itself), validate: true
+  enum :http_method, HTTP_METHODS.index_by(&:itself), validate: true
   enum :auth_type, %w[none bearer basic api_key].index_by(&:itself), default: :none, validate: true, prefix: :auth
 
   before_validation :normalize_group_name

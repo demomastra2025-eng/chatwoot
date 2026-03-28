@@ -40,12 +40,13 @@ let contextFieldsRequest = null;
 const { t } = useI18n();
 const contextFieldOptions = shallowRef([]);
 const hasLoadedContextFields = ref(false);
+const isSyncingFormState = ref(false);
 
 const formState = {
   uiFlags: useMapGetter('captainCustomTools/getUIFlags'),
 };
 
-const initialState = {
+const createInitialState = () => ({
   title: '',
   group_name: '',
   description: '',
@@ -56,9 +57,9 @@ const initialState = {
   auth_type: 'none',
   auth_config: {},
   param_schema: [],
-};
+});
 
-const state = reactive({ ...initialState });
+const state = reactive(createInitialState());
 
 const DEFAULT_PARAM = {
   name: '',
@@ -90,26 +91,62 @@ const normalizeParam = param => ({
   fixed_value: serializeFixedValue(param?.fixed_value),
 });
 
-// Populate form when in edit mode
+const syncFormState = updater => {
+  isSyncingFormState.value = true;
+  try {
+    updater();
+  } finally {
+    isSyncingFormState.value = false;
+  }
+};
+
+const resetState = () => {
+  syncFormState(() => {
+    Object.assign(state, createInitialState());
+  });
+};
+
+const applyToolState = tool => {
+  syncFormState(() => {
+    Object.assign(state, {
+      ...createInitialState(),
+      title: tool.title || '',
+      group_name: tool.group_name || '',
+      description: tool.description || '',
+      endpoint_url: tool.endpoint_url || '',
+      http_method: tool.http_method || 'GET',
+      request_template: tool.request_template || '',
+      response_template: tool.response_template || '',
+      auth_type: tool.auth_type || 'none',
+      auth_config: tool.auth_config ? { ...tool.auth_config } : {},
+      param_schema: (tool.param_schema || []).map(normalizeParam),
+    });
+  });
+};
+
 watch(
-  () => props.tool,
-  newTool => {
-    if (props.mode === 'edit' && newTool && newTool.id) {
-      state.title = newTool.title || '';
-      state.group_name = newTool.group_name || '';
-      state.description = newTool.description || '';
-      state.endpoint_url = newTool.endpoint_url || '';
-      state.http_method = newTool.http_method || 'GET';
-      state.request_template = newTool.request_template || '';
-      state.response_template = newTool.response_template || '';
-      state.auth_type = newTool.auth_type || 'none';
-      state.auth_config = newTool.auth_config || {};
-      state.param_schema = (newTool.param_schema || []).map(normalizeParam);
-    } else if (props.mode === 'create') {
-      state.param_schema = [];
+  () => [props.mode, props.tool],
+  ([mode, tool]) => {
+    if (mode === 'edit' && tool?.id) {
+      applyToolState(tool);
+      return;
     }
+
+    resetState();
   },
   { immediate: true }
+);
+
+watch(
+  () => state.auth_type,
+  (authType, previousAuthType) => {
+    if (isSyncingFormState.value || authType === previousAuthType) {
+      return;
+    }
+
+    state.auth_config = {};
+  },
+  { flush: 'sync' }
 );
 
 const validationRules = {
@@ -119,10 +156,18 @@ const validationRules = {
   auth_type: { required },
 };
 
-const httpMethodOptions = computed(() => [
-  { value: 'GET', label: 'GET' },
-  { value: 'POST', label: 'POST' },
-]);
+const httpMethodOptions = computed(() =>
+  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(method => ({
+    value: method,
+    label: method,
+  }))
+);
+
+const showRequestTemplate = computed(
+  () => !['GET', 'HEAD'].includes(state.http_method)
+);
+
+const responseTemplatePlaceholder = computed(() => '{{ response.some_field }}');
 
 const authTypeOptions = computed(() => [
   { value: 'none', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_TYPES.NONE') },
@@ -253,6 +298,7 @@ const handleSubmit = async () => {
 
   emit('submit', {
     ...state,
+    request_template: showRequestTemplate.value ? state.request_template : '',
     param_schema: state.param_schema.map(normalizeParam),
   });
 };
@@ -359,26 +405,21 @@ const handleSubmit = async () => {
     </div>
 
     <TextArea
-      v-if="state.http_method === 'POST'"
+      v-if="showRequestTemplate"
       v-model="state.request_template"
       :label="t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.LABEL')"
       :placeholder="t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PLACEHOLDER')"
       :rows="4"
       class="[&_textarea]:font-mono"
     />
-    <p
-      v-if="state.http_method === 'POST'"
-      class="text-xs text-n-slate-11 -mt-2"
-    >
+    <p v-if="showRequestTemplate" class="text-xs text-n-slate-11 -mt-2">
       {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.HELP_TEXT') }}
     </p>
 
     <TextArea
       v-model="state.response_template"
       :label="t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.LABEL')"
-      :placeholder="
-        t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.PLACEHOLDER')
-      "
+      :placeholder="responseTemplatePlaceholder"
       :rows="4"
       class="[&_textarea]:font-mono"
     />

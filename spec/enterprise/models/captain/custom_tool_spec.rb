@@ -8,7 +8,17 @@ RSpec.describe Captain::CustomTool, type: :model do
   describe 'validations' do
     it { is_expected.to validate_presence_of(:title) }
     it { is_expected.to validate_presence_of(:endpoint_url) }
-    it { is_expected.to define_enum_for(:http_method).with_values('GET' => 'GET', 'POST' => 'POST').backed_by_column_of_type(:string) }
+    it do
+      expect(subject).to define_enum_for(:http_method).with_values(
+        'GET' => 'GET',
+        'POST' => 'POST',
+        'PUT' => 'PUT',
+        'PATCH' => 'PATCH',
+        'DELETE' => 'DELETE',
+        'HEAD' => 'HEAD',
+        'OPTIONS' => 'OPTIONS'
+      ).backed_by_column_of_type(:string)
+    end
 
     it {
       expect(subject).to define_enum_for(:auth_type).with_values('none' => 'none', 'bearer' => 'bearer', 'basic' => 'basic',
@@ -222,6 +232,14 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(tool.errors[:param_schema]).to include(
           'parameter filters must be valid JSON object'
         )
+      end
+    end
+
+    it 'accepts the full supported HTTP method set' do
+      Captain::CustomTool::HTTP_METHODS.each do |http_method|
+        tool = build(:captain_custom_tool, http_method: http_method)
+
+        expect(tool).to be_valid
       end
     end
   end

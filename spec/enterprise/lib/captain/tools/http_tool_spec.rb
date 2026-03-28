@@ -63,6 +63,81 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    {
+      'PUT' => {
+        request_method: :put,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"status": "{{ status }}"}',
+        params: { status: 'shipped' },
+        expected_body: '{"status": "shipped"}'
+      },
+      'PATCH' => {
+        request_method: :patch,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"status": "{{ status }}"}',
+        params: { status: 'delivered' },
+        expected_body: '{"status": "delivered"}'
+      },
+      'DELETE' => {
+        request_method: :delete,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"reason": "{{ reason }}"}',
+        params: { reason: 'duplicate' },
+        expected_body: '{"reason": "duplicate"}'
+      },
+      'OPTIONS' => {
+        request_method: :options,
+        endpoint_url: 'https://example.com/orders',
+        request_template: '{"probe": "{{ probe }}"}',
+        params: { probe: 'allowed_methods' },
+        expected_body: '{"probe": "allowed_methods"}'
+      }
+    }.each do |http_method, config|
+      context "with #{http_method} request" do
+        before do
+          custom_tool.update!(
+            http_method: http_method,
+            endpoint_url: config[:endpoint_url],
+            request_template: config[:request_template],
+            response_template: nil
+          )
+          stub_request(config[:request_method], config[:endpoint_url])
+            .with(
+              body: config[:expected_body],
+              headers: { 'Content-Type' => 'application/json' }
+            )
+            .to_return(status: 200, body: '{"ok": true}')
+        end
+
+        it "executes #{http_method} request with rendered body" do
+          result = tool.perform(tool_context, **config[:params])
+
+          expect(result).to eq('{"ok": true}')
+          expect(WebMock).to have_requested(config[:request_method], config[:endpoint_url])
+            .with(body: config[:expected_body])
+        end
+      end
+    end
+
+    context 'with HEAD request' do
+      before do
+        custom_tool.update!(
+          http_method: 'HEAD',
+          endpoint_url: 'https://example.com/orders/123',
+          response_template: nil
+        )
+        stub_request(:head, 'https://example.com/orders/123')
+          .to_return(status: 200, body: '')
+      end
+
+      it 'executes HEAD request without a response body' do
+        result = tool.perform(tool_context)
+
+        expect(result).to eq('')
+        expect(WebMock).to have_requested(:head, 'https://example.com/orders/123')
+      end
+    end
+
     context 'with template variables in URL' do
       before do
         custom_tool.update!(
