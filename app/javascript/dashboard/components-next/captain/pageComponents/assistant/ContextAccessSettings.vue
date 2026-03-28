@@ -25,6 +25,12 @@ const availableFields = ref([]);
 const isLoading = ref(false);
 
 const TABLES = Object.freeze(['contact', 'conversation']);
+const expandedTables = ref(
+  TABLES.reduce((result, tableName) => {
+    result[tableName] = true;
+    return result;
+  }, {})
+);
 
 const tableMetadata = computed(() => ({
   contact: {
@@ -95,6 +101,16 @@ const fieldsByTable = computed(() => {
   }, {});
 });
 
+const tableFieldCounts = computed(() => {
+  return TABLES.reduce((result, tableName) => {
+    result[tableName] = availableFields.value.filter(
+      field => field.table_name === tableName
+    ).length;
+
+    return result;
+  }, {});
+});
+
 const normalizedAccess = computed(() => {
   return TABLES.reduce((result, tableName) => {
     const rawScope = props.modelValue?.[tableName] || {};
@@ -138,6 +154,16 @@ const serializedAccess = computed(() => {
 
 const updateAccess = nextAccess => {
   emit('update:modelValue', nextAccess);
+};
+
+const selectionCountLabel = (selectedCount, totalCount) =>
+  `${selectedCount} / ${totalCount}`;
+
+const toggleTableExpanded = tableName => {
+  expandedTables.value = {
+    ...expandedTables.value,
+    [tableName]: !expandedTables.value[tableName],
+  };
 };
 
 const updateTableEnabled = (tableName, enabled) => {
@@ -211,76 +237,128 @@ watch(
       class="rounded-xl border border-n-weak bg-n-solid-1 p-4 flex flex-col gap-4"
     >
       <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <h5 class="text-sm font-medium text-n-slate-12">
-            {{ tableMetadata[tableName].title }}
-          </h5>
-          <p class="mt-1 text-sm text-n-slate-11">
-            {{ tableMetadata[tableName].description }}
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 items-start gap-3 text-left"
+          :aria-expanded="expandedTables[tableName]"
+          @click="toggleTableExpanded(tableName)"
+        >
+          <span
+            class="mt-0.5 size-4 shrink-0 text-n-slate-10 i-lucide-chevron-down transition-transform duration-200"
+            :class="{ 'rotate-180': expandedTables[tableName] }"
+          />
+
+          <span class="min-w-0 flex-1">
+            <span class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ tableMetadata[tableName].title }}
+              </span>
+              <span
+                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
+              >
+                {{
+                  selectionCountLabel(
+                    normalizedAccess[tableName].fieldIds.length,
+                    tableFieldCounts[tableName]
+                  )
+                }}
+              </span>
+            </span>
+            <span class="mt-1 block text-sm text-n-slate-11">
+              {{ tableMetadata[tableName].description }}
+            </span>
+          </span>
+        </button>
+
+        <div class="shrink-0" @click.stop>
+          <Switch
+            :model-value="normalizedAccess[tableName].enabled"
+            class="data-[state=checked]:!bg-n-violet-9"
+            @update:model-value="value => updateTableEnabled(tableName, value)"
+          />
+        </div>
+      </div>
+
+      <div v-show="expandedTables[tableName]" class="flex flex-col gap-4">
+        <div
+          class="flex items-center justify-between gap-3 text-xs text-n-slate-10"
+        >
+          <span>
+            {{
+              selectionCountLabel(
+                normalizedAccess[tableName].fieldIds.length,
+                tableFieldCounts[tableName]
+              )
+            }}
+          </span>
+          <span v-if="!normalizedAccess[tableName].enabled">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.DISABLED_MESSAGE') }}
+          </span>
+        </div>
+
+        <div v-if="isLoading" class="text-sm text-n-slate-11">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.LOADING') }}
+        </div>
+
+        <div
+          v-else-if="normalizedAccess[tableName].enabled"
+          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+        >
+          <div
+            v-for="group in fieldsByTable[tableName]"
+            :key="group.groupName"
+            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3 flex flex-col gap-3"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-sm font-medium text-n-slate-12">
+                {{ group.groupName }}
+              </div>
+              <div class="text-xs text-n-slate-10">
+                {{
+                  selectionCountLabel(
+                    group.fields.filter(field =>
+                      normalizedAccess[tableName].fieldIds.includes(field.id)
+                    ).length,
+                    group.fields.length
+                  )
+                }}
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <label
+                v-for="field in group.fields"
+                :key="field.id"
+                class="flex items-start gap-2 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
+              >
+                <Checkbox
+                  :model-value="
+                    normalizedAccess[tableName].fieldIds.includes(field.id)
+                  "
+                  @update:model-value="
+                    value => toggleFieldSelection(tableName, field.id, value)
+                  "
+                />
+                <span class="min-w-0">
+                  <span class="block text-sm font-medium text-n-slate-12">
+                    {{ field.title }}
+                  </span>
+                  <span class="block text-xs text-n-slate-10">
+                    {{ field.description }}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <p
+            v-if="!fieldsByTable[tableName]?.length"
+            class="text-sm text-n-slate-11"
+          >
+            {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.EMPTY') }}
           </p>
         </div>
-
-        <Switch
-          :model-value="normalizedAccess[tableName].enabled"
-          class="data-[state=checked]:!bg-n-violet-9"
-          @update:model-value="value => updateTableEnabled(tableName, value)"
-        />
       </div>
-
-      <div v-if="isLoading" class="text-sm text-n-slate-11">
-        {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.LOADING') }}
-      </div>
-
-      <div
-        v-else-if="normalizedAccess[tableName].enabled"
-        class="grid grid-cols-1 gap-4 md:grid-cols-2"
-      >
-        <div
-          v-for="group in fieldsByTable[tableName]"
-          :key="group.groupName"
-          class="rounded-lg border border-n-weak bg-n-alpha-2 p-3 flex flex-col gap-3"
-        >
-          <div class="text-sm font-medium text-n-slate-12">
-            {{ group.groupName }}
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <label
-              v-for="field in group.fields"
-              :key="field.id"
-              class="flex items-start gap-2"
-            >
-              <Checkbox
-                :model-value="
-                  normalizedAccess[tableName].fieldIds.includes(field.id)
-                "
-                @update:model-value="
-                  value => toggleFieldSelection(tableName, field.id, value)
-                "
-              />
-              <span class="min-w-0">
-                <span class="block text-sm font-medium text-n-slate-12">
-                  {{ field.title }}
-                </span>
-                <span class="block text-xs text-n-slate-10">
-                  {{ field.description }}
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <p
-          v-if="!fieldsByTable[tableName]?.length"
-          class="text-sm text-n-slate-11"
-        >
-          {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.EMPTY') }}
-        </p>
-      </div>
-
-      <p v-else class="text-sm text-n-slate-11">
-        {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.DISABLED_MESSAGE') }}
-      </p>
     </div>
   </div>
 </template>
