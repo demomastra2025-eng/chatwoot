@@ -35,6 +35,7 @@ class Captain::Scenario < ApplicationRecord
   validates :assistant_id, presence: true
   validates :account_id, presence: true
   validate :validate_instruction_tools
+  validate :validate_instruction_fields
 
   scope :enabled, -> { where(enabled: true) }
 
@@ -51,6 +52,10 @@ class Captain::Scenario < ApplicationRecord
       response_guidelines: response_guidelines || [],
       guardrails: guardrails || []
     }
+  end
+
+  def resolve_runtime_prompt_context(context, prompt_state)
+    assistant.resolve_runtime_prompt_context(context, prompt_state)
   end
 
   private
@@ -114,6 +119,18 @@ class Captain::Scenario < ApplicationRecord
     return unless invalid_tools.any?
 
     errors.add(:instruction, "contains invalid tools: #{invalid_tools.join(', ')}")
+  end
+
+  def validate_instruction_fields
+    return if instruction.blank?
+
+    field_ids = Captain::ContextFields.extract_field_ids_from_text(instruction)
+    return if field_ids.empty?
+
+    invalid_fields = field_ids - assistant.allowed_context_field_ids
+    return unless invalid_fields.any?
+
+    errors.add(:instruction, "contains invalid fields: #{invalid_fields.join(', ')}")
   end
 
   # Resolves tool references from the instruction text into the tools field.

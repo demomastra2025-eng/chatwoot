@@ -6,6 +6,7 @@ RSpec.describe Captain::PromptRenderer do
   let(:template_name) { 'test_template' }
   let(:template_content) { 'Hello {{name}}, your balance is {{balance}}' }
   let(:template_path) { Rails.root.join('enterprise', 'lib', 'captain', 'prompts', "#{template_name}.liquid") }
+  let(:snippet_template_path) { Rails.root.join('enterprise', 'lib', 'captain', 'prompts', 'snippets', 'user.liquid') }
   let(:context) { { name: 'John', balance: 100 } }
 
   before do
@@ -55,15 +56,28 @@ RSpec.describe Captain::PromptRenderer do
       expect(result).to eq('Hello World')
     end
 
+    it 'renders snippet partials from the captain prompt snippets directory' do
+      allow(File).to receive(:read).with(template_path).and_return("Hello {% render 'user' %}")
+      allow(File).to receive(:exist?).with(snippet_template_path).and_return(true)
+      allow(File).to receive(:read).with(snippet_template_path).and_return('Name: {{ name }}')
+
+      result = described_class.render(template_name, { name: 'John' })
+
+      expect(result).to eq('Hello Name: John')
+    end
+
     it 'loads and parses liquid template' do
       liquid_template_double = instance_double(Liquid::Template)
-      allow(Liquid::Template).to receive(:parse).with(template_content).and_return(liquid_template_double)
-      allow(liquid_template_double).to receive(:render).with(hash_including('name', 'balance')).and_return('rendered')
+      allow(Liquid::Template).to receive(:parse).with(template_content, error_mode: :strict).and_return(liquid_template_double)
+      allow(liquid_template_double).to receive(:render!).with(
+        hash_including('name', 'balance'),
+        registers: hash_including(file_system: instance_of(Liquid::LocalFileSystem))
+      ).and_return('rendered')
 
       result = described_class.render(template_name, context)
 
       expect(result).to eq('rendered')
-      expect(Liquid::Template).to have_received(:parse).with(template_content)
+      expect(Liquid::Template).to have_received(:parse).with(template_content, error_mode: :strict)
     end
   end
 

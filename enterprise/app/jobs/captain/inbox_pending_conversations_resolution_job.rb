@@ -18,12 +18,14 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   def create_outgoing_message(conversation, inbox)
     I18n.with_locale(inbox.account.locale) do
       resolution_message = inbox.captain_assistant.config['resolution_message']
+      content = resolution_message.presence || I18n.t('conversations.activity.auto_resolution_message')
+
       conversation.messages.create!(
         {
           message_type: :outgoing,
           account_id: conversation.account_id,
           inbox_id: conversation.inbox_id,
-          content: resolution_message.presence || I18n.t('conversations.activity.auto_resolution_message'),
+          content: inbox.captain_assistant.render_runtime_text(content, conversation: conversation),
           sender: inbox.captain_assistant
         }
       )

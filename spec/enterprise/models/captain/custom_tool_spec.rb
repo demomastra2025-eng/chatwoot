@@ -37,6 +37,15 @@ RSpec.describe Captain::CustomTool, type: :model do
 
     describe 'param_schema validation' do
       let(:account) { create(:account) }
+      let!(:contact_attribute_definition) do
+        create(
+          :custom_attribute_definition,
+          account: account,
+          attribute_model: :contact_attribute,
+          attribute_key: 'vip_level',
+          attribute_display_name: 'VIP Level'
+        )
+      end
 
       it 'is valid with proper param_schema' do
         tool = build(:captain_custom_tool, account: account, param_schema: [
@@ -84,12 +93,135 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(tool).not_to be_valid
       end
 
+      it 'is invalid when a parameter name is blank' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => '   ', 'type' => 'string', 'description' => 'Order ID' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter names cannot be blank')
+      end
+
+      it 'is invalid when a parameter name uses unsupported characters' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order-id', 'type' => 'string', 'description' => 'Order ID' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include(
+          'parameter order-id must use only letters, numbers, and underscores'
+        )
+      end
+
+      it 'is invalid when parameter names are duplicated' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order_id', 'type' => 'string', 'description' => 'Primary order ID' },
+                       { 'name' => 'order_id', 'type' => 'string', 'description' => 'Secondary order ID' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter order_id is duplicated')
+      end
+
+      it 'is invalid when a parameter type is unknown' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order_id', 'type' => 'integer', 'description' => 'Order ID' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter order_id has an invalid type')
+      end
+
+      it 'is invalid when a parameter description is blank' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order_id', 'type' => 'string', 'description' => '   ' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter order_id must define a description')
+      end
+
       it 'is valid when required field is omitted (defaults to optional param)' do
         tool = build(:captain_custom_tool, account: account, param_schema: [
                        { 'name' => 'order_id', 'type' => 'string', 'description' => 'Order ID' }
                      ])
 
         expect(tool).to be_valid
+      end
+
+      it 'defaults missing sources to agent' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order_id', 'type' => 'string', 'description' => 'Order ID' }
+                     ])
+
+        tool.validate
+
+        expect(tool.param_schema.first['source']).to eq('agent')
+      end
+
+      it 'is valid with a known context field mapping' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'vip_level',
+                         'type' => 'string',
+                         'description' => 'VIP level from the current contact',
+                         'source' => 'context',
+                         'context_path' => 'contact.custom_attributes.vip_level'
+                       }
+                     ])
+
+        expect(tool).to be_valid
+      end
+
+      it 'is invalid when a context mapping references an unknown field' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'vip_level',
+                         'type' => 'string',
+                         'description' => 'VIP level from the current contact',
+                         'source' => 'context',
+                         'context_path' => 'contact.custom_attributes.missing_field'
+                       }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include(
+          'parameter vip_level references an unknown context field'
+        )
+      end
+
+      it 'is invalid when a fixed parameter has no configured value' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'pipeline',
+                         'type' => 'string',
+                         'description' => 'Destination pipeline',
+                         'source' => 'fixed',
+                         'fixed_value' => ''
+                       }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include(
+          'parameter pipeline must define a fixed value'
+        )
+      end
+
+      it 'is invalid when a fixed JSON parameter cannot be parsed' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'filters',
+                         'type' => 'object',
+                         'description' => 'Static filters',
+                         'source' => 'fixed',
+                         'fixed_value' => '{invalid json}'
+                       }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include(
+          'parameter filters must be valid JSON object'
+        )
       end
     end
   end
@@ -240,6 +372,22 @@ RSpec.describe Captain::CustomTool, type: :model do
         result = tool.build_request_url({ resource: 'orders', id: '123', show_details: 'true' })
         expect(result).to eq('https://api.example.com/orders/123?details=true')
       end
+
+      it 'renders URL template with filtered captain context variables' do
+        tool = create(:captain_custom_tool, account: account,
+                                            endpoint_url: 'https://api.example.com/contacts/{{ contact.phone_number }}')
+
+        result = tool.build_request_url(
+          {},
+          template_context: {
+            contact: {
+              phone_number: '+1234567890'
+            }
+          }
+        )
+
+        expect(result).to eq('https://api.example.com/contacts/+1234567890')
+      end
     end
 
     describe '#build_request_body' do
@@ -255,6 +403,21 @@ RSpec.describe Captain::CustomTool, type: :model do
 
         result = tool.build_request_body({ order_id: '12345' })
         expect(result).to eq('{ "order_id": "12345", "source": "chatwoot" }')
+      end
+
+      it 'renders request body with captain context variables' do
+        tool = create(:captain_custom_tool, account: account,
+                                            request_template: '{ "phone": "{{ contact.phone_number }}", "order_id": "{{ conversation.custom_attributes.order_id }}" }')
+
+        result = tool.build_request_body(
+          {},
+          template_context: {
+            contact: { phone_number: '+1234567890' },
+            conversation: { custom_attributes: { order_id: 'ORD-42' } }
+          }
+        )
+
+        expect(result).to eq('{ "phone": "+1234567890", "order_id": "ORD-42" }')
       end
     end
 
@@ -386,6 +549,21 @@ RSpec.describe Captain::CustomTool, type: :model do
 
         expect(headers['X-Chatwoot-Contact-Id']).to eq(contact.id.to_s)
         expect(headers['X-Chatwoot-Contact-Email']).to eq(contact.email)
+      end
+
+      it 'prefers prompt_context metadata when present' do
+        state[:prompt_context] = {
+          contact: {
+            id: contact.id,
+            phone_number: '+1987654321'
+          }
+        }
+
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Contact-Id']).to eq(contact.id.to_s)
+        expect(headers['X-Chatwoot-Contact-Phone']).to eq('+1987654321')
+        expect(headers['X-Chatwoot-Contact-Email']).to be_nil
       end
 
       it 'handles missing conversation gracefully' do

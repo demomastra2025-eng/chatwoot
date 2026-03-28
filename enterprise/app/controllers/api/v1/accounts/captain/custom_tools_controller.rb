@@ -44,7 +44,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
       :auth_type,
       :enabled,
       auth_config: {},
-      param_schema: [:name, :type, :description, :required]
+      param_schema: [:name, :type, :description, :required, :source, :context_path, :fixed_value]
     )
   end
 end

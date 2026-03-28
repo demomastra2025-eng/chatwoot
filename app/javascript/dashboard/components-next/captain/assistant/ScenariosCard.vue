@@ -34,6 +34,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  assistantId: {
+    type: Number,
+    default: null,
+  },
   selectable: {
     type: Boolean,
     default: false,
@@ -114,7 +118,7 @@ const instructionError = computed(() =>
 );
 
 const LINK_INSTRUCTION_CLASS =
-  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a:not([href^="tool://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
+  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a:not([href^="tool://"]):not([href^="field://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
 const renderInstruction = instruction => () =>
   h('p', {
@@ -235,6 +239,8 @@ const renderInstruction = instruction => () =>
         :message-type="instructionError ? 'error' : 'info'"
         :show-character-count="false"
         enable-captain-tools
+        enable-captain-fields
+        :captain-context-assistant-id="assistantId"
       />
       <div class="flex items-center gap-3">
         <Button

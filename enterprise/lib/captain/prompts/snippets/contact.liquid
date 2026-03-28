@@ -1,10 +1,22 @@
 # Contact Information
+{% if contact_visible_fields contains 'id' -%}
 - Contact ID: {{ contact.id }}
-- Name: {{ contact.name || "Unknown" }}
-- Email: {{ contact.email || "None" }}
-- Phone: {{ contact.phone_number || "None" }}
-- Identifier: {{ contact.identifier || "None" }}
-- Type: {{ contact.contact_type || "visitor" }}
+{% endif -%}
+{% if contact_visible_fields contains 'name' -%}
+- Name: {{ contact.name | default: "Unknown" }}
+{% endif -%}
+{% if contact_visible_fields contains 'email' -%}
+- Email: {{ contact.email | default: "None" }}
+{% endif -%}
+{% if contact_visible_fields contains 'phone_number' -%}
+- Phone: {{ contact.phone_number | default: "None" }}
+{% endif -%}
+{% if contact_visible_fields contains 'identifier' -%}
+- Identifier: {{ contact.identifier | default: "None" }}
+{% endif -%}
+{% if contact_visible_fields contains 'contact_type' -%}
+- Type: {{ contact.contact_type | default: "visitor" }}
+{% endif -%}
 {% if contact.custom_attributes -%}
   {% for attribute in contact.custom_attributes -%}
 - {{ attribute[0] }}: {{ attribute[1] }}

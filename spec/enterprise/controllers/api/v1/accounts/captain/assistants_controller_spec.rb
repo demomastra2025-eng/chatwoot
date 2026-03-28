@@ -125,6 +125,20 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:config][:feature_citation]).to be(false)
         expect(response).to have_http_status(:success)
       end
+
+      it 'stores an explicit empty context_access on create' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants",
+               params: valid_attributes,
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::Assistant, :count).by(1)
+
+        created_assistant = Captain::Assistant.order(:id).last
+
+        expect(created_assistant.config['context_access']).to eq({})
+        expect(json_response.dig(:config, :context_access)).to eq({})
+      end
     end
   end
 
@@ -215,6 +229,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:config][:feature_citation]).to be(false)
+      end
+
+      it 'allows clearing context_access to an explicit empty hash' do
+        assistant.update!(config: { 'context_access' => { 'contact' => { 'enabled' => false, 'field_ids' => [] } } })
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { config: { context_access: {} } } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['context_access']).to eq({})
+        expect(json_response.dig(:config, :context_access)).to eq({})
       end
     end
   end

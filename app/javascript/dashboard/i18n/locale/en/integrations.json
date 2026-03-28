@@ -518,6 +518,24 @@
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
           "ALLOW_CITATIONS": "Include source citations in responses"
         },
+        "CONTEXT_ACCESS": {
+          "TITLE": "Context access",
+          "DESCRIPTION": "Choose which contact and conversation fields the AI agent can read in live conversations.",
+          "HINT": "Use $ inside scenario instructions, descriptions, handoff messages, and resolution messages to insert any enabled field.",
+          "LOADING": "Loading available fields...",
+          "EMPTY": "No fields are available for this section yet.",
+          "DISABLED_MESSAGE": "This table is disabled. The AI agent will not see any of these fields in its prompt context.",
+          "TABLES": {
+            "CONTACT": {
+              "TITLE": "Contact fields",
+              "DESCRIPTION": "Profile data that should stay available across this customer's conversations."
+            },
+            "CONVERSATION": {
+              "TITLE": "Conversation fields",
+              "DESCRIPTION": "Case-specific context that is only relevant to the current thread."
+            }
+          }
+        },
         "AUTO_REPLY_ON_LAST_INCOMING": {
           "TITLE": "Auto-reply to last incoming",
           "DESCRIPTION": "When an agent manually switches a conversation to an AI agent, reply immediately if the latest public message is from the customer."
@@ -765,16 +783,16 @@
         "COMPLETED": "Completed",
         "FAILED": "Failed"
       },
-        "SOURCE_MODE": {
-          "LEGACY_URL": "Legacy import",
-          "SINGLE_PAGE": "Single page",
-          "SITE_IMPORT": "Site import",
-          "SELECTED_PAGES": "Selected pages",
-          "PDF_URL": "PDF URL",
-          "FILE_URL": "File URL",
-          "FILE_UPLOAD": "Uploaded file",
-          "PDF_UPLOAD": "Uploaded PDF"
-        },
+      "SOURCE_MODE": {
+        "LEGACY_URL": "Legacy import",
+        "SINGLE_PAGE": "Single page",
+        "SITE_IMPORT": "Site import",
+        "SELECTED_PAGES": "Selected pages",
+        "PDF_URL": "PDF URL",
+        "FILE_URL": "File URL",
+        "FILE_UPLOAD": "Uploaded file",
+        "PDF_UPLOAD": "Uploaded PDF"
+      },
       "META": {
         "CREATED_AT": "Created {time}",
         "PROGRESS": "Progress {value}",
@@ -935,6 +953,7 @@
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
+          "HELP_TEXT": "You can use Liquid variables from tool parameters and the agent's allowed context, for example {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }}, or {{ account.locale }}.",
           "ERROR": "Valid URL is required"
         },
         "AUTH_TYPE": {
@@ -960,11 +979,27 @@
         },
         "PARAMETERS": {
           "LABEL": "Parameters",
-          "HELP_TEXT": "Define the parameters that will be extracted from user queries"
+          "HELP_TEXT": "Choose which values the AI agent should infer, which ones should come from the assistant's allowed context, and which ones should always be sent as fixed values."
         },
         "ADD_PARAMETER": "Add Parameter",
         "PARAM_NAME": {
           "PLACEHOLDER": "Parameter name (e.g., order_id)"
+        },
+        "PARAM_SOURCE": {
+          "PLACEHOLDER": "Filled by"
+        },
+        "PARAM_SOURCES": {
+          "AGENT": "Agent",
+          "CONTEXT": "System context",
+          "FIXED": "Fixed value"
+        },
+        "PARAM_CONTEXT_FIELD": {
+          "PLACEHOLDER": "Select a context field",
+          "HELP_TEXT": "Only fields allowed by the active assistant at runtime will be injected into the request."
+        },
+        "PARAM_FIXED_VALUE": {
+          "PLACEHOLDER": "Fixed value to send",
+          "JSON_PLACEHOLDER": "Fixed JSON value"
         },
         "PARAM_TYPE": {
           "PLACEHOLDER": "Type"
@@ -984,14 +1019,19 @@
         },
         "REQUEST_TEMPLATE": {
           "LABEL": "Request Body Template (Optional)",
-          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}"
+          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
+          "HELP_TEXT": "Request templates support the same Liquid variables as the endpoint URL. Only fields allowed in the assistant's Context access settings are exposed to custom tools."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Response Template (Optional)",
           "PLACEHOLDER": "Order {'{{'} order_id {'}}'} status: {'{{'} status {'}}'}"
         },
         "ERRORS": {
-          "PARAM_NAME_REQUIRED": "Parameter name is required"
+          "PARAM_NAME_REQUIRED": "Parameter name is required",
+          "PARAM_NAME_INVALID": "Use letters, numbers, and underscores only, and start with a letter or underscore",
+          "PARAM_DESCRIPTION_REQUIRED": "Parameter description is required",
+          "PARAM_CONTEXT_PATH_REQUIRED": "Select a context field for this parameter",
+          "PARAM_FIXED_VALUE_REQUIRED": "Fixed value is required for this parameter"
         }
       },
       "UNGROUPED": "Ungrouped"

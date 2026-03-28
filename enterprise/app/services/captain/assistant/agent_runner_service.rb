@@ -4,16 +4,6 @@ require 'agents/instrumentation'
 class Captain::Assistant::AgentRunnerService
   include Integrations::LlmInstrumentationConstants
 
-  CONVERSATION_STATE_ATTRIBUTES = %i[
-    id display_id inbox_id contact_id status priority
-    label_list custom_attributes additional_attributes
-  ].freeze
-
-  CONTACT_STATE_ATTRIBUTES = %i[
-    id name email phone_number identifier contact_type
-    custom_attributes additional_attributes
-  ].freeze
-
   def initialize(assistant:, conversation: nil, callbacks: {})
     @assistant = assistant
     @conversation = conversation
@@ -113,9 +103,11 @@ class Captain::Assistant::AgentRunnerService
     }
 
     if @conversation
-      state[:conversation] = @conversation.attributes.symbolize_keys.slice(*CONVERSATION_STATE_ATTRIBUTES)
-      state[:contact] = @conversation.contact.attributes.symbolize_keys.slice(*CONTACT_STATE_ATTRIBUTES) if @conversation.contact
+      state[:conversation] = @conversation.attributes.symbolize_keys.slice(*Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES)
+      state[:contact] = @conversation.contact.attributes.symbolize_keys.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
     end
+
+    state[:prompt_context] = @assistant.prompt_context_state(state)
 
     state
   end

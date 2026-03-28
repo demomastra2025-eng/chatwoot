@@ -238,6 +238,8 @@ const addAllExample = async () => {
             <template #default-actions>
               <AddNewRulesDialog
                 v-model="newDialogRule"
+                enable-captain-fields
+                :captain-context-assistant-id="assistantId"
                 :placeholder="
                   t(
                     'CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.ADD.NEW.PLACEHOLDER'
@@ -298,6 +300,8 @@ const addAllExample = async () => {
             :id="guideline.id"
             :key="guideline.id"
             :content="guideline.content"
+            enable-captain-fields
+            :captain-context-assistant-id="assistantId"
             :is-selected="bulkSelectedIds.has(guideline.id)"
             :selectable="
               hoveredCard === guideline.id || bulkSelectedIds.size > 0
@@ -310,6 +314,8 @@ const addAllExample = async () => {
         </div>
         <AddNewRulesInput
           v-model="newInlineRule"
+          enable-captain-fields
+          :captain-context-assistant-id="assistantId"
           :placeholder="
             t(
               'CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.ADD.SUGGESTED.PLACEHOLDER'

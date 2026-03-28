@@ -21,6 +21,9 @@ const props = defineProps({
   enableVariables: { type: Boolean, default: false },
   enableCannedResponses: { type: Boolean, default: true },
   enableCaptainTools: { type: Boolean, default: false },
+  enableCaptainFields: { type: Boolean, default: false },
+  captainContextAssistantId: { type: Number, default: null },
+  captainContextAccess: { type: Object, default: null },
   signature: { type: String, default: '' },
   allowSignature: { type: Boolean, default: false },
   sendWithSignature: { type: Boolean, default: false },
@@ -107,6 +110,9 @@ watch(
         :enable-variables="enableVariables"
         :enable-canned-responses="enableCannedResponses"
         :enable-captain-tools="enableCaptainTools"
+        :enable-captain-fields="enableCaptainFields"
+        :captain-context-assistant-id="captainContextAssistantId"
+        :captain-context-access="captainContextAccess"
         :signature="signature"
         :allow-signature="allowSignature"
         :send-with-signature="sendWithSignature"

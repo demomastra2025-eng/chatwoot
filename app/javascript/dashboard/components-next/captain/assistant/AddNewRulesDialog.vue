@@ -3,7 +3,7 @@ import { useToggle } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 
 import Button from 'dashboard/components-next/button/Button.vue';
-import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
+import Editor from 'dashboard/components-next/Editor/Editor.vue';
 
 defineProps({
   placeholder: {
@@ -21,6 +21,14 @@ defineProps({
   cancelLabel: {
     type: String,
     default: '',
+  },
+  enableCaptainFields: {
+    type: Boolean,
+    default: false,
+  },
+  captainContextAssistantId: {
+    type: Number,
+    default: null,
   },
 });
 
@@ -60,10 +68,13 @@ const onClickCancel = () => {
       v-if="showPopover"
       class="absolute w-[26.5rem] top-9 z-50 ltr:left-0 rtl:right-0 flex flex-col gap-5 bg-n-alpha-3 backdrop-blur-[100px] p-4 rounded-xl border border-n-weak shadow-md"
     >
-      <InlineInput
+      <Editor
         v-model="modelValue"
+        focus-on-mount
         :placeholder="placeholder"
-        @keyup.enter="onClickAdd"
+        :show-character-count="false"
+        :enable-captain-fields="enableCaptainFields"
+        :captain-context-assistant-id="captainContextAssistantId"
       />
       <div class="flex gap-2 justify-between">
         <Button

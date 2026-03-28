@@ -38,7 +38,9 @@ class Captain::Assistant < ApplicationRecord
 
   store_accessor :config, :temperature, :feature_faq, :feature_memory, :product_name,
                  :message_collapse_window_seconds, :history_message_limit,
-                 :auto_reply_on_last_incoming
+                 :auto_reply_on_last_incoming, :context_access
+
+  before_validation :initialize_context_access_config, on: :create
 
   validates :name, presence: true
   validates :description, presence: true
@@ -69,6 +71,37 @@ class Captain::Assistant < ApplicationRecord
 
   def available_tool_ids
     available_agent_tools.pluck(:id)
+  end
+
+  def available_context_fields
+    Captain::ContextFields.definitions_for(account)
+  end
+
+  def allowed_context_fields
+    Captain::ContextFields.allowed_definitions_for(self)
+  end
+
+  def allowed_context_field_ids
+    allowed_context_fields.map { |field| field[:id] }
+  end
+
+  def normalized_context_access
+    Captain::ContextFields.normalized_access_for(self, available_context_fields)
+  end
+
+  def prompt_context_state(runtime_state = {})
+    Captain::ContextFields.prompt_state_for(assistant: self, runtime_state: runtime_state)
+  end
+
+  def render_runtime_text(text, conversation: nil)
+    runtime_state = runtime_state_for(conversation)
+    prompt_state = prompt_context_state(runtime_state)
+
+    resolve_runtime_value(text, prompt_state)
+  end
+
+  def resolve_runtime_prompt_context(context, prompt_state)
+    resolve_runtime_value(context, prompt_state)
   end
 
   def push_event_data
@@ -135,6 +168,30 @@ class Captain::Assistant < ApplicationRecord
     }
   end
 
+  def resolve_runtime_value(value, prompt_state)
+    allowed_fields = allowed_context_fields
+
+    case value
+    when String
+      Captain::ContextFields.render_references(value, prompt_state: prompt_state, allowed_fields: allowed_fields)
+    when Array
+      value.map { |item| resolve_runtime_value(item, prompt_state) }
+    when Hash
+      value.transform_values { |item| resolve_runtime_value(item, prompt_state) }
+    else
+      value
+    end
+  end
+
+  def runtime_state_for(conversation)
+    return {} unless conversation
+
+    {
+      conversation: conversation.attributes.symbolize_keys.slice(*Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
+      contact: conversation.contact&.attributes&.symbolize_keys&.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES)
+    }.compact
+  end
+
   def default_avatar_url
     "#{ENV.fetch('FRONTEND_URL', nil)}/assets/images/dashboard/captain/logo.svg"
   end
@@ -142,5 +199,10 @@ class Captain::Assistant < ApplicationRecord
   def config_integer_value(key)
     value = config[key]
     value.present? ? value.to_i : 0
+  end
+
+  def initialize_context_access_config
+    self.config = (config || {}).deep_stringify_keys
+    config['context_access'] ||= {}
   end
 end

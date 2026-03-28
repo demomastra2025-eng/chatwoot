@@ -14,15 +14,24 @@ module Concerns::Agentable
 
   def agent_instructions(context = nil)
     enhanced_context = prompt_context
+    state = context&.context&.[](:state) || {}
+    prompt_state = state[:prompt_context] || {}
 
-    if context
-      state = context.context[:state] || {}
-      conversation_data = state[:conversation] || {}
-      contact_data = state[:contact] || {}
+    if state.present?
+      conversation_data = state.key?(:prompt_context) ? prompt_state[:conversation].presence : state[:conversation].presence
+      contact_data = state.key?(:prompt_context) ? prompt_state[:contact].presence : state[:contact].presence
+      visible_fields = prompt_state[:visible_fields] || {}
+
       enhanced_context = enhanced_context.merge(
         conversation: conversation_data,
-        contact: contact_data
+        contact: contact_data,
+        conversation_visible_fields: visible_fields[:conversation] || [],
+        contact_visible_fields: visible_fields[:contact] || []
       )
+    end
+
+    if respond_to?(:resolve_runtime_prompt_context, true)
+      enhanced_context = resolve_runtime_prompt_context(enhanced_context, prompt_state)
     end
 
     Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access)

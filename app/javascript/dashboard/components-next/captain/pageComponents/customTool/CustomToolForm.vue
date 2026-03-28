@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, useTemplateRef, watch } from 'vue';
+import { reactive, computed, ref, useTemplateRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
@@ -9,6 +9,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
 import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
 
@@ -27,6 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['submit', 'cancel']);
 
 const { t } = useI18n();
+const availableContextFields = ref([]);
 
 const formState = {
   uiFlags: useMapGetter('captainCustomTools/getUIFlags'),
@@ -47,6 +49,36 @@ const initialState = {
 
 const state = reactive({ ...initialState });
 
+const DEFAULT_PARAM = {
+  name: '',
+  type: 'string',
+  description: '',
+  required: false,
+  source: 'agent',
+  context_path: '',
+  fixed_value: '',
+};
+
+const serializeFixedValue = value => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
+const normalizeParam = param => ({
+  ...DEFAULT_PARAM,
+  ...param,
+  source: param?.source || 'agent',
+  context_path: param?.context_path || '',
+  fixed_value: serializeFixedValue(param?.fixed_value),
+});
+
 // Populate form when in edit mode
 watch(
   () => props.tool,
@@ -61,18 +93,13 @@ watch(
       state.response_template = newTool.response_template || '';
       state.auth_type = newTool.auth_type || 'none';
       state.auth_config = newTool.auth_config || {};
-      state.param_schema = newTool.param_schema || [];
+      state.param_schema = (newTool.param_schema || []).map(normalizeParam);
+    } else if (props.mode === 'create') {
+      state.param_schema = [];
     }
   },
   { immediate: true }
 );
-
-const DEFAULT_PARAM = {
-  name: '',
-  type: 'string',
-  description: '',
-  required: false,
-};
 
 const validationRules = {
   title: { required },
@@ -96,6 +123,27 @@ const authTypeOptions = computed(() => [
   },
 ]);
 
+const contextFieldOptions = computed(() =>
+  availableContextFields.value
+    .slice()
+    .sort((leftField, rightField) => {
+      const groupComparison = (leftField.group_name || '').localeCompare(
+        rightField.group_name || ''
+      );
+      if (groupComparison !== 0) {
+        return groupComparison;
+      }
+
+      return leftField.title.localeCompare(rightField.title);
+    })
+    .map(field => ({
+      value: field.id,
+      label: field.group_name
+        ? `${field.group_name} - ${field.title}`
+        : field.title,
+    }))
+);
+
 const v$ = useVuelidate(validationRules, state);
 
 const isLoading = computed(() =>
@@ -104,10 +152,17 @@ const isLoading = computed(() =>
     : formState.uiFlags.value.creatingItem
 );
 
+const fieldErrorMessages = computed(() => ({
+  TITLE: t('CAPTAIN.CUSTOM_TOOLS.FORM.TITLE.ERROR'),
+  ENDPOINT_URL: t('CAPTAIN.CUSTOM_TOOLS.FORM.ENDPOINT_URL.ERROR'),
+}));
+
+const submitLabel = computed(() =>
+  props.mode === 'edit' ? t('CAPTAIN.FORM.EDIT') : t('CAPTAIN.FORM.CREATE')
+);
+
 const getErrorMessage = (field, errorKey) => {
-  return v$.value[field].$error
-    ? t(`CAPTAIN.CUSTOM_TOOLS.FORM.${errorKey}.ERROR`)
-    : '';
+  return v$.value[field].$error ? fieldErrorMessages.value[errorKey] : '';
 };
 
 const formErrors = computed(() => ({
@@ -132,6 +187,15 @@ const addParam = () => {
   state.param_schema.push({ ...DEFAULT_PARAM });
 };
 
+const loadContextFields = async () => {
+  try {
+    const response = await CaptainContextFieldsAPI.get();
+    availableContextFields.value = response.data || [];
+  } catch (error) {
+    availableContextFields.value = [];
+  }
+};
+
 const handleCancel = () => emit('cancel');
 
 const handleSubmit = async () => {
@@ -140,8 +204,13 @@ const handleSubmit = async () => {
     return;
   }
 
-  emit('submit', state);
+  emit('submit', {
+    ...state,
+    param_schema: state.param_schema.map(normalizeParam),
+  });
 };
+
+loadContextFields();
 </script>
 
 <template>
@@ -190,6 +259,9 @@ const handleSubmit = async () => {
         class="flex-1"
       />
     </div>
+    <p class="text-xs text-n-slate-11 -mt-2">
+      {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.ENDPOINT_URL.HELP_TEXT') }}
+    </p>
 
     <div class="flex flex-col gap-1">
       <label class="mb-0.5 text-sm font-medium text-n-slate-12">
@@ -223,6 +295,10 @@ const handleSubmit = async () => {
           v-model:type="param.type"
           v-model:description="param.description"
           v-model:required="param.required"
+          v-model:source="param.source"
+          v-model:context-path="param.context_path"
+          v-model:fixed-value="param.fixed_value"
+          :context-field-options="contextFieldOptions"
           @remove="removeParam(index)"
         />
       </ul>
@@ -245,6 +321,12 @@ const handleSubmit = async () => {
       :rows="4"
       class="[&_textarea]:font-mono"
     />
+    <p
+      v-if="state.http_method === 'POST'"
+      class="text-xs text-n-slate-11 -mt-2"
+    >
+      {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.HELP_TEXT') }}
+    </p>
 
     <TextArea
       v-model="state.response_template"
@@ -267,9 +349,7 @@ const handleSubmit = async () => {
       />
       <Button
         type="submit"
-        :label="
-          t(mode === 'edit' ? 'CAPTAIN.FORM.EDIT' : 'CAPTAIN.FORM.CREATE')
-        "
+        :label="submitLabel"
         class="w-full"
         :is-loading="isLoading"
         :disabled="isLoading"

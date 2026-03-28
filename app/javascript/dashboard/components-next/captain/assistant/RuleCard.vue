@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
+import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Button from 'dashboard/components-next/button/Button.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
-import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
+import Editor from 'dashboard/components-next/Editor/Editor.vue';
 
 const props = defineProps({
   id: {
@@ -13,6 +14,14 @@ const props = defineProps({
   content: {
     type: String,
     required: true,
+  },
+  enableCaptainFields: {
+    type: Boolean,
+    default: false,
+  },
+  captainContextAssistantId: {
+    type: Number,
+    default: null,
   },
   selectable: {
     type: Boolean,
@@ -25,6 +34,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['select', 'hover', 'edit', 'delete']);
+const { formatMessage } = useMessageFormatter();
 
 const modelValue = computed({
   get: () => props.isSelected,
@@ -56,6 +66,15 @@ const saveEdit = () => {
   localContent.value = editedContent.value;
   emit('edit', { id: props.id, content: editedContent.value });
 };
+
+const LINK_RULE_CLASS =
+  '[&_a[href^="field://"]]:text-n-teal-11 [&_a[href^="tool://"]]:text-n-iris-11 [&_a]:pointer-events-none [&_a]:cursor-default';
+
+const renderRuleContent = content => () =>
+  h('span', {
+    class: `block text-sm text-n-slate-12 prose prose-sm min-w-0 break-words ${LINK_RULE_CLASS}`,
+    innerHTML: formatMessage(content, false),
+  });
 </script>
 
 <template>
@@ -69,16 +88,21 @@ const saveEdit = () => {
     <div v-show="selectable" class="absolute top-6 ltr:left-3 rtl:right-3">
       <Checkbox v-model="modelValue" />
     </div>
-    <InlineInput
+    <Editor
       v-if="isEditing"
       v-model="editedContent"
       focus-on-mount
-      @keyup.enter="saveEdit"
+      :show-character-count="false"
+      :enable-captain-fields="enableCaptainFields"
+      :captain-context-assistant-id="captainContextAssistantId"
+      class="flex-1"
     />
-    <span v-else class="flex items-center gap-2 text-sm text-n-slate-12">
-      {{ localContent }}
-    </span>
+    <component :is="renderRuleContent(localContent)" v-else class="flex-1" />
     <div class="flex items-center gap-2">
+      <template v-if="isEditing">
+        <Button icon="i-lucide-check" slate xs ghost @click="saveEdit" />
+        <span class="w-px h-4 bg-n-weak" />
+      </template>
       <Button icon="i-lucide-pen" slate xs ghost @click="startEdit" />
       <span class="w-px h-4 bg-n-weak" />
       <Button

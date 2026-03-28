@@ -1,7 +1,7 @@
 <script setup>
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
+import Editor from 'dashboard/components-next/Editor/Editor.vue';
 
 defineProps({
   placeholder: {
@@ -11,6 +11,14 @@ defineProps({
   label: {
     type: String,
     default: '',
+  },
+  enableCaptainFields: {
+    type: Boolean,
+    default: false,
+  },
+  captainContextAssistantId: {
+    type: Number,
+    default: null,
   },
 });
 
@@ -30,14 +38,17 @@ const onClickAdd = () => {
 
 <template>
   <div
-    class="flex py-3 ltr:pl-3 h-16 rtl:pr-3 ltr:pr-4 rtl:pl-4 items-center gap-3 rounded-xl bg-n-solid-2 outline-1 outline outline-n-container"
+    class="flex py-3 ltr:pl-3 rtl:pr-3 ltr:pr-4 rtl:pl-4 items-start gap-3 rounded-xl bg-n-solid-2 outline-1 outline outline-n-container"
   >
     <Icon icon="i-lucide-plus" class="text-n-slate-10 size-5 flex-shrink-0" />
 
-    <InlineInput
+    <Editor
       v-model="modelValue"
       :placeholder="placeholder"
-      @keyup.enter="onClickAdd"
+      :show-character-count="false"
+      :enable-captain-fields="enableCaptainFields"
+      :captain-context-assistant-id="captainContextAssistantId"
+      class="flex-1"
     />
     <Button
       :label="label"
