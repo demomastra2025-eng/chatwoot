@@ -827,55 +827,55 @@
       },
       "FORM": {
         "TITLE": {
-          "LABEL": "Tool Name",
-          "PLACEHOLDER": "Order Lookup",
-          "ERROR": "Tool name is required"
+          "LABEL": "Құрал атауы",
+          "PLACEHOLDER": "Тапсырысты іздеу",
+          "ERROR": "Құрал атауы міндетті"
         },
         "GROUP_NAME": {
-          "LABEL": "Group (Optional)",
-          "PLACEHOLDER": "Orders"
+          "LABEL": "Топ (міндетті емес)",
+          "PLACEHOLDER": "Тапсырыстар"
         },
         "DESCRIPTION": {
-          "LABEL": "Description",
-          "PLACEHOLDER": "Looks up order details by order ID"
+          "LABEL": "Сипаттама",
+          "PLACEHOLDER": "Тапсырыс ID-і арқылы тапсырыс мәліметтерін іздейді"
         },
         "HTTP_METHOD": {
-          "LABEL": "Method"
+          "LABEL": "Әдіс"
         },
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
           "HELP_TEXT": "Tool параметрлерінен және агентке рұқсат етілген контекстен Liquid айнымалыларын пайдалануға болады, мысалы {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }} немесе {{ account.locale }}.",
-          "ERROR": "Valid URL is required"
+          "ERROR": "Жарамды URL міндетті"
         },
         "AUTH_TYPE": {
-          "LABEL": "Authentication Type"
+          "LABEL": "Аутентификация түрі"
         },
         "AUTH_TYPES": {
-          "NONE": "None",
+          "NONE": "Жоқ",
           "BEARER": "Bearer Token",
-          "BASIC": "Basic Auth",
-          "API_KEY": "API Key"
+          "BASIC": "Негізгі аутентификация",
+          "API_KEY": "API кілті"
         },
         "AUTH_CONFIG": {
           "BEARER_TOKEN": "Bearer Token",
-          "BEARER_TOKEN_PLACEHOLDER": "Enter your bearer token",
-          "USERNAME": "Username",
-          "USERNAME_PLACEHOLDER": "Enter username",
-          "PASSWORD": "Password",
-          "PASSWORD_PLACEHOLDER": "Enter password",
-          "API_KEY": "Header Name",
+          "BEARER_TOKEN_PLACEHOLDER": "Bearer token енгізіңіз",
+          "USERNAME": "Пайдаланушы аты",
+          "USERNAME_PLACEHOLDER": "Пайдаланушы атын енгізіңіз",
+          "PASSWORD": "Құпиясөз",
+          "PASSWORD_PLACEHOLDER": "Құпиясөзді енгізіңіз",
+          "API_KEY": "Тақырып атауы",
           "API_KEY_PLACEHOLDER": "X-API-Key",
-          "API_VALUE": "Header Value",
-          "API_VALUE_PLACEHOLDER": "Enter API key value"
+          "API_VALUE": "Тақырып мәні",
+          "API_VALUE_PLACEHOLDER": "API кілтінің мәнін енгізіңіз"
         },
         "PARAMETERS": {
-          "LABEL": "Parameters",
+          "LABEL": "Параметрлер",
           "HELP_TEXT": "AI-агент қай мәндерді өзі анықтайтынын, қайсысын ассистентке рұқсат етілген контекстен алу керегін және қайсысын әрқашан тұрақты мән ретінде жіберу керегін таңдаңыз."
         },
-        "ADD_PARAMETER": "Add Parameter",
+        "ADD_PARAMETER": "Параметр қосу",
         "PARAM_NAME": {
-          "PLACEHOLDER": "Parameter name (e.g., order_id)"
+          "PLACEHOLDER": "Параметр атауы (мысалы, order_id)"
         },
         "PARAM_SOURCE": {
           "PLACEHOLDER": "Кім толтырады"
@@ -894,29 +894,29 @@
           "JSON_PLACEHOLDER": "Тұрақты JSON мәні"
         },
         "PARAM_TYPE": {
-          "PLACEHOLDER": "Type"
+          "PLACEHOLDER": "Түрі"
         },
         "PARAM_TYPES": {
-          "STRING": "String",
-          "NUMBER": "Number",
-          "BOOLEAN": "Boolean",
-          "ARRAY": "Array",
-          "OBJECT": "Object"
+          "STRING": "Жол",
+          "NUMBER": "Сан",
+          "BOOLEAN": "Логикалық мән",
+          "ARRAY": "Массив",
+          "OBJECT": "Объект"
         },
         "PARAM_DESCRIPTION": {
-          "PLACEHOLDER": "Description of the parameter"
+          "PLACEHOLDER": "Параметр сипаттамасы"
         },
         "PARAM_REQUIRED": {
-          "LABEL": "Required"
+          "LABEL": "Міндетті"
         },
         "REQUEST_TEMPLATE": {
-          "LABEL": "Request Body Template (Optional)",
+          "LABEL": "Сұрау денесінің шаблоны (міндетті емес)",
           "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
           "HELP_TEXT": "Request template endpoint URL сияқты Liquid айнымалыларын қолдайды. Custom tools ішінде ассистенттің Context access баптауларында рұқсат етілген өрістер ғана қолжетімді."
         },
         "RESPONSE_TEMPLATE": {
-          "LABEL": "Response Template (Optional)",
-          "PLACEHOLDER": "Order {'{{'} order_id {'}}'} status: {'{{'} status {'}}'}"
+          "LABEL": "Жауап шаблоны (міндетті емес)",
+          "PLACEHOLDER": "Тапсырыс {'{{'} order_id {'}}'} мәртебесі: {'{{'} status {'}}'}"
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Параметр атауы міндетті",
@@ -926,7 +926,7 @@
           "PARAM_FIXED_VALUE_REQUIRED": "Осы параметр үшін тұрақты мән міндетті"
         }
       },
-      "UNGROUPED": "Ungrouped"
+      "UNGROUPED": "Топсыз"
     },
     "RESPONSES": {
       "HEADER": "FAQs",
