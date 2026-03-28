@@ -1024,7 +1024,8 @@
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Response Template (Optional)",
-          "PLACEHOLDER": "Order {'{{'} order_id {'}}'} status: {'{{'} status {'}}'}"
+          "PLACEHOLDER": "Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'}; {'{{'} status {'}}'} will not work",
+          "HELP_TEXT": "Response templates receive the parsed API result as response and r. Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'} instead of root-level fields like {'{{'} status {'}}'}."
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required",

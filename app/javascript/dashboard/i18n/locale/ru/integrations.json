@@ -1024,7 +1024,8 @@
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Шаблон ответа (необязательно)",
-          "PLACEHOLDER": "Заказ {'{{'} order_id {'}}'} status: {'{{'} status {'}}'}"
+          "PLACEHOLDER": "Используйте {'{{'} response.status {'}}'} или {'{{'} r.status {'}}'}; {'{{'} status {'}}'} не сработает",
+          "HELP_TEXT": "В шаблоне ответа распарсенный результат API доступен как response и r. Используйте {'{{'} response.status {'}}'} или {'{{'} r.status {'}}'} вместо корневых полей вроде {'{{'} status {'}}'}."
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Имя параметра обязательно",

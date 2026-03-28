@@ -1,5 +1,12 @@
 <script setup>
-import { reactive, computed, ref, useTemplateRef, watch } from 'vue';
+import {
+  reactive,
+  computed,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
@@ -27,8 +34,12 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel']);
 
+let cachedContextFieldOptions = null;
+let contextFieldsRequest = null;
+
 const { t } = useI18n();
-const availableContextFields = ref([]);
+const contextFieldOptions = shallowRef([]);
+const hasLoadedContextFields = ref(false);
 
 const formState = {
   uiFlags: useMapGetter('captainCustomTools/getUIFlags'),
@@ -123,8 +134,8 @@ const authTypeOptions = computed(() => [
   },
 ]);
 
-const contextFieldOptions = computed(() =>
-  availableContextFields.value
+const toContextFieldOptions = fields =>
+  fields
     .slice()
     .sort((leftField, rightField) => {
       const groupComparison = (leftField.group_name || '').localeCompare(
@@ -141,8 +152,7 @@ const contextFieldOptions = computed(() =>
       label: field.group_name
         ? `${field.group_name} - ${field.title}`
         : field.title,
-    }))
-);
+    }));
 
 const v$ = useVuelidate(validationRules, state);
 
@@ -188,13 +198,50 @@ const addParam = () => {
 };
 
 const loadContextFields = async () => {
+  if (hasLoadedContextFields.value) {
+    return;
+  }
+
+  if (cachedContextFieldOptions !== null) {
+    contextFieldOptions.value = cachedContextFieldOptions;
+    hasLoadedContextFields.value = true;
+    return;
+  }
+
+  if (!contextFieldsRequest) {
+    contextFieldsRequest = CaptainContextFieldsAPI.get()
+      .then(response => toContextFieldOptions(response.data || []))
+      .then(options => {
+        cachedContextFieldOptions = options;
+        return options;
+      })
+      .finally(() => {
+        contextFieldsRequest = null;
+      });
+  }
+
   try {
-    const response = await CaptainContextFieldsAPI.get();
-    availableContextFields.value = response.data || [];
-  } catch (error) {
-    availableContextFields.value = [];
+    contextFieldOptions.value = await contextFieldsRequest;
+  } catch {
+    contextFieldOptions.value = [];
+  } finally {
+    hasLoadedContextFields.value = true;
   }
 };
+
+const needsContextFields = computed(() =>
+  state.param_schema.some(param => param.source === 'context')
+);
+
+watch(
+  needsContextFields,
+  shouldLoadContextFields => {
+    if (shouldLoadContextFields) {
+      loadContextFields();
+    }
+  },
+  { immediate: true }
+);
 
 const handleCancel = () => emit('cancel');
 
@@ -209,8 +256,6 @@ const handleSubmit = async () => {
     param_schema: state.param_schema.map(normalizeParam),
   });
 };
-
-loadContextFields();
 </script>
 
 <template>
@@ -337,6 +382,9 @@ loadContextFields();
       :rows="4"
       class="[&_textarea]:font-mono"
     />
+    <p class="text-xs text-n-slate-11 -mt-2">
+      {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.HELP_TEXT') }}
+    </p>
 
     <div class="flex gap-3 justify-between items-center w-full">
       <Button

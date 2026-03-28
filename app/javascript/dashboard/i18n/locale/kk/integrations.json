@@ -916,7 +916,8 @@
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Жауап шаблоны (міндетті емес)",
-          "PLACEHOLDER": "Тапсырыс {'{{'} order_id {'}}'} мәртебесі: {'{{'} status {'}}'}"
+          "PLACEHOLDER": "{'{{'} response.status {'}}'} немесе {'{{'} r.status {'}}'} пайдаланыңыз; {'{{'} status {'}}'} жұмыс істемейді",
+          "HELP_TEXT": "Response template ішінде API жауабы response және r ретінде қолжетімді. {'{{'} response.status {'}}'} немесе {'{{'} r.status {'}}'} пайдаланыңыз; {'{{'} status {'}}'} сияқты түбір өрістер жұмыс істемейді."
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Параметр атауы міндетті",
