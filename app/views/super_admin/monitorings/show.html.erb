@@ -14,11 +14,14 @@
         <%= content_for(:title) %>
       </h1>
       <p class="text-sm text-slate-700 mt-2">
-        Grafana already has Loki logs and Prometheus metrics connected for this production stack.
+        Overview for the production stack with ready health checks, infrastructure metrics, important incidents, and quick links to logs and queue operations.
       </p>
     </div>
 
     <div class="flex items-center gap-3">
+      <%= link_to 'Logs', super_admin_logs_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Alerts', '/monitoring/grafana/alerting/list', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Sidekiq', sidekiq_web_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
       <%= link_to 'Open Dashboard', grafana_dashboard_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
       <%= link_to 'Open Grafana', '/monitoring/grafana/', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
     </div>

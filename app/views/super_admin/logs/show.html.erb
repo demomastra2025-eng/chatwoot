@@ -1,0 +1,39 @@
+<% content_for(:title) do %>
+  Logs
+<% end %>
+
+<%
+  grafana_logs_dashboard_url = '/monitoring/grafana/d/crafty-production-logs/crafty-production-logs?orgId=1&from=now-6h&to=now&refresh=15s'
+  grafana_embedded_logs_dashboard_url = "#{grafana_logs_dashboard_url}&kiosk=tv"
+%>
+
+<header class="main-content__header" role="banner">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="main-content__page-title" id="page-title">
+        <%= content_for(:title) %>
+      </h1>
+      <p class="text-sm text-slate-700 mt-2">
+        Ready-made Loki views for Rails, gateway, Sidekiq, workers, Evolution API, and the monitoring stack.
+      </p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <%= link_to 'Monitoring', super_admin_monitoring_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Open Logs Dashboard', grafana_logs_dashboard_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
+      <%= link_to 'Grafana Explore', '/monitoring/grafana/explore', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+    </div>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <iframe
+      src="<%= grafana_embedded_logs_dashboard_url %>"
+      title="Grafana Logs"
+      class="w-full min-h-[85vh] bg-white"
+      loading="lazy"
+      referrerpolicy="same-origin"
+    ></iframe>
+  </div>
+</section>

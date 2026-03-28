@@ -741,6 +741,7 @@ Rails.application.routes.draw do
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]
       resource :monitoring, only: [:show]
+      get 'logs', to: 'logs#show', as: :logs
 
       resource :settings, only: [:show] do
         get :refresh, on: :collection
