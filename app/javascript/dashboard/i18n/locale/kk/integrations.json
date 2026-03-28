@@ -845,7 +845,7 @@
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
-          "HELP_TEXT": "Tool параметрлерінен және агентке рұқсат етілген контекстен Liquid айнымалыларын пайдалануға болады, мысалы {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }} немесе {{ account.locale }}.",
+          "HELP_TEXT": "Tool параметрлерінен және агентке рұқсат етілген контекстен Liquid айнымалыларын пайдалануға болады, мысалы params.order_id, contact.phone_number, conversation.custom_attributes.order_id, assistant.name немесе account.locale.",
           "ERROR": "Жарамды URL міндетті"
         },
         "AUTH_TYPE": {

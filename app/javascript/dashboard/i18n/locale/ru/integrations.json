@@ -953,7 +953,7 @@
         "ENDPOINT_URL": {
           "LABEL": "URL endpoint",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
-          "HELP_TEXT": "Можно использовать Liquid-переменные из параметров инструмента и разрешённого агенту контекста, например {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }} или {{ account.locale }}.",
+          "HELP_TEXT": "Можно использовать Liquid-переменные из параметров инструмента и разрешённого агенту контекста, например params.order_id, contact.phone_number, conversation.custom_attributes.order_id, assistant.name или account.locale.",
           "ERROR": "Требуется корректный URL"
         },
         "AUTH_TYPE": {

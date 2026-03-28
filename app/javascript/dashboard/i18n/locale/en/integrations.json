@@ -953,7 +953,7 @@
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
-          "HELP_TEXT": "You can use Liquid variables from tool parameters and the agent's allowed context, for example {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }}, or {{ account.locale }}.",
+          "HELP_TEXT": "You can use Liquid variables from tool parameters and the agent's allowed context, for example params.order_id, contact.phone_number, conversation.custom_attributes.order_id, assistant.name, or account.locale.",
           "ERROR": "Valid URL is required"
         },
         "AUTH_TYPE": {
