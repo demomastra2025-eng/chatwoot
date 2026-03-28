@@ -102,6 +102,8 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
 
   def fb_object
     @user_access_token = long_lived_token(params[:omniauth_token])
+    return if @user_access_token.blank?
+
     Koala::Facebook::API.new(@user_access_token)
   end
 

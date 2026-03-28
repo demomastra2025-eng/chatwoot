@@ -187,7 +187,8 @@ export default {
       } catch (error) {
         this.hasError = true;
         this.errorStateMessage =
-          error?.response?.data?.error || this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH');
+          error?.response?.data?.error ||
+          this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH');
         this.errorStateDescription = '';
         Sentry.captureException(error);
       }

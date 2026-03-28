@@ -91,6 +91,18 @@ RSpec.describe 'Callbacks API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include(facebook_page.page_id.to_s)
       end
+
+      it 'returns a provider error when token exchange fails' do
+        allow(koala_oauth).to receive(:exchange_access_token_info).and_raise(StandardError, 'token exchange failed')
+        expect(Koala::Facebook::API).not_to receive(:new).with(nil)
+
+        post "/api/v1/accounts/#{account.id}/callbacks/facebook_pages",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_FETCH_ERROR_MESSAGE)
+      end
     end
   end
 
@@ -128,6 +140,20 @@ RSpec.describe 'Callbacks API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
+      end
+
+      it 'returns a provider error when token exchange fails' do
+        allow(koala_oauth).to receive(:exchange_access_token_info).and_raise(StandardError, 'token exchange failed')
+        expect(Koala::Facebook::API).not_to receive(:new).with(nil)
+        params = { inbox_id: inbox.id }
+
+        post "/api/v1/accounts/#{account.id}/callbacks/reauthorize_page",
+             headers: admin.create_new_auth_token,
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq(Api::V1::Accounts::CallbacksController::FACEBOOK_FETCH_ERROR_MESSAGE)
       end
     end
   end
