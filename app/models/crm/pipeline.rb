@@ -40,7 +40,7 @@ class Crm::Pipeline < ApplicationRecord
   before_validation :normalize_code
   before_validation :assign_position, on: :create
   before_validation :disable_default_when_inactive
-  after_commit :clear_other_defaults, on: %i[create update], if: :default?
+  before_save :clear_other_defaults, if: :reassigning_default?
 
   private
 
@@ -51,13 +51,17 @@ class Crm::Pipeline < ApplicationRecord
   end
 
   def clear_other_defaults
-    account.crm_pipelines.where.not(id: id).find_each do |pipeline|
-      pipeline.update!(default: false)
-    end
+    account.crm_pipelines.where.not(id: id).where(default: true).update_all(default: false, updated_at: Time.current)
   end
 
   def disable_default_when_inactive
     self.default = false unless active?
+  end
+
+  def reassigning_default?
+    return false unless default? && active? && account.present?
+
+    new_record? || will_save_change_to_default? || will_save_change_to_active?
   end
 
   def normalize_code

@@ -41,6 +41,7 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     get path, headers: agent.create_new_auth_token, as: :json
 
     expect(response).to have_http_status(:unauthorized)
+    expect(account.crm_pipelines).to be_empty
   end
 
   it 'creates a pipeline for administrators' do
@@ -52,6 +53,37 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'code')).to eq('enterprise_sales')
     expect(account.crm_pipelines.where(code: 'enterprise_sales')).to exist
+  end
+
+  it 'switches the default pipeline when creating another default pipeline' do
+    get path, headers: headers, as: :json
+    original_default = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+
+    post path,
+         params: { name: 'Enterprise Sales', code: 'enterprise_sales', default: true },
+         headers: headers,
+         as: :json
+
+    new_default = account.crm_pipelines.find_by!(code: 'enterprise_sales')
+
+    expect(response).to have_http_status(:created)
+    expect(new_default.default).to eq(true)
+    expect(original_default.reload.default).to eq(false)
+  end
+
+  it 'switches the default pipeline when updating an existing pipeline' do
+    get path, headers: headers, as: :json
+    original_default = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    pipeline = create(:crm_pipeline, account: account, code: 'enterprise_sales', default: false, active: true)
+
+    patch "#{path}/#{pipeline.id}",
+          params: { default: true },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(pipeline.reload.default).to eq(true)
+    expect(original_default.reload.default).to eq(false)
   end
 
   it 'creates a pipeline with a russian name and auto-generated code' do

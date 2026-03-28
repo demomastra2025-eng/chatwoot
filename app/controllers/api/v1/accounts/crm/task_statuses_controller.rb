@@ -1,10 +1,10 @@
 class Api::V1::Accounts::Crm::TaskStatusesController < Api::V1::Accounts::Crm::BaseController
   before_action :ensure_crm_tasks_enabled!
-  before_action :bootstrap_defaults!, only: [:index]
   before_action :set_task_status, only: [:update, :destroy]
 
   def index
     authorize ::Crm::TaskStatus
+    bootstrap_defaults!
 
     task_statuses = policy_scope(::Crm::TaskStatus).ordered
     render_payload(

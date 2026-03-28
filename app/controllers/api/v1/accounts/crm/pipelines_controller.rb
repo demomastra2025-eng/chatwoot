@@ -1,10 +1,10 @@
 class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::BaseController
   before_action :ensure_crm_deals_enabled!
-  before_action :bootstrap_defaults!, only: [:index]
   before_action :set_pipeline, only: [:show, :update, :destroy]
 
   def index
     authorize ::Crm::Pipeline
+    bootstrap_defaults!
 
     pipelines = policy_scope(::Crm::Pipeline).includes(:stages).ordered
     render_payload(

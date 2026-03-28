@@ -71,7 +71,7 @@ class Crm::TaskStatus < ApplicationRecord
   before_validation :normalize_color
   before_validation :assign_position, on: :create
   before_validation :disable_default_unless_open
-  after_commit :clear_other_defaults, on: %i[create update], if: :default?
+  before_save :clear_other_defaults, if: :reassigning_default?
 
   private
 
@@ -82,13 +82,17 @@ class Crm::TaskStatus < ApplicationRecord
   end
 
   def clear_other_defaults
-    account.crm_task_statuses.where.not(id: id).find_each do |task_status|
-      task_status.update!(default: false)
-    end
+    account.crm_task_statuses.where.not(id: id).where(default: true).update_all(default: false, updated_at: Time.current)
   end
 
   def disable_default_unless_open
     self.default = false unless category_open? && active?
+  end
+
+  def reassigning_default?
+    return false unless default? && category_open? && active? && account.present?
+
+    new_record? || will_save_change_to_default? || will_save_change_to_category? || will_save_change_to_active?
   end
 
   def normalize_code

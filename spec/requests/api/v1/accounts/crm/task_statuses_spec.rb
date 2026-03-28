@@ -29,7 +29,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Waiting for client',
            code: 'waiting_for_client',
            category: 'in_progress',
-           color: '#3B82F6',
+           color: '#3B82F6'
          },
          headers: headers,
          as: :json
@@ -40,12 +40,58 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     expect(response.parsed_body.dig('payload', 'color')).to eq('#3B82F6')
   end
 
+  it 'switches the default status when creating another open default status' do
+    get path, headers: headers, as: :json
+    original_default = account.crm_task_statuses.find_by!(code: 'todo')
+
+    post path,
+         params: {
+           name: 'Waiting for client',
+           code: 'waiting_for_client',
+           category: 'open',
+           color: '#123456',
+           default: true
+         },
+         headers: headers,
+         as: :json
+
+    new_default = account.crm_task_statuses.find_by!(code: 'waiting_for_client')
+
+    expect(response).to have_http_status(:created)
+    expect(new_default.default).to eq(true)
+    expect(original_default.reload.default).to eq(false)
+  end
+
+  it 'switches the default status when updating an existing open status' do
+    get path, headers: headers, as: :json
+    original_default = account.crm_task_statuses.find_by!(code: 'todo')
+    task_status = create(
+      :crm_task_status,
+      account: account,
+      name: 'Waiting for client',
+      code: 'waiting_for_client',
+      category: 'open',
+      color: '#123456',
+      default: false,
+      active: true
+    )
+
+    patch "#{path}/#{task_status.id}",
+          params: { default: true },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(task_status.reload.default).to eq(true)
+    expect(original_default.reload.default).to eq(false)
+  end
+
   it 'creates a task status with a russian name and auto-generated code' do
     post path,
          params: {
            name: 'В работе',
            category: 'in_progress',
-           color: '#3B82F6',
+           color: '#3B82F6'
          },
          headers: headers,
          as: :json
@@ -61,7 +107,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Paused',
            category: 'in_progress',
            color: '#3B82F6',
-           active: false,
+           active: false
          },
          headers: headers,
          as: :json
@@ -93,5 +139,6 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     get path, headers: agent.create_new_auth_token, as: :json
 
     expect(response).to have_http_status(:unauthorized)
+    expect(account.crm_task_statuses).to be_empty
   end
 end
