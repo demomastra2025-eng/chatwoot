@@ -406,12 +406,13 @@ export function stripUnsupportedFormatting(content, schema) {
  * - canned response
  * - variable
  * - emoji
+ * - field
  */
 
 /**
  * Centralized node creation function that handles the creation of different types of nodes based on the specified type.
  * @param {Object} editorView - The editor view instance.
- * @param {string} nodeType - The type of node to create ('mention', 'cannedResponse', 'variable', 'emoji').
+ * @param {string} nodeType - The type of node to create ('mention', 'cannedResponse', 'variable', 'emoji', 'field').
  * @param {Object|string} content - The content needed to create the node, which varies based on node type.
  * @returns {Object|null} - The created ProseMirror node or null if the type is not supported.
  */
@@ -451,6 +452,14 @@ const createNode = (editorView, nodeType, content) => {
         name: content.title,
       });
     }
+    case 'field': {
+      const label = content.title?.startsWith('$')
+        ? content.title
+        : `$${content.title}`;
+      return new MessageMarkdownTransformer(state.schema).parse(
+        `[${label}](field://${content.id})`
+      );
+    }
     default:
       return null;
   }
@@ -484,6 +493,11 @@ const nodeCreators = {
   }),
   emoji: (editorView, content, from, to) => ({
     node: createNode(editorView, 'emoji', content),
+    from,
+    to,
+  }),
+  field: (editorView, content, from, to) => ({
+    node: createNode(editorView, 'field', content),
     from,
     to,
   }),

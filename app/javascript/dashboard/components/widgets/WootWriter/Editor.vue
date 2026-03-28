@@ -16,6 +16,7 @@ import KeyboardEmojiSelector from './keyboardEmojiSelector.vue';
 import TagAgents from '../conversation/TagAgents.vue';
 import VariableList from '../conversation/VariableList.vue';
 import TagTools from '../conversation/TagTools.vue';
+import TagFields from '../conversation/TagFields.vue';
 import CopilotMenuBar from './CopilotMenuBar.vue';
 
 import { useEmitter } from 'dashboard/composables/emitter';
@@ -44,10 +45,7 @@ import {
   EditorState,
   Selection,
 } from '@chatwoot/prosemirror-schema';
-import {
-  suggestionsPlugin,
-  triggerCharacters,
-} from '@chatwoot/prosemirror-schema/src/mentions/plugin';
+import { suggestionsPlugin } from '@chatwoot/prosemirror-schema/src/mentions/plugin';
 
 import {
   appendSignature,
@@ -83,6 +81,9 @@ const props = defineProps({
   enableVariables: { type: Boolean, default: false },
   enableCannedResponses: { type: Boolean, default: true },
   enableCaptainTools: { type: Boolean, default: false },
+  enableCaptainFields: { type: Boolean, default: false },
+  captainContextAssistantId: { type: Number, default: null },
+  captainContextAccess: { type: Object, default: null },
   variables: { type: Object, default: () => ({}) },
   signature: { type: String, default: '' },
   // allowSignature is a kill switch, ensuring no signature methods
@@ -184,8 +185,10 @@ const showCannedMenu = ref(false);
 const showVariables = ref(false);
 const showEmojiMenu = ref(false);
 const showToolsMenu = ref(false);
+const showFieldsMenu = ref(false);
 const mentionSearchKey = ref('');
 const toolSearchKey = ref('');
+const fieldSearchKey = ref('');
 const cannedSearchTerm = ref('');
 const variableSearchTerm = ref('');
 const emojiSearchTerm = ref('');
@@ -236,6 +239,57 @@ const shouldShowCannedResponses = computed(() => {
   );
 });
 
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const escapeForCharacterClass = value => value.replace(/[-\\\]^]/g, '\\$&');
+
+const createTriggerMatcher = (trigger, minChars = 0) => {
+  const escapedTrigger = escapeRegExp(trigger);
+  const excludedChars = Array.from(new Set(trigger.split('')))
+    .map(char => escapeForCharacterClass(char))
+    .join('');
+  const regexp = new RegExp(
+    `(?:^)?${escapedTrigger}[^\\s${excludedChars}]{${minChars},}`,
+    'g'
+  );
+
+  return $position => {
+    const textFrom = $position.before();
+    const textTo = $position.end();
+    const text = $position.doc.textBetween(textFrom, textTo, '\0', '\0');
+
+    regexp.lastIndex = 0;
+    let match = regexp.exec(text);
+
+    // Guard against zero-length regex matches for special trigger characters
+    // such as "$", which otherwise can lock the editor.
+    while (match) {
+      const prefix = match.input.slice(
+        Math.max(0, match.index - 1),
+        match.index
+      );
+      if (/^[\s\0]?$/.test(prefix)) {
+        const from = match.index + $position.start();
+        const to = from + match[0].length;
+
+        if (from < $position.pos && to >= $position.pos) {
+          const fullMatch = match[0];
+          const trimmedText = fullMatch ? fullMatch.slice(trigger.length) : '';
+          return { range: { from, to }, text: trimmedText };
+        }
+      }
+
+      if (match[0].length === 0) {
+        regexp.lastIndex += 1;
+      }
+
+      match = regexp.exec(text);
+    }
+
+    return null;
+  };
+};
+
 function createSuggestionPlugin({
   trigger,
   minChars = 0,
@@ -244,7 +298,7 @@ function createSuggestionPlugin({
   isAllowed = () => true,
 }) {
   return suggestionsPlugin({
-    matcher: triggerCharacters(trigger, minChars),
+    matcher: createTriggerMatcher(trigger, minChars),
     suggestionClass: '',
     onEnter: args => {
       if (!isAllowed()) return false;
@@ -288,6 +342,12 @@ const plugins = computed(() => {
       showMenu: showUserMentions,
       searchTerm: mentionSearchKey,
       isAllowed: () => props.isPrivate || !props.enableCaptainTools,
+    }),
+    createSuggestionPlugin({
+      trigger: '$',
+      showMenu: showFieldsMenu,
+      searchTerm: fieldSearchKey,
+      isAllowed: () => props.enableCaptainFields,
     }),
     createSuggestionPlugin({
       trigger: '/',
@@ -661,8 +721,8 @@ function insertContentIntoEditor(content, defaultFrom = 0) {
 }
 
 /**
- * Inserts special content (mention, canned response, variable, emoji) into the editor.
- * @param {string} type - The type of special content to insert. Possible values: 'mention', 'canned_response', 'variable', 'emoji'.
+ * Inserts special content (mention, canned response, variable, emoji, field) into the editor.
+ * @param {string} type - The type of special content to insert. Possible values: 'mention', 'canned_response', 'variable', 'emoji', 'field'.
  * @param {Object|string} content - The content to insert, depending on the type.
  */
 function insertSpecialContent(type, content) {
@@ -687,10 +747,13 @@ function insertSpecialContent(type, content) {
     cannedResponse: CONVERSATION_EVENTS.INSERTED_A_CANNED_RESPONSE,
     variable: CONVERSATION_EVENTS.INSERTED_A_VARIABLE,
     emoji: CONVERSATION_EVENTS.INSERTED_AN_EMOJI,
+    field: CONVERSATION_EVENTS.INSERTED_A_FIELD,
     tool: CONVERSATION_EVENTS.INSERTED_A_TOOL,
   };
 
-  useTrack(event_map[type]);
+  if (event_map[type]) {
+    useTrack(event_map[type]);
+  }
 }
 
 function handleLineBreakWhenCmdAndEnterToSendEnabled(event) {
@@ -771,8 +834,10 @@ watch(
   () => {
     showCannedMenu.value = false;
     showEmojiMenu.value = false;
+    showFieldsMenu.value = false;
     showVariables.value = false;
     cannedSearchTerm.value = '';
+    fieldSearchKey.value = '';
     reloadState(props.modelValue);
   }
 );
@@ -869,6 +934,13 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       v-if="showToolsMenu"
       :search-key="toolSearchKey"
       @select-tool="content => insertSpecialContent('tool', content)"
+    />
+    <TagFields
+      v-if="showFieldsMenu"
+      :search-key="fieldSearchKey"
+      :assistant-id="captainContextAssistantId"
+      :context-access="captainContextAccess"
+      @select-field="content => insertSpecialContent('field', content)"
     />
     <CopilotMenuBar
       v-if="showSelectionMenu"

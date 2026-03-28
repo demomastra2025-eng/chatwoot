@@ -10,6 +10,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import ContextAccessSettings from './ContextAccessSettings.vue';
 
 const props = defineProps({
   mode: {
@@ -41,6 +42,7 @@ const initialState = {
   autoReplyOnLastIncoming: false,
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
+  contextAccess: {},
 };
 
 const state = reactive({ ...initialState });
@@ -90,7 +92,10 @@ const prepareAssistantDetails = () => ({
     message_collapse_window_seconds: normalizeNonNegativeInteger(
       state.messageCollapseWindowSeconds
     ),
-    history_message_limit: normalizeNonNegativeInteger(state.historyMessageLimit),
+    history_message_limit: normalizeNonNegativeInteger(
+      state.historyMessageLimit
+    ),
+    context_access: state.contextAccess,
   },
 });
 
@@ -120,6 +125,7 @@ const updateStateFromAssistant = assistant => {
       config.message_collapse_window_seconds || 0
     ),
     historyMessageLimit: Number(config.history_message_limit || 0),
+    contextAccess: config.context_access || {},
   });
 };
 
@@ -150,6 +156,8 @@ watch(
       :placeholder="t('CAPTAIN.ASSISTANTS.FORM.DESCRIPTION.PLACEHOLDER')"
       :message="formErrors.description"
       :message-type="formErrors.description ? 'error' : 'info'"
+      enable-captain-fields
+      :captain-context-access="state.contextAccess"
     />
 
     <Input
@@ -187,7 +195,9 @@ watch(
       </label>
     </fieldset>
 
-    <div class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4">
+    <div
+      class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4"
+    >
       <div class="flex-1 min-w-0">
         <h4 class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
@@ -241,6 +251,8 @@ watch(
         message-type="info"
       />
     </div>
+
+    <ContextAccessSettings v-model="state.contextAccess" />
 
     <div class="flex items-center justify-between w-full gap-3">
       <Button

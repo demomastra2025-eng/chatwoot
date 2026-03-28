@@ -34,6 +34,18 @@ class Captain::CustomTool < ApplicationRecord
   NAME_PREFIX = 'custom'.freeze
   NAME_SEPARATOR = '_'.freeze
   DEFAULT_SLUG_BODY = 'tool'.freeze
+  PARAM_SOURCE_AGENT = 'agent'.freeze
+  PARAM_SOURCE_CONTEXT = 'context'.freeze
+  PARAM_SOURCE_FIXED = 'fixed'.freeze
+  PARAM_SOURCES = [
+    PARAM_SOURCE_AGENT,
+    PARAM_SOURCE_CONTEXT,
+    PARAM_SOURCE_FIXED
+  ].freeze
+  HTTP_METHODS = %w[GET POST PUT PATCH DELETE HEAD OPTIONS].freeze
+  REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
+  PARAM_TYPES = %w[string number boolean array object].freeze
+  PARAM_NAME_FORMAT = /\A[a-zA-Z_][a-zA-Z0-9_]*\z/
   CYRILLIC_TRANSLITERATION_MAP = {
     'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e',
     'ё' => 'yo', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', 'к' => 'k',
@@ -52,7 +64,10 @@ class Captain::CustomTool < ApplicationRecord
         'name': { 'type': 'string' },
         'type': { 'type': 'string' },
         'description': { 'type': 'string' },
-        'required': { 'type': 'boolean' }
+        'required': { 'type': 'boolean' },
+        'source': { 'type': 'string' },
+        'context_path': { 'type': 'string' },
+        'fixed_value': {}
       },
       'required': %w[name type description],
       'additionalProperties': false
@@ -61,11 +76,12 @@ class Captain::CustomTool < ApplicationRecord
 
   belongs_to :account
 
-  enum :http_method, %w[GET POST].index_by(&:itself), validate: true
+  enum :http_method, HTTP_METHODS.index_by(&:itself), validate: true
   enum :auth_type, %w[none bearer basic api_key].index_by(&:itself), default: :none, validate: true, prefix: :auth
 
   before_validation :normalize_group_name
   before_validation :generate_slug
+  before_validation :normalize_param_schema
 
   validates :slug, presence: true, uniqueness: { scope: :account_id }
   validates :title, presence: true
@@ -74,8 +90,63 @@ class Captain::CustomTool < ApplicationRecord
   validates_with JsonSchemaValidator,
                  schema: PARAM_SCHEMA_VALIDATION,
                  attribute_resolver: ->(record) { record.param_schema }
+  validate :validate_param_schema_sources
 
   scope :enabled, -> { where(enabled: true) }
+
+  class << self
+    def cast_param_value(type, value)
+      return nil if value.nil?
+
+      case type
+      when 'string'
+        value.is_a?(String) ? value : stringify_param_value(value)
+      when 'number'
+        cast_number_param_value(value)
+      when 'boolean'
+        ActiveModel::Type::Boolean.new.cast(value)
+      when 'array'
+        cast_json_param_value(value, Array, 'array')
+      when 'object'
+        cast_json_param_value(value, Hash, 'object')
+      else
+        value
+      end
+    end
+
+    private
+
+    def cast_number_param_value(value)
+      return value if value.is_a?(Numeric)
+
+      numeric_value = Float(value)
+      numeric_value.to_i == numeric_value ? numeric_value.to_i : numeric_value
+    rescue ArgumentError, TypeError
+      raise ArgumentError, 'must be a valid number'
+    end
+
+    def cast_json_param_value(value, expected_class, type_name)
+      return value if value.is_a?(expected_class)
+
+      parsed_value = JSON.parse(value.to_s)
+      return parsed_value if parsed_value.is_a?(expected_class)
+
+      raise ArgumentError, "must be valid JSON #{type_name}"
+    rescue JSON::ParserError
+      raise ArgumentError, "must be valid JSON #{type_name}"
+    end
+
+    def stringify_param_value(value)
+      case value
+      when Hash, Array
+        JSON.generate(value)
+      else
+        value.to_s
+      end
+    rescue JSON::GeneratorError
+      value.to_s
+    end
+  end
 
   def to_tool_metadata
     {
@@ -85,6 +156,33 @@ class Captain::CustomTool < ApplicationRecord
       group_name: group_name,
       custom: true
     }
+  end
+
+  def parameter_definitions
+    Array(param_schema).map { |param_definition| normalize_param_definition(param_definition) }
+  end
+
+  def agent_parameter_definitions
+    parameter_definitions.select { |param_definition| param_definition['source'] == PARAM_SOURCE_AGENT }
+  end
+
+  def normalize_param_definition(param_definition)
+    raw_definition = (param_definition || {}).to_h.deep_stringify_keys
+    normalized_definition = raw_definition.slice(
+      'name', 'type', 'description', 'required', 'source', 'context_path', 'fixed_value'
+    )
+    normalized_definition['source'] = normalize_param_source(raw_definition['source'])
+    normalized_definition['context_path'] = normalize_context_path(raw_definition['context_path'])
+
+    if normalized_definition['source'] != PARAM_SOURCE_CONTEXT
+      normalized_definition.delete('context_path')
+    end
+
+    if normalized_definition['source'] != PARAM_SOURCE_FIXED
+      normalized_definition.delete('fixed_value')
+    end
+
+    normalized_definition
   end
 
   private
@@ -134,5 +232,94 @@ class Captain::CustomTool < ApplicationRecord
 
   def slug_exists?(candidate)
     self.class.exists?(account_id: account_id, slug: candidate)
+  end
+
+  def normalize_param_schema
+    self.param_schema = parameter_definitions
+  end
+
+  def validate_param_schema_sources
+    available_field_ids = account.present? ? Captain::ContextFields.field_ids_for(account) : []
+    parameter_names = []
+
+    parameter_definitions.each do |param_definition|
+      validate_param_definition_shape(param_definition, parameter_names)
+      validate_param_source(param_definition, available_field_ids)
+      validate_fixed_param_value(param_definition)
+    end
+  end
+
+  def validate_param_definition_shape(param_definition, parameter_names)
+    name = param_definition['name'].to_s
+    type = param_definition['type'].to_s
+    description = param_definition['description'].to_s
+
+    if name.blank?
+      errors.add(:param_schema, 'parameter names cannot be blank')
+      return
+    end
+
+    unless name.match?(PARAM_NAME_FORMAT)
+      errors.add(:param_schema, "parameter #{name} must use only letters, numbers, and underscores")
+    end
+
+    if parameter_names.include?(name)
+      errors.add(:param_schema, "parameter #{name} is duplicated")
+    else
+      parameter_names << name
+    end
+
+    errors.add(:param_schema, "parameter #{name} has an invalid type") unless PARAM_TYPES.include?(type)
+    errors.add(:param_schema, "parameter #{name} must define a description") if description.blank?
+  end
+
+  def validate_param_source(param_definition, available_field_ids)
+    source = param_definition['source']
+
+    unless PARAM_SOURCES.include?(source)
+      errors.add(:param_schema, "parameter #{param_definition['name']} has an invalid source")
+      return
+    end
+
+    return unless source == PARAM_SOURCE_CONTEXT
+
+    context_path = param_definition['context_path']
+    if context_path.blank?
+      errors.add(:param_schema, "parameter #{param_definition['name']} must define a context field")
+      return
+    end
+
+    return if available_field_ids.include?(context_path)
+
+    errors.add(:param_schema, "parameter #{param_definition['name']} references an unknown context field")
+  end
+
+  def validate_fixed_param_value(param_definition)
+    return unless param_definition['source'] == PARAM_SOURCE_FIXED
+
+    if fixed_param_value_blank?(param_definition['fixed_value'])
+      errors.add(:param_schema, "parameter #{param_definition['name']} must define a fixed value")
+      return
+    end
+
+    self.class.cast_param_value(param_definition['type'], param_definition['fixed_value'])
+  rescue ArgumentError => e
+    errors.add(:param_schema, "parameter #{param_definition['name']} #{e.message}")
+  end
+
+  def fixed_param_value_blank?(value)
+    return true if value.nil?
+    return value.empty? if value.respond_to?(:empty?)
+
+    false
+  end
+
+  def normalize_param_source(source)
+    normalized_source = source.to_s.strip.presence
+    normalized_source || PARAM_SOURCE_AGENT
+  end
+
+  def normalize_context_path(context_path)
+    context_path.to_s.gsub(/\\(.)/, '\1').presence
   end
 end

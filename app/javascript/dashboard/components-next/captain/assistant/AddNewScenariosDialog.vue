@@ -11,6 +11,13 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 
+const props = defineProps({
+  assistantId: {
+    type: Number,
+    default: null,
+  },
+});
+
 const emit = defineEmits(['add']);
 
 const { t } = useI18n();
@@ -133,6 +140,8 @@ const onClickCancel = () => {
           :message-type="instructionError ? 'error' : 'info'"
           :show-character-count="false"
           enable-captain-tools
+          enable-captain-fields
+          :captain-context-assistant-id="props.assistantId"
         />
       </div>
 

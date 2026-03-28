@@ -49,6 +49,15 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @tools = assistant.available_agent_tools
   end
 
+  def context_fields
+    assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
+    allowed_ids = assistant.allowed_context_field_ids
+
+    @context_fields = assistant.available_context_fields.map do |field|
+      field.merge(selected: allowed_ids.include?(field[:id]))
+    end
+  end
+
   private
 
   def set_assistant
@@ -74,6 +83,13 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     permitted[:response_guidelines] = params[:assistant][:response_guidelines] if params[:assistant].key?(:response_guidelines)
 
     permitted[:guardrails] = params[:assistant][:guardrails] if params[:assistant].key?(:guardrails)
+
+    assistant_config = params.dig(:assistant, :config)
+    if assistant_config.respond_to?(:key?) && assistant_config.key?(:context_access)
+      context_access = assistant_config[:context_access]
+      permitted[:config] ||= {}
+      permitted[:config][:context_access] = context_access.respond_to?(:permit!) ? context_access.permit!.to_h : context_access
+    end
 
     permitted
   end

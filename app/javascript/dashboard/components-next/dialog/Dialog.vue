@@ -58,6 +58,10 @@ const props = defineProps({
     default: 'center',
     validator: value => ['center', 'top'].includes(value),
   },
+  renderOnOpenOnly: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['confirm', 'close']);
@@ -87,14 +91,25 @@ const positionClass = computed(() =>
 );
 
 const open = () => {
+  if (isOpen.value) {
+    return;
+  }
+
   isOpen.value = true;
   dialogRef.value?.showModal();
 };
 
 const close = () => {
-  emit('close');
-  dialogRef.value?.close();
+  if (!isOpen.value) {
+    return;
+  }
+
   isOpen.value = false;
+  emit('close');
+
+  if (dialogRef.value?.open) {
+    dialogRef.value.close();
+  }
 };
 
 // Only close if the close event originated from this dialog,
@@ -147,7 +162,7 @@ defineExpose({ open, close });
               </p>
             </slot>
           </div>
-          <slot v-if="isOpen" />
+          <slot v-if="isOpen || !renderOnOpenOnly" />
           <!-- Dialog content will be injected here -->
           <slot name="footer">
             <div

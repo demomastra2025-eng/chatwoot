@@ -227,6 +227,8 @@ const addAllExample = () => {
             <template #default-actions>
               <AddNewRulesDialog
                 v-model="newDialogRule"
+                enable-captain-fields
+                :captain-context-assistant-id="assistantId"
                 :placeholder="
                   t('CAPTAIN.ASSISTANTS.GUARDRAILS.ADD.NEW.PLACEHOLDER')
                 "
@@ -278,6 +280,8 @@ const addAllExample = () => {
             :id="guardrail.id"
             :key="guardrail.id"
             :content="guardrail.content"
+            enable-captain-fields
+            :captain-context-assistant-id="assistantId"
             :is-selected="bulkSelectedIds.has(guardrail.id)"
             :selectable="
               hoveredCard === guardrail.id || bulkSelectedIds.size > 0
@@ -290,6 +294,8 @@ const addAllExample = () => {
         </div>
         <AddNewRulesInput
           v-model="newInlineRule"
+          enable-captain-fields
+          :captain-context-assistant-id="assistantId"
           :placeholder="
             t('CAPTAIN.ASSISTANTS.GUARDRAILS.ADD.SUGGESTED.PLACEHOLDER')
           "

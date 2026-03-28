@@ -135,6 +135,8 @@ watch(
       :message="formErrors.handoffMessage"
       :message-type="formErrors.handoffMessage ? 'error' : 'info'"
       class="z-0"
+      enable-captain-fields
+      :captain-context-assistant-id="assistant.id"
     />
 
     <Editor
@@ -144,6 +146,8 @@ watch(
       :message="formErrors.resolutionMessage"
       :message-type="formErrors.resolutionMessage ? 'error' : 'info'"
       class="z-0"
+      enable-captain-fields
+      :captain-context-assistant-id="assistant.id"
     />
 
     <Editor
@@ -155,6 +159,8 @@ watch(
       :max-length="20000"
       :message-type="formErrors.instructions ? 'error' : 'info'"
       class="z-0"
+      enable-captain-fields
+      :captain-context-assistant-id="assistant.id"
     />
 
     <div class="flex flex-col gap-2">
@@ -177,7 +183,9 @@ watch(
       </p>
     </div>
 
-    <div class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4">
+    <div
+      class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4"
+    >
       <div class="flex-1 min-w-0">
         <h4 class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}

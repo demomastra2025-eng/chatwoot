@@ -11,6 +11,10 @@ class Captain::AssistantPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def context_fields?
+    update?
+  end
+
   def create?
     @account_user.administrator?
   end

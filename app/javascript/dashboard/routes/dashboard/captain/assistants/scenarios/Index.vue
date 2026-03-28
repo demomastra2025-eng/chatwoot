@@ -31,7 +31,7 @@ const scenarios = useMapGetter('captainScenarios/getRecords');
 const searchQuery = ref('');
 
 const LINK_INSTRUCTION_CLASS =
-  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a:not([href^="tool://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
+  '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a:not([href^="tool://"]):not([href^="field://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
 
 const renderInstruction = instruction => () =>
   h('span', {
@@ -271,7 +271,10 @@ onMounted(() => {
             @bulk-delete="bulkDeleteScenarios"
           >
             <template #default-actions>
-              <AddNewScenariosDialog @add="addScenario" />
+              <AddNewScenariosDialog
+                :assistant-id="assistantId"
+                @add="addScenario"
+              />
             </template>
           </BulkSelectBar>
           <div
@@ -305,6 +308,7 @@ onMounted(() => {
             :description="scenario.description"
             :instruction="scenario.instruction"
             :tools="scenario.tools"
+            :assistant-id="assistantId"
             :is-selected="bulkSelectedIds.has(scenario.id)"
             :selectable="
               hoveredCard === scenario.id || bulkSelectedIds.size > 0

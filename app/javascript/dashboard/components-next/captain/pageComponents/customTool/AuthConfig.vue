@@ -1,9 +1,9 @@
 <script setup>
-import { defineModel, watch } from 'vue';
+import { defineModel } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Input from 'dashboard/components-next/input/Input.vue';
 
-const props = defineProps({
+defineProps({
   authType: {
     type: String,
     required: true,
@@ -17,13 +17,6 @@ const authConfig = defineModel('authConfig', {
   type: Object,
   default: () => ({}),
 });
-
-watch(
-  () => props.authType,
-  () => {
-    authConfig.value = {};
-  }
-);
 </script>
 
 <template>

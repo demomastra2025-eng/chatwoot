@@ -63,6 +63,81 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    {
+      'PUT' => {
+        request_method: :put,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"status": "{{ status }}"}',
+        params: { status: 'shipped' },
+        expected_body: '{"status": "shipped"}'
+      },
+      'PATCH' => {
+        request_method: :patch,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"status": "{{ status }}"}',
+        params: { status: 'delivered' },
+        expected_body: '{"status": "delivered"}'
+      },
+      'DELETE' => {
+        request_method: :delete,
+        endpoint_url: 'https://example.com/orders/123',
+        request_template: '{"reason": "{{ reason }}"}',
+        params: { reason: 'duplicate' },
+        expected_body: '{"reason": "duplicate"}'
+      },
+      'OPTIONS' => {
+        request_method: :options,
+        endpoint_url: 'https://example.com/orders',
+        request_template: '{"probe": "{{ probe }}"}',
+        params: { probe: 'allowed_methods' },
+        expected_body: '{"probe": "allowed_methods"}'
+      }
+    }.each do |http_method, config|
+      context "with #{http_method} request" do
+        before do
+          custom_tool.update!(
+            http_method: http_method,
+            endpoint_url: config[:endpoint_url],
+            request_template: config[:request_template],
+            response_template: nil
+          )
+          stub_request(config[:request_method], config[:endpoint_url])
+            .with(
+              body: config[:expected_body],
+              headers: { 'Content-Type' => 'application/json' }
+            )
+            .to_return(status: 200, body: '{"ok": true}')
+        end
+
+        it "executes #{http_method} request with rendered body" do
+          result = tool.perform(tool_context, **config[:params])
+
+          expect(result).to eq('{"ok": true}')
+          expect(WebMock).to have_requested(config[:request_method], config[:endpoint_url])
+            .with(body: config[:expected_body])
+        end
+      end
+    end
+
+    context 'with HEAD request' do
+      before do
+        custom_tool.update!(
+          http_method: 'HEAD',
+          endpoint_url: 'https://example.com/orders/123',
+          response_template: nil
+        )
+        stub_request(:head, 'https://example.com/orders/123')
+          .to_return(status: 200, body: '')
+      end
+
+      it 'executes HEAD request without a response body' do
+        result = tool.perform(tool_context)
+
+        expect(result).to eq('')
+        expect(WebMock).to have_requested(:head, 'https://example.com/orders/123')
+      end
+    end
+
     context 'with template variables in URL' do
       before do
         custom_tool.update!(
@@ -78,6 +153,135 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         expect(result).to eq('{"order_id": "456"}')
         expect(WebMock).to have_requested(:get, 'https://example.com/orders/456')
+      end
+    end
+
+    context 'with filtered captain context variables' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 account_id: account.id,
+                                 assistant_id: assistant.id,
+                                 prompt_context: {
+                                   contact: {
+                                     phone_number: '+1234567890'
+                                   },
+                                   conversation: {
+                                     custom_attributes: {
+                                       order_id: 'ORD-42'
+                                     }
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/contacts/{{ contact.phone_number }}',
+          request_template: '{"order_id": "{{ conversation.custom_attributes.order_id }}"}',
+          response_template: nil
+        )
+        stub_request(:post, 'https://example.com/contacts/+1234567890')
+          .with(body: '{"order_id": "ORD-42"}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'renders custom tool templates using filtered prompt context' do
+        result = tool.perform(tool_context_with_prompt_context)
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/contacts/+1234567890')
+          .with(body: '{"order_id": "ORD-42"}')
+      end
+    end
+
+    context 'with mixed agent, context, and fixed parameters' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 prompt_context: {
+                                   contact: {
+                                     phone_number: '+1234567890'
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/leads',
+          request_template: '{"lead_name":"{{ lead_name }}","phone":"{{ customer_phone }}","pipeline":"{{ pipeline }}"}',
+          response_template: nil,
+          param_schema: [
+            {
+              'name' => 'lead_name',
+              'type' => 'string',
+              'description' => 'Lead name',
+              'source' => 'agent',
+              'required' => true
+            },
+            {
+              'name' => 'customer_phone',
+              'type' => 'string',
+              'description' => 'Phone number from contact context',
+              'source' => 'context',
+              'context_path' => 'contact.phone_number',
+              'required' => true
+            },
+            {
+              'name' => 'pipeline',
+              'type' => 'string',
+              'description' => 'Static pipeline name',
+              'source' => 'fixed',
+              'fixed_value' => 'sales',
+              'required' => true
+            }
+          ]
+        )
+        stub_request(:post, 'https://example.com/leads')
+          .with(body: '{"lead_name":"Alice","phone":"+1234567890","pipeline":"sales"}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'merges all parameter sources before rendering the request' do
+        result = tool.perform(tool_context_with_prompt_context, lead_name: 'Alice')
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/leads')
+          .with(body: '{"lead_name":"Alice","phone":"+1234567890","pipeline":"sales"}')
+      end
+    end
+
+    context 'when a required context parameter is missing' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 prompt_context: {
+                                   contact: {}
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          endpoint_url: 'https://example.com/leads',
+          param_schema: [
+            {
+              'name' => 'customer_phone',
+              'type' => 'string',
+              'description' => 'Phone number from contact context',
+              'source' => 'context',
+              'context_path' => 'contact.phone_number',
+              'required' => true
+            }
+          ]
+        )
+      end
+
+      it 'returns a helpful error without executing the request' do
+        result = tool.perform(tool_context_with_prompt_context)
+
+        expect(result).to eq('The tool could not run because customer_phone is missing')
+        expect(WebMock).not_to have_requested(:any, 'https://example.com/leads')
       end
     end
 
@@ -314,6 +518,39 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
         expect(WebMock).to have_requested(:post, 'https://example.com/api/data')
       end
 
+      it 'does not leak filtered-out contact fields through metadata headers' do
+        tool_context_with_filtered_prompt_context = Struct.new(:state).new({
+                                                                            account_id: account.id,
+                                                                            assistant_id: assistant.id,
+                                                                            prompt_context: {
+                                                                              contact: {
+                                                                                id: contact.id
+                                                                              },
+                                                                              conversation: {
+                                                                                id: conversation.id,
+                                                                                display_id: conversation.display_id
+                                                                              }
+                                                                            },
+                                                                            contact: {
+                                                                              id: contact.id,
+                                                                              email: contact.email,
+                                                                              phone_number: contact.phone_number
+                                                                            }
+                                                                          })
+
+        stub_request(:get, 'https://example.com/api/data')
+          .with do |request|
+            request.headers['X-Chatwoot-Contact-Id'] == contact.id.to_s &&
+              request.headers['X-Chatwoot-Contact-Email'].blank? &&
+              request.headers['X-Chatwoot-Contact-Phone'].blank?
+          end
+          .to_return(status: 200, body: '{"success": true}')
+
+        tool.perform(tool_context_with_filtered_prompt_context)
+
+        expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
+      end
+
       it 'includes metadata headers along with authentication headers' do
         custom_tool.update!(
           auth_type: 'bearer',
@@ -405,6 +642,40 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
           .with(headers: { 'X-Chatwoot-Contact-Phone' => '+1234567890' })
+      end
+
+      it 'uses filtered prompt context for metadata headers when available' do
+        tool_context_with_state.state[:prompt_context] = {
+          contact: {
+            id: contact.id
+          }
+        }
+
+        stub_request(:get, 'https://example.com/api/data')
+          .with(headers: {
+                  'X-Chatwoot-Contact-Id' => contact.id.to_s
+                })
+          .to_return(status: 200, body: '{"success": true}')
+
+        tool.perform(tool_context_with_state)
+
+        expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
+          .with { |request| request.headers['X-Chatwoot-Contact-Email'].blank? }
+      end
+
+      it 'does not fall back to raw metadata when prompt context disables the table' do
+        tool_context_with_state.state[:prompt_context] = {}
+
+        stub_request(:get, 'https://example.com/api/data')
+          .with(headers: {
+                  'X-Chatwoot-Account-Id' => account.id.to_s
+                })
+          .to_return(status: 200, body: '{"success": true}')
+
+        tool.perform(tool_context_with_state)
+
+        expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
+          .with { |request| request.headers['X-Chatwoot-Contact-Id'].blank? && request.headers['X-Chatwoot-Conversation-Id'].blank? }
       end
 
       it 'includes unverified contact inbox status explicitly as false' do

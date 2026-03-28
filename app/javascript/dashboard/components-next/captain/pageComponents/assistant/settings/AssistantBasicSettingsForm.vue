@@ -8,6 +8,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import ContextAccessSettings from '../ContextAccessSettings.vue';
 
 const props = defineProps({
   assistant: {
@@ -30,6 +31,7 @@ const initialState = {
     citations: false,
     contactAttributes: false,
   },
+  contextAccess: {},
 };
 
 const state = reactive({ ...initialState });
@@ -63,6 +65,7 @@ const updateStateFromAssistant = assistant => {
     citations: config.feature_citation || false,
     contactAttributes: config.feature_contact_attributes || false,
   };
+  state.contextAccess = config.context_access || {};
 };
 
 const handleBasicInfoUpdate = async () => {
@@ -83,6 +86,7 @@ const handleBasicInfoUpdate = async () => {
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
       feature_contact_attributes: state.features.contactAttributes,
+      context_access: state.contextAccess,
     },
   };
 
@@ -123,6 +127,9 @@ watch(
       :message="formErrors.description"
       :message-type="formErrors.description ? 'error' : 'info'"
       class="z-0"
+      enable-captain-fields
+      :captain-context-assistant-id="assistant.id"
+      :captain-context-access="state.contextAccess"
     />
 
     <div class="flex flex-col gap-2">
@@ -148,6 +155,11 @@ watch(
         </label>
       </div>
     </div>
+
+    <ContextAccessSettings
+      v-model="state.contextAccess"
+      :assistant-id="assistant.id"
+    />
 
     <div>
       <Button

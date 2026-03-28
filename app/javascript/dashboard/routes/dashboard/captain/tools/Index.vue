@@ -18,11 +18,16 @@ const uiFlags = useMapGetter('captainCustomTools/getUIFlags');
 const customTools = useMapGetter('captainCustomTools/getRecords');
 const isFetching = computed(() => uiFlags.value.fetchingList);
 const customToolsMeta = useMapGetter('captainCustomTools/getMeta');
+const EMPTY_SELECTED_TOOL = Object.freeze({});
 
 const createDialogRef = ref(null);
 const deleteDialogRef = ref(null);
 const selectedTool = ref(null);
 const dialogType = ref('');
+const activeDialogType = computed(() => dialogType.value || 'create');
+const dialogSelectedTool = computed(
+  () => selectedTool.value || EMPTY_SELECTED_TOOL
+);
 
 const sortTools = tools =>
   [...tools].sort((leftTool, rightTool) => {
@@ -78,7 +83,7 @@ const handleDelete = tool => {
 };
 
 const handleAction = ({ action, id }) => {
-  const tool = customTools.value.find(t => t.id === id);
+  const tool = customTools.value.find(customTool => customTool.id === id);
   if (action === 'edit') {
     handleEdit(tool);
   } else if (action === 'delete') {
@@ -172,10 +177,9 @@ onMounted(() => {
   </PageLayout>
 
   <CreateCustomToolDialog
-    v-if="dialogType"
     ref="createDialogRef"
-    :type="dialogType"
-    :selected-tool="selectedTool"
+    :type="activeDialogType"
+    :selected-tool="dialogSelectedTool"
     @close="handleDialogClose"
   />
 

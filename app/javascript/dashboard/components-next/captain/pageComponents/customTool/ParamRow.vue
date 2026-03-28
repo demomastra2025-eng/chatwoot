@@ -6,9 +6,17 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
+const props = defineProps({
+  contextFieldOptions: {
+    type: Array,
+    default: () => [],
+  },
+});
+
 const emit = defineEmits(['remove']);
 const { t } = useI18n();
 const showErrors = ref(false);
+const PARAM_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const name = defineModel('name', {
   type: String,
@@ -30,6 +38,21 @@ const required = defineModel('required', {
   default: false,
 });
 
+const source = defineModel('source', {
+  type: String,
+  default: 'agent',
+});
+
+const contextPath = defineModel('contextPath', {
+  type: String,
+  default: '',
+});
+
+const fixedValue = defineModel('fixedValue', {
+  type: String,
+  default: '',
+});
+
 const paramTypeOptions = computed(() => [
   { value: 'string', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_TYPES.STRING') },
   { value: 'number', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_TYPES.NUMBER') },
@@ -41,16 +64,81 @@ const paramTypeOptions = computed(() => [
   { value: 'object', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_TYPES.OBJECT') },
 ]);
 
+const paramSourceOptions = computed(() => [
+  {
+    value: 'agent',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_SOURCES.AGENT'),
+  },
+  {
+    value: 'context',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_SOURCES.CONTEXT'),
+  },
+  {
+    value: 'fixed',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_SOURCES.FIXED'),
+  },
+]);
+
+const fixedValuePlaceholder = computed(() => {
+  if (['array', 'object'].includes(type.value)) {
+    return t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_FIXED_VALUE.JSON_PLACEHOLDER');
+  }
+
+  return t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_FIXED_VALUE.PLACEHOLDER');
+});
+
+const validationErrorMessages = computed(() => ({
+  PARAM_NAME_REQUIRED: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_REQUIRED'
+  ),
+  PARAM_NAME_INVALID: t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_INVALID'),
+  PARAM_DESCRIPTION_REQUIRED: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_DESCRIPTION_REQUIRED'
+  ),
+  PARAM_CONTEXT_PATH_REQUIRED: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_CONTEXT_PATH_REQUIRED'
+  ),
+  PARAM_FIXED_VALUE_REQUIRED: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_FIXED_VALUE_REQUIRED'
+  ),
+}));
+
 const validationError = computed(() => {
   if (!name.value || name.value.trim() === '') {
     return 'PARAM_NAME_REQUIRED';
   }
+  if (!PARAM_NAME_REGEX.test(name.value.trim())) {
+    return 'PARAM_NAME_INVALID';
+  }
+  if (!description.value || description.value.trim() === '') {
+    return 'PARAM_DESCRIPTION_REQUIRED';
+  }
+  if (source.value === 'context' && !contextPath.value) {
+    return 'PARAM_CONTEXT_PATH_REQUIRED';
+  }
+  if (
+    source.value === 'fixed' &&
+    (fixedValue.value === '' ||
+      fixedValue.value === null ||
+      fixedValue.value === undefined)
+  ) {
+    return 'PARAM_FIXED_VALUE_REQUIRED';
+  }
   return null;
 });
 
-watch([name, type, description, required], () => {
-  showErrors.value = false;
-});
+const validationErrorMessage = computed(() =>
+  validationError.value
+    ? validationErrorMessages.value[validationError.value]
+    : ''
+);
+
+watch(
+  [name, type, description, required, source, contextPath, fixedValue],
+  () => {
+    showErrors.value = false;
+  }
+);
 
 const validate = () => {
   showErrors.value = true;
@@ -82,12 +170,39 @@ defineExpose({ validate });
             class="[&>div>button]:bg-n-alpha-black2"
           />
         </div>
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <ComboBox
+            v-model="source"
+            :options="paramSourceOptions"
+            :placeholder="
+              t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_SOURCE.PLACEHOLDER')
+            "
+            class="[&>div>button]:bg-n-alpha-black2"
+          />
+          <ComboBox
+            v-if="source === 'context'"
+            v-model="contextPath"
+            :options="props.contextFieldOptions"
+            :placeholder="
+              t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_CONTEXT_FIELD.PLACEHOLDER')
+            "
+            class="[&>div>button]:bg-n-alpha-black2"
+          />
+          <Input
+            v-else-if="source === 'fixed'"
+            v-model="fixedValue"
+            :placeholder="fixedValuePlaceholder"
+          />
+        </div>
         <Input
           v-model="description"
           :placeholder="
             t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_DESCRIPTION.PLACEHOLDER')
           "
         />
+        <p v-if="source === 'context'" class="text-xs text-n-slate-10 -mt-1">
+          {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_CONTEXT_FIELD.HELP_TEXT') }}
+        </p>
         <label class="flex items-center gap-2 cursor-pointer">
           <Checkbox v-model="required" />
           <span class="text-sm text-n-slate-11">
@@ -107,7 +222,7 @@ defineExpose({ validate });
       v-if="showErrors && validationError"
       class="block mt-1 text-sm text-n-ruby-11"
     >
-      {{ t(`CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.${validationError}`) }}
+      {{ validationErrorMessage }}
     </span>
   </li>
 </template>

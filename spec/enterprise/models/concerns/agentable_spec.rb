@@ -136,10 +136,7 @@ RSpec.describe Concerns::Agentable do
       expect(Captain::PromptRenderer).to receive(:render).with(
         'dummy_class',
         hash_including(
-          base_key: 'base_value',
-          conversation: {},
-          contact: nil,
-          campaign: {}
+          base_key: 'base_value'
         )
       )
 

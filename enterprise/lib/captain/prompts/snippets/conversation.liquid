@@ -1,9 +1,23 @@
 # Current Conversation Context
+{% if conversation_visible_fields contains 'display_id' -%}
 - Conversation ID: {{ conversation.display_id }}
+{% endif -%}
+{% if conversation_visible_fields contains 'id' -%}
+- Conversation Record ID: {{ conversation.id }}
+{% endif -%}
+{% if conversation_visible_fields contains 'contact_id' -%}
 - Contact ID: {{ conversation.contact_id }}
+{% endif -%}
+{% if conversation_visible_fields contains 'inbox_id' -%}
+- Inbox ID: {{ conversation.inbox_id }}
+{% endif -%}
+{% if conversation_visible_fields contains 'status' -%}
 - Status: {{ conversation.status }}
-- Priority: {{ conversation.priority || "None" }}
-{% if conversation.label_list.size > 0 -%}
+{% endif -%}
+{% if conversation_visible_fields contains 'priority' -%}
+- Priority: {{ conversation.priority | default: "None" }}
+{% endif -%}
+{% if conversation_visible_fields contains 'label_list' and conversation.label_list and conversation.label_list.size > 0 -%}
 - Labels: {{ conversation.label_list | join: ", " }}
 {% endif -%}
 {% if conversation.custom_attributes -%}

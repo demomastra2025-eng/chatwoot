@@ -10,7 +10,7 @@ module Concerns::Toolable
     tool_class = Class.new(Captain::Tools::HttpTool) do
       description custom_tool_record.description
 
-      custom_tool_record.param_schema.each do |param_def|
+      custom_tool_record.agent_parameter_definitions.each do |param_def|
         param param_def['name'].to_sym,
               type: param_def['type'],
               desc: param_def['description'],
@@ -31,16 +31,16 @@ module Concerns::Toolable
     tool_class.new(assistant, self)
   end
 
-  def build_request_url(params)
+  def build_request_url(params, template_context: params)
     return endpoint_url if endpoint_url.blank? || endpoint_url.exclude?('{{')
 
-    render_template(endpoint_url, params)
+    render_template(endpoint_url, template_context)
   end
 
-  def build_request_body(params)
+  def build_request_body(params, template_context: params)
     return nil if request_template.blank?
 
-    render_template(request_template, params)
+    render_template(request_template, template_context)
   end
 
   def build_auth_headers
@@ -67,10 +67,15 @@ module Concerns::Toolable
   end
 
   def build_metadata_headers(state)
+    prompt_context = state[:prompt_context] || {}
+    prompt_context = prompt_context.with_indifferent_access if prompt_context.respond_to?(:with_indifferent_access)
+    conversation_context = state.key?(:prompt_context) ? prompt_context[:conversation] : state[:conversation]
+    contact_context = state.key?(:prompt_context) ? prompt_context[:contact] : state[:contact]
+
     {}.tap do |headers|
       add_base_headers(headers, state)
-      add_conversation_headers(headers, state[:conversation]) if state[:conversation]
-      add_contact_headers(headers, state[:contact]) if state[:contact]
+      add_conversation_headers(headers, conversation_context) if conversation_context
+      add_contact_headers(headers, contact_context) if contact_context
       add_contact_inbox_headers(headers, state[:contact_inbox])
     end
   end
@@ -115,8 +120,10 @@ module Concerns::Toolable
   end
 
   def parse_response_body(body)
+    return body if body.blank?
+
     JSON.parse(body)
-  rescue JSON::ParserError
+  rescue JSON::ParserError, TypeError
     body
   end
 end
