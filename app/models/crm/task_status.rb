@@ -82,7 +82,9 @@ class Crm::TaskStatus < ApplicationRecord
   end
 
   def clear_other_defaults
-    account.crm_task_statuses.where.not(id: id).where(default: true).update_all(default: false, updated_at: Time.current)
+    account.crm_task_statuses.where.not(id: id).where(default: true).find_each do |task_status|
+      task_status.update!(default: false)
+    end
   end
 
   def disable_default_unless_open
@@ -90,8 +92,14 @@ class Crm::TaskStatus < ApplicationRecord
   end
 
   def reassigning_default?
-    return false unless default? && category_open? && active? && account.present?
+    open_default? && default_state_changing?
+  end
 
+  def open_default?
+    default? && category_open? && active? && account.present?
+  end
+
+  def default_state_changing?
     new_record? || will_save_change_to_default? || will_save_change_to_category? || will_save_change_to_active?
   end
 

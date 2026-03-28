@@ -51,7 +51,9 @@ class Crm::Pipeline < ApplicationRecord
   end
 
   def clear_other_defaults
-    account.crm_pipelines.where.not(id: id).where(default: true).update_all(default: false, updated_at: Time.current)
+    account.crm_pipelines.where.not(id: id).where(default: true).find_each do |pipeline|
+      pipeline.update!(default: false)
+    end
   end
 
   def disable_default_when_inactive
@@ -59,8 +61,14 @@ class Crm::Pipeline < ApplicationRecord
   end
 
   def reassigning_default?
-    return false unless default? && active? && account.present?
+    active_default? && default_state_changing?
+  end
 
+  def active_default?
+    default? && active? && account.present?
+  end
+
+  def default_state_changing?
     new_record? || will_save_change_to_default? || will_save_change_to_active?
   end
 

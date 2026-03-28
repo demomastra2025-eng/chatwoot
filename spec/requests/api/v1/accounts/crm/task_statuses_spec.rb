@@ -29,7 +29,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Waiting for client',
            code: 'waiting_for_client',
            category: 'in_progress',
-           color: '#3B82F6'
+           color: '#3B82F6',
          },
          headers: headers,
          as: :json
@@ -50,7 +50,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            code: 'waiting_for_client',
            category: 'open',
            color: '#123456',
-           default: true
+           default: true,
          },
          headers: headers,
          as: :json
@@ -91,7 +91,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
          params: {
            name: 'В работе',
            category: 'in_progress',
-           color: '#3B82F6'
+           color: '#3B82F6',
          },
          headers: headers,
          as: :json
@@ -107,7 +107,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
            name: 'Paused',
            category: 'in_progress',
            color: '#3B82F6',
-           active: false
+           active: false,
          },
          headers: headers,
          as: :json
