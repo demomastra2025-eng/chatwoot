@@ -281,19 +281,10 @@ watch(
 
       <div v-show="expandedTables[tableName]" class="flex flex-col gap-4">
         <div
-          class="flex items-center justify-between gap-3 text-xs text-n-slate-10"
+          v-if="!normalizedAccess[tableName].enabled"
+          class="text-xs text-n-slate-10"
         >
-          <span>
-            {{
-              selectionCountLabel(
-                normalizedAccess[tableName].fieldIds.length,
-                tableFieldCounts[tableName]
-              )
-            }}
-          </span>
-          <span v-if="!normalizedAccess[tableName].enabled">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.DISABLED_MESSAGE') }}
-          </span>
+          {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.DISABLED_MESSAGE') }}
         </div>
 
         <div v-if="isLoading" class="text-sm text-n-slate-11">
@@ -309,19 +300,9 @@ watch(
             :key="group.groupName"
             class="rounded-lg border border-n-weak bg-n-alpha-2 p-3 flex flex-col gap-3"
           >
-            <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
               <div class="text-sm font-medium text-n-slate-12">
                 {{ group.groupName }}
-              </div>
-              <div class="text-xs text-n-slate-10">
-                {{
-                  selectionCountLabel(
-                    group.fields.filter(field =>
-                      normalizedAccess[tableName].fieldIds.includes(field.id)
-                    ).length,
-                    group.fields.length
-                  )
-                }}
               </div>
             </div>
 

@@ -45,10 +45,7 @@ import {
   EditorState,
   Selection,
 } from '@chatwoot/prosemirror-schema';
-import {
-  suggestionsPlugin,
-  triggerCharacters,
-} from '@chatwoot/prosemirror-schema/src/mentions/plugin';
+import { suggestionsPlugin } from '@chatwoot/prosemirror-schema/src/mentions/plugin';
 
 import {
   appendSignature,
@@ -237,6 +234,57 @@ const shouldShowCannedResponses = computed(() => {
   );
 });
 
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const escapeForCharacterClass = value => value.replace(/[-\\\]^]/g, '\\$&');
+
+const createTriggerMatcher = (trigger, minChars = 0) => {
+  const escapedTrigger = escapeRegExp(trigger);
+  const excludedChars = Array.from(new Set(trigger.split('')))
+    .map(char => escapeForCharacterClass(char))
+    .join('');
+  const regexp = new RegExp(
+    `(?:^)?${escapedTrigger}[^\\s${excludedChars}]{${minChars},}`,
+    'g'
+  );
+
+  return $position => {
+    const textFrom = $position.before();
+    const textTo = $position.end();
+    const text = $position.doc.textBetween(textFrom, textTo, '\0', '\0');
+
+    regexp.lastIndex = 0;
+    let match = regexp.exec(text);
+
+    // Guard against zero-length regex matches for special trigger characters
+    // such as "$", which otherwise can lock the editor.
+    while (match) {
+      const prefix = match.input.slice(
+        Math.max(0, match.index - 1),
+        match.index
+      );
+      if (/^[\s\0]?$/.test(prefix)) {
+        const from = match.index + $position.start();
+        const to = from + match[0].length;
+
+        if (from < $position.pos && to >= $position.pos) {
+          const fullMatch = match[0];
+          const trimmedText = fullMatch ? fullMatch.slice(trigger.length) : '';
+          return { range: { from, to }, text: trimmedText };
+        }
+      }
+
+      if (match[0].length === 0) {
+        regexp.lastIndex += 1;
+      }
+
+      match = regexp.exec(text);
+    }
+
+    return null;
+  };
+};
+
 function createSuggestionPlugin({
   trigger,
   minChars = 0,
@@ -245,7 +293,7 @@ function createSuggestionPlugin({
   isAllowed = () => true,
 }) {
   return suggestionsPlugin({
-    matcher: triggerCharacters(trigger, minChars),
+    matcher: createTriggerMatcher(trigger, minChars),
     suggestionClass: '',
     onEnter: args => {
       if (!isAllowed()) return false;
