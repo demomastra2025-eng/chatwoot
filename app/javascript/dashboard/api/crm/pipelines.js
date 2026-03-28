@@ -17,6 +17,14 @@ class CrmPipelinesAPI extends ApiClient {
   updateStage(stageId, data) {
     return axios.patch(`${this.baseUrl()}/crm/stages/${stageId}`, data);
   }
+
+  deletePipeline(pipelineId) {
+    return this.delete(pipelineId);
+  }
+
+  deleteStage(stageId) {
+    return axios.delete(`${this.baseUrl()}/crm/stages/${stageId}`);
+  }
 }
 
 export default new CrmPipelinesAPI();

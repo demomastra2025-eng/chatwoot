@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
+import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
   disabled: {
@@ -26,10 +27,18 @@ const { t } = useI18n();
 
 const isOpen = ref(false);
 const currentStageId = computed(() => Number(props.modelValue));
+const fallbackStageColor = DEFAULT_STAGE_COLOR;
 
 const stageLabelById = computed(() =>
   props.stages.reduce((result, stage) => {
     result[Number(stage.id)] = stage.name;
+    return result;
+  }, {})
+);
+
+const stageColorById = computed(() =>
+  props.stages.reduce((result, stage) => {
+    result[Number(stage.id)] = stage.color || fallbackStageColor;
     return result;
   }, {})
 );
@@ -39,10 +48,14 @@ const currentStageLabel = computed(
     stageLabelById.value[currentStageId.value] || t('CRM.GENERAL.EMPTY_VALUE')
 );
 
+const currentStageColor = computed(
+  () => stageColorById.value[currentStageId.value] || fallbackStageColor
+);
+
 const menuItems = computed(() =>
   props.stages.map(stage => ({
     action: 'select',
-    icon: 'i-lucide-circle-dot',
+    color: stage.color || fallbackStageColor,
     isSelected: Number(stage.id) === currentStageId.value,
     label: stage.name,
     value: stage.id,
@@ -70,17 +83,17 @@ const handleAction = ({ value }) => {
     <OnClickOutside @trigger="isOpen = false">
       <Button
         size="xs"
-        variant="outline"
+        variant="ghost"
         color="slate"
         no-animation
         :disabled="disabled"
-        class="!h-7 !gap-1 !rounded-full !px-2.5 !text-xs !font-medium"
+        class="!h-7 !gap-1 !rounded-full !bg-transparent !px-1.5 !text-xs !font-medium"
         @click.stop="toggleMenu"
       >
         <span class="inline-flex min-w-0 items-center gap-1.5">
           <span
-            class="size-3.5 shrink-0 i-lucide-circle-dot"
-            aria-hidden="true"
+            class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+            :style="{ backgroundColor: currentStageColor }"
           />
           <span class="truncate">{{ currentStageLabel }}</span>
           <span
@@ -96,7 +109,14 @@ const handleAction = ({ value }) => {
         :menu-items="menuItems"
         class="top-9 min-w-[11rem] ltr:right-0 rtl:left-0"
         @action="handleAction"
-      />
+      >
+        <template #thumbnail="{ item }">
+          <span
+            class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+            :style="{ backgroundColor: item.color || fallbackStageColor }"
+          />
+        </template>
+      </DropdownMenu>
     </OnClickOutside>
   </div>
 </template>

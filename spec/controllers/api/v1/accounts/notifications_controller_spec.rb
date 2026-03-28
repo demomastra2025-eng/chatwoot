@@ -31,6 +31,30 @@ RSpec.describe 'Notifications API', type: :request do
         expect(response_json['data']['payload'].first['id']).to eq notification2.id
         expect(response_json['data']['payload'].first['primary_actor']).not_to be_nil
       end
+
+      it 'returns orphaned notifications using the stored snapshot' do
+        conversation = create(:conversation, :with_assignee, account: account)
+        notification = create(
+          :notification,
+          account: account,
+          user: admin,
+          notification_type: 'conversation_creation',
+          primary_actor: conversation
+        )
+        conversation.destroy!
+
+        get "/api/v1/accounts/#{account.id}/notifications",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        response_json = response.parsed_body
+        payload = response_json['data']['payload'].detect { |item| item['id'] == notification.id }
+
+        expect(response).to have_http_status(:success)
+        expect(payload['primary_actor']['id']).to eq(conversation.display_id)
+        expect(payload['primary_actor']['inbox_id']).to eq(conversation.inbox_id)
+        expect(payload['push_message_title']).to include("##{conversation.display_id}")
+      end
     end
   end
 

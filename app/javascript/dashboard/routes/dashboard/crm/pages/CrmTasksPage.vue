@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { format } from 'date-fns';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -24,6 +24,7 @@ import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomField
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
 import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
+import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
@@ -46,6 +47,7 @@ import {
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
+import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
 
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
@@ -61,22 +63,28 @@ const currentCalendarView = ref('week');
 const calendarAnchorDate = ref(new Date());
 const drawerOpen = ref(false);
 const filterDialogRef = ref(null);
+const listCurrentPage = ref(1);
 const selectedTask = ref(null);
 const timelineItems = ref([]);
+
+const LIST_PAGE_SIZE = 25;
 
 const filters = reactive({
   archived: false,
   assigneeId: '',
-  q: '',
+  priority: '',
   statusId: '',
   teamId: '',
 });
 const filterDraft = reactive({
   archived: false,
   assigneeId: '',
-  q: '',
+  priority: '',
   statusId: '',
   teamId: '',
+});
+const listQuickFilters = reactive({
+  q: '',
 });
 
 const form = reactive({
@@ -103,6 +111,7 @@ const ui = reactive({
   isTimelineLoading: false,
 });
 
+const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
 const currentUser = useMapGetter('getCurrentUser');
 const teams = useMapGetter('teams/getTeams');
@@ -126,9 +135,35 @@ const taskStatusOptions = computed(() =>
   }))
 );
 
+const taskStatusCategoryMeta = {
+  done: {
+    icon: 'i-lucide-check-circle',
+    toneClass: 'text-n-teal-11',
+  },
+  in_progress: {
+    icon: 'i-lucide-clock-3',
+    toneClass: 'text-n-amber-11',
+  },
+  open: {
+    icon: 'i-lucide-circle',
+    toneClass: 'text-n-slate-11',
+  },
+};
+
+const hasBoardStatuses = computed(
+  () => referencesStore.taskStatuses.length > 0
+);
+
+const shouldRenderBoard = computed(
+  () => currentPresentation.value === 'board' && hasBoardStatuses.value
+);
+
 const assigneeOptions = computed(() =>
   agents.value.map(agent => ({
     label: agent.name || agent.email,
+    thumbnail: {
+      name: agent.name || agent.email,
+    },
     value: agent.id,
   }))
 );
@@ -161,6 +196,13 @@ const statusNameById = computed(() =>
   }, {})
 );
 
+const statusColorById = computed(() =>
+  referencesStore.taskStatuses.reduce((result, status) => {
+    result[status.id] = status.color;
+    return result;
+  }, {})
+);
+
 const assigneeNameById = computed(() =>
   agents.value.reduce((result, agent) => {
     result[agent.id] = agent.name || agent.email;
@@ -181,6 +223,46 @@ const priorityOptions = computed(() => [
   { label: t('CRM.TASKS.PRIORITY.high'), value: 'high' },
   { label: t('CRM.TASKS.PRIORITY.urgent'), value: 'urgent' },
 ]);
+
+const priorityMetaByValue = computed(() => ({
+  high: {
+    icon: 'i-lucide-arrow-up',
+    label: t('CRM.TASKS.PRIORITY.high'),
+    toneClass: 'text-n-ruby-11',
+  },
+  low: {
+    icon: 'i-lucide-arrow-down',
+    label: t('CRM.TASKS.PRIORITY.low'),
+    toneClass: 'text-n-slate-11',
+  },
+  medium: {
+    icon: 'i-lucide-arrow-right',
+    label: t('CRM.TASKS.PRIORITY.medium'),
+    toneClass: 'text-n-amber-11',
+  },
+  urgent: {
+    icon: 'i-lucide-arrow-up',
+    label: t('CRM.TASKS.PRIORITY.urgent'),
+    toneClass: 'text-n-ruby-11',
+  },
+}));
+
+const statusMetaById = computed(() =>
+  referencesStore.taskStatuses.reduce((result, status) => {
+    const categoryMeta =
+      taskStatusCategoryMeta[status.category] || taskStatusCategoryMeta.open;
+
+    result[status.id] = {
+      color: status.color || DEFAULT_TASK_STATUS_COLOR,
+      icon: categoryMeta.icon,
+      label: status.name,
+      toneClass: categoryMeta.toneClass,
+    };
+    return result;
+  }, {})
+);
+
+const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
 
 const viewOptions = computed(() => [
   { label: t('CRM.VIEWS.LIST'), value: 'list' },
@@ -203,13 +285,64 @@ const calendarLabel = computed(() =>
 );
 
 const tableColumns = computed(() => [
-  { key: 'title', label: t('CRM.TASKS.TABLE.TITLE'), width: '1.7fr' },
+  { key: 'id', label: t('CRM.GENERAL.ID'), width: '72px' },
+  { key: 'title', label: t('CRM.TASKS.TABLE.TITLE'), width: '2.4fr' },
   { key: 'status', label: t('CRM.TASKS.TABLE.STATUS'), width: '1fr' },
+  {
+    key: 'priority',
+    label: t('CRM.TASKS.FORM.PRIORITY'),
+    width: '0.95fr',
+  },
   { key: 'assignee', label: t('CRM.TASKS.TABLE.ASSIGNEE'), width: '1fr' },
   { key: 'dueAt', label: t('CRM.TASKS.TABLE.DUE_AT'), width: '1fr' },
-  { key: 'deal', label: t('CRM.TASKS.TABLE.DEAL'), width: '1.2fr' },
   { key: 'actions', label: '', width: '112px', align: 'end' },
 ]);
+
+const normalizeFilterText = value =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const filteredListTasks = computed(() => {
+  const search = normalizeFilterText(listQuickFilters.q);
+
+  return tasks.value.filter(task => {
+    if (!search) {
+      return true;
+    }
+
+    return [
+      task.title,
+      task.description,
+      `#${task.id}`,
+      dealNameById.value[task.dealId],
+      assigneeNameById.value[task.assigneeId],
+    ].some(value => normalizeFilterText(value).includes(search));
+  });
+});
+
+const paginatedListTasks = computed(() => {
+  const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
+  return filteredListTasks.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
+});
+
+const stripedTaskRowIds = computed(
+  () =>
+    new Set(
+      paginatedListTasks.value
+        .filter((_, index) => index % 2 === 1)
+        .map(task => Number(task.id))
+    )
+);
+
+const shouldShowListPagination = computed(
+  () => filteredListTasks.value.length > LIST_PAGE_SIZE
+);
+
+const taskListRowClass = row => [
+  row.archivedAt ? 'opacity-75' : '',
+  stripedTaskRowIds.value.has(Number(row.id)) ? 'bg-n-surface-1/70' : '',
+];
 
 const defaultCustomAttributes = definitions => {
   return definitions.reduce((result, definition) => {
@@ -479,7 +612,7 @@ const loadTasks = async () => {
     const query = compactPayload({
       archived: filters.archived,
       assignee_id: filters.assigneeId || undefined,
-      q: filters.q || undefined,
+      priority: filters.priority || undefined,
       status_id: filters.statusId || undefined,
       team_id: filters.teamId || undefined,
     });
@@ -565,7 +698,7 @@ const syncFilterDraft = () => {
   Object.assign(filterDraft, {
     archived: filters.archived,
     assigneeId: filters.assigneeId,
-    q: filters.q,
+    priority: filters.priority,
     statusId: filters.statusId,
     teamId: filters.teamId,
   });
@@ -577,15 +710,54 @@ const openFilterDialog = () => {
 };
 
 const applyFilters = async () => {
+  listCurrentPage.value = 1;
   Object.assign(filters, {
     archived: filterDraft.archived,
     assigneeId: filterDraft.assigneeId,
-    q: filterDraft.q,
+    priority: filterDraft.priority,
     statusId: filterDraft.statusId,
     teamId: filterDraft.teamId,
   });
   filterDialogRef.value?.close();
   await loadTasks();
+};
+
+watch(
+  () => listQuickFilters.q,
+  () => {
+    listCurrentPage.value = 1;
+  }
+);
+
+watch(filteredListTasks, rows => {
+  if (!rows.length) {
+    listCurrentPage.value = 1;
+    return;
+  }
+
+  const maxPage = Math.max(1, Math.ceil(rows.length / LIST_PAGE_SIZE));
+
+  if (listCurrentPage.value > maxPage) {
+    listCurrentPage.value = maxPage;
+  }
+});
+
+const openCreateTaskStatusSetup = () => {
+  if (!canManageTasks.value) return;
+
+  router.push({
+    name: 'crm_settings_index',
+    params: { accountId: accountId.value },
+    query: {
+      action: 'create-task-status',
+    },
+  });
+};
+
+const handleBoardCreateTask = async ({ statusId }) => {
+  await openCreateDrawer({
+    statusId,
+  });
 };
 
 const handleTaskStatusChange = async ({ task, statusId }) => {
@@ -622,6 +794,52 @@ const handleTaskStatusChange = async ({ task, statusId }) => {
     ) {
       selectedTask.value = updatedTask;
       form.statusId = updatedTask.statusId;
+    }
+  } catch (error) {
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original API error as the surfaced failure.
+    }
+
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const handleTaskAssigneeChange = async ({ task, assigneeId }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const nextAssigneeId = Number(assigneeId);
+
+  if (!nextAssigneeId || Number(currentTask.assigneeId) === nextAssigneeId) {
+    return;
+  }
+
+  const optimisticTask = { ...currentTask, assigneeId: nextAssigneeId };
+  upsertTask(optimisticTask);
+
+  if (
+    selectedTask.value &&
+    Number(selectedTask.value.id) === optimisticTask.id
+  ) {
+    selectedTask.value = optimisticTask;
+    form.assigneeId = nextAssigneeId;
+  }
+
+  try {
+    const response = await CrmTasksAPI.update(currentTask.id, {
+      assignee_id: nextAssigneeId,
+      lock_version: currentTask.lockVersion,
+    });
+    const updatedTask = normalizePayload(response.data);
+    upsertTask(updatedTask);
+
+    if (
+      selectedTask.value &&
+      Number(selectedTask.value.id) === updatedTask.id
+    ) {
+      selectedTask.value = updatedTask;
+      form.assigneeId = updatedTask.assigneeId;
     }
   } catch (error) {
     try {
@@ -739,12 +957,26 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-surface-1">
-    <SchedulingPageHeader
-      :title="$t('CRM.TASKS.TITLE')"
-      :description="$t('CRM.TASKS.DESCRIPTION')"
-    >
+  <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
+    <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
       <template #actions>
+        <Input
+          v-if="currentPresentation === 'list'"
+          size="sm"
+          type="search"
+          :model-value="listQuickFilters.q"
+          :placeholder="$t('CRM.TASKS.LIST.SEARCH_PLACEHOLDER')"
+          class="w-full sm:w-72"
+          custom-input-class="ltr:!pr-8 rtl:!pl-8"
+          @update:model-value="listQuickFilters.q = $event"
+        >
+          <template #suffix>
+            <Icon
+              icon="i-lucide-search"
+              class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
+            />
+          </template>
+        </Input>
         <Button
           size="sm"
           color="slate"
@@ -769,6 +1001,7 @@ onMounted(async () => {
 
     <SchedulingToolbar
       v-if="currentPresentation === 'calendar'"
+      transparent
       :current-label="calendarLabel"
       :anchor-date="calendarAnchorDate"
       :model-value="currentCalendarView"
@@ -783,7 +1016,7 @@ onMounted(async () => {
     <div
       class="flex-1"
       :class="
-        ['calendar', 'board'].includes(currentPresentation) &&
+        (currentPresentation === 'calendar' || shouldRenderBoard) &&
         !ui.isLoading &&
         !ui.error
           ? 'min-h-0 overflow-hidden'
@@ -792,7 +1025,7 @@ onMounted(async () => {
     >
       <div
         :class="
-          ['calendar', 'board'].includes(currentPresentation) &&
+          (currentPresentation === 'calendar' || shouldRenderBoard) &&
           !ui.isLoading &&
           !ui.error
             ? 'flex h-full min-h-0 flex-col px-5 pb-5 pt-3'
@@ -811,7 +1044,18 @@ onMounted(async () => {
         />
 
         <SchedulingEmptyState
-          v-else-if="tasks.length === 0 && currentPresentation !== 'calendar'"
+          v-else-if="currentPresentation === 'board' && !hasBoardStatuses"
+          icon="i-lucide-columns-3"
+          :title="$t('CRM.TASKS.BOARD.EMPTY_STATUS_TITLE')"
+          :description="$t('CRM.TASKS.BOARD.EMPTY_STATUS_DESCRIPTION')"
+          :action-label="
+            canManageTasks ? $t('CRM.TASKS.BOARD.CREATE_STATUS') : ''
+          "
+          @action="openCreateTaskStatusSetup"
+        />
+
+        <SchedulingEmptyState
+          v-else-if="tasks.length === 0 && currentPresentation === 'list'"
           icon="i-lucide-list-todo"
           :title="$t('CRM.TASKS.EMPTY_TITLE')"
           :description="$t('CRM.TASKS.EMPTY_DESCRIPTION')"
@@ -819,77 +1063,172 @@ onMounted(async () => {
           @action="openCreateDrawer"
         />
 
-        <SchedulingRecordTable
+        <div
           v-else-if="currentPresentation === 'list'"
-          :columns="tableColumns"
-          :rows="tasks"
+          class="mt-3 overflow-hidden rounded-xl outline outline-1 outline-n-container"
         >
-          <template #cell-title="{ row }">
-            <button
-              type="button"
-              class="grid gap-1 text-left"
-              @click="openEditDrawer(row)"
-            >
-              <span class="font-medium text-n-slate-12">{{ row.title }}</span>
-              <span class="text-xs text-n-slate-11">
-                {{ row.priority || $t('CRM.GENERAL.EMPTY_VALUE') }}
+          <SchedulingRecordTable
+            borderless
+            class="crm-task-list-table !rounded-none !bg-transparent"
+            :columns="tableColumns"
+            :rows="paginatedListTasks"
+            :row-class="taskListRowClass"
+          >
+            <template #empty>
+              {{
+                hasListSearchQuery
+                  ? $t('CRM.TASKS.LIST.EMPTY_FILTERED')
+                  : $t('SCHEDULING.GENERAL.NO_DATA')
+              }}
+            </template>
+
+            <template #cell-id="{ row }">
+              <span class="text-xs font-medium tabular-nums text-n-slate-11">
+                {{ `#${row.id}` }}
               </span>
-            </button>
-          </template>
+            </template>
 
-          <template #cell-status="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{
-                statusNameById[row.statusId] || $t('CRM.GENERAL.EMPTY_VALUE')
-              }}
-            </span>
-          </template>
-
-          <template #cell-assignee="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{
-                assigneeNameById[row.assigneeId] ||
-                $t('CRM.GENERAL.EMPTY_VALUE')
-              }}
-            </span>
-          </template>
-
-          <template #cell-dueAt="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{ formatDate(row.dueAt) }}
-            </span>
-          </template>
-
-          <template #cell-deal="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{ dealNameById[row.dealId] || $t('CRM.GENERAL.EMPTY_VALUE') }}
-            </span>
-          </template>
-
-          <template #cell-actions="{ row }">
-            <div class="flex justify-end gap-1">
-              <Button
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-pen-line"
+            <template #cell-title="{ row }">
+              <button
+                type="button"
+                class="grid w-full gap-0.5 border-0 bg-transparent p-0 text-left"
                 @click="openEditDrawer(row)"
-              />
-              <Button
-                v-if="canManageTasks"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                :icon="
-                  row.archivedAt
-                    ? 'i-lucide-archive-restore'
-                    : 'i-lucide-archive'
-                "
-                @click="toggleArchived(row)"
-              />
-            </div>
-          </template>
-        </SchedulingRecordTable>
+              >
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-n-slate-12">
+                    {{ row.title }}
+                  </span>
+                  <span
+                    v-if="row.dealId"
+                    class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                  >
+                    {{
+                      dealNameById[row.dealId] || $t('CRM.GENERAL.EMPTY_VALUE')
+                    }}
+                  </span>
+                  <span
+                    v-if="row.archivedAt"
+                    class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
+                  >
+                    {{ $t('CRM.GENERAL.ARCHIVED') }}
+                  </span>
+                </span>
+                <span
+                  v-if="row.description"
+                  class="line-clamp-1 text-xs text-n-slate-11"
+                >
+                  {{ row.description }}
+                </span>
+              </button>
+            </template>
+
+            <template #cell-status="{ row }">
+              <span
+                class="inline-flex items-center gap-2 text-sm text-n-slate-12"
+              >
+                <span
+                  class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-n-alpha-black2"
+                >
+                  <span
+                    class="size-3"
+                    :class="[
+                      statusMetaById[row.statusId]?.icon || 'i-lucide-circle',
+                      statusMetaById[row.statusId]?.toneClass ||
+                        'text-n-slate-11',
+                    ]"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span class="inline-flex items-center gap-2">
+                  <span
+                    class="size-2 rounded-full"
+                    :style="{
+                      backgroundColor:
+                        statusColorById[row.statusId] ||
+                        DEFAULT_TASK_STATUS_COLOR,
+                    }"
+                  />
+                  <span>
+                    {{
+                      statusNameById[row.statusId] ||
+                      $t('CRM.GENERAL.EMPTY_VALUE')
+                    }}
+                  </span>
+                </span>
+              </span>
+            </template>
+
+            <template #cell-priority="{ row }">
+              <span
+                class="inline-flex items-center gap-2 text-sm text-n-slate-12"
+              >
+                <span
+                  class="size-4"
+                  :class="[
+                    priorityMetaByValue[row.priority]?.icon || 'i-lucide-minus',
+                    priorityMetaByValue[row.priority]?.toneClass ||
+                      'text-n-slate-10',
+                  ]"
+                  aria-hidden="true"
+                />
+                <span>
+                  {{
+                    priorityMetaByValue[row.priority]?.label ||
+                    $t('CRM.GENERAL.EMPTY_VALUE')
+                  }}
+                </span>
+              </span>
+            </template>
+
+            <template #cell-assignee="{ row }">
+              <span class="text-sm text-n-slate-12">
+                {{
+                  assigneeNameById[row.assigneeId] ||
+                  $t('CRM.GENERAL.EMPTY_VALUE')
+                }}
+              </span>
+            </template>
+
+            <template #cell-dueAt="{ row }">
+              <span class="text-sm text-n-slate-12">
+                {{ formatDate(row.dueAt) }}
+              </span>
+            </template>
+
+            <template #cell-actions="{ row }">
+              <div class="flex justify-end gap-1">
+                <Button
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  icon="i-lucide-pen-line"
+                  @click="openEditDrawer(row)"
+                />
+                <Button
+                  v-if="canManageTasks"
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  :icon="
+                    row.archivedAt
+                      ? 'i-lucide-archive-restore'
+                      : 'i-lucide-archive'
+                  "
+                  @click="toggleArchived(row)"
+                />
+              </div>
+            </template>
+          </SchedulingRecordTable>
+
+          <PaginationFooter
+            v-if="shouldShowListPagination"
+            class="!border-t !border-n-weak !bg-transparent before:!hidden"
+            :current-page="listCurrentPage"
+            :total-items="filteredListTasks.length"
+            :items-per-page="LIST_PAGE_SIZE"
+            @update:current-page="listCurrentPage = $event"
+          />
+        </div>
 
         <CrmTaskCalendar
           v-else-if="currentPresentation === 'calendar'"
@@ -910,12 +1249,14 @@ onMounted(async () => {
         <CrmTaskBoard
           v-else
           class="min-h-0 flex-1"
-          :assignee-names="assigneeNameById"
+          :assignees="assigneeOptions"
           :can-manage="canManageTasks"
           :deal-names="dealNameById"
           :statuses="referencesStore.taskStatuses"
           :tasks="tasks"
+          @change-assignee="handleTaskAssigneeChange"
           @change-status="handleTaskStatusChange"
+          @create-task="handleBoardCreateTask"
           @select-task="openEditDrawer"
         />
       </div>
@@ -923,7 +1264,7 @@ onMounted(async () => {
 
     <SchedulingDrawer
       v-model="drawerOpen"
-      width="xl"
+      width="sm"
       :title="
         selectedTask ? $t('CRM.TASKS.EDIT_TITLE') : $t('CRM.TASKS.CREATE_TITLE')
       "
@@ -958,11 +1299,7 @@ onMounted(async () => {
           </p>
         </div>
 
-        <SchedulingFormFieldGroup
-          :framed="false"
-          :title="$t('CRM.TASKS.FORM.BASICS')"
-          :description="$t('CRM.TASKS.FORM.BASICS_DESCRIPTION')"
-        >
+        <SchedulingFormFieldGroup :framed="false">
           <div class="grid gap-4 md:grid-cols-2">
             <Input
               :label="$t('CRM.TASKS.FORM.TITLE')"
@@ -1090,25 +1427,6 @@ onMounted(async () => {
       @confirm="applyFilters"
     >
       <div class="grid gap-4 md:grid-cols-2">
-        <div class="md:col-span-2">
-          <Input
-            type="search"
-            :label="$t('CRM.FILTERS.SEARCH')"
-            :model-value="filterDraft.q"
-            custom-input-class="ltr:!pr-8 rtl:!pl-8"
-            :placeholder="$t('CRM.FILTERS.SEARCH_PLACEHOLDER')"
-            @enter="applyFilters"
-            @update:model-value="filterDraft.q = $event"
-          >
-            <template #suffix>
-              <Icon
-                icon="i-lucide-search"
-                class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
-              />
-            </template>
-          </Input>
-        </div>
-
         <SchedulingSelectField
           :label="$t('CRM.TASKS.FORM.STATUS')"
           :model-value="filterDraft.statusId"
@@ -1123,6 +1441,14 @@ onMounted(async () => {
           :options="assigneeOptions"
           :placeholder="$t('CRM.TASKS.FORM.ASSIGNEE')"
           @update:model-value="filterDraft.assigneeId = $event"
+        />
+
+        <SchedulingSelectField
+          :label="$t('CRM.TASKS.FORM.PRIORITY')"
+          :model-value="filterDraft.priority"
+          :options="priorityOptions"
+          :placeholder="$t('CRM.TASKS.FORM.PRIORITY')"
+          @update:model-value="filterDraft.priority = $event"
         />
 
         <SchedulingSelectField
@@ -1146,3 +1472,17 @@ onMounted(async () => {
     </Dialog>
   </section>
 </template>
+
+<style scoped>
+.crm-task-list-table :deep(.grid.border-b) {
+  @apply bg-n-surface-1/70;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+
+.crm-task-list-table :deep(.divide-y > .grid) {
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+</style>

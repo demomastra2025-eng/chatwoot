@@ -30,8 +30,6 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         apply_defaults: new_record
       )
 
-      validate_related_parties!(contacts: contacts, company: company, conversation: conversation)
-
       deal.assign_attributes(
         account: account,
         pipeline: pipeline,
@@ -147,12 +145,6 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     end
 
     changed
-  end
-
-  def validate_related_parties!(contacts:, company:, conversation:)
-    return if contacts.any? || company.present? || conversation.present?
-
-    validation_error!('base', 'deal must have a contact, company, or originating conversation')
   end
 
   def write_event!(new_record:, contacts_changed:)

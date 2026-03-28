@@ -624,13 +624,9 @@ onMounted(async () => {
       @select-date="handleAnchorDateSelect"
     >
       <template #filters>
-        <SchedulingResourceFilter
-          :resources="filterableResources"
-          :model-value="calendarStore.selectedResourceIds"
-          @update:model-value="
-            calendarStore.setSelectedResources($event);
-            calendarStore.fetchCalendar();
-          "
+        <SchedulingViewSwitcher
+          v-model="currentPresentation"
+          :views="presentationOptions"
         />
       </template>
       <template #actions>
@@ -645,9 +641,13 @@ onMounted(async () => {
 
     <div class="bg-n-surface-1 px-5 pb-2 pt-1.5">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <SchedulingViewSwitcher
-          v-model="currentPresentation"
-          :views="presentationOptions"
+        <SchedulingResourceFilter
+          :resources="filterableResources"
+          :model-value="calendarStore.selectedResourceIds"
+          @update:model-value="
+            calendarStore.setSelectedResources($event);
+            calendarStore.fetchCalendar();
+          "
         />
         <SchedulingMultiSelectFilter
           :model-value="selectedStatusFilters"

@@ -14,4 +14,8 @@ class Crm::TaskStatusPolicy < Crm::BasePolicy
   def update?
     settings_manage_access?
   end
+
+  def destroy?
+    settings_manage_access?
+  end
 end

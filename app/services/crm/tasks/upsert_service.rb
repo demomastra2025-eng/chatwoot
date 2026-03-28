@@ -98,7 +98,9 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     return account.crm_task_statuses.find(params[:status_id]) if params.key?(:status_id) && params[:status_id].present?
     return task.status if task.persisted?
 
-    account.crm_task_statuses.active.find_by(default: true) || account.crm_task_statuses.active.ordered.first ||
+    account.crm_task_statuses.active.find_by(default: true) ||
+      account.crm_task_statuses.active.where(category: 'open').ordered.first ||
+      account.crm_task_statuses.active.ordered.first ||
       validation_error!('status_id', 'must reference an active status')
   end
 

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
 import { useRouter, useRoute } from 'vue-router';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper.js';
@@ -7,6 +8,7 @@ import { dynamicTime, shortTimestamp } from 'shared/helpers/timeHelper';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import Label from 'dashboard/components-next/label/Label.vue';
 import CardMessagePreview from './CardMessagePreview.vue';
 import CardMessagePreviewWithMeta from './CardMessagePreviewWithMeta.vue';
 import CardPriorityIcon from './CardPriorityIcon.vue';
@@ -32,6 +34,7 @@ const props = defineProps({
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const cardMessagePreviewWithMetaRef = ref(null);
 
@@ -42,6 +45,7 @@ const currentContactThumbnail = computed(() => currentContact.value?.thumbnail);
 const currentContactStatus = computed(
   () => currentContact.value?.availabilityStatus
 );
+const campaignTitle = computed(() => props.conversation?.campaign?.title || '');
 
 const inbox = computed(() => props.stateInbox);
 
@@ -99,9 +103,18 @@ const onCardClick = e => {
     />
     <div class="flex flex-col w-full gap-1 min-w-0">
       <div class="flex items-center justify-between h-6 gap-2">
-        <h4 class="text-base font-medium truncate text-n-slate-12">
-          {{ currentContactName }}
-        </h4>
+        <div class="flex items-center gap-2 min-w-0">
+          <h4 class="text-base font-medium truncate text-n-slate-12">
+            {{ currentContactName }}
+          </h4>
+          <div v-if="conversation.campaign" :title="campaignTitle">
+            <Label
+              :label="t('CAMPAIGN.BADGE.BROADCAST')"
+              color="blue"
+              compact
+            />
+          </div>
+        </div>
         <div class="flex items-center gap-2">
           <CardPriorityIcon :priority="conversation.priority || null" />
           <div

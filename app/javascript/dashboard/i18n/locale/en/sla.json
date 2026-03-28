@@ -27,7 +27,13 @@
       "404": "There are no SLAs available in this account.",
       "TABLE_HEADER": {
         "SLA": "SLA",
-        "BUSINESS_HOURS": "Business hours"
+        "BUSINESS_HOURS": "Business hours",
+        "ACTIONS": "Actions"
+      },
+      "TIME_UNITS_SHORT": {
+        "MINUTES": "m",
+        "HOURS": "h",
+        "DAYS": "d"
       },
       "EMPTY": {
         "TITLE_1": "Enterprise P0",
@@ -42,9 +48,9 @@
         "NRT": "Next response time threshold",
         "RT": "Resolution time threshold",
         "SHORT_HAND": {
-          "FRT": "FRT",
-          "NRT": "NRT",
-          "RT": "RT"
+          "FRT": "First",
+          "NRT": "Next",
+          "RT": "Resolution"
         }
       }
     },
@@ -79,6 +85,11 @@
       "THRESHOLD_TIME": {
         "INVALID_FORMAT_ERROR": "Threshold should be a number and greater than zero"
       },
+      "UNITS": {
+        "MINUTES": "Minutes",
+        "HOURS": "Hours",
+        "DAYS": "Days"
+      },
       "EDIT": "Edit",
       "CREATE": "Create",
       "DELETE": "Delete",
@@ -89,6 +100,14 @@
       "DESC": "Friendly promises for great service!",
       "API": {
         "SUCCESS_MESSAGE": "SLA added successfully",
+        "ERROR_MESSAGE": "There was an error, please try again"
+      }
+    },
+    "EDIT": {
+      "TITLE": "Edit SLA",
+      "DESC": "Update response and resolution targets for this SLA.",
+      "API": {
+        "SUCCESS_MESSAGE": "SLA updated successfully",
         "ERROR_MESSAGE": "There was an error, please try again"
       }
     },

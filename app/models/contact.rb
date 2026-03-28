@@ -25,6 +25,7 @@
 #
 # Indexes
 #
+#  idx_contacts_account_medelement_patient_code          (account_id, ((custom_attributes ->> 'medelement_patient_code'::text))) UNIQUE WHERE ((custom_attributes ->> 'medelement_patient_code'::text) IS NOT NULL)
 #  index_contacts_on_account_id                          (account_id)
 #  index_contacts_on_account_id_and_contact_type         (account_id,contact_type)
 #  index_contacts_on_account_id_and_last_activity_at     (account_id,last_activity_at DESC NULLS LAST)
@@ -58,6 +59,7 @@ class Contact < ApplicationRecord
             format: { with: /\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
 
   belongs_to :account
+  has_many :campaign_deliveries, dependent: :delete_all
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
   has_many :csat_survey_responses, dependent: :destroy_async

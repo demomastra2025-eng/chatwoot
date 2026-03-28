@@ -11,6 +11,7 @@ RSpec.describe Contact do
 
   context 'with associations' do
     it { is_expected.to belong_to(:account) }
+    it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
     it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
   end
 
@@ -100,6 +101,25 @@ RSpec.describe Contact do
     it 'has contact type "lead" when contacted through a social channel' do
       contact = create(:contact, additional_attributes: { social_facebook_user_id: '123' })
       expect(contact.contact_type).to eq 'lead'
+    end
+  end
+
+  context 'when a contact has campaign deliveries' do
+    it 'can be deleted without foreign key violations' do
+      contact = create(:contact, :with_phone_number)
+      campaign = create(:campaign, account: contact.account)
+      delivery = create(
+        :campaign_delivery,
+        campaign: campaign,
+        account: contact.account,
+        inbox: campaign.inbox,
+        contact: contact
+      )
+
+      contact.destroy!
+
+      expect(described_class.exists?(contact.id)).to be false
+      expect(CampaignDelivery.exists?(delivery.id)).to be false
     end
   end
 

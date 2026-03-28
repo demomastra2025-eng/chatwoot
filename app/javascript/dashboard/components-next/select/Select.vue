@@ -125,7 +125,7 @@ const selectClasses = computed(() => [
       <slot v-else />
     </select>
     <div
-      class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
+      class="pointer-events-none absolute inset-y-0 right-0 flex items-start py-3 pr-2"
     >
       <Icon
         icon="i-lucide-chevron-down"

@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
-import CrmDealStageMenu from './CrmDealStageMenu.vue';
+import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
+import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
   canManage: {
@@ -14,13 +15,9 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  ownerNames: {
-    type: Object,
-    default: () => ({}),
-  },
-  pipelineNames: {
-    type: Object,
-    default: () => ({}),
+  owners: {
+    type: Array,
+    default: () => [],
   },
   stages: {
     type: Array,
@@ -28,7 +25,12 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['changeStage', 'selectDeal']);
+const emit = defineEmits([
+  'changeOwner',
+  'changeStage',
+  'createDeal',
+  'selectDeal',
+]);
 const { locale, t } = useI18n();
 
 const boardColumns = ref({});
@@ -78,9 +80,10 @@ watch([() => props.deals, () => props.stages], () => syncBoardColumns(), {
 
 const kanbanColumns = computed(() =>
   props.stages.map(stage => ({
-    description: stage.pipelineName || '',
+    color: stage.color,
     deals: boardColumns.value[Number(stage.id)] || [],
     label: stage.name,
+    pipelineId: Number(stage.pipelineId),
     stageId: Number(stage.id),
   }))
 );
@@ -104,9 +107,7 @@ const formatAmountLabel = deal => {
 };
 
 const dealSubtitle = deal => {
-  return [props.pipelineNames[deal.pipelineId], props.ownerNames[deal.ownerId]]
-    .filter(Boolean)
-    .join(' · ');
+  return deal.primaryContact?.name || '';
 };
 
 const emitStageChange = (deal, stageId) => {
@@ -118,77 +119,63 @@ const emitStageChange = (deal, stageId) => {
   emit('changeStage', { deal, stageId: nextStageId });
 };
 
-const moveDealToStage = (deal, nextStageId) => {
-  const normalizedStageId = Number(nextStageId);
-  const currentStageId = props.stages.find(stage =>
-    (boardColumns.value[Number(stage.id)] || []).some(
-      item => item.id === deal.id
-    )
-  )?.id;
-
-  if (!currentStageId || Number(currentStageId) === normalizedStageId) {
-    return;
-  }
-
-  boardColumns.value[Number(currentStageId)] = boardColumns.value[
-    Number(currentStageId)
-  ].filter(item => item.id !== deal.id);
-
-  const updatedDeal = { ...deal, stageId: normalizedStageId };
-  boardColumns.value[normalizedStageId] = [
-    updatedDeal,
-    ...(boardColumns.value[normalizedStageId] || []),
-  ];
-
-  emit('changeStage', {
-    deal: updatedDeal,
-    stageId: normalizedStageId,
-  });
-};
-
 const handleColumnChange = (event, stageId) => {
   if (!event.added) return;
 
   const deal = boardColumns.value[Number(stageId)][event.added.newIndex];
   emitStageChange(deal, stageId);
 };
+
+const handleOwnerChange = (deal, ownerId) => {
+  const nextOwnerId = Number(ownerId);
+
+  if (!nextOwnerId || Number(deal.ownerId) === nextOwnerId) {
+    return;
+  }
+
+  emit('changeOwner', { deal, ownerId: nextOwnerId });
+};
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <div class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-1 pb-2">
-      <div class="flex h-full min-w-max items-stretch gap-4 py-1">
+      <div class="mx-auto flex h-full w-max items-stretch gap-2 py-1">
         <section
           v-for="column in kanbanColumns"
           :key="column.stageId"
-          class="flex h-full min-h-0 w-[17rem] shrink-0 flex-col overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container"
+          class="crm-deal-board-column group/crm-column flex h-full min-h-0 w-[17rem] shrink-0 flex-col overflow-visible"
         >
-          <header
-            class="flex items-start justify-between gap-3 border-b border-n-weak bg-n-surface-2 px-4 py-3"
-          >
-            <div class="min-w-0">
-              <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
-                {{ column.label }}
-              </h3>
-              <p
-                v-if="column.description"
-                class="mb-0 mt-1 truncate text-xs text-n-slate-11"
+          <header class="px-4 pt-3 pb-1.5">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
+                  {{ column.label }}
+                </h3>
+              </div>
+              <span
+                class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
               >
-                {{ column.description }}
-              </p>
+                {{ column.deals.length }}
+              </span>
             </div>
-            <span
-              class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
+            <div
+              class="mt-3 h-1 overflow-hidden rounded-full bg-n-alpha-black2"
             >
-              {{ column.deals.length }}
-            </span>
+              <div
+                class="h-full rounded-full"
+                :style="{
+                  backgroundColor: column.color || DEFAULT_STAGE_COLOR,
+                }"
+              />
+            </div>
           </header>
 
           <Draggable
             :list="boardColumns[column.stageId]"
             :disabled="!canManage"
             animation="180"
-            class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3"
+            class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 pb-3 pt-1.5"
             ghost-class="crm-deal-board-card-ghost"
             group="crm-deal-board"
             item-key="id"
@@ -196,46 +183,46 @@ const handleColumnChange = (event, stageId) => {
           >
             <template #item="{ element }">
               <article
-                class="rounded-2xl border border-n-weak bg-n-surface-1 p-3 shadow-sm transition-shadow hover:shadow-md"
+                class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
                 @click="emit('selectDeal', element)"
               >
-                <div class="flex items-start justify-between gap-3">
+                <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
                     <h4
-                      class="mb-0 truncate text-sm font-semibold text-n-slate-12"
+                      class="mb-0 truncate text-xs font-semibold text-n-slate-12"
                     >
                       {{ element.title }}
                     </h4>
-                    <p class="mb-0 mt-1 text-xs text-n-slate-11">
+                    <p class="mb-0 mt-0.5 text-[10px] text-n-slate-11">
                       {{
                         dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE')
                       }}
                     </p>
                   </div>
 
-                  <CrmDealStageMenu
+                  <CrmDealOwnerMenu
                     :disabled="!canManage"
-                    :model-value="element.stageId"
-                    :stages="stages"
-                    @update:model-value="moveDealToStage(element, $event)"
+                    :model-value="element.ownerId"
+                    :owners="owners"
+                    @update:model-value="handleOwnerChange(element, $event)"
                   />
                 </div>
 
-                <div class="mt-3 flex items-center justify-between gap-3">
+                <div class="mt-2 flex items-center justify-between gap-2">
                   <span
                     v-if="element.archivedAt"
-                    class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[11px] font-medium text-n-amber-11"
+                    class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
                   >
                     {{ $t('CRM.GENERAL.ARCHIVED') }}
                   </span>
                   <span
                     v-else
-                    class="text-xs font-medium uppercase tracking-[0.06em] text-n-slate-10"
+                    class="text-[10px] font-medium leading-none tracking-normal text-n-slate-10"
                   >
                     {{ formatAmountLabel(element) }}
                   </span>
 
-                  <span class="text-xs text-n-slate-11">
+                  <span class="text-[9px] text-n-slate-10/90">
                     {{
                       formatDateLabel(
                         element.expectedCloseOn || element.updatedAt
@@ -247,11 +234,60 @@ const handleColumnChange = (event, stageId) => {
             </template>
 
             <template #footer>
+              <template v-if="!column.deals.length">
+                <div
+                  class="grid gap-0.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-left"
+                  :class="
+                    canManage
+                      ? 'block group-hover/crm-column:hidden group-focus-within/crm-column:hidden'
+                      : 'block'
+                  "
+                >
+                  <p class="mb-0 text-xs font-medium text-n-slate-12">
+                    {{ $t('CRM.DEALS.BOARD.EMPTY_COLUMN') }}
+                  </p>
+                  <p class="mb-0 text-[10px] text-n-slate-11">
+                    {{ $t('CRM.DEALS.BOARD.EMPTY_COLUMN_DESCRIPTION') }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="canManage"
+                  class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
+                >
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                    @click.stop="
+                      emit('createDeal', {
+                        pipelineId: column.pipelineId,
+                        stageId: column.stageId,
+                      })
+                    "
+                  >
+                    <span class="size-3 i-lucide-plus" aria-hidden="true" />
+                    <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
+                  </button>
+                </div>
+              </template>
+
               <div
-                v-if="!column.deals.length"
-                class="flex min-h-[8rem] flex-1 items-center justify-center rounded-2xl border border-dashed border-n-strong bg-n-alpha-black2 px-4 text-center text-sm text-n-slate-11"
+                v-else-if="canManage"
+                class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
               >
-                {{ $t('CRM.DEALS.BOARD.EMPTY_COLUMN') }}
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                  @click.stop="
+                    emit('createDeal', {
+                      pipelineId: column.pipelineId,
+                      stageId: column.stageId,
+                    })
+                  "
+                >
+                  <span class="size-3 i-lucide-plus" aria-hidden="true" />
+                  <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
+                </button>
               </div>
             </template>
           </Draggable>
@@ -264,5 +300,14 @@ const handleColumnChange = (event, stageId) => {
 <style scoped lang="scss">
 .crm-deal-board-card-ghost {
   @apply opacity-40;
+}
+
+.crm-deal-board-column {
+  @apply relative;
+}
+
+.crm-deal-board-column + .crm-deal-board-column::before {
+  content: '';
+  @apply absolute -left-1 top-1/2 h-1/3 w-px -translate-y-1/2 bg-n-weak;
 }
 </style>

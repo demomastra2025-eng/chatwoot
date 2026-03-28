@@ -54,6 +54,50 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.where(code: 'enterprise_sales')).to exist
   end
 
+  it 'creates a pipeline with a russian name and auto-generated code' do
+    post path,
+         params: { name: 'Новая воронка продаж', default: false },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'code')).to eq('новая_воронка_продаж')
+    expect(account.crm_pipelines.where(code: 'новая_воронка_продаж')).to exist
+  end
+
+  it 'deletes an archived pipeline without deals' do
+    pipeline = create(:crm_pipeline, account: account, active: false, default: false)
+    create(:crm_stage, account: account, pipeline: pipeline)
+
+    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
+    expect(account.crm_stages.where(pipeline_id: pipeline.id)).not_to exist
+  end
+
+  it 'rejects deleting an active pipeline' do
+    pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+
+    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('PIPELINE_MUST_BE_ARCHIVED')
+    expect(account.crm_pipelines.where(id: pipeline.id)).to exist
+  end
+
+  it 'rejects deleting an archived pipeline with deals' do
+    pipeline = create(:crm_pipeline, account: account, active: false, default: false)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+
+    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('PIPELINE_HAS_DEALS')
+    expect(account.crm_pipelines.where(id: pipeline.id)).to exist
+  end
+
   it 'returns forbidden when crm_deals is disabled' do
     account.disable_features!('crm_deals')
 

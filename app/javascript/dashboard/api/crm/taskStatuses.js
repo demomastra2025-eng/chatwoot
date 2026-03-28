@@ -9,6 +9,10 @@ class CrmTaskStatusesAPI extends ApiClient {
   get(params = {}) {
     return axios.get(this.url, { params });
   }
+
+  deleteTaskStatus(taskStatusId) {
+    return this.delete(taskStatusId);
+  }
 }
 
 export default new CrmTaskStatusesAPI();

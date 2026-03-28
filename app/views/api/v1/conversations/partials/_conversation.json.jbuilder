@@ -37,6 +37,14 @@ else
 end
 
 json.account_id conversation.account_id
+json.campaign_id conversation.campaign_id
+if conversation.campaign.present?
+  json.campaign do
+    json.id conversation.campaign.display_id
+    json.title conversation.campaign.title
+    json.campaign_type conversation.campaign.campaign_type
+  end
+end
 json.uuid conversation.uuid
 json.additional_attributes conversation.additional_attributes
 json.agent_last_seen_at conversation.agent_last_seen_at.to_i

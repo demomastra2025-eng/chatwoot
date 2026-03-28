@@ -48,22 +48,23 @@ class Notification < ApplicationRecord
 
   enum notification_type: NOTIFICATION_TYPES
 
+  before_validation :capture_render_snapshot, on: :create
   before_create :set_last_activity_at
   after_create_commit :process_notification_delivery, :dispatch_create_event
   after_destroy_commit :dispatch_destroy_event
   after_update_commit :dispatch_update_event
 
   PRIMARY_ACTORS = ['Conversation'].freeze
+  RENDER_SNAPSHOT_KEY = 'render_snapshot'.freeze
 
   def push_event_data
-    # Secondary actor could be nil for cases like system assigning conversation
-    payload = {
+    {
       id: id,
       notification_type: notification_type,
       primary_actor_type: primary_actor_type,
       primary_actor_id: primary_actor_id,
       read_at: read_at,
-      secondary_actor: secondary_actor&.push_event_data,
+      secondary_actor: secondary_actor_payload,
       user: user&.push_event_data,
       created_at: created_at.to_i,
       last_activity_at: last_activity_at.to_i,
@@ -71,8 +72,7 @@ class Notification < ApplicationRecord
       meta: meta,
       account_id: account_id
     }
-    payload.merge!(primary_actor_data) if primary_actor.present?
-    payload
+      .merge(primary_actor_data)
   end
 
   def fcm_push_data
@@ -81,60 +81,42 @@ class Notification < ApplicationRecord
       notification_type: notification_type,
       primary_actor_id: primary_actor_id,
       primary_actor_type: primary_actor_type,
-      primary_actor: primary_actor.push_event_data.with_indifferent_access.slice('conversation_id', 'id')
+      primary_actor: primary_actor_payload.with_indifferent_access.slice('conversation_id', 'id')
     }
   end
 
-  # rubocop:disable Metrics/MethodLength
   def push_message_title
-    notification_title_map = {
-      'conversation_creation' => 'notifications.notification_title.conversation_creation',
-      'conversation_assignment' => 'notifications.notification_title.conversation_assignment',
-      'assigned_conversation_new_message' => 'notifications.notification_title.assigned_conversation_new_message',
-      'participating_conversation_new_message' => 'notifications.notification_title.assigned_conversation_new_message',
-      'conversation_mention' => 'notifications.notification_title.conversation_mention',
-      'sla_missed_first_response' => 'notifications.notification_title.sla_missed_first_response',
-      'sla_missed_next_response' => 'notifications.notification_title.sla_missed_next_response',
-      'sla_missed_resolution' => 'notifications.notification_title.sla_missed_resolution'
-    }
-
-    i18n_key = notification_title_map[notification_type]
-    return '' unless i18n_key
-
-    if notification_type == 'conversation_creation'
-      I18n.t(i18n_key, display_id: conversation.display_id, inbox_name: primary_actor.inbox.name)
-    elsif %w[conversation_assignment assigned_conversation_new_message participating_conversation_new_message
-             conversation_mention].include?(notification_type)
-      I18n.t(i18n_key, display_id: conversation.display_id)
-    else
-      I18n.t(i18n_key, display_id: primary_actor.display_id)
-    end
+    snapshot_value('push_message_title').presence || build_live_push_message_title
   end
-  # rubocop:enable Metrics/MethodLength
 
   def push_message_body
-    case notification_type
-    when 'conversation_creation', 'sla_missed_first_response'
-      message_body(conversation.messages.first)
-    when 'assigned_conversation_new_message', 'participating_conversation_new_message', 'conversation_mention'
-      message_body(secondary_actor)
-    when 'conversation_assignment', 'sla_missed_next_response', 'sla_missed_resolution'
-      message_body((conversation.messages.incoming.last || conversation.messages.outgoing.last))
-    else
-      ''
-    end
+    snapshot_value('push_message_body').presence || build_live_push_message_body
   end
 
   def conversation
     primary_actor
   end
 
+  def conversation_display_id
+    snapshot_value('conversation', 'display_id') || live_conversation&.display_id || primary_actor_display_id
+  end
+
+  def primary_actor_payload
+    primary_actor&.push_event_data || snapshot_value('primary_actor') || default_primary_actor_payload
+  end
+
+  def secondary_actor_payload
+    secondary_actor&.push_event_data || snapshot_value('secondary_actor')
+  end
+
   private
 
   def message_body(actor)
+    return I18n.t('notifications.no_content') if actor.blank?
+
     sender_name = sender_name(actor)
     content = message_content(actor)
-    "#{sender_name}: #{content}"
+    sender_name.present? ? "#{sender_name}: #{content}" : content
   end
 
   def sender_name(actor)
@@ -199,10 +181,121 @@ class Notification < ApplicationRecord
 
   def primary_actor_data
     {
-      primary_actor: primary_actor&.push_event_data,
+      primary_actor: primary_actor_payload,
       # TODO: Rename push_message_title to push_message_body
-      push_message_title: push_message_body,
+      push_message_title: push_message_title,
       push_message_body: push_message_body
     }
+  end
+
+  def build_live_push_message_title
+    i18n_key = notification_title_i18n_key
+    return '' unless i18n_key
+
+    if notification_type == 'conversation_creation'
+      I18n.t(i18n_key, display_id: live_conversation_display_id, inbox_name: live_conversation_inbox_name)
+    elsif conversation_scoped_notification?
+      I18n.t(i18n_key, display_id: live_conversation_display_id)
+    else
+      I18n.t(i18n_key, display_id: primary_actor_display_id)
+    end
+  end
+
+  def build_live_push_message_body
+    case notification_type
+    when 'conversation_creation', 'sla_missed_first_response'
+      message_body(live_conversation&.messages&.first)
+    when 'assigned_conversation_new_message', 'participating_conversation_new_message', 'conversation_mention'
+      message_body(secondary_actor)
+    when 'conversation_assignment', 'sla_missed_next_response', 'sla_missed_resolution'
+      latest_message = live_conversation&.messages&.incoming&.last || live_conversation&.messages&.outgoing&.last
+      message_body(latest_message)
+    else
+      ''
+    end
+  end
+
+  def build_render_snapshot
+    {
+      'push_message_title' => build_live_push_message_title,
+      'push_message_body' => build_live_push_message_body,
+      'primary_actor' => build_primary_actor_snapshot,
+      'secondary_actor' => secondary_actor&.push_event_data,
+      'conversation' => build_conversation_snapshot
+    }.compact
+  end
+
+  def build_primary_actor_snapshot
+    primary_actor&.push_event_data || default_primary_actor_payload
+  end
+
+  def build_conversation_snapshot
+    {
+      display_id: live_conversation_display_id,
+      inbox_name: live_conversation_inbox_name,
+      account_id: account_id
+    }.compact
+  end
+
+  def capture_render_snapshot
+    snapshot = build_render_snapshot
+    return if snapshot.blank?
+
+    snapshot_meta = (meta || {}).deep_stringify_keys
+    snapshot_meta[RENDER_SNAPSHOT_KEY] ||= snapshot
+    self.meta = snapshot_meta
+  end
+
+  def conversation_scoped_notification?
+    %w[conversation_assignment assigned_conversation_new_message participating_conversation_new_message
+       conversation_mention].include?(notification_type)
+  end
+
+  def default_primary_actor_payload
+    {
+      id: primary_actor_display_id,
+      meta: {}
+    }.compact.with_indifferent_access
+  end
+
+  def live_conversation
+    primary_actor if primary_actor.is_a?(Conversation)
+  end
+
+  def live_conversation_display_id
+    live_conversation&.display_id || primary_actor_display_id
+  end
+
+  def live_conversation_inbox_name
+    live_conversation&.inbox&.name.to_s
+  end
+
+  def notification_title_i18n_key
+    {
+      'conversation_creation' => 'notifications.notification_title.conversation_creation',
+      'conversation_assignment' => 'notifications.notification_title.conversation_assignment',
+      'assigned_conversation_new_message' => 'notifications.notification_title.assigned_conversation_new_message',
+      'participating_conversation_new_message' => 'notifications.notification_title.assigned_conversation_new_message',
+      'conversation_mention' => 'notifications.notification_title.conversation_mention',
+      'sla_missed_first_response' => 'notifications.notification_title.sla_missed_first_response',
+      'sla_missed_next_response' => 'notifications.notification_title.sla_missed_next_response',
+      'sla_missed_resolution' => 'notifications.notification_title.sla_missed_resolution'
+    }[notification_type]
+  end
+
+  def primary_actor_display_id
+    primary_actor&.try(:display_id) || primary_actor_id
+  end
+
+  def render_snapshot
+    raw_snapshot = meta.is_a?(Hash) ? meta[RENDER_SNAPSHOT_KEY] || meta[RENDER_SNAPSHOT_KEY.to_sym] : nil
+    return {} if raw_snapshot.blank?
+
+    raw_snapshot.with_indifferent_access
+  end
+
+  def snapshot_value(*keys)
+    value = render_snapshot.dig(*keys)
+    value.is_a?(Hash) ? value.with_indifferent_access : value
   end
 end

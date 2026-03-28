@@ -9,9 +9,13 @@ describe Whatsapp::OneoffCampaignService do
   let(:label1) { create(:label, account: account) }
   let(:label2) { create(:label, account: account) }
   let!(:campaign) do
-    create(:campaign, inbox: whatsapp_inbox, account: account,
-                      audience: [{ type: 'Label', id: label1.id }, { type: 'Label', id: label2.id }],
-                      template_params: template_params)
+    create(
+      :campaign,
+      inbox: whatsapp_inbox,
+      account: account,
+      audience: [{ type: 'Label', id: label1.id }, { type: 'Label', id: label2.id }],
+      template_params: template_params
+    )
   end
   let(:template_params) do
     {
@@ -24,19 +28,12 @@ describe Whatsapp::OneoffCampaignService do
   end
 
   before do
-    # Stub HTTP requests to WhatsApp API
-    stub_request(:post, /graph\.facebook\.com.*messages/)
-      .to_return(status: 200, body: { messages: [{ id: 'message_id_123' }] }.to_json, headers: { 'Content-Type' => 'application/json' })
-
-    # Ensure the service uses our mocked channel object by stubbing the whole delegation chain
-    # Using allow_any_instance_of here because the service is instantiated within individual tests
-    # and we need to mock the delegated channel method for proper test isolation
-    allow_any_instance_of(described_class).to receive(:channel).and_return(whatsapp_channel) # rubocop:disable RSpec/AnyInstance
+    clear_enqueued_jobs
+    clear_performed_jobs
   end
 
   describe '#perform' do
     before do
-      # Enable WhatsApp campaigns feature flag for all tests
       account.enable_features!(:whatsapp_campaign)
     end
 
@@ -82,65 +79,31 @@ describe Whatsapp::OneoffCampaignService do
         expect(campaign.reload.completed?).to be true
       end
 
-      it 'processes contacts with matching labels' do
+      it 'processes contacts with matching labels through native conversations and messages' do
         contact_with_label1, contact_with_label2, contact_with_both_labels =
           create_list(:contact, 3, :with_phone_number, account: account)
         contact_with_label1.update_labels([label1.title])
         contact_with_label2.update_labels([label2.title])
         contact_with_both_labels.update_labels([label1.title, label2.title])
 
-        expect(whatsapp_channel).to receive(:send_template).exactly(3).times
-
         described_class.new(campaign: campaign).perform
+
         expect(campaign.campaign_deliveries.count).to eq(3)
-        expect(campaign.campaign_deliveries.pluck(:status).uniq).to eq(['submitted'])
+        expect(campaign.campaign_deliveries.pluck(:status).uniq).to eq(['pending'])
+        expect(campaign.conversations.count).to eq(3)
+        expect(campaign.conversations.pluck(:status).uniq).to eq(['resolved'])
+        expect(campaign.conversations.all? { |conversation| conversation.messages.outgoing.count == 1 }).to be true
+        expect(campaign.conversations.all? { |conversation| conversation.messages.first.additional_attributes['campaign_id'] == campaign.id }).to be true
+        expect(enqueued_jobs.count { |job| job[:job] == SendReplyJob }).to eq(3)
       end
 
       it 'skips contacts without phone numbers' do
         contact_without_phone = create(:contact, account: account, phone_number: nil)
         contact_without_phone.update_labels([label1.title])
 
-        expect(whatsapp_channel).not_to receive(:send_template)
-
         described_class.new(campaign: campaign).perform
+
         expect(campaign.campaign_deliveries.find_by(contact: contact_without_phone).status).to eq('skipped')
-      end
-
-      it 'uses template processor service to process templates' do
-        contact = create(:contact, :with_phone_number, account: account)
-        contact.update_labels([label1.title])
-
-        expect(Whatsapp::TemplateProcessorService).to receive(:new)
-          .with(channel: whatsapp_channel, template_params: template_params)
-          .and_call_original
-
-        described_class.new(campaign: campaign).perform
-      end
-
-      it 'sends template message with correct parameters' do
-        contact = create(:contact, :with_phone_number, account: account)
-        contact.update_labels([label1.title])
-
-        expect(whatsapp_channel).to receive(:send_template).with(
-          contact.phone_number,
-          hash_including(
-            name: 'ticket_status_updated',
-            namespace: '23423423_2342423_324234234_2343224',
-            lang_code: 'en',
-            parameters: array_including(
-              hash_including(
-                type: 'body',
-                parameters: array_including(
-                  hash_including(type: 'text', parameter_name: 'name', text: 'John'),
-                  hash_including(type: 'text', parameter_name: 'ticket_id', text: '2332')
-                )
-              )
-            )
-          ),
-          nil
-        )
-
-        described_class.new(campaign: campaign).perform
       end
     end
 
@@ -153,33 +116,40 @@ describe Whatsapp::OneoffCampaignService do
 
         expect(Rails.logger).to receive(:error)
           .with("Skipping contact #{contact.name} - no template_params found for WhatsApp campaign")
-        expect(whatsapp_channel).not_to receive(:send_template)
 
         described_class.new(campaign: campaign).perform
+
         expect(campaign.campaign_deliveries.find_by(contact: contact).status).to eq('skipped')
       end
     end
 
-    context 'when send_template raises an error' do
+    context 'when native conversation creation fails for one contact' do
       it 'logs error and continues processing remaining contacts' do
         contact_error, contact_success = create_list(:contact, 2, :with_phone_number, account: account)
         contact_error.update_labels([label1.title])
         contact_success.update_labels([label1.title])
-        error_message = 'WhatsApp API error'
+        error_message = 'Builder error'
+        expected_campaign = campaign
 
-        allow(whatsapp_channel).to receive(:send_template).and_return(nil)
+        builder_error = instance_double(Campaigns::OneoffConversationBuilder)
+        builder_success = instance_double(Campaigns::OneoffConversationBuilder)
 
-        expect(whatsapp_channel).to receive(:send_template).with(contact_error.phone_number, anything, nil).and_raise(StandardError, error_message)
-        expect(whatsapp_channel).to receive(:send_template).with(contact_success.phone_number, anything, nil).once
+        allow(Campaigns::OneoffConversationBuilder).to receive(:new) do |campaign:, contact:|
+          expect(campaign).to eq(expected_campaign)
+          contact == contact_error ? builder_error : builder_success
+        end
+        expect(builder_error).to receive(:perform).and_raise(StandardError, error_message)
+        expect(builder_success).to receive(:perform).and_return(instance_double(Message))
 
         expect(Rails.logger).to receive(:error)
-          .with("Failed to send WhatsApp template message to #{contact_error.phone_number}: #{error_message}")
+          .with("Failed to create WhatsApp campaign message for #{contact_error.phone_number}: #{error_message}")
         expect(Rails.logger).to receive(:error).with(/Backtrace:/)
 
         described_class.new(campaign: campaign).perform
+
         expect(campaign.reload.completed?).to be true
         expect(campaign.campaign_deliveries.find_by(contact: contact_error).status).to eq('failed')
-        expect(campaign.campaign_deliveries.find_by(contact: contact_success).status).to eq('submitted')
+        expect(campaign.campaign_deliveries.find_by(contact: contact_success).status).to eq('pending')
       end
     end
   end

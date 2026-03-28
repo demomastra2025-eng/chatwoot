@@ -70,7 +70,7 @@ export default {
         this.$t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.FRT'),
         this.$t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.NRT'),
         this.$t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.RT'),
-        this.$t('INTEGRATION_APPS.LIST.ACTIONS'),
+        this.$t('SLA.LIST.TABLE_HEADER.ACTIONS'),
       ];
     },
     filteredRecords() {
@@ -87,10 +87,19 @@ export default {
       if (this.isBehindAPaywall) {
         return;
       }
+      this.selectedResponse = {};
       this.showAddPopup = true;
     },
     hideAddPopup() {
       this.showAddPopup = false;
+      this.selectedResponse = {};
+    },
+    openEditPopup(response) {
+      if (this.isBehindAPaywall) {
+        return;
+      }
+      this.selectedResponse = response;
+      this.showAddPopup = true;
     },
     openDeletePopup(response) {
       this.showDeleteConfirmationPopup = true;
@@ -119,9 +128,9 @@ export default {
     },
     displayTime(threshold) {
       const { time, unit } = convertSecondsToTimeUnit(threshold, {
-        minute: 'm',
-        hour: 'h',
-        day: 'd',
+        minute: this.$t('SLA.LIST.TIME_UNITS_SHORT.MINUTES'),
+        hour: this.$t('SLA.LIST.TIME_UNITS_SHORT.HOURS'),
+        day: this.$t('SLA.LIST.TIME_UNITS_SHORT.DAYS'),
       });
       if (!time) return '-';
       return `${time}${unit}`;
@@ -187,7 +196,7 @@ export default {
       >
         <template #header-2>
           <div class="flex items-center gap-1">
-            <span class="text-heading-3">
+            <span class="whitespace-nowrap text-body-main">
               {{ $t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.FRT') }}
             </span>
             <Icon
@@ -199,7 +208,7 @@ export default {
         </template>
         <template #header-3>
           <div class="flex items-center gap-1">
-            <span class="text-heading-3">
+            <span class="whitespace-nowrap text-body-main">
               {{ $t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.NRT') }}
             </span>
             <Icon
@@ -211,7 +220,7 @@ export default {
         </template>
         <template #header-4>
           <div class="flex items-center gap-1">
-            <span class="text-heading-3">
+            <span class="whitespace-nowrap text-body-main">
               {{ $t('SLA.LIST.RESPONSE_TYPES.SHORT_HAND.RT') }}
             </span>
             <Icon
@@ -263,32 +272,39 @@ export default {
                 </WootLabel>
               </BaseTableCell>
 
-              <BaseTableCell align="start" class="w-24">
+              <BaseTableCell align="start" class="w-28">
                 <span class="text-body-main text-n-slate-12">
                   {{ displayTime(sla.first_response_time_threshold) }}
                 </span>
               </BaseTableCell>
 
-              <BaseTableCell align="start" class="w-24">
+              <BaseTableCell align="start" class="w-28">
                 <span class="text-body-main text-n-slate-12">
                   {{ displayTime(sla.next_response_time_threshold) }}
                 </span>
               </BaseTableCell>
 
-              <BaseTableCell align="start" class="w-24">
+              <BaseTableCell align="start" class="w-28">
                 <span class="text-body-main text-n-slate-12">
                   {{ displayTime(sla.resolution_time_threshold) }}
                 </span>
               </BaseTableCell>
 
-              <BaseTableCell align="end" class="w-12">
-                <div class="flex justify-end">
+              <BaseTableCell align="end" class="w-24">
+                <div class="flex justify-end gap-1">
                   <NextButton
-                    v-tooltip.top="$t('SLA.FORM.DELETE')"
-                    icon="i-woot-bin"
+                    v-tooltip.top="$t('SLA.FORM.EDIT')"
+                    icon="i-lucide-pencil"
                     slate
                     sm
-                    class="hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-2"
+                    @click="openEditPopup(sla)"
+                  />
+                  <NextButton
+                    v-tooltip.top="$t('SLA.FORM.DELETE')"
+                    icon="i-lucide-trash-2"
+                    slate
+                    sm
+                    class="text-n-ruby-10 hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-1"
                     :is-loading="loading[sla.id]"
                     @click="openDeletePopup(sla)"
                   />
@@ -300,7 +316,11 @@ export default {
       </BaseTable>
 
       <woot-modal v-model:show="showAddPopup" @close="hideAddPopup">
-        <AddSLA @close="hideAddPopup" />
+        <AddSLA
+          :key="selectedResponse?.id || 'create'"
+          :selected-response="selectedResponse"
+          @close="hideAddPopup"
+        />
       </woot-modal>
 
       <woot-delete-modal

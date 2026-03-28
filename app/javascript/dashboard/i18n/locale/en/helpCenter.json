@@ -3,7 +3,57 @@
     "TITLE": "Help Center",
     "NEW_PAGE": {
       "DESCRIPTION": "Create self-service help center portals for your customers. Help them find answers quickly, without waiting. Streamline inquiries, boost agent efficiency, and elevate customer support.",
-      "CREATE_PORTAL_BUTTON": "Create Portal"
+      "CREATE_PORTAL_BUTTON": "Create Portal",
+      "SAMPLE_ARTICLES": {
+        "TITLES": {
+          "SSL_CERTIFICATE": "How to get an SSL certificate for your Help Center's custom domain",
+          "FIRST_PORTAL": "Setting up your first Help Center portal",
+          "BEST_PRACTICES": "Best practices for organizing your Help Center content",
+          "CUSTOMIZE_APPEARANCE": "Customizing the appearance of your Help Center",
+          "THIRD_PARTY_TOOLS": "Integrating your Help Center with third-party tools",
+          "USER_PERMISSIONS": "Managing user permissions in your Help Center",
+          "FAQ_SECTIONS": "Creating and managing FAQ sections",
+          "SEARCH_FUNCTIONALITY": "Implementing search functionality in your Help Center",
+          "USAGE_METRICS": "Analyzing Help Center usage metrics",
+          "MULTILINGUAL_SUPPORT": "Setting up multilingual support in your Help Center",
+          "INTERACTIVE_TUTORIALS": "Creating interactive tutorials for your products",
+          "FEEDBACK_SYSTEM": "Implementing a feedback system in your Help Center",
+          "SEO_OPTIMIZATION": "Optimizing Help Center content for SEO",
+          "INTERNAL_KNOWLEDGE_BASE": "Creating a knowledge base for internal teams"
+        },
+        "CATEGORIES": {
+          "CONFIGURATION": "Setup & Configuration",
+          "ONBOARDING": "Onboarding",
+          "BEST_PRACTICES": "Best Practices",
+          "DESIGN": "Design",
+          "INTEGRATIONS": "Integrations",
+          "ADMINISTRATION": "Administration",
+          "CONTENT_MANAGEMENT": "Content Management",
+          "FEATURES": "Features",
+          "ANALYTICS": "Analytics",
+          "LOCALIZATION": "Localization",
+          "EDUCATION": "Education",
+          "USER_ENGAGEMENT": "User Engagement",
+          "SEO": "SEO",
+          "INTERNAL_RESOURCES": "Internal Resources"
+        },
+        "AUTHORS": {
+          "AIGERIM": "Aigerim",
+          "NURLAN": "Nurlan",
+          "DANA": "Dana",
+          "TIMUR": "Timur",
+          "ALIYA": "Aliya",
+          "ALIKHAN": "Alikhan",
+          "ARUZHAN": "Aruzhan",
+          "ERLAN": "Erlan",
+          "MADINA": "Madina",
+          "ARMAN": "Arman",
+          "ASEM": "Asem",
+          "DAMIR": "Damir",
+          "DINARA": "Dinara",
+          "BAUYRZHAN": "Bauyrzhan"
+        }
+      }
     },
     "HEADER": {
       "FILTER": "Filter by",

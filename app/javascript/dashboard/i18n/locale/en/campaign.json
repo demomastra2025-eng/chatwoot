@@ -210,6 +210,9 @@
         "ERROR_MESSAGE": "There was an error. Please try again."
       }
     },
+    "BADGE": {
+      "BROADCAST": "Broadcast"
+    },
     "ANALYTICS": {
       "TITLE": "Campaign analytics",
       "DESCRIPTION": "Review native delivery outcomes for this campaign.",

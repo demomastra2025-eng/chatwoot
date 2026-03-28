@@ -4,7 +4,7 @@
     "CURRENT_PAGE_INFO": "{currentPage} из {totalPages} страниц"
   },
   "COMBOBOX": {
-    "PLACEHOLDER": "Выберите параметр...",
+    "PLACEHOLDER": "Выбрать...",
     "EMPTY_SEARCH_RESULTS": "Не найдено элементов для поиска `{searchTerm}`",
     "EMPTY_STATE": "Результаты не найдены.",
     "SEARCH_PLACEHOLDER": "Поиск...",
@@ -29,7 +29,7 @@
   "DATE_TIME_PICKER": {
     "BACK": "Назад",
     "HOURS": "Часы",
-    "MINUTES": "Минуты",
+    "MINUTES": "Мин",
     "MONTH": "Месяц",
     "YEAR": "Год"
   },

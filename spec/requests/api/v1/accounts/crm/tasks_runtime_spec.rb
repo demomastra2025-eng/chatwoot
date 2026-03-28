@@ -71,6 +71,24 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
   end
 
+  it 'does not auto-assign an inactive default status to new tasks' do
+    default_status = account.crm_task_statuses.find_by!(code: 'todo')
+    default_status.update!(active: false, default: true)
+
+    post path,
+         params: {
+           title: 'Fallback active status'
+         },
+         headers: headers,
+         as: :json
+
+    created_task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+
+    expect(response).to have_http_status(:created)
+    expect(created_task.status_id).not_to eq(default_status.id)
+    expect(created_task.status.active).to eq(true)
+  end
+
   it 'returns an existing task when create is retried with the same idempotency_key' do
     params = {
       title: 'Imported follow-up',
@@ -84,6 +102,28 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'id')).to eq(first_id)
+  end
+
+  it 'filters tasks by priority' do
+    high_priority_task = create(
+      :crm_task,
+      account: account,
+      status: account.crm_task_statuses.find_by!(code: 'todo'),
+      priority: 'high',
+      title: 'Escalate renewal'
+    )
+    create(
+      :crm_task,
+      account: account,
+      status: account.crm_task_statuses.find_by!(code: 'todo'),
+      priority: 'low',
+      title: 'Send follow-up note'
+    )
+
+    get path, params: { priority: 'high' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([high_priority_task.id])
   end
 
   it 'changes status to done and sets completed_at' do
@@ -133,5 +173,39 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'archived_at')).to be_nil
+  end
+
+  it 'drops custom field values when their field definition is deleted' do
+    field_definition = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'follow_up_reason',
+      label: 'Follow-up reason'
+    )
+    task = create(
+      :crm_task,
+      account: account,
+      status: account.crm_task_statuses.find_by!(code: 'todo'),
+      custom_attributes: { 'follow_up_reason' => 'documents' }
+    )
+
+    delete "/api/v1/accounts/#{account.id}/crm/field_definitions/#{field_definition.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+
+    patch "#{path}/#{task.id}",
+          params: {
+            title: 'Updated task title',
+            lock_version: task.lock_version
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'custom_attributes')).to eq({})
+    expect(task.reload.custom_attributes).to eq({})
   end
 end

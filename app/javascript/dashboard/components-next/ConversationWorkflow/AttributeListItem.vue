@@ -15,21 +15,36 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  readOnly: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['edit', 'delete']);
 
 const iconByType = {
   text: 'i-lucide-menu',
+  textarea: 'i-lucide-align-left',
   checkbox: 'i-lucide-circle-check-big',
   list: 'i-lucide-list',
   date: 'i-lucide-calendar',
+  datetime: 'i-lucide-calendar-clock',
   link: 'i-lucide-link',
+  url: 'i-lucide-link',
   number: 'i-lucide-hash',
+  currency: 'i-lucide-banknote',
+  percent: 'i-lucide-percent',
+  select: 'i-lucide-list-filter',
+  multiselect: 'i-lucide-list-checks',
 };
 
 const attributeIcon = computed(() => {
-  const typeKey = props.attribute.type?.toLowerCase();
+  const typeKey = (
+    props.attribute.typeIconKey ||
+    props.attribute.typeLabel ||
+    props.attribute.type
+  )?.toLowerCase();
   return iconByType[typeKey] || 'i-lucide-menu';
 });
 </script>
@@ -49,7 +64,7 @@ const attributeIcon = computed(() => {
               {{ attribute.label }}
             </h4>
             <div class="flex items-center gap-1.5">
-              <Label :label="attribute.type" compact />
+              <Label :label="attribute.typeLabel || attribute.type" compact />
               <AttributeBadge
                 v-for="badge in badges"
                 :key="badge.type"
@@ -75,7 +90,7 @@ const attributeIcon = computed(() => {
           </div>
         </div>
       </div>
-      <div class="flex gap-3 justify-end flex-shrink-0">
+      <div v-if="!readOnly" class="flex gap-3 justify-end flex-shrink-0">
         <Button
           icon="i-woot-edit-pen"
           slate

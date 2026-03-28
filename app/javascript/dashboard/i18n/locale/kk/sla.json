@@ -1,108 +1,136 @@
 {
   "SLA": {
-    "HEADER": "Service Level Agreements",
-    "ADD_ACTION": "Add SLA",
-    "ADD_ACTION_LONG": "Create a new SLA Policy",
-    "DESCRIPTION": "Service Level Agreements (SLAs) are contracts that define clear expectations between your team and customers. They establish standards for response and resolution times, creating a framework for accountability and ensures a consistent, high-quality experience.",
-    "LEARN_MORE": "Learn more about SLA",
-    "LOADING": "Fetching SLAs",
+    "HEADER": "Қызмет көрсету деңгейі туралы келісімдер",
+    "ADD_ACTION": "SLA қосу",
+    "ADD_ACTION_LONG": "Жаңа SLA саясатын құру",
+    "DESCRIPTION": "Қызмет көрсету деңгейі туралы келісімдер (SLA) командаңыз бен клиенттер арасындағы нақты күтулерді белгілейді. Олар жауап беру және мәселені шешу уақытының стандарттарын орнатып, жауапкершілікке негіз болады және тұрақты, сапалы қызмет көрсетуге көмектеседі.",
+    "LEARN_MORE": "SLA туралы толығырақ",
+    "COUNT": "{n} SLA | {n} SLA",
+    "LOADING": "SLA жүктелуде",
+    "SEARCH_PLACEHOLDER": "SLA іздеу...",
+    "SEARCH": {
+      "NO_RESULTS": "Іздеуіңізге сәйкес SLA табылмады"
+    },
     "PAYWALL": {
-      "TITLE": "Upgrade to create SLAs",
-      "AVAILABLE_ON": "The SLA feature is only available in the Business and Enterprise plans.",
-      "UPGRADE_PROMPT": "Upgrade your plan to get access to advanced features like team management, automations, custom attributes, and more.",
-      "UPGRADE_NOW": "Upgrade now",
-      "CANCEL_ANYTIME": "You can change or cancel your plan anytime"
+      "TITLE": "SLA жасау үшін тарифті жаңартыңыз",
+      "AVAILABLE_ON": "SLA мүмкіндігі тек Business және Enterprise тарифтерінде қолжетімді.",
+      "UPGRADE_PROMPT": "Команданы басқару, автоматтандыру, теңшелетін атрибуттар және басқа да кеңейтілген мүмкіндіктерге қол жеткізу үшін тарифіңізді жаңартыңыз.",
+      "UPGRADE_NOW": "Қазір жаңарту",
+      "CANCEL_ANYTIME": "Тарифті кез келген уақытта өзгертуге немесе тоқтатуға болады"
     },
     "ENTERPRISE_PAYWALL": {
-      "AVAILABLE_ON": "The SLA feature is only available in the paid plans.",
-      "UPGRADE_PROMPT": "Upgrade to a paid plan to access advanced features like audit logs, agent capacity, and more.",
-      "ASK_ADMIN": "Please reach out to your administrator for the upgrade."
+      "AVAILABLE_ON": "SLA мүмкіндігі тек ақылы тарифтерде қолжетімді.",
+      "UPGRADE_PROMPT": "Аудит журналдары, агент сыйымдылығы және басқа да кеңейтілген мүмкіндіктерге қол жеткізу үшін ақылы тарифке ауысыңыз.",
+      "ASK_ADMIN": "Жаңарту үшін әкімшіге хабарласыңыз."
     },
     "LIST": {
-      "404": "There are no SLAs available in this account.",
+      "404": "Бұл аккаунтта SLA жоқ.",
+      "TABLE_HEADER": {
+        "SLA": "SLA",
+        "BUSINESS_HOURS": "Жұмыс уақыты",
+        "ACTIONS": "Әрекеттер"
+      },
+      "TIME_UNITS_SHORT": {
+        "MINUTES": "мин",
+        "HOURS": "сағ",
+        "DAYS": "күн"
+      },
       "EMPTY": {
         "TITLE_1": "Enterprise P0",
-        "DESC_1": "Issues raised by enterprise customers, that require immediate attention.",
+        "DESC_1": "Жедел назар аударуды қажет ететін enterprise клиенттерден түскен мәселелер.",
         "TITLE_2": "Enterprise P1",
-        "DESC_2": "Issues raised by enterprise customers, that needs to be acknowledged quickly."
+        "DESC_2": "Тез арада қабылдануы тиіс enterprise клиенттерден түскен мәселелер."
       },
-      "BUSINESS_HOURS_ON": "Business hours on",
-      "BUSINESS_HOURS_OFF": "Business hours off",
+      "BUSINESS_HOURS_ON": "Қосулы",
+      "BUSINESS_HOURS_OFF": "Өшірулі",
       "RESPONSE_TYPES": {
-        "FRT": "First response time threshold",
-        "NRT": "Next response time threshold",
-        "RT": "Resolution time threshold",
+        "FRT": "Алғашқы жауап беру уақытының шегі",
+        "NRT": "Келесі жауап беру уақытының шегі",
+        "RT": "Шешу уақытының шегі",
         "SHORT_HAND": {
-          "FRT": "FRT",
-          "NRT": "NRT",
-          "RT": "RT"
+          "FRT": "Алғашқы",
+          "NRT": "Келесі",
+          "RT": "Аяқтау"
         }
       }
     },
     "FORM": {
       "NAME": {
-        "LABEL": "SLA Name",
-        "PLACEHOLDER": "SLA Name",
-        "REQUIRED_ERROR": "SLA name is required",
-        "MINIMUM_LENGTH_ERROR": "Minimum length 2 is required",
-        "VALID_ERROR": "Only Alphabets, Numbers, Hyphen and Underscore are allowed"
+        "LABEL": "SLA атауы",
+        "PLACEHOLDER": "SLA атауы",
+        "REQUIRED_ERROR": "SLA атауы міндетті",
+        "MINIMUM_LENGTH_ERROR": "Кемінде 2 таңба болуы керек",
+        "VALID_ERROR": "Тек әріптерге, сандарға, дефиске және астыңғы сызуға рұқсат етіледі"
       },
       "DESCRIPTION": {
-        "LABEL": "Description",
-        "PLACEHOLDER": "SLA for premium customers"
+        "LABEL": "Сипаттама",
+        "PLACEHOLDER": "Премиум клиенттерге арналған SLA"
       },
       "FIRST_RESPONSE_TIME": {
-        "LABEL": "First Response Time",
+        "LABEL": "Алғашқы жауап",
         "PLACEHOLDER": "5"
       },
       "NEXT_RESPONSE_TIME": {
-        "LABEL": "Next Response Time",
+        "LABEL": "Келесі жауап",
         "PLACEHOLDER": "5"
       },
       "RESOLUTION_TIME": {
-        "LABEL": "Resolution Time",
+        "LABEL": "Шешу",
         "PLACEHOLDER": "60"
       },
       "BUSINESS_HOURS": {
-        "LABEL": "Business Hours",
-        "PLACEHOLDER": "Only during business hours"
+        "LABEL": "Жұмыс уақыты",
+        "PLACEHOLDER": "Тек жұмыс уақытында"
       },
       "THRESHOLD_TIME": {
-        "INVALID_FORMAT_ERROR": "Threshold should be a number and greater than zero"
+        "INVALID_FORMAT_ERROR": "Шек мәні сан болуы және нөлден үлкен болуы керек"
       },
-      "EDIT": "Edit",
-      "CREATE": "Create",
-      "DELETE": "Delete",
-      "CANCEL": "Cancel"
+      "UNITS": {
+        "MINUTES": "Минут",
+        "HOURS": "Сағат",
+        "DAYS": "Күн"
+      },
+      "EDIT": "Өңдеу",
+      "CREATE": "Құру",
+      "DELETE": "Жою",
+      "CANCEL": "Болдырмау"
     },
     "ADD": {
-      "TITLE": "Add SLA",
-      "DESC": "Friendly promises for great service!",
+      "TITLE": "SLA қосу",
+      "DESC": "Команда үшін жауап және шешу мерзімдерін баптаңыз.",
       "API": {
-        "SUCCESS_MESSAGE": "SLA added successfully",
-        "ERROR_MESSAGE": "There was an error, please try again"
+        "SUCCESS_MESSAGE": "SLA сәтті қосылды",
+        "ERROR_MESSAGE": "Қате орын алды, қайтадан көріңіз"
+      }
+    },
+    "EDIT": {
+      "TITLE": "SLA өңдеу",
+      "DESC": "Осы SLA үшін жауап және шешу мерзімдерін жаңартыңыз.",
+      "API": {
+        "SUCCESS_MESSAGE": "SLA сәтті жаңартылды",
+        "ERROR_MESSAGE": "Қате орын алды, қайтадан көріңіз"
       }
     },
     "DELETE": {
-      "TITLE": "Delete SLA",
+      "TITLE": "SLA жою",
       "API": {
-        "SUCCESS_MESSAGE": "SLA deleted successfully",
-        "ERROR_MESSAGE": "There was an error, please try again"
+        "SUCCESS_MESSAGE": "SLA сәтті жойылды",
+        "ERROR_MESSAGE": "Қате орын алды, қайтадан көріңіз"
       },
       "CONFIRM": {
-        "TITLE": "Confirm Deletion",
-        "MESSAGE": "Are you sure you want to delete ",
-        "YES": "Yes, Delete ",
-        "NO": "No, Keep "
+        "TITLE": "Жоюды растау",
+        "MESSAGE": "Мынаны жойғыңыз келетініне сенімдісіз бе: ",
+        "YES": "Иә, жою ",
+        "NO": "Жоқ, қалдыру "
       }
     },
     "EVENTS": {
-      "TITLE": "SLA Misses",
-      "FRT": "First response time",
-      "NRT": "Next response time",
-      "RT": "Resolution time",
-      "SHOW_MORE": "{count} more",
-      "HIDE": "Hide {count} rows"
+      "TITLE": "SLA бұзылулары",
+      "FRT": "Алғашқы жауап беру уақыты",
+      "NRT": "Келесі жауап беру уақыты",
+      "RT": "Шешу уақыты",
+      "SHOW_MORE": "тағы {count}",
+      "HIDE": "{count} жолды жасыру"
     }
   }
 }

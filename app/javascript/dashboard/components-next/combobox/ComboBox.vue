@@ -23,6 +23,11 @@ const props = defineProps({
   hasError: { type: Boolean, default: false },
   useApiResults: { type: Boolean, default: false }, // useApiResults prop to determine if search is handled by API
   inputLike: { type: Boolean, default: false },
+  dropdownPlacement: {
+    type: String,
+    default: 'bottom',
+    validator: value => ['auto', 'bottom', 'top'].includes(value),
+  },
 });
 
 const emit = defineEmits(['open', 'update:modelValue', 'search']);
@@ -39,8 +44,18 @@ const dropdownStyle = ref({});
 const teleportTarget = ref('body');
 
 const resolveTeleportTarget = () => {
-  const overlayElement = comboboxRef.value?.closest('dialog[open], .modal-mask');
+  const overlayElement = comboboxRef.value?.closest(
+    'dialog[open], .modal-mask'
+  );
   teleportTarget.value = overlayElement || 'body';
+};
+
+const resolveDropdownPlacement = ({ availableAbove, availableBelow }) => {
+  if (props.dropdownPlacement !== 'auto') {
+    return props.dropdownPlacement;
+  }
+
+  return availableAbove > availableBelow ? 'top' : 'bottom';
 };
 
 const updateDropdownPosition = () => {
@@ -48,18 +63,38 @@ const updateDropdownPosition = () => {
 
   const rect = comboboxRef.value.getBoundingClientRect();
   const viewportPadding = 8;
+  const dropdownGap = 8;
   const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
   const left = Math.min(
     Math.max(rect.left, viewportPadding),
     window.innerWidth - width - viewportPadding
   );
-  const top = Math.max(rect.bottom + 8, viewportPadding);
-  const maxHeight = Math.max(window.innerHeight - top - viewportPadding, 160);
+  const availableAbove = Math.max(
+    rect.top - viewportPadding - dropdownGap,
+    160
+  );
+  const availableBelow = Math.max(
+    window.innerHeight - rect.bottom - viewportPadding - dropdownGap,
+    160
+  );
+  const placement = resolveDropdownPlacement({
+    availableAbove,
+    availableBelow,
+  });
 
   dropdownStyle.value = {
+    bottom:
+      placement === 'top'
+        ? `${Math.round(window.innerHeight - rect.top + dropdownGap)}px`
+        : 'auto',
     left: `${Math.round(left)}px`,
-    maxHeight: `${Math.round(maxHeight)}px`,
-    top: `${Math.round(top)}px`,
+    maxHeight: `${Math.round(
+      placement === 'top' ? availableAbove : availableBelow
+    )}px`,
+    top:
+      placement === 'bottom'
+        ? `${Math.round(rect.bottom + dropdownGap)}px`
+        : 'auto',
     width: `${Math.round(width)}px`,
   };
 };

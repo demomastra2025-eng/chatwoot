@@ -104,7 +104,7 @@
           "MINE": "Назначено",
           "ALL": "Все",
           "ASSIGNED": "Назначенные диалоги",
-          "UNASSIGNED": "Назначенные диалоги",
+          "UNASSIGNED": "Неназначенные диалоги",
           "NOTME": "Открытые диалоги, назначенные другим"
         },
         "ALERT_COMBINATIONS": {
@@ -357,7 +357,7 @@
     "LIVE_CHAT": "Онлайн чат",
     "SMS": "SMS",
     "WHATSAPP": "WhatsApp",
-    "CAMPAIGNS": "Рассылки кампаний",
+    "CAMPAIGNS": "Рассылки",
     "ONGOING": "Повторяющиеся",
     "ONE_OFF": "Единоразовые",
     "REPORTS_SLA": "SLA",

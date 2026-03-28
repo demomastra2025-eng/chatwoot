@@ -22,9 +22,10 @@
 #
 # Indexes
 #
-#  idx_scheduling_resources_on_account_active_name  (account_id,active,name)
-#  index_scheduling_resources_on_account_id         (account_id)
-#  index_scheduling_resources_on_user_id            (user_id)
+#  idx_scheduling_resources_account_medelement_specialist_code  (account_id, ((custom_attributes ->> 'medelement_specialist_code'::text))) UNIQUE WHERE ((custom_attributes ->> 'medelement_specialist_code'::text) IS NOT NULL)
+#  idx_scheduling_resources_on_account_active_name              (account_id,active,name)
+#  index_scheduling_resources_on_account_id                     (account_id)
+#  index_scheduling_resources_on_user_id                        (user_id)
 #
 # Foreign Keys
 #
@@ -58,7 +59,7 @@ class Scheduling::Resource < ApplicationRecord
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
   scope :not_deleted_from_scheduling,
-        -> { where.not("custom_attributes @> ?", { DELETED_FROM_SCHEDULING_KEY => true }.to_json) }
+        -> { where.not('custom_attributes @> ?', { DELETED_FROM_SCHEDULING_KEY => true }.to_json) }
   scope :available_for_scheduling, -> { active.not_deleted_from_scheduling }
 
   def deleted_from_scheduling?

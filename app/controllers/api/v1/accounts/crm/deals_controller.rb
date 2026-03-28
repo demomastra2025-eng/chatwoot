@@ -166,7 +166,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def filtered_deals
-    scope = policy_scope(::Crm::Deal).preload(:deal_contacts).ordered
+    scope = policy_scope(::Crm::Deal).preload(:company, deal_contacts: :contact).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
     scope = filter_by_exact(scope, :pipeline_id)
     scope = filter_by_exact(scope, :stage_id)
@@ -180,11 +180,11 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   def idempotent_deal
     return if create_deal_params[:idempotency_key].blank?
 
-    Current.account.crm_deals.preload(:deal_contacts).find_by(idempotency_key: create_deal_params[:idempotency_key])
+    Current.account.crm_deals.preload(:company, deal_contacts: :contact).find_by(idempotency_key: create_deal_params[:idempotency_key])
   end
 
   def set_deal
-    @deal = policy_scope(::Crm::Deal).preload(:deal_contacts).find(params[:id])
+    @deal = policy_scope(::Crm::Deal).preload(:company, deal_contacts: :contact).find(params[:id])
   end
 
   def update_deal_params

@@ -1,7 +1,7 @@
 class Api::V1::Accounts::Crm::TaskStatusesController < Api::V1::Accounts::Crm::BaseController
   before_action :ensure_crm_tasks_enabled!
   before_action :bootstrap_defaults!, only: [:index]
-  before_action :set_task_status, only: [:update]
+  before_action :set_task_status, only: [:update, :destroy]
 
   def index
     authorize ::Crm::TaskStatus
@@ -29,6 +29,14 @@ class Api::V1::Accounts::Crm::TaskStatusesController < Api::V1::Accounts::Crm::B
     render_payload(::Crm::PayloadBuilder.task_status(@task_status.reload))
   end
 
+  def destroy
+    authorize @task_status
+    ensure_destroyable_task_status!
+    @task_status.destroy!
+
+    head :no_content
+  end
+
   private
 
   def bootstrap_defaults!
@@ -40,6 +48,16 @@ class Api::V1::Accounts::Crm::TaskStatusesController < Api::V1::Accounts::Crm::B
   end
 
   def task_status_params
-    params.permit(:name, :code, :position, :category, :active, :default)
+    params.permit(:name, :code, :position, :category, :color, :active, :default)
+  end
+
+  def ensure_destroyable_task_status!
+    return unless @task_status.tasks.exists?
+
+    raise ::Crm::Error.new(
+      code: 'TASK_STATUS_HAS_TASKS',
+      message: 'You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.',
+      status: :unprocessable_content
+    )
   end
 end

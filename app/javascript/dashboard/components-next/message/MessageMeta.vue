@@ -1,9 +1,11 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 
 import MessageStatus from './MessageStatus.vue';
 import Icon from 'next/icon/Icon.vue';
+import Label from 'dashboard/components-next/label/Label.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useMessageContext } from './provider.js';
 
@@ -30,8 +32,10 @@ const {
   createdAt,
   sourceId,
   messageType,
+  additionalAttributes,
   contentAttributes,
 } = useMessageContext();
+const { t } = useI18n();
 
 const readableTime = computed(() =>
   messageTimestamp(createdAt.value, 'LLL d, h:mm a')
@@ -133,10 +137,20 @@ const statusToShow = computed(() => {
 
   return MESSAGE_STATUS.PROGRESS;
 });
+
+const isCampaignMessage = computed(
+  () => !!additionalAttributes.value?.campaignId
+);
 </script>
 
 <template>
   <div class="text-xs flex items-center gap-1.5">
+    <Label
+      v-if="isCampaignMessage"
+      :label="t('CAMPAIGN.BADGE.BROADCAST')"
+      color="blue"
+      compact
+    />
     <div class="inline">
       <time class="inline">{{ readableTime }}</time>
     </div>
@@ -144,4 +158,3 @@ const statusToShow = computed(() => {
     <MessageStatus v-if="showStatusIndicator" :status="statusToShow" />
   </div>
 </template>
-`

@@ -11,6 +11,10 @@ class CampaignPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def analytics?
+    show?
+  end
+
   def create?
     @account_user.administrator?
   end

@@ -20,6 +20,28 @@ describe Messages::MessageBuilder do
       message = message_builder
       expect(message.content).to eq params[:content]
     end
+
+    context 'when campaign_id and template_params are both provided' do
+      let(:params) do
+        ActionController::Parameters.new({
+                                           content: 'test',
+                                           campaign_id: 42,
+                                           template_params: {
+                                             name: 'ticket_status_updated',
+                                             language: 'en',
+                                             category: 'UTILITY',
+                                             processed_params: { body: { name: 'John' } }
+                                           }
+                                         })
+      end
+
+      it 'merges them into additional_attributes' do
+        message = message_builder
+
+        expect(message.additional_attributes['campaign_id']).to eq(42)
+        expect(message.additional_attributes.dig('template_params', 'name')).to eq('ticket_status_updated')
+      end
+    end
   end
 
   describe '#content_attributes' do

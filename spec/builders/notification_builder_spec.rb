@@ -26,6 +26,22 @@ describe NotificationBuilder do
       end.to change { user.notifications.count }.by(1)
     end
 
+    it 'stores a render snapshot for resilient notification rendering' do
+      described_class.new(
+        notification_type: 'conversation_creation',
+        user: user,
+        account: account,
+        primary_actor: primary_actor
+      ).perform
+
+      notification = user.notifications.last
+      snapshot = notification.meta['render_snapshot']
+
+      expect(snapshot['conversation']['display_id']).to eq(primary_actor.display_id)
+      expect(snapshot['primary_actor']['id']).to eq(primary_actor.display_id)
+      expect(snapshot['push_message_title']).to include("##{primary_actor.display_id}")
+    end
+
     it 'will not throw error if notification setting is not present' do
       perform_enqueued_jobs do
         user.account_users.destroy_all

@@ -134,14 +134,33 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
 
       context 'when the original message exists in Chatwoot' do
-        it 'sets in_reply_to to reference the existing message' do
-          # Create a conversation and the original message that will be replied to first
+        it 'reuses the original campaign conversation and sets in_reply_to' do
           contact = create(:contact, phone_number: '+16503071063', account: whatsapp_channel.account)
           contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: '16503071063')
-          conversation = create(:conversation, contact: contact, inbox: whatsapp_channel.inbox, contact_inbox: contact_inbox)
+          campaign = create(
+            :campaign,
+            account: whatsapp_channel.account,
+            inbox: whatsapp_channel.inbox,
+            template_params: {
+              'name' => 'ticket_status_updated',
+              'language' => 'en_US',
+              'category' => 'UTILITY',
+              'processed_params' => { 'body' => { 'name' => 'John' } }
+            }
+          )
+          conversation = create(
+            :conversation,
+            status: :resolved,
+            campaign: campaign,
+            contact: contact,
+            inbox: whatsapp_channel.inbox,
+            contact_inbox: contact_inbox
+          )
 
           original_message = create(:message,
                                     conversation: conversation,
+                                    message_type: :outgoing,
+                                    additional_attributes: { campaign_id: campaign.id },
                                     source_id: 'wamid.ORIGINAL_MESSAGE_ID',
                                     content: 'Original message')
 
@@ -149,8 +168,10 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
 
           reply_message = whatsapp_channel.inbox.messages.last
           expect(reply_message.content).to eq('This is a reply')
+          expect(reply_message.conversation_id).to eq(conversation.id)
           expect(reply_message.content_attributes['in_reply_to']).to eq(original_message.id)
           expect(reply_message.content_attributes['in_reply_to_external_id']).to eq('wamid.ORIGINAL_MESSAGE_ID')
+          expect(conversation.reload).to be_open
         end
       end
 
@@ -163,6 +184,68 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
           expect(reply_message.content_attributes['in_reply_to']).to be_nil
           expect(reply_message.content_attributes['in_reply_to_external_id']).to be_nil
         end
+      end
+    end
+
+    context 'when the latest conversation is a resolved campaign conversation without reply context' do
+      let(:campaign_reply_params) do
+        {
+          phone_number: whatsapp_channel.phone_number,
+          object: 'whatsapp_business_account',
+          entry: [{
+            changes: [{
+              value: {
+                contacts: [{ profile: { name: 'Pranav' }, wa_id: '16503071063' }],
+                messages: [{
+                  from: '16503071063',
+                  id: 'wamid.NEW_MESSAGE_ID',
+                  timestamp: '1770407829',
+                  text: { body: 'Need help with this campaign' },
+                  type: 'text'
+                }]
+              }
+            }]
+          }]
+        }.with_indifferent_access
+      end
+
+      it 'reopens the latest campaign conversation' do
+        contact = create(:contact, phone_number: '+16503071063', account: whatsapp_channel.account)
+        contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: '16503071063')
+        campaign = create(
+          :campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          template_params: {
+            'name' => 'ticket_status_updated',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'processed_params' => { 'body' => { 'name' => 'John' } }
+          }
+        )
+        conversation = create(
+          :conversation,
+          status: :resolved,
+          campaign: campaign,
+          contact: contact,
+          inbox: whatsapp_channel.inbox,
+          contact_inbox: contact_inbox
+        )
+        create(
+          :message,
+          conversation: conversation,
+          message_type: :outgoing,
+          additional_attributes: { campaign_id: campaign.id },
+          source_id: 'wamid.CAMPAIGN_MESSAGE_ID',
+          content: 'Original campaign message'
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: campaign_reply_params).perform
+
+        reply_message = whatsapp_channel.inbox.messages.last
+        expect(reply_message.content).to eq('Need help with this campaign')
+        expect(reply_message.conversation_id).to eq(conversation.id)
+        expect(conversation.reload).to be_open
       end
     end
   end

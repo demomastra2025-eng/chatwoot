@@ -33,14 +33,23 @@ const props = defineProps({
   width: {
     type: String,
     default: 'lg',
-    validator: value => ['md', 'lg', 'xl'].includes(value),
+    validator: value => ['sm', 'md', 'lg', 'xl'].includes(value),
   },
 });
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
 
+const clickOutsideIgnore = [
+  '[data-modal-safe-interaction]',
+  'dialog[open]',
+  '.dashboard-combobox-dropdown',
+  '.reka-date-time-picker__content',
+  '.reka-color-picker__content',
+];
+
 const widthClass = computed(() => {
   const widthMap = {
+    sm: 'max-w-md',
     lg: 'max-w-2xl',
     md: 'max-w-xl',
     xl: 'max-w-4xl',
@@ -87,13 +96,7 @@ useEventListener(document, 'keydown', event => {
         >
           <OnClickOutside
             class="flex justify-end w-full"
-            :options="{
-              ignore: [
-                '.dashboard-combobox-dropdown',
-                '.reka-date-time-picker__content',
-                '.reka-color-picker__content',
-              ],
-            }"
+            :options="{ ignore: clickOutsideIgnore }"
             @trigger="close"
           >
             <aside

@@ -9,7 +9,7 @@ class Crm::Bootstrap::AccountService
   ].freeze
   DEFAULT_TASK_STATUS_DEFINITIONS = [
     { code: 'todo', name: 'To do', category: 'open', default: true },
-    { code: 'in_progress', name: 'In progress', category: 'open', default: false },
+    { code: 'in_progress', name: 'In progress', category: 'in_progress', default: false },
     { code: 'done', name: 'Done', category: 'done', default: false }
   ].freeze
 
@@ -44,6 +44,7 @@ class Crm::Bootstrap::AccountService
         account: account,
         name: definition[:name],
         code: definition[:code],
+        color: Crm::Stage::STANDARD_COLORS[index] || Crm::Stage::DEFAULT_COLOR,
         outcome: definition[:outcome],
         position: index + 1,
         active: true
@@ -59,6 +60,7 @@ class Crm::Bootstrap::AccountService
         name: definition[:name],
         code: definition[:code],
         category: definition[:category],
+        color: Crm::TaskStatus::STANDARD_COLORS[index] || Crm::TaskStatus::DEFAULT_COLOR,
         position: index + 1,
         active: true,
         default: definition[:default]

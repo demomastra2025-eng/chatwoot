@@ -3,6 +3,8 @@ class Conversations::EventDataPresenter < SimpleDelegator
     {
       additional_attributes: additional_attributes,
       can_reply: can_reply?,
+      campaign: push_campaign,
+      campaign_id: campaign_id,
       channel: inbox.try(:channel_type),
       contact_inbox: contact_inbox,
       id: display_id,
@@ -45,6 +47,16 @@ class Conversations::EventDataPresenter < SimpleDelegator
       timestamp: last_activity_at.to_i,
       created_at: created_at.to_i,
       updated_at: updated_at.to_f
+    }
+  end
+
+  def push_campaign
+    return unless campaign.present?
+
+    {
+      id: campaign.display_id,
+      title: campaign.title,
+      campaign_type: campaign.campaign_type
     }
   end
 end

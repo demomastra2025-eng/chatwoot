@@ -129,7 +129,7 @@ export default {
   <div
     v-if="!authUIFlags.isFetching && !accountUIFlags.isFetchingItem"
     id="app"
-    class="flex flex-col w-full h-screen min-h-0 bg-n-background"
+    class="flex flex-col w-full h-full min-h-0 overflow-hidden bg-n-background"
     :dir="isRTL ? 'rtl' : 'ltr'"
   >
     <!-- Onelink intentionally hides the global update banner in the app chrome. -->

@@ -4,6 +4,7 @@
       "ACTIVE": "Active",
       "ARCHIVE": "Archive",
       "ARCHIVED": "Archived",
+      "ID": "ID",
       "CONVERSATION_SOURCE": "Keeps the inbox conversation as source context",
       "CREATE": "Create",
       "DEFAULT": "Default",
@@ -52,6 +53,10 @@
       "GENERIC": "Something went wrong while working with CRM.",
       "LOAD_TITLE": "Unable to load CRM data",
       "NOT_FOUND": "The requested CRM record could not be found.",
+      "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
+      "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
+      "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
+      "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
       "VALIDATION_ERROR": "Please fix the form errors and try again."
     },
@@ -63,7 +68,15 @@
       "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
       "EMPTY_TITLE": "No deals yet",
       "BOARD": {
+        "CREATE_STAGE": "Create stage",
+        "EMPTY_COLUMN_DESCRIPTION": "New deals moved to this stage will appear here.",
+        "EMPTY_PIPELINE_DESCRIPTION": "Add at least one stage so the board can render columns for this pipeline.",
+        "EMPTY_PIPELINE_TITLE": "This pipeline has no stages yet",
         "EMPTY_COLUMN": "No deals in this stage"
+      },
+      "LIST": {
+        "EMPTY_FILTERED": "No deals match the current quick filters.",
+        "SEARCH_PLACEHOLDER": "Filter deals..."
       },
       "FORM": {
         "AMOUNT": "Amount",
@@ -71,6 +84,9 @@
         "BASICS_DESCRIPTION": "Deal title, owner, pipeline, and commercial context.",
         "COMPANY": "Company",
         "CONTACTS": "Contacts",
+        "CONTACTS_EMPTY_STATE": "No contacts found",
+        "CONTACTS_SEARCH_PLACEHOLDER": "Search by name, phone or email",
+        "CREATE_CONTACT": "Create",
         "CURRENCY": "Currency",
         "DESCRIPTION": "Description",
         "EXPECTED_CLOSE_ON": "Expected close date",
@@ -78,8 +94,8 @@
         "OWNER": "Owner",
         "PIPELINE": "Pipeline",
         "PRIMARY_CONTACT": "Primary contact",
-        "RELATIONSHIPS": "Relationships",
-        "RELATIONSHIPS_DESCRIPTION": "Attach existing contacts and a company when available.",
+        "RELATIONSHIPS": "Contacts",
+        "RELATIONSHIPS_DESCRIPTION": "Select contacts and a company if needed.",
         "STAGE": "Stage",
         "TEAM": "Team",
         "TITLE": "Title",
@@ -102,7 +118,7 @@
         "TITLE": "Deal",
         "UPDATED": "Updated"
       },
-      "TITLE": "Deals"
+      "TITLE": "Pipelines"
     },
     "TASKS": {
       "CREATE_TITLE": "Create task",
@@ -116,7 +132,15 @@
         "NO_TASKS_DAY": "No scheduled tasks on this day"
       },
       "BOARD": {
-        "EMPTY_COLUMN": "No tasks in this status"
+        "CREATE_STATUS": "Create status",
+        "EMPTY_COLUMN": "No tasks in this status",
+        "EMPTY_COLUMN_DESCRIPTION": "New tasks moved to this status will appear here.",
+        "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
+        "EMPTY_STATUS_TITLE": "No task statuses yet"
+      },
+      "LIST": {
+        "EMPTY_FILTERED": "No tasks match the current quick filters.",
+        "SEARCH_PLACEHOLDER": "Filter tasks..."
       },
       "FORM": {
         "ASSIGNEE": "Assignee",
@@ -158,7 +182,7 @@
       "TITLE": "Tasks"
     },
     "SETTINGS": {
-      "DESCRIPTION": "Configure pipelines, statuses, and managed fields using the same dashboard settings shell.",
+      "DESCRIPTION": "Configure pipelines and task statuses using the same dashboard settings shell.",
       "FIELD_TABS": {
         "DEALS": "Deals",
         "TASKS": "Tasks"
@@ -209,16 +233,28 @@
       "LOADING": "Loading CRM settings...",
       "PIPELINES": {
         "ADD": "Add pipeline",
+        "ARCHIVE": "Archive",
+        "ARCHIVED_STATUS": "Archived",
         "CREATE_TITLE": "Create pipeline",
+        "DELETE": "Delete pipeline",
+        "DELETE_CONFIRM": "Delete",
+        "DELETE_DESCRIPTION": "Archived pipeline “{name}” can only be deleted when it has no deals.",
+        "DELETE_TITLE": "Delete pipeline?",
         "DESCRIPTION": "Pipelines and stages drive the native deal board and transition rules.",
+        "DRAG": "Drag pipeline",
         "EDIT_TITLE": "Edit pipeline",
         "FORM": {
-          "ACTIVE": "Pipeline is active",
           "CODE": "Code",
           "DEFAULT": "Default pipeline",
           "NAME": "Name",
           "POSITION": "Position"
         },
+        "NEW_PIPELINE_HELP": "Code will be generated automatically",
+        "RESTORE": "Restore",
+        "SHOW_ARCHIVED": "Show archived",
+        "SUCCESS_ARCHIVED": "Pipeline archived",
+        "SUCCESS_DELETE": "Pipeline deleted",
+        "SUCCESS_RESTORED": "Pipeline restored",
         "SUCCESS_SAVE": "Pipeline saved",
         "TABLE": {
           "DEFAULT": "Default",
@@ -230,45 +266,61 @@
       },
       "STAGES": {
         "CREATE_TITLE": "Create stage",
+        "DELETE": "Delete stage",
+        "DELETE_CONFIRM": "Delete",
+        "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
+        "DELETE_TITLE": "Delete stage?",
         "EDIT_TITLE": "Edit stage",
         "FORM": {
           "ACTIVE": "Stage is active",
-          "CODE": "Code",
+          "COLOR": "Color",
+          "COLOR_UNAVAILABLE": "Already used in this pipeline",
+          "CUSTOM_COLOR": "Custom color",
+          "DEACTIVATE": "Deactivate stage",
           "NAME": "Name",
           "OUTCOME": "Outcome",
-          "PIPELINE": "Pipeline",
-          "POSITION": "Position"
+          "PIPELINE": "Pipeline"
         },
         "OUTCOMES": {
           "lost": "Lost",
           "open": "Open",
           "won": "Won"
         },
+        "REORDER": "Reorder stages",
+        "REORDER_DESCRIPTION": "Drag stages to change their order inside the “{name}” pipeline.",
+        "REORDER_TITLE": "Stage order",
+        "SUCCESS_DELETE": "Stage deleted",
+        "SUCCESS_REORDER": "Stage order saved",
         "SUCCESS_SAVE": "Stage saved"
       },
       "TASK_STATUSES": {
         "ADD": "Add status",
         "CATEGORIES": {
           "done": "Done",
+          "in_progress": "In progress",
           "open": "Open"
         },
         "CREATE_TITLE": "Create task status",
+        "DELETE_CONFIRM": "Delete status",
+        "DELETE_DESCRIPTION": "You cannot delete task status \"{name}\" while it still has tasks. Move all open and completed tasks to another status first.",
+        "DELETE_TITLE": "Delete task status?",
         "DESCRIPTION": "Statuses shape the CRM task board and completion lifecycle.",
+        "DRAG": "Drag status",
         "EDIT_TITLE": "Edit task status",
         "FORM": {
-          "ACTIVE": "Status is active",
           "CATEGORY": "Category",
-          "CODE": "Code",
-          "DEFAULT": "Default status",
-          "NAME": "Name",
-          "POSITION": "Position"
+          "COLOR": "Color",
+          "COLOR_UNAVAILABLE": "Already used in task statuses",
+          "CUSTOM_COLOR": "Custom color",
+          "DEACTIVATE": "Deactivate status",
+          "NAME": "Name"
         },
+        "SUCCESS_DELETE": "Task status deleted",
         "SUCCESS_SAVE": "Task status saved",
         "TABLE": {
           "CATEGORY": "Category",
           "DEFAULT": "Default",
-          "NAME": "Status",
-          "STATUS": "Status"
+          "NAME": "Status"
         },
         "TITLE": "Task statuses"
       },

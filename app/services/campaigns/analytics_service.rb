@@ -19,11 +19,15 @@ class Campaigns::AnalyticsService
   private
 
   def deliveries
-    @deliveries ||= campaign.campaign_deliveries.includes(:contact).order(updated_at: :desc)
+    @deliveries ||= campaign.campaign_deliveries.includes(:contact)
+  end
+
+  def ordered_deliveries
+    deliveries.order(updated_at: :desc)
   end
 
   def grouped_statuses
-    @grouped_statuses ||= deliveries.group(:status).count.transform_keys do |key|
+    @grouped_statuses ||= deliveries.reorder(nil).group(:status).count.transform_keys do |key|
       CampaignDelivery.statuses.key(key) || key.to_s
     end
   end
@@ -40,7 +44,8 @@ class Campaigns::AnalyticsService
   end
 
   def top_errors
-    deliveries.where.not(error_message: [nil, ''])
+    deliveries.reorder(nil)
+              .where.not(error_message: [nil, ''])
               .group(:error_message)
               .order(Arel.sql('COUNT(*) DESC'))
               .count
@@ -49,7 +54,7 @@ class Campaigns::AnalyticsService
   end
 
   def serialized_deliveries
-    deliveries.limit(100).map do |delivery|
+    ordered_deliveries.limit(100).map do |delivery|
       {
         id: delivery.id,
         status: delivery.status,

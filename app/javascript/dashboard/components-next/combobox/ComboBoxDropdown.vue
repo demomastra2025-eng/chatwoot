@@ -70,7 +70,7 @@ defineExpose({
     <div
       v-show="open"
       data-modal-safe-interaction
-      class="dashboard-combobox-dropdown fixed z-[170] rounded-2xl border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
+      class="dashboard-combobox-dropdown fixed z-[170] rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
       :style="props.dropdownStyle"
       @mousedown.stop
       @mouseup.stop
@@ -86,7 +86,7 @@ defineExpose({
             :value="searchValue"
             type="text"
             :placeholder="searchPlaceholder || t('COMBOBOX.SEARCH_PLACEHOLDER')"
-            class="reset-base h-10 w-full appearance-none rounded-xl border-none bg-n-alpha-black2 py-2 pl-5 pr-10 text-sm text-n-slate-12 outline outline-1 outline-n-weak focus:outline-n-brand rtl:pr-5 rtl:pl-10"
+            class="reset-base h-10 w-full appearance-none rounded-lg border-none bg-n-alpha-black2 py-2 pl-5 pr-10 text-sm text-n-slate-12 outline outline-1 outline-n-weak focus:outline-n-brand rtl:pr-5 rtl:pl-10"
             @input="onInputSearch"
           />
         </div>
@@ -99,7 +99,7 @@ defineExpose({
         <li
           v-for="option in options"
           :key="option.value"
-          class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm transition-colors duration-150 hover:bg-n-alpha-2"
+          class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors duration-150 hover:bg-n-alpha-2"
           :class="{
             'bg-n-alpha-2': isSelected(option),
           }"

@@ -6,6 +6,7 @@ RSpec.describe Campaign do
   describe 'associations' do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:inbox) }
+    it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
   end
 
   describe '.before_create' do
@@ -59,6 +60,19 @@ RSpec.describe Campaign do
     it 'cant be triggered' do
       expect(Twilio::OneoffSmsCampaignService).not_to receive(:new).with(campaign: campaign)
       expect(campaign.trigger!).to be_nil
+    end
+  end
+
+  context 'when a campaign has deliveries' do
+    let(:campaign) { create(:campaign) }
+
+    it 'can be deleted without foreign key violations' do
+      delivery = create(:campaign_delivery, campaign: campaign, account: campaign.account, inbox: campaign.inbox)
+
+      campaign.destroy!
+
+      expect(described_class.exists?(campaign.id)).to be false
+      expect(CampaignDelivery.exists?(delivery.id)).to be false
     end
   end
 

@@ -129,7 +129,9 @@ Rails.application.routes.draw do
               resources :inbox_limits, only: [:create, :update, :destroy]
             end
           end
-          resources :campaigns, only: [:index, :create, :show, :update, :destroy]
+          resources :campaigns, only: [:index, :create, :show, :update, :destroy] do
+            get :analytics, on: :member
+          end
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
           namespace :scheduling do
             resource :calendar, only: [:show], controller: 'calendar'
@@ -158,11 +160,11 @@ Rails.application.routes.draw do
             resources :time_offs, only: [:index, :create, :update, :destroy]
           end
           namespace :crm do
-            resources :pipelines, only: [:index, :show, :create, :update] do
+            resources :pipelines, only: [:index, :show, :create, :update, :destroy] do
               resources :stages, only: [:create]
             end
-            resources :stages, only: [:update]
-            resources :task_statuses, only: [:index, :create, :update]
+            resources :stages, only: [:update, :destroy]
+            resources :task_statuses, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
             resources :deals, only: [:index, :show, :create, :update] do
               scope module: :deals do

@@ -261,6 +261,25 @@ RSpec.describe 'Campaigns API', type: :request do
         expect(response).to have_http_status(:success)
         expect(Campaign.exists?(campaign.display_id)).to be false
       end
+
+      it 'deletes campaign with campaign deliveries if admin' do
+        create(
+          :campaign_delivery,
+          campaign: campaign,
+          account: account,
+          inbox: campaign.inbox,
+          provider: 'test_provider',
+          status: 'delivered'
+        )
+
+        delete "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}",
+               headers: administrator.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(Campaign.exists?(campaign.id)).to be false
+        expect(CampaignDelivery.where(campaign_id: campaign.id)).to be_empty
+      end
     end
   end
 end

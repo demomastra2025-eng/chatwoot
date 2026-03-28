@@ -171,6 +171,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_exact(scope, :status_id)
     scope = filter_by_exact(scope, :assignee_id)
     scope = filter_by_exact(scope, :team_id)
+    scope = filter_by_exact(scope, :priority)
     scope = filter_by_exact(scope, :deal_id)
     scope = filter_by_due_range(scope)
     filter_by_query(scope)

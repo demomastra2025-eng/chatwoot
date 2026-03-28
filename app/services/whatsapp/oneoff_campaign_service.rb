@@ -61,7 +61,7 @@ class Whatsapp::OneoffCampaignService
       return
     end
 
-    send_whatsapp_template_message(delivery: delivery, to: contact.phone_number)
+    create_campaign_message(delivery: delivery, contact: contact)
   end
 
   def process_audience(audience_labels)
@@ -73,41 +73,12 @@ class Whatsapp::OneoffCampaignService
     Rails.logger.info "Campaign #{campaign.id} processing completed"
   end
 
-  def send_whatsapp_template_message(delivery:, to:)
-    processor = Whatsapp::TemplateProcessorService.new(
-      channel: channel,
-      template_params: campaign.template_params
-    )
-
-    name, namespace, lang_code, processed_parameters = processor.call
-
-    if name.blank?
-      delivery.mark_status!(status: :failed, error_message: 'Unable to resolve WhatsApp template')
-      return
-    end
-
-    provider_message_id = channel.send_template(to, {
-                                                  name: name,
-                                                  namespace: namespace,
-                                                  lang_code: lang_code,
-                                                  parameters: processed_parameters
-                                                }, nil)
-
-    if provider_message_id.present?
-      delivery.mark_status!(
-        status: :submitted,
-        provider_message_id: provider_message_id,
-        metadata: { template_name: name, template_language: lang_code }
-      )
-    else
-      delivery.mark_status!(status: :failed, error_message: 'WhatsApp provider did not return a message id')
-    end
-
+  def create_campaign_message(delivery:, contact:)
+    Campaigns::OneoffConversationBuilder.new(campaign: campaign, contact: contact).perform
   rescue StandardError => e
     delivery.mark_status!(status: :failed, error_message: e.message)
-    Rails.logger.error "Failed to send WhatsApp template message to #{to}: #{e.message}"
+    Rails.logger.error "Failed to create WhatsApp campaign message for #{contact.phone_number}: #{e.message}"
     Rails.logger.error "Backtrace: #{e.backtrace.first(5).join('\n')}"
-    # continue processing remaining contacts
     nil
   end
 

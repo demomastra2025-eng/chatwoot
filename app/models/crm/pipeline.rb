@@ -26,7 +26,8 @@ class Crm::Pipeline < ApplicationRecord
   self.table_name = 'crm_pipelines'
 
   belongs_to :account, class_name: '::Account'
-  has_many :stages, -> { ordered }, class_name: '::Crm::Stage', dependent: :destroy_async, inverse_of: :pipeline
+  has_many :stages, -> { ordered }, class_name: '::Crm::Stage', dependent: :destroy, inverse_of: :pipeline
+  has_many :deals, class_name: '::Crm::Deal', inverse_of: :pipeline
 
   validates :name, presence: true
   validates :code, presence: true, uniqueness: { scope: :account_id }
@@ -61,7 +62,7 @@ class Crm::Pipeline < ApplicationRecord
 
   def normalize_code
     base = code.presence || name
-    self.code = base.to_s.parameterize(separator: '_')
+    self.code = ::Crm::CodeNormalizer.normalize(base)
   end
 
   def normalize_name

@@ -23,6 +23,7 @@ module Crm::PayloadBuilder
       pipeline_id: stage.pipeline_id,
       name: stage.name,
       code: stage.code,
+      color: stage.color,
       position: stage.position,
       outcome: stage.outcome,
       active: stage.active,
@@ -37,6 +38,7 @@ module Crm::PayloadBuilder
       account_id: task_status.account_id,
       name: task_status.name,
       code: task_status.code,
+      color: task_status.color,
       position: task_status.position,
       category: task_status.category,
       active: task_status.active,
@@ -67,6 +69,9 @@ module Crm::PayloadBuilder
   end
 
   def deal(deal)
+    primary_contact =
+      deal.deal_contacts.detect(&:primary?)&.contact || deal.deal_contacts.first&.contact
+
     {
       id: deal.id,
       account_id: deal.account_id,
@@ -89,15 +94,26 @@ module Crm::PayloadBuilder
       lock_version: deal.lock_version,
       custom_attributes: deal.custom_attributes,
       archived_at: deal.archived_at&.iso8601,
+      company: compact_company(deal.company),
       deal_contacts: deal.deal_contacts.map do |deal_contact|
         {
           contact_id: deal_contact.contact_id,
           primary: deal_contact.primary
         }
       end,
+      primary_contact: compact_contact(primary_contact),
       primary_contact_id: deal.primary_contact_id,
       created_at: deal.created_at&.iso8601,
       updated_at: deal.updated_at&.iso8601
+    }
+  end
+
+  def compact_company(company)
+    return if company.blank?
+
+    {
+      id: company.id,
+      name: company.name
     }
   end
 

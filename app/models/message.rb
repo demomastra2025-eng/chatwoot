@@ -160,6 +160,8 @@ class Message < ApplicationRecord
   def conversation_push_event_data
     {
       assignee_id: conversation.assignee_id,
+      campaign_id: conversation.campaign_id,
+      campaign: campaign_push_event_data,
       unread_count: conversation.unread_incoming_messages.count,
       last_activity_at: conversation.last_activity_at.to_i,
       contact_inbox: { source_id: conversation.contact_inbox.source_id }
@@ -298,6 +300,16 @@ class Message < ApplicationRecord
 
     message_content = text_content_quoted || html_content_quoted || content
     self.processed_message_content = message_content&.truncate(150_000)
+  end
+
+  def campaign_push_event_data
+    return unless conversation.campaign.present?
+
+    {
+      id: conversation.campaign.display_id,
+      title: conversation.campaign.title,
+      campaign_type: conversation.campaign.campaign_type
+    }
   end
 
   # fetch the in_reply_to message and set the external id

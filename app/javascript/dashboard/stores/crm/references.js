@@ -33,6 +33,45 @@ const upsertStageInPipelines = (pipelines, stage) => {
   });
 };
 
+const removeStageFromPipelines = (pipelines, stage) => {
+  return pipelines.map(pipeline => {
+    if (Number(pipeline.id) !== Number(stage.pipelineId)) {
+      return pipeline;
+    }
+
+    return {
+      ...pipeline,
+      stages: removeRecord(pipeline.stages || [], stage.id).sort(
+        (left, right) => left.position - right.position
+      ),
+    };
+  });
+};
+
+const upsertPipelineInList = (pipelines, pipeline) => {
+  const nextPipelines = upsertRecord(pipelines, pipeline).map(item => {
+    if (!pipeline.default || Number(item.id) === Number(pipeline.id)) {
+      return item;
+    }
+
+    return { ...item, default: false };
+  });
+
+  return nextPipelines.sort((left, right) => left.position - right.position);
+};
+
+const upsertTaskStatusInList = (taskStatuses, taskStatus) => {
+  const nextTaskStatuses = upsertRecord(taskStatuses, taskStatus).map(item => {
+    if (!taskStatus.default || Number(item.id) === Number(taskStatus.id)) {
+      return item;
+    }
+
+    return { ...item, default: false };
+  });
+
+  return nextTaskStatuses.sort((left, right) => left.position - right.position);
+};
+
 export const useCrmReferencesStore = defineStore('crmReferences', {
   state: () => ({
     fieldDefinitions: {
@@ -80,10 +119,23 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
           : await CrmPipelinesAPI.create(payload);
 
         const pipeline = normalizePayload(response.data);
-        this.pipelines = upsertRecord(this.pipelines, pipeline).sort(
-          (left, right) => left.position - right.position
-        );
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
         return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async deletePipeline(pipeline) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        await CrmPipelinesAPI.deletePipeline(pipeline.id);
+        this.pipelines = removeRecord(this.pipelines, pipeline.id);
       } catch (error) {
         this.ui.error = extractCrmError(error);
         throw error;
@@ -104,6 +156,21 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
         const stage = normalizePayload(response.data);
         this.pipelines = upsertStageInPipelines(this.pipelines, stage);
         return stage;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async deleteStage(stage) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        await CrmPipelinesAPI.deleteStage(stage.id);
+        this.pipelines = removeStageFromPipelines(this.pipelines, stage);
       } catch (error) {
         this.ui.error = extractCrmError(error);
         throw error;
@@ -138,10 +205,26 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
           : await CrmTaskStatusesAPI.create(payload);
 
         const taskStatus = normalizePayload(response.data);
-        this.taskStatuses = upsertRecord(this.taskStatuses, taskStatus).sort(
-          (left, right) => left.position - right.position
+        this.taskStatuses = upsertTaskStatusInList(
+          this.taskStatuses,
+          taskStatus
         );
         return taskStatus;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async deleteTaskStatus(taskStatus) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        await CrmTaskStatusesAPI.deleteTaskStatus(taskStatus.id);
+        this.taskStatuses = removeRecord(this.taskStatuses, taskStatus.id);
       } catch (error) {
         this.ui.error = extractCrmError(error);
         throw error;

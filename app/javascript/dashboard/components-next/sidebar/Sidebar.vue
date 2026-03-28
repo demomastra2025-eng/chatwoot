@@ -2,6 +2,7 @@
 import { h, ref, computed, onMounted } from 'vue';
 import { provideSidebarContext, useSidebarResize } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useStore } from 'vuex';
@@ -39,6 +40,7 @@ const emit = defineEmits([
 ]);
 
 const { accountScopedRoute, isOnChatwootCloud } = useAccount();
+const { checkPermissions } = usePolicy();
 const store = useStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
@@ -74,6 +76,28 @@ const hasCompanies = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
     FEATURE_FLAGS.COMPANIES
+  );
+});
+
+const hasLegacyCustomAttributes = computed(() => {
+  return (
+    checkPermissions(['administrator']) &&
+    isFeatureEnabledonAccount.value(
+      accountId.value,
+      FEATURE_FLAGS.CUSTOM_ATTRIBUTES
+    )
+  );
+});
+
+const hasUnifiedCustomAttributes = computed(() => {
+  return (
+    hasLegacyCustomAttributes.value ||
+    (checkPermissions([
+      'administrator',
+      'crm_settings_view',
+      'crm_settings_manage',
+    ]) &&
+      hasCrmRuntime.value)
   );
 });
 
@@ -712,12 +736,16 @@ const menuItems = computed(() => {
           icon: 'i-lucide-tags',
           to: accountScopedRoute('labels_list'),
         },
-        {
-          name: 'Settings Custom Attributes',
-          label: t('SIDEBAR.CUSTOM_ATTRIBUTES'),
-          icon: 'i-lucide-code',
-          to: accountScopedRoute('attributes_list'),
-        },
+        ...(hasUnifiedCustomAttributes.value
+          ? [
+              {
+                name: 'Settings Custom Attributes',
+                label: t('SIDEBAR.CUSTOM_ATTRIBUTES'),
+                icon: 'i-lucide-code',
+                to: accountScopedRoute('attributes_list'),
+              },
+            ]
+          : []),
         {
           name: 'Settings Automation',
           label: t('SIDEBAR.AUTOMATION'),

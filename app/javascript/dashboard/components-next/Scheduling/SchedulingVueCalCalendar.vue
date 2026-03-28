@@ -2344,7 +2344,7 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal__background-fill--unavailable {
-  background: rgb(var(--slate-6) / 0.16);
+  background: rgb(var(--slate-6) / 0.24);
 }
 
 .scheduling-vue-cal__background-label {

@@ -38,6 +38,8 @@ class Whatsapp::IncomingMessageBaseService
     set_contact
     return unless @contact
 
+    process_in_reply_to(messages_data.first)
+
     ActiveRecord::Base.transaction do
       set_conversation
       create_messages
@@ -77,8 +79,6 @@ class Whatsapp::IncomingMessageBaseService
   def create_messages
     message = messages_data.first
     log_error(message) && return if error_webhook_event?(message)
-
-    process_in_reply_to(message)
 
     message_type == 'contacts' ? create_contact_messages(message) : create_regular_message(message)
   end
@@ -142,13 +142,7 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def set_conversation
-    # if lock to single conversation is disabled, we will create a new conversation if previous conversation is resolved
-    @conversation = if @inbox.lock_to_single_conversation
-                      @contact_inbox.conversations.last
-                    else
-                      @contact_inbox.conversations
-                                    .where.not(status: :resolved).last
-                    end
+    @conversation = conversation_from_reply_context || existing_contact_conversation
     return if @conversation
 
     @conversation = ::Conversation.create!(conversation_params)
@@ -239,5 +233,25 @@ class Whatsapp::IncomingMessageBaseService
     phone_number = "+#{messages_data.first[:from]}"
     formatted_phone_number = TelephoneNumber.parse(phone_number).international_number
     @contact.name == phone_number || @contact.name == formatted_phone_number
+  end
+
+  def conversation_from_reply_context
+    return if @in_reply_to_external_id.blank?
+
+    Message.find_by(source_id: @in_reply_to_external_id, inbox_id: @inbox.id)&.conversation
+  end
+
+  def existing_contact_conversation
+    return @contact_inbox.conversations.last if @inbox.lock_to_single_conversation
+
+    @contact_inbox.conversations.where.not(status: :resolved).last || latest_campaign_conversation
+  end
+
+  def latest_campaign_conversation
+    latest_conversation = @contact_inbox.conversations.last
+    return unless latest_conversation&.resolved?
+    return if latest_conversation.campaign_id.blank?
+
+    latest_conversation
   end
 end

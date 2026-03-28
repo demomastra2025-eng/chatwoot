@@ -31,6 +31,51 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('payload', 'currency')).to eq('USD')
   end
 
+  it 'creates a standalone deal without contacts or company' do
+    post path,
+         params: {
+           title: 'Inbound without links'
+         },
+         headers: headers,
+         as: :json
+
+    deal = account.crm_deals.find(response.parsed_body.dig('payload', 'id'))
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'pipeline_id')).to be_present
+    expect(response.parsed_body.dig('payload', 'stage_id')).to be_present
+    expect(response.parsed_body.dig('payload', 'company_id')).to be_nil
+    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to be_nil
+    expect(deal.company_id).to be_nil
+    expect(deal.originating_conversation_id).to be_nil
+    expect(deal.deal_contacts).to be_empty
+  end
+
+  it 'updates a deal to remove contacts and company' do
+    company = create(:company, account: account)
+    contact = create(:contact, :with_email, account: account, company: company)
+    deal = create(:crm_deal, account: account, company: company)
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+
+    patch "#{path}/#{deal.id}",
+          params: {
+            title: deal.title,
+            company_id: nil,
+            contact_ids: [],
+            primary_contact_id: nil,
+            lock_version: deal.lock_version
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'company_id')).to be_nil
+    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to be_nil
+    expect(deal.reload.company_id).to be_nil
+    expect(deal.originating_conversation_id).to be_nil
+    expect(deal.deal_contacts).to be_empty
+  end
+
   it 'returns an existing deal when create is retried with the same idempotency_key' do
     params = {
       title: 'API import',
@@ -93,5 +138,54 @@ RSpec.describe 'CRM Deals API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+  end
+
+  it 'returns compact company and primary contact in the deal payload' do
+    company = create(:company, account: account, name: 'Onelink LLC')
+    contact = create(:contact, :with_email, account: account, company: company, name: 'Aruzhan')
+    deal = create(:crm_deal, account: account, company: company)
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+
+    get path, headers: headers, as: :json
+
+    payload = response.parsed_body.fetch('payload').first
+
+    expect(response).to have_http_status(:ok)
+    expect(payload.dig('company', 'name')).to eq('Onelink LLC')
+    expect(payload.dig('primary_contact', 'name')).to eq('Aruzhan')
+  end
+
+  it 'drops custom field values when their field definition becomes inactive' do
+    field_definition = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'lead_source_code',
+      label: 'Lead source'
+    )
+    deal = create(
+      :crm_deal,
+      account: account,
+      custom_attributes: { 'lead_source_code' => 'referral' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/crm/field_definitions/#{field_definition.id}",
+          params: { active: false },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+
+    patch "#{path}/#{deal.id}",
+          params: {
+            title: 'Updated deal title',
+            lock_version: deal.lock_version
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'custom_attributes')).to eq({})
+    expect(deal.reload.custom_attributes).to eq({})
   end
 end

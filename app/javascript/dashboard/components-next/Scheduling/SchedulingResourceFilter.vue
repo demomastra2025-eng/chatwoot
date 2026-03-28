@@ -153,12 +153,19 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         size="sm"
         color="slate"
         variant="outline"
-        trailing-icon
-        :label="buttonLabel"
+        justify="start"
         class="!h-10 !max-w-full !rounded-lg !bg-n-alpha-black2 !px-3 !py-2 !font-normal !outline-n-weak hover:!outline-n-slate-6"
-        :icon="isOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
         @click="toggleDropdown"
-      />
+      >
+        <span class="min-w-0 flex-1 truncate text-left text-sm text-n-slate-12">
+          {{ buttonLabel }}
+        </span>
+        <span
+          class="size-4 shrink-0 text-n-slate-10"
+          :class="[isOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down']"
+          aria-hidden="true"
+        />
+      </Button>
 
       <Teleport :to="teleportTarget">
         <div

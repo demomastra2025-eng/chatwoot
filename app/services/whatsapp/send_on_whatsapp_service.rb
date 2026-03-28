@@ -25,6 +25,7 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
     if name.blank?
       message.update!(status: :failed, external_error: 'Template not found or invalid template name')
+      update_campaign_delivery(status: :failed, error_message: 'Template not found or invalid template name')
       return
     end
 
@@ -34,7 +35,17 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
                                          lang_code: lang_code,
                                          parameters: processed_parameters
                                        }, message)
-    message.update!(source_id: message_id) if message_id.present?
+
+    if message_id.present?
+      message.update!(source_id: message_id)
+      update_campaign_delivery(
+        status: :submitted,
+        provider_message_id: message_id,
+        metadata: { template_name: name, template_language: lang_code }
+      )
+    else
+      update_campaign_delivery(status: :failed, error_message: 'WhatsApp provider did not return a message id')
+    end
   end
 
   def send_session_message
@@ -44,5 +55,27 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
   def template_params
     message.additional_attributes && message.additional_attributes['template_params']
+  end
+
+  def update_campaign_delivery(status:, provider_message_id: nil, error_message: nil, metadata: {})
+    return if campaign_id.blank?
+
+    delivery = CampaignDelivery.find_by(
+      campaign_id: campaign_id,
+      contact_id: conversation.contact_id,
+      inbox_id: inbox.id
+    )
+    return if delivery.blank?
+
+    delivery.mark_status!(
+      status: status,
+      provider_message_id: provider_message_id,
+      error_message: error_message,
+      metadata: metadata
+    )
+  end
+
+  def campaign_id
+    message.additional_attributes&.[]('campaign_id') || conversation.campaign_id
   end
 end

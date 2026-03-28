@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_26_124500) do
+ActiveRecord::Schema[7.1].define(version: 2026_03_27_174500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -908,6 +908,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_26_124500) do
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "color", default: "#F0F0F3", null: false
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
@@ -924,6 +925,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_26_124500) do
     t.boolean "default", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "color", default: "#F0F0F3", null: false
     t.index ["account_id", "code"], name: "index_crm_task_statuses_on_account_id_and_code", unique: true
     t.index ["account_id"], name: "index_crm_task_statuses_on_account_default_open", unique: true, where: "((\"default\" = true) AND ((category)::text = 'open'::text))"
     t.index ["account_id"], name: "index_crm_task_statuses_on_account_id"

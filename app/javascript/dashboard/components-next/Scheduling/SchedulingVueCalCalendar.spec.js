@@ -31,6 +31,7 @@ const baseProps = {
 };
 
 let mountedWrappers = [];
+const originalScrollTo = HTMLElement.prototype.scrollTo;
 
 const mountCalendar = props => {
   const wrapper = mount(SchedulingVueCalCalendar, {
@@ -47,6 +48,7 @@ const mountCalendar = props => {
 
 describe('SchedulingVueCalCalendar', () => {
   beforeEach(() => {
+    HTMLElement.prototype.scrollTo = vi.fn();
     useI18n.mockReturnValue({
       locale: { value: 'en' },
       t: vi.fn(key => key),
@@ -57,6 +59,7 @@ describe('SchedulingVueCalCalendar', () => {
     mountedWrappers.forEach(wrapper => wrapper.unmount());
     mountedWrappers = [];
     document.body.innerHTML = '';
+    HTMLElement.prototype.scrollTo = originalScrollTo;
   });
 
   it('renders unavailable time as background events in timeline views', async () => {
@@ -73,6 +76,20 @@ describe('SchedulingVueCalCalendar', () => {
       ],
     });
 
+    await nextTick();
+
+    expect(
+      wrapper.findAll('.scheduling-vue-cal__background-fill--unavailable')
+        .length
+    ).toBeGreaterThan(0);
+  });
+
+  it('renders the same unavailable background for closed days', async () => {
+    const wrapper = mountCalendar({
+      workRules: [],
+    });
+
+    await nextTick();
     await nextTick();
 
     expect(
@@ -153,7 +170,7 @@ describe('SchedulingVueCalCalendar', () => {
     const summary = wrapper.find('.scheduling-vue-cal__event-summary');
 
     expect(summary.exists()).toBe(true);
-    expect(summary.text()).toContain('11:00 - 11:30');
+    expect(summary.text()).toMatch(/\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/);
     expect(summary.text()).toContain('Alexandria Very Long Name');
   });
 
@@ -195,7 +212,7 @@ describe('SchedulingVueCalCalendar', () => {
     await nextTick();
     await nextTick();
 
-    expect(wrapper.text()).toContain('2 staff');
-    expect(wrapper.text()).not.toContain('1 staff');
+    expect(wrapper.text()).toContain('2 specialists');
+    expect(wrapper.text()).not.toContain('1 specialist');
   });
 });

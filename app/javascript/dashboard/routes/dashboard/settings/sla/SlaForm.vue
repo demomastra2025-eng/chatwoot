@@ -6,17 +6,19 @@ import SlaTimeInput from './SlaTimeInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import { useVuelidate } from '@vuelidate/core';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
+import NextInput from 'dashboard/components-next/input/Input.vue';
 
 export default {
   components: {
     SlaTimeInput,
     NextButton,
     ToggleSwitch,
+    NextInput,
   },
   props: {
     selectedResponse: {
       type: Object,
-      default: () => {},
+      default: () => ({}),
     },
     submitLabel: {
       type: String,
@@ -68,6 +70,31 @@ export default {
         this.uiFlags.isUpdating
       );
     },
+    localizedSlaTimeInputs() {
+      return [
+        {
+          ...this.slaTimeInputs[0],
+          translatedLabel: this.$t('SLA.FORM.FIRST_RESPONSE_TIME.LABEL'),
+          translatedPlaceholder: this.$t(
+            'SLA.FORM.FIRST_RESPONSE_TIME.PLACEHOLDER'
+          ),
+        },
+        {
+          ...this.slaTimeInputs[1],
+          translatedLabel: this.$t('SLA.FORM.NEXT_RESPONSE_TIME.LABEL'),
+          translatedPlaceholder: this.$t(
+            'SLA.FORM.NEXT_RESPONSE_TIME.PLACEHOLDER'
+          ),
+        },
+        {
+          ...this.slaTimeInputs[2],
+          translatedLabel: this.$t('SLA.FORM.RESOLUTION_TIME.LABEL'),
+          translatedPlaceholder: this.$t(
+            'SLA.FORM.RESOLUTION_TIME.PLACEHOLDER'
+          ),
+        },
+      ];
+    },
     slaNameErrorMessage() {
       let errorMessage = '';
       if (this.v$.name.$error) {
@@ -81,11 +108,25 @@ export default {
     },
   },
   mounted() {
-    if (this.selectedResponse) this.setFormValues();
+    if (this.selectedResponse?.id) {
+      this.setFormValues();
+    }
   },
   methods: {
     onClose() {
       this.$emit('close');
+    },
+    resetFormValues() {
+      this.name = '';
+      this.description = '';
+      this.onlyDuringBusinessHours = false;
+      this.isSlaTimeInputsInvalid = false;
+      this.slaTimeInputsValidation = {};
+      this.slaTimeInputs.forEach(input => {
+        input.threshold = null;
+        input.unit = 'Minutes';
+      });
+      this.v$?.$reset?.();
     },
     setFormValues() {
       const {
@@ -115,6 +156,7 @@ export default {
         input.threshold = converted.time;
         input.unit = converted.unit;
       });
+      this.v$?.$reset?.();
     },
     updateThreshold(index, value) {
       this.slaTimeInputs[index].threshold = value;
@@ -159,48 +201,40 @@ export default {
 
 <template>
   <div class="flex flex-col h-auto overflow-auto">
-    <form class="flex flex-wrap mx-0" @submit.prevent="onSubmit">
-      <woot-input
+    <form class="flex flex-col gap-3 mx-0" @submit.prevent="onSubmit">
+      <NextInput
         v-model="name"
-        :class="{ error: v$.name.$error }"
         class="w-full"
-        :styles="{
-          borderRadius: '0.75rem',
-          padding: '0.375rem 0.75rem',
-          fontSize: '0.875rem',
-        }"
         :label="$t('SLA.FORM.NAME.LABEL')"
         :placeholder="$t('SLA.FORM.NAME.PLACEHOLDER')"
-        :error="slaNameErrorMessage"
-        @input="v$.name.$touch"
+        :message="slaNameErrorMessage"
+        :message-type="slaNameErrorMessage ? 'error' : 'info'"
+        @update:model-value="v$.name.$touch()"
         @blur="v$.name.$touch"
       />
-      <woot-input
+      <NextInput
         v-model="description"
         class="w-full"
-        :styles="{
-          borderRadius: '0.75rem',
-          padding: '0.375rem 0.75rem',
-          fontSize: '0.875rem',
-        }"
         :label="$t('SLA.FORM.DESCRIPTION.LABEL')"
         :placeholder="$t('SLA.FORM.DESCRIPTION.PLACEHOLDER')"
       />
 
-      <SlaTimeInput
-        v-for="(input, index) in slaTimeInputs"
-        :key="index"
-        :threshold="input.threshold"
-        :threshold-unit="input.unit"
-        :label="$t(input.label)"
-        :placeholder="$t(input.placeholder)"
-        @update-threshold="updateThreshold(index, $event)"
-        @unit="updateUnit(index, $event)"
-        @is-in-valid="handleIsInvalid(index, $event)"
-      />
+      <div class="grid w-full grid-cols-1 gap-3 md:grid-cols-3 md:gap-3">
+        <SlaTimeInput
+          v-for="(input, index) in localizedSlaTimeInputs"
+          :key="index"
+          :threshold="input.threshold"
+          :threshold-unit="input.unit"
+          :label="input.translatedLabel"
+          :placeholder="input.translatedPlaceholder"
+          @update-threshold="updateThreshold(index, $event)"
+          @unit="updateUnit(index, $event)"
+          @is-in-valid="handleIsInvalid(index, $event)"
+        />
+      </div>
 
       <div
-        class="mt-3 flex h-10 items-center text-sm w-full gap-2 border border-solid border-n-strong px-3 py-1.5 rounded-xl justify-between"
+        class="mt-1 flex h-10 items-center justify-between gap-2 rounded-xl border border-solid border-n-strong px-3 py-1.5 text-sm w-full"
       >
         <span for="sla_bh" class="text-n-slate-11">
           {{ $t('SLA.FORM.BUSINESS_HOURS.PLACEHOLDER') }}
@@ -208,7 +242,7 @@ export default {
         <ToggleSwitch id="sla_bh" v-model="onlyDuringBusinessHours" />
       </div>
 
-      <div class="flex items-center justify-end w-full gap-2 mt-8">
+      <div class="mt-5 flex w-full items-center justify-end gap-2">
         <NextButton
           faded
           slate

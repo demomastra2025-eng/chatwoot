@@ -1,171 +1,219 @@
 export default [
   {
     id: 1,
-    title: "How to get an SSL certificate for your Help Center's custom domain",
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.SSL_CERTIFICATE',
     status: 'draft',
     updatedAt: 1729205669,
-    author: { availableName: 'Michael' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.AIGERIM',
+    },
     category: {
       slug: 'configuration',
       icon: '📦',
-      name: 'Setup & Configuration',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.CONFIGURATION',
     },
     views: 3400,
   },
   {
     id: 2,
-    title: 'Setting up your first Help Center portal',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.FIRST_PORTAL',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'John' },
-    category: { slug: 'onboarding', icon: '🧑‍🍳', name: 'Onboarding' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.NURLAN',
+    },
+    category: {
+      slug: 'onboarding',
+      icon: '🧑‍🍳',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.ONBOARDING',
+    },
     views: 400,
   },
   {
     id: 3,
-    title: 'Best practices for organizing your Help Center content',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.BEST_PRACTICES',
     status: 'archived',
     updatedAt: 1729205669,
-    author: { availableName: 'Fernando' },
-    category: { slug: 'best-practices', icon: '⛺️', name: 'Best Practices' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.DANA',
+    },
+    category: {
+      slug: 'best-practices',
+      icon: '⛺️',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.BEST_PRACTICES',
+    },
     views: 400,
   },
   {
     id: 4,
-    title: 'Customizing the appearance of your Help Center',
+    titleKey:
+      'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.CUSTOMIZE_APPEARANCE',
     status: 'draft',
     updatedAt: 1729205669,
-    author: { availableName: 'Jane' },
-    category: { slug: 'design', icon: '🎨', name: 'Design' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.TIMUR',
+    },
+    category: {
+      slug: 'design',
+      icon: '🎨',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.DESIGN',
+    },
     views: 400,
   },
   {
     id: 5,
-    title: 'Integrating your Help Center with third-party tools',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.THIRD_PARTY_TOOLS',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'Sarah' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ALIYA',
+    },
     category: {
       slug: 'integrations',
       icon: '🔗',
-      name: 'Integrations',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.INTEGRATIONS',
     },
     views: 2800,
   },
   {
     id: 6,
-    title: 'Managing user permissions in your Help Center',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.USER_PERMISSIONS',
     status: 'draft',
     updatedAt: 1729205669,
-    author: { availableName: 'Alex' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ALIKHAN',
+    },
     category: {
       slug: 'administration',
       icon: '🔐',
-      name: 'Administration',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.ADMINISTRATION',
     },
     views: 1200,
   },
   {
     id: 7,
-    title: 'Creating and managing FAQ sections',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.FAQ_SECTIONS',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'Emily' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ARUZHAN',
+    },
     category: {
       slug: 'content-management',
       icon: '📝',
-      name: 'Content Management',
+      nameKey:
+        'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.CONTENT_MANAGEMENT',
     },
     views: 5600,
   },
   {
     id: 8,
-    title: 'Implementing search functionality in your Help Center',
+    titleKey:
+      'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.SEARCH_FUNCTIONALITY',
     status: 'archived',
     updatedAt: 1729205669,
-    author: { availableName: 'David' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ERLAN',
+    },
     category: {
       slug: 'features',
       icon: '🔍',
-      name: 'Features',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.FEATURES',
     },
     views: 1800,
   },
   {
     id: 9,
-    title: 'Analyzing Help Center usage metrics',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.USAGE_METRICS',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'Rachel' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.MADINA',
+    },
     category: {
       slug: 'analytics',
       icon: '📊',
-      name: 'Analytics',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.ANALYTICS',
     },
     views: 3200,
   },
   {
     id: 10,
-    title: 'Setting up multilingual support in your Help Center',
+    titleKey:
+      'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.MULTILINGUAL_SUPPORT',
     status: 'draft',
     updatedAt: 1729205669,
-    author: { availableName: 'Carlos' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ARMAN',
+    },
     category: {
       slug: 'localization',
       icon: '🌍',
-      name: 'Localization',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.LOCALIZATION',
     },
     views: 900,
   },
   {
     id: 11,
-    title: 'Creating interactive tutorials for your products',
+    titleKey:
+      'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.INTERACTIVE_TUTORIALS',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'Olivia' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.ASEM',
+    },
     category: {
       slug: 'education',
       icon: '🎓',
-      name: 'Education',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.EDUCATION',
     },
     views: 4100,
   },
   {
     id: 12,
-    title: 'Implementing a feedback system in your Help Center',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.FEEDBACK_SYSTEM',
     status: 'draft',
     updatedAt: 1729205669,
-    author: { availableName: 'Nathan' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.DAMIR',
+    },
     category: {
       slug: 'user-engagement',
       icon: '💬',
-      name: 'User Engagement',
+      nameKey:
+        'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.USER_ENGAGEMENT',
     },
     views: 750,
   },
   {
     id: 13,
-    title: 'Optimizing Help Center content for SEO',
+    titleKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.SEO_OPTIMIZATION',
     status: 'published',
     updatedAt: 1729205669,
-    author: { availableName: 'Sophia' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.DINARA',
+    },
     category: {
       slug: 'seo',
       icon: '🚀',
-      name: 'SEO',
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.SEO',
     },
     views: 2900,
   },
   {
     id: 14,
-    title: 'Creating a knowledge base for internal teams',
+    titleKey:
+      'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.TITLES.INTERNAL_KNOWLEDGE_BASE',
     status: 'archived',
     updatedAt: 1729205669,
-    author: { availableName: 'Daniel' },
+    author: {
+      nameKey: 'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.AUTHORS.BAUYRZHAN',
+    },
     category: {
       slug: 'internal-resources',
       icon: '🏢',
-      name: 'Internal Resources',
+      nameKey:
+        'HELP_CENTER.NEW_PAGE.SAMPLE_ARTICLES.CATEGORIES.INTERNAL_RESOURCES',
     },
     views: 1500,
   },

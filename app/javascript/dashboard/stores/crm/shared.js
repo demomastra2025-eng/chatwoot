@@ -38,6 +38,14 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.FEATURE_DISABLED');
     case 'NOT_FOUND':
       return t('CRM.ERRORS.NOT_FOUND');
+    case 'PIPELINE_HAS_DEALS':
+      return t('CRM.ERRORS.PIPELINE_HAS_DEALS');
+    case 'PIPELINE_MUST_BE_ARCHIVED':
+      return t('CRM.ERRORS.PIPELINE_MUST_BE_ARCHIVED');
+    case 'STAGE_HAS_DEALS':
+      return t('CRM.ERRORS.STAGE_HAS_DEALS');
+    case 'TASK_STATUS_HAS_TASKS':
+      return t('CRM.ERRORS.TASK_STATUS_HAS_TASKS');
     case 'STALE_RECORD':
       return t('CRM.ERRORS.STALE_RECORD');
     case 'VALIDATION_ERROR':

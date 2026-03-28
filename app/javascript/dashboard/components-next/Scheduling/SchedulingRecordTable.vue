@@ -12,6 +12,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  rowClass: {
+    type: [Function, String],
+    default: '',
+  },
 });
 </script>
 
@@ -55,6 +59,11 @@ const props = defineProps({
         v-for="row in rows"
         :key="row.id"
         class="grid items-center gap-3 px-5 py-3 text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-1"
+        :class="
+          typeof props.rowClass === 'function'
+            ? props.rowClass(row)
+            : props.rowClass
+        "
         :style="{
           gridTemplateColumns: columns
             .map(column => column.width || '1fr')

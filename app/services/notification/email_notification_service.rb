@@ -18,6 +18,9 @@ class Notification::EmailNotificationService
   # TODO : Clean up whatever happening over here
   # Segregate the mailers properly
   def send_notification_email
+    return if notification.primary_actor.blank?
+    return if secondary_actor_required? && notification.secondary_actor.blank?
+
     AgentNotifications::ConversationNotificationsMailer.with(account: notification.account).public_send(
       notification.notification_type.to_s, notification.primary_actor, notification.user, notification.secondary_actor
     ).deliver_later
@@ -28,5 +31,11 @@ class Notification::EmailNotificationService
     return true if notification_setting.public_send("email_#{notification.notification_type}?")
 
     false
+  end
+
+  def secondary_actor_required?
+    %w[conversation_mention assigned_conversation_new_message participating_conversation_new_message].include?(
+      notification.notification_type
+    )
   end
 end

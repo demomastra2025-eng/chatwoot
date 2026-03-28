@@ -20,7 +20,10 @@ class Crm::FieldCatalog
   end
 
   def resolve_custom_attributes(current_attributes:, incoming_attributes:, apply_defaults:)
-    resolved = current_attributes.to_h.deep_stringify_keys
+    resolved = current_attributes
+               .to_h
+               .deep_stringify_keys
+               .slice(*definitions.map(&:key))
     incoming = incoming_attributes.nil? ? {} : incoming_attributes.to_h.deep_stringify_keys
 
     incoming.each do |key, value|
@@ -102,7 +105,10 @@ class Crm::FieldCatalog
     normalized_value = normalize_text(value)
     return nil if normalized_value.blank?
 
-    raise_validation_error("custom_attributes.#{definition.key}", 'contains a value outside allowed options') unless option_values(definition).include?(normalized_value)
+    unless option_values(definition).include?(normalized_value)
+      raise_validation_error("custom_attributes.#{definition.key}",
+                             'contains a value outside allowed options')
+    end
 
     normalized_value
   end

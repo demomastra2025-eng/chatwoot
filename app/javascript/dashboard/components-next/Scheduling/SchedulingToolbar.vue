@@ -23,6 +23,10 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  transparent: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
@@ -42,7 +46,10 @@ const translatedViews = computed(() =>
 </script>
 
 <template>
-  <div class="bg-n-surface-1 px-5 pb-2 pt-4">
+  <div
+    class="px-5 pb-2 pt-4"
+    :class="props.transparent ? 'bg-transparent' : 'bg-n-surface-1'"
+  >
     <div class="grid gap-3 xl:grid-cols-[auto_1fr_auto] xl:items-center">
       <div class="min-w-0">
         <SchedulingViewSwitcher

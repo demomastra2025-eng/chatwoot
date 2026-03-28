@@ -97,6 +97,53 @@ describe Whatsapp::SendOnWhatsappService do
         expect(message.reload.external_error).to eq('Template not found or invalid template name')
       end
 
+      it 'marks campaign delivery as failed when template name is blank' do
+        processor = instance_double(Whatsapp::TemplateProcessorService)
+        allow(Whatsapp::TemplateProcessorService).to receive(:new).and_return(processor)
+        allow(processor).to receive(:call).and_return([nil, nil, nil, nil])
+
+        campaign = create(
+          :campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          template_params: {
+            'name' => 'ticket_status_updated',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'processed_params' => { 'body' => { 'name' => 'John' } }
+          }
+        )
+        delivery = create(
+          :campaign_delivery,
+          campaign: campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: conversation.contact,
+          provider: whatsapp_channel.provider
+        )
+        message = create(
+          :message,
+          additional_attributes: {
+            campaign_id: campaign.id,
+            template_params: {
+              name: '',
+              namespace: 'test_namespace',
+              language: 'en_US',
+              category: 'UTILITY',
+              processed_params: { '1' => 'test' }
+            }
+          },
+          conversation: conversation,
+          message_type: :outgoing,
+          account: conversation.account
+        )
+
+        described_class.new(message: message).perform
+
+        expect(delivery.reload.status).to eq('failed')
+        expect(delivery.error_message).to eq('Template not found or invalid template name')
+      end
+
       it 'calls channel.send_template when after 24 hour limit' do
         message = create(:message, message_type: :outgoing, content: 'Your package has been shipped. It will be delivered in 3 business days.',
                                    conversation: conversation, additional_attributes: { template_params: template_params },
@@ -124,6 +171,52 @@ describe Whatsapp::SendOnWhatsappService do
 
         described_class.new(message: message).perform
         expect(message.reload.source_id).to eq('123456789')
+      end
+
+      it 'updates campaign delivery when a campaign message is submitted' do
+        campaign = create(
+          :campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          template_params: {
+            'name' => 'sample_shipping_confirmation',
+            'namespace' => '23423423_2342423_324234234_2343224',
+            'language' => 'en_US',
+            'category' => 'Marketing',
+            'processed_params' => { 'body' => { '1' => '3' } }
+          }
+        )
+        delivery = create(
+          :campaign_delivery,
+          campaign: campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: conversation.contact,
+          provider: whatsapp_channel.provider
+        )
+        message = create(
+          :message,
+          additional_attributes: { campaign_id: campaign.id, template_params: template_params },
+          content: 'Your package will be delivered in 3 business days.',
+          conversation: conversation,
+          message_type: :outgoing,
+          account: conversation.account
+        )
+
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+          .with(
+            headers: headers,
+            body: template_body.to_json
+          ).to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(delivery.reload.status).to eq('submitted')
+        expect(delivery.provider_message_id).to eq('123456789')
+        expect(delivery.metadata).to include(
+          'template_name' => 'sample_shipping_confirmation',
+          'template_language' => 'en_US'
+        )
       end
 
       it 'calls channel.send_template with named params if template parameter type is NAMED' do

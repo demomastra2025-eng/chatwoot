@@ -1,10 +1,11 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import EmptyStateLayout from 'dashboard/components-next/EmptyStateLayout.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ArticleCard from 'dashboard/components-next/HelpCenter/ArticleCard/ArticleCard.vue';
-import articleContent from './portalEmptyStateContent';
+import portalEmptyStateContent from './portalEmptyStateContent';
 import CreatePortalDialog from 'dashboard/components-next/HelpCenter/PortalSwitcher/CreatePortalDialog.vue';
 
 const createPortalDialogRef = ref(null);
@@ -13,6 +14,26 @@ const openDialog = () => {
 };
 
 const router = useRouter();
+const { t } = useI18n();
+
+const articleContent = computed(() =>
+  portalEmptyStateContent.map(article => ({
+    ...article,
+    title: t(article.titleKey),
+    author: {
+      ...article.author,
+      name: t(article.author.nameKey),
+    },
+    category: {
+      ...article.category,
+      name: t(article.category.nameKey),
+    },
+  }))
+);
+
+const reversedArticleContent = computed(() =>
+  [...articleContent.value].reverse()
+);
 
 const onPortalCreate = ({ slug: portalSlug, locale }) => {
   router.push({
@@ -45,7 +66,7 @@ const onPortalCreate = ({ slug: portalSlug, locale }) => {
         </div>
         <div class="space-y-4">
           <ArticleCard
-            v-for="(article, index) in articleContent.reverse()"
+            v-for="(article, index) in reversedArticleContent"
             :id="article.id"
             :key="`article-${index}`"
             :title="article.title"

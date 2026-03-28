@@ -25,6 +25,7 @@ import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
+import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
@@ -36,12 +37,18 @@ import SchedulingRecordTable from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
+import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 import {
   compactPayload,
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
+import {
+  DuplicateContactException,
+  ExceptionWithMessage,
+} from 'shared/helpers/CustomErrors';
 
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
@@ -54,24 +61,35 @@ const deals = ref([]);
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const filterDialogRef = ref(null);
+const listCurrentPage = ref(1);
 const timelineItems = ref([]);
 const contactOptions = ref([]);
 const companyOptions = ref([]);
+const createNewContactDialogRef = ref(null);
 const selectedDeal = ref(null);
+
+const LIST_PAGE_SIZE = 25;
 
 const filters = reactive({
   archived: false,
+  companyId: '',
+  contactId: '',
   ownerId: '',
   pipelineId: '',
-  q: '',
+  stageId: '',
   teamId: '',
 });
 const filterDraft = reactive({
   archived: false,
+  companyId: '',
+  contactId: '',
   ownerId: '',
   pipelineId: '',
-  q: '',
+  stageId: '',
   teamId: '',
+});
+const listQuickFilters = reactive({
+  q: '',
 });
 
 const form = reactive({
@@ -132,6 +150,46 @@ const pipelineOptions = computed(() =>
   }))
 );
 
+const defaultPipeline = computed(
+  () =>
+    referencesStore.pipelines.find(pipeline => pipeline.default) ||
+    referencesStore.pipelines[0] ||
+    null
+);
+
+const selectedPipeline = computed(
+  () =>
+    referencesStore.pipelines.find(
+      pipeline => Number(pipeline.id) === Number(filters.pipelineId)
+    ) ||
+    defaultPipeline.value ||
+    null
+);
+
+const pipelineToggleItems = computed(() =>
+  referencesStore.pipelines.map(pipeline => ({
+    id: `crm-deals-pipeline-${pipeline.id}`,
+    label: pipeline.name,
+    value: pipeline.id,
+  }))
+);
+
+const hasSelectedPipeline = pipelineId =>
+  pipelineToggleItems.value.some(
+    item => Number(item.value) === Number(pipelineId)
+  );
+
+const resolvePipelineFilterId = pipelineId => {
+  if (hasSelectedPipeline(pipelineId)) {
+    return pipelineId;
+  }
+
+  return defaultPipeline.value?.id || pipelineToggleItems.value[0]?.value || '';
+};
+
+const isActivePipeline = pipelineId =>
+  Number(filters.pipelineId) === Number(pipelineId);
+
 const stageOptions = computed(() =>
   (
     referencesStore.pipelines.find(
@@ -146,6 +204,9 @@ const stageOptions = computed(() =>
 const ownerOptions = computed(() =>
   agents.value.map(agent => ({
     label: agent.name || agent.email,
+    thumbnail: {
+      name: agent.name || agent.email,
+    },
     value: agent.id,
   }))
 );
@@ -157,6 +218,20 @@ const teamOptions = computed(() =>
   }))
 );
 
+const filterStageOptions = computed(() => {
+  const pipelineId = resolvePipelineFilterId(
+    filterDraft.pipelineId || filters.pipelineId
+  );
+  const pipeline = referencesStore.pipelines.find(
+    item => Number(item.id) === Number(pipelineId)
+  );
+
+  return (pipeline?.stages || []).map(stage => ({
+    label: stage.name,
+    value: stage.id,
+  }));
+});
+
 const boardStages = computed(() => {
   const pipelines = filters.pipelineId
     ? referencesStore.pipelines.filter(
@@ -166,13 +241,20 @@ const boardStages = computed(() => {
 
   return pipelines.flatMap(pipeline =>
     (pipeline.stages || []).map(stage => ({
+      color: stage.color,
       id: stage.id,
       label: stage.name,
       name: stage.name,
-      pipelineName: pipeline.name,
+      pipelineId: pipeline.id,
     }))
   );
 });
+
+const hasBoardStages = computed(() => boardStages.value.length > 0);
+
+const shouldRenderBoard = computed(
+  () => currentPresentation.value === 'board' && hasBoardStages.value
+);
 
 const viewOptions = computed(() => [
   { label: t('CRM.VIEWS.BOARD'), value: 'board' },
@@ -180,11 +262,12 @@ const viewOptions = computed(() => [
 ]);
 
 const tableColumns = computed(() => [
-  { key: 'title', label: t('CRM.DEALS.TABLE.TITLE'), width: '1.8fr' },
+  { key: 'id', label: t('CRM.GENERAL.ID'), width: '72px' },
+  { key: 'title', label: t('CRM.DEALS.TABLE.TITLE'), width: '2.4fr' },
   { key: 'stage', label: t('CRM.DEALS.TABLE.STAGE'), width: '1fr' },
   { key: 'owner', label: t('CRM.DEALS.TABLE.OWNER'), width: '1fr' },
-  { key: 'amount', label: t('CRM.DEALS.TABLE.AMOUNT'), width: '0.8fr' },
-  { key: 'updatedAt', label: t('CRM.DEALS.TABLE.UPDATED'), width: '0.9fr' },
+  { key: 'amount', label: t('CRM.DEALS.TABLE.AMOUNT'), width: '0.95fr' },
+  { key: 'updatedAt', label: t('CRM.DEALS.TABLE.UPDATED'), width: '0.95fr' },
   { key: 'actions', label: '', width: '112px', align: 'end' },
 ]);
 
@@ -208,12 +291,75 @@ const stageNameById = computed(() =>
   }, {})
 );
 
+const stageColorById = computed(() =>
+  referencesStore.pipelines.reduce((result, pipeline) => {
+    (pipeline.stages || []).forEach(stage => {
+      result[stage.id] = stage.color || DEFAULT_STAGE_COLOR;
+    });
+    return result;
+  }, {})
+);
+
 const ownerNameById = computed(() =>
   agents.value.reduce((result, agent) => {
     result[agent.id] = agent.name || agent.email;
     return result;
   }, {})
 );
+
+const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
+
+const normalizeFilterText = value =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const filteredListDeals = computed(() => {
+  const search = normalizeFilterText(listQuickFilters.q);
+
+  return deals.value.filter(deal => {
+    if (!search) {
+      return true;
+    }
+
+    return [
+      deal.title,
+      deal.description,
+      `#${deal.id}`,
+      deal.externalRef,
+      deal.company?.name,
+      deal.primaryContact?.name,
+      pipelineNameById.value[deal.pipelineId],
+      stageNameById.value[deal.stageId],
+      ownerNameById.value[deal.ownerId],
+      deal.amountMinor,
+      deal.currency,
+    ].some(value => normalizeFilterText(value).includes(search));
+  });
+});
+
+const paginatedListDeals = computed(() => {
+  const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
+  return filteredListDeals.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
+});
+
+const stripedDealRowIds = computed(
+  () =>
+    new Set(
+      paginatedListDeals.value
+        .filter((_, index) => index % 2 === 1)
+        .map(deal => Number(deal.id))
+    )
+);
+
+const shouldShowListPagination = computed(
+  () => filteredListDeals.value.length > LIST_PAGE_SIZE
+);
+
+const dealListRowClass = row => [
+  row.archivedAt ? 'opacity-75' : '',
+  stripedDealRowIds.value.has(Number(row.id)) ? 'bg-n-surface-1/70' : '',
+];
 
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
@@ -235,11 +381,90 @@ const defaultCustomAttributes = definitions => {
   }, {});
 };
 
+const buildContactOption = contact => {
+  const primaryLabel =
+    contact.name ||
+    contact.phoneNumber ||
+    contact.email ||
+    contact.identifier ||
+    t('CRM.GENERAL.EMPTY_VALUE');
+  const secondaryLabel = contact.name
+    ? contact.phoneNumber || contact.email || contact.identifier
+    : '';
+
+  return {
+    label: [primaryLabel, secondaryLabel].filter(Boolean).join(' · '),
+    value: contact.id,
+  };
+};
+
+const buildCompanyOption = company => ({
+  label: company.name,
+  value: company.id,
+});
+
+const dedupeOptions = options => {
+  const optionMap = new Map();
+
+  options.forEach(option => {
+    const key = Number.isFinite(Number(option.value))
+      ? Number(option.value)
+      : option.value;
+    optionMap.set(key, option);
+  });
+
+  return Array.from(optionMap.values());
+};
+
+const selectedContactOptionIds = computed(() => {
+  return [
+    ...form.contactIds.map(Number),
+    filterDraft.contactId ? Number(filterDraft.contactId) : null,
+    form.primaryContactId ? Number(form.primaryContactId) : null,
+  ].filter(Boolean);
+});
+
+const selectedCompanyOptionIds = computed(() =>
+  [form.companyId, filterDraft.companyId].map(Number).filter(Boolean)
+);
+
+const mergeContactOptions = options => {
+  const selectedOptions = contactOptions.value.filter(option =>
+    selectedContactOptionIds.value.includes(Number(option.value))
+  );
+
+  return dedupeOptions([...selectedOptions, ...options]);
+};
+
+const mergeCompanyOptions = options => {
+  const selectedOptions = companyOptions.value.filter(option =>
+    selectedCompanyOptionIds.value.includes(Number(option.value))
+  );
+
+  return dedupeOptions([...selectedOptions, ...options]);
+};
+
+const upsertContactOption = contact => {
+  const option = buildContactOption(contact);
+  contactOptions.value = dedupeOptions([option, ...contactOptions.value]);
+  return option;
+};
+
+const upsertCompanyOption = company => {
+  const option = buildCompanyOption(company);
+  companyOptions.value = dedupeOptions([option, ...companyOptions.value]);
+  return option;
+};
+
 const resetForm = () => {
-  const defaultPipeline =
+  const defaultPipelineId = resolvePipelineFilterId(filters.pipelineId);
+  const resolvedDefaultPipeline =
+    referencesStore.pipelines.find(
+      pipeline => Number(pipeline.id) === Number(defaultPipelineId)
+    ) ||
     referencesStore.pipelines.find(pipeline => pipeline.default) ||
     referencesStore.pipelines[0];
-  const defaultStage = defaultPipeline?.stages?.[0];
+  const defaultStage = resolvedDefaultPipeline?.stages?.[0];
 
   Object.assign(form, {
     amountMinor: '',
@@ -253,7 +478,7 @@ const resetForm = () => {
     originatingConversationDisplayId: '',
     originatingConversationId: '',
     ownerId: currentUserId.value,
-    pipelineId: defaultPipeline?.id || '',
+    pipelineId: resolvedDefaultPipeline?.id || '',
     primaryContactId: '',
     stageId: defaultStage?.id || '',
     teamId: '',
@@ -335,10 +560,9 @@ const loadContacts = async query => {
   const response = query
     ? await ContactAPI.search(query, 1)
     : await ContactAPI.get(1);
-  contactOptions.value = normalizePayload(response.data).map(contact => ({
-    label: [contact.name, contact.phoneNumber].filter(Boolean).join(' · '),
-    value: contact.id,
-  }));
+  contactOptions.value = mergeContactOptions(
+    normalizePayload(response.data).map(buildContactOption)
+  );
 };
 
 const loadCompanies = async query => {
@@ -350,10 +574,9 @@ const loadCompanies = async query => {
   const response = query
     ? await CompanyAPI.search(query, 1)
     : await CompanyAPI.get();
-  companyOptions.value = normalizePayload(response.data).map(company => ({
-    label: company.name,
-    value: company.id,
-  }));
+  companyOptions.value = mergeCompanyOptions(
+    normalizePayload(response.data).map(buildCompanyOption)
+  );
 };
 
 const ensureSelectedLookups = async deal => {
@@ -379,25 +602,53 @@ const ensureSelectedLookups = async deal => {
     const resolvedContacts = responses.map(response =>
       normalizePayload(response.data)
     );
-    contactOptions.value = [
+    contactOptions.value = dedupeOptions([
       ...contactOptions.value,
-      ...resolvedContacts.map(contact => ({
-        label: [contact.name, contact.phoneNumber].filter(Boolean).join(' · '),
-        value: contact.id,
-      })),
-    ];
+      ...resolvedContacts.map(buildContactOption),
+    ]);
   }
 
   if (missingCompanyId && companiesEnabled.value) {
     const response = await CompanyAPI.show(deal.companyId);
     const company = normalizePayload(response.data);
-    companyOptions.value = [
-      ...companyOptions.value,
-      {
-        label: company.name,
-        value: company.id,
-      },
-    ];
+    upsertCompanyOption(company);
+  }
+};
+
+const resolveStageFilterId = (stageId, pipelineId) => {
+  if (!stageId) return '';
+
+  const resolvedPipelineId = resolvePipelineFilterId(pipelineId);
+  const pipeline = referencesStore.pipelines.find(
+    item => Number(item.id) === Number(resolvedPipelineId)
+  );
+  const belongsToPipeline = (pipeline?.stages || []).some(
+    stage => Number(stage.id) === Number(stageId)
+  );
+
+  return belongsToPipeline ? stageId : '';
+};
+
+const ensureSelectedFilterLookups = async () => {
+  if (
+    filterDraft.contactId &&
+    !contactOptions.value.some(
+      option => Number(option.value) === Number(filterDraft.contactId)
+    )
+  ) {
+    const response = await ContactAPI.show(filterDraft.contactId);
+    upsertContactOption(normalizePayload(response.data));
+  }
+
+  if (
+    filterDraft.companyId &&
+    companiesEnabled.value &&
+    !companyOptions.value.some(
+      option => Number(option.value) === Number(filterDraft.companyId)
+    )
+  ) {
+    const response = await CompanyAPI.show(filterDraft.companyId);
+    upsertCompanyOption(normalizePayload(response.data));
   }
 };
 
@@ -460,6 +711,52 @@ const closeDrawer = () => {
   selectedDeal.value = null;
   timelineItems.value = [];
   resetForm();
+};
+
+const openCreateNewContactDialog = () => {
+  createNewContactDialogRef.value?.dialogRef.open();
+};
+
+const createContact = async contact => {
+  try {
+    const createdContact = await store.dispatch('contacts/create', contact);
+    createNewContactDialogRef.value?.onSuccess();
+
+    const createdOption = upsertContactOption(createdContact);
+    form.contactIds = [
+      ...new Set([...form.contactIds, createdOption.value].map(Number)),
+    ];
+
+    if (!form.primaryContactId) {
+      form.primaryContactId = createdOption.value;
+    }
+
+    useAlert(
+      t('CONTACTS_LAYOUT.HEADER.ACTIONS.CONTACT_CREATION.SUCCESS_MESSAGE')
+    );
+  } catch (error) {
+    if (error instanceof DuplicateContactException) {
+      if (error.data.includes('email')) {
+        useAlert(
+          t(
+            'CONTACTS_LAYOUT.HEADER.ACTIONS.CONTACT_CREATION.EMAIL_ADDRESS_DUPLICATE'
+          )
+        );
+      } else if (error.data.includes('phone_number')) {
+        useAlert(
+          t(
+            'CONTACTS_LAYOUT.HEADER.ACTIONS.CONTACT_CREATION.PHONE_NUMBER_DUPLICATE'
+          )
+        );
+      }
+    } else if (error instanceof ExceptionWithMessage) {
+      useAlert(error.data);
+    } else {
+      useAlert(
+        t('CONTACTS_LAYOUT.HEADER.ACTIONS.CONTACT_CREATION.ERROR_MESSAGE')
+      );
+    }
+  }
 };
 
 const syncSelectedDeal = records => {
@@ -576,9 +873,11 @@ const loadDeals = async () => {
     const { data } = await CrmDealsAPI.get(
       compactPayload({
         archived: filters.archived,
+        company_id: filters.companyId || undefined,
+        contact_id: filters.contactId || undefined,
         owner_id: filters.ownerId || undefined,
         pipeline_id: filters.pipelineId || undefined,
-        q: filters.q || undefined,
+        stage_id: filters.stageId || undefined,
         team_id: filters.teamId || undefined,
       })
     );
@@ -591,32 +890,104 @@ const loadDeals = async () => {
   }
 };
 
+const ensurePipelineFilterSelection = () => {
+  const nextPipelineId = resolvePipelineFilterId(filters.pipelineId);
+  if (!nextPipelineId) return;
+
+  filters.pipelineId = nextPipelineId;
+  filterDraft.pipelineId = nextPipelineId;
+};
+
+const selectPipelineFilter = async pipelineId => {
+  const nextPipelineId = resolvePipelineFilterId(pipelineId);
+  if (!nextPipelineId || isActivePipeline(nextPipelineId)) return;
+
+  listCurrentPage.value = 1;
+  filters.pipelineId = nextPipelineId;
+  filters.stageId = resolveStageFilterId(filters.stageId, nextPipelineId);
+  filterDraft.pipelineId = nextPipelineId;
+  filterDraft.stageId = resolveStageFilterId(
+    filterDraft.stageId,
+    nextPipelineId
+  );
+  await loadDeals();
+};
+
+const openCreateStageSetup = () => {
+  if (!canManageDeals.value || !selectedPipeline.value) return;
+
+  router.push({
+    name: 'crm_settings_index',
+    params: { accountId: accountId.value },
+    query: {
+      action: 'create-stage',
+      pipelineId: selectedPipeline.value.id,
+    },
+  });
+};
+
+const handleBoardCreateDeal = async ({ pipelineId, stageId }) => {
+  await openCreateDrawer({
+    pipelineId,
+    stageId,
+  });
+};
+
 const syncFilterDraft = () => {
   Object.assign(filterDraft, {
     archived: filters.archived,
+    companyId: filters.companyId,
+    contactId: filters.contactId,
     ownerId: filters.ownerId,
     pipelineId: filters.pipelineId,
-    q: filters.q,
+    stageId: resolveStageFilterId(filters.stageId, filters.pipelineId),
     teamId: filters.teamId,
   });
 };
 
-const openFilterDialog = () => {
+const openFilterDialog = async () => {
   syncFilterDraft();
+  await ensureSelectedFilterLookups();
   filterDialogRef.value?.open();
 };
 
 const applyFilters = async () => {
+  listCurrentPage.value = 1;
   Object.assign(filters, {
     archived: filterDraft.archived,
+    companyId: filterDraft.companyId,
+    contactId: filterDraft.contactId,
     ownerId: filterDraft.ownerId,
-    pipelineId: filterDraft.pipelineId,
-    q: filterDraft.q,
+    pipelineId: resolvePipelineFilterId(filterDraft.pipelineId),
+    stageId: resolveStageFilterId(
+      filterDraft.stageId,
+      resolvePipelineFilterId(filterDraft.pipelineId)
+    ),
     teamId: filterDraft.teamId,
   });
   filterDialogRef.value?.close();
   await loadDeals();
 };
+
+watch(
+  () => listQuickFilters.q,
+  () => {
+    listCurrentPage.value = 1;
+  }
+);
+
+watch(filteredListDeals, rows => {
+  if (!rows.length) {
+    listCurrentPage.value = 1;
+    return;
+  }
+
+  const maxPage = Math.max(1, Math.ceil(rows.length / LIST_PAGE_SIZE));
+
+  if (listCurrentPage.value > maxPage) {
+    listCurrentPage.value = maxPage;
+  }
+});
 
 const handleDealStageChange = async ({ deal, stageId }) => {
   const currentDeal =
@@ -652,6 +1023,52 @@ const handleDealStageChange = async ({ deal, stageId }) => {
     ) {
       selectedDeal.value = updatedDeal;
       form.stageId = updatedDeal.stageId;
+    }
+  } catch (error) {
+    try {
+      await loadDeals();
+    } catch {
+      // Keep the original API error as the surfaced failure.
+    }
+
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const handleDealOwnerChange = async ({ deal, ownerId }) => {
+  const currentDeal =
+    deals.value.find(item => Number(item.id) === Number(deal.id)) || deal;
+  const nextOwnerId = Number(ownerId);
+
+  if (!nextOwnerId || Number(currentDeal.ownerId) === nextOwnerId) {
+    return;
+  }
+
+  const optimisticDeal = { ...currentDeal, ownerId: nextOwnerId };
+  upsertDeal(optimisticDeal);
+
+  if (
+    selectedDeal.value &&
+    Number(selectedDeal.value.id) === optimisticDeal.id
+  ) {
+    selectedDeal.value = optimisticDeal;
+    form.ownerId = nextOwnerId;
+  }
+
+  try {
+    const response = await CrmDealsAPI.update(currentDeal.id, {
+      lock_version: currentDeal.lockVersion,
+      owner_id: nextOwnerId,
+    });
+    const updatedDeal = normalizePayload(response.data);
+    upsertDeal(updatedDeal);
+
+    if (
+      selectedDeal.value &&
+      Number(selectedDeal.value.id) === updatedDeal.id
+    ) {
+      selectedDeal.value = updatedDeal;
+      form.ownerId = updatedDeal.ownerId;
     }
   } catch (error) {
     try {
@@ -745,14 +1162,7 @@ const consumeDealPrefillQuery = async () => {
     )
   ) {
     const response = await CompanyAPI.show(companyId);
-    const company = normalizePayload(response.data);
-    companyOptions.value = [
-      ...companyOptions.value,
-      {
-        label: company.name,
-        value: company.id,
-      },
-    ];
+    upsertCompanyOption(normalizePayload(response.data));
   }
 
   await clearDealPrefillQuery();
@@ -776,6 +1186,20 @@ watch(
   }
 );
 
+watch(
+  () => [...form.contactIds],
+  contactIds => {
+    const normalizedContactIds = contactIds.map(Number);
+
+    if (
+      form.primaryContactId &&
+      !normalizedContactIds.includes(Number(form.primaryContactId))
+    ) {
+      form.primaryContactId = normalizedContactIds[0] || '';
+    }
+  }
+);
+
 onMounted(async () => {
   if (!canViewDeals.value) return;
 
@@ -791,6 +1215,7 @@ onMounted(async () => {
     referencesStore.loadPipelines(),
     referencesStore.loadFieldDefinitions('deal'),
   ]);
+  ensurePipelineFilterSelection();
   resetForm();
   await loadDeals();
   await consumeDealPrefillQuery();
@@ -798,12 +1223,51 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-surface-1">
-    <SchedulingPageHeader
-      :title="$t('CRM.DEALS.TITLE')"
-      :description="$t('CRM.DEALS.DESCRIPTION')"
-    >
+  <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
+    <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.DEALS.TITLE')">
+      <template #left>
+        <label
+          v-for="pipeline in pipelineToggleItems"
+          :key="pipeline.id"
+          class="relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-n-weak focus-within:outline-offset-2"
+          :class="
+            isActivePipeline(pipeline.value)
+              ? 'border-n-weak bg-n-solid-1 text-n-slate-12 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
+              : 'border-transparent bg-transparent text-n-slate-11 hover:bg-n-alpha-black2/60 hover:text-n-slate-12'
+          "
+        >
+          <input
+            :id="pipeline.id"
+            class="size-3 flex-shrink-0 border-n-slate-6 text-n-slate-12 focus:ring-n-weak focus:ring-offset-0"
+            type="radio"
+            name="crm-deals-pipeline"
+            :value="pipeline.value"
+            :checked="isActivePipeline(pipeline.value)"
+            @change="selectPipelineFilter(pipeline.value)"
+          />
+          <span class="text-xs font-medium leading-none">
+            {{ pipeline.label }}
+          </span>
+        </label>
+      </template>
       <template #actions>
+        <Input
+          v-if="currentPresentation === 'list'"
+          size="sm"
+          type="search"
+          :model-value="listQuickFilters.q"
+          :placeholder="$t('CRM.DEALS.LIST.SEARCH_PLACEHOLDER')"
+          class="w-full sm:w-72"
+          custom-input-class="ltr:!pr-8 rtl:!pl-8"
+          @update:model-value="listQuickFilters.q = $event"
+        >
+          <template #suffix>
+            <Icon
+              icon="i-lucide-search"
+              class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
+            />
+          </template>
+        </Input>
         <Button
           size="sm"
           color="slate"
@@ -828,14 +1292,14 @@ onMounted(async () => {
     <div
       class="flex-1"
       :class="
-        currentPresentation === 'board' && !ui.isLoading && !ui.error
+        shouldRenderBoard && !ui.isLoading && !ui.error
           ? 'min-h-0 overflow-hidden'
           : 'overflow-y-auto'
       "
     >
       <div
         :class="
-          currentPresentation === 'board' && !ui.isLoading && !ui.error
+          shouldRenderBoard && !ui.isLoading && !ui.error
             ? 'flex h-full min-h-0 flex-col px-5 pb-5 pt-3'
             : 'flex flex-col gap-4 px-5 pb-5 pt-3'
         "
@@ -852,6 +1316,30 @@ onMounted(async () => {
         />
 
         <SchedulingEmptyState
+          v-else-if="currentPresentation === 'board' && !hasBoardStages"
+          icon="i-lucide-columns-3"
+          :title="$t('CRM.DEALS.BOARD.EMPTY_PIPELINE_TITLE')"
+          :description="$t('CRM.DEALS.BOARD.EMPTY_PIPELINE_DESCRIPTION')"
+          :action-label="
+            canManageDeals ? $t('CRM.DEALS.BOARD.CREATE_STAGE') : ''
+          "
+          @action="openCreateStageSetup"
+        />
+
+        <CrmDealBoard
+          v-else-if="currentPresentation === 'board'"
+          class="min-h-0 flex-1"
+          :can-manage="canManageDeals"
+          :deals="deals"
+          :owners="ownerOptions"
+          :stages="boardStages"
+          @change-owner="handleDealOwnerChange"
+          @change-stage="handleDealStageChange"
+          @create-deal="handleBoardCreateDeal"
+          @select-deal="openEditDrawer"
+        />
+
+        <SchedulingEmptyState
           v-else-if="deals.length === 0"
           icon="i-lucide-briefcase-business"
           :title="$t('CRM.DEALS.EMPTY_TITLE')"
@@ -860,97 +1348,144 @@ onMounted(async () => {
           @action="openCreateDrawer"
         />
 
-        <SchedulingRecordTable
+        <div
           v-else-if="currentPresentation === 'list'"
-          :columns="tableColumns"
-          :rows="deals"
+          class="mt-3 overflow-hidden rounded-xl outline outline-1 outline-n-container"
         >
-          <template #cell-title="{ row }">
-            <button
-              type="button"
-              class="grid gap-1 text-left"
-              @click="openEditDrawer(row)"
-            >
-              <span class="font-medium text-n-slate-12">{{ row.title }}</span>
-              <span class="text-xs text-n-slate-11">
+          <SchedulingRecordTable
+            borderless
+            class="crm-deal-list-table !rounded-none !bg-transparent"
+            :columns="tableColumns"
+            :rows="paginatedListDeals"
+            :row-class="dealListRowClass"
+          >
+            <template #empty>
+              {{
+                hasListSearchQuery
+                  ? $t('CRM.DEALS.LIST.EMPTY_FILTERED')
+                  : $t('SCHEDULING.GENERAL.NO_DATA')
+              }}
+            </template>
+
+            <template #cell-id="{ row }">
+              <span class="text-xs font-medium tabular-nums text-n-slate-11">
+                {{ `#${row.id}` }}
+              </span>
+            </template>
+
+            <template #cell-title="{ row }">
+              <button
+                type="button"
+                class="grid w-full gap-0.5 border-0 bg-transparent p-0 text-left"
+                @click="openEditDrawer(row)"
+              >
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-n-slate-12">
+                    {{ row.title }}
+                  </span>
+                  <span
+                    v-if="row.company?.name"
+                    class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                  >
+                    {{ row.company.name }}
+                  </span>
+                  <span
+                    v-if="row.primaryContact?.name"
+                    class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                  >
+                    {{ row.primaryContact.name }}
+                  </span>
+                  <span
+                    v-if="row.archivedAt"
+                    class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
+                  >
+                    {{ $t('CRM.GENERAL.ARCHIVED') }}
+                  </span>
+                </span>
+              </button>
+            </template>
+
+            <template #cell-stage="{ row }">
+              <span
+                class="inline-flex items-center gap-2 text-sm text-n-slate-12"
+              >
+                <span
+                  class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
+                  :style="{
+                    backgroundColor:
+                      stageColorById[row.stageId] || DEFAULT_STAGE_COLOR,
+                  }"
+                />
                 {{
-                  pipelineNameById[row.pipelineId] ||
-                  $t('CRM.GENERAL.EMPTY_VALUE')
+                  stageNameById[row.stageId] || $t('CRM.GENERAL.EMPTY_VALUE')
                 }}
               </span>
-            </button>
-          </template>
+            </template>
 
-          <template #cell-stage="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{ stageNameById[row.stageId] || $t('CRM.GENERAL.EMPTY_VALUE') }}
-            </span>
-          </template>
+            <template #cell-owner="{ row }">
+              <span class="text-sm text-n-slate-12">
+                {{
+                  ownerNameById[row.ownerId] || $t('CRM.GENERAL.EMPTY_VALUE')
+                }}
+              </span>
+            </template>
 
-          <template #cell-owner="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{ ownerNameById[row.ownerId] || $t('CRM.GENERAL.EMPTY_VALUE') }}
-            </span>
-          </template>
+            <template #cell-amount="{ row }">
+              <span class="text-sm text-n-slate-12">
+                {{
+                  row.amountMinor
+                    ? `${row.amountMinor}${row.currency ? ` ${row.currency}` : ''}`
+                    : $t('CRM.GENERAL.EMPTY_VALUE')
+                }}
+              </span>
+            </template>
 
-          <template #cell-amount="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{
-                row.amountMinor
-                  ? `${row.amountMinor}${row.currency ? ` ${row.currency}` : ''}`
-                  : $t('CRM.GENERAL.EMPTY_VALUE')
-              }}
-            </span>
-          </template>
+            <template #cell-updatedAt="{ row }">
+              <span class="text-sm text-n-slate-12">
+                {{ formatDate(row.updatedAt) }}
+              </span>
+            </template>
 
-          <template #cell-updatedAt="{ row }">
-            <span class="text-sm text-n-slate-12">
-              {{ formatDate(row.updatedAt) }}
-            </span>
-          </template>
+            <template #cell-actions="{ row }">
+              <div class="flex justify-end gap-1">
+                <Button
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  icon="i-lucide-pen-line"
+                  @click="openEditDrawer(row)"
+                />
+                <Button
+                  v-if="canManageDeals"
+                  size="sm"
+                  color="slate"
+                  variant="ghost"
+                  :icon="
+                    row.archivedAt
+                      ? 'i-lucide-archive-restore'
+                      : 'i-lucide-archive'
+                  "
+                  @click="toggleArchived(row)"
+                />
+              </div>
+            </template>
+          </SchedulingRecordTable>
 
-          <template #cell-actions="{ row }">
-            <div class="flex justify-end gap-1">
-              <Button
-                size="sm"
-                color="slate"
-                variant="ghost"
-                icon="i-lucide-pen-line"
-                @click="openEditDrawer(row)"
-              />
-              <Button
-                v-if="canManageDeals"
-                size="sm"
-                color="slate"
-                variant="ghost"
-                :icon="
-                  row.archivedAt
-                    ? 'i-lucide-archive-restore'
-                    : 'i-lucide-archive'
-                "
-                @click="toggleArchived(row)"
-              />
-            </div>
-          </template>
-        </SchedulingRecordTable>
-
-        <CrmDealBoard
-          v-else
-          class="min-h-0 flex-1"
-          :can-manage="canManageDeals"
-          :deals="deals"
-          :owner-names="ownerNameById"
-          :pipeline-names="pipelineNameById"
-          :stages="boardStages"
-          @change-stage="handleDealStageChange"
-          @select-deal="openEditDrawer"
-        />
+          <PaginationFooter
+            v-if="shouldShowListPagination"
+            class="!border-t !border-n-weak !bg-transparent before:!hidden"
+            :current-page="listCurrentPage"
+            :total-items="filteredListDeals.length"
+            :items-per-page="LIST_PAGE_SIZE"
+            @update:current-page="listCurrentPage = $event"
+          />
+        </div>
       </div>
     </div>
 
     <SchedulingDrawer
       v-model="drawerOpen"
-      width="xl"
+      width="sm"
       :title="
         selectedDeal ? $t('CRM.DEALS.EDIT_TITLE') : $t('CRM.DEALS.CREATE_TITLE')
       "
@@ -985,10 +1520,7 @@ onMounted(async () => {
           </p>
         </div>
 
-        <SchedulingFormFieldGroup
-          :framed="false"
-          :title="$t('CRM.DEALS.FORM.BASICS')"
-        >
+        <SchedulingFormFieldGroup :framed="false">
           <div class="grid gap-4 md:grid-cols-2">
             <Input
               :label="$t('CRM.DEALS.FORM.TITLE')"
@@ -996,6 +1528,7 @@ onMounted(async () => {
               @update:model-value="form.title = $event"
             />
             <SchedulingSelectField
+              v-if="selectedDeal"
               :label="$t('CRM.DEALS.FORM.PIPELINE')"
               :model-value="form.pipelineId"
               :options="pipelineOptions"
@@ -1032,35 +1565,43 @@ onMounted(async () => {
               :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
               :label="$t('CRM.DEALS.FORM.AMOUNT')"
             />
-            <TextArea
-              class="md:col-span-2"
-              :label="$t('CRM.DEALS.FORM.DESCRIPTION')"
-              :model-value="form.description"
-              auto-height
-              @update:model-value="form.description = $event"
-            />
           </div>
         </SchedulingFormFieldGroup>
 
-        <SchedulingFormFieldGroup
-          :framed="false"
-          :title="$t('CRM.DEALS.FORM.RELATIONSHIPS')"
-          :description="$t('CRM.DEALS.FORM.RELATIONSHIPS_DESCRIPTION')"
-        >
+        <SchedulingFormFieldGroup :framed="false">
           <div class="grid gap-4 md:grid-cols-2">
             <div class="grid gap-1 md:col-span-2">
-              <span class="mb-0.5 text-sm font-medium text-n-slate-12">
-                {{ $t('CRM.DEALS.FORM.CONTACTS') }}
-              </span>
+              <div class="mb-0.5 flex items-center justify-between gap-3">
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{ $t('CRM.DEALS.FORM.CONTACTS') }}
+                </span>
+                <Button
+                  size="sm"
+                  color="blue"
+                  variant="link"
+                  icon="i-lucide-plus"
+                  :label="$t('CRM.DEALS.FORM.CREATE_CONTACT')"
+                  @click="openCreateNewContactDialog"
+                />
+              </div>
               <TagMultiSelectComboBox
                 :model-value="form.contactIds"
                 :options="contactOptions"
+                use-api-results
+                dropdown-placement="top"
+                :search-placeholder="
+                  $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
+                "
+                :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+                @open="loadContacts('')"
+                @search="loadContacts"
                 @update:model-value="form.contactIds = $event"
               />
             </div>
             <SchedulingSelectField
               :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
               :model-value="form.primaryContactId"
+              dropdown-placement="top"
               :options="
                 contactOptions.filter(option =>
                   form.contactIds.includes(option.value)
@@ -1074,6 +1615,7 @@ onMounted(async () => {
               v-if="companiesEnabled"
               :label="$t('CRM.DEALS.FORM.COMPANY')"
               :model-value="form.companyId"
+              dropdown-placement="top"
               :options="companyOptions"
               use-api-results
               @open="loadCompanies('')"
@@ -1091,6 +1633,15 @@ onMounted(async () => {
           :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
           @update:model-value="form.customAttributes = $event"
         />
+
+        <SchedulingFormFieldGroup :framed="false">
+          <TextArea
+            :label="$t('CRM.DEALS.FORM.DESCRIPTION')"
+            :model-value="form.description"
+            auto-height
+            @update:model-value="form.description = $event"
+          />
+        </SchedulingFormFieldGroup>
 
         <SchedulingFormFieldGroup
           v-if="selectedDeal"
@@ -1145,6 +1696,11 @@ onMounted(async () => {
       </template>
     </SchedulingDrawer>
 
+    <CreateNewContactDialog
+      ref="createNewContactDialogRef"
+      @create="createContact"
+    />
+
     <Dialog
       ref="filterDialogRef"
       width="xl"
@@ -1154,33 +1710,6 @@ onMounted(async () => {
       @confirm="applyFilters"
     >
       <div class="grid gap-4 md:grid-cols-2">
-        <div class="md:col-span-2">
-          <Input
-            type="search"
-            :label="$t('CRM.FILTERS.SEARCH')"
-            :model-value="filterDraft.q"
-            custom-input-class="ltr:!pr-8 rtl:!pl-8"
-            :placeholder="$t('CRM.FILTERS.SEARCH_PLACEHOLDER')"
-            @enter="applyFilters"
-            @update:model-value="filterDraft.q = $event"
-          >
-            <template #suffix>
-              <Icon
-                icon="i-lucide-search"
-                class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
-              />
-            </template>
-          </Input>
-        </div>
-
-        <SchedulingSelectField
-          :label="$t('CRM.DEALS.FORM.PIPELINE')"
-          :model-value="filterDraft.pipelineId"
-          :options="pipelineOptions"
-          :placeholder="$t('CRM.DEALS.FORM.PIPELINE')"
-          @update:model-value="filterDraft.pipelineId = $event"
-        />
-
         <SchedulingSelectField
           :label="$t('CRM.DEALS.FORM.OWNER')"
           :model-value="filterDraft.ownerId"
@@ -1190,11 +1719,44 @@ onMounted(async () => {
         />
 
         <SchedulingSelectField
+          :label="$t('CRM.DEALS.FORM.STAGE')"
+          :model-value="filterDraft.stageId"
+          :options="filterStageOptions"
+          :placeholder="$t('CRM.DEALS.FORM.STAGE')"
+          @update:model-value="filterDraft.stageId = $event"
+        />
+
+        <SchedulingSelectField
           :label="$t('CRM.DEALS.FORM.TEAM')"
           :model-value="filterDraft.teamId"
           :options="teamOptions"
           :placeholder="$t('CRM.DEALS.FORM.TEAM')"
           @update:model-value="filterDraft.teamId = $event"
+        />
+
+        <SchedulingSelectField
+          v-if="companiesEnabled"
+          :label="$t('CRM.DEALS.FORM.COMPANY')"
+          :model-value="filterDraft.companyId"
+          :options="companyOptions"
+          use-api-results
+          :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+          @open="loadCompanies('')"
+          @search="loadCompanies"
+          @update:model-value="filterDraft.companyId = $event"
+        />
+
+        <SchedulingSelectField
+          :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+          :model-value="filterDraft.contactId"
+          :options="contactOptions"
+          use-api-results
+          :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+          :search-placeholder="$t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')"
+          :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+          @open="loadContacts('')"
+          @search="loadContacts"
+          @update:model-value="filterDraft.contactId = $event"
         />
 
         <div class="flex items-center gap-3 pt-6">
@@ -1210,3 +1772,17 @@ onMounted(async () => {
     </Dialog>
   </section>
 </template>
+
+<style scoped>
+.crm-deal-list-table :deep(.grid.border-b) {
+  @apply bg-n-surface-1/70;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+
+.crm-deal-list-table :deep(.divide-y > .grid) {
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+</style>

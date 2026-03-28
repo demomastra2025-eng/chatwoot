@@ -880,7 +880,7 @@ onMounted(async () => {
                     ? 'ring-2 ring-offset-2 ring-offset-n-surface-1 ring-n-slate-8 border-n-slate-9'
                     : 'border-n-container',
                   isStandardColorDisabled(color)
-                    ? 'grayscale saturate-0 border-n-slate-8 shadow-inner'
+                    ? 'border-n-slate-8 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]'
                     : '',
                 ]"
                 :style="{ backgroundColor: color }"
@@ -891,15 +891,10 @@ onMounted(async () => {
               >
                 <span
                   v-if="isStandardColorDisabled(color)"
-                  class="pointer-events-none absolute inset-0 rounded-full bg-n-surface-1/55"
-                  aria-hidden="true"
-                />
-                <span
-                  v-if="isStandardColorDisabled(color)"
-                  class="pointer-events-none absolute inset-0 flex items-center justify-center text-n-slate-12"
+                  class="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-n-surface-1 text-n-slate-12 outline outline-1 outline-n-container shadow-sm"
                   aria-hidden="true"
                 >
-                  <span class="size-4 i-lucide-slash" />
+                  <span class="size-2.5 i-lucide-slash" />
                 </span>
               </button>
             </div>

@@ -19,27 +19,23 @@ class Notification::PushNotificationService
   delegate :notification_subscriptions, to: :user
   delegate :notification_settings, to: :user
 
-  def user_subscribed_to_notification?
-    notification_setting = notification_settings.find_by(account_id: notification.account.id)
-    return true if notification_setting.public_send("push_#{notification.notification_type}?")
-
-    false
-  end
-
-  def conversation
-    @conversation ||= notification.conversation
-  end
-
   def push_message
     {
       title: notification.push_message_title,
-      tag: "#{notification.notification_type}_#{conversation.display_id}_#{notification.id}",
+      tag: "#{notification.notification_type}_#{notification.conversation_display_id}_#{notification.id}",
       url: push_url
     }
   end
 
   def push_url
-    app_account_conversation_url(account_id: conversation.account_id, id: conversation.display_id)
+    app_account_conversation_url(account_id: notification.account_id, id: notification.conversation_display_id)
+  end
+
+  def user_subscribed_to_notification?
+    notification_setting = notification_settings.find_by(account_id: notification.account.id)
+    return true if notification_setting.public_send("push_#{notification.notification_type}?")
+
+    false
   end
 
   def can_send_browser_push?(subscription)

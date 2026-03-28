@@ -116,17 +116,30 @@ class Messages::MessageBuilder
   end
 
   def campaign_id
-    @params[:campaign_id].present? ? { additional_attributes: { campaign_id: @params[:campaign_id] } } : {}
+    @params[:campaign_id]
   end
 
   def template_params
-    @params[:template_params].present? ? { additional_attributes: { template_params: JSON.parse(@params[:template_params].to_json) } } : {}
+    return if @params[:template_params].blank?
+
+    JSON.parse(@params[:template_params].to_json)
+  end
+
+  def additional_attributes
+    attrs = {}
+    attrs[:campaign_id] = campaign_id if campaign_id.present?
+    attrs[:template_params] = template_params if template_params.present?
+    attrs.presence
   end
 
   def message_sender
     return if @params[:sender_type] != 'AgentBot'
 
     AgentBot.where(account_id: [nil, @conversation.account.id]).find_by(id: @params[:sender_id])
+  end
+
+  def additional_attributes_payload
+    additional_attributes.present? ? { additional_attributes: additional_attributes } : {}
   end
 
   def message_params
@@ -143,7 +156,7 @@ class Messages::MessageBuilder
       in_reply_to: @in_reply_to,
       echo_id: @params[:echo_id],
       source_id: @params[:source_id]
-    }.merge(external_created_at).merge(automation_rule_id).merge(campaign_id).merge(template_params)
+    }.merge(external_created_at).merge(automation_rule_id).merge(additional_attributes_payload)
   end
 
   def email_inbox?

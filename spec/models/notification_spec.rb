@@ -5,6 +5,10 @@ require 'rails_helper'
 RSpec.describe Notification do
   include ActiveJob::TestHelper
 
+  around do |example|
+    I18n.with_locale(:en) { example.run }
+  end
+
   context 'with associations' do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:user) }
@@ -196,6 +200,52 @@ has been assigned to you"
       end
 
       expect { notification.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
+  context 'when the live associations are missing but the snapshot is present' do
+    let!(:conversation) { create(:conversation, :with_assignee) }
+    let!(:sender) { create(:user, account: conversation.account) }
+    let!(:message) do
+      create(
+        :message,
+        account: conversation.account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        sender: sender,
+        content: 'Snapshot fallback body'
+      )
+    end
+    let!(:notification) do
+      create(
+        :notification,
+        account: conversation.account,
+        user: create(:user, account: conversation.account),
+        notification_type: 'conversation_mention',
+        primary_actor: conversation,
+        secondary_actor: message
+      )
+    end
+
+    before do
+      message.destroy!
+      conversation.destroy!
+    end
+
+    it 'uses the stored snapshot for title and body' do
+      expect(notification.reload.push_message_title).to eq("You have been mentioned in conversation (##{conversation.display_id})")
+      expect(notification.push_message_body).to eq("#{sender.name}: Snapshot fallback body")
+    end
+
+    it 'returns a safe primary actor payload for rendering' do
+      payload = notification.reload.primary_actor_payload.with_indifferent_access
+
+      expect(payload[:id]).to eq(conversation.display_id)
+      expect(payload.dig(:meta, :assignee, :id)).to eq(conversation.assignee.id)
+    end
+
+    it 'builds fcm data from the snapshot' do
+      expect(notification.reload.fcm_push_data[:primary_actor]).to eq({ 'id' => conversation.display_id })
     end
   end
 end

@@ -40,6 +40,16 @@ describe Notification::PushNotificationService do
           expect(Rails.logger).to have_received(:info).with("FCM push sent to #{user.email} with title #{notification.push_message_title}")
         end
       end
+
+      it 'uses the stored snapshot when the conversation has already been deleted' do
+        with_modified_env VAPID_PUBLIC_KEY: 'test' do
+          notification.primary_actor.destroy!
+          create(:notification_subscription, user: notification.user)
+
+          expect { described_class.new(notification: notification.reload).perform }.not_to raise_error
+          expect(WebPush).to have_received(:payload_send)
+        end
+      end
     end
   end
 
