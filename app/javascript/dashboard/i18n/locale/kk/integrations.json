@@ -507,6 +507,28 @@
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
           "ALLOW_CITATIONS": "Include source citations in responses"
+        },
+        "CONTEXT_ACCESS": {
+          "TITLE": "Контекстке қолжеткізу",
+          "DESCRIPTION": "AI-агент live диалогтарда контакт пен диалогтың қай өрістерін оқи алатынын таңдаңыз.",
+          "HINT": "Кез келген қосылған өрісті кірістіру үшін сценарий нұсқауларында, сипаттамаларда, тапсыру хабарламаларында және аяқтау хабарламаларында $ белгісін қолданыңыз.",
+          "LOADING": "Қолжетімді өрістер жүктелуде...",
+          "EMPTY": "Бұл бөлім үшін әзірге қолжетімді өрістер жоқ.",
+          "DISABLED_MESSAGE": "Бұл кесте өшірілген. AI-агент бұл өрістерді prompt контекстінде көрмейді.",
+          "TABLES": {
+            "CONTACT": {
+              "TITLE": "Контакт өрістері",
+              "DESCRIPTION": "Осы клиенттің барлық диалогтарында қолжетімді болып қалуы тиіс профиль деректері."
+            },
+            "CONVERSATION": {
+              "TITLE": "Диалог өрістері",
+              "DESCRIPTION": "Тек ағымдағы чатқа қатысты кейс контексті."
+            }
+          }
+        },
+        "AUTO_REPLY_ON_LAST_INCOMING": {
+          "TITLE": "Соңғы кіріс хабарламаға автожауап",
+          "DESCRIPTION": "Агент диалогты AI-агентке қолмен ауыстырғанда, егер соңғы ашық хабарлама клиенттен болса, бірден жауап береді."
         }
       },
       "EDIT": {
@@ -823,6 +845,7 @@
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
+          "HELP_TEXT": "Tool параметрлерінен және агентке рұқсат етілген контекстен Liquid айнымалыларын пайдалануға болады, мысалы {{ params.order_id }}, {{ contact.phone_number }}, {{ conversation.custom_attributes.order_id }}, {{ assistant.name }} немесе {{ account.locale }}.",
           "ERROR": "Valid URL is required"
         },
         "AUTH_TYPE": {
@@ -848,11 +871,27 @@
         },
         "PARAMETERS": {
           "LABEL": "Parameters",
-          "HELP_TEXT": "Define the parameters that will be extracted from user queries"
+          "HELP_TEXT": "AI-агент қай мәндерді өзі анықтайтынын, қайсысын ассистентке рұқсат етілген контекстен алу керегін және қайсысын әрқашан тұрақты мән ретінде жіберу керегін таңдаңыз."
         },
         "ADD_PARAMETER": "Add Parameter",
         "PARAM_NAME": {
           "PLACEHOLDER": "Parameter name (e.g., order_id)"
+        },
+        "PARAM_SOURCE": {
+          "PLACEHOLDER": "Кім толтырады"
+        },
+        "PARAM_SOURCES": {
+          "AGENT": "Агент",
+          "CONTEXT": "Жүйелік контекст",
+          "FIXED": "Тұрақты мән"
+        },
+        "PARAM_CONTEXT_FIELD": {
+          "PLACEHOLDER": "Контекст өрісін таңдаңыз",
+          "HELP_TEXT": "Сұрауға runtime кезінде тек белсенді ассистентке рұқсат етілген өрістер ғана енгізіледі."
+        },
+        "PARAM_FIXED_VALUE": {
+          "PLACEHOLDER": "Жіберілетін тұрақты мән",
+          "JSON_PLACEHOLDER": "Тұрақты JSON мәні"
         },
         "PARAM_TYPE": {
           "PLACEHOLDER": "Type"
@@ -872,14 +911,19 @@
         },
         "REQUEST_TEMPLATE": {
           "LABEL": "Request Body Template (Optional)",
-          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}"
+          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
+          "HELP_TEXT": "Request template endpoint URL сияқты Liquid айнымалыларын қолдайды. Custom tools ішінде ассистенттің Context access баптауларында рұқсат етілген өрістер ғана қолжетімді."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Response Template (Optional)",
           "PLACEHOLDER": "Order {'{{'} order_id {'}}'} status: {'{{'} status {'}}'}"
         },
         "ERRORS": {
-          "PARAM_NAME_REQUIRED": "Parameter name is required"
+          "PARAM_NAME_REQUIRED": "Параметр атауы міндетті",
+          "PARAM_NAME_INVALID": "Тек әріптерді, сандарды және астын сызу таңбасын қолданыңыз, атау әріптен немесе астын сызудан басталуы керек",
+          "PARAM_DESCRIPTION_REQUIRED": "Параметр сипаттамасы міндетті",
+          "PARAM_CONTEXT_PATH_REQUIRED": "Осы параметр үшін контекст өрісін таңдаңыз",
+          "PARAM_FIXED_VALUE_REQUIRED": "Осы параметр үшін тұрақты мән міндетті"
         }
       },
       "UNGROUPED": "Ungrouped"
