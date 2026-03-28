@@ -185,7 +185,11 @@ export default {
         this.pageList = data.page_details;
         this.user_access_token = data.user_access_token;
       } catch (error) {
-        // Ignore error
+        this.hasError = true;
+        this.errorStateMessage =
+          error?.response?.data?.error || this.$t('INBOX_MGMT.DETAILS.ERROR_FB_AUTH');
+        this.errorStateDescription = '';
+        Sentry.captureException(error);
       }
     },
 
