@@ -18,7 +18,7 @@ RSpec.describe 'Super Admin Monitoring', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include('Monitoring')
-        expect(response.body).to include('/monitoring/grafana/')
+        expect(response.body).to include('/monitoring/grafana/d/crafty-production-overview/crafty-production-overview')
       end
     end
   end
