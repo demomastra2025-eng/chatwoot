@@ -20,6 +20,32 @@ as defined by the routes in the `admin/` namespace
 %>
 
 <div class="border-slate-100 border-r w-56 flex-shrink-0 justify-between h-full flex flex-col" role="navigation">
+  <%
+    hidden_primary_nav_resources = %w[
+      account_users
+      access_tokens
+      installation_configs
+      dashboard
+      devise/sessions
+      app_configs
+      instance_statuses
+      monitorings
+      settings
+    ]
+
+    primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
+      next if hidden_primary_nav_resources.include?(resource.resource)
+
+      begin
+        {
+          resource: resource,
+          url: resource_index_route(resource)
+        }
+      rescue ActionController::UrlGenerationError
+        nil
+      end
+    end
+  %>
   <div>
     <div class="flex mx-4 mb-4 border-slate-100 border-b py-6">
       <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'Onelink Admin Dashboard', class: 'h-10'), super_admin_root_url %>
@@ -31,12 +57,11 @@ as defined by the routes in the `admin/` namespace
 
     <ul class="my-4">
       <%= render partial: "nav_item", locals: { icon: 'icon-grid-line', url: super_admin_root_url, label: 'Dashboard' } %>
-      <% Administrate::Namespace.new(namespace).resources.each do |resource| %>
-        <% next if ["account_users", "access_tokens", "installation_configs", "dashboard", "devise/sessions", "app_configs", "instance_statuses", "settings"].include?  resource.resource %>
+      <% primary_nav_items.each do |item| %>
         <%= render partial: "nav_item", locals: {
-            icon: sidebar_icons[resource.resource.to_sym],
-            url: resource_index_route(resource),
-            label: display_resource_name(resource),
+            icon: sidebar_icons[item[:resource].resource.to_sym],
+            url: item[:url],
+            label: display_resource_name(item[:resource]),
           }
         %>
 
@@ -46,6 +71,7 @@ as defined by the routes in the `admin/` namespace
   </div>
   <div>
     <ul class="my-4">
+      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq Dashboard' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Instance Health' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: '/', label: 'Agent Dashboard' } %>
