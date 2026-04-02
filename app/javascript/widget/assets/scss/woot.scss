@@ -9,7 +9,7 @@ html,
 body {
   font-family: 'Geist', -apple-system, system-ui, BlinkMacSystemFont,
     'Segoe UI', Roboto, 'Helvetica Neue', Tahoma, Arial, sans-serif;
-  @apply antialiased h-full bg-n-slate-2 dark:bg-n-solid-1;
+  @apply antialiased h-full;
 }
 
 .is-mobile {
