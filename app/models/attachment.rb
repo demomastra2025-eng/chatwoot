@@ -118,7 +118,7 @@ class Attachment < ApplicationRecord
       height: file.metadata[:height]
     }
 
-    metadata[:data_url] = metadata[:thumb_url] = external_url if message.inbox.instagram? && message.incoming?
+    metadata[:data_url] = metadata[:thumb_url] = external_url if instagram_incoming_message?
     metadata
   end
 
@@ -154,6 +154,13 @@ class Attachment < ApplicationRecord
     }
   end
 
+  def instagram_incoming_message?
+    return false unless message.incoming?
+
+    return true if message.inbox.instagram_direct?
+
+    message.inbox.instagram? && message.conversation&.additional_attributes&.dig('type') == 'instagram_direct_message'
+  end
   def should_validate_file?
     return unless file.attached?
     # we are only limiting attachment types in case of website widget
