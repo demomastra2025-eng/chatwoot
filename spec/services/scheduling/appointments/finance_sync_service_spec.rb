@@ -35,4 +35,58 @@ RSpec.describe Scheduling::Appointments::FinanceSyncService do
 
     expect(appointment.reload.expense.amount).to eq(7_000)
   end
+
+  it 'refuses to mark an appointment as paid when required managed fields are missing' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      required: true
+    )
+    appointment.update!(
+      payment_status: 'awaiting_payment',
+      settlement_amount: 0,
+      settlement_payment_method: nil,
+      custom_attributes: {}
+    )
+
+    expect do
+      service_object.add_payment!(amount: 20_000, payment_method: 'cash')
+    end.to raise_error(
+      Scheduling::Error,
+      'Complete required fields before marking the appointment as paid: Visit reason'
+    )
+
+    appointment.reload
+    expect(appointment.payment_status).to eq('awaiting_payment')
+    expect(appointment.payments).to be_empty
+    expect(appointment.expense).to be_nil
+  end
+
+  it 'does not require booking intake-only fields when marking an appointment as paid' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'triage_note',
+      label: 'Triage note',
+      required: true,
+      rules: { contexts: ['booking_intake'] }
+    )
+    appointment.update!(
+      payment_status: 'awaiting_payment',
+      settlement_amount: 0,
+      settlement_payment_method: nil,
+      custom_attributes: {}
+    )
+
+    expect do
+      service_object.add_payment!(amount: 20_000, payment_method: 'cash')
+    end.not_to raise_error
+
+    appointment.reload
+    expect(appointment.payment_status).to eq('paid')
+  end
 end

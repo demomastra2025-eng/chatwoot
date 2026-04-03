@@ -74,7 +74,7 @@ class Tiktok::MessageService
         filename: attachment_file.original_filename,
         content_type: attachment_file.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def create_share_post_message_attachment(message)
@@ -84,7 +84,7 @@ class Tiktok::MessageService
       account_id: message.account_id,
       file_type: :embed,
       external_url: tt_share_post_embed_url
-    )
+    ).skip_storage_limit_validation!
   end
 
   def supported_message?

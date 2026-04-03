@@ -9,7 +9,8 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       to: parse_datetime_param!(params[:to], field_name: 'to'),
       resource_ids: parse_csv_ids(params[:resource_ids]),
       include_slots: parse_boolean(params[:include_slots]),
-      duration_min: params[:duration_min]
+      duration_min: params[:duration_min],
+      custom_attribute_filters: custom_attribute_filters_param
     ).perform
 
     render_payload(Scheduling::PayloadBuilder.calendar(result))

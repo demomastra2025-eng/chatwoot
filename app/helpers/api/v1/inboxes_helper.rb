@@ -97,8 +97,18 @@ module Api::V1::InboxesHelper
   end
 
   def validate_limit
-    return unless Current.account.inboxes.count >= Current.account.usage_limits[:inboxes]
+    if Current.account.inboxes.count >= Current.account.usage_limits[:inboxes]
+      render_payment_required('Account limit exceeded. Upgrade to a higher plan')
+      return
+    end
 
-    render_payment_required('Account limit exceeded. Upgrade to a higher plan')
+    return unless creating_non_web_inbox?
+    return if Current.account.non_web_inboxes_count < Current.account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
+
+    render_payment_required('Account non-web inbox limit exceeded. Upgrade to a higher plan')
+  end
+
+  def creating_non_web_inbox?
+    permitted_params[:channel][:type] != 'web_widget'
   end
 end

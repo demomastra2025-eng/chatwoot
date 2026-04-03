@@ -68,7 +68,7 @@ const filterOperatorIcon = {
  * @property {import('vue').ComputedRef<Operator[]>} containmentOperators - Containment check operators
  * @property {import('vue').ComputedRef<Operator[]>} comparisonOperators - Numeric comparison operators
  * @property {import('vue').ComputedRef<Operator[]>} dateOperators - Date-specific operators
- * @property {(key: 'list'|'text'|'number'|'link'|'date'|'checkbox') => Operator[]} getOperatorTypes - Get operators for a field type
+ * @property {(key: 'list'|'text'|'number'|'currency'|'percent'|'link'|'date'|'checkbox') => Operator[]} getOperatorTypes - Get operators for a field type
  */
 export function useOperators() {
   const { t } = useI18n();
@@ -140,7 +140,9 @@ export function useOperators() {
       case 'text':
         return containmentOperators.value;
       case 'number':
-        return equalityOperators.value;
+      case 'currency':
+      case 'percent':
+        return comparisonOperators.value;
       case 'link':
         return equalityOperators.value;
       case 'date':

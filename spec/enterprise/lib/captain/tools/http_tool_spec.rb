@@ -22,6 +22,11 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
   end
 
   describe '#perform' do
+    before do
+      allow(Resolv).to receive(:getaddresses).and_call_original
+      allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34'])
+    end
+
     context 'with GET request' do
       before do
         custom_tool.update!(
@@ -195,6 +200,80 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    context 'with appointment prompt context variables' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 account_id: account.id,
+                                 assistant_id: assistant.id,
+                                 prompt_context: {
+                                   appointment: {
+                                     starts_at: '2026-03-29T10:00:00Z',
+                                     custom_attributes: {
+                                       visit_room: 'B12'
+                                     }
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/appointments',
+          request_template: '{"starts_at": "{{ appointment.starts_at }}", "visit_room": "{{ appointment.custom_attributes.visit_room }}"}',
+          response_template: nil
+        )
+        stub_request(:post, 'https://example.com/appointments')
+          .with(body: '{"starts_at": "2026-03-29T10:00:00Z", "visit_room": "B12"}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'renders custom tool templates using appointment prompt context' do
+        result = tool.perform(tool_context_with_prompt_context)
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/appointments')
+          .with(body: '{"starts_at": "2026-03-29T10:00:00Z", "visit_room": "B12"}')
+      end
+    end
+
+    context 'with deal and task prompt context variables' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 account_id: account.id,
+                                 assistant_id: assistant.id,
+                                 prompt_context: {
+                                   deal: {
+                                     stage_name: 'Negotiation'
+                                   },
+                                   task: {
+                                     status_name: 'In progress'
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/crm-context',
+          request_template: '{"deal_stage": "{{ deal.stage_name }}", "task_status": "{{ task.status_name }}"}',
+          response_template: nil
+        )
+        stub_request(:post, 'https://example.com/crm-context')
+          .with(body: '{"deal_stage": "Negotiation", "task_status": "In progress"}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'renders custom tool templates using deal and task prompt context' do
+        result = tool.perform(tool_context_with_prompt_context)
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/crm-context')
+          .with(body: '{"deal_stage": "Negotiation", "task_status": "In progress"}')
+      end
+    end
+
     context 'with mixed agent, context, and fixed parameters' do
       let(:tool_context_with_prompt_context) do
         Struct.new(:state).new({
@@ -249,6 +328,49 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
         expect(result).to eq('{"ok": true}')
         expect(WebMock).to have_requested(:post, 'https://example.com/leads')
           .with(body: '{"lead_name":"Alice","phone":"+1234567890","pipeline":"sales"}')
+      end
+    end
+
+    context 'with a legacy tool using a reserved parameter name' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 prompt_context: {
+                                   contact: {
+                                     phone_number: '+1234567890'
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update_columns(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/leads',
+          request_template: '{"root_phone":"{{ contact.phone_number }}","agent_value":"{{ params.contact }}"}',
+          response_template: nil,
+          param_schema: [
+            {
+              'name' => 'contact',
+              'type' => 'string',
+              'description' => 'Legacy agent override',
+              'source' => 'agent',
+              'required' => true
+            }
+          ]
+        )
+        custom_tool.reload
+
+        stub_request(:post, 'https://example.com/leads')
+          .with(body: '{"root_phone":"+1234567890","agent_value":"override"}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'keeps system context at the root and exposes the agent value only under params' do
+        result = tool.perform(tool_context_with_prompt_context, contact: 'override')
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/leads')
+          .with(body: '{"root_phone":"+1234567890","agent_value":"override"}')
       end
     end
 
@@ -405,6 +527,17 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
         expect(result).to eq('An error occurred while executing the request')
       end
 
+      it 'returns generic error message when a hostname resolves to mixed public and private IPs' do
+        custom_tool.update!(endpoint_url: 'https://example.com/data')
+        allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34', '127.0.0.1'])
+        stub_request(:get, 'https://example.com/data').to_return(status: 200, body: '{"ok": true}')
+
+        result = tool.perform(tool_context)
+
+        expect(result).to eq('An error occurred while executing the request')
+        expect(WebMock).not_to have_requested(:get, 'https://example.com/data')
+      end
+
       it 'logs error details' do
         custom_tool.update!(endpoint_url: 'https://example.com/data')
         stub_request(:get, 'https://example.com/data').to_raise(StandardError.new('Test error'))
@@ -445,6 +578,18 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
     context 'with metadata headers' do
       let(:conversation) { create(:conversation, account: account) }
       let(:contact) { conversation.contact }
+      let(:appointment) do
+        create(
+          :scheduling_appointment,
+          account: account,
+          resource: create(:scheduling_resource, account: account),
+          service: create(:scheduling_service, account: account),
+          contact: contact,
+          conversation: conversation,
+          status: 'confirmed',
+          starts_at: Time.zone.parse('2026-03-29 10:00:00 UTC')
+        )
+      end
       let(:tool_context_with_state) do
         Struct.new(:state).new({
                                  account_id: account.id,
@@ -461,6 +606,11 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
                                    id: contact.id,
                                    email: contact.email,
                                    phone_number: contact.phone_number
+                                 },
+                                 appointment: {
+                                   id: appointment.id,
+                                   status: appointment.status,
+                                   starts_at: appointment.starts_at.iso8601
                                  }
                                })
       end
@@ -483,7 +633,10 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
                   'X-Chatwoot-Contact-Inbox-Id' => conversation.contact_inbox.id.to_s,
                   'X-Chatwoot-Contact-Inbox-Verified' => conversation.contact_inbox.hmac_verified.to_s,
                   'X-Chatwoot-Contact-Id' => contact.id.to_s,
-                  'X-Chatwoot-Contact-Email' => contact.email
+                  'X-Chatwoot-Contact-Email' => contact.email,
+                  'X-Chatwoot-Appointment-Id' => appointment.id.to_s,
+                  'X-Chatwoot-Appointment-Status' => appointment.status,
+                  'X-Chatwoot-Appointment-Starts-At' => appointment.starts_at.iso8601
                 })
           .to_return(status: 200, body: '{"success": true}')
 
@@ -493,7 +646,8 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
           .with(headers: {
                   'X-Chatwoot-Account-Id' => account.id.to_s,
                   'X-Chatwoot-Contact-Inbox-Verified' => conversation.contact_inbox.hmac_verified.to_s,
-                  'X-Chatwoot-Contact-Email' => contact.email
+                  'X-Chatwoot-Contact-Email' => contact.email,
+                  'X-Chatwoot-Appointment-Id' => appointment.id.to_s
                 })
       end
 
@@ -648,19 +802,27 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
         tool_context_with_state.state[:prompt_context] = {
           contact: {
             id: contact.id
+          },
+          appointment: {
+            id: appointment.id
           }
         }
 
         stub_request(:get, 'https://example.com/api/data')
           .with(headers: {
-                  'X-Chatwoot-Contact-Id' => contact.id.to_s
+                  'X-Chatwoot-Contact-Id' => contact.id.to_s,
+                  'X-Chatwoot-Appointment-Id' => appointment.id.to_s
                 })
           .to_return(status: 200, body: '{"success": true}')
 
         tool.perform(tool_context_with_state)
 
         expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
-          .with { |request| request.headers['X-Chatwoot-Contact-Email'].blank? }
+          .with { |request|
+            request.headers['X-Chatwoot-Contact-Email'].blank? &&
+              request.headers['X-Chatwoot-Appointment-Status'].blank? &&
+              request.headers['X-Chatwoot-Appointment-Starts-At'].blank?
+          }
       end
 
       it 'does not fall back to raw metadata when prompt context disables the table' do
@@ -675,7 +837,11 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
         tool.perform(tool_context_with_state)
 
         expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
-          .with { |request| request.headers['X-Chatwoot-Contact-Id'].blank? && request.headers['X-Chatwoot-Conversation-Id'].blank? }
+          .with { |request|
+            request.headers['X-Chatwoot-Contact-Id'].blank? &&
+              request.headers['X-Chatwoot-Conversation-Id'].blank? &&
+              request.headers['X-Chatwoot-Appointment-Id'].blank?
+          }
       end
 
       it 'includes unverified contact inbox status explicitly as false' do

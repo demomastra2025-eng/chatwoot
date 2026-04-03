@@ -143,6 +143,7 @@ describe Messages::Instagram::MessageBuilder do
       messaging = story_mention_params[:entry][0][:messaging][0]
       create_instagram_contact_for_sender(messaging['sender']['id'], instagram_inbox)
       story_source_id = messaging['message']['mid']
+      expected_content = I18n.t('conversations.messages.instagram_deleted_story_content')
 
       stub_request(:get, %r{https://graph\.instagram\.com/.*?/#{story_source_id}\?.*})
         .to_return(status: 404, body: { error: { message: 'Story not found', code: 1_609_005 } }.to_json)
@@ -151,7 +152,7 @@ describe Messages::Instagram::MessageBuilder do
 
       message = instagram_inbox.messages.first
 
-      expect(message.content).to eq('This story is no longer available.')
+      expect(message.content).to eq(expected_content)
       expect(message.attachments.count).to eq(0)
     end
 
@@ -325,6 +326,8 @@ describe Messages::Instagram::MessageBuilder do
 
     it 'handles deleted stories' do
       # Override the stub for this test to return a 404 error
+      expected_content = I18n.t('conversations.messages.instagram_deleted_story_content')
+
       stub_request(:get, %r{https://graph\.instagram\.com/.*?fields=story,from})
         .to_return(
           status: 404,
@@ -338,7 +341,7 @@ describe Messages::Instagram::MessageBuilder do
 
       message = instagram_inbox.messages.first
 
-      expect(message.content).to eq('This story is no longer available.')
+      expect(message.content).to eq(expected_content)
       expect(message.attachments.count).to eq(0)
     end
   end

@@ -370,6 +370,30 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.ui.isSaving = false;
         }
       },
+
+      async destroy(calendarStore) {
+        if (!this.recordId) return null;
+
+        this.ui.isSaving = true;
+        this.ui.error = null;
+
+        try {
+          await SchedulingAppointmentsAPI.delete(this.recordId);
+          calendarStore.removeAppointment(this.recordId);
+          if (calendarStore.currentView === 'month') {
+            await calendarStore.refresh();
+          }
+          const deletedAppointmentId = this.recordId;
+          this.close();
+          this.reset();
+          return deletedAppointmentId;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isSaving = false;
+        }
+      },
     },
   }
 );

@@ -19,7 +19,7 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
   def search
     if params[:q].blank?
       return render json: { error: I18n.t('errors.companies.search.query_missing') },
-                    status: :unprocessable_entity
+                    status: :unprocessable_content
     end
 
     companies = resolved_companies.search_by_name_or_domain(params[:q])

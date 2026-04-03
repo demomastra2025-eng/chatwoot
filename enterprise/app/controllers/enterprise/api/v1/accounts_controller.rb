@@ -13,27 +13,7 @@ class Enterprise::Api::V1::AccountsController < Api::BaseController
   end
 
   def limits
-    limits = if default_plan?(@account)
-               {
-                 'conversation' => {
-                   'allowed' => 500,
-                   'consumed' => conversations_this_month(@account)
-                 },
-                 'non_web_inboxes' => {
-                   'allowed' => 0,
-                   'consumed' => non_web_inboxes(@account)
-                 },
-                 'agents' => {
-                   'allowed' => 2,
-                   'consumed' => agents(@account)
-                 }
-               }
-             else
-               default_limits
-             end
-
-    # include id in response to ensure that the store can be updated on the frontend
-    render json: { id: @account.id, limits: limits }, status: :ok
+    render json: { id: @account.id, limits: @account.billing_limits_overview }, status: :ok
   end
 
   def checkout
@@ -75,18 +55,6 @@ class Enterprise::Api::V1::AccountsController < Api::BaseController
 
   def check_cloud_env
     render json: { error: 'Not found' }, status: :not_found unless ChatwootApp.chatwoot_cloud?
-  end
-
-  def default_limits
-    {
-      'conversation' => {},
-      'non_web_inboxes' => {},
-      'agents' => {
-        'allowed' => @account.usage_limits[:agents],
-        'consumed' => agents(@account)
-      },
-      'captain' => @account.usage_limits[:captain]
-    }
   end
 
   def fetch_account

@@ -128,6 +128,11 @@ const validateSingleAction = action => {
     'remove_assigned_team',
     'open_conversation',
     'pending_conversation',
+    'cancel_appointment_payment',
+    'archive_deal',
+    'unarchive_deal',
+    'archive_task',
+    'unarchive_task',
   ];
 
   if (

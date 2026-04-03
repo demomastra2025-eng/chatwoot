@@ -63,6 +63,9 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
   def process_attached_logo
     blob_id = params[:blob_id]
     blob = ActiveStorage::Blob.find_signed(blob_id)
+    released_bytes = @portal.logo.attached? ? @portal.logo.blob.byte_size : 0
+    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?(blob.byte_size, released_bytes)
+
     @portal.logo.attach(blob)
   end
 
@@ -105,6 +108,13 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
 
   def valid_email?(email)
     ValidEmail2::Address.new(email).valid?
+  end
+
+  def storage_limit_available?(extra_bytes, released_bytes = 0)
+    AccountLimits::StorageUsageService.new(account: Current.account).within_limit?(
+      extra_bytes: extra_bytes,
+      released_bytes: released_bytes
+    )
   end
 end
 

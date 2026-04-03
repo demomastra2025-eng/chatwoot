@@ -37,7 +37,9 @@ const filteredTemplates = computed(() => {
 });
 
 const getTemplateBody = template => {
-  return template.components.find(component => component.type === 'BODY').text;
+  return (
+    template.components.find(component => component.type === 'BODY')?.text || ''
+  );
 };
 
 const handleTriggerClick = () => {

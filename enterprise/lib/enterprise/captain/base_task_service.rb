@@ -9,7 +9,7 @@ module Enterprise::Captain::BaseTaskService
     end
 
     result = super
-    increment_usage if successful_result?(result)
+    increment_usage(result) if successful_result?(result)
     result
   end
 
@@ -18,15 +18,21 @@ module Enterprise::Captain::BaseTaskService
   def responses_available?
     return true unless ChatwootApp.chatwoot_cloud?
 
-    account.usage_limits[:captain][:responses][:current_available].positive?
+    account.captain_quota_available?
   end
 
   def successful_result?(result)
     result.is_a?(Hash) && result[:message].present? && !result[:error]
   end
 
-  def increment_usage
+  def increment_usage(result)
     Rails.logger.info("[CAPTAIN][#{self.class.name}] Incrementing response usage for account #{account.id}")
     account.increment_response_usage
+    account.increment_token_usage(extract_total_tokens(result))
+  end
+
+  def extract_total_tokens(result)
+    result.dig(:usage, 'total_tokens') || result.dig(:usage, :total_tokens) ||
+      result.dig('usage', 'total_tokens') || result.dig('usage', :total_tokens)
   end
 end

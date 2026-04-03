@@ -64,6 +64,7 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
         estate_id: 5767119,
         note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
       )
+      expect(conversation.reload.custom_attributes['macrocrm_estate_id']).to eq('5767119')
     end
   end
 

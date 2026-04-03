@@ -19,7 +19,28 @@ RSpec.describe Company, type: :model do
 
   context 'with associations' do
     it { is_expected.to belong_to(:account) }
+    it { is_expected.to have_many(:crm_deals).class_name('Crm::Deal').dependent(:nullify) }
     it { is_expected.to have_many(:contacts).dependent(:nullify) }
+  end
+
+  describe 'domain normalization' do
+    let(:account) { create(:account) }
+
+    it 'normalizes blank domain to nil before validation' do
+      company = build(:company, account: account, domain: '   ')
+
+      company.validate
+
+      expect(company.domain).to be_nil
+    end
+
+    it 'strips and downcases domain before validation' do
+      company = build(:company, account: account, domain: '  EXAMPLE.COM ')
+
+      company.validate
+
+      expect(company.domain).to eq('example.com')
+    end
   end
 
   describe 'scopes' do

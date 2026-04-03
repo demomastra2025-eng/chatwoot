@@ -5,13 +5,11 @@ description: "Use for Onelink Captain and AI flows: assistants, copilot, documen
 
 # Onelink Captain
 
-## Overview
-
 Use this skill when the task is about Captain, copilot, knowledge documents, AI tool execution, or related enterprise AI overlays.
 
-This skill owns the AI surface inside Onelink and should coordinate model, service, config, and enterprise prompt/tool layers together.
+This skill owns the AI surface inside One Link and should coordinate model, service, config, and enterprise prompt/tool layers together.
 
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 ## Use This Skill When
 
@@ -24,11 +22,12 @@ All repo paths below are relative to the Onelink repository root.
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/platform/current-architecture.mdx`
-3. `docs/platform/repository-map.mdx`
-4. `docs/contributing-guide/implementation-examples-map.mdx`
-5. `config/agents/tools.yml`
-6. the touched code paths under `app/models/`, `app/services/`, `enterprise/lib/captain/`, and `enterprise/lib/enterprise/captain/`
+2. `docs/platform/captain-ai.mdx`
+3. `docs/internal/captain-runtime.mdx`
+4. `docs/internal/automation-and-integrations.mdx`
+5. `docs/internal/entity-reference.mdx`
+6. `config/agents/tools.yml`
+7. the touched code paths under `app/models/`, `app/services/`, `enterprise/lib/captain/`, and `enterprise/lib/enterprise/captain/`
 
 ## Workflow
 
@@ -42,31 +41,34 @@ All repo paths below are relative to the Onelink repository root.
 2. Inspect current models, services, jobs, config, and enterprise overlays together.
 3. Keep data contracts and tool registry behavior aligned.
 4. If the task changes external tool or API behavior, coordinate with `onelink-api` or `onelink-integrations`.
-5. Update docs if the operator or agent workflow changed.
+5. Update public docs for user-visible Captain behavior and internal docs for runtime contracts.
 
 ## Documentation Discipline
 
-- Read the Captain and architecture docs before editing.
-- If assistant behavior, tool contracts, scenario flow, or operator/agent workflow changed, update `docs/` in the same task.
+- If assistant behavior, tool contracts, scenario flow, or operator workflow changed, update docs in the same task.
 - Keep runtime code commits in `onelink` and documentation commits in `docs/`.
 
 ## Placement Rules
 
 - models:
   - `app/models/` with Captain and copilot namespaces
+  - `enterprise/app/models/captain/`
 - services and jobs:
-  - `app/services/`, `app/jobs/`
+  - `app/services/`
+  - `app/jobs/`
 - AI tool registry:
   - `config/agents/tools.yml`
 - enterprise overlays:
-  - `enterprise/lib/captain/`, `enterprise/lib/enterprise/captain/`, and other enterprise paths that extend Captain behavior
+  - `enterprise/lib/captain/`
+  - `enterprise/lib/enterprise/captain/`
+  - other enterprise paths that extend Captain behavior
 
 ## Captain Guardrails
 
 - do not assume a `Captain::CustomTool` is the same as a full integration lifecycle
 - do not change tool config without checking the runtime model or service path that consumes it
 - do not update prompts or tool contracts in only one layer when enterprise overlays also participate
-- treat AI docs as explanatory, not as proof of current runtime behavior unless code confirms them
+- treat docs as explanatory, not as proof of current runtime behavior unless code confirms them
 
 ## Verification
 
@@ -80,6 +82,7 @@ Captain runtime code lives in `onelink`. Captain-related docs live in `onelink/d
 
 ## References
 
-- `docs/platform/current-architecture.mdx`
-- `docs/platform/repository-map.mdx`
-- `docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/platform/captain-ai.mdx`
+- `docs/internal/captain-runtime.mdx`
+- `docs/internal/automation-and-integrations.mdx`
+- `docs/internal/entity-reference.mdx`

@@ -31,7 +31,7 @@
 class Crm::FieldDefinition < ApplicationRecord
   self.table_name = 'crm_field_definitions'
 
-  ENTITY_KINDS = %w[deal task].freeze
+  ENTITY_KINDS = %w[deal task appointment].freeze
   FIELD_TYPES = %w[text textarea number currency percent checkbox date datetime select multiselect url].freeze
   BUILT_IN_FIELDS = {
     'deal' => %w[
@@ -42,6 +42,16 @@ class Crm::FieldDefinition < ApplicationRecord
     'task' => %w[
       title description deal_id status_id assignee_id creator_id team_id priority
       start_at due_at completed_at external_ref idempotency_key lock_version archived_at
+    ],
+    'appointment' => %w[
+      resource_id contact_id service_id company_id conversation_id created_by_id
+      starts_at ends_at duration_min status appointment_type client_name client_phone
+      client_identifier client_birth_date client_gender client_comment source
+      external_ref idempotency_key service_name_snapshot service_type_snapshot
+      service_duration_min_snapshot service_amount compensation_type_snapshot
+      compensation_value_snapshot compensation_percent_snapshot prepaid_amount
+      prepaid_payment_method settlement_amount settlement_payment_method
+      payment_status
     ]
   }.freeze
 
@@ -49,7 +59,8 @@ class Crm::FieldDefinition < ApplicationRecord
 
   enum :entity_kind, {
     deal: 'deal',
-    task: 'task'
+    task: 'task',
+    appointment: 'appointment'
   }, prefix: true
 
   enum :field_type, FIELD_TYPES.index_with(&:itself), prefix: true

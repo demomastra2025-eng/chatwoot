@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 
 import microsoftClient from 'dashboard/api/channel/microsoftClient';
 import googleClient from 'dashboard/api/channel/googleClient';
@@ -33,6 +33,7 @@ const props = defineProps({
 });
 
 const isRequestingAuthorization = ref(false);
+const OAUTH_CALLBACK_ERROR = 'oauth_callback_failed';
 
 const client = computed(() => {
   if (props.provider === 'microsoft') {
@@ -57,6 +58,23 @@ async function requestAuthorization() {
     isRequestingAuthorization.value = false;
   }
 }
+
+onMounted(() => {
+  const currentUrl = new URL(window.location.href);
+  const urlParams = currentUrl.searchParams;
+
+  if (urlParams.get('error') !== OAUTH_CALLBACK_ERROR) {
+    return;
+  }
+
+  useAlert(props.errorMessage);
+  urlParams.delete('error');
+  const nextSearch = urlParams.toString();
+  const nextUrl = `${currentUrl.pathname}${nextSearch ? `?${nextSearch}` : ''}${
+    currentUrl.hash
+  }`;
+  window.history.replaceState({}, document.title, nextUrl);
+});
 </script>
 
 <template>

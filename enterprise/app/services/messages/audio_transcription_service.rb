@@ -30,7 +30,7 @@ class Messages::AudioTranscriptionService< Llm::LegacyBaseOpenAiService
     return false unless account.feature_enabled?('captain_integration')
     return false if account.audio_transcriptions.blank?
 
-    account.usage_limits[:captain][:responses][:current_available].positive?
+    account.captain_quota_available?
   end
 
   def fetch_audio_file

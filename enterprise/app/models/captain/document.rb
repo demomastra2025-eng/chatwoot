@@ -23,6 +23,7 @@
 class Captain::Document < ApplicationRecord
   class LimitExceededError < StandardError; end
   self.table_name = 'captain_documents'
+  include AccountStorageLimitable
 
   DEFAULT_SOURCE_MODE = 'legacy_url'.freeze
   FILE_PREFIX = 'FILE:'.freeze
@@ -34,6 +35,7 @@ class Captain::Document < ApplicationRecord
   belongs_to :account
   has_one_attached :pdf_file
   has_one_attached :source_file
+  account_storage_attachments :pdf_file, :source_file
 
   validates :external_link, presence: true, unless: :uploaded_file_attached?
   validates :external_link, uniqueness: { scope: :assistant_id }, allow_blank: true

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAutomation } from 'dashboard/composables/useAutomation';
 import { useEditableAutomation } from 'dashboard/composables/useEditableAutomation';
@@ -30,11 +30,24 @@ const {
   resetAction,
   getActionDropdownValues,
   manifestCustomAttributes,
+  loadAutomationReferences,
+  appointmentFieldDefinitions,
+  dealFieldDefinitions,
+  taskFieldDefinitions,
 } = useAutomation();
 
 const { formatAutomation } = useEditableAutomation();
+const mergedCustomAttributes = computed(() => [
+  ...allCustomAttributes.value,
+  ...appointmentFieldDefinitions.value,
+  ...dealFieldDefinitions.value,
+  ...taskFieldDefinitions.value,
+]);
 
-const open = () => formRef.value?.open();
+const open = async () => {
+  await loadAutomationReferences(props.selectedResponse?.event_name);
+  formRef.value?.open();
+};
 const close = () => formRef.value?.close();
 
 const onSave = (payload, mode) => {
@@ -43,14 +56,15 @@ const onSave = (payload, mode) => {
 
 watch(
   () => props.selectedResponse,
-  value => {
+  async value => {
     if (!value?.conditions) return;
 
+    await loadAutomationReferences(value.event_name);
     manifestCustomAttributes();
 
     automation.value = formatAutomation(
       value,
-      allCustomAttributes.value,
+      mergedCustomAttributes.value,
       automationTypes,
       AUTOMATION_ACTION_TYPES
     );

@@ -425,6 +425,37 @@ RSpec.describe Message do
       expect(message.created_at).to eq message.conversation.last_activity_at
     end
 
+    it 'does not move conversation or contact activity backwards when an older imported history message arrives later' do
+      conversation = create(:conversation)
+      sender = conversation.contact
+
+      travel_to 2.hours.ago do
+        create(
+          :message,
+          account: conversation.account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: sender
+        )
+      end
+
+      latest_activity_at = conversation.reload.last_activity_at
+      latest_contact_activity_at = sender.reload.last_activity_at
+
+      build(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        sender: sender,
+        created_at: 2.days.ago,
+        content_attributes: { imported_history: true }
+      ).save!
+
+      expect(conversation.reload.last_activity_at.to_i).to eq(latest_activity_at.to_i)
+      expect(sender.reload.last_activity_at.to_i).to eq(latest_contact_activity_at.to_i)
+    end
+
     it 'updates contact last_activity_at when created' do
       expect { message.save! }.to(change { message.sender.last_activity_at })
     end

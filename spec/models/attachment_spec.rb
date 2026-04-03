@@ -19,7 +19,7 @@ RSpec.describe Attachment do
       it 'invalid when crossed the limit' do
         attachment.external_url = 'a' * (Limits::URL_LENGTH_LIMIT + 5)
         attachment.valid?
-        expect(attachment.errors[:external_url]).to include("is too long (maximum is #{Limits::URL_LENGTH_LIMIT} characters)")
+        expect(attachment.errors.of_kind?(:external_url, :too_long)).to be(true)
       end
     end
   end
@@ -219,6 +219,30 @@ RSpec.describe Attachment do
       attachment.send(:validate_file_size, 41.megabytes)
 
       expect(attachment.errors[:file]).to include('size is too big')
+    end
+  end
+
+  describe 'storage limit validation' do
+    let(:attachment) { message.attachments.new(account_id: message.account_id, file_type: :image) }
+
+    before do
+      message.account.update!(limits: { storage_bytes: 1 })
+      attachment.file.attach(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'avatar.png',
+        content_type: 'image/png'
+      )
+    end
+
+    it 'blocks regular attachments when the account is over limit' do
+      expect(attachment).not_to be_valid
+      expect(attachment.errors[:file]).to include(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+    end
+
+    it 'allows explicitly exempt inbound attachments even when the account is over limit' do
+      attachment.skip_storage_limit_validation!
+
+      expect(attachment).to be_valid
     end
   end
 end

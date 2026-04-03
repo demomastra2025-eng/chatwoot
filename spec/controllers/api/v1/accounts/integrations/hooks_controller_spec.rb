@@ -1,6 +1,12 @@
 require 'rails_helper'
 
 RSpec.describe 'Integration Hooks API', type: :request do
+  around do |example|
+    with_modified_env('FRONTEND_URL' => 'https://app.example.com') do
+      example.run
+    end
+  end
+
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
@@ -89,8 +95,13 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
         expect(hook.app_id).to eq 'macrocrm'
         expect(hook.access_token).to eq 'macro-secret'
+        expect(hook.reference_id).to be_present
         expect(hook.settings['app_id']).to eq 'macro-app'
         expect(response.parsed_body).not_to have_key('access_token')
+        expect(response.parsed_body['reference_id']).to eq(hook.reference_id)
+        expect(response.parsed_body.dig('metadata', 'webhook_url')).to eq(
+          "https://app.example.com/webhooks/macrocrm/#{hook.reference_id}/manager_changed"
+        )
       end
 
       it 'creates a medelement hook with encrypted secret settings' do
@@ -175,9 +186,13 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(hook.reload.access_token).to eq 'existing-secret'
+        expect(hook.reference_id).to be_present
         expect(hook.disabled?).to be true
         expect(hook.settings['app_id']).to eq 'macro-app-updated'
         expect(hook.settings['sync_incoming_messages']).to be false
+        expect(response.parsed_body.dig('metadata', 'webhook_url')).to eq(
+          "https://app.example.com/webhooks/macrocrm/#{hook.reference_id}/manager_changed"
+        )
       end
 
       it 'keeps existing medelement secret settings when blank values are submitted' do

@@ -1,8 +1,11 @@
 import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
+import { getMaxUploadSizeByChannel } from '@chatwoot/utils';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 
 export const DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE = 40;
+export const WHATSAPP_VIDEO_UPLOAD_SIZE = 70;
+export const WHATSAPP_DOCUMENT_UPLOAD_SIZE = 70;
 
 export const formatBytes = (bytes, decimals = 2) => {
   if (bytes === 0) return '0 Bytes';
@@ -34,6 +37,57 @@ export const resolveMaximumFileUploadSize = value => {
   }
 
   return parsedValue;
+};
+
+export const resolveConversationUploadLimit = ({
+  channelType,
+  medium,
+  mime,
+  installationLimit,
+  isPrivateNote = false,
+}) => {
+  if (isPrivateNote) {
+    return installationLimit;
+  }
+
+  if (!channelType || channelType === INBOX_TYPES.WEB) {
+    return installationLimit;
+  }
+
+  const normalizedChannelType = channelType.toLowerCase();
+  const normalizedMedium = (medium || '').toLowerCase();
+  const normalizedMime = (mime || '').toLowerCase();
+
+  if (
+    (normalizedChannelType === 'channel::whatsapp' ||
+      normalizedChannelType === 'channel::whatsappweb' ||
+      normalizedMedium === 'whatsapp') &&
+    normalizedMime.startsWith('video/')
+  ) {
+    return WHATSAPP_VIDEO_UPLOAD_SIZE;
+  }
+
+  if (
+    (normalizedChannelType === 'channel::whatsapp' ||
+      normalizedChannelType === 'channel::whatsappweb' ||
+      normalizedMedium === 'whatsapp') &&
+    (normalizedMime.startsWith('application/') ||
+      normalizedMime.startsWith('text/'))
+  ) {
+    return WHATSAPP_DOCUMENT_UPLOAD_SIZE;
+  }
+
+  const channelLimit = getMaxUploadSizeByChannel({
+    channelType,
+    medium,
+    mime,
+  });
+
+  if (channelLimit === DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE) {
+    return installationLimit;
+  }
+
+  return Math.min(channelLimit, installationLimit);
 };
 
 /**

@@ -81,6 +81,66 @@ RSpec.describe Captain::Scenario, type: :model do
     end
   end
 
+  describe '#agent_instructions' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:scenario) { create(:captain_scenario, assistant: assistant, account: account) }
+
+    it 'renders deal and task context when provided through prompt context state' do
+      context_double = instance_double(
+        Agents::RunContext,
+        context: {
+          state: {
+            assistant_config: { 'context_access' => {} },
+            prompt_context: {
+              deal: {
+                'stage_name' => 'Negotiation'
+              },
+              task: {
+                'status_name' => 'In progress'
+              },
+              visible_fields: {
+                deal: ['stage_name'],
+                task: ['status_name']
+              }
+            }
+          }
+        }
+      )
+
+      rendered = scenario.agent_instructions(context_double)
+
+      expect(rendered).to include('Deal')
+      expect(rendered).to include('Stage Name: Negotiation')
+      expect(rendered).to include('Task')
+      expect(rendered).to include('Status Name: In progress')
+    end
+
+    it 'renders appointment context when provided through prompt context state' do
+      context_double = instance_double(
+        Agents::RunContext,
+        context: {
+          state: {
+            assistant_config: { 'context_access' => {} },
+            prompt_context: {
+              appointment: {
+                'status' => 'confirmed'
+              },
+              visible_fields: {
+                appointment: ['status']
+              }
+            }
+          }
+        }
+      )
+
+      rendered = scenario.agent_instructions(context_double)
+
+      expect(rendered).to include('Appointment')
+      expect(rendered).to include('Status: confirmed')
+    end
+  end
+
   describe 'tool validation and population' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
@@ -110,6 +170,28 @@ RSpec.describe Captain::Scenario, type: :model do
 
         expect(scenario).not_to be_valid
         expect(scenario.errors[:instruction]).to include('contains invalid tools: invalid_tool')
+      end
+
+      it 'is invalid when the assistant tool access disables the referenced tool' do
+        assistant.update!(
+          config: {
+            'context_access' => {},
+            'tool_access' => {
+              'agent' => {
+                'enabled' => true,
+                'tool_ids' => ['faq_lookup']
+              }
+            }
+          }
+        )
+
+        scenario = build(:captain_scenario,
+                         assistant: assistant,
+                         account: account,
+                         instruction: 'Use [@Add Contact Note](tool://add_contact_note) to document')
+
+        expect(scenario).not_to be_valid
+        expect(scenario.errors[:instruction]).to include('contains invalid tools: add_contact_note')
       end
 
       it 'is invalid with multiple invalid tools' do

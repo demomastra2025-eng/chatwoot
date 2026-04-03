@@ -7,6 +7,8 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
 
   def create
     @message = @conversation.messages.new(message_params)
+    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?
+
     build_attachment
     @message.save!
   end
@@ -31,6 +33,13 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
         file: uploaded_attachment
       )
     end
+  end
+
+  def storage_limit_available?
+    return true if params[:attachments].blank?
+
+    extra_bytes = params[:attachments].sum { |uploaded_attachment| uploaded_attachment.size.to_i }
+    AccountLimits::StorageUsageService.new(account: @message.account).within_limit?(extra_bytes: extra_bytes)
   end
 
   def message_finder_params

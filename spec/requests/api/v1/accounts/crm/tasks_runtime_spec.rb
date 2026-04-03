@@ -86,7 +86,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(created_task.status_id).not_to eq(default_status.id)
-    expect(created_task.status.active).to eq(true)
+    expect(created_task.status.active).to be(true)
   end
 
   it 'returns an existing task when create is retried with the same idempotency_key' do
@@ -126,6 +126,58 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([high_priority_task.id])
   end
 
+  it 'filters tasks by managed custom field values' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'resolution_note',
+      label: 'Resolution note',
+      field_type: 'text'
+    )
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'task_tags',
+      label: 'Task tags',
+      field_type: 'multiselect',
+      options: ['VIP', 'Docs']
+    )
+
+    matching_task = create(
+      :crm_task,
+      account: account,
+      status: account.crm_task_statuses.find_by!(code: 'todo'),
+      custom_attributes: {
+        'resolution_note' => 'Need urgent docs',
+        'task_tags' => ['VIP']
+      }
+    )
+    create(
+      :crm_task,
+      account: account,
+      status: account.crm_task_statuses.find_by!(code: 'todo'),
+      custom_attributes: {
+        'resolution_note' => 'Routine follow-up',
+        'task_tags' => ['Docs']
+      }
+    )
+
+    get path,
+        params: {
+          custom_attribute_filters: {
+            resolution_note: { operator: 'contains', value: 'urgent' },
+            task_tags: ['VIP']
+          }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([matching_task.id])
+  end
+
   it 'changes status to done and sets completed_at' do
     open_status = account.crm_task_statuses.find_by!(code: 'todo')
     done_status = account.crm_task_statuses.find_by!(code: 'done')
@@ -140,6 +192,34 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body.dig('payload', 'status_id')).to eq(done_status.id)
     expect(response.parsed_body.dig('payload', 'completed_at')).to be_present
     expect(task.reload.events.where(event_type: 'task_status_changed')).to exist
+  end
+
+  it 'blocks moving a task to done when required custom fields are missing' do
+    open_status = account.crm_task_statuses.find_by!(code: 'todo')
+    done_status = account.crm_task_statuses.find_by!(code: 'done')
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'resolution_note',
+      label: 'Resolution note',
+      required: true
+    )
+    task = create(:crm_task, account: account, status: open_status)
+
+    post "#{path}/#{task.id}/change_status",
+         params: { status_id: done_status.id, lock_version: task.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('TASK_STATUS_REQUIRES_FIELDS')
+    expect(response.parsed_body['error']).to include('Resolution note')
+    expect(response.parsed_body.dig('details', 'missing_fields')).to include(
+      { 'key' => 'resolution_note', 'label' => 'Resolution note' }
+    )
+    expect(task.reload.status_id).to eq(open_status.id)
+    expect(task.completed_at).to be_nil
   end
 
   it 'rejects unknown custom fields' do

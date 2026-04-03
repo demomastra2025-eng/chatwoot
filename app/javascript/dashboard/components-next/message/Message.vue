@@ -471,9 +471,12 @@ const avatarInfo = computed(() => {
 
   // If sender type is agent bot, use avatarUrl
   if ([SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(type)) {
+    const shouldUseCaptainIcon = !avatarUrl;
+
     return {
-      name: name ?? '',
+      name: shouldUseCaptainIcon ? '' : (name ?? ''),
       src: avatarUrl ?? '',
+      iconName: shouldUseCaptainIcon ? 'i-woot-captain' : null,
     };
   }
 

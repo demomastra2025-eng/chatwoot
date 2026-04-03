@@ -8,6 +8,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
 
     stage = @pipeline.stages.new(stage_params)
     stage.account = Current.account
+    stage.position = nil unless params.key?(:position)
     stage.save!
 
     render_payload(::Crm::PayloadBuilder.stage(stage), status: :created)

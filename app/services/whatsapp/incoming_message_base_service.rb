@@ -165,7 +165,7 @@ class Whatsapp::IncomingMessageBaseService
         filename: attachment_file.original_filename,
         content_type: attachment_file.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def attach_location
@@ -178,7 +178,7 @@ class Whatsapp::IncomingMessageBaseService
       coordinates_long: location['longitude'],
       fallback_title: location_name,
       external_url: location['url']
-    )
+    ).skip_storage_limit_validation!
   end
 
   def create_message(message, source_id: nil)
@@ -214,7 +214,7 @@ class Whatsapp::IncomingMessageBaseService
         file_type: file_content_type(message_type),
         fallback_title: phone[:phone].to_s,
         meta: contact_meta
-      )
+      ).skip_storage_limit_validation!
     end
   end
 

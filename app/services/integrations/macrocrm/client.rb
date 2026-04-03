@@ -15,6 +15,13 @@ class Integrations::Macrocrm::Client
     post('/estateBuy/find', { contacts_id: contact_id })
   end
 
+  def list_estate_buy(ids:, statuses: [])
+    payload = { ids: ids }
+    payload[:statuses] = statuses if statuses.present?
+
+    post('/estateBuy/list', payload)
+  end
+
   def create_estate_buy(name:, phone:, message:, manager_id: nil)
     payload = {
       name: name,

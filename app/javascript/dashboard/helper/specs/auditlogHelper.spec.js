@@ -2,6 +2,8 @@ import {
   extractChangedAccountUserValues,
   generateTranslationPayload,
   generateLogActionKey,
+  getAuditLogChannelTypeLabel,
+  getAuditLogChannelTypeSuffix,
 } from '../auditlogHelper'; // import the functions
 
 describe('Helper functions', () => {
@@ -10,6 +12,7 @@ describe('Helper functions', () => {
     { id: 2, name: 'Agent 2' },
     { id: 3, name: 'Agent 3' },
   ];
+  const t = key => key;
 
   describe('extractChangedAccountUserValues', () => {
     it('should correctly extract values when role is changed', () => {
@@ -189,6 +192,104 @@ describe('Helper functions', () => {
 
       const logActionKey = generateLogActionKey(auditLogItem);
       expect(logActionKey).toEqual('AUDIT_LOGS.ACCOUNT_USER.EDIT.DELETED');
+    });
+  });
+
+  describe('getAuditLogChannelTypeLabel', () => {
+    it('returns localized label for inbox audit items', () => {
+      const auditLogItem = {
+        auditable_type: 'Inbox',
+        auditable: {
+          channel_type: 'Channel::WhatsappWeb',
+        },
+      };
+
+      expect(getAuditLogChannelTypeLabel(auditLogItem, t)).toEqual(
+        'INBOX_MGMT.CHANNELS.WHATSAPP_WEB'
+      );
+    });
+
+    it('uses whatsapp label for Twilio WhatsApp inboxes', () => {
+      const auditLogItem = {
+        auditable_type: 'Inbox',
+        auditable: {
+          channel_type: 'Channel::TwilioSms',
+          medium: 'whatsapp',
+        },
+      };
+
+      expect(getAuditLogChannelTypeLabel(auditLogItem, t)).toEqual(
+        'INBOX_MGMT.CHANNELS.WHATSAPP'
+      );
+    });
+
+    it('reads inbox type from inbox member payload', () => {
+      const auditLogItem = {
+        auditable_type: 'InboxMember',
+        auditable: {
+          inbox: {
+            channel_type: 'Channel::Telegram',
+          },
+        },
+      };
+
+      expect(getAuditLogChannelTypeLabel(auditLogItem, t)).toEqual(
+        'INBOX_MGMT.CHANNELS.TELEGRAM'
+      );
+    });
+
+    it('falls back to configured API channel name', () => {
+      const auditLogItem = {
+        auditable_type: 'Inbox',
+        auditable: {
+          channel_type: 'Channel::Api',
+        },
+      };
+
+      expect(
+        getAuditLogChannelTypeLabel(auditLogItem, t, {
+          apiChannelName: 'Custom API',
+        })
+      ).toEqual('Custom API');
+    });
+
+    it('falls back to audited changes for deleted twilio whatsapp inboxes', () => {
+      const auditLogItem = {
+        auditable_type: 'Inbox',
+        auditable: null,
+        audited_changes: {
+          channel_type: 'Channel::TwilioSms',
+          medium: 'whatsapp',
+        },
+      };
+
+      expect(getAuditLogChannelTypeLabel(auditLogItem, t)).toEqual(
+        'INBOX_MGMT.CHANNELS.WHATSAPP'
+      );
+    });
+  });
+
+  describe('getAuditLogChannelTypeSuffix', () => {
+    it('returns a formatted suffix when channel type is available', () => {
+      const auditLogItem = {
+        auditable_type: 'Inbox',
+        auditable: {
+          channel_type: 'Channel::Email',
+        },
+      };
+
+      expect(getAuditLogChannelTypeSuffix(auditLogItem, t)).toEqual(
+        ' «INBOX_MGMT.CHANNELS.EMAIL»'
+      );
+    });
+
+    it('returns an empty string when channel type is unavailable', () => {
+      const auditLogItem = {
+        auditable_type: 'Team',
+        auditable: {},
+      };
+
+      expect(getAuditLogChannelTypeSuffix(auditLogItem, t)).toEqual('');
     });
   });
 });

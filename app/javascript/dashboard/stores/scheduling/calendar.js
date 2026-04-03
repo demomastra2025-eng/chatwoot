@@ -5,12 +5,15 @@ import {
   extractSchedulingError,
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildCalendarRange,
   formatCalendarTitle,
   shiftAnchorDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import { CALENDAR_STORAGE_KEY } from 'dashboard/routes/dashboard/scheduling/constants';
+import { appointmentMatchesCustomFieldFilters } from 'dashboard/routes/dashboard/scheduling/customFieldFilters';
+import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
 const defaultPayload = () => ({
   range: { from: null, to: null },
@@ -54,6 +57,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
   state: () => ({
     activeRequestId: 0,
     anchorDate: new Date().toISOString(),
+    customAttributeFilters: {},
     currentView: 'week',
     initialized: false,
     paymentStatusFilters: [],
@@ -176,6 +180,10 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.paymentStatusFilters = [...statuses];
     },
 
+    setCustomAttributeFilters(filters = {}) {
+      this.customAttributeFilters = { ...(filters || {}) };
+    },
+
     clearQuickFilters() {
       this.statusFilters = [];
       this.paymentStatusFilters = [];
@@ -213,6 +221,12 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
 
         if (this.paymentStatusFilters.length) {
           params.payment_status = this.paymentStatusFilters.join(',');
+        }
+
+        const customAttributeFilters =
+          options.customAttributeFilters ?? this.customAttributeFilters;
+        if (Object.keys(customAttributeFilters || {}).length) {
+          params.custom_attribute_filters = customAttributeFilters;
         }
 
         const { data } = await SchedulingCalendarAPI.show(params);
@@ -264,6 +278,12 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         this.currentView,
         this.anchorDate
       );
+      const crmReferencesStore = useCrmReferencesStore();
+      const matchesCustomFields = appointmentMatchesCustomFieldFilters(
+        appointment,
+        crmReferencesStore.appointmentFieldDefinitions,
+        this.customAttributeFilters
+      );
 
       return (
         matchesNumericFilter(
@@ -274,12 +294,16 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           this.statusFilters.includes(appointment.status)) &&
         (!this.paymentStatusFilters.length ||
           this.paymentStatusFilters.includes(appointment.paymentStatus)) &&
+        matchesCustomFields &&
         appointmentIntersectsRange(appointment, currentRange)
       );
     },
 
     upsertAppointment(appointment) {
-      const nextAppointment = camelcaseKeys(appointment, { deep: true });
+      const nextAppointment = preserveCustomAttributeKeys(
+        appointment,
+        camelcaseKeys(appointment, { deep: true })
+      );
       const nextAppointments = [...this.payload.appointments];
       const existingIndex = nextAppointments.findIndex(
         item => item.id === nextAppointment.id
@@ -321,7 +345,10 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     },
 
     syncAppointment(appointment) {
-      const normalizedAppointment = camelcaseKeys(appointment, { deep: true });
+      const normalizedAppointment = preserveCustomAttributeKeys(
+        appointment,
+        camelcaseKeys(appointment, { deep: true })
+      );
 
       if (!this.appointmentMatchesActiveView(normalizedAppointment)) {
         this.removeAppointment(normalizedAppointment.id);

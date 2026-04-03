@@ -1,12 +1,24 @@
+import { renderTemplateFieldReferencePreview } from './templateFieldReferences';
+
 // Constants
 export const DEFAULT_LANGUAGE = 'en';
 export const DEFAULT_CATEGORY = 'UTILITY';
 export const COMPONENT_TYPES = {
   HEADER: 'HEADER',
   BODY: 'BODY',
+  FOOTER: 'FOOTER',
   BUTTONS: 'BUTTONS',
 };
 export const MEDIA_FORMATS = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+export const UNSUPPORTED_TEMPLATE_COMPONENT_TYPES = [
+  'LIST',
+  'PRODUCT',
+  'CATALOG',
+  'CAROUSEL',
+  'LIMITED_TIME_OFFER',
+  'CALL_PERMISSION_REQUEST',
+];
+export const UNSUPPORTED_TEMPLATE_HEADER_FORMATS = ['LOCATION'];
 
 export const findComponentByType = (template, type) =>
   template.components?.find(component => component.type === type);
@@ -20,10 +32,19 @@ export const allKeysRequired = value => {
   return keys.every(key => value[key]);
 };
 
-export const replaceTemplateVariables = (templateText, processedParams) => {
+export const replaceTemplateVariables = (
+  templateText,
+  processedParams,
+  { previewMode = true } = {}
+) => {
   return templateText.replace(/{{([^}]+)}}/g, (match, variable) => {
     const variableKey = processVariable(variable);
-    return processedParams.body?.[variableKey] || `{{${variable}}}`;
+    const value = processedParams.body?.[variableKey];
+    if (!value) {
+      return `{{${variable}}}`;
+    }
+
+    return previewMode ? renderTemplateFieldReferencePreview(value) : value;
   });
 };
 

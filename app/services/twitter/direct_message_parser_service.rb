@@ -120,7 +120,7 @@ class Twitter::DirectMessageParserService < Twitter::WebhooksBaseService
         filename: 'twitter_attachment',
         content_type: media['type']
       }
-    )
+    ).skip_storage_limit_validation!
     @message.save!
   end
 end

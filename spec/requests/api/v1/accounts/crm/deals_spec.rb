@@ -110,7 +110,7 @@ RSpec.describe 'CRM Deals API', type: :request do
   end
 
   it 'transitions a deal to a won stage' do
-    bootstrap = Crm::Bootstrap::AccountService.new(account: account).perform
+    Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     won_stage = pipeline.stages.find_by!(code: 'won')
@@ -126,6 +126,36 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('payload', 'stage_id')).to eq(won_stage.id)
     expect(response.parsed_body.dig('payload', 'closed_at')).to be_present
     expect(deal.reload.events.where(event_type: 'deal_stage_changed')).to exist
+  end
+
+  it 'blocks moving a deal to a closed stage when required custom fields are missing' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    open_stage = pipeline.stages.find_by!(code: 'new')
+    won_stage = pipeline.stages.find_by!(code: 'won')
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'decision_maker',
+      label: 'Decision maker',
+      required: true
+    )
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: won_stage.id, lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_FIELDS')
+    expect(response.parsed_body['error']).to include('Decision maker')
+    expect(response.parsed_body.dig('details', 'missing_fields')).to include(
+      { 'key' => 'decision_maker', 'label' => 'Decision maker' }
+    )
+    expect(deal.reload.stage_id).to eq(open_stage.id)
+    expect(deal.closed_at).to be_nil
   end
 
   it 'allows custom-role users with crm_deal_view to list deals' do
@@ -153,6 +183,56 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(payload.dig('company', 'name')).to eq('Onelink LLC')
     expect(payload.dig('primary_contact', 'name')).to eq('Aruzhan')
+  end
+
+  it 'filters deals by managed custom field values' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'deal_size_band',
+      label: 'Deal size',
+      field_type: 'select',
+      options: [{ 'label' => 'Enterprise', 'value' => 'enterprise' }]
+    )
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'budget_score',
+      label: 'Budget score',
+      field_type: 'number'
+    )
+
+    matching_deal = create(
+      :crm_deal,
+      account: account,
+      custom_attributes: {
+        'budget_score' => 88,
+        'deal_size_band' => 'enterprise'
+      }
+    )
+    create(
+      :crm_deal,
+      account: account,
+      custom_attributes: {
+        'budget_score' => 32,
+        'deal_size_band' => 'mid_market'
+      }
+    )
+
+    get path,
+        params: {
+          custom_attribute_filters: {
+            budget_score: { operator: 'greater_than', value: 50 },
+            deal_size_band: ['enterprise']
+          }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].map { |deal| deal['id'] }).to eq([matching_deal.id])
   end
 
   it 'drops custom field values when their field definition becomes inactive' do
@@ -187,5 +267,24 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'custom_attributes')).to eq({})
     expect(deal.reload.custom_attributes).to eq({})
+  end
+
+  it 'filters deals by originating conversation' do
+    conversation = create(:conversation, account: account)
+    matching_deal = create(
+      :crm_deal,
+      account: account,
+      originating_conversation: conversation
+    )
+    create(:crm_deal, account: account)
+
+    get path,
+        params: { originating_conversation_id: conversation.id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
   end
 end

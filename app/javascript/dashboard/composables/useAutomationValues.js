@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages';
 import countries from 'shared/constants/countries';
 import { useStoreGetters, useMapGetter } from 'dashboard/composables/store';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 
 import {
   getActionOptions,
@@ -19,6 +20,7 @@ import {
  */
 export default function useAutomationValues() {
   const getters = useStoreGetters();
+  const crmReferencesStore = useCrmReferencesStore();
   const { t } = useI18n();
   const agents = useMapGetter('agents/getVerifiedAgents');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
@@ -65,16 +67,113 @@ export default function useAutomationValues() {
   });
 
   const messageTypeOptions = computed(() =>
-    MESSAGE_CONDITION_VALUES.map(item => ({
-      id: item.id,
-      name: t(`AUTOMATION.MESSAGE_TYPES.${item.i18nKey}`),
-    }))
+    MESSAGE_CONDITION_VALUES.map(item => {
+      const translatedLabels = {
+        INCOMING: t('AUTOMATION.MESSAGE_TYPES.INCOMING'),
+        OUTGOING: t('AUTOMATION.MESSAGE_TYPES.OUTGOING'),
+      };
+
+      return {
+        id: item.id,
+        name: translatedLabels[item.i18nKey] || item.name,
+      };
+    })
   );
 
   const priorityOptions = computed(() =>
-    PRIORITY_CONDITION_VALUES.map(item => ({
-      id: item.id,
-      name: t(`AUTOMATION.PRIORITY_TYPES.${item.i18nKey}`),
+    PRIORITY_CONDITION_VALUES.map(item => {
+      const translatedLabels = {
+        NONE: t('AUTOMATION.PRIORITY_TYPES.NONE'),
+        LOW: t('AUTOMATION.PRIORITY_TYPES.LOW'),
+        MEDIUM: t('AUTOMATION.PRIORITY_TYPES.MEDIUM'),
+        HIGH: t('AUTOMATION.PRIORITY_TYPES.HIGH'),
+        URGENT: t('AUTOMATION.PRIORITY_TYPES.URGENT'),
+      };
+
+      return {
+        id: item.id,
+        name: translatedLabels[item.i18nKey] || item.name,
+      };
+    })
+  );
+
+  const appointmentStatusOptions = computed(() =>
+    ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'].map(
+      status => {
+        const translatedLabels = {
+          scheduled: t('SCHEDULING.APPOINTMENT_STATUS.scheduled'),
+          confirmed: t('SCHEDULING.APPOINTMENT_STATUS.confirmed'),
+          completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
+          cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
+          no_show: t('SCHEDULING.APPOINTMENT_STATUS.no_show'),
+        };
+
+        return {
+          id: status,
+          name: translatedLabels[status] || status,
+        };
+      }
+    )
+  );
+
+  const appointmentPaymentStatusOptions = computed(() =>
+    ['awaiting_payment', 'prepaid', 'paid', 'cancelled'].map(status => {
+      const translatedLabels = {
+        awaiting_payment: t('SCHEDULING.PAYMENT_STATUS.awaiting_payment'),
+        prepaid: t('SCHEDULING.PAYMENT_STATUS.prepaid'),
+        paid: t('SCHEDULING.PAYMENT_STATUS.paid'),
+        cancelled: t('SCHEDULING.PAYMENT_STATUS.cancelled'),
+      };
+
+      return {
+        id: status,
+        name: translatedLabels[status] || status,
+      };
+    })
+  );
+
+  const appointmentTypeOptions = computed(() =>
+    ['primary', 'secondary', 'other'].map(typeKey => {
+      const translatedLabels = {
+        primary: t('SCHEDULING.APPOINTMENT_TYPE.primary'),
+        secondary: t('SCHEDULING.APPOINTMENT_TYPE.secondary'),
+        other: t('SCHEDULING.APPOINTMENT_TYPE.other'),
+      };
+
+      return {
+        id: typeKey,
+        name: translatedLabels[typeKey] || typeKey,
+      };
+    })
+  );
+
+  const appointmentFieldDefinitions = computed(
+    () => crmReferencesStore.appointmentFieldDefinitions || []
+  );
+  const dealFieldDefinitions = computed(
+    () => crmReferencesStore.dealFieldDefinitions || []
+  );
+  const taskFieldDefinitions = computed(
+    () => crmReferencesStore.taskFieldDefinitions || []
+  );
+  const crmPipelineOptions = computed(() =>
+    (crmReferencesStore.pipelines || []).map(pipeline => ({
+      id: pipeline.id,
+      name: pipeline.name,
+    }))
+  );
+  const crmStageOptions = computed(() =>
+    (crmReferencesStore.pipelines || []).flatMap(pipeline =>
+      (pipeline.stages || []).map(stage => ({
+        id: stage.id,
+        name: `${pipeline.name} / ${stage.name}`,
+      }))
+    )
+  );
+  const crmTaskStatusOptions = computed(() =>
+    (crmReferencesStore.taskStatuses || []).map(status => ({
+      id: status.id,
+      name: status.name,
     }))
   );
 
@@ -96,18 +195,29 @@ export default function useAutomationValues() {
    * @param {string} type - The type of condition.
    * @returns {Array} An array of condition dropdown values.
    */
-  const getConditionDropdownValues = type => {
+  const getConditionDropdownValues = (type, eventName = null) => {
     return getConditionOptions({
       agents: agents.value,
+      appointmentFieldDefinitions: appointmentFieldDefinitions.value,
+      appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
+      appointmentStatusOptions: appointmentStatusOptions.value,
+      appointmentTypeOptions: appointmentTypeOptions.value,
       booleanFilterOptions: booleanFilterOptions.value,
       campaigns: campaigns.value,
+      crmDealOwnerOptions: agents.value,
+      crmPipelineOptions: crmPipelineOptions.value,
+      crmStageOptions: crmStageOptions.value,
+      crmTaskStatusOptions: crmTaskStatusOptions.value,
+      dealFieldDefinitions: dealFieldDefinitions.value,
       contacts: contacts.value,
       customAttributes: getters['attributes/getAttributes'].value,
+      eventName,
       inboxes: inboxes.value,
       labels: labels.value,
       statusFilterOptions: statusFilterOptions.value,
       priorityOptions: priorityOptions.value,
       messageTypeOptions: messageTypeOptions.value,
+      taskFieldDefinitions: taskFieldDefinitions.value,
       teams: teams.value,
       languages,
       countries,
@@ -123,6 +233,10 @@ export default function useAutomationValues() {
   const getActionDropdownValues = type => {
     return getActionOptions({
       agents: agents.value,
+      appointmentStatusOptions: appointmentStatusOptions.value,
+      crmDealOwnerOptions: agents.value,
+      crmStageOptions: crmStageOptions.value,
+      crmTaskStatusOptions: crmTaskStatusOptions.value,
       labels: labels.value,
       teams: teams.value,
       slaPolicies: slaPolicies.value,
@@ -137,6 +251,15 @@ export default function useAutomationValues() {
     booleanFilterOptions,
     statusFilterItems,
     statusFilterOptions,
+    appointmentStatusOptions,
+    appointmentPaymentStatusOptions,
+    appointmentTypeOptions,
+    appointmentFieldDefinitions,
+    dealFieldDefinitions,
+    taskFieldDefinitions,
+    crmPipelineOptions,
+    crmStageOptions,
+    crmTaskStatusOptions,
     priorityOptions,
     messageTypeOptions,
     getConditionDropdownValues,

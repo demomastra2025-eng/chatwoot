@@ -1,7 +1,10 @@
 import camelcaseKeys from 'camelcase-keys';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
+import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
 const ERROR_KEY_BY_CODE = {
+  APPOINTMENT_DELETE_REQUIRES_CANCELLED:
+    'SCHEDULING.ERRORS.APPOINTMENT_DELETE_REQUIRES_CANCELLED',
   APPOINTMENT_NOT_FOUND: 'SCHEDULING.ERRORS.APPOINTMENT_NOT_FOUND',
   BLOCKED_BY_BREAK: 'SCHEDULING.ERRORS.BLOCKED_BY_BREAK',
   BLOCKED_BY_HOLIDAY: 'SCHEDULING.ERRORS.BLOCKED_BY_HOLIDAY',
@@ -22,6 +25,8 @@ const ERROR_KEY_BY_CODE = {
 const ERROR_KEY_BY_MESSAGE = {
   'Appointment is outside working hours':
     'SCHEDULING.ERRORS.OUTSIDE_WORKING_HOURS',
+  'Only cancelled appointments can be deleted':
+    'SCHEDULING.ERRORS.APPOINTMENT_DELETE_REQUIRES_CANCELLED',
   'Appointment must fit into one local day':
     'SCHEDULING.ERRORS.SINGLE_DAY_REQUIRED',
   'Appointment overlaps blocked time': 'SCHEDULING.ERRORS.BLOCKED_BY_VACATION',
@@ -40,6 +45,8 @@ const ERROR_KEY_BY_MESSAGE = {
   'Payment amount must be greater than 0':
     'SCHEDULING.ERRORS.PAYMENT_AMOUNT_REQUIRED',
   'Specialist with appointments cannot be deleted':
+    'SCHEDULING.ERRORS.RESOURCE_HAS_APPOINTMENTS',
+  'Specialist with active appointments cannot be deleted':
     'SCHEDULING.ERRORS.RESOURCE_HAS_APPOINTMENTS',
   'Specialist is not available for scheduling':
     'SCHEDULING.ERRORS.RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING',
@@ -79,7 +86,10 @@ const ERROR_FIELD_KEY_BY_NAME = {
 };
 
 export const normalizePayload = data => {
-  return camelcaseKeys(data?.payload || [], { deep: true });
+  return preserveCustomAttributeKeys(
+    data?.payload || [],
+    camelcaseKeys(data?.payload || [], { deep: true })
+  );
 };
 
 export const normalizeMeta = data => {
@@ -105,6 +115,19 @@ const resolveSchedulingErrorPayload = error => {
   return extractSchedulingError(error);
 };
 
+const resolveMissingFieldLabels = payload => {
+  return (payload.details?.missingFields || [])
+    .map(field => field?.label)
+    .filter(Boolean)
+    .join(', ');
+};
+
+const translateOrFallback = (t, key, fallback, params = {}) => {
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  const translated = t(key, params);
+  return translated === key ? fallback : translated;
+};
+
 const fallbackFieldLabel = field => {
   return field
     .replace(/_/g, ' ')
@@ -117,17 +140,33 @@ const resolveFieldLabel = (field, t) => {
     return fallbackFieldLabel(field);
   }
 
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   const translated = t(translationKey);
   return translated === translationKey ? fallbackFieldLabel(field) : translated;
 };
 
 export const formatSchedulingErrorMessage = (error, t) => {
   const payload = resolveSchedulingErrorPayload(error);
+  const missingFields = resolveMissingFieldLabels(payload);
+
+  if (payload.code === 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS') {
+    return translateOrFallback(
+      t,
+      'SCHEDULING.ERRORS.APPOINTMENT_PAYMENT_REQUIRES_FIELDS',
+      payload.message,
+      { fields: missingFields }
+    );
+  }
+
   const directKey =
     ERROR_KEY_BY_CODE[payload.code] || ERROR_KEY_BY_MESSAGE[payload.message];
 
   if (directKey) {
-    return t(directKey);
+    return translateOrFallback(
+      t,
+      directKey,
+      payload.message || t('SCHEDULING.ERRORS.GENERIC')
+    );
   }
 
   const requiredMatch = payload.message?.match(/^([a-z_]+) is required$/);
@@ -164,7 +203,10 @@ export const formatSchedulingErrorMessage = (error, t) => {
 };
 
 export const upsertRecord = (records, record) => {
-  const nextRecord = camelcaseKeys(record, { deep: true });
+  const nextRecord = preserveCustomAttributeKeys(
+    record,
+    camelcaseKeys(record, { deep: true })
+  );
   const existingIndex = records.findIndex(item => item.id === nextRecord.id);
 
   if (existingIndex === -1) {

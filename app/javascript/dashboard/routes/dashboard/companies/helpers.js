@@ -14,3 +14,14 @@ export const companyMatchesSearch = (company = {}, search = '') => {
     normalizeCompanySearch(value).includes(normalizedSearch)
   );
 };
+
+export const resolveCompaniesPageAfterDelete = ({
+  currentPage = 1,
+  remainingItemsOnPage = 0,
+} = {}) => {
+  if (remainingItemsOnPage === 0 && currentPage > 1) {
+    return currentPage - 1;
+  }
+
+  return currentPage;
+};

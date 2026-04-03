@@ -132,8 +132,18 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def custom_attributes
-    @conversation.custom_attributes = params.permit(custom_attributes: {})[:custom_attributes]
+    @conversation.custom_attributes = merged_custom_attributes
     @conversation.save!
+    render :custom_attributes
+  end
+
+  def destroy_custom_attributes
+    @conversation.custom_attributes = CustomAttributes::MutationService.destroy(
+      @conversation.custom_attributes,
+      custom_attribute_keys_to_destroy
+    )
+    @conversation.save!
+    render :custom_attributes
   end
 
   def destroy
@@ -230,6 +240,24 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   def assignee?
     @conversation.assignee_id? && Current.user == @conversation.assignee
+  end
+
+  def merged_custom_attributes
+    incoming_attributes = params.permit(custom_attributes: {})[:custom_attributes]
+    return {} if explicit_empty_custom_attributes?(incoming_attributes)
+    return @conversation.custom_attributes if incoming_attributes.blank?
+
+    CustomAttributes::MutationService.merge(@conversation.custom_attributes, incoming_attributes)
+  end
+
+  def custom_attribute_keys_to_destroy
+    params.permit(custom_attributes: [])[:custom_attributes] || []
+  end
+
+  def explicit_empty_custom_attributes?(incoming_attributes)
+    params.key?(:custom_attributes) &&
+      (incoming_attributes.is_a?(ActionController::Parameters) || incoming_attributes.is_a?(Hash)) &&
+      incoming_attributes.empty?
   end
 end
 

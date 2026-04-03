@@ -16,28 +16,82 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def transformed_message
-    remote_jid = params.dig(:key, :remoteJid).to_s
-    remote_wa_id = remote_jid.split('@').first
+    remote_identity = contact_remote_identity
     message_type = extract_message_type
 
     {
       contact: {
-        wa_id: remote_wa_id,
+        wa_id: remote_identity,
         profile: {
-          name: params[:pushName].presence || "+#{remote_wa_id}"
+          name: contact_display_name(remote_identity)
         }
       },
       message: {
         id: params.dig(:key, :id).to_s,
         type: message_type,
         context: reply_context
-      }.merge(direction_payload(remote_wa_id))
+      }.merge(direction_payload(remote_identity))
         .merge(message_payload_for(message_type))
     }
   end
 
-  def direction_payload(remote_wa_id)
-    outgoing_echo ? { to: remote_wa_id } : { from: remote_wa_id }
+  def direction_payload(remote_identity)
+    outgoing_echo ? { to: remote_identity } : { from: remote_identity }
+  end
+
+  def set_contact_from_echo
+    set_contact_from_whatsapp_web_identity
+  end
+
+  def set_contact_from_message
+    set_contact_from_whatsapp_web_identity
+  end
+
+  def existing_contact_conversation
+    current_conversation = super
+    return if @contact.blank?
+
+    latest_contact_conversation = inbox.conversations.where(contact_id: @contact.id).order(last_activity_at: :desc, id: :desc).first
+    return latest_contact_conversation if current_conversation.blank?
+    return current_conversation if latest_contact_conversation.blank?
+
+    [current_conversation, latest_contact_conversation].max_by do |conversation|
+      [conversation.last_activity_at, conversation.id]
+    end
+  end
+
+  def set_contact_from_whatsapp_web_identity
+    contact_inbox = WhatsappWeb::ContactSyncService.new(
+      channel: inbox.channel,
+      contact_payload: {
+        remoteJid: params.dig(:key, :remoteJid),
+        remoteJidAlt: params.dig(:key, :remoteJidAlt),
+        remoteLid: params.dig(:key, :remoteLid),
+        pushName: params[:pushName]
+      }
+    ).perform
+    return if contact_inbox.blank?
+
+    @contact_inbox = contact_inbox
+    @contact = contact_inbox.contact
+  end
+
+  def contact_remote_identity
+    key = params[:key].to_h.deep_symbolize_keys
+
+    WhatsappWeb::ProviderPayloadNormalizer.canonical_remote_jid(
+      key[:remoteJid],
+      key[:remoteJidAlt],
+      key[:remoteLid]
+    ).presence || key[:remoteJid].to_s.presence || key[:remoteJidAlt].to_s.presence || key[:remoteLid].to_s
+  end
+
+  def contact_display_name(remote_identity)
+    return params[:pushName].presence if params[:pushName].present?
+    return "+#{remote_identity.split('@').first}" if remote_identity.to_s.end_with?('@s.whatsapp.net')
+    return remote_identity if remote_identity.to_s.include?('@')
+
+    "+#{remote_identity}"
   end
 
   def message_payload_for(message_type)

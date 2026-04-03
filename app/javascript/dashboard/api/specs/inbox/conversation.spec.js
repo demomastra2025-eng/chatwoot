@@ -188,6 +188,19 @@ describe('#ConversationAPI', () => {
       );
     });
 
+    it('#destroyCustomAttributes', () => {
+      conversationAPI.destroyCustomAttributes({
+        conversationId: 45,
+        customAttributes: ['order_d'],
+      });
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/conversations/45/destroy_custom_attributes',
+        {
+          custom_attributes: ['order_d'],
+        }
+      );
+    });
+
     it('#filter', () => {
       const payload = {
         page: 1,

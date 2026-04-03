@@ -14,6 +14,12 @@ describe('filterHelper', () => {
       expect(getCustomAttributeInputType('text')).toBe('plainText');
     });
 
+    it('returns plainText for numeric-like types', () => {
+      expect(getCustomAttributeInputType('number')).toBe('plainText');
+      expect(getCustomAttributeInputType('currency')).toBe('plainText');
+      expect(getCustomAttributeInputType('percent')).toBe('plainText');
+    });
+
     it('returns searchSelect for list type', () => {
       expect(getCustomAttributeInputType('list')).toBe('searchSelect');
     });
@@ -29,7 +35,11 @@ describe('filterHelper', () => {
 
   describe('buildAttributesFilterTypes', () => {
     const mockGetOperatorTypes = type => {
-      return type === 'list' ? ['is', 'is_not'] : ['contains', 'not_contains'];
+      if (type === 'list') return ['is', 'is_not'];
+      if (['number', 'currency', 'percent'].includes(type)) {
+        return ['gt', 'lt'];
+      }
+      return ['contains', 'not_contains'];
     };
 
     it('builds filter types for text attributes', () => {
@@ -122,6 +132,25 @@ describe('filterHelper', () => {
     it('handles empty attributes array', () => {
       const result = buildAttributesFilterTypes([], mockGetOperatorTypes);
       expect(result).toEqual([]);
+    });
+
+    it('builds filter types for currency attributes with numeric operators', () => {
+      const attributes = [
+        {
+          attributeKey: 'arr_value',
+          attributeDisplayName: 'ARR',
+          attributeDisplayType: 'currency',
+          attributeValues: [],
+        },
+      ];
+
+      const result = buildAttributesFilterTypes(
+        attributes,
+        mockGetOperatorTypes
+      );
+
+      expect(result[0].inputType).toBe('plainText');
+      expect(result[0].filterOperators).toEqual(['gt', 'lt']);
     });
   });
 

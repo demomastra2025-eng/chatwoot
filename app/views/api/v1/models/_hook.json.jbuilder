@@ -20,13 +20,28 @@ if Current.account_user&.administrator?
 end
 json.reference_id resource.reference_id if Current.account_user&.administrator?
 
-if Current.account_user&.administrator? && resource.medelement?
-  schedule_service = Integrations::Medelement::CronScheduleService.new(hook: resource)
+if Current.account_user&.administrator?
+  metadata = {}
 
-  json.metadata do
-    json.next_sync_at schedule_service.next_sync_at&.iso8601
-    json.next_sync_at_display schedule_service.next_sync_at_display
-    json.last_scheduled_sync_at schedule_service.last_enqueue_at&.iso8601
-    json.last_scheduled_sync_at_display schedule_service.last_enqueue_at_display
+  if resource.medelement?
+    schedule_service = Integrations::Medelement::CronScheduleService.new(hook: resource)
+    metadata.merge!(
+      next_sync_at: schedule_service.next_sync_at&.iso8601,
+      next_sync_at_display: schedule_service.next_sync_at_display,
+      last_scheduled_sync_at: schedule_service.last_enqueue_at&.iso8601,
+      last_scheduled_sync_at_display: schedule_service.last_enqueue_at_display
+    )
+  end
+
+  if resource.macrocrm?
+    metadata[:webhook_url] = resource.macrocrm_manager_changed_webhook_url
+  end
+
+  if metadata.present?
+    json.metadata do
+      metadata.each do |key, value|
+        json.set! key, value
+      end
+    end
   end
 end

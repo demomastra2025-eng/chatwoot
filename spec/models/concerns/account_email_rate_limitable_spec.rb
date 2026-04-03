@@ -60,4 +60,14 @@ RSpec.describe AccountEmailRateLimitable do
       expect(Redis::Alfred).not_to have_received(:expire)
     end
   end
+
+  describe '#reset_email_sent_count' do
+    it 'clears the counter for the current day' do
+      account.increment_email_sent_count
+
+      expect do
+        account.reset_email_sent_count
+      end.to change(account, :emails_sent_today).from(1).to(0)
+    end
+  end
 end

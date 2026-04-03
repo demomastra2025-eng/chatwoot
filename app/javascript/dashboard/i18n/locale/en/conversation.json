@@ -288,6 +288,7 @@
     },
     "SIDEBAR": {
       "CONTACT": "Contact",
+      "DEAL": "Deal",
       "COPILOT": "Assistant"
     },
     "VOICE_WIDGET": {

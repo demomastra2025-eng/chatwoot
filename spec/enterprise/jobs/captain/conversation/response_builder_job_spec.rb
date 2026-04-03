@@ -4,7 +4,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
-  let(:captain_inbox_association) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
+  let!(:captain_inbox_association) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
 
   describe '#perform' do
     let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
@@ -23,8 +23,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     context 'when captain_v2 is disabled' do
       before do
-        allow(account).to receive(:feature_enabled?).and_return(false)
-        allow(account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).and_return(false)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
       end
 
       it 'uses Captain::Llm::AssistantChatService' do
@@ -56,18 +56,47 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.count })
       end
+
+      it 'stores captain trace on the outgoing message when provided by the assistant runtime' do
+        trace_payload = Captain::ToolTraceBuilder.payload([
+          Captain::ToolTraceBuilder.step(
+            tool_name: 'search_documentation',
+            event: 'start',
+            sequence: 1
+          ),
+          Captain::ToolTraceBuilder.step(
+            tool_name: 'search_documentation',
+            event: 'complete',
+            sequence: 2
+          )
+        ])
+        allow(mock_llm_chat_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'Hey, welcome to Captain Specs',
+            'captain_trace' => trace_payload
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
+      end
     end
 
     context 'when captain_v2 is enabled' do
       before do
-        allow(account).to receive(:feature_enabled?).and_return(false)
-        allow(account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(true)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).and_return(false)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(true)
       end
 
       it 'uses Captain::Assistant::AgentRunnerService' do
         expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
-          conversation: conversation
+          conversation: conversation,
+          callbacks: hash_including(
+            on_tool_start: kind_of(Proc),
+            on_tool_complete: kind_of(Proc)
+          )
         )
         expect(Captain::Llm::AssistantChatService).not_to receive(:new)
 
@@ -99,6 +128,33 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         account.reload
         expect(account.usage_limits[:captain][:responses][:consumed]).to eq(1)
       end
+
+      it 'builds tool execution trace from runner callbacks' do
+        job = described_class.new
+        callbacks, tool_trace_steps = job.send(:build_tool_trace_callbacks)
+
+        callbacks[:on_tool_start].call('search_documentation', {}, nil)
+        callbacks[:on_tool_complete].call('search_documentation', { results: [] }, nil)
+
+        response = { 'response' => 'Hey, welcome to Captain V2' }
+        job.instance_variable_set(:@response, response)
+        job.send(:attach_tool_trace_to_response!, tool_trace_steps)
+
+        expect(response['captain_trace']).to eq(
+          Captain::ToolTraceBuilder.payload([
+            Captain::ToolTraceBuilder.step(
+              tool_name: 'search_documentation',
+              event: 'start',
+              sequence: 1
+            ),
+            Captain::ToolTraceBuilder.step(
+              tool_name: 'search_documentation',
+              event: 'complete',
+              sequence: 2
+            )
+          ])
+        )
+      end
     end
 
     # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
@@ -110,8 +166,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       let(:agent) { create(:user, account: account, role: :agent) }
 
       before do
-        allow(account).to receive(:feature_enabled?).and_return(false)
-        allow(account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).and_return(false)
+        allow_any_instance_of(Account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
         allow(mock_llm_chat_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
       end
 
@@ -136,6 +192,26 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         create(:message, conversation: conversation, message_type: :outgoing,
                          sender: agent, account: account, inbox: inbox)
         expect(conversation.reload.waiting_since).to be_nil
+      end
+
+      it 'keeps captain trace on the handoff message' do
+        trace_payload = Captain::ToolTraceBuilder.payload([
+          Captain::ToolTraceBuilder.step(
+            tool_name: 'search_documentation',
+            event: 'start',
+            sequence: 1
+          )
+        ])
+        allow(mock_llm_chat_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'captain_trace' => trace_payload
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
       end
     end
 
@@ -284,8 +360,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     before do
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
       allow(Captain::Llm::AssistantChatService).to receive(:new).and_return(mock_llm_chat_service)
-      allow(account).to receive(:feature_enabled?).and_return(false)
-      allow(account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
+      allow_any_instance_of(Account).to receive(:feature_enabled?).and_return(false)
+      allow_any_instance_of(Account).to receive(:feature_enabled?).with('captain_integration_v2').and_return(false)
     end
 
     context 'when handoff occurs outside business hours' do

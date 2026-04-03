@@ -105,7 +105,9 @@ const formErrors = computed(() => ({
 }));
 
 const hasRequiredTemplateParams = computed(() => {
-  return templateParserRef.value?.v$?.$invalid === false || true;
+  if (!selectedTemplate.value) return true;
+
+  return templateParserRef.value?.isFormInvalid === false;
 });
 
 const isSubmitDisabled = computed(
@@ -128,7 +130,7 @@ const prepareCampaignDetails = () => {
   const parserData = templateParserRef.value;
 
   // Extract template content - this should be the template message body
-  const templateContent = parserData?.renderedTemplate || '';
+  const templateContent = parserData?.rawRenderedTemplate || '';
 
   // Prepare template_params object with the same structure as used in contacts
   const templateParams = {
@@ -154,7 +156,9 @@ const prepareCampaignDetails = () => {
 
 const handleSubmit = async () => {
   const isFormValid = await v$.value.$validate();
-  if (!isFormValid) return;
+  const isTemplateValid =
+    (await templateParserRef.value?.v$?.$validate?.()) ?? true;
+  if (!isFormValid || !isTemplateValid) return;
 
   emit('submit', prepareCampaignDetails());
   resetState();

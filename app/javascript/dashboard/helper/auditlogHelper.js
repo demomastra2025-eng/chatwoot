@@ -3,6 +3,23 @@ const roleMapping = {
   1: 'administrator',
 };
 
+const inboxChannelI18nMap = {
+  'Channel::FacebookPage': 'MESSENGER',
+  'Channel::WebWidget': 'WEB_WIDGET',
+  'Channel::TwitterProfile': 'TWITTER_PROFILE',
+  'Channel::TwilioSms': 'TWILIO_SMS',
+  'Channel::Whatsapp': 'WHATSAPP',
+  'Channel::Sms': 'SMS',
+  'Channel::Email': 'EMAIL',
+  'Channel::Telegram': 'TELEGRAM',
+  'Channel::Line': 'LINE',
+  'Channel::Api': 'API',
+  'Channel::WhatsappWeb': 'WHATSAPP_WEB',
+  'Channel::Instagram': 'INSTAGRAM',
+  'Channel::Tiktok': 'TIKTOK',
+  'Channel::Voice': 'VOICE',
+};
+
 const availabilityMapping = {
   0: 'online',
   1: 'offline',
@@ -158,6 +175,71 @@ function handleAccountUser(
   }
 
   return translationPayload;
+}
+
+function getAuditLogInboxDetails(auditLogItem) {
+  const auditableType = auditLogItem.auditable_type?.toLowerCase();
+
+  if (auditableType === 'inbox') {
+    return {
+      channelType:
+        auditLogItem.auditable?.channel_type ||
+        auditLogItem.audited_changes?.channel_type,
+      medium:
+        auditLogItem.auditable?.medium || auditLogItem.audited_changes?.medium,
+    };
+  }
+
+  if (auditableType === 'inboxmember') {
+    return {
+      channelType: auditLogItem.auditable?.inbox?.channel_type,
+      medium: auditLogItem.auditable?.inbox?.medium,
+    };
+  }
+
+  return {
+    channelType: '',
+    medium: '',
+  };
+}
+
+export function getAuditLogChannelTypeLabel(
+  auditLogItem,
+  t,
+  { apiChannelName } = {}
+) {
+  const { channelType, medium } = getAuditLogInboxDetails(auditLogItem);
+
+  if (!channelType) {
+    return '';
+  }
+
+  if (channelType === 'Channel::Api') {
+    return apiChannelName || t('INBOX_MGMT.CHANNELS.API');
+  }
+
+  if (channelType === 'Channel::TwilioSms' && medium === 'whatsapp') {
+    return t('INBOX_MGMT.CHANNELS.WHATSAPP');
+  }
+
+  const channelI18nKey = inboxChannelI18nMap[channelType];
+
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  return channelI18nKey ? t(`INBOX_MGMT.CHANNELS.${channelI18nKey}`) : '';
+}
+
+export function getAuditLogChannelTypeSuffix(
+  auditLogItem,
+  t,
+  globalConfig = {}
+) {
+  const channelTypeLabel = getAuditLogChannelTypeLabel(
+    auditLogItem,
+    t,
+    globalConfig
+  );
+
+  return channelTypeLabel ? ` «${channelTypeLabel}»` : '';
 }
 
 export function generateTranslationPayload(auditLogItem, agentList) {

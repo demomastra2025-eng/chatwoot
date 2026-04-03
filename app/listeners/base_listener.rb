@@ -24,6 +24,21 @@ class BaseListener
     [contact, contact.account]
   end
 
+  def extract_appointment_and_account(event)
+    appointment = event.data[:appointment]
+    [appointment, appointment.account]
+  end
+
+  def extract_deal_and_account(event)
+    deal = event.data[:deal]
+    [deal, deal.account]
+  end
+
+  def extract_task_and_account(event)
+    task = event.data[:task]
+    [task, task.account]
+  end
+
   def extract_inbox_and_account(event)
     inbox = event.data[:inbox]
     [inbox, inbox.account]

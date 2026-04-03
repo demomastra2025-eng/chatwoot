@@ -122,7 +122,7 @@ class Messages::Instagram::BaseMessageBuilder < Messages::Messenger::MessageBuil
       file_type: :ig_story,
       account_id: @message.account_id,
       external_url: story_url
-    )
+    ).skip_storage_limit_validation!
     attachment.save!
     begin
       attach_file(attachment, story_url)

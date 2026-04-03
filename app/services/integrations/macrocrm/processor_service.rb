@@ -15,6 +15,7 @@ class Integrations::Macrocrm::ProcessorService
     estate = find_last_estate(contact)
     sync_chat_manager_from_estate(estate) if estate.present?
     estate_id = estate&.dig('id') || create_estate_id(contact_name: contact&.dig('name'))
+    store_estate_reference(estate_id)
     client.add_note(estate_id: estate_id, note: note)
   end
 
@@ -99,6 +100,19 @@ class Integrations::Macrocrm::ProcessorService
 
   def note
     "[#{direction_prefix}] #{text}"
+  end
+
+  def store_estate_reference(estate_id)
+    return if estate_id.blank?
+
+    custom_attributes = message.conversation.custom_attributes.to_h
+    return if custom_attributes[Integrations::Macrocrm::ConversationAttributeKeys::ESTATE_ID].to_s == estate_id.to_s
+
+    message.conversation.update!(
+      custom_attributes: custom_attributes.merge(
+        Integrations::Macrocrm::ConversationAttributeKeys::ESTATE_ID => estate_id.to_s
+      )
+    )
   end
 
   def direction_prefix

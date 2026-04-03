@@ -40,16 +40,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(json_response[:payload].length).to eq(5)
       end
 
-      it 'returns only enabled custom tools' do
-        create(:captain_custom_tool, account: account, enabled: true)
-        create(:captain_custom_tool, account: account, enabled: false)
+      it 'returns enabled and disabled custom tools for management' do
+        enabled_tool = create(:captain_custom_tool, account: account, enabled: true)
+        disabled_tool = create(:captain_custom_tool, account: account, enabled: false)
         get "/api/v1/accounts/#{account.id}/captain/custom_tools",
             headers: admin.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response[:payload].length).to eq(1)
-        expect(json_response[:payload].first[:enabled]).to be(true)
+        expect(json_response[:payload].map { |tool| tool[:id] }).to contain_exactly(enabled_tool.id, disabled_tool.id)
+        expect(json_response[:payload].map { |tool| tool[:enabled] }).to contain_exactly(true, false)
       end
     end
   end
@@ -142,6 +142,69 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                                                    ])
       end
 
+      it 'persists agent, system context, and fixed parameter sources' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+             params: {
+               custom_tool: {
+                 title: 'Sync lead',
+                 endpoint_url: 'https://api.example.com/leads',
+                 http_method: 'POST',
+                 param_schema: [
+                   {
+                     name: 'lead_name',
+                     type: 'string',
+                     description: 'Lead name',
+                     source: 'agent'
+                   },
+                   {
+                     name: 'customer_phone',
+                     type: 'string',
+                     description: 'Phone from system context',
+                     source: 'context',
+                     context_path: 'contact.phone_number',
+                     required: true
+                   },
+                   {
+                     name: 'filters',
+                     type: 'object',
+                     description: 'Static filters',
+                     source: 'fixed',
+                     fixed_value: '{"pipeline":"sales"}'
+                   }
+                 ]
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:param_schema]).to eq([
+                                                    {
+                                                      name: 'lead_name',
+                                                      type: 'string',
+                                                      description: 'Lead name',
+                                                      required: false,
+                                                      source: 'agent'
+                                                    },
+                                                    {
+                                                      name: 'customer_phone',
+                                                      type: 'string',
+                                                      description: 'Phone from system context',
+                                                      required: true,
+                                                      source: 'context',
+                                                      context_path: 'contact.phone_number'
+                                                    },
+                                                    {
+                                                      name: 'filters',
+                                                      type: 'object',
+                                                      description: 'Static filters',
+                                                      required: false,
+                                                      source: 'fixed',
+                                                      fixed_value: '{"pipeline":"sales"}'
+                                                    }
+                                                  ])
+      end
+
       context 'with invalid parameters' do
         let(:invalid_attributes) do
           {
@@ -223,6 +286,66 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:title]).to eq('Updated Tool Title')
         expect(json_response[:enabled]).to be(false)
+      end
+
+      it 'updates parameter sources without dropping context or fixed configuration' do
+        patch "/api/v1/accounts/#{account.id}/captain/custom_tools/#{custom_tool.id}",
+              params: {
+                custom_tool: {
+                  param_schema: [
+                    {
+                      name: 'lead_name',
+                      type: 'string',
+                      description: 'Lead name',
+                      source: 'agent'
+                    },
+                    {
+                      name: 'customer_phone',
+                      type: 'string',
+                      description: 'Phone from system context',
+                      source: 'context',
+                      context_path: 'contact.phone_number',
+                      required: true
+                    },
+                    {
+                      name: 'pipeline',
+                      type: 'string',
+                      description: 'Static pipeline',
+                      source: 'fixed',
+                      fixed_value: 'sales'
+                    }
+                  ]
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:param_schema]).to eq([
+                                                    {
+                                                      name: 'lead_name',
+                                                      type: 'string',
+                                                      description: 'Lead name',
+                                                      required: false,
+                                                      source: 'agent'
+                                                    },
+                                                    {
+                                                      name: 'customer_phone',
+                                                      type: 'string',
+                                                      description: 'Phone from system context',
+                                                      required: true,
+                                                      source: 'context',
+                                                      context_path: 'contact.phone_number'
+                                                    },
+                                                    {
+                                                      name: 'pipeline',
+                                                      type: 'string',
+                                                      description: 'Static pipeline',
+                                                      required: false,
+                                                      source: 'fixed',
+                                                      fixed_value: 'sales'
+                                                    }
+                                                  ])
       end
 
       context 'with invalid parameters' do

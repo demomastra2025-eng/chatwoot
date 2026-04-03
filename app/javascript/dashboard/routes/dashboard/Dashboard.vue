@@ -22,9 +22,11 @@ const FloatingCallWidget = defineAsyncComponent(
 
 import CopilotLauncher from 'dashboard/components-next/copilot/CopilotLauncher.vue';
 import CopilotContainer from 'dashboard/components/copilot/CopilotContainer.vue';
+import CrmConversationDealPanel from 'dashboard/components-next/CRM/CrmConversationDealPanel.vue';
 
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useMapGetter } from 'dashboard/composables/store';
 
 export default {
   components: {
@@ -35,6 +37,7 @@ export default {
     UpgradePage,
     CopilotLauncher,
     CopilotContainer,
+    CrmConversationDealPanel,
     FloatingCallWidget,
     MobileSidebarLauncher,
   },
@@ -44,11 +47,13 @@ export default {
     const { accountId } = useAccount();
     const { width: windowWidth } = useWindowSize();
     const callsStore = useCallsStore();
+    const currentChat = useMapGetter('getSelectedChat');
 
     return {
       uiSettings,
       updateUISettings,
       accountId,
+      currentChat,
       upgradePageRef,
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
@@ -103,6 +108,11 @@ export default {
     },
   },
   methods: {
+    handleCrmDealPanelModelUpdate(value) {
+      this.updateUISettings({
+        is_crm_deal_panel_open: value,
+      });
+    },
     toggleMobileSidebar() {
       this.isMobileSidebarOpen = !this.isMobileSidebarOpen;
     },
@@ -162,6 +172,11 @@ export default {
         <MobileSidebarLauncher
           :is-mobile-sidebar-open="isMobileSidebarOpen"
           @toggle="toggleMobileSidebar"
+        />
+        <CrmConversationDealPanel
+          :current-chat="currentChat"
+          :model-value="uiSettings.is_crm_deal_panel_open"
+          @update:model-value="handleCrmDealPanelModelUpdate"
         />
         <CopilotContainer />
         <FloatingCallWidget v-if="hasActiveCall || hasIncomingCall" />

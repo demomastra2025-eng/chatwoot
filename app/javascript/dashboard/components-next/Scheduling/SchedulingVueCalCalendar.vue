@@ -9,6 +9,7 @@ import {
   HOUR_ROW_HEIGHT,
   MINUTE_STEP,
 } from 'dashboard/routes/dashboard/scheduling/constants';
+import { buildCustomFieldSummary } from 'dashboard/stores/crm/customFieldFormatter';
 import {
   buildBreakIntervals,
   buildCalendarColumns,
@@ -34,6 +35,10 @@ const props = defineProps({
     default: () => [],
   },
   breakRules: {
+    type: Array,
+    default: () => [],
+  },
+  customFieldDefinitions: {
     type: Array,
     default: () => [],
   },
@@ -1100,6 +1105,33 @@ const formatEventTimeRange = event => {
   return `${formatTimeLabel(minuteOfDayFromDate(event.start))}-${formatTimeLabel(minuteOfDayFromDate(event.end))}`;
 };
 
+const customFieldSummaryTitle = appointment => {
+  return buildCustomFieldSummary(
+    props.customFieldDefinitions,
+    appointment?.customAttributes,
+    {
+      locale: localeCode.value,
+      maxItems: 2,
+      noLabel: t('CHOICE_TOGGLE.NO'),
+      yesLabel: t('CHOICE_TOGGLE.YES'),
+    }
+  )
+    .map(entry => `${entry.label}: ${entry.displayValue}`)
+    .join(' · ');
+};
+
+const eventTitle = event => {
+  return [
+    formatEventTimeRange(event),
+    resolveEventStatusLabel(event),
+    event.resourceName,
+    event.clientName,
+    customFieldSummaryTitle(event.appointment),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+};
+
 const formatScheduleHeadingLabel = schedule => {
   const rawLabel = String(
     resourceById.value[schedule.id]?.name || schedule.label || ''
@@ -1664,16 +1696,7 @@ onMounted(() => {
                 :style="{
                   '--appointment-accent': event.resourceColor || '#2563eb',
                 }"
-                :title="
-                  [
-                    formatEventTimeRange(event),
-                    resolveEventStatusLabel(event),
-                    event.resourceName,
-                    event.clientName,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')
-                "
+                :title="eventTitle(event)"
               >
                 <div class="scheduling-vue-cal__event-header">
                   <span class="scheduling-vue-cal__event-status-icon">

@@ -34,19 +34,30 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   def sync_templates
     # ensuring that channels with wrong provider config wouldn't keep trying to sync templates
     whatsapp_channel.mark_message_templates_updated
-    templates = fetch_whatsapp_templates("#{business_account_path}/message_templates?access_token=#{whatsapp_channel.provider_config['api_key']}")
-    whatsapp_channel.update(message_templates: templates, message_templates_last_updated: Time.now.utc) if templates.present?
+    templates = fetch_whatsapp_templates("#{business_account_path}/message_templates")
+    return false if templates.nil?
+
+    whatsapp_channel.update!(
+      message_templates: templates,
+      message_templates_last_updated: Time.current.utc
+    )
   end
 
   def fetch_whatsapp_templates(url)
-    response = HTTParty.get(url)
-    return [] unless response.success?
+    response = HTTParty.get(url, headers: api_headers)
+    return nil unless response.success?
 
     next_url = next_url(response)
+    data = response['data'] || []
 
-    return response['data'] + fetch_whatsapp_templates(next_url) if next_url.present?
+    if next_url.present?
+      next_page_templates = fetch_whatsapp_templates(next_url)
+      return nil if next_page_templates.nil?
 
-    response['data']
+      return data + next_page_templates
+    end
+
+    data
   end
 
   def next_url(response)
@@ -54,7 +65,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def validate_provider_config?
-    response = HTTParty.get("#{business_account_path}/message_templates?access_token=#{whatsapp_channel.provider_config['api_key']}")
+    response = HTTParty.get("#{business_account_path}/message_templates", headers: api_headers)
     response.success?
   end
 
@@ -76,7 +87,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def media_url(media_id)
-    "#{api_base_path}/v13.0/#{media_id}"
+    "#{api_base_path}/#{api_version}/#{media_id}"
   end
 
   private
@@ -91,11 +102,15 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
 
   # TODO: See if we can unify the API versions and for both paths and make it consistent with out facebook app API versions
   def phone_id_path
-    "#{api_base_path}/v13.0/#{whatsapp_channel.provider_config['phone_number_id']}"
+    "#{api_base_path}/#{api_version}/#{whatsapp_channel.provider_config['phone_number_id']}"
   end
 
   def business_account_path
-    "#{api_base_path}/v14.0/#{whatsapp_channel.provider_config['business_account_id']}"
+    "#{api_base_path}/#{api_version}/#{whatsapp_channel.provider_config['business_account_id']}"
+  end
+
+  def api_version
+    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
   end
 
   def send_text_message(phone_number, message)

@@ -4,16 +4,26 @@ class DeleteObjectJob < ApplicationJob
   BATCH_SIZE = 5_000
 
   def perform(object, user = nil, ip = nil)
+    deletion_context = build_post_deletion_context(object)
+
     # Pre-purge heavy associations for large objects to avoid
     # timeouts & race conditions due to destroy_async fan-out.
     purge_heavy_associations(object)
     object.destroy!
-    process_post_deletion_tasks(object, user, ip)
+    process_post_deletion_tasks(object, user, ip, deletion_context)
   end
 
-  def process_post_deletion_tasks(object, user, ip); end
+  def process_post_deletion_tasks(object, user, ip, deletion_context = {}); end
 
   private
+
+  def build_post_deletion_context(object)
+    return {} unless object.is_a?(Inbox)
+
+    {
+      channel_medium: object.channel.try(:medium)
+    }.compact
+  end
 
   def heavy_associations
     {

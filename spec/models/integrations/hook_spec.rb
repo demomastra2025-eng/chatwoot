@@ -40,6 +40,21 @@ RSpec.describe Integrations::Hook do
       expect(hook.errors[:access_token].join).to include('company_login')
       expect(hook.errors[:access_token].join).to include('password')
     end
+
+    it 'generates a webhook key for macrocrm hooks' do
+      hook = create(:integrations_hook,
+                    account: create(:account),
+                    app_id: 'macrocrm',
+                    reference_id: nil,
+                    access_token: 'macro-secret',
+                    settings: {
+                      'app_id' => 'macro-app',
+                      'sync_incoming_messages' => true,
+                      'sync_outgoing_messages' => true
+                    })
+
+      expect(hook.reference_id).to be_present
+    end
   end
 
   describe 'associations' do

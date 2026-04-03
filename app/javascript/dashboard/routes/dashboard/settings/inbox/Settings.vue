@@ -114,7 +114,7 @@ export default {
       isRunningWhatsappWebRepair: false,
       isRefreshingWhatsappWebQr: false,
       whatsappWebConversationPending: false,
-      whatsappWebHistoryLookbackDays: 365,
+      whatsappWebHistoryLookbackDays: 0,
       whatsappWebIgnoreJids: '',
       whatsappWebSignMessages: false,
       whatsappWebSignDelimiter: '\\n',
@@ -476,7 +476,7 @@ export default {
       this.whatsappWebConversationPending =
         this.inbox.conversation_pending || false;
       this.whatsappWebHistoryLookbackDays =
-        this.inbox.history_lookback_days || 365;
+        this.inbox.history_lookback_days ?? 0;
       this.whatsappWebIgnoreJids = (this.inbox.ignore_jids || []).join('\n');
       this.whatsappWebSignMessages = this.inbox.sign_messages || false;
       this.whatsappWebSignDelimiter = this.inbox.sign_delimiter || '\\n';
@@ -790,7 +790,7 @@ export default {
       const value = Number(this.whatsappWebHistoryLookbackDays);
 
       if (!Number.isFinite(value) || value <= 0) {
-        return 365;
+        return 0;
       }
 
       return Math.min(Math.trunc(value), 3650);
@@ -1183,7 +1183,7 @@ export default {
                           v-model="whatsappWebHistoryLookbackDays"
                           class="!mb-0 w-full rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
                           type="number"
-                          min="1"
+                          min="0"
                           max="3650"
                         />
                         <p class="mt-1 text-sm text-n-slate-10">

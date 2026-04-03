@@ -3,50 +3,65 @@
 ## Use These Files First
 
 - `AGENTS.md`
-  - Repo-specific coding rules, dev commands, git flow, enterprise checklist, and translation constraints.
-- `docs/platform/current-architecture.mdx`
+  - Repo-specific coding rules, dev commands, git flow, architecture read order, and skill sync rules.
+- `docs/AGENTS.md`
+  - Docs-repo specific editing rules and contour boundaries.
+- `docs/README.md`
+  - Docs contour overview and local preview workflow.
+- `docs/internal/index.mdx`
+  - Entry point for hidden internal documentation.
+- `docs/internal/architecture-overview.mdx`
   - Current implemented system shape.
-- `docs/platform/repository-map.mdx`
+- `docs/internal/repository-structure.mdx`
   - Repo ownership, directory placement, and control files.
-- `docs/contributing-guide/project-operations.mdx`
-  - Runtime, delivery, API, docs, and deployment operating model.
-- `docs/contributing-guide/ai-agent-operating-model.mdx`
-  - Agent read order, commit boundaries, staging rules, and verification expectations.
-- `docs/contributing-guide/skill-map.mdx`
-  - Which specialized Onelink skill should own which task.
 - `.codex/skills/`
   - Versioned project copy of the Onelink skill family.
 - `.codex/scripts/sync-skills.sh`
   - Syncs the versioned project skill family into the installed Codex runtime copy.
 
-## Development and Setup Docs
+## Public Product Docs
 
-- `docs/contributing-guide/setup-guide.mdx`
-  - Baseline local setup, Docker dev flow, widget test page, and test server notes.
-- `docs/contributing-guide/environment-variables.mdx`
-  - Development/test environment variables such as `LETTER_OPENER`.
-- `docs/contributing-guide/api-documentation.mdx`
-  - Swagger file layout, build command, and `/swagger` preview flow.
+- `docs/introduction.mdx`
+  - Public product entry point.
+- `docs/getting-started/quick-start.mdx`
+  - Fast client onboarding.
+- `docs/getting-started/workspace-setup.mdx`
+  - Workspace, members, and initial setup.
+- `docs/platform/overview.mdx`
+  - Public product architecture summary.
+- `docs/platform/entity-matrix.mdx`
+  - Core entities and how they relate.
 
-## Product and Channel Docs
+## Public Task-Specific Docs
 
-- `docs/self-hosted/supported-features.mdx`
-  - Channel matrix for supported features, message size limits, outbound restrictions, delivery status support, reply support, attachment types, and editor formatting.
-- `docs/self-hosted/enterprise-edition.mdx`
-  - Business context for Enterprise features such as whitelabeling, SLA, audit logs, and capacity management.
+- `docs/platform/communication-workflows.mdx`
+  - Communication and inbox behavior.
+- `docs/platform/crm-architecture.mdx`
+  - CRM model and flexible data.
+- `docs/platform/scheduling-and-payments.mdx`
+  - Scheduling, appointments, payments, and related flows.
+- `docs/platform/captain-ai.mdx`
+  - Captain behavior and concepts.
+- `docs/platform/integrations-architecture.mdx`
+  - Automations and integrations.
+- `docs/user-guide/`
+  - End-user workflow pages.
+- `docs/integrators/`
+  - External integration and API-consumer pages.
+- `docs/reference/`
+  - FAQ and glossary.
 
 ## Docs Workspace Notes
 
 - `docs/` is its own Mintlify docs workspace and separate Git repository mounted as a submodule.
 - `docs/README.md` explains local docs preview with `mint dev`.
 - Use `docs/docs.json` if you need the docs navigation structure or want to place a new page consistently.
-- Use `docs/contributing-guide/docs-repository-workflow.mdx` when the task changes docs content, OpenAPI docs sync, or submodule update flow.
+- Keep internal docs out of `docs/docs.json`.
 - Use `.codex/scripts/sync-skills.sh` when a project skill changed and the installed Codex copy needs to be refreshed.
 
 ## When to Reach for Docs
 
-- Load setup docs when local boot, Docker, or widget preview behavior matters.
-- Load repository-map and project-operations first when the task is about repo ownership, cross-repo commits, or structural documentation.
-- Load supported-features docs before changing channel message rules, attachment support, or reply constraints.
+- Load internal docs first when the task is about architecture, repo ownership, runtime internals, data modeling, or engineering workflow.
+- Load public docs when the task changes what clients, operators, or integrators should understand about the product.
+- Load integrator docs before changing external API usage guidance, webhook behavior, or integration setup language.
 - Load API docs guidance when adding or renaming endpoints, request fields, or response schema.
-- Load Enterprise docs when a task is driven by licensing, premium features, or self-hosted behavior rather than pure code mechanics.

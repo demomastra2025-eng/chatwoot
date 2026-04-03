@@ -1476,6 +1476,138 @@
         }
       }
     },
+    "x-crm-error-schema": {
+      "type": "object",
+      "required": [
+        "error",
+        "code"
+      ],
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "VALIDATION_ERROR",
+            "FEATURE_DISABLED",
+            "DUPLICATE_EXTERNAL_REF",
+            "DUPLICATE_IDEMPOTENCY_KEY",
+            "NOT_FOUND",
+            "STALE_RECORD"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "nullable": true,
+          "additionalProperties": true
+        }
+      }
+    },
+    "x-crm-field-definition-schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "account_id": {
+          "type": "integer"
+        },
+        "entity_kind": {
+          "type": "string",
+          "enum": [
+            "deal",
+            "task",
+            "appointment"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "nullable": true
+        },
+        "field_type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "textarea",
+            "number",
+            "currency",
+            "percent",
+            "checkbox",
+            "date",
+            "datetime",
+            "select",
+            "multiselect",
+            "url"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "default_value": {
+          "nullable": true,
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": true
+            }
+          ]
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "x-scheduling-error-schema": {
       "type": "object",
       "required": [
@@ -2215,6 +2347,17 @@
             "schema": {
               "type": "integer",
               "minimum": 5
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_attribute_filters",
+            "description": "Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.",
+            "style": "deepObject",
+            "explode": true,
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
             }
           }
         ],
@@ -4859,6 +5002,940 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/crm/field_definitions": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "list-crm-field-definitions",
+        "summary": "List managed custom field definitions",
+        "description": "Returns field definitions for deal, task, or appointment entities. `appointment` definitions require the scheduling feature.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "entity_kind",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "deal",
+                "task",
+                "appointment"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Managed field definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "account_id": {
+                            "type": "integer"
+                          },
+                          "entity_kind": {
+                            "type": "string",
+                            "enum": [
+                              "deal",
+                              "task",
+                              "appointment"
+                            ]
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "field_type": {
+                            "type": "string",
+                            "enum": [
+                              "text",
+                              "textarea",
+                              "number",
+                              "currency",
+                              "percent",
+                              "checkbox",
+                              "date",
+                              "datetime",
+                              "select",
+                              "multiselect",
+                              "url"
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "position": {
+                            "type": "integer"
+                          },
+                          "default_value": {
+                            "nullable": true,
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            ]
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                }
+                              ]
+                            }
+                          },
+                          "rules": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Relevant CRM or scheduling feature is disabled for this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "create-crm-field-definition",
+        "summary": "Create a managed custom field definition",
+        "description": "Creates a field definition for `deal`, `task`, or `appointment`. Built-in entity fields are reserved and cannot be reused as custom keys.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "entity_kind",
+                  "key",
+                  "label",
+                  "field_type"
+                ],
+                "properties": {
+                  "entity_kind": {
+                    "type": "string",
+                    "enum": [
+                      "deal",
+                      "task",
+                      "appointment"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "field_type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "textarea",
+                      "number",
+                      "currency",
+                      "percent",
+                      "checkbox",
+                      "date",
+                      "datetime",
+                      "select",
+                      "multiselect",
+                      "url"
+                    ]
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "position": {
+                    "type": "integer"
+                  },
+                  "default_value": {
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  },
+                  "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Field definition created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "account_id": {
+                          "type": "integer"
+                        },
+                        "entity_kind": {
+                          "type": "string",
+                          "enum": [
+                            "deal",
+                            "task",
+                            "appointment"
+                          ]
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "field_type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "textarea",
+                            "number",
+                            "currency",
+                            "percent",
+                            "checkbox",
+                            "date",
+                            "datetime",
+                            "select",
+                            "multiselect",
+                            "url"
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "active": {
+                          "type": "boolean"
+                        },
+                        "position": {
+                          "type": "integer"
+                        },
+                        "default_value": {
+                          "nullable": true,
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            ]
+                          }
+                        },
+                        "rules": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Relevant CRM or scheduling feature is disabled for this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field definition payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/crm/field_definitions/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "update-crm-field-definition",
+        "summary": "Update a managed custom field definition",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entity_kind": {
+                    "type": "string",
+                    "enum": [
+                      "deal",
+                      "task",
+                      "appointment"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "field_type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "textarea",
+                      "number",
+                      "currency",
+                      "percent",
+                      "checkbox",
+                      "date",
+                      "datetime",
+                      "select",
+                      "multiselect",
+                      "url"
+                    ]
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "position": {
+                    "type": "integer"
+                  },
+                  "default_value": {
+                    "nullable": true,
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  },
+                  "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Field definition updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "account_id": {
+                          "type": "integer"
+                        },
+                        "entity_kind": {
+                          "type": "string",
+                          "enum": [
+                            "deal",
+                            "task",
+                            "appointment"
+                          ]
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "field_type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "textarea",
+                            "number",
+                            "currency",
+                            "percent",
+                            "checkbox",
+                            "date",
+                            "datetime",
+                            "select",
+                            "multiselect",
+                            "url"
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "active": {
+                          "type": "boolean"
+                        },
+                        "position": {
+                          "type": "integer"
+                        },
+                        "default_value": {
+                          "nullable": true,
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            ]
+                          }
+                        },
+                        "rules": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Relevant CRM or scheduling feature is disabled for this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Field definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field definition payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "CRM"
+        ],
+        "operationId": "delete-crm-field-definition",
+        "summary": "Delete a managed custom field definition",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Field definition deleted"
+          },
+          "403": {
+            "description": "Relevant CRM or scheduling feature is disabled for this account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Field definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_ERROR",
+                        "FEATURE_DISABLED",
+                        "DUPLICATE_EXTERNAL_REF",
+                        "DUPLICATE_IDEMPOTENCY_KEY",
+                        "NOT_FOUND",
+                        "STALE_RECORD"
+                      ]
+                    },
+                    "details": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/scheduling/services": {
       "parameters": [
         {
@@ -5912,6 +6989,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "custom_attribute_filters",
+            "description": "Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.",
+            "style": "deepObject",
+            "explode": true,
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
+            }
           }
         ],
         "responses": {
@@ -6218,7 +7306,8 @@
                   },
                   "custom_attributes": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "description": "Free-form attributes by default. When active `appointment` field definitions exist for the account, unknown keys are rejected, field defaults may be applied on create, and deleted managed field values are removed on the next update while preserved system integration keys remain."
                   }
                 }
               }
@@ -14262,6 +15351,93 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/conversations/{conversation_id}/destroy_custom_attributes": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/account_id"
+        },
+        {
+          "$ref": "#/components/parameters/conversation_id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Conversations"
+        ],
+        "operationId": "destroy-custom-attributes-of-a-conversation",
+        "summary": "Delete Conversation Custom Attributes",
+        "description": "Deletes one or more custom attributes from a conversation without overwriting unrelated keys.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "custom_attributes"
+                ],
+                "properties": {
+                  "custom_attributes": {
+                    "type": "array",
+                    "description": "The custom attribute keys to remove from the conversation",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": [
+                      "order_id",
+                      "previous_conversation"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "custom_attributes": {
+                      "type": "object",
+                      "description": "The remaining custom attributes of the conversation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/conversations/{conversation_id}/assignments": {
       "parameters": [
         {
@@ -14902,6 +16078,387 @@
           },
           "403": {
             "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/inboxes/{id}/refresh_whatsapp_web_qr": {
+      "post": {
+        "tags": [
+          "Inboxes"
+        ],
+        "operationId": "refreshWhatsappWebQr",
+        "summary": "Refresh WhatsApp Web QR or sync status",
+        "description": "Refreshes the QR code for a WhatsApp Web inbox. Pass `status_only=true` to sync runtime state without forcing a new QR refresh.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/account_id"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "number"
+            },
+            "description": "ID of the inbox",
+            "required": true
+          },
+          {
+            "name": "status_only",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Sync the provider status without requesting a new QR code",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inbox type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider runtime error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/inboxes/{id}/reconnect_whatsapp_web": {
+      "post": {
+        "tags": [
+          "Inboxes"
+        ],
+        "operationId": "reconnectWhatsappWeb",
+        "summary": "Reconnect a WhatsApp Web inbox",
+        "description": "Reconnects the WhatsApp Web runtime session for the inbox.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/account_id"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "number"
+            },
+            "description": "ID of the inbox",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inbox type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider runtime error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/inboxes/{id}/disconnect_whatsapp_web": {
+      "post": {
+        "tags": [
+          "Inboxes"
+        ],
+        "operationId": "disconnectWhatsappWeb",
+        "summary": "Disconnect a WhatsApp Web inbox",
+        "description": "Disconnects the WhatsApp Web runtime session for the inbox.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/account_id"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "number"
+            },
+            "description": "ID of the inbox",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inbox type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider runtime error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/inboxes/{id}/repair_whatsapp_web": {
+      "post": {
+        "tags": [
+          "Inboxes"
+        ],
+        "operationId": "repairWhatsappWeb",
+        "summary": "Repair WhatsApp Web sync",
+        "description": "Runs the provider repair flow for a WhatsApp Web inbox.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/account_id"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "number"
+            },
+            "description": "ID of the inbox",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inbox type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider runtime error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/inboxes/{id}/whatsapp_web_diagnostics": {
+      "get": {
+        "tags": [
+          "Inboxes"
+        ],
+        "operationId": "whatsappWebDiagnostics",
+        "summary": "Get WhatsApp Web diagnostics",
+        "description": "Returns provider diagnostic counters and samples for a WhatsApp Web inbox.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/account_id"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "number"
+            },
+            "description": "ID of the inbox",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "counts": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "samples": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid inbox type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider runtime error",
             "content": {
               "application/json": {
                 "schema": {
@@ -18177,17 +19734,33 @@
           },
           "event_name": {
             "type": "string",
-            "description": "Automation Rule event, on which we call the actions(conversation_created, conversation_updated, message_created)",
+            "description": "Automation Rule event, on which we call the actions",
             "enum": [
               "conversation_created",
               "conversation_updated",
-              "message_created"
+              "conversation_resolved",
+              "conversation_opened",
+              "message_created",
+              "appointment_created",
+              "appointment_updated",
+              "appointment_cancelled",
+              "appointment_completed",
+              "deal_created",
+              "deal_updated",
+              "deal_stage_changed",
+              "deal_archived",
+              "deal_unarchived",
+              "task_created",
+              "task_updated",
+              "task_status_changed",
+              "task_archived",
+              "task_unarchived"
             ],
             "example": "message_created"
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation/message filter would work",
+            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `payment_status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -18198,7 +19771,8 @@
                   }
                 },
                 "attribute_key": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Condition attribute key."
                 },
                 "query_operator": {
                   "type": "string"
@@ -18208,10 +19782,10 @@
                 }
               },
               "example": {
-                "attribute_key": "content",
-                "filter_operator": "contains",
+                "attribute_key": "status",
+                "filter_operator": "equal_to",
                 "values": [
-                  "help"
+                  "confirmed"
                 ],
                 "query_operator": "and"
               }
@@ -18219,25 +19793,26 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which we perform when condition matches",
+            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
                 "action_name": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Action identifier."
                 },
                 "action_params": {
                   "type": "array",
+                  "description": "Action params. `cancel_appointment_payment` uses an empty array.",
                   "items": {
                     "type": "string"
                   }
                 }
               },
               "example": {
-                "action_name": "add_label",
+                "action_name": "change_appointment_status",
                 "action_params": [
-                  "support",
-                  "sales"
+                  "confirmed"
                 ]
               }
             }
@@ -19294,6 +20869,41 @@
             ],
             "description": "Phone number associated with the inbox"
           },
+          "conversation_pending": {
+            "type": "boolean",
+            "description": "Whether new live inbound WhatsApp Web conversations start in pending"
+          },
+          "history_lookback_days": {
+            "type": "integer",
+            "description": "Number of days imported during the first WhatsApp Web history sync"
+          },
+          "ignore_jids": {
+            "type": "array",
+            "description": "WhatsApp JIDs ignored by the native WhatsApp Web channel",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sign_messages": {
+            "type": "boolean",
+            "description": "Whether outgoing WhatsApp Web messages are signed with the agent name"
+          },
+          "sign_delimiter": {
+            "type": "string",
+            "description": "Delimiter used between the agent signature and message body for WhatsApp Web"
+          },
+          "import_contacts": {
+            "type": "boolean",
+            "description": "Whether WhatsApp Web address book contacts are imported"
+          },
+          "import_messages": {
+            "type": "boolean",
+            "description": "Whether WhatsApp Web history messages are imported"
+          },
+          "sync_labels": {
+            "type": "boolean",
+            "description": "Whether WhatsApp labels are synced into Onelink labels"
+          },
           "medium": {
             "type": "string",
             "description": "Medium of communication (e.g., sms, email)"
@@ -19304,6 +20914,14 @@
               "null"
             ],
             "description": "Provider of the channel"
+          },
+          "provider_config": {
+            "type": "object",
+            "description": "Provider-specific configuration returned for administrator users on supported channels"
+          },
+          "additional_attributes": {
+            "type": "object",
+            "description": "Channel-specific additional attributes, including WhatsApp Web runtime state"
           }
         }
       },
@@ -21257,6 +22875,7 @@
                 "enum": [
                   "web_widget",
                   "api",
+                  "whatsapp_web",
                   "email",
                   "line",
                   "telegram",
@@ -21284,6 +22903,60 @@
                 "type": "string",
                 "description": "A Hex-color string used to customize the widget",
                 "example": "#FF5733"
+              },
+              "phone_number": {
+                "type": "string",
+                "description": "E.164 phone number for SMS or WhatsApp Web channels",
+                "example": "+15551234567"
+              },
+              "conversation_pending": {
+                "type": "boolean",
+                "description": "Start new live inbound WhatsApp Web conversations as pending",
+                "example": false
+              },
+              "history_lookback_days": {
+                "type": "integer",
+                "description": "Number of days to import during the initial WhatsApp Web history sync",
+                "example": 365
+              },
+              "ignore_jids": {
+                "type": "array",
+                "description": "WhatsApp JIDs that should be ignored by the native WhatsApp Web channel",
+                "items": {
+                  "type": "string"
+                },
+                "example": [
+                  "15550001111@s.whatsapp.net"
+                ]
+              },
+              "sign_messages": {
+                "type": "boolean",
+                "description": "Prefix outgoing WhatsApp Web message bodies with the agent name",
+                "example": false
+              },
+              "sign_delimiter": {
+                "type": "string",
+                "description": "Delimiter inserted between the agent signature and the message body. Use \\\\n for a newline.",
+                "example": "\\\\n"
+              },
+              "import_contacts": {
+                "type": "boolean",
+                "description": "Enable address book import for WhatsApp Web contact sync",
+                "example": true
+              },
+              "import_messages": {
+                "type": "boolean",
+                "description": "Enable history import for WhatsApp Web message sync",
+                "example": true
+              },
+              "sync_labels": {
+                "type": "boolean",
+                "description": "Sync WhatsApp labels into Onelink conversation labels",
+                "example": true
+              },
+              "provider_config": {
+                "type": "object",
+                "description": "Provider-specific configuration for channels that support it"
               }
             }
           }
@@ -21572,7 +23245,22 @@
               "conversation_created",
               "conversation_updated",
               "conversation_resolved",
-              "message_created"
+              "conversation_opened",
+              "message_created",
+              "appointment_created",
+              "appointment_updated",
+              "appointment_cancelled",
+              "appointment_completed",
+              "deal_created",
+              "deal_updated",
+              "deal_stage_changed",
+              "deal_archived",
+              "deal_unarchived",
+              "task_created",
+              "task_updated",
+              "task_status_changed",
+              "task_archived",
+              "task_unarchived"
             ],
             "example": "message_created",
             "description": "The event when you want to execute the automation actions"
@@ -21583,28 +23271,93 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which you want to perform when condition matches, e.g add label support if message contains content help.",
+            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
+              "properties": {
+                "action_name": {
+                  "type": "string",
+                  "description": "Action identifier. Supported values depend on the selected event family.",
+                  "enum": [
+                    "send_message",
+                    "add_label",
+                    "remove_label",
+                    "send_email_to_team",
+                    "assign_team",
+                    "assign_agent",
+                    "send_webhook_event",
+                    "mute_conversation",
+                    "send_attachment",
+                    "change_status",
+                    "resolve_conversation",
+                    "open_conversation",
+                    "pending_conversation",
+                    "snooze_conversation",
+                    "change_priority",
+                    "send_email_transcript",
+                    "add_private_note",
+                    "change_appointment_status",
+                    "cancel_appointment_payment",
+                    "change_deal_stage",
+                    "assign_deal_owner",
+                    "assign_deal_team",
+                    "archive_deal",
+                    "unarchive_deal",
+                    "change_task_status",
+                    "assign_task_assignee",
+                    "assign_task_team",
+                    "change_task_priority",
+                    "archive_task",
+                    "unarchive_task"
+                  ]
+                },
+                "action_params": {
+                  "type": "array",
+                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`cancel_appointment_payment` does not require params.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
               "example": {
-                "action_name": "add_label",
+                "action_name": "change_appointment_status",
                 "action_params": [
-                  "support"
+                  "confirmed"
                 ]
               }
             }
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation filter would work, e.g message content contains text help.",
+            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
             "items": {
               "type": "object",
+              "properties": {
+                "attribute_key": {
+                  "type": "string",
+                  "description": "Condition attribute key. Supported keys depend on the selected event family and can include conversation, appointment, deal, or task fields."
+                },
+                "filter_operator": {
+                  "type": "string",
+                  "description": "Filter operator. Supported operators depend on the selected field type."
+                },
+                "query_operator": {
+                  "type": "string",
+                  "description": "Logical operator between conditions."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
               "example": {
-                "attribute_key": "content",
-                "filter_operator": "contains",
+                "attribute_key": "status",
+                "filter_operator": "equal_to",
                 "query_operator": "OR",
                 "values": [
-                  "help"
+                  "confirmed"
                 ]
               }
             }

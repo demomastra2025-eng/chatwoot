@@ -4,7 +4,16 @@ require 'rails_helper'
 
 RSpec.describe Contacts::SyncAttributes do
   describe '#perform' do
-    let(:contact) { create(:contact, additional_attributes: { 'city' => 'New York', 'country' => 'US' }) }
+    let(:contact) do
+      create(
+        :contact,
+        additional_attributes: {
+          'city' => 'New York',
+          'country' => 'United States',
+          'country_code' => 'US'
+        }
+      )
+    end
 
     context 'when contact has neither email/phone number nor social details' do
       it 'does not change contact type' do
@@ -40,6 +49,31 @@ RSpec.describe Contacts::SyncAttributes do
         # Expect location and country code to be updated
         expect(contact.reload.location).to eq('New York')
         expect(contact.reload.country_code).to eq('US')
+      end
+    end
+
+    context 'when only legacy country code is present in country' do
+      let(:contact) do
+        create(:contact, additional_attributes: { 'city' => 'New York', 'country' => 'us' })
+      end
+
+      it 'falls back to the legacy two-letter country value' do
+        described_class.new(contact).perform
+
+        expect(contact.reload.country_code).to eq('US')
+      end
+    end
+
+    context 'when country contains a country name without country_code' do
+      let(:contact) do
+        create(:contact, country_code: 'KZ', additional_attributes: { 'city' => 'Almaty', 'country' => 'Kazakhstan' })
+      end
+
+      it 'does not overwrite country_code with a country name' do
+        described_class.new(contact).perform
+
+        expect(contact.reload.location).to eq('Almaty')
+        expect(contact.reload.country_code).to eq('KZ')
       end
     end
   end

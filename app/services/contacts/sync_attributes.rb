@@ -16,7 +16,7 @@ class Contacts::SyncAttributes
     # Ensure that location and country_code are updated from additional_attributes.
     # TODO: Remove this once all contacts are updated and both the location and country_code fields are standardized throughout the app.
     @contact.location = @contact.additional_attributes['city']
-    @contact.country_code = @contact.additional_attributes['country']
+    @contact.country_code = resolved_country_code
   end
 
   def set_contact_type
@@ -33,5 +33,22 @@ class Contacts::SyncAttributes
     @contact.additional_attributes.keys.any? do |key|
       key.start_with?('social_') && @contact.additional_attributes[key].present?
     end
+  end
+
+  def resolved_country_code
+    if @contact.additional_attributes['country_code'].present?
+      return normalize_country_code(@contact.additional_attributes['country_code'])
+    end
+
+    legacy_country_value = @contact.additional_attributes['country']
+    return normalize_country_code(legacy_country_value) if legacy_country_value.to_s.match?(/\A[a-z]{2}\z/i)
+
+    @contact.country_code
+  end
+
+  def normalize_country_code(value)
+    return value.to_s.upcase if value.to_s.match?(/\A[a-z]{2}\z/i)
+
+    value
   end
 end

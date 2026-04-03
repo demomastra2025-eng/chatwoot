@@ -92,7 +92,7 @@ class Line::IncomingMessageService
         filename: file_name,
         content_type: response.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def get_file_extension(response)

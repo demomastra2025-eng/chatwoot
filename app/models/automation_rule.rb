@@ -18,14 +18,90 @@
 #  index_automation_rules_on_account_id  (account_id)
 #
 class AutomationRule < ApplicationRecord
+  include AccountStorageLimitable
+
+  CONVERSATION_EVENT_NAMES = %w[
+    conversation_created
+    conversation_updated
+    conversation_resolved
+    conversation_opened
+    message_created
+  ].freeze
+  DEAL_EVENT_NAMES = %w[
+    deal_created
+    deal_updated
+    deal_stage_changed
+    deal_archived
+    deal_unarchived
+  ].freeze
+  TASK_EVENT_NAMES = %w[
+    task_created
+    task_updated
+    task_status_changed
+    task_archived
+    task_unarchived
+  ].freeze
+  CRM_EVENT_NAMES = (DEAL_EVENT_NAMES + TASK_EVENT_NAMES).freeze
+  APPOINTMENT_EVENT_NAMES = %w[
+    appointment_created
+    appointment_updated
+    appointment_cancelled
+    appointment_completed
+  ].freeze
+  SUPPORTED_EVENT_NAMES = (
+    CONVERSATION_EVENT_NAMES +
+    DEAL_EVENT_NAMES +
+    TASK_EVENT_NAMES +
+    APPOINTMENT_EVENT_NAMES
+  ).freeze
+  CONVERSATION_ACTION_ATTRIBUTES = %w[
+    send_message add_label remove_label send_email_to_team assign_team assign_agent send_webhook_event mute_conversation
+    send_attachment change_status resolve_conversation open_conversation pending_conversation snooze_conversation change_priority
+    send_email_transcript add_private_note
+  ].freeze
+  APPOINTMENT_ACTION_ATTRIBUTES = %w[
+    send_webhook_event
+    change_appointment_status
+    cancel_appointment_payment
+  ].freeze
+  DEAL_ACTION_ATTRIBUTES = %w[
+    send_webhook_event
+    change_deal_stage
+    assign_deal_owner
+    assign_deal_team
+    archive_deal
+    unarchive_deal
+  ].freeze
+  TASK_ACTION_ATTRIBUTES = %w[
+    send_webhook_event
+    change_task_status
+    assign_task_assignee
+    assign_task_team
+    change_task_priority
+    archive_task
+    unarchive_task
+  ].freeze
+  CONVERSATION_CONDITION_ATTRIBUTES = %w[
+    content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
+    mail_subject phone_number priority conversation_language labels
+  ].freeze
+  APPOINTMENT_CONDITION_ATTRIBUTES = %w[status payment_status appointment_type source].freeze
+
   include Rails.application.routes.url_helpers
   include Reauthorizable
 
   belongs_to :account
   has_many_attached :files
+  account_storage_attachments :files
 
   validate :json_conditions_format
   validate :json_actions_format
+  validate :event_name_supported
+  validate :feature_enabled_for_event
+  validate :appointment_condition_operators_supported
+  validate :appointment_action_params_supported
+  validate :crm_condition_operators_supported
+  validate :crm_action_params_supported
   validate :query_operator_presence
   validate :query_operator_value
   validates :account_id, presence: true
@@ -35,14 +111,32 @@ class AutomationRule < ApplicationRecord
   scope :active, -> { where(active: true) }
 
   def conditions_attributes
-    %w[content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
-       mail_subject phone_number priority conversation_language labels]
+    return APPOINTMENT_CONDITION_ATTRIBUTES if appointment_event?
+    return crm_condition_catalog.standard_field_keys if crm_event?
+    return CONVERSATION_CONDITION_ATTRIBUTES if conversation_event?
+
+    []
   end
 
   def actions_attributes
-    %w[send_message add_label remove_label send_email_to_team assign_team assign_agent send_webhook_event mute_conversation
-       send_attachment change_status resolve_conversation open_conversation pending_conversation snooze_conversation change_priority
-       send_email_transcript add_private_note].freeze
+    return appointment_actions_attributes if appointment_event?
+    return crm_actions_attributes if crm_event?
+    return CONVERSATION_ACTION_ATTRIBUTES if conversation_event?
+
+    []
+  end
+
+  def appointment_event?
+    event_name.in?(APPOINTMENT_EVENT_NAMES)
+  end
+
+  def crm_event?
+    event_name.in?(CRM_EVENT_NAMES)
+  end
+
+  def crm_entity_kind
+    return 'deal' if event_name.in?(DEAL_EVENT_NAMES)
+    return 'task' if event_name.in?(TASK_EVENT_NAMES)
   end
 
   def file_base_data
@@ -62,21 +156,59 @@ class AutomationRule < ApplicationRecord
   private
 
   def json_conditions_format
-    return if conditions.blank?
+    return if conditions.blank? || !supported_event_name?
 
     attributes = conditions.map { |obj, _| obj['attribute_key'] }
     conditions = attributes - conditions_attributes
-    conditions -= account.custom_attribute_definitions.pluck(:attribute_key)
+    conditions -= account.custom_attribute_definitions.pluck(:attribute_key) if conversation_event?
+    conditions -= appointment_condition_catalog.custom_field_keys if appointment_event?
+    conditions -= crm_condition_catalog.custom_field_keys if crm_event?
     errors.add(:conditions, "Automation conditions #{conditions.join(',')} not supported.") if conditions.any?
   end
 
   def json_actions_format
-    return if actions.blank?
+    return if actions.blank? || !supported_event_name?
 
     attributes = actions.map { |obj, _| obj['action_name'] }
     actions = attributes - actions_attributes
 
     errors.add(:actions, "Automation actions #{actions.join(',')} not supported.") if actions.any?
+  end
+
+  def appointment_condition_operators_supported
+    return unless appointment_event?
+    return if conditions.blank?
+
+    unsupported_conditions = conditions.filter_map do |condition|
+      key = condition['attribute_key'].to_s
+      operator = condition['filter_operator'].to_s
+      next unless appointment_condition_catalog.supported_attribute?(key)
+      next if appointment_condition_catalog.operator_supported?(key, operator)
+
+      "#{key}:#{operator}"
+    end
+
+    return if unsupported_conditions.blank?
+
+    errors.add(:conditions, "Automation condition operators #{unsupported_conditions.join(',')} not supported.")
+  end
+
+  def crm_condition_operators_supported
+    return unless crm_event?
+    return if conditions.blank?
+
+    unsupported_conditions = conditions.filter_map do |condition|
+      key = condition['attribute_key'].to_s
+      operator = condition['filter_operator'].to_s
+      next unless crm_condition_catalog.supported_attribute?(key)
+      next if crm_condition_catalog.operator_supported?(key, operator)
+
+      "#{key}:#{operator}"
+    end
+
+    return if unsupported_conditions.blank?
+
+    errors.add(:conditions, "Automation condition operators #{unsupported_conditions.join(',')} not supported.")
   end
 
   def query_operator_presence
@@ -102,6 +234,145 @@ class AutomationRule < ApplicationRecord
 
     operator = query_operator.upcase
     errors.add(:conditions, 'Query operator must be either "AND" or "OR"') unless %w[AND OR].include?(operator)
+  end
+
+  def appointment_condition_catalog
+    @appointment_condition_catalog ||= AutomationRules::AppointmentFieldCatalog.new(account: account)
+  end
+
+  def crm_condition_catalog
+    @crm_condition_catalog ||= AutomationRules::CrmFieldCatalog.new(
+      account: account,
+      entity_kind: crm_entity_kind
+    )
+  end
+
+  def appointment_actions_attributes
+    actions = APPOINTMENT_ACTION_ATTRIBUTES.dup
+    actions.delete('cancel_appointment_payment') unless account&.feature_enabled?('scheduling_finance')
+    actions
+  end
+
+  def crm_actions_attributes
+    crm_entity_kind == 'deal' ? DEAL_ACTION_ATTRIBUTES : TASK_ACTION_ATTRIBUTES
+  end
+
+  def appointment_action_params_supported
+    return unless appointment_event?
+    return if actions.blank?
+
+    unsupported_actions = actions.filter_map do |action|
+      action_name = action['action_name'].to_s
+      next unless actions_attributes.include?(action_name)
+      next if appointment_action_params_supported?(action_name, action['action_params'])
+
+      action_name
+    end
+
+    return if unsupported_actions.blank?
+
+    errors.add(:actions, "Automation action parameters #{unsupported_actions.join(',')} not supported.")
+  end
+
+  def crm_action_params_supported
+    return unless crm_event?
+    return if actions.blank?
+
+    unsupported_actions = actions.filter_map do |action|
+      action_name = action['action_name'].to_s
+      next unless actions_attributes.include?(action_name)
+      next if crm_action_params_supported?(action_name, action['action_params'])
+
+      action_name
+    end
+
+    return if unsupported_actions.blank?
+
+    errors.add(:actions, "Automation action parameters #{unsupported_actions.join(',')} not supported.")
+  end
+
+  def appointment_action_params_supported?(action_name, action_params)
+    case action_name
+    when 'change_appointment_status'
+      Scheduling::Constants::APPOINTMENT_STATUSES.include?(normalized_action_param(action_params))
+    when 'cancel_appointment_payment'
+      true
+    else
+      true
+    end
+  end
+
+  def crm_action_params_supported?(action_name, action_params)
+    case action_name
+    when 'change_deal_stage'
+      account.crm_stages.active.exists?(id: normalized_action_param(action_params))
+    when 'assign_deal_owner', 'assign_task_assignee'
+      optional_reference_supported?(account.users, action_params)
+    when 'assign_deal_team', 'assign_task_team'
+      optional_reference_supported?(account.teams, action_params)
+    when 'change_task_status'
+      account.crm_task_statuses.active.exists?(id: normalized_action_param(action_params))
+    when 'change_task_priority'
+      normalized_action_param(action_params).in?(::Crm::Task::PRIORITIES)
+    else
+      true
+    end
+  end
+
+  def optional_reference_supported?(scope, action_params)
+    value = normalized_optional_action_param(action_params)
+    return true if value.nil?
+
+    scope.exists?(id: value)
+  end
+
+  def normalized_action_param(action_params)
+    Array(action_params).first.to_s.presence
+  end
+
+  def normalized_optional_action_param(action_params)
+    value = Array(action_params).first.to_s.strip
+    return nil if value.blank? || value == 'nil'
+
+    value
+  end
+
+  def conversation_event?
+    event_name.in?(CONVERSATION_EVENT_NAMES)
+  end
+
+  def supported_event_name?
+    event_name.in?(SUPPORTED_EVENT_NAMES)
+  end
+
+  def event_name_supported
+    return unless validating_event_name_constraints?
+    return if supported_event_name?
+
+    errors.add(:event_name, 'Automation event not supported.')
+  end
+
+  def feature_enabled_for_event
+    return unless validating_event_name_constraints?
+    return if account.blank?
+    return unless appointment_event? || crm_event?
+
+    feature_name =
+      if appointment_event?
+        'scheduling'
+      elsif crm_entity_kind == 'deal'
+        'crm_deals'
+      else
+        'crm_tasks'
+      end
+
+    return if account.feature_enabled?(feature_name)
+
+    errors.add(:event_name, "Automation event requires #{feature_name} feature.")
+  end
+
+  def validating_event_name_constraints?
+    new_record? || will_save_change_to_event_name?
   end
 end
 

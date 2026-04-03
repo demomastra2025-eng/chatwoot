@@ -165,6 +165,7 @@ describe Messages::Instagram::Messenger::MessageBuilder do
     it 'raises exception on deleted story' do
       messaging = story_mention_params[:entry][0][:messaging][0]
       sender_id = messaging['sender']['id']
+      expected_content = I18n.t('conversations.messages.instagram_deleted_story_content')
 
       allow(Koala::Facebook::API).to receive(:new).and_return(fb_object)
       allow(fb_object).to receive(:get_object).and_raise(Koala::Facebook::ClientError.new(
@@ -187,7 +188,7 @@ describe Messages::Instagram::Messenger::MessageBuilder do
       message = instagram_messenger_channel.inbox.messages.first
 
       expect(contact.name).to eq('Jane Dae')
-      expect(message.content).to eq('This story is no longer available.')
+      expect(message.content).to eq(expected_content)
       expect(message.attachments.count).to eq(0)
     end
 

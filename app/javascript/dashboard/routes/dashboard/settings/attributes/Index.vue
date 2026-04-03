@@ -25,6 +25,10 @@ import {
 } from 'dashboard/composables/store';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import {
+  buildCrmFieldContextOptions,
+  filterCrmFieldContexts,
+} from 'dashboard/stores/crm/fieldContexts';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 
@@ -109,6 +113,11 @@ const tasksEnabled = computed(
     canViewCrm.value &&
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS)
 );
+const appointmentsEnabled = computed(
+  () =>
+    canViewCrm.value &&
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.SCHEDULING)
+);
 
 const availableTabs = computed(() => {
   const tabs = [];
@@ -138,6 +147,13 @@ const availableTabs = computed(() => {
     });
   }
 
+  if (appointmentsEnabled.value) {
+    tabs.push({
+      key: 'appointment',
+      name: t('CRM.SETTINGS.FIELD_TABS.APPOINTMENTS'),
+    });
+  }
+
   return tabs;
 });
 
@@ -155,6 +171,17 @@ watch(selectedTabKey, () => {
   searchQuery.value = '';
 });
 
+watch(
+  () => crmFieldForm.entityKind,
+  entityKind => {
+    crmFieldForm.contexts = filterCrmFieldContexts(
+      crmFieldForm.contexts,
+      entityKind,
+      t
+    );
+  }
+);
+
 const selectedTabIndex = computed(() =>
   Math.max(
     0,
@@ -170,7 +197,7 @@ const isLegacyTab = computed(() =>
   ['conversation_attribute', 'contact_attribute'].includes(selectedTabKey.value)
 );
 const isCrmTab = computed(() =>
-  ['deal', 'task'].includes(selectedTabKey.value)
+  ['deal', 'task', 'appointment'].includes(selectedTabKey.value)
 );
 
 const canManageCurrentTab = computed(() => {
@@ -237,19 +264,18 @@ const crmEntityOptions = computed(() =>
     tasksEnabled.value
       ? { label: t('CRM.SETTINGS.FIELD_TABS.TASKS'), value: 'task' }
       : null,
+    appointmentsEnabled.value
+      ? {
+          label: t('CRM.SETTINGS.FIELD_TABS.APPOINTMENTS'),
+          value: 'appointment',
+        }
+      : null,
   ].filter(Boolean)
 );
 
-const taskContextOptions = computed(() => [
-  {
-    label: t('CRM.SETTINGS.FIELDS.CONTEXTS.deal_task'),
-    value: 'deal_task',
-  },
-  {
-    label: t('CRM.SETTINGS.FIELDS.CONTEXTS.standalone_task'),
-    value: 'standalone_task',
-  },
-]);
+const crmFieldContextOptions = computed(() =>
+  buildCrmFieldContextOptions(crmFieldForm.entityKind, t)
+);
 
 const currentAttributes = computed(() => {
   if (selectedTabKey.value === 'deal') {
@@ -258,6 +284,10 @@ const currentAttributes = computed(() => {
 
   if (selectedTabKey.value === 'task') {
     return referencesStore.taskFieldDefinitions;
+  }
+
+  if (selectedTabKey.value === 'appointment') {
+    return referencesStore.appointmentFieldDefinitions;
   }
 
   return getters['attributes/getAttributesByModel'].value(selectedTabKey.value);
@@ -309,6 +339,7 @@ const humanizeValue = value => {
 
 const describeCrmField = definition => {
   const details = [];
+  const contextOptions = buildCrmFieldContextOptions(definition.entityKind, t);
 
   if (definition.required) {
     details.push(t('ATTRIBUTES_MGMT.CRM.METADATA.REQUIRED'));
@@ -318,13 +349,13 @@ const describeCrmField = definition => {
     details.push(t('ATTRIBUTES_MGMT.CRM.METADATA.INACTIVE'));
   }
 
-  if (definition.entityKind === 'task' && definition.rules?.contexts?.length) {
+  if (contextOptions.length && definition.rules?.contexts?.length) {
     details.push(
       definition.rules.contexts
         .map(context => {
           return (
-            taskContextOptions.value.find(option => option.value === context)
-              ?.label || humanizeValue(context)
+            contextOptions.find(option => option.value === context)?.label ||
+            humanizeValue(context)
           );
         })
         .join(', ')
@@ -481,7 +512,7 @@ const confirmDeleteAttribute = async () => {
 };
 
 const defaultCrmEntityKind = () => {
-  if (selectedTabKey.value === 'deal' || selectedTabKey.value === 'task') {
+  if (['deal', 'task', 'appointment'].includes(selectedTabKey.value)) {
     return selectedTabKey.value;
   }
 
@@ -531,7 +562,11 @@ function openCrmFieldDialog(fieldDefinition) {
 
     Object.assign(crmFieldForm, {
       active: fieldDefinition.active,
-      contexts: fieldDefinition.rules?.contexts || [],
+      contexts: filterCrmFieldContexts(
+        fieldDefinition.rules?.contexts || [],
+        fieldDefinition.entityKind,
+        t
+      ),
       defaultValue,
       description: fieldDefinition.description || '',
       entityKind: fieldDefinition.entityKind,
@@ -598,11 +633,17 @@ const findCrmFieldDefinitionById = fieldId => {
   return [
     ...referencesStore.dealFieldDefinitions,
     ...referencesStore.taskFieldDefinitions,
+    ...referencesStore.appointmentFieldDefinitions,
   ].find(definition => Number(definition.id) === Number(fieldId));
 };
 
 const saveCrmFieldDefinition = async () => {
   try {
+    const normalizedContexts = filterCrmFieldContexts(
+      crmFieldForm.contexts,
+      crmFieldForm.entityKind,
+      t
+    );
     const previousEntityKind = crmFieldForm.id
       ? findCrmFieldDefinitionById(crmFieldForm.id)?.entityKind
       : null;
@@ -626,9 +667,7 @@ const saveCrmFieldDefinition = async () => {
         ...(crmFieldForm.min !== '' ? { min: Number(crmFieldForm.min) } : {}),
         ...(crmFieldForm.max !== '' ? { max: Number(crmFieldForm.max) } : {}),
         ...(crmFieldForm.regex ? { regex: crmFieldForm.regex } : {}),
-        ...(crmFieldForm.entityKind === 'task' && crmFieldForm.contexts.length
-          ? { contexts: crmFieldForm.contexts }
-          : {}),
+        ...(normalizedContexts.length ? { contexts: normalizedContexts } : {}),
       },
     });
 
@@ -638,7 +677,8 @@ const saveCrmFieldDefinition = async () => {
       selectedTabKey.value,
     ].filter((value, index, values) => {
       return (
-        ['deal', 'task'].includes(value) && values.indexOf(value) === index
+        ['deal', 'task', 'appointment'].includes(value) &&
+        values.indexOf(value) === index
       );
     });
 
@@ -724,6 +764,10 @@ onMounted(async () => {
 
   if (tasksEnabled.value) {
     requests.push(referencesStore.loadFieldDefinitions('task'));
+  }
+
+  if (appointmentsEnabled.value) {
+    requests.push(referencesStore.loadFieldDefinitions('appointment'));
   }
 
   try {
@@ -953,14 +997,14 @@ onMounted(async () => {
         />
 
         <div
-          v-if="crmFieldForm.entityKind === 'task'"
+          v-if="crmFieldContextOptions.length"
           class="grid gap-2 rounded-xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
         >
           <span class="text-sm font-medium text-n-slate-12">
             {{ $t('CRM.SETTINGS.FIELDS.FORM.CONTEXTS') }}
           </span>
           <label
-            v-for="contextOption in taskContextOptions"
+            v-for="contextOption in crmFieldContextOptions"
             :key="contextOption.value"
             class="flex items-center gap-3 text-sm text-n-slate-12"
           >

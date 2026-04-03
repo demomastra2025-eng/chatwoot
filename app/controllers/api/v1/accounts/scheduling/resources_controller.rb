@@ -65,11 +65,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       )
     end
 
-    return unless @scheduling_resource.appointments.exists?
+    return unless @scheduling_resource.appointments.active_statuses.exists?
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_HAS_APPOINTMENTS',
-      message: 'Specialist with appointments cannot be deleted',
+      message: 'Specialist with active appointments cannot be deleted',
       status: :unprocessable_content
     )
   end

@@ -3,8 +3,13 @@ import { useStoreGetters, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import * as automationHelper from 'dashboard/helper/automationHelper';
+import { createPinia, setActivePinia } from 'pinia';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   customAttributes,
+  appointmentFieldDefinitions,
+  dealFieldDefinitions,
+  taskFieldDefinitions,
   agents,
   teams,
   labels,
@@ -26,6 +31,30 @@ vi.mock('dashboard/helper/automationHelper');
 
 describe('useAutomation', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    const crmReferencesStore = useCrmReferencesStore();
+    crmReferencesStore.fieldDefinitions.appointment =
+      appointmentFieldDefinitions;
+    crmReferencesStore.fieldDefinitions.deal = dealFieldDefinitions;
+    crmReferencesStore.fieldDefinitions.task = taskFieldDefinitions;
+    crmReferencesStore.pipelines = [
+      {
+        id: 11,
+        name: 'Sales',
+        stages: [{ id: 111, name: 'Qualified' }],
+      },
+    ];
+    crmReferencesStore.taskStatuses = [{ id: 21, name: 'Todo' }];
+    crmReferencesStore.loadFieldDefinitions = vi.fn(entityKind =>
+      Promise.resolve(crmReferencesStore.fieldDefinitions[entityKind] || [])
+    );
+    crmReferencesStore.loadPipelines = vi
+      .fn()
+      .mockResolvedValue(crmReferencesStore.pipelines);
+    crmReferencesStore.loadTaskStatuses = vi
+      .fn()
+      .mockResolvedValue(crmReferencesStore.taskStatuses);
+
     useStoreGetters.mockReturnValue({
       'attributes/getAttributes': { value: customAttributes },
       'attributes/getAttributesByModel': {
@@ -34,6 +63,11 @@ describe('useAutomation', () => {
             ? [{ id: 1, name: 'Conversation Attribute' }]
             : [{ id: 2, name: 'Contact Attribute' }];
         },
+      },
+      getCurrentAccountId: { value: 1 },
+      'accounts/isFeatureEnabledonAccount': {
+        value: (_accountId, feature) =>
+          ['scheduling', 'crm_deals', 'crm_tasks'].includes(feature),
       },
     });
     useMapGetter.mockImplementation(getter => {
@@ -53,7 +87,44 @@ describe('useAutomation', () => {
 
     // Mock getConditionOptions for different types
     automationHelper.getConditionOptions.mockImplementation(options => {
-      const { type } = options;
+      const { type, eventName } = options;
+      if (eventName?.startsWith('appointment_')) {
+        switch (type) {
+          case 'status':
+            return [{ id: 'scheduled', name: 'Scheduled' }];
+          case 'payment_status':
+            return [{ id: 'paid', name: 'Paid' }];
+          case 'appointment_type':
+            return [{ id: 'primary', name: 'Primary' }];
+          default:
+            return [];
+        }
+      }
+
+      if (eventName?.startsWith('deal_')) {
+        switch (type) {
+          case 'stage_id':
+            return [{ id: 111, name: 'Sales / Qualified' }];
+          case 'pipeline_id':
+            return [{ id: 11, name: 'Sales' }];
+          case 'owner_id':
+            return agents;
+          default:
+            return [];
+        }
+      }
+
+      if (eventName?.startsWith('task_')) {
+        switch (type) {
+          case 'status_id':
+            return [{ id: 21, name: 'Todo' }];
+          case 'assignee_id':
+            return agents;
+          default:
+            return [];
+        }
+      }
+
       switch (type) {
         case 'status':
           return statusFilterOptions;
@@ -98,6 +169,10 @@ describe('useAutomation', () => {
           return slaPolicies;
         case 'change_priority':
           return priorityOptions;
+        case 'change_deal_stage':
+          return [{ id: 111, name: 'Sales / Qualified' }];
+        case 'change_task_status':
+          return [{ id: 21, name: 'Todo' }];
         default:
           return [];
       }
@@ -124,6 +199,23 @@ describe('useAutomation', () => {
     expect(computedSlaPolicies.value).toEqual(slaPolicies);
   });
 
+  it('loads CRM automation references when CRM events are requested', async () => {
+    const crmReferencesStore = useCrmReferencesStore();
+    const { loadAutomationReferences } = useAutomation();
+
+    await loadAutomationReferences('deal_created');
+    await loadAutomationReferences('task_created');
+
+    expect(crmReferencesStore.loadFieldDefinitions).toHaveBeenCalledWith(
+      'deal'
+    );
+    expect(crmReferencesStore.loadFieldDefinitions).toHaveBeenCalledWith(
+      'task'
+    );
+    expect(crmReferencesStore.loadPipelines).toHaveBeenCalled();
+    expect(crmReferencesStore.loadTaskStatuses).toHaveBeenCalled();
+  });
+
   it('appends new condition and action correctly', () => {
     const { appendNewCondition, appendNewAction, automation } = useAutomation();
     automation.value = {
@@ -141,7 +233,9 @@ describe('useAutomation', () => {
     expect(automationHelper.getDefaultConditions).toHaveBeenCalledWith(
       'message_created'
     );
-    expect(automationHelper.getDefaultActions).toHaveBeenCalled();
+    expect(automationHelper.getDefaultActions).toHaveBeenCalledWith(
+      'message_created'
+    );
     expect(automation.value.conditions).toHaveLength(1);
     expect(automation.value.actions).toHaveLength(1);
   });
@@ -197,8 +291,19 @@ describe('useAutomation', () => {
     automationTypes.conversation_updated = { conditions: [] };
     automationTypes.conversation_opened = { conditions: [] };
     automationTypes.conversation_resolved = { conditions: [] };
+    automationTypes.deal_created = { conditions: [] };
+    automationTypes.task_created = { conditions: [] };
 
     automationHelper.generateCustomAttributeTypes.mockReturnValue([]);
+    automationHelper.generateManagedCustomAttributeTypes.mockReturnValue([
+      {
+        key: 'visit_reason',
+        name: 'Visit reason',
+        inputType: 'search_select',
+        filterOperators: [],
+        customAttributeType: 'appointment_attribute',
+      },
+    ]);
     automationHelper.generateCustomAttributes.mockReturnValue([]);
 
     manifestCustomAttributes();
@@ -206,16 +311,51 @@ describe('useAutomation', () => {
     expect(automationHelper.generateCustomAttributeTypes).toHaveBeenCalledTimes(
       2
     );
+    expect(
+      automationHelper.generateManagedCustomAttributeTypes
+    ).toHaveBeenCalledTimes(3);
     expect(automationHelper.generateCustomAttributes).toHaveBeenCalledTimes(1);
-    Object.values(automationTypes).forEach(type => {
-      expect(type.conditions).toHaveLength(0);
-    });
+    expect(automationTypes.message_created.conditions).toHaveLength(0);
+    expect(automationTypes.conversation_created.conditions).toHaveLength(0);
+    expect(automationTypes.conversation_updated.conditions).toHaveLength(0);
+    expect(automationTypes.conversation_opened.conditions).toHaveLength(0);
+    expect(automationTypes.conversation_resolved.conditions).toHaveLength(0);
+    expect(
+      automationTypes.appointment_created.conditions.map(({ key }) => key)
+    ).toEqual([
+      'status',
+      'payment_status',
+      'appointment_type',
+      'source',
+      'appointment_custom_attribute',
+      'visit_reason',
+    ]);
+    expect(automationTypes.deal_created.conditions).toEqual([
+      expect.objectContaining({ key: 'deal_custom_attribute' }),
+      expect.objectContaining({ key: 'visit_reason' }),
+    ]);
+    expect(automationTypes.task_created.conditions).toEqual([
+      expect.objectContaining({ key: 'task_custom_attribute' }),
+      expect.objectContaining({ key: 'visit_reason' }),
+    ]);
   });
 
   it('gets condition dropdown values correctly', () => {
     const { getConditionDropdownValues } = useAutomation();
 
     expect(getConditionDropdownValues('status')).toEqual(statusFilterOptions);
+    expect(getConditionDropdownValues('status', 'appointment_created')).toEqual(
+      [{ id: 'scheduled', name: 'Scheduled' }]
+    );
+    expect(getConditionDropdownValues('stage_id', 'deal_created')).toEqual([
+      { id: 111, name: 'Sales / Qualified' },
+    ]);
+    expect(getConditionDropdownValues('status_id', 'task_created')).toEqual([
+      { id: 21, name: 'Todo' },
+    ]);
+    expect(
+      getConditionDropdownValues('payment_status', 'appointment_created')
+    ).toEqual([{ id: 'paid', name: 'Paid' }]);
     expect(getConditionDropdownValues('team_id')).toEqual(teams);
     expect(getConditionDropdownValues('assignee_id')).toEqual(agents);
     expect(getConditionDropdownValues('contact')).toEqual(contacts);
@@ -239,6 +379,12 @@ describe('useAutomation', () => {
     expect(getActionDropdownValues('send_message')).toEqual([]);
     expect(getActionDropdownValues('add_sla')).toEqual(slaPolicies);
     expect(getActionDropdownValues('change_priority')).toEqual(priorityOptions);
+    expect(getActionDropdownValues('change_deal_stage')).toEqual([
+      { id: 111, name: 'Sales / Qualified' },
+    ]);
+    expect(getActionDropdownValues('change_task_status')).toEqual([
+      { id: 21, name: 'Todo' },
+    ]);
   });
 
   it('handles event change correctly', () => {
@@ -257,8 +403,39 @@ describe('useAutomation', () => {
     expect(automationHelper.getDefaultConditions).toHaveBeenCalledWith(
       'message_created'
     );
-    expect(automationHelper.getDefaultActions).toHaveBeenCalled();
+    expect(automationHelper.getDefaultActions).toHaveBeenCalledWith(
+      'message_created'
+    );
     expect(automation.value.conditions).toHaveLength(1);
     expect(automation.value.actions).toHaveLength(1);
+  });
+
+  it('uses appointment webhook action defaults for appointment events', () => {
+    const { onEventChange, automation } = useAutomation();
+    automation.value = {
+      event_name: 'appointment_created',
+      conditions: [],
+      actions: [],
+    };
+
+    automationHelper.getDefaultConditions.mockReturnValue([{}]);
+    automationHelper.getDefaultActions.mockReturnValue([{}]);
+
+    onEventChange();
+
+    expect(automationHelper.getDefaultActions).toHaveBeenCalledWith(
+      'appointment_created'
+    );
+  });
+
+  it('loads appointment field definitions when appointment automations are requested', async () => {
+    const crmReferencesStore = useCrmReferencesStore();
+    const { loadAutomationReferences } = useAutomation();
+
+    await loadAutomationReferences('appointment_created');
+
+    expect(crmReferencesStore.loadFieldDefinitions).toHaveBeenCalledWith(
+      'appointment'
+    );
   });
 });

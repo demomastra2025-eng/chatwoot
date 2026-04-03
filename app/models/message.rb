@@ -348,10 +348,14 @@ class Message < ApplicationRecord
   def update_contact_activity(runtime_events: true)
     return unless sender.is_a?(Contact)
 
+    activity_time = created_at || Time.current
+    current_activity = sender[:last_activity_at]
+    return if current_activity.present? && current_activity >= activity_time
+
     if runtime_events
-      sender.update(last_activity_at: DateTime.now)
+      sender.update(last_activity_at: activity_time)
     else
-      sender.update_columns(last_activity_at: Time.current, updated_at: Time.current)
+      sender.update_columns(last_activity_at: activity_time, updated_at: Time.current)
     end
   end
 
@@ -468,8 +472,12 @@ class Message < ApplicationRecord
   end
 
   def set_conversation_activity
+    activity_time = created_at || Time.current
+    current_activity = conversation[:last_activity_at]
+    return if current_activity.present? && current_activity >= activity_time
+
     # rubocop:disable Rails/SkipsModelValidations
-    conversation.update_columns(last_activity_at: created_at, updated_at: Time.current)
+    conversation.update_columns(last_activity_at: activity_time, updated_at: Time.current)
     # rubocop:enable Rails/SkipsModelValidations
   end
 

@@ -280,7 +280,7 @@ onMounted(() => {
         {{ $t('CAPTAIN.RESPONSES.PENDING_BANNER.TITLE') }}
       </Banner>
 
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-3">
         <ResponseCard
           v-for="response in responses"
           :id="response.id"

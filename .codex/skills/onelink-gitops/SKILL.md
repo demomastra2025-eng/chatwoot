@@ -1,17 +1,15 @@
 ---
 name: onelink-gitops
-description: "Use for Git, GitHub, submodule, branch, release, and upstream-sync work in Onelink, including syncing changes from Chatwoot into the fork."
+description: "Use for Git, GitHub, submodule, branch, release, and upstream-sync work in Onelink."
 ---
 
 # Onelink GitOps
 
-## Overview
-
 Use this skill when the task is mainly about repository operations rather than product runtime behavior.
 
-This skill owns GitHub flow, branch discipline, submodule updates, versioned skill sync, and the upstream sync process from Chatwoot.
+This skill owns GitHub flow, branch discipline, submodule updates, versioned skill sync, and upstream sync work.
 
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 ## Use This Skill When
 
@@ -19,17 +17,16 @@ All repo paths below are relative to the Onelink repository root.
 - preparing or validating GitHub push and PR flow
 - updating the `docs/` submodule pointer
 - syncing the versioned project skills into `$CODEX_HOME/skills`
-- fetching and merging upstream Chatwoot changes
+- fetching and merging upstream changes
 - validating remote layout or branch strategy
 
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/contributing-guide/project-operations.mdx`
-3. `docs/contributing-guide/ai-agent-operating-model.mdx`
-4. `docs/contributing-guide/docs-repository-workflow.mdx`
-5. `docs/development/upstream-sync.mdx`
-6. `docs/contributing-guide/skill-map.mdx`
+2. `docs/AGENTS.md`
+3. `docs/README.md`
+4. `docs/internal/repository-structure.mdx`
+5. `.codex/scripts/sync-skills.sh`
 
 ## Workflow
 
@@ -37,7 +34,7 @@ All repo paths below are relative to the Onelink repository root.
    - normal product branch flow
    - docs submodule update
    - skill sync
-   - upstream sync from Chatwoot
+   - upstream sync
 2. Confirm the correct repo boundary:
    - product code and versioned skills commit in `onelink`
    - docs content commit in `docs/`
@@ -48,15 +45,13 @@ All repo paths below are relative to the Onelink repository root.
 
 ## Documentation Discipline
 
-- Read the Git and workflow docs before editing branches or remotes.
-- If branch model, submodule flow, or sync process changed, update `docs/` in the same task.
-- Keep docs commits separate in `docs/` when the change belongs to the docs repository.
+- If branch model, submodule flow, or sync process changed, update internal workflow docs in the same task.
 
 ## Branch Rules
 
 - base product branch: `onelink-main`
 - normal delivery branches: `feature/...`, `fix/...`, `chore/...`
-- upstream sync branches: `sync/chatwoot-vX.Y.Z`
+- upstream sync branches: `sync/...`
 - do not use this fork's `develop` as the main working branch
 
 ## Upstream Sync Rules
@@ -84,7 +79,6 @@ All repo paths below are relative to the Onelink repository root.
 ## References
 
 - `AGENTS.md`
-- `docs/contributing-guide/project-operations.mdx`
-- `docs/contributing-guide/ai-agent-operating-model.mdx`
-- `docs/contributing-guide/docs-repository-workflow.mdx`
-- `docs/development/upstream-sync.mdx`
+- `docs/AGENTS.md`
+- `docs/README.md`
+- `docs/internal/repository-structure.mdx`

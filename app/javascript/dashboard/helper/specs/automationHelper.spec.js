@@ -3,8 +3,12 @@ import {
   OPERATOR_TYPES_1,
   OPERATOR_TYPES_3,
   OPERATOR_TYPES_4,
+  OPERATOR_TYPES_7,
 } from 'dashboard/routes/dashboard/settings/automation/operators';
 import {
+  appointmentFieldDefinitions,
+  dealFieldDefinitions,
+  taskFieldDefinitions,
   customAttributes,
   labels,
   automation,
@@ -17,12 +21,23 @@ import { AUTOMATIONS } from 'dashboard/routes/dashboard/settings/automation/cons
 describe('getCustomAttributeInputType', () => {
   it('returns the attribute input type', () => {
     expect(helpers.getCustomAttributeInputType('date')).toEqual('date');
+    expect(helpers.getCustomAttributeInputType('datetime')).toEqual('datetime');
     expect(helpers.getCustomAttributeInputType('date')).not.toEqual(
       'some_random_value'
     );
     expect(helpers.getCustomAttributeInputType('text')).toEqual('plain_text');
+    expect(helpers.getCustomAttributeInputType('number')).toEqual('plain_text');
+    expect(helpers.getCustomAttributeInputType('currency')).toEqual(
+      'plain_text'
+    );
+    expect(helpers.getCustomAttributeInputType('percent')).toEqual(
+      'plain_text'
+    );
     expect(helpers.getCustomAttributeInputType('list')).toEqual(
       'search_select'
+    );
+    expect(helpers.getCustomAttributeInputType('multiselect')).toEqual(
+      'multi_select'
     );
     expect(helpers.getCustomAttributeInputType('checkbox')).toEqual(
       'search_select'
@@ -30,6 +45,42 @@ describe('getCustomAttributeInputType', () => {
     expect(helpers.getCustomAttributeInputType('some_random_text')).toEqual(
       'plain_text'
     );
+  });
+
+  it('maps managed datetime fields to datetime inputs', () => {
+    expect(
+      helpers.generateManagedCustomAttributeTypes([
+        {
+          key: 'follow_up_at',
+          label: 'Follow-up at',
+          fieldType: 'datetime',
+        },
+      ])
+    ).toEqual([
+      {
+        key: 'follow_up_at',
+        name: 'Follow-up at',
+        inputType: 'datetime',
+        filterOperators: OPERATOR_TYPES_4,
+        customAttributeType: 'managed_attribute',
+      },
+    ]);
+  });
+});
+
+describe('AUTOMATIONS datetime inputs', () => {
+  it('uses datetime inputs for standard CRM datetime fields', () => {
+    expect(
+      AUTOMATIONS.deal_updated.conditions.find(
+        condition => condition.key === 'closed_at'
+      )?.inputType
+    ).toEqual('datetime');
+
+    expect(
+      AUTOMATIONS.task_updated.conditions.find(
+        condition => condition.key === 'due_at'
+      )?.inputType
+    ).toEqual('datetime');
   });
 });
 
@@ -84,7 +135,9 @@ describe('getOperatorTypes', () => {
   it('returns the correct custom attribute operators', () => {
     expect(helpers.getOperatorTypes('list')).toEqual(OPERATOR_TYPES_1);
     expect(helpers.getOperatorTypes('text')).toEqual(OPERATOR_TYPES_3);
-    expect(helpers.getOperatorTypes('number')).toEqual(OPERATOR_TYPES_1);
+    expect(helpers.getOperatorTypes('number')).toEqual(OPERATOR_TYPES_4);
+    expect(helpers.getOperatorTypes('currency')).toEqual(OPERATOR_TYPES_4);
+    expect(helpers.getOperatorTypes('percent')).toEqual(OPERATOR_TYPES_4);
     expect(helpers.getOperatorTypes('link')).toEqual(OPERATOR_TYPES_1);
     expect(helpers.getOperatorTypes('date')).toEqual(OPERATOR_TYPES_4);
     expect(helpers.getOperatorTypes('checkbox')).toEqual(OPERATOR_TYPES_1);
@@ -158,6 +211,44 @@ describe('getActionOptions', () => {
       })
     ).toEqual(agents);
   });
+
+  it('returns appointment status options for native appointment status actions', () => {
+    const appointmentStatusOptions = [{ id: 'confirmed', name: 'Confirmed' }];
+
+    expect(
+      helpers.getActionOptions({
+        appointmentStatusOptions,
+        type: 'change_appointment_status',
+      })
+    ).toEqual(appointmentStatusOptions);
+  });
+
+  it('returns CRM action options for native deal and task actions', () => {
+    const crmStageOptions = [{ id: 1, name: 'Pipeline / Won' }];
+    const crmTaskStatusOptions = [{ id: 2, name: 'Done' }];
+    const teams = [{ id: 9, name: 'Sales' }];
+
+    expect(
+      helpers.getActionOptions({
+        crmStageOptions,
+        type: 'change_deal_stage',
+      })
+    ).toEqual(crmStageOptions);
+
+    expect(
+      helpers.getActionOptions({
+        crmTaskStatusOptions,
+        type: 'change_task_status',
+      })
+    ).toEqual(crmTaskStatusOptions);
+
+    expect(
+      helpers.getActionOptions({
+        teams,
+        type: 'assign_deal_team',
+      })
+    ).toEqual(teams);
+  });
 });
 
 describe('getConditionOptions', () => {
@@ -177,6 +268,169 @@ describe('getConditionOptions', () => {
         type: 'status',
       })
     ).toEqual(testOptions);
+  });
+
+  it('returns appointment-specific options when the event is appointment-based', () => {
+    const appointmentStatusOptions = [{ id: 'scheduled', name: 'Scheduled' }];
+    const appointmentPaymentStatusOptions = [{ id: 'paid', name: 'Paid' }];
+
+    expect(
+      helpers.getConditionOptions({
+        customAttributes,
+        eventName: 'appointment_created',
+        appointmentStatusOptions,
+        type: 'status',
+      })
+    ).toEqual(appointmentStatusOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        customAttributes,
+        eventName: 'appointment_created',
+        appointmentPaymentStatusOptions,
+        type: 'payment_status',
+      })
+    ).toEqual(appointmentPaymentStatusOptions);
+  });
+
+  it('returns managed appointment field options when the event is appointment-based', () => {
+    expect(
+      helpers.getConditionOptions({
+        appointmentFieldDefinitions,
+        booleanFilterOptions: [
+          { id: true, name: 'True' },
+          { id: false, name: 'False' },
+        ],
+        customAttributes,
+        eventName: 'appointment_created',
+        type: 'visit_reason',
+      })
+    ).toEqual([{ id: 'follow_up', name: 'Follow-up' }]);
+
+    expect(
+      helpers.getConditionOptions({
+        appointmentFieldDefinitions,
+        booleanFilterOptions: [
+          { id: true, name: 'True' },
+          { id: false, name: 'False' },
+        ],
+        customAttributes,
+        eventName: 'appointment_created',
+        type: 'needs_lab',
+      })
+    ).toEqual([
+      { id: true, name: 'True' },
+      { id: false, name: 'False' },
+    ]);
+  });
+
+  it('returns deal-specific options when the event is deal-based', () => {
+    const crmPipelineOptions = [{ id: 10, name: 'Sales' }];
+    const crmStageOptions = [{ id: 11, name: 'Sales / Qualified' }];
+    const crmDealOwnerOptions = [{ id: 12, name: 'Aigerim' }];
+
+    expect(
+      helpers.getConditionOptions({
+        crmDealOwnerOptions,
+        crmPipelineOptions,
+        crmStageOptions,
+        customAttributes,
+        eventName: 'deal_created',
+        type: 'stage_id',
+      })
+    ).toEqual(crmStageOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        crmDealOwnerOptions,
+        crmPipelineOptions,
+        crmStageOptions,
+        customAttributes,
+        eventName: 'deal_created',
+        type: 'pipeline_id',
+      })
+    ).toEqual(crmPipelineOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        crmDealOwnerOptions,
+        crmPipelineOptions,
+        crmStageOptions,
+        customAttributes,
+        eventName: 'deal_created',
+        type: 'owner_id',
+      })
+    ).toEqual(crmDealOwnerOptions);
+  });
+
+  it('returns task-specific options when the event is task-based', () => {
+    const crmTaskStatusOptions = [{ id: 21, name: 'In Progress' }];
+    const agents = [{ id: 22, name: 'Dina' }];
+
+    expect(
+      helpers.getConditionOptions({
+        agents,
+        crmTaskStatusOptions,
+        customAttributes,
+        eventName: 'task_created',
+        type: 'status_id',
+      })
+    ).toEqual(crmTaskStatusOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        agents,
+        crmTaskStatusOptions,
+        customAttributes,
+        eventName: 'task_created',
+        type: 'assignee_id',
+      })
+    ).toEqual(agents);
+  });
+
+  it('returns managed deal and task field options when the event is CRM-based', () => {
+    expect(
+      helpers.getConditionOptions({
+        booleanFilterOptions: [
+          { id: true, name: 'True' },
+          { id: false, name: 'False' },
+        ],
+        customAttributes,
+        dealFieldDefinitions,
+        eventName: 'deal_created',
+        type: 'deal_region',
+      })
+    ).toEqual([{ id: 'emea', name: 'EMEA' }]);
+
+    expect(
+      helpers.getConditionOptions({
+        booleanFilterOptions: [
+          { id: true, name: 'True' },
+          { id: false, name: 'False' },
+        ],
+        customAttributes,
+        eventName: 'task_created',
+        taskFieldDefinitions,
+        type: 'task_channel',
+      })
+    ).toEqual([{ id: 'chat', name: 'Chat' }]);
+  });
+});
+
+describe('default automation factories', () => {
+  it('returns CRM defaults for deal and task events', () => {
+    expect(helpers.getDefaultConditions('deal_created')).toEqual([
+      expect.objectContaining({ attribute_key: 'stage_id' }),
+    ]);
+    expect(helpers.getDefaultConditions('task_created')).toEqual([
+      expect.objectContaining({ attribute_key: 'status_id' }),
+    ]);
+    expect(helpers.getDefaultActions('deal_created')).toEqual([
+      expect.objectContaining({ action_name: 'send_webhook_event' }),
+    ]);
+    expect(helpers.getDefaultActions('task_created')).toEqual([
+      expect.objectContaining({ action_name: 'send_webhook_event' }),
+    ]);
   });
 });
 
@@ -225,6 +479,15 @@ describe('getDefaultActions', () => {
     ];
     expect(helpers.getDefaultActions()).toEqual(genericActionModel);
   });
+
+  it('returns appointment webhook defaults for appointment automation events', () => {
+    expect(helpers.getDefaultActions('appointment_created')).toEqual([
+      {
+        action_name: 'send_webhook_event',
+        action_params: [],
+      },
+    ]);
+  });
 });
 
 describe('filterCustomAttributes', () => {
@@ -242,6 +505,76 @@ describe('filterCustomAttributes', () => {
     expect(helpers.filterCustomAttributes(customAttributes)).toEqual(
       filteredAttributes
     );
+  });
+});
+
+describe('generateManagedCustomAttributeTypes', () => {
+  it('maps managed field definitions into automation conditions', () => {
+    expect(
+      helpers.generateManagedCustomAttributeTypes(
+        appointmentFieldDefinitions,
+        'appointment_attribute'
+      )
+    ).toEqual([
+      {
+        key: 'visit_reason',
+        name: 'Visit reason',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_3,
+        customAttributeType: 'appointment_attribute',
+      },
+      {
+        key: 'visit_tags',
+        name: 'Visit tags',
+        inputType: 'multi_select',
+        filterOperators: OPERATOR_TYPES_3,
+        customAttributeType: 'appointment_attribute',
+      },
+      {
+        key: 'needs_lab',
+        name: 'Needs lab',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_3,
+        customAttributeType: 'appointment_attribute',
+      },
+      {
+        key: 'triage_note',
+        name: 'Triage note',
+        inputType: 'plain_text',
+        filterOperators: OPERATOR_TYPES_7,
+        customAttributeType: 'appointment_attribute',
+      },
+    ]);
+
+    expect(
+      helpers.generateManagedCustomAttributeTypes(
+        dealFieldDefinitions,
+        'deal_attribute'
+      )
+    ).toEqual([
+      {
+        key: 'deal_region',
+        name: 'Deal region',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_3,
+        customAttributeType: 'deal_attribute',
+      },
+    ]);
+
+    expect(
+      helpers.generateManagedCustomAttributeTypes(
+        taskFieldDefinitions,
+        'task_attribute'
+      )
+    ).toEqual([
+      {
+        key: 'task_channel',
+        name: 'Task channel',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_3,
+        customAttributeType: 'task_attribute',
+      },
+    ]);
   });
 });
 

@@ -42,9 +42,11 @@ const {
   resetAction,
   getActionDropdownValues,
   manifestCustomAttributes,
+  loadAutomationReferences,
 } = useAutomation(START_VALUE);
 
-const open = () => {
+const open = async () => {
+  await loadAutomationReferences();
   automation.value = structuredClone(START_VALUE);
   manifestCustomAttributes();
   formRef.value?.open();

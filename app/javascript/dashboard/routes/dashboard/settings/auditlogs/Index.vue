@@ -13,6 +13,7 @@ import SettingsLayout from '../SettingsLayout.vue';
 import {
   generateTranslationPayload,
   generateLogActionKey,
+  getAuditLogChannelTypeSuffix,
 } from 'dashboard/helper/auditlogHelper';
 import { computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -25,6 +26,7 @@ const records = computed(() => getters['auditlogs/getAuditLogs'].value);
 const uiFlags = computed(() => getters['auditlogs/getUIFlags'].value);
 const meta = computed(() => getters['auditlogs/getMeta'].value);
 const agentList = computed(() => getters['agents/getAgents'].value);
+const globalConfig = computed(() => getters['globalConfig/get'].value);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -52,7 +54,13 @@ const generateLogText = auditLogItem => {
     ...payload,
     attributes: joinIfArray(payload.attributes),
     values: joinIfArray(payload.values),
+    channelTypeSuffix: getAuditLogChannelTypeSuffix(
+      auditLogItem,
+      t,
+      globalConfig.value
+    ),
   };
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   return t(translationKey, mergedPayload);
 };
 

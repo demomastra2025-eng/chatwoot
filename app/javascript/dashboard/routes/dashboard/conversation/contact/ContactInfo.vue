@@ -1,6 +1,7 @@
 <script>
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
+import { useUISettings } from 'dashboard/composables/useUISettings';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
   CRM_DEAL_MANAGE_PERMISSION,
@@ -50,8 +51,10 @@ export default {
   emits: ['panelClose'],
   setup() {
     const { isAdmin } = useAdmin();
+    const { updateUISettings } = useUISettings();
     return {
       isAdmin,
+      updateUISettings,
     };
   },
   data() {
@@ -222,6 +225,18 @@ export default {
       });
     },
     onCreateDeal() {
+      if (
+        isAConversationRoute(this.$route.name) ||
+        isAInboxViewRoute(this.$route.name)
+      ) {
+        this.updateUISettings({
+          is_contact_sidebar_open: false,
+          is_crm_deal_panel_open: true,
+          is_copilot_panel_open: false,
+        });
+        return;
+      }
+
       this.openCrmRoute('crm_deals_index', {
         action: 'new',
         contactId: this.contact.id,

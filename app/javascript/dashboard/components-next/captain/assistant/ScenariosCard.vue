@@ -130,7 +130,7 @@ const renderInstruction = instruction => () =>
 <template>
   <CardLayout
     selectable
-    class="relative [&>div]:!py-4"
+    class="relative h-full [&>div]:!py-4"
     :class="{
       '[&>div]:ltr:!pr-4 [&>div]:rtl:!pl-4': !isEditing,
       '[&>div]:ltr:!pr-10 [&>div]:rtl:!pl-10': isEditing,
@@ -146,11 +146,11 @@ const renderInstruction = instruction => () =>
       <Checkbox v-model="modelValue" />
     </div>
 
-    <div v-if="!isEditing" class="flex flex-col w-full">
+    <div v-if="!isEditing" class="flex h-full flex-col w-full">
       <div class="flex items-start justify-between w-full gap-2">
-        <div class="flex flex-col items-start">
+        <div class="flex min-w-0 flex-col items-start">
           <span class="text-sm text-n-slate-12 font-medium">{{ title }}</span>
-          <span class="text-sm text-n-slate-11 mt-2">
+          <span class="mt-2 text-sm text-n-slate-11">
             {{ description }}
           </span>
         </div>
@@ -170,7 +170,7 @@ const renderInstruction = instruction => () =>
       </div>
 
       <div
-        class="relative overflow-hidden transition-all duration-300 ease-in-out group/expandable"
+        class="relative flex-1 overflow-hidden transition-all duration-300 ease-in-out group/expandable"
         :class="{ 'cursor-pointer': needsOverlay }"
         :style="{
           maxHeight: isInstructionExpanded ? `${contentHeight}px` : '10rem',
@@ -198,7 +198,7 @@ const renderInstruction = instruction => () =>
       </div>
       <span
         v-if="tools?.length"
-        class="text-sm text-n-slate-11 font-medium mb-1"
+        class="mt-3 text-sm text-n-slate-11 font-medium"
       >
         {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TOOLS_USED') }}
         {{ tools?.map(tool => `@${tool}`).join(', ') }}

@@ -29,6 +29,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       "#{self.class.name} Assistant: #{@assistant.id}, Incrementing response usage for account #{@account.id}"
     )
     @account.increment_response_usage
+    @account.increment_token_usage(response.dig('usage', 'total_tokens'))
 
     response
   end
@@ -61,18 +62,24 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def build_tools
-    tools = []
+    allowed_tool_ids = @assistant.allowed_assistant_tool_ids
 
-    tools << Captain::Tools::SearchDocumentationService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::GetConversationService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::SearchConversationsService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::GetContactService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::GetArticleService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::SearchArticlesService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::SearchContactsService.new(@assistant, user: @user)
-    tools << Captain::Tools::Copilot::SearchLinearIssuesService.new(@assistant, user: @user)
+    @assistant.available_assistant_tools.filter_map do |tool_definition|
+      next unless allowed_tool_ids.include?(tool_definition[:id])
+      next unless Captain::ToolPolicy.runtime_allowed?(
+        tool_definition,
+        assistant: @assistant,
+        scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
+        user: @user
+      )
 
-    tools.select(&:active?)
+      Captain::Copilot::ToolCatalog.build_tool(
+        tool_definition,
+        assistant: @assistant,
+        user: @user,
+        conversation: @conversation
+      )
+    end.select(&:active?)
   end
 
   def system_message
@@ -87,7 +94,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def tools_summary
-    @tools.map { |tool| "- #{tool.class.name}: #{tool.class.description}" }.join("\n")
+    @tools.map { |tool| "- #{tool.name}: #{tool.description}" }.join("\n")
   end
 
   def account_id_context

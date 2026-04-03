@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_03_27_174500) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_02_131500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -628,7 +628,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_03_27_174500) do
     t.datetime "updated_at", null: false
     t.jsonb "sync_state", default: {}, null: false
     t.boolean "conversation_pending", default: false, null: false
-    t.integer "history_lookback_days", default: 365, null: false
+    t.integer "history_lookback_days", default: 0, null: false
     t.jsonb "ignore_jids", default: [], null: false
     t.boolean "sign_messages", default: false, null: false
     t.string "sign_delimiter", default: "\\n", null: false

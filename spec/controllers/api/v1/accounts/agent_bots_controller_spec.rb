@@ -94,7 +94,7 @@ RSpec.describe 'Agent Bot API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/agent_bots' do
-    let(:valid_params) { { name: 'test' } }
+    let(:valid_params) { { name: 'test', outgoing_url: 'https://example.com/webhook' } }
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do

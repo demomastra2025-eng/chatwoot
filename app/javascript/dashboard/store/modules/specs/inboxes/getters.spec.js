@@ -310,6 +310,75 @@ describe('#getters', () => {
       expect(result[0].name).toBe('regular_template');
     });
 
+    it('filters out advanced unsupported templates (CAROUSEL, LIMITED_TIME_OFFER)', () => {
+      const advancedTemplates = [
+        {
+          name: 'carousel_template',
+          status: 'approved',
+          components: [
+            { type: 'BODY', text: 'Carousel body' },
+            { type: 'CAROUSEL', cards: [] },
+          ],
+        },
+        {
+          name: 'limited_offer_template',
+          status: 'approved',
+          components: [
+            { type: 'BODY', text: 'Offer body' },
+            { type: 'LIMITED_TIME_OFFER', offer: {} },
+          ],
+        },
+        {
+          name: 'regular_template',
+          status: 'approved',
+          components: [{ type: 'BODY', text: 'Regular message' }],
+        },
+      ];
+
+      const state = {
+        records: [
+          {
+            id: 1,
+            channel_type: 'Channel::Whatsapp',
+            message_templates: advancedTemplates,
+          },
+        ],
+      };
+
+      const result = getters.getFilteredWhatsAppTemplates(state)(1);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('regular_template');
+    });
+
+    it('filters out templates without a body component', () => {
+      const invalidTemplates = [
+        {
+          name: 'header_only_template',
+          status: 'approved',
+          components: [{ type: 'HEADER', format: 'TEXT', text: 'Header only' }],
+        },
+        {
+          name: 'regular_template',
+          status: 'approved',
+          components: [{ type: 'BODY', text: 'Regular message' }],
+        },
+      ];
+
+      const state = {
+        records: [
+          {
+            id: 1,
+            channel_type: 'Channel::Whatsapp',
+            message_templates: invalidTemplates,
+          },
+        ],
+      };
+
+      const result = getters.getFilteredWhatsAppTemplates(state)(1);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('regular_template');
+    });
+
     it('returns valid templates from fixture data', () => {
       const state = {
         records: [

@@ -24,10 +24,17 @@ const { t } = useI18n();
 const availableFields = ref([]);
 const isLoading = ref(false);
 
-const TABLES = Object.freeze(['contact', 'conversation']);
+const TABLE_ORDER = Object.freeze([
+  'contact',
+  'conversation',
+  'deal',
+  'task',
+  'appointment',
+]);
+const OPTIONAL_TABLES = Object.freeze(['deal', 'task', 'appointment']);
 const expandedTables = ref(
-  TABLES.reduce((result, tableName) => {
-    result[tableName] = true;
+  TABLE_ORDER.reduce((result, tableName) => {
+    result[tableName] = false;
     return result;
   }, {})
 );
@@ -45,6 +52,24 @@ const tableMetadata = computed(() => ({
     ),
     description: t(
       'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.CONVERSATION.DESCRIPTION'
+    ),
+  },
+  deal: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.DEAL.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.DEAL.DESCRIPTION'
+    ),
+  },
+  task: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.TASK.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.TASK.DESCRIPTION'
+    ),
+  },
+  appointment: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.APPOINTMENT.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.APPOINTMENT.DESCRIPTION'
     ),
   },
 }));
@@ -65,7 +90,7 @@ const loadFields = async () => {
 };
 
 const fieldsByTable = computed(() => {
-  return TABLES.reduce((result, tableName) => {
+  return TABLE_ORDER.reduce((result, tableName) => {
     const groups = new Map();
 
     availableFields.value
@@ -102,7 +127,7 @@ const fieldsByTable = computed(() => {
 });
 
 const tableFieldCounts = computed(() => {
-  return TABLES.reduce((result, tableName) => {
+  return TABLE_ORDER.reduce((result, tableName) => {
     result[tableName] = availableFields.value.filter(
       field => field.table_name === tableName
     ).length;
@@ -111,8 +136,21 @@ const tableFieldCounts = computed(() => {
   }, {});
 });
 
+const visibleTables = computed(() => {
+  return TABLE_ORDER.filter(tableName => {
+    if (!OPTIONAL_TABLES.includes(tableName)) {
+      return true;
+    }
+
+    return (
+      tableFieldCounts.value[tableName] > 0 ||
+      Object.prototype.hasOwnProperty.call(props.modelValue || {}, tableName)
+    );
+  });
+});
+
 const normalizedAccess = computed(() => {
-  return TABLES.reduce((result, tableName) => {
+  return TABLE_ORDER.reduce((result, tableName) => {
     const rawScope = props.modelValue?.[tableName] || {};
     const tableFields = availableFields.value.filter(
       field => field.table_name === tableName
@@ -122,16 +160,15 @@ const normalizedAccess = computed(() => {
       rawScope,
       'field_ids'
     );
-    const defaultFieldIds = tableFields
-      .filter(field => field.selected !== false)
-      .map(field => field.id);
+    const defaultEnabled = tableFields.some(field => field.selected !== false);
+    const defaultFieldIds = availableFieldIds;
 
     result[tableName] = {
       enabled:
         Object.prototype.hasOwnProperty.call(rawScope, 'enabled') &&
         typeof rawScope.enabled === 'boolean'
           ? rawScope.enabled
-          : true,
+          : defaultEnabled,
       fieldIds: (hasFieldIds ? rawScope.field_ids : defaultFieldIds).filter(
         fieldId => availableFieldIds.includes(fieldId)
       ),
@@ -142,7 +179,7 @@ const normalizedAccess = computed(() => {
 });
 
 const serializedAccess = computed(() => {
-  return TABLES.reduce((result, tableName) => {
+  return visibleTables.value.reduce((result, tableName) => {
     result[tableName] = {
       enabled: normalizedAccess.value[tableName].enabled,
       field_ids: normalizedAccess.value[tableName].fieldIds,
@@ -156,8 +193,8 @@ const updateAccess = nextAccess => {
   emit('update:modelValue', nextAccess);
 };
 
-const selectionCountLabel = (selectedCount, totalCount) =>
-  `${selectedCount} / ${totalCount}`;
+const selectionCountLabel = (tableName, selectedCount, totalCount) =>
+  `${normalizedAccess.value[tableName].enabled ? selectedCount : 0} / ${totalCount}`;
 
 const toggleTableExpanded = tableName => {
   expandedTables.value = {
@@ -218,7 +255,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex min-w-0 flex-col gap-4">
     <div class="flex flex-col gap-1">
       <h4 class="text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TITLE') }}
@@ -232,9 +269,9 @@ watch(
     </div>
 
     <div
-      v-for="tableName in TABLES"
+      v-for="tableName in visibleTables"
       :key="tableName"
-      class="rounded-xl border border-n-weak bg-n-solid-1 p-4 flex flex-col gap-4"
+      class="flex min-w-0 flex-col gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
     >
       <div class="flex items-start justify-between gap-4">
         <button
@@ -250,7 +287,7 @@ watch(
 
           <span class="min-w-0 flex-1">
             <span class="flex flex-wrap items-center gap-2">
-              <span class="text-sm font-medium text-n-slate-12">
+              <span class="break-words text-sm font-medium text-n-slate-12">
                 {{ tableMetadata[tableName].title }}
               </span>
               <span
@@ -258,13 +295,14 @@ watch(
               >
                 {{
                   selectionCountLabel(
+                    tableName,
                     normalizedAccess[tableName].fieldIds.length,
                     tableFieldCounts[tableName]
                   )
                 }}
               </span>
             </span>
-            <span class="mt-1 block text-sm text-n-slate-11">
+            <span class="mt-1 block break-words text-sm text-n-slate-11">
               {{ tableMetadata[tableName].description }}
             </span>
           </span>
@@ -293,15 +331,17 @@ watch(
 
         <div
           v-else-if="normalizedAccess[tableName].enabled"
-          class="grid grid-cols-1 gap-4 md:grid-cols-2"
+          class="grid grid-cols-1 gap-4 xl:grid-cols-2"
         >
           <div
             v-for="group in fieldsByTable[tableName]"
             :key="group.groupName"
-            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3 flex flex-col gap-3"
+            class="flex min-w-0 flex-col gap-3 rounded-lg border border-n-weak bg-n-alpha-2 p-3"
           >
-            <div class="flex items-center gap-2">
-              <div class="text-sm font-medium text-n-slate-12">
+            <div class="flex min-w-0 items-center gap-2">
+              <div
+                class="min-w-0 break-words text-sm font-medium text-n-slate-12"
+              >
                 {{ group.groupName }}
               </div>
             </div>
@@ -310,7 +350,7 @@ watch(
               <label
                 v-for="field in group.fields"
                 :key="field.id"
-                class="flex items-start gap-2 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
+                class="flex min-w-0 items-start gap-2 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
               >
                 <Checkbox
                   :model-value="
@@ -321,10 +361,12 @@ watch(
                   "
                 />
                 <span class="min-w-0">
-                  <span class="block text-sm font-medium text-n-slate-12">
+                  <span
+                    class="block break-words text-sm font-medium text-n-slate-12"
+                  >
                     {{ field.title }}
                   </span>
-                  <span class="block text-xs text-n-slate-10">
+                  <span class="block break-words text-xs text-n-slate-10">
                     {{ field.description }}
                   </span>
                 </span>

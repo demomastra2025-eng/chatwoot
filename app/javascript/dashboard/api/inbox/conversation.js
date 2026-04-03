@@ -119,6 +119,15 @@ class ConversationApi extends ApiClient {
     });
   }
 
+  destroyCustomAttributes({ conversationId, customAttributes }) {
+    return axios.post(
+      `${this.url}/${conversationId}/destroy_custom_attributes`,
+      {
+        custom_attributes: customAttributes,
+      }
+    );
+  }
+
   fetchParticipants(conversationId) {
     return axios.get(`${this.url}/${conversationId}/participants`);
   }

@@ -1,0 +1,27 @@
+<%
+  rows = field.rows
+  format_usage = lambda do |value, bytes|
+    bytes ? number_to_human_size(value) : number_with_delimiter(value)
+  end
+  unlimited_label = 'Unlimited'
+%>
+
+<% if rows.present? %>
+  <div class="w-full">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <% rows.each do |row| %>
+        <div class="p-3 bg-white rounded-md outline outline-n-container outline-1 shadow-sm">
+          <div class="text-sm text-n-slate-12"><%= row[:label] %></div>
+          <div class="mt-2 text-base font-medium text-n-slate-12">
+            <%= format_usage.call(row[:consumed], row[:bytes]) %> / <%= row[:unlimited] ? unlimited_label : format_usage.call(row[:total_count], row[:bytes]) %>
+          </div>
+          <div class="mt-1 text-xs text-n-slate-10">
+            Available: <%= row[:unlimited] ? unlimited_label : format_usage.call(row[:current_available], row[:bytes]) %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% else %>
+  <p class="text-gray-400 text-xs italic">No usage data available</p>
+<% end %>

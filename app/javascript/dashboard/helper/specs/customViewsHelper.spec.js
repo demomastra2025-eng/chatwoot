@@ -284,6 +284,14 @@ describe('customViewsHelper', () => {
       expect(generateCustomAttributesInputType('number')).toEqual('string');
     });
 
+    it('should return string if type is currency', () => {
+      expect(generateCustomAttributesInputType('currency')).toEqual('string');
+    });
+
+    it('should return string if type is percent', () => {
+      expect(generateCustomAttributesInputType('percent')).toEqual('string');
+    });
+
     it('should return string if type is date', () => {
       expect(generateCustomAttributesInputType('date')).toEqual('string');
     });

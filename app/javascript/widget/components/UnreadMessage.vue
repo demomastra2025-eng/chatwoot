@@ -58,6 +58,24 @@ export default {
       }
       return displayImage;
     },
+    useCaptainIconAvatar() {
+      const senderType = this.sender?.type;
+
+      return (
+        !this.isSenderExist(this.sender) ||
+        (['agent_bot', 'captain_assistant'].includes(senderType) &&
+          !this.sender?.avatar_url)
+      );
+    },
+    displayAvatarUrl() {
+      return this.useCaptainIconAvatar ? '' : this.avatarUrl;
+    },
+    displayAvatarName() {
+      return this.useCaptainIconAvatar ? '' : this.agentName;
+    },
+    avatarIcon() {
+      return this.useCaptainIconAvatar ? 'i-woot-captain' : null;
+    },
     agentName() {
       if (this.isSenderExist(this.sender)) {
         const { available_name: availableName, name } = this.sender;
@@ -96,11 +114,13 @@ export default {
     <button class="chat-bubble agent bg-white" @click="onClickMessage">
       <div v-if="showSender" class="row--agent-block">
         <Avatar
-          :src="avatarUrl"
+          :src="displayAvatarUrl"
           :size="20"
-          :name="agentName"
-          :status="availabilityStatus"
+          :name="displayAvatarName"
+          :icon-name="avatarIcon"
+          :status="useCaptainIconAvatar ? null : availabilityStatus"
           rounded-full
+          class="text-n-slate-12 dark:text-n-slate-1"
         />
         <span v-dompurify-html="agentName" class="agent--name" />
         <span v-dompurify-html="companyName" class="company--name" />

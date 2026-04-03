@@ -25,7 +25,13 @@ describe Conversations::FilterService do
     create(:inbox_member, user: user_2, inbox: inbox)
 
     en_conversation_1.update!(custom_attributes: { conversation_additional_information: 'test custom data' })
-    en_conversation_2.update!(custom_attributes: { conversation_additional_information: 'test custom data', conversation_type: 'platinum' })
+    en_conversation_2.update!(
+      custom_attributes: {
+        conversation_additional_information: 'test custom data',
+        conversation_type: 'platinum',
+        quote_amount: '250.50'
+      }
+    )
     user_2_assigned_conversation.update!(custom_attributes: { conversation_type: 'platinum', conversation_created: '2022-01-19' })
     create(:conversation, account: account, inbox: inbox, assignee: user_1)
 
@@ -45,6 +51,11 @@ describe Conversations::FilterService do
            account: account,
            attribute_model: 'conversation_attribute',
            attribute_display_type: 'text')
+    create(:custom_attribute_definition,
+           attribute_key: 'quote_amount',
+           account: account,
+           attribute_model: 'conversation_attribute',
+           attribute_display_type: 'currency')
   end
 
   describe '#perform' do
@@ -450,6 +461,22 @@ describe Conversations::FilterService do
         ]
 
         expect { filter_service.new(params, user_1, account).perform }.to raise_error(CustomExceptions::CustomFilter::InvalidValue)
+      end
+
+      it 'filters by custom currency attributes' do
+        params[:payload] = [
+          {
+            attribute_key: 'quote_amount',
+            filter_operator: 'is_greater_than',
+            values: ['200'],
+            query_operator: nil,
+            custom_attribute_type: ''
+          }.with_indifferent_access
+        ]
+
+        result = filter_service.new(params, user_1, account).perform
+
+        expect(result[:conversations].pluck(:id)).to eq([en_conversation_2.id])
       end
 
       it 'filter by created_at and conversation_type' do

@@ -248,13 +248,14 @@ const actions = {
     try {
       // Update custom attributes first if provided
       if (customAttributes) {
-        await ConversationApi.updateCustomAttributes({
+        const response = await ConversationApi.updateCustomAttributes({
           conversationId,
           customAttributes,
         });
+        const { custom_attributes } = response.data;
         commit(types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES, {
           conversationId,
-          customAttributes,
+          customAttributes: custom_attributes,
         });
       }
 
@@ -464,19 +465,30 @@ const actions = {
     { commit },
     { conversationId, customAttributes }
   ) => {
-    try {
-      const response = await ConversationApi.updateCustomAttributes({
-        conversationId,
-        customAttributes,
-      });
-      const { custom_attributes } = response.data;
-      commit(types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES, {
-        conversationId,
-        customAttributes: custom_attributes,
-      });
-    } catch (error) {
-      // Handle error
-    }
+    const response = await ConversationApi.updateCustomAttributes({
+      conversationId,
+      customAttributes,
+    });
+    const { custom_attributes } = response.data;
+    commit(types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES, {
+      conversationId,
+      customAttributes: custom_attributes,
+    });
+  },
+
+  deleteCustomAttributes: async (
+    { commit },
+    { conversationId, customAttributes }
+  ) => {
+    const response = await ConversationApi.destroyCustomAttributes({
+      conversationId,
+      customAttributes,
+    });
+    const { custom_attributes } = response.data;
+    commit(types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES, {
+      conversationId,
+      customAttributes: custom_attributes,
+    });
   },
 
   setConversationFilters({ commit }, data) {

@@ -166,7 +166,7 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
              params: params
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
+        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid', locale: account.locale))
       end
 
       it 'stores the original blob_id in action_params after create' do
@@ -259,7 +259,7 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
             headers: administrator.create_new_auth_token
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
+        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid', locale: account.locale))
       end
 
       it 'allows adding new attachment on update with signed blob_id' do

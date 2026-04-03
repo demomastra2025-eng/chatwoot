@@ -10,7 +10,8 @@ class AccountDashboard < Administrate::BaseDashboard
 
   enterprise_attribute_types = if ChatwootApp.enterprise?
                                  attributes = {
-                                   limits: AccountLimitsField
+                                   limits: AccountLimitsField,
+                                   account_usage_overview: AccountUsageField
                                  }
 
                                  # Only show manually managed features in Chatwoot Cloud deployment
@@ -54,7 +55,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # SHOW_PAGE_ATTRIBUTES
   # an array of attributes that will be displayed on the model's show page.
   enterprise_show_page_attributes = if ChatwootApp.enterprise?
-                                      attrs = %i[custom_attributes limits]
+                                      attrs = %i[custom_attributes limits account_usage_overview]
                                       attrs << :manually_managed_features if ChatwootApp.chatwoot_cloud?
                                       attrs << :all_features
                                       attrs
@@ -76,7 +77,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # an array of attributes that will be displayed
   # on the model's form (`new` and `edit`) pages.
   enterprise_form_attributes = if ChatwootApp.enterprise?
-                                 attrs = %i[limits]
+                                 attrs = %i[limits account_usage_overview]
                                  attrs << :manually_managed_features if ChatwootApp.chatwoot_cloud?
                                  attrs << :all_features
                                  attrs

@@ -46,6 +46,18 @@ class Captain::CustomTool < ApplicationRecord
   REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
   PARAM_TYPES = %w[string number boolean array object].freeze
   PARAM_NAME_FORMAT = /\A[a-zA-Z_][a-zA-Z0-9_]*\z/
+  RESERVED_TEMPLATE_PARAM_NAMES = %w[
+    contact
+    conversation
+    deal
+    task
+    appointment
+    assistant
+    account
+    params
+    p
+    visible_fields
+  ].freeze
   CYRILLIC_TRANSLITERATION_MAP = {
     'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e',
     'ё' => 'yo', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', 'к' => 'k',
@@ -153,8 +165,15 @@ class Captain::CustomTool < ApplicationRecord
       id: slug,
       title: title,
       description: description,
-      group_name: group_name,
-      custom: true
+      group_name: group_name.presence || 'Custom tools',
+      icon: 'plug',
+      custom: true,
+      allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+      required_features: [],
+      required_permissions: [],
+      risk_level: 'custom',
+      requires_confirmation: false,
+      idempotent: false
     }
   end
 
@@ -171,6 +190,11 @@ class Captain::CustomTool < ApplicationRecord
     normalized_definition = raw_definition.slice(
       'name', 'type', 'description', 'required', 'source', 'context_path', 'fixed_value'
     )
+    normalized_definition['required'] = if raw_definition.key?('required')
+                                          ActiveModel::Type::Boolean.new.cast(raw_definition['required'])
+                                        else
+                                          false
+                                        end
     normalized_definition['source'] = normalize_param_source(raw_definition['source'])
     normalized_definition['context_path'] = normalize_context_path(raw_definition['context_path'])
 
@@ -261,6 +285,10 @@ class Captain::CustomTool < ApplicationRecord
 
     unless name.match?(PARAM_NAME_FORMAT)
       errors.add(:param_schema, "parameter #{name} must use only letters, numbers, and underscores")
+    end
+
+    if RESERVED_TEMPLATE_PARAM_NAMES.include?(name)
+      errors.add(:param_schema, "parameter #{name} uses a reserved name")
     end
 
     if parameter_names.include?(name)

@@ -44,6 +44,12 @@ module Events::Types
   CONTACT_MERGED = 'contact.merged'
   CONTACT_DELETED = 'contact.deleted'
 
+  # scheduling appointment events
+  APPOINTMENT_CREATED = 'appointment.created'
+  APPOINTMENT_UPDATED = 'appointment.updated'
+  APPOINTMENT_CANCELLED = 'appointment.cancelled'
+  APPOINTMENT_COMPLETED = 'appointment.completed'
+
   # contact events
   INBOX_CREATED = 'inbox.created'
   INBOX_UPDATED = 'inbox.updated'

@@ -325,7 +325,7 @@ onMounted(() => {
     <template #body>
       <LimitBanner class="mb-5" />
 
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-3">
         <ResponseCard
           v-for="response in filteredResponses"
           :id="response.id"

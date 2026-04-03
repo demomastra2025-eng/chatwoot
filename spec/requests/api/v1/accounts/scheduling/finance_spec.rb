@@ -84,4 +84,42 @@ RSpec.describe 'Scheduling Finance API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(appointment.reload.expense.amount).to eq(6_000)
   end
+
+  it 'blocks marking an appointment as paid when required custom fields are missing' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      required: true
+    )
+    unpaid_appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      payment_status: 'awaiting_payment',
+      prepaid_amount: 0,
+      settlement_amount: 0,
+      settlement_payment_method: nil,
+      custom_attributes: {}
+    )
+
+    post "/api/v1/accounts/#{account.id}/scheduling/appointments/#{unpaid_appointment.id}/payments",
+         params: { amount: 20_000, payment_method: 'cash' },
+         headers: agent.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('APPOINTMENT_PAYMENT_REQUIRES_FIELDS')
+    expect(response_body['error']).to include('Visit reason')
+    expect(response_body.dig('details', 'missing_fields')).to include(
+      { 'key' => 'visit_reason', 'label' => 'Visit reason' }
+    )
+    expect(unpaid_appointment.reload.payment_status).to eq('awaiting_payment')
+    expect(unpaid_appointment.payments).to be_empty
+  end
 end

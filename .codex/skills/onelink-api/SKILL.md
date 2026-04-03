@@ -5,31 +5,28 @@ description: "Use for Onelink API work: application, platform, public, and surve
 
 # Onelink API
 
-## Overview
+Use this skill when the task changes a real API contract or the documentation generated from it.
 
-Use this skill when the task changes an API contract or the documentation generated from it.
+This skill owns route-to-controller-to-spec-to-Swagger alignment and the follow-up sync into the Mintlify OpenAPI files.
 
-This skill owns controller-to-spec-to-Swagger alignment and the follow-up sync into Mintlify OpenAPI files.
-
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 ## Use This Skill When
 
 - adding or changing endpoints under `api/`, `platform/`, `public/`, or survey surfaces
-- changing request params or response payloads
+- changing request params, auth rules, or response payloads
 - updating Swagger source files or generated OpenAPI output
-- fixing mismatch between runtime API behavior and docs reference
+- fixing mismatch between runtime API behavior and API docs
 
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/platform/current-architecture.mdx`
-3. `docs/platform/repository-map.mdx`
-4. `docs/contributing-guide/project-operations.mdx`
-5. `docs/contributing-guide/apis.mdx`
-6. `docs/contributing-guide/api-documentation.mdx`
-7. `docs/contributing-guide/platform-apis.mdx`
-8. `docs/contributing-guide/docs-repository-workflow.mdx` if docs sync is required
+2. `docs/internal/api-and-routes.mdx`
+3. `docs/internal/testing-and-tooling.mdx`
+4. `docs/api-reference/introduction.mdx`
+5. `docs/integrators/authentication-and-api-model.mdx`
+6. `docs/integrators/api-resource-map.mdx`
+7. `docs/AGENTS.md` if docs sync is required
 
 ## Workflow
 
@@ -38,22 +35,25 @@ All repo paths below are relative to the Onelink repository root.
 3. Update request specs and Swagger source files to match the real contract.
 4. Run `bundle exec rake swagger:build`.
 5. If Mintlify API reference should change, run `./scripts/sync-openapi-from-onelink.sh` from `onelink/docs`.
-6. Commit docs-side OpenAPI changes in the docs repo separately from app code.
+6. Keep app changes in `onelink` and generated OpenAPI changes in `docs/`.
 
 ## Documentation Discipline
 
-- Read the API docs listed above before editing.
-- If request or response contracts, auth rules, or generated API reference changed, update `docs/` in the same task.
-- Keep runtime API commits in `onelink` and docs/OpenAPI commits in `docs/`.
+- If request or response contracts, auth rules, or generated API reference changed, update docs in the same task.
+- Update public API docs when integrator-facing behavior changed.
+- Update internal API docs when route topology, ownership, or subsystem mapping changed.
 
 ## Placement Rules
 
 - routes:
   - `config/routes.rb`
 - controllers:
-  - `app/controllers/api/`, `app/controllers/public/`, `app/controllers/platform/`, `app/controllers/survey/`
+  - `app/controllers/api/`
+  - `app/controllers/public/`
+  - `app/controllers/platform/`
+  - `app/controllers/survey/`
 - API tests:
-  - `spec/requests/` and neighboring request specs
+  - `spec/requests/`
 - Swagger:
   - `swagger/`
 - Mintlify OpenAPI files:
@@ -64,7 +64,7 @@ All repo paths below are relative to the Onelink repository root.
 - do not update Swagger without matching runtime behavior
 - do not treat docs-only contract changes as valid if request specs still describe different behavior
 - keep account scoping and authorization rules aligned with the endpoint surface
-- if a change is primarily feature logic, coordinate with the owning backend or integrations skill
+- if a change is primarily feature logic, coordinate with `onelink-backend` or `onelink-integrations`
 
 ## Verification
 
@@ -78,8 +78,8 @@ Runtime API code lives in `onelink`. Mintlify API reference files live in `oneli
 
 ## References
 
-- `docs/contributing-guide/apis.mdx`
-- `docs/contributing-guide/api-documentation.mdx`
-- `docs/contributing-guide/platform-apis.mdx`
-- `docs/contributing-guide/project-operations.mdx`
-- `docs/contributing-guide/docs-repository-workflow.mdx`
+- `docs/internal/api-and-routes.mdx`
+- `docs/internal/testing-and-tooling.mdx`
+- `docs/api-reference/introduction.mdx`
+- `docs/integrators/authentication-and-api-model.mdx`
+- `docs/integrators/api-resource-map.mdx`

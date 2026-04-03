@@ -40,6 +40,9 @@ export const getCustomAttributeInputType = key => {
     case 'date':
       return 'date';
     case 'text':
+    case 'number':
+    case 'currency':
+    case 'percent':
       return 'plainText';
     case 'list':
       return 'searchSelect';

@@ -75,6 +75,19 @@ describe SearchService do
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Contact')
         expect(search.perform[:contacts].map(&:id)).to eq([harry4.id, harry3.id, harry2.id, harry.id])
       end
+
+      it 'searches contacts by phone regardless of spaces, plus sign, and 8/+7 prefix' do
+        matching_contact = create(:contact, account_id: account.id, phone_number: '+77011234567')
+        create(:contact, account_id: account.id, phone_number: '+77777777777')
+
+        aggregate_failures do
+          ['+7 701 123 45 67', '7011234567', '8 701 123 45 67'].each do |query|
+            params = { q: query }
+            search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Contact')
+            expect(search.perform[:contacts].map(&:id)).to eq([matching_contact.id]), "expected query #{query.inspect} to find the normalized phone"
+          end
+        end
+      end
     end
 
     context 'when message search' do
@@ -258,6 +271,17 @@ describe SearchService do
         params = { q: new_converstion.display_id }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
         expect(search.perform[:conversations].map(&:id)).to include new_converstion.id
+      end
+
+      it 'searches conversations by phone when the query uses 8 instead of +7' do
+        matching_contact = create(:contact, account_id: account.id, phone_number: '+77011234567')
+        matching_conversation = create(:conversation, contact: matching_contact, inbox: inbox, account: account)
+        create(:conversation, contact: create(:contact, account_id: account.id, phone_number: '+77777777777'), inbox: inbox, account: account)
+
+        params = { q: '8 701 123 45 67' }
+        search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
+
+        expect(search.perform[:conversations].map(&:id)).to eq([matching_conversation.id])
       end
     end
 

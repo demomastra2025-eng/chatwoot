@@ -5,15 +5,13 @@ description: "Use for frontend work in Onelink: dashboard, widget, portal, surve
 
 # Onelink Frontend
 
-## Overview
-
-Use this skill when the task is primarily in `app/javascript/` and needs current Onelink frontend rules instead of generic Vue advice.
+Use this skill when the task is primarily in `app/javascript/` and needs current One Link frontend rules instead of generic Vue advice.
 
 This skill owns frontend surface selection, component sourcing, state decisions, UI placement, and narrow verification for the existing Rails + Vue + Vite stack.
 
 When the requirement is interaction-heavy but not visually complex, this skill prefers `VueUse` before bespoke utility code or another small helper package.
 
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 ## Use This Skill When
 
@@ -26,14 +24,10 @@ All repo paths below are relative to the Onelink repository root.
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/platform/current-architecture.mdx`
-3. `docs/platform/frontend-implementation.mdx`
-4. `docs/contributing-guide/frontend-agent-playbook.mdx`
-5. `docs/contributing-guide/frontend-dependency-policy.mdx`
-6. `docs/contributing-guide/dashboard-feature-template.mdx`
-7. `docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
-8. `docs/contributing-guide/implementation-examples-map.mdx`
-9. `docs/contributing-guide/testing-strategy-for-agents.mdx`
+2. `docs/internal/frontend-architecture.mdx`
+3. `docs/internal/repository-structure.mdx`
+4. `docs/internal/testing-and-tooling.mdx`
+5. the relevant public page if the UI is user-facing and documented
 
 ## Workflow
 
@@ -95,8 +89,9 @@ Use `VueUse` as a utility layer, not as a replacement for the app's data archite
 
 ## Documentation Discipline
 
-- Read the frontend docs listed above before editing.
-- If UI behavior, route structure, dependency policy, or operator-facing workflow changed, update `docs/` in the same task.
+- If UI behavior, route structure, or dependency expectations changed, update docs in the same task.
+- Update public docs for user-visible workflows.
+- Update internal docs for architecture, placement, or implementation structure.
 - Keep the docs commit separate in `docs/` when documentation changes are required.
 
 ## Placement Rules
@@ -142,10 +137,6 @@ This skill normally edits only `onelink`. If the UI change also requires docs up
 
 ## References
 
-- `docs/platform/frontend-implementation.mdx`
-- `docs/contributing-guide/frontend-agent-playbook.mdx`
-- `docs/contributing-guide/frontend-dependency-policy.mdx`
-- `docs/contributing-guide/dashboard-feature-template.mdx`
-- `docs/contributing-guide/design-tokens-and-ui-conventions.mdx`
-- `docs/contributing-guide/implementation-examples-map.mdx`
-- `docs/contributing-guide/testing-strategy-for-agents.mdx`
+- `docs/internal/frontend-architecture.mdx`
+- `docs/internal/repository-structure.mdx`
+- `docs/internal/testing-and-tooling.mdx`

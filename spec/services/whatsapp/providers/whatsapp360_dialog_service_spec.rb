@@ -10,6 +10,17 @@ describe Whatsapp::Providers::Whatsapp360DialogService do
 
   describe '#sync_templates' do
     context 'when called' do
+      it 'clears stale templates when provider returns an empty successful response' do
+        whatsapp_channel.update!(message_templates: [{ id: 'stale-template', name: 'stale_template' }])
+
+        stub_request(:get, 'https://waba.360dialog.io/v1/configs/templates')
+          .to_return(status: 200, body: { waba_templates: [] }.to_json, headers: response_headers)
+
+        subject.sync_templates
+
+        expect(whatsapp_channel.reload.message_templates).to eq([])
+      end
+
       it 'updates message_templates_last_updated even when template request fails' do
         stub_request(:get, 'https://waba.360dialog.io/v1/configs/templates')
           .to_return(status: 401)

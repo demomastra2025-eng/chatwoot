@@ -17,6 +17,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  fieldDefinitions: {
+    type: Array,
+    default: () => [],
+  },
   dealNames: {
     type: Object,
     default: () => ({}),
@@ -105,6 +109,7 @@ const calendarTasks = computed(() =>
         title: task.title,
         subtitle: buildTaskSubtitle(task),
         clientName: task.title,
+        customAttributes: task.customAttributes,
         serviceNameSnapshot: buildTaskSubtitle(task),
         resourceColor: priorityColor(task.priority),
         resourceName: '',
@@ -146,6 +151,7 @@ const handleResizeTask = payload => {
     :appointments="calendarTasks"
     :allow-create-without-resources="canManage"
     :break-rules="[]"
+    :custom-field-definitions="fieldDefinitions"
     :holidays="[]"
     :read-only="!canManage"
     :resources="[]"

@@ -19,6 +19,7 @@
       "ACTIVE": "Active",
       "ACTIVATE": "Activate",
       "AMOUNT": "Amount",
+      "APPLY": "Apply",
       "CANCEL": "Cancel",
       "CLEAR": "Clear",
       "COMMENTS": "Comments",
@@ -52,6 +53,19 @@
       "VALUE": "Value",
       "YES": "Yes"
     },
+    "CUSTOM_FIELD_FILTERS": {
+      "OPERATORS": {
+        "AFTER": "After",
+        "BEFORE": "Before",
+        "CONTAINS": "Contains",
+        "EQUALS": "Equals",
+        "GREATER_THAN": "Greater than",
+        "IS_NOT_PRESENT": "Is empty",
+        "IS_PRESENT": "Is filled",
+        "LESS_THAN": "Less than",
+        "ON": "On"
+      }
+    },
     "TOOLBAR": {
       "ALL_RESOURCES": "All specialists",
       "FILTERS": "Filters",
@@ -77,6 +91,10 @@
       "APPOINTMENT_TITLE": "Appointment details",
       "APPOINTMENT_TYPE": "Appointment type",
       "CANCEL_APPOINTMENT": "Cancel appointment",
+      "DELETE_APPOINTMENT": "Delete appointment",
+      "DELETE_CONFIRM": "Delete appointment",
+      "DELETE_DESCRIPTION": "Appointment \"{name}\" will be permanently deleted.",
+      "DELETE_TITLE": "Delete cancelled appointment?",
       "CLIENT_BIRTH_DATE": "Birth date",
       "CLIENT_GENDER": "Gender",
       "CLIENT_IDENTIFIER": "Identifier",
@@ -91,8 +109,12 @@
       "CONTACT_SEARCH": "Search contacts",
       "CONTACT_TITLE": "Contact",
       "CREATE_TITLE": "Create appointment",
+      "CUSTOM_FIELDS_DESCRIPTION": "Capture additional appointment-specific details using managed custom fields.",
+      "CUSTOM_FIELDS_TITLE": "Custom fields",
       "EDIT_TITLE": "Edit appointment",
       "ENDS_AT": "Ends at",
+      "INTAKE_FIELDS_DESCRIPTION": "Collect the managed fields that should be captured during booking intake.",
+      "INTAKE_FIELDS_TITLE": "Booking intake",
       "NOTES_DESCRIPTION": "Keep any extra instructions or context for the visit.",
       "NOTES_TITLE": "Notes",
       "PREPAID_AMOUNT": "Prepayment",
@@ -102,6 +124,7 @@
       "STARTS_AT": "Starts at",
       "STATUS": "Status",
       "SUCCESS_CANCEL": "Appointment cancelled",
+      "SUCCESS_DELETE": "Appointment deleted",
       "SUCCESS_SAVE": "Appointment saved",
       "ERRORS": {
         "END_BEFORE_START": "End time must be later than the start time",
@@ -330,8 +353,10 @@
       "TOTAL_UNPAID_DESCRIPTION": "Expenses still waiting for payout."
     },
     "ERRORS": {
+      "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Fill required fields before marking the appointment as paid: {fields}.",
       "GENERIC": "Something went wrong. Try again.",
       "APPOINTMENT_NOT_FOUND": "Appointment not found.",
+      "APPOINTMENT_DELETE_REQUIRES_CANCELLED": "Set the appointment status to Cancelled before deleting it.",
       "BLOCKED_BY_BREAK": "This time overlaps a break.",
       "BLOCKED_BY_HOLIDAY": "This date is blocked by a holiday.",
       "BLOCKED_BY_VACATION": "This time overlaps blocked time.",
@@ -353,7 +378,7 @@
       "OUTSIDE_WORKING_HOURS": "This time is outside working hours.",
       "PAYMENT_AMOUNT_EXCEEDS_BALANCE": "Payment amount exceeds the remaining balance.",
       "PAYMENT_AMOUNT_REQUIRED": "Payment amount must be greater than 0.",
-      "RESOURCE_HAS_APPOINTMENTS": "This specialist already has appointments. Delete is available only for specialists without appointment history.",
+      "RESOURCE_HAS_APPOINTMENTS": "This specialist still has active appointments. Cancel or delete them first.",
       "RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING": "This specialist is not available for scheduling.",
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Select a specialist for specialist pricing.",
       "SERVICE_AMOUNT_REQUIRED": "Enter a service amount greater than 0.",

@@ -22,6 +22,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
     authorize ::Crm::Pipeline
 
     pipeline = Current.account.crm_pipelines.new(pipeline_params)
+    pipeline.position = nil unless params.key?(:position)
     pipeline.save!
 
     render_payload(::Crm::PayloadBuilder.pipeline(pipeline.reload), status: :created)

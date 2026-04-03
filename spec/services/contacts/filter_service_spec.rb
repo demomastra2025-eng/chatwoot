@@ -54,6 +54,16 @@ describe Contacts::FilterService do
            account: account,
            attribute_model: 'contact_attribute',
            attribute_display_type: 'number')
+    create(:custom_attribute_definition,
+           attribute_key: 'arr_value',
+           account: account,
+           attribute_model: 'contact_attribute',
+           attribute_display_type: 'currency')
+    create(:custom_attribute_definition,
+           attribute_key: 'discount_rate',
+           account: account,
+           attribute_model: 'contact_attribute',
+           attribute_display_type: 'percent')
   end
 
   describe '#perform' do
@@ -65,7 +75,15 @@ describe Contacts::FilterService do
 
       en_contact.update!(custom_attributes: { contact_additional_information: 'test custom data' })
       el_contact.update!(custom_attributes: { contact_additional_information: 'test custom data', customer_type: 'platinum' })
-      cs_contact.update!(custom_attributes: { customer_type: 'platinum', signed_in_at: '2022-01-19', lifetime_value: '120.50' })
+      cs_contact.update!(
+        custom_attributes: {
+          customer_type: 'platinum',
+          signed_in_at: '2022-01-19',
+          lifetime_value: '120.50',
+          arr_value: '1200.75',
+          discount_rate: '15'
+        }
+      )
     end
 
     context 'with standard attributes - name' do
@@ -451,6 +469,39 @@ describe Contacts::FilterService do
             attribute_key: 'lifetime_value',
             filter_operator: 'is_greater_than',
             values: ['100.25'],
+            query_operator: nil
+          }.with_indifferent_access
+        ]
+
+        result = filter_service.new(account, first_user, params).perform
+
+        expect(result[:contacts].pluck(:id)).to eq([cs_contact.id])
+      end
+
+      it 'binds custom currency comparison values as decimals' do
+        params[:payload] = [
+          {
+            attribute_key: 'arr_value',
+            filter_operator: 'is_greater_than',
+            values: ['1000.25'],
+            query_operator: nil
+          }.with_indifferent_access
+        ]
+
+        service = filter_service.new(account, first_user, params)
+        filters = service.instance_variable_get(:@filters)['contacts']
+        condition_query = service.send(:build_condition_query, filters, params[:payload].first, 0)
+
+        expect(condition_query).to include("(contacts.custom_attributes ->> 'arr_value')::numeric > :value_0")
+        expect(service.instance_variable_get(:@filter_values)['value_0']).to eq(BigDecimal('1000.25'))
+      end
+
+      it 'filters by custom percent attributes' do
+        params[:payload] = [
+          {
+            attribute_key: 'discount_rate',
+            filter_operator: 'is_greater_than',
+            values: ['10'],
             query_operator: nil
           }.with_indifferent_access
         ]

@@ -37,12 +37,20 @@ class WhatsappWeb::Providers::BaseService
     raise 'Overwrite this method in child class'
   end
 
+  def fetch_chats(*)
+    raise 'Overwrite this method in child class'
+  end
+
   def fetch_message_by_source_id(*)
     raise 'Overwrite this method in child class'
   end
 
   def fetch_message_media(*)
     raise 'Overwrite this method in child class'
+  end
+
+  def prefer_provider_media_for_history?
+    false
   end
 
   def fetch_labels

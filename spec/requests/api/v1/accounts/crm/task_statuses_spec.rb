@@ -101,6 +101,26 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     expect(response.parsed_body.dig('payload', 'category')).to eq('in_progress')
   end
 
+  it 'creates a task status at the end when position is omitted' do
+    get path, headers: headers, as: :json
+    previous_last_position = account.crm_task_statuses.maximum(:position)
+
+    post path,
+         params: {
+           name: 'Waiting for approval',
+           category: 'open',
+           color: '#14B8A6',
+         },
+         headers: headers,
+         as: :json
+
+    created_task_status = account.crm_task_statuses.find_by!(code: 'waiting_for_approval')
+
+    expect(response).to have_http_status(:created)
+    expect(created_task_status.position).to eq(previous_last_position + 1)
+    expect(account.crm_task_statuses.ordered.last.id).to eq(created_task_status.id)
+  end
+
   it 'allows administrators to persist explicit active state' do
     post path,
          params: {

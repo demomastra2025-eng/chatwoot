@@ -8,6 +8,10 @@ import { useConfig } from 'dashboard/composables/useConfig';
 import { differenceInDays } from 'date-fns';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import { useI18n } from 'vue-i18n';
+import {
+  isAccountLimitExceeded,
+  normalizeAccountLimit,
+} from 'dashboard/helper/accountLimits';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -28,10 +32,6 @@ const { isAdmin } = useAdmin();
 
 const isOnChatwootCloud = useMapGetter('globalConfig/isOnChatwootCloud');
 
-const testLimit = ({ allowed, consumed }) => {
-  return consumed > allowed;
-};
-
 const isTrialAccount = computed(() => {
   // check if account is less than 15 days old
   const account = currentAccount.value;
@@ -49,19 +49,24 @@ const limitExceededMessage = computed(() => {
 
   const {
     conversation,
+    inboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
 
   let message = '';
 
-  if (testLimit(conversation)) {
+  if (isAccountLimitExceeded(conversation)) {
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.CONVERSATION');
-  } else if (testLimit(nonWebInboxes)) {
+  } else if (
+    isAccountLimitExceeded(nonWebInboxes) ||
+    isAccountLimitExceeded(inboxes)
+  ) {
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.INBOXES');
-  } else if (testLimit(agents)) {
+  } else if (isAccountLimitExceeded(agents)) {
+    const normalizedAgentsLimit = normalizeAccountLimit(agents);
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.AGENTS', {
-      allowedAgents: agents.allowed,
+      allowedAgents: normalizedAgentsLimit?.totalCount ?? 0,
     });
   }
 
@@ -74,12 +79,16 @@ const isLimitExceeded = computed(() => {
 
   const {
     conversation,
+    inboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
 
   return (
-    testLimit(conversation) || testLimit(nonWebInboxes) || testLimit(agents)
+    isAccountLimitExceeded(conversation) ||
+    isAccountLimitExceeded(inboxes) ||
+    isAccountLimitExceeded(nonWebInboxes) ||
+    isAccountLimitExceeded(agents)
   );
 });
 

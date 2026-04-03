@@ -55,6 +55,20 @@ class Api::V1::Accounts::Crm::BaseController < Api::V1::Accounts::BaseController
     parsed
   end
 
+  def custom_attribute_filters_param
+    raw_filters = params[:custom_attribute_filters]
+    return {} if raw_filters.blank?
+
+    case raw_filters
+    when ActionController::Parameters
+      raw_filters.to_unsafe_h
+    when Hash
+      raw_filters
+    else
+      {}
+    end
+  end
+
   def render_error(code:, error:, status:, details: nil)
     body = {
       error: error,
@@ -128,7 +142,11 @@ class Api::V1::Accounts::Crm::BaseController < Api::V1::Accounts::BaseController
   end
 
   def duplicate_error?(record, attribute)
-    record.errors.attribute_names.include?(attribute) && record.errors[attribute].any? { |message| message.to_s.match?(/taken|unique/i) }
+    record.errors.details.fetch(attribute, []).any? { |detail| detail[:error] == :taken } ||
+      (
+        record.errors.attribute_names.include?(attribute) &&
+        record.errors[attribute].any? { |message| message.to_s.match?(/taken|unique/i) }
+      )
   end
 
   def record_not_unique_constraint(error)

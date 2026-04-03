@@ -2,7 +2,7 @@ class Channels::WhatsappWeb::HistorySyncJob < MutexApplicationJob
   queue_as :whatsappweb_history
   LOCK_TIMEOUT = 30.minutes
 
-  retry_on LockAcquisitionError, wait: 10.seconds, attempts: 60
+  retry_on LockAcquisitionError, wait: 30.seconds, attempts: 20
 
   def perform(channel_id, mode = 'incremental', sync_context = {})
     channel = Channel::WhatsappWeb.find_by(id: channel_id)

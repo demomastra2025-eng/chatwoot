@@ -60,15 +60,15 @@
 - Prefer a separate git worktree plus branch per task to isolate changes.
 - Keep Codex-specific local setup under `.codex/`.
 - Use `Procfile.worktree` when operating in a worktree-oriented local setup.
-- Expect per-worktree DB/port/Redis values from `.codex/environments/environment.toml` to avoid collisions.
+- Expect per-worktree DB and port isolation when the local setup provides it.
 - Start each worktree with its own Overmind socket/title.
-- If using a worktree, preserve the same remote layout: `origin` over SSH and `upstream` pointing to Chatwoot.
+- If using a worktree, preserve the same remote layout: `origin` over SSH and `upstream` unchanged.
 
 ## Coding Rules
 
 - Use Composition API with `<script setup>` in Vue files.
 - Avoid bare strings in Vue templates; use i18n.
-- Use Tailwind utilities only. Avoid custom CSS, scoped CSS, and inline styles.
+- Prefer Tailwind utilities for new or heavily reworked UI. Do not assume the repo is already Tailwind-only.
 - Keep changes minimal and readable; optimize for happy path first.
 - Avoid unnecessary specs unless the user explicitly asks for them.
 - Remove dead code instead of layering parallel implementations.
@@ -89,11 +89,11 @@
 ## Practical Heuristics
 
 - Start broad tasks with `onelink-builder`, then switch to the matching specialized skill when the task surface is clear.
-- Use `onelink-gitops` when the task is mainly about remotes, branches, GitHub flow, submodule updates, or upstream sync from Chatwoot.
+- Use `onelink-gitops` when the task is mainly about remotes, branches, GitHub flow, submodule updates, or upstream sync.
 - If a task changes skill definitions, update the versioned project copy under `onelink/.codex/skills` and then sync to `$CODEX_HOME/skills` with `./.codex/scripts/sync-skills.sh to-codex-home`.
-- For docs tasks, read `docs/AGENTS.md`, `docs/platform/repository-map.mdx`, `docs/contributing-guide/project-operations.mdx`, and `docs/contributing-guide/docs-repository-workflow.mdx`.
+- For docs tasks, read `docs/AGENTS.md`, `docs/README.md`, `docs/docs.json`, and the relevant public or internal page.
 - Choose dev-lite unless the feature depends on jobs, cron, async mailers, or background processing.
 - If the task touches channels, start by reading existing service folders and docs for channel constraints instead of designing from scratch.
 - If the task adds an endpoint, check controller, route, serializer/builder, policy, request spec pattern, and `swagger/`.
 - If the task touches AI/Captain, inspect models, services, `config/agents/tools.yml`, and Enterprise prompt/tool files together.
-- If a user-facing UI string mentions `Chatwoot` but should respect white-labeling, use `replaceInstallationName` from `shared/composables/useBranding` instead of hardcoding brand text.
+- If a user-facing UI string needs installation-aware branding, use the existing branding helpers instead of hardcoding product names.

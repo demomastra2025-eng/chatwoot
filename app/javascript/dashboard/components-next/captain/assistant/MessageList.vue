@@ -67,6 +67,7 @@ watch(() => props.messages.length, scrollToBottom);
           :name="getAvatarName(message.sender)"
           rounded-full
           :size="24"
+          :icon-name="isUserMessage(message.sender) ? null : 'i-woot-captain'"
           class="shrink-0"
         />
         <div
@@ -79,7 +80,12 @@ watch(() => props.messages.length, scrollToBottom);
     </div>
     <div v-if="isLoading" class="flex justify-start">
       <div class="flex items-start gap-1.5">
-        <Avatar :name="getAvatarName('assistant')" rounded-full :size="24" />
+        <Avatar
+          :name="getAvatarName('assistant')"
+          rounded-full
+          :size="24"
+          icon-name="i-woot-captain"
+        />
         <div
           class="max-w-sm rounded-lg p-3 text-sm bg-n-solid-iris text-n-slate-12"
         >

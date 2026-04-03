@@ -68,7 +68,7 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
 
         json_response = response.parsed_body
 
-        expect(json_response['message']).to eq('Content is too long (maximum is 150000 characters)')
+        expect(json_response['message']).to include(I18n.t('errors.messages.too_long', count: 150_000))
       end
 
       it 'creates message in conversation with a valid reply to' do
@@ -113,6 +113,19 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
 
         expect(conversation.messages.last.attachments.first.file.present?).to be(true)
         expect(conversation.messages.last.attachments.first.file_type).to eq('image')
+      end
+
+      it 'returns payment required when account storage limit is reached for attachments' do
+        account.update!(limits: { storage_bytes: 1000 })
+        file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+        message_params = { content: 'hello world', timestamp: Time.current, attachments: [file] }
+
+        post api_v1_widget_messages_url,
+             params: { website_token: web_widget.website_token, message: message_params },
+             headers: { 'X-Auth-Token' => token }
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to eq('Account storage limit exceeded')
       end
 
       it 'does not reopen conversation when conversation is muted' do

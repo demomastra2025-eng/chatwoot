@@ -112,6 +112,31 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(channel.inbox.messages.find_by(source_id: 'history-msg-old')).to be_nil
   end
 
+  it 'imports old records when lookback days are disabled' do
+    channel.update!(history_lookback_days: 0)
+
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-unlimited',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 14.days.ago.to_i,
+          message: {
+            conversation: 'Still importable'
+          }
+        }
+      ]
+    ).perform
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(channel.inbox.messages.find_by(source_id: 'history-msg-unlimited')).to be_present
+  end
+
   it 'skips records from ignored jids' do
     channel.update!(ignore_jids: ['15559876543@s.whatsapp.net'])
 
@@ -256,7 +281,11 @@ RSpec.describe WhatsappWeb::HistoryImportService do
 
   it 'persists a media-only stub when attachment download fails' do
     allow(Down).to receive(:download).and_raise(StandardError, 'expired media URL')
-    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService, fetch_message_media: nil)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true,
+      fetch_message_media: nil
+    )
     allow(provider_service).to receive(:fetch_message_media).and_raise(StandardError, 'provider media unavailable')
     allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
     allow(channel).to receive(:provider_service).and_return(provider_service)
@@ -296,9 +325,12 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     )
   end
 
-  it 'falls back to provider media fetch when the direct media URL is unavailable' do
-    allow(Down).to receive(:download).and_raise(StandardError, 'expired media URL')
-    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+  it 'prefers provider media fetch before direct media URL downloads' do
+    expect(Down).not_to receive(:download)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true
+    )
     allow(provider_service).to receive(:fetch_message_media).and_return(
       {
         base64: Base64.strict_encode64('image-bytes'),
@@ -341,8 +373,11 @@ RSpec.describe WhatsappWeb::HistoryImportService do
   end
 
   it 'keeps a placeholder when the provider reports historical media as unavailable' do
-    allow(Down).to receive(:download).and_raise(StandardError, 'expired media URL')
-    provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+    expect(Down).not_to receive(:download)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true
+    )
     allow(provider_service).to receive(:fetch_message_media).and_return(
       {
         unavailable: true,
@@ -419,6 +454,11 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     video_file.write('fake-video')
     video_file.rewind
     allow(Down).to receive(:download).and_return(video_file)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: false
+    )
+    allow(channel).to receive(:provider_service).and_return(provider_service)
 
     result = described_class.new(
       channel: channel,
@@ -454,5 +494,121 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(imported_message.attachments.first.file_type).to eq('video')
   ensure
     video_file&.close!
+  end
+
+  it 'imports lid-only direct history so the conversation remains replyable before phone resolution' do
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-lid-only',
+            remoteJid: '143907392331785@lid',
+            remoteLid: '143907392331785@lid',
+            fromMe: false
+          },
+          pushName: 'LID User',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            conversation: 'Imported from a provisional LID identity'
+          }
+        }
+      ]
+    ).perform
+
+    imported_message = channel.inbox.messages.find_by(source_id: 'history-msg-lid-only')
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(imported_message).to be_present
+    expect(imported_message.conversation.contact_inbox.source_id).to eq('143907392331785@lid')
+    expect(imported_message.conversation.contact.phone_number).to be_nil
+  end
+
+  it 'reuses the same conversation when history first arrives as LID and later as canonical phone jid' do
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-lid-first',
+            remoteJid: '143907392331785@lid',
+            remoteLid: '143907392331785@lid',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 2.hours.ago.to_i,
+          message: {
+            conversation: 'First via LID'
+          }
+        },
+        {
+          key: {
+            id: 'history-msg-pn-second',
+            remoteJid: '15551234567@s.whatsapp.net',
+            remoteLid: '143907392331785@lid',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            conversation: 'Later via PN'
+          }
+        }
+      ]
+    ).perform
+
+    conversations = channel.inbox.conversations.order(:id).to_a
+    latest_message = channel.inbox.messages.find_by(source_id: 'history-msg-pn-second')
+
+    expect(conversations.size).to eq(1)
+    expect(latest_message).to be_present
+    expect(latest_message.conversation_id).to eq(conversations.first.id)
+    expect(conversations.first.contact.reload.phone_number).to eq('+15551234567')
+    expect(conversations.first.last_activity_at.to_i).to eq(latest_message.created_at.to_i)
+  end
+
+  it 'keeps the conversation ordered by the newest imported message when older history chunks arrive later' do
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-newer-first',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            conversation: 'Newer history chunk'
+          }
+        }
+      ]
+    ).perform
+
+    conversation = channel.inbox.conversations.order(:id).last
+    latest_activity_at = conversation.last_activity_at
+    latest_contact_activity_at = conversation.contact.reload.last_activity_at
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-older-later',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: 2.days.ago.to_i,
+          message: {
+            conversation: 'Older history chunk that arrived later'
+          }
+        }
+      ]
+    ).perform
+
+    expect(conversation.reload.last_activity_at.to_i).to eq(latest_activity_at.to_i)
+    expect(conversation.contact.reload.last_activity_at.to_i).to eq(latest_contact_activity_at.to_i)
   end
 end

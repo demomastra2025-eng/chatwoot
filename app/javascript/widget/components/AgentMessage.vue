@@ -99,6 +99,24 @@ export default {
         this.message.additional_attributes?.sender_avatar_url || displayImage
       );
     },
+    useCaptainIconAvatar() {
+      const senderType = this.message.sender?.type;
+
+      return (
+        !this.message.sender ||
+        (['agent_bot', 'captain_assistant'].includes(senderType) &&
+          !this.message.sender?.avatar_url)
+      );
+    },
+    displayAvatarUrl() {
+      return this.useCaptainIconAvatar ? '' : this.avatarUrl;
+    },
+    displayAvatarName() {
+      return this.useCaptainIconAvatar ? '' : this.agentName;
+    },
+    avatarIcon() {
+      return this.useCaptainIconAvatar ? 'i-woot-captain' : null;
+    },
     hasRecordedResponse() {
       return (
         this.messageContentAttributes.submitted_email ||
@@ -176,10 +194,12 @@ export default {
         <div class="user-thumbnail-box">
           <Avatar
             v-if="message.showAvatar || hasRecordedResponse"
-            :src="avatarUrl"
+            :src="displayAvatarUrl"
             :size="24"
-            :name="agentName"
+            :name="displayAvatarName"
+            :icon-name="avatarIcon"
             rounded-full
+            class="text-n-slate-12 dark:text-n-slate-1"
           />
         </div>
       </div>

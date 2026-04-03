@@ -115,9 +115,10 @@ const handleAssistantChange = async assistant => {
         </span>
         <Avatar
           v-if="assistant"
+          :src="assistant.avatar_url || ''"
           :name="assistant.name"
           :size="20"
-          icon-name="i-lucide-bot"
+          :icon-name="assistant.avatar_url ? null : 'i-woot-captain'"
           rounded-full
         />
       </Button>

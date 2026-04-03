@@ -42,9 +42,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def generate_response_with_v2
-    @response = Captain::Assistant::AgentRunnerService.new(assistant: @assistant, conversation: @conversation).generate_response(
+    callbacks, tool_trace_steps = build_tool_trace_callbacks
+    @response = Captain::Assistant::AgentRunnerService.new(
+      assistant: @assistant,
+      conversation: @conversation,
+      callbacks: callbacks
+    ).generate_response(
       message_history: collect_previous_messages
     )
+    attach_tool_trace_to_response!(tool_trace_steps)
     process_response
   end
 
@@ -52,13 +58,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless current_buffer_state_valid?
     return unless conversation_pending?
 
-    ActiveRecord::Base.transaction do
-      if handoff_requested?
-        process_action('handoff')
-      else
+    if handoff_requested?
+      process_action('handoff')
+      account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+    else
+      ActiveRecord::Base.transaction do
         create_messages
         Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
         account.increment_response_usage
+        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
     end
 
@@ -130,12 +138,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_handoff_message
     handoff_message = @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
 
-    create_outgoing_message(@assistant.render_runtime_text(handoff_message, conversation: @conversation))
+    create_outgoing_message(
+      @assistant.render_runtime_text(handoff_message, conversation: @conversation)
+    )
   end
 
   def create_messages
     validate_message_content!(@response['response'])
-    create_outgoing_message(@response['response'], agent_name: @response['agent_name'])
+    create_outgoing_message(
+      @response['response'],
+      agent_name: @response['agent_name']
+    )
   end
 
   def validate_message_content!(content)
@@ -145,6 +158,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def create_outgoing_message(message_content, agent_name: nil)
     additional_attrs = {}
     additional_attrs[:agent_name] = agent_name if agent_name.present?
+    additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
 
     @conversation.messages.create!(
       message_type: :outgoing,
@@ -171,6 +185,40 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def captain_v2_enabled?
     account.feature_enabled?('captain_integration_v2')
+  end
+
+  def build_tool_trace_callbacks
+    tool_trace_steps = []
+    tool_trace_sequence = 0
+
+    callbacks = {
+      on_tool_start: lambda { |tool_name, *_args|
+        tool_trace_sequence += 1
+        tool_trace_steps << Captain::ToolTraceBuilder.step(
+          tool_name: tool_name,
+          event: 'start',
+          sequence: tool_trace_sequence
+        )
+      },
+      on_tool_complete: lambda { |tool_name, *_args|
+        tool_trace_sequence += 1
+        tool_trace_steps << Captain::ToolTraceBuilder.step(
+          tool_name: tool_name,
+          event: 'complete',
+          sequence: tool_trace_sequence
+        )
+      }
+    }
+
+    [callbacks, tool_trace_steps]
+  end
+
+  def attach_tool_trace_to_response!(tool_trace_steps = nil)
+    return if @response.blank?
+    return if @response['captain_trace'].present?
+
+    payload = Captain::ToolTraceBuilder.payload(tool_trace_steps)
+    @response['captain_trace'] = payload if payload.present?
   end
 
   def conversation_pending?

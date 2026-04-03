@@ -20,16 +20,22 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import CrmTaskAssigneeMenu from 'dashboard/components-next/CRM/CrmTaskAssigneeMenu.vue';
+import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
 import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
+import CrmTaskPriorityMenu from 'dashboard/components-next/CRM/CrmTaskPriorityMenu.vue';
+import CrmTaskStatusMenu from 'dashboard/components-next/CRM/CrmTaskStatusMenu.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
+import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
+import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/SchedulingMultiSelectFilter.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
@@ -43,10 +49,25 @@ import {
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
+  buildDefaultCustomAttributes,
+  mergeMissingDefaultCustomAttributes,
+} from 'dashboard/stores/crm/customFieldDefaults';
+import {
+  buildAdvancedCustomFieldOperatorOptions,
+  buildCustomFieldFilterOptions,
+  buildCustomFieldFilterSummary,
+  isAdvancedFilterableCustomFieldDefinition,
+  isDiscreteFilterableCustomFieldDefinition,
+  isFilterableCustomFieldDefinition,
+  normalizeCustomFieldFilters,
+} from 'dashboard/stores/crm/customFieldFilters';
+import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
+import {
   compactPayload,
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
+import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
 import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
 
 const referencesStore = useCrmReferencesStore();
@@ -66,12 +87,23 @@ const filterDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const selectedTask = ref(null);
 const timelineItems = ref([]);
+const pendingCreateCustomFieldDefaultsHydration = ref(false);
+const editingTaskTitleId = ref(null);
+const taskTitleDraft = ref('');
+const savingTaskTitleId = ref(null);
+const customFieldFilters = ref({});
+const customFieldFilterDraft = ref({});
+const listSort = ref({
+  direction: '',
+  key: '',
+});
 
 const LIST_PAGE_SIZE = 25;
 
 const filters = reactive({
   archived: false,
   assigneeId: '',
+  dealId: '',
   priority: '',
   statusId: '',
   teamId: '',
@@ -79,6 +111,7 @@ const filters = reactive({
 const filterDraft = reactive({
   archived: false,
   assigneeId: '',
+  dealId: '',
   priority: '',
   statusId: '',
   teamId: '',
@@ -105,7 +138,7 @@ const form = reactive({
 
 const ui = reactive({
   error: null,
-  isLoading: false,
+  isLoading: true,
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
@@ -180,14 +213,54 @@ const currentUserId = computed(() => {
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
 
+const localeCode = computed(
+  () => locale.value?.replace(/_/g, '-') || undefined
+);
+
+const taskFieldDefinitions = computed(
+  () => referencesStore.taskFieldDefinitions
+);
+
 const applicableTaskFieldDefinitions = computed(() => {
   const context = form.dealId ? 'deal_task' : 'standalone_task';
 
-  return referencesStore.taskFieldDefinitions.filter(definition => {
+  return taskFieldDefinitions.value.filter(definition => {
     const contexts = definition.rules?.contexts || [];
     return contexts.length === 0 || contexts.includes(context);
   });
 });
+
+const customFieldFilterLabels = computed(() => ({
+  noLabel: t('CHOICE_TOGGLE.NO'),
+  operators: {
+    after: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.AFTER'),
+    before: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.BEFORE'),
+    contains: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.CONTAINS'),
+    equals: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.EQUALS'),
+    greater_than: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.GREATER_THAN'),
+    is_not_present: t(
+      'SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.IS_NOT_PRESENT'
+    ),
+    is_present: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.IS_PRESENT'),
+    less_than: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.LESS_THAN'),
+    on: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.ON'),
+  },
+  yesLabel: t('CHOICE_TOGGLE.YES'),
+}));
+
+const filterableTaskFieldDefinitions = computed(() =>
+  taskFieldDefinitions.value.filter(isFilterableCustomFieldDefinition)
+);
+const discreteTaskFieldDefinitions = computed(() =>
+  filterableTaskFieldDefinitions.value.filter(
+    isDiscreteFilterableCustomFieldDefinition
+  )
+);
+const advancedTaskFieldDefinitions = computed(() =>
+  filterableTaskFieldDefinitions.value.filter(
+    isAdvancedFilterableCustomFieldDefinition
+  )
+);
 
 const statusNameById = computed(() =>
   referencesStore.taskStatuses.reduce((result, status) => {
@@ -285,7 +358,13 @@ const calendarLabel = computed(() =>
 );
 
 const tableColumns = computed(() => [
-  { key: 'id', label: t('CRM.GENERAL.ID'), width: '72px' },
+  {
+    key: 'id',
+    label: t('CRM.GENERAL.ID'),
+    width: '72px',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
   { key: 'title', label: t('CRM.TASKS.TABLE.TITLE'), width: '2.4fr' },
   { key: 'status', label: t('CRM.TASKS.TABLE.STATUS'), width: '1fr' },
   {
@@ -294,7 +373,13 @@ const tableColumns = computed(() => [
     width: '0.95fr',
   },
   { key: 'assignee', label: t('CRM.TASKS.TABLE.ASSIGNEE'), width: '1fr' },
-  { key: 'dueAt', label: t('CRM.TASKS.TABLE.DUE_AT'), width: '1fr' },
+  {
+    key: 'dueAt',
+    label: t('CRM.TASKS.TABLE.DUE_AT'),
+    width: '1fr',
+    sortable: true,
+    defaultSortDirection: 'desc',
+  },
   { key: 'actions', label: '', width: '112px', align: 'end' },
 ]);
 
@@ -302,6 +387,23 @@ const normalizeFilterText = value =>
   String(value || '')
     .trim()
     .toLowerCase();
+
+const taskCustomFieldEntries = task =>
+  resolveCustomFieldEntries(
+    taskFieldDefinitions.value,
+    task?.customAttributes,
+    {
+      locale: localeCode.value,
+      noLabel: t('CHOICE_TOGGLE.NO'),
+      yesLabel: t('CHOICE_TOGGLE.YES'),
+    }
+  );
+
+const searchableTaskCustomFieldTerms = task =>
+  taskCustomFieldEntries(task).flatMap(entry => [
+    entry.label,
+    entry.displayValue,
+  ]);
 
 const filteredListTasks = computed(() => {
   const search = normalizeFilterText(listQuickFilters.q);
@@ -317,13 +419,29 @@ const filteredListTasks = computed(() => {
       `#${task.id}`,
       dealNameById.value[task.dealId],
       assigneeNameById.value[task.assigneeId],
+      ...searchableTaskCustomFieldTerms(task),
     ].some(value => normalizeFilterText(value).includes(search));
   });
 });
 
+const resolveTaskSortValue = (task, key) => {
+  switch (key) {
+    case 'dueAt':
+      return task.dueAt ? new Date(task.dueAt).getTime() : null;
+    case 'id':
+      return Number(task.id);
+    default:
+      return null;
+  }
+};
+
+const sortedListTasks = computed(() =>
+  sortListRecords(filteredListTasks.value, listSort.value, resolveTaskSortValue)
+);
+
 const paginatedListTasks = computed(() => {
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
-  return filteredListTasks.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
+  return sortedListTasks.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
 });
 
 const stripedTaskRowIds = computed(
@@ -336,7 +454,7 @@ const stripedTaskRowIds = computed(
 );
 
 const shouldShowListPagination = computed(
-  () => filteredListTasks.value.length > LIST_PAGE_SIZE
+  () => sortedListTasks.value.length > LIST_PAGE_SIZE
 );
 
 const taskListRowClass = row => [
@@ -344,16 +462,9 @@ const taskListRowClass = row => [
   stripedTaskRowIds.value.has(Number(row.id)) ? 'bg-n-surface-1/70' : '',
 ];
 
-const defaultCustomAttributes = definitions => {
-  return definitions.reduce((result, definition) => {
-    if (
-      definition.defaultValue !== null &&
-      definition.defaultValue !== undefined
-    ) {
-      result[definition.key] = definition.defaultValue;
-    }
-    return result;
-  }, {});
+const handleListSortChange = sortState => {
+  listCurrentPage.value = 1;
+  listSort.value = sortState;
 };
 
 const resetForm = () => {
@@ -363,7 +474,7 @@ const resetForm = () => {
 
   Object.assign(form, {
     assigneeId: currentUserId.value,
-    customAttributes: defaultCustomAttributes(
+    customAttributes: buildDefaultCustomAttributes(
       referencesStore.taskFieldDefinitions
     ),
     dealId: '',
@@ -447,6 +558,7 @@ const loadTimeline = async taskId => {
 
 const openCreateDrawer = async prefill => {
   selectedTask.value = null;
+  pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
   timelineItems.value = [];
   drawerOpen.value = true;
@@ -469,6 +581,7 @@ const openCalendarCreateDrawer = async payload => {
 };
 
 const openEditDrawer = async task => {
+  pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
   Object.assign(form, {
     assigneeId: task.assigneeId ?? '',
@@ -493,10 +606,29 @@ const openEditDrawer = async task => {
 };
 
 const closeDrawer = () => {
+  pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   selectedTask.value = null;
   timelineItems.value = [];
   resetForm();
+};
+
+const closeTaskTitleEditor = () => {
+  editingTaskTitleId.value = null;
+  taskTitleDraft.value = '';
+};
+
+const syncTaskRangeInDrawer = task => {
+  if (
+    !selectedTask.value ||
+    Number(selectedTask.value.id) !== Number(task.id)
+  ) {
+    return;
+  }
+
+  selectedTask.value = task;
+  form.startAt = task.startAt ? task.startAt.slice(0, 16) : '';
+  form.dueAt = task.dueAt ? task.dueAt.slice(0, 16) : '';
 };
 
 const upsertTask = task => {
@@ -612,6 +744,8 @@ const loadTasks = async () => {
     const query = compactPayload({
       archived: filters.archived,
       assignee_id: filters.assigneeId || undefined,
+      custom_attribute_filters: customFieldFilters.value,
+      deal_id: filters.dealId || undefined,
       priority: filters.priority || undefined,
       status_id: filters.statusId || undefined,
       team_id: filters.teamId || undefined,
@@ -698,10 +832,12 @@ const syncFilterDraft = () => {
   Object.assign(filterDraft, {
     archived: filters.archived,
     assigneeId: filters.assigneeId,
+    dealId: filters.dealId,
     priority: filters.priority,
     statusId: filters.statusId,
     teamId: filters.teamId,
   });
+  customFieldFilterDraft.value = { ...customFieldFilters.value };
 };
 
 const openFilterDialog = () => {
@@ -709,18 +845,85 @@ const openFilterDialog = () => {
   filterDialogRef.value?.open();
 };
 
+const customFieldFilterOptions = definition =>
+  buildCustomFieldFilterOptions(definition, customFieldFilterLabels.value);
+
+const customFieldAdvancedOperatorOptions = definition =>
+  buildAdvancedCustomFieldOperatorOptions(
+    definition,
+    customFieldFilterLabels.value
+  );
+
+const customFieldAdvancedFilterSummary = definition =>
+  buildCustomFieldFilterSummary(
+    definition,
+    customFieldFilterDraft.value?.[definition.key],
+    customFieldFilterLabels.value
+  );
+
+const updateTaskCustomFieldFilterDraft = (key, value) => {
+  customFieldFilterDraft.value = {
+    ...customFieldFilterDraft.value,
+    [key]: value,
+  };
+};
+
 const applyFilters = async () => {
   listCurrentPage.value = 1;
   Object.assign(filters, {
     archived: filterDraft.archived,
     assigneeId: filterDraft.assigneeId,
+    dealId: filterDraft.dealId,
     priority: filterDraft.priority,
     statusId: filterDraft.statusId,
     teamId: filterDraft.teamId,
   });
+  customFieldFilters.value = normalizeCustomFieldFilters(
+    filterableTaskFieldDefinitions.value,
+    customFieldFilterDraft.value,
+    customFieldFilterLabels.value
+  );
   filterDialogRef.value?.close();
   await loadTasks();
 };
+
+watch(
+  filterableTaskFieldDefinitions,
+  definitions => {
+    customFieldFilters.value = normalizeCustomFieldFilters(
+      definitions,
+      customFieldFilters.value,
+      customFieldFilterLabels.value
+    );
+    customFieldFilterDraft.value = normalizeCustomFieldFilters(
+      definitions,
+      customFieldFilterDraft.value,
+      customFieldFilterLabels.value
+    );
+  },
+  { immediate: true }
+);
+
+watch(
+  applicableTaskFieldDefinitions,
+  definitions => {
+    if (
+      !drawerOpen.value ||
+      selectedTask.value ||
+      !pendingCreateCustomFieldDefaultsHydration.value ||
+      !definitions.length
+    ) {
+      return;
+    }
+
+    form.customAttributes = mergeMissingDefaultCustomAttributes(
+      form.customAttributes,
+      definitions
+    );
+    pendingCreateCustomFieldDefaultsHydration.value = false;
+  },
+  { immediate: true }
+);
 
 watch(
   () => listQuickFilters.q,
@@ -746,7 +949,7 @@ const openCreateTaskStatusSetup = () => {
   if (!canManageTasks.value) return;
 
   router.push({
-    name: 'crm_settings_index',
+    name: 'crm_task_settings_index',
     params: { accountId: accountId.value },
     query: {
       action: 'create-task-status',
@@ -758,6 +961,109 @@ const handleBoardCreateTask = async ({ statusId }) => {
   await openCreateDrawer({
     statusId,
   });
+};
+
+const startEditingTaskTitle = task => {
+  if (!canManageTasks.value) {
+    openEditDrawer(task);
+    return;
+  }
+
+  editingTaskTitleId.value = task.id;
+  taskTitleDraft.value = task.title || '';
+};
+
+const saveTaskTitle = async task => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const nextTitle = String(taskTitleDraft.value || '').trim();
+  const currentTitle = String(currentTask.title || '').trim();
+
+  if (!nextTitle || nextTitle === currentTitle) {
+    closeTaskTitleEditor();
+    return;
+  }
+
+  if (savingTaskTitleId.value === currentTask.id) {
+    return;
+  }
+
+  savingTaskTitleId.value = currentTask.id;
+  const optimisticTask = { ...currentTask, title: nextTitle };
+  upsertTask(optimisticTask);
+
+  if (
+    selectedTask.value &&
+    Number(selectedTask.value.id) === optimisticTask.id
+  ) {
+    selectedTask.value = optimisticTask;
+    form.title = nextTitle;
+  }
+
+  try {
+    const response = await CrmTasksAPI.update(currentTask.id, {
+      lock_version: currentTask.lockVersion,
+      title: nextTitle,
+    });
+    const updatedTask = normalizePayload(response.data);
+    upsertTask(updatedTask);
+
+    if (
+      selectedTask.value &&
+      Number(selectedTask.value.id) === updatedTask.id
+    ) {
+      selectedTask.value = updatedTask;
+      form.title = updatedTask.title;
+    }
+  } catch (error) {
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original API error as the surfaced failure.
+    }
+
+    useAlert(formatErrorMessage(error));
+  } finally {
+    savingTaskTitleId.value = null;
+    closeTaskTitleEditor();
+  }
+};
+
+const handleTaskDueAtChange = async ({ task, dueAt }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const nextDueAt = dueAt || '';
+  const currentDueAt = toDateTimeInputValue(currentTask.dueAt);
+
+  if (nextDueAt === currentDueAt) {
+    return;
+  }
+
+  const previousTask = { ...currentTask };
+  const optimisticTask = { ...currentTask, dueAt: nextDueAt || null };
+  upsertTask(optimisticTask);
+  syncTaskRangeInDrawer(optimisticTask);
+
+  try {
+    const response = await CrmTasksAPI.update(currentTask.id, {
+      due_at: nextDueAt || null,
+      lock_version: currentTask.lockVersion,
+    });
+    const updatedTask = normalizePayload(response.data);
+    upsertTask(updatedTask);
+    syncTaskRangeInDrawer(updatedTask);
+  } catch (error) {
+    upsertTask(previousTask);
+    syncTaskRangeInDrawer(previousTask);
+
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original API error as the surfaced failure.
+    }
+
+    useAlert(formatErrorMessage(error));
+  }
 };
 
 const handleTaskStatusChange = async ({ task, statusId }) => {
@@ -794,6 +1100,52 @@ const handleTaskStatusChange = async ({ task, statusId }) => {
     ) {
       selectedTask.value = updatedTask;
       form.statusId = updatedTask.statusId;
+    }
+  } catch (error) {
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original API error as the surfaced failure.
+    }
+
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const handleTaskPriorityChange = async ({ priority, task }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const nextPriority = String(priority || '');
+
+  if (!nextPriority || currentTask.priority === nextPriority) {
+    return;
+  }
+
+  const optimisticTask = { ...currentTask, priority: nextPriority };
+  upsertTask(optimisticTask);
+
+  if (
+    selectedTask.value &&
+    Number(selectedTask.value.id) === optimisticTask.id
+  ) {
+    selectedTask.value = optimisticTask;
+    form.priority = nextPriority;
+  }
+
+  try {
+    const response = await CrmTasksAPI.update(currentTask.id, {
+      lock_version: currentTask.lockVersion,
+      priority: nextPriority,
+    });
+    const updatedTask = normalizePayload(response.data);
+    upsertTask(updatedTask);
+
+    if (
+      selectedTask.value &&
+      Number(selectedTask.value.id) === updatedTask.id
+    ) {
+      selectedTask.value = updatedTask;
+      form.priority = updatedTask.priority;
     }
   } catch (error) {
     try {
@@ -850,19 +1202,6 @@ const handleTaskAssigneeChange = async ({ task, assigneeId }) => {
 
     useAlert(formatErrorMessage(error));
   }
-};
-
-const syncTaskRangeInDrawer = task => {
-  if (
-    !selectedTask.value ||
-    Number(selectedTask.value.id) !== Number(task.id)
-  ) {
-    return;
-  }
-
-  selectedTask.value = task;
-  form.startAt = task.startAt ? task.startAt.slice(0, 16) : '';
-  form.dueAt = task.dueAt ? task.dueAt.slice(0, 16) : '';
 };
 
 const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
@@ -1057,7 +1396,7 @@ onMounted(async () => {
         <SchedulingEmptyState
           v-else-if="tasks.length === 0 && currentPresentation === 'list'"
           icon="i-lucide-list-todo"
-          :title="$t('CRM.TASKS.EMPTY_TITLE')"
+          title=""
           :description="$t('CRM.TASKS.EMPTY_DESCRIPTION')"
           :action-label="canManageTasks ? $t('CRM.TASKS.NEW_TASK') : ''"
           @action="openCreateDrawer"
@@ -1073,6 +1412,8 @@ onMounted(async () => {
             :columns="tableColumns"
             :rows="paginatedListTasks"
             :row-class="taskListRowClass"
+            :sort-state="listSort"
+            @sort="handleListSortChange"
           >
             <template #empty>
               {{
@@ -1089,15 +1430,37 @@ onMounted(async () => {
             </template>
 
             <template #cell-title="{ row }">
-              <button
-                type="button"
-                class="grid w-full gap-0.5 border-0 bg-transparent p-0 text-left"
-                @click="openEditDrawer(row)"
-              >
+              <div class="grid w-full gap-0.5">
                 <span class="flex flex-wrap items-center gap-2">
-                  <span class="font-medium text-n-slate-12">
-                    {{ row.title }}
-                  </span>
+                  <Input
+                    v-if="
+                      canManageTasks &&
+                      Number(editingTaskTitleId) === Number(row.id)
+                    "
+                    autofocus
+                    size="sm"
+                    class="min-w-[14rem] flex-1"
+                    :disabled="savingTaskTitleId === row.id"
+                    :model-value="taskTitleDraft"
+                    custom-input-class="font-medium shadow-none !bg-n-surface-1"
+                    @update:model-value="taskTitleDraft = $event"
+                    @blur="saveTaskTitle(row)"
+                    @enter="saveTaskTitle(row)"
+                  />
+                  <button
+                    v-else
+                    type="button"
+                    class="min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
+                    @click="
+                      canManageTasks
+                        ? startEditingTaskTitle(row)
+                        : openEditDrawer(row)
+                    "
+                  >
+                    <span class="font-medium text-n-slate-12">
+                      {{ row.title }}
+                    </span>
+                  </button>
                   <span
                     v-if="row.dealId"
                     class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
@@ -1119,11 +1482,25 @@ onMounted(async () => {
                 >
                   {{ row.description }}
                 </span>
-              </button>
+                <CrmCustomFieldsSummary
+                  :definitions="taskFieldDefinitions"
+                  :values="row.customAttributes"
+                />
+              </div>
             </template>
 
             <template #cell-status="{ row }">
+              <CrmTaskStatusMenu
+                v-if="canManageTasks"
+                borderless
+                :model-value="row.statusId"
+                :statuses="referencesStore.taskStatuses"
+                @update:model-value="
+                  handleTaskStatusChange({ task: row, statusId: $event })
+                "
+              />
               <span
+                v-else
                 class="inline-flex items-center gap-2 text-sm text-n-slate-12"
               >
                 <span
@@ -1159,7 +1536,16 @@ onMounted(async () => {
             </template>
 
             <template #cell-priority="{ row }">
+              <CrmTaskPriorityMenu
+                v-if="canManageTasks"
+                :model-value="row.priority"
+                :options="priorityOptions"
+                @update:model-value="
+                  handleTaskPriorityChange({ task: row, priority: $event })
+                "
+              />
               <span
+                v-else
                 class="inline-flex items-center gap-2 text-sm text-n-slate-12"
               >
                 <span
@@ -1181,7 +1567,15 @@ onMounted(async () => {
             </template>
 
             <template #cell-assignee="{ row }">
-              <span class="text-sm text-n-slate-12">
+              <CrmTaskAssigneeMenu
+                v-if="canManageTasks"
+                :assignees="assigneeOptions"
+                :model-value="row.assigneeId"
+                @update:model-value="
+                  handleTaskAssigneeChange({ task: row, assigneeId: $event })
+                "
+              />
+              <span v-else class="text-sm text-n-slate-12">
                 {{
                   assigneeNameById[row.assigneeId] ||
                   $t('CRM.GENERAL.EMPTY_VALUE')
@@ -1190,7 +1584,20 @@ onMounted(async () => {
             </template>
 
             <template #cell-dueAt="{ row }">
-              <span class="text-sm text-n-slate-12">
+              <SchedulingDateTimeField
+                v-if="canManageTasks"
+                class="!w-auto"
+                type="datetime"
+                :display-label="formatDate(row.dueAt)"
+                :model-value="toDateTimeInputValue(row.dueAt)"
+                hide-icon
+                input-class="!h-auto !w-auto !justify-start !gap-1 !rounded-none !bg-transparent !px-0 !py-0 !text-sm !font-normal !text-n-slate-12 !outline-transparent hover:!outline-transparent focus-visible:!outline-transparent data-[state=open]:!outline-transparent"
+                time-picker-variant="field"
+                @update:model-value="
+                  handleTaskDueAtChange({ task: row, dueAt: $event })
+                "
+              />
+              <span v-else class="text-sm text-n-slate-12">
                 {{ formatDate(row.dueAt) }}
               </span>
             </template>
@@ -1224,7 +1631,7 @@ onMounted(async () => {
             v-if="shouldShowListPagination"
             class="!border-t !border-n-weak !bg-transparent before:!hidden"
             :current-page="listCurrentPage"
-            :total-items="filteredListTasks.length"
+            :total-items="sortedListTasks.length"
             :items-per-page="LIST_PAGE_SIZE"
             @update:current-page="listCurrentPage = $event"
           />
@@ -1237,6 +1644,7 @@ onMounted(async () => {
           :assignee-names="assigneeNameById"
           :can-manage="canManageTasks"
           :deal-names="dealNameById"
+          :field-definitions="taskFieldDefinitions"
           :tasks="tasks"
           :view="currentCalendarView"
           :status-names="statusNameById"
@@ -1252,6 +1660,7 @@ onMounted(async () => {
           :assignees="assigneeOptions"
           :can-manage="canManageTasks"
           :deal-names="dealNameById"
+          :field-definitions="taskFieldDefinitions"
           :statuses="referencesStore.taskStatuses"
           :tasks="tasks"
           @change-assignee="handleTaskAssigneeChange"
@@ -1444,6 +1853,14 @@ onMounted(async () => {
         />
 
         <SchedulingSelectField
+          :label="$t('CRM.TASKS.FORM.DEAL')"
+          :model-value="filterDraft.dealId"
+          :options="dealOptions"
+          :placeholder="$t('CRM.TASKS.FORM.DEAL')"
+          @update:model-value="filterDraft.dealId = $event"
+        />
+
+        <SchedulingSelectField
           :label="$t('CRM.TASKS.FORM.PRIORITY')"
           :model-value="filterDraft.priority"
           :options="priorityOptions"
@@ -1457,6 +1874,34 @@ onMounted(async () => {
           :options="teamOptions"
           :placeholder="$t('CRM.TASKS.FORM.TEAM')"
           @update:model-value="filterDraft.teamId = $event"
+        />
+
+        <SchedulingMultiSelectFilter
+          v-for="definition in discreteTaskFieldDefinitions"
+          :key="definition.key"
+          :model-value="customFieldFilterDraft[definition.key] || []"
+          :options="customFieldFilterOptions(definition)"
+          :placeholder="definition.label"
+          :show-trigger-icon="false"
+          @update:model-value="
+            updateTaskCustomFieldFilterDraft(definition.key, $event)
+          "
+        />
+
+        <SchedulingCustomFieldAdvancedFilter
+          v-for="definition in advancedTaskFieldDefinitions"
+          :key="definition.key"
+          :definition="definition"
+          :model-value="customFieldFilterDraft[definition.key] || null"
+          :operator-options="customFieldAdvancedOperatorOptions(definition)"
+          :placeholder="definition.label"
+          :summary-label="customFieldAdvancedFilterSummary(definition)"
+          :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
+          :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
+          :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
+          @update:model-value="
+            updateTaskCustomFieldFilterDraft(definition.key, $event)
+          "
         />
 
         <div class="flex items-center gap-3 pt-6">

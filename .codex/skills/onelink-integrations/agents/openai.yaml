@@ -1,4 +1,4 @@
 interface:
-  display_name: "Onelink Integrations"
-  short_description: "Channels and integrations in Onelink"
-  default_prompt: "Use $onelink-integrations to work on channels, providers, hooks, callbacks, or external integrations in Onelink."
+  display_name: "One Link Integrations"
+  short_description: "Channels and integrations in One Link"
+  default_prompt: "Use $onelink-integrations to work on channels, providers, hooks, callbacks, or external integrations in One Link."

@@ -5,6 +5,7 @@ import { formatNumber } from '@chatwoot/utils';
 import wootConstants from 'dashboard/constants/globals';
 
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
+import ConversationLocalSearch from './widgets/conversation/ConversationLocalSearch.vue';
 import SwitchLayout from 'dashboard/routes/dashboard/conversation/search/SwitchLayout.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -25,6 +26,11 @@ const emit = defineEmits([
   'basicFilterChange',
   'filtersModal',
 ]);
+
+const localSearchQuery = defineModel('localSearchQuery', {
+  type: String,
+  default: '',
+});
 
 const { uiSettings, updateUISettings } = useUISettings();
 
@@ -154,6 +160,10 @@ const toggleConversationLayout = () => {
           :class="{ 'ltr:right-0 rtl:left-0': isOnExpandedLayout }"
         />
       </div>
+      <ConversationLocalSearch
+        v-model="localSearchQuery"
+        :is-on-expanded-layout="isOnExpandedLayout"
+      />
       <ConversationBasicFilter
         v-if="!hasAppliedFiltersOrActiveFolders"
         :is-on-expanded-layout="isOnExpandedLayout"

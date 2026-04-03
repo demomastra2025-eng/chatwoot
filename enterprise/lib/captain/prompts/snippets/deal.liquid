@@ -1,0 +1,72 @@
+# Linked Deal Context
+{% if deal_visible_fields contains 'id' -%}
+- Deal ID: {{ deal.id }}
+{% endif -%}
+{% if deal_visible_fields contains 'title' -%}
+- Title: {{ deal.title | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'description' -%}
+- Description: {{ deal.description | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'amount_minor' -%}
+- Amount (minor units): {{ deal.amount_minor }}
+{% endif -%}
+{% if deal_visible_fields contains 'currency' -%}
+- Currency: {{ deal.currency | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'expected_close_on' -%}
+- Expected Close Date: {{ deal.expected_close_on | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'win_probability' -%}
+- Win Probability: {{ deal.win_probability }}
+{% endif -%}
+{% if deal_visible_fields contains 'closed_at' -%}
+- Closed At: {{ deal.closed_at | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'external_ref' -%}
+- External Reference: {{ deal.external_ref | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'pipeline_id' -%}
+- Pipeline ID: {{ deal.pipeline_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'pipeline_name' -%}
+- Pipeline Name: {{ deal.pipeline_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'stage_id' -%}
+- Stage ID: {{ deal.stage_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'stage_name' -%}
+- Stage Name: {{ deal.stage_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'owner_id' -%}
+- Owner User ID: {{ deal.owner_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'owner_name' -%}
+- Owner Name: {{ deal.owner_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'creator_id' -%}
+- Created By User ID: {{ deal.creator_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'creator_name' -%}
+- Creator Name: {{ deal.creator_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'team_id' -%}
+- Team ID: {{ deal.team_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'team_name' -%}
+- Team Name: {{ deal.team_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'company_id' -%}
+- Company ID: {{ deal.company_id }}
+{% endif -%}
+{% if deal_visible_fields contains 'company_name' -%}
+- Company Name: {{ deal.company_name | default: "None" }}
+{% endif -%}
+{% if deal_visible_fields contains 'originating_conversation_id' -%}
+- Conversation ID: {{ deal.originating_conversation_id }}
+{% endif -%}
+{% if deal.custom_attributes -%}
+  {% for attribute in deal.custom_attributes -%}
+- {{ attribute[0] }}: {{ attribute[1] }}
+  {% endfor -%}
+{% endif -%}

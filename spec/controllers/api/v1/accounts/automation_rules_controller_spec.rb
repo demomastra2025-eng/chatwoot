@@ -140,6 +140,171 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(account.automation_rules.count).to eq(1)
       end
 
+      it 'saves appointment automation rules with managed custom field conditions' do
+        account.enable_features!('scheduling')
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'appointment',
+          key: 'visit_reason',
+          label: 'Visit reason',
+          field_type: 'select',
+          options: [{ 'label' => 'Follow-up', 'value' => 'follow_up' }]
+        )
+
+        appointment_params = params.merge(
+          event_name: 'appointment_created',
+          conditions: [
+            {
+              attribute_key: 'visit_reason',
+              filter_operator: 'equal_to',
+              values: ['follow_up'],
+              query_operator: nil,
+              custom_attribute_type: 'appointment_attribute'
+            }
+          ],
+          actions: [
+            {
+              action_name: :send_webhook_event,
+              action_params: ['https://example.com/hooks/appointments']
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: appointment_params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+        expect(account.automation_rules.first.conditions.first['attribute_key']).to eq('visit_reason')
+      end
+
+      it 'saves appointment automation rules with native appointment actions' do
+        account.enable_features!('scheduling')
+        account.enable_features!('scheduling_finance')
+
+        appointment_params = params.merge(
+          event_name: 'appointment_updated',
+          conditions: [
+            {
+              attribute_key: 'status',
+              filter_operator: 'equal_to',
+              values: ['scheduled'],
+              query_operator: nil
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_appointment_status,
+              action_params: ['confirmed']
+            },
+            {
+              action_name: :cancel_appointment_payment,
+              action_params: []
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: appointment_params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+        expect(account.automation_rules.first.actions.pluck('action_name')).to contain_exactly(
+          'change_appointment_status',
+          'cancel_appointment_payment'
+        )
+      end
+
+      it 'saves deal automation rules with managed custom field conditions and native actions' do
+        account.enable_features!('crm_deals')
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'deal',
+          key: 'deal_region',
+          label: 'Deal region',
+          field_type: 'select',
+          options: [{ 'label' => 'EMEA', 'value' => 'emea' }]
+        )
+        pipeline = create(:crm_pipeline, account: account)
+        stage = create(:crm_stage, account: account, pipeline: pipeline)
+
+        deal_params = params.merge(
+          event_name: 'deal_created',
+          conditions: [
+            {
+              attribute_key: 'deal_region',
+              filter_operator: 'equal_to',
+              values: ['emea'],
+              query_operator: nil,
+              custom_attribute_type: 'deal_attribute'
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_deal_stage,
+              action_params: [stage.id]
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: deal_params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+        expect(account.automation_rules.first.event_name).to eq('deal_created')
+        expect(account.automation_rules.first.conditions.first['attribute_key']).to eq('deal_region')
+        expect(account.automation_rules.first.actions.first['action_name']).to eq('change_deal_stage')
+      end
+
+      it 'saves task automation rules with managed custom field conditions and native actions' do
+        account.enable_features!('crm_tasks')
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'task',
+          key: 'task_channel',
+          label: 'Task channel',
+          field_type: 'select',
+          options: [{ 'label' => 'Chat', 'value' => 'chat' }]
+        )
+        task_status = create(:crm_task_status, account: account)
+
+        task_params = params.merge(
+          event_name: 'task_created',
+          conditions: [
+            {
+              attribute_key: 'task_channel',
+              filter_operator: 'equal_to',
+              values: ['chat'],
+              query_operator: nil,
+              custom_attribute_type: 'task_attribute'
+            }
+          ],
+          actions: [
+            {
+              action_name: :change_task_status,
+              action_params: [task_status.id]
+            }
+          ]
+        )
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: task_params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+        expect(account.automation_rules.first.event_name).to eq('task_created')
+        expect(account.automation_rules.first.conditions.first['attribute_key']).to eq('task_channel')
+        expect(account.automation_rules.first.actions.first['action_name']).to eq('change_task_status')
+      end
+
       it 'Saves file in the automation actions to send an attachments' do
         blob = ActiveStorage::Blob.create_and_upload!(
           io: Rails.root.join('spec/assets/avatar.png').open,
@@ -213,7 +378,9 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
              params: params
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
+        expect(response.parsed_body['error']).to eq(
+          I18n.t('errors.attachments.invalid', locale: :en)
+        )
       end
 
       it 'stores the original blob_id in action_params after create' do
@@ -395,7 +562,9 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
               params: update_params
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq(I18n.t('errors.attachments.invalid'))
+        expect(response.parsed_body['error']).to eq(
+          I18n.t('errors.attachments.invalid', locale: :en)
+        )
       end
 
       it 'allows adding new attachment on update with signed blob_id' do

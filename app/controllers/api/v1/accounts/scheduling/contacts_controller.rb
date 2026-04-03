@@ -54,7 +54,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def contact_custom_attributes(contact)
     incoming = params.permit(:birth_date, :gender, :iin, custom_attributes: {})[:custom_attributes] || {}
-    merged = contact.custom_attributes.merge(incoming.to_h)
+    merged = CustomAttributes::MutationService.merge(contact.custom_attributes, incoming)
     merged['birth_date'] = params[:birth_date] if params[:birth_date].present?
     merged['gender'] = params[:gender] if params[:gender].present?
     merged['iin'] = normalized_iin if normalized_iin.present?

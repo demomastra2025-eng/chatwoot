@@ -5,7 +5,7 @@
 #  id                    :bigint           not null, primary key
 #  connection_state      :string           default("close"), not null
 #  conversation_pending  :boolean          default(FALSE), not null
-#  history_lookback_days :integer          default(365), not null
+#  history_lookback_days :integer          default(0), not null
 #  ignore_jids           :jsonb            not null
 #  import_contacts       :boolean          default(TRUE), not null
 #  import_messages       :boolean          default(TRUE), not null
@@ -82,7 +82,8 @@ class Channel::WhatsappWeb < ApplicationRecord
   validates :lifecycle_state, inclusion: { in: LIFECYCLE_STATES }
   validates :connection_state, inclusion: { in: CONNECTION_STATES }
   validates :phone_number, presence: true, format: { with: /\A\+\d{6,15}\z/, message: 'must be in E.164 format' }
-  validates :history_lookback_days, numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 3650 }
+  validates :history_lookback_days,
+            numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 3650 }
   validates :sign_delimiter, length: { maximum: 20 }
   validates :instance_name, presence: true, uniqueness: true
   validates :webhook_identifier, presence: true, uniqueness: true
@@ -127,7 +128,13 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def history_lookback_window
+    return if history_unlimited?
+
     history_lookback_days.days
+  end
+
+  def history_unlimited?
+    history_lookback_days.to_i <= 0
   end
 
   def custom_ignore_jids
@@ -230,6 +237,7 @@ class Channel::WhatsappWeb < ApplicationRecord
 
     requested_at = history_sync_requested_at
     return false if requested_at.blank?
+    return false if history_sync_failed_without_pending_retry?(requested_at: requested_at)
 
     !history_sync_request_fulfilled?(
       requested_at: requested_at,
@@ -257,7 +265,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def preferred_history_sync_mode
-    full_history_baseline_present? ? 'incremental' : 'full'
+    full_history_baseline_current? ? 'incremental' : 'full'
   end
 
   def history_sync_request_pending?(stale_after: HISTORY_SYNC_REQUEST_STALE_AFTER)
@@ -270,6 +278,16 @@ class Channel::WhatsappWeb < ApplicationRecord
     return false if stale_after.present? && requested_at < stale_after.ago
 
     true
+  end
+
+  def history_sync_failed_without_pending_retry?(requested_at:)
+    return false if sync_state_payload['last_history_sync_error'].blank?
+    return false if history_sync_expected_provider_synced_at.present?
+
+    completed_at = last_local_history_sync_finished_at
+    return false if completed_at.blank?
+
+    completed_at >= requested_at - 1.second
   end
 
   def history_sync_request_fulfilled?(requested_at: nil, expected_provider_history_synced_at: nil)
@@ -539,7 +557,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     self.lifecycle_state = 'creating' if lifecycle_state.blank?
     self.connection_state = 'close' if connection_state.blank?
     self.conversation_pending = false if conversation_pending.nil?
-    self.history_lookback_days = 365 if history_lookback_days.blank?
+    self.history_lookback_days = 0 if history_lookback_days.nil?
     self.sign_messages = false if sign_messages.nil?
     self.sign_delimiter = '\\n' if sign_delimiter.blank?
     self.import_contacts = true if import_contacts.nil?

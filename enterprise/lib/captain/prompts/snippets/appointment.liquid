@@ -1,0 +1,102 @@
+# Linked Appointment Context
+{% if appointment_visible_fields contains 'id' -%}
+- Appointment ID: {{ appointment.id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'status' -%}
+- Status: {{ appointment.status }}
+{% endif -%}
+{% if appointment_visible_fields contains 'appointment_type' -%}
+- Appointment Type: {{ appointment.appointment_type }}
+{% endif -%}
+{% if appointment_visible_fields contains 'starts_at' -%}
+- Start Time: {{ appointment.starts_at }}
+{% endif -%}
+{% if appointment_visible_fields contains 'ends_at' -%}
+- End Time: {{ appointment.ends_at }}
+{% endif -%}
+{% if appointment_visible_fields contains 'duration_min' -%}
+- Duration (minutes): {{ appointment.duration_min }}
+{% endif -%}
+{% if appointment_visible_fields contains 'payment_status' -%}
+- Payment Status: {{ appointment.payment_status }}
+{% endif -%}
+{% if appointment_visible_fields contains 'service_name_snapshot' -%}
+- Service Name: {{ appointment.service_name_snapshot | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'service_type_snapshot' -%}
+- Service Type: {{ appointment.service_type_snapshot | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'service_duration_min_snapshot' -%}
+- Service Duration (minutes): {{ appointment.service_duration_min_snapshot }}
+{% endif -%}
+{% if appointment_visible_fields contains 'service_amount' -%}
+- Service Amount: {{ appointment.service_amount }}
+{% endif -%}
+{% if appointment_visible_fields contains 'resource_id' -%}
+- Specialist ID: {{ appointment.resource_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'contact_id' -%}
+- Contact ID: {{ appointment.contact_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'service_id' -%}
+- Service ID: {{ appointment.service_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'company_id' -%}
+- Company ID: {{ appointment.company_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'conversation_id' -%}
+- Conversation ID: {{ appointment.conversation_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'created_by_id' -%}
+- Created By User ID: {{ appointment.created_by_id }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_name' -%}
+- Client Name: {{ appointment.client_name | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_phone' -%}
+- Client Phone: {{ appointment.client_phone | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_identifier' -%}
+- Client Identifier: {{ appointment.client_identifier | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_birth_date' -%}
+- Client Birth Date: {{ appointment.client_birth_date | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_gender' -%}
+- Client Gender: {{ appointment.client_gender | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'client_comment' -%}
+- Client Comment: {{ appointment.client_comment | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'source' -%}
+- Source: {{ appointment.source | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'external_ref' -%}
+- External Reference: {{ appointment.external_ref | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'compensation_type_snapshot' -%}
+- Compensation Type: {{ appointment.compensation_type_snapshot | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'compensation_value_snapshot' -%}
+- Compensation Value: {{ appointment.compensation_value_snapshot }}
+{% endif -%}
+{% if appointment_visible_fields contains 'compensation_percent_snapshot' -%}
+- Compensation Percent: {{ appointment.compensation_percent_snapshot }}
+{% endif -%}
+{% if appointment_visible_fields contains 'prepaid_amount' -%}
+- Prepaid Amount: {{ appointment.prepaid_amount }}
+{% endif -%}
+{% if appointment_visible_fields contains 'prepaid_payment_method' -%}
+- Prepaid Payment Method: {{ appointment.prepaid_payment_method | default: "None" }}
+{% endif -%}
+{% if appointment_visible_fields contains 'settlement_amount' -%}
+- Settlement Amount: {{ appointment.settlement_amount }}
+{% endif -%}
+{% if appointment_visible_fields contains 'settlement_payment_method' -%}
+- Settlement Payment Method: {{ appointment.settlement_payment_method | default: "None" }}
+{% endif -%}
+{% if appointment.custom_attributes -%}
+  {% for attribute in appointment.custom_attributes -%}
+- {{ attribute[0] }}: {{ attribute[1] }}
+  {% endfor -%}
+{% endif -%}

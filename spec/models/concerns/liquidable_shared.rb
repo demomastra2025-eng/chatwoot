@@ -165,6 +165,139 @@ shared_examples_for 'liqudable' do
         expect(body_params['priority']).to eq 'high'
       end
 
+      it 'resolves field references in content and template params' do
+        conversation.update!(custom_attributes: { 'priority.v2' => 'urgent' })
+        message.content = 'Hello [Name](field://contact.name)'
+        message.additional_attributes = {
+          'template_params' => {
+            'name' => 'test_template',
+            'processed_params' => {
+              'body' => {
+                'customer_name' => '[Name](field://contact.name)',
+                'priority' => '[Priority](field://conversation.custom_attributes.priority.v2)'
+              }
+            }
+          }
+        }
+
+        message.save!
+
+        expect(message.content).to eq 'Hello John'
+        body_params = message.additional_attributes['template_params']['processed_params']['body']
+        expect(body_params['customer_name']).to eq 'John'
+        expect(body_params['priority']).to eq 'urgent'
+      end
+
+      it 'does not resolve field references inside code blocks' do
+        message.content = 'Hello [Name](field://contact.name) `example [Name](field://contact.name)`'
+
+        message.save!
+
+        expect(message.content).to eq 'Hello John `example [Name](field://contact.name)`'
+      end
+
+      it 'resolves enterprise field references in template params' do
+        skip 'Captain context fields are not available' unless defined?(Captain::ContextFields)
+
+        account = conversation.account
+        account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
+        crm_role = create(
+          :custom_role,
+          account: account,
+          permissions: %w[crm_deal_view crm_task_view]
+        )
+        message.sender.account_users.find_by(account_id: account.id)&.update!(
+          custom_role: crm_role
+        )
+
+        deal = create(
+          :crm_deal,
+          account: account,
+          title: 'Expansion',
+          originating_conversation_id: conversation.id,
+          custom_attributes: { 'deal-stage.v2' => 'proposal' }
+        )
+        task = create(
+          :crm_task,
+          account: account,
+          title: 'Call back',
+          originating_conversation_id: conversation.id,
+          custom_attributes: { 'task-kind.v2' => 'callback' }
+        )
+        appointment = create(
+          :scheduling_appointment,
+          account: account,
+          contact: contact,
+          conversation: conversation,
+          client_name: 'John Patient',
+          custom_attributes: { 'visit-kind.v2' => 'follow_up' }
+        )
+
+        message.additional_attributes = {
+          'template_params' => {
+            'name' => 'test_template',
+            'processed_params' => {
+              'body' => {
+                'deal_title' => '[Deal Title](field://deal.title)',
+                'deal_stage' => '[Deal Stage](field://deal.custom_attributes.deal-stage.v2)',
+                'task_title' => '[Task Title](field://task.title)',
+                'task_kind' => '[Task Kind](field://task.custom_attributes.task-kind.v2)',
+                'appointment_name' => '[Client Name](field://appointment.client_name)',
+                'appointment_kind' => '[Visit Kind](field://appointment.custom_attributes.visit-kind.v2)'
+              }
+            }
+          }
+        }
+
+        message.save!
+
+        body_params = message.additional_attributes['template_params']['processed_params']['body']
+        expect(body_params['deal_title']).to eq deal.title
+        expect(body_params['deal_stage']).to eq 'proposal'
+        expect(body_params['task_title']).to eq task.title
+        expect(body_params['task_kind']).to eq 'callback'
+        expect(body_params['appointment_name']).to eq appointment.client_name
+        expect(body_params['appointment_kind']).to eq 'follow_up'
+      end
+
+      it 'does not resolve unauthorized crm field references' do
+        skip 'Captain context fields are not available' unless defined?(Captain::ContextFields)
+
+        account = conversation.account
+        account.enable_features!('crm_deals', 'crm_tasks')
+
+        create(
+          :crm_deal,
+          account: account,
+          title: 'Expansion',
+          originating_conversation_id: conversation.id
+        )
+        create(
+          :crm_task,
+          account: account,
+          title: 'Call back',
+          originating_conversation_id: conversation.id
+        )
+
+        message.additional_attributes = {
+          'template_params' => {
+            'name' => 'test_template',
+            'processed_params' => {
+              'body' => {
+                'deal_title' => '[Deal Title](field://deal.title)',
+                'task_title' => '[Task Title](field://task.title)'
+              }
+            }
+          }
+        }
+
+        message.save!
+
+        body_params = message.additional_attributes['template_params']['processed_params']['body']
+        expect(body_params['deal_title']).to eq ''
+        expect(body_params['task_title']).to eq ''
+      end
+
       it 'handles missing email with default filter in template_params' do
         contact.update!(email: nil)
         message.additional_attributes = {

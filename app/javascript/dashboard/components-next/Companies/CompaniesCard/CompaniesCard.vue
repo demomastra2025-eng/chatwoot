@@ -28,7 +28,7 @@ const props = defineProps({
   isExpanded: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['toggle', 'deleted']);
+const emit = defineEmits(['toggle', 'deleted', 'updated']);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -111,6 +111,7 @@ const updateCompany = async () => {
   try {
     await companiesStore.update(companyData.value);
     useAlert(t('COMPANIES.FORM.SUCCESS.UPDATE'));
+    emit('updated', props.id);
   } catch {
     useAlert(t('COMPANIES.FORM.ERROR.UPDATE'));
   }

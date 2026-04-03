@@ -17,7 +17,7 @@ const { filterTypes } = defineProps({
 });
 
 const emit = defineEmits(['remove']);
-const { t } = useI18n();
+const { t, tm } = useI18n();
 const showErrors = ref(false);
 
 const attributeKey = defineModel('attributeKey', {
@@ -91,6 +91,10 @@ const booleanOptions = computed(() => [
   { id: true, name: t('FILTER.ATTRIBUTE_LABELS.TRUE') },
   { id: false, name: t('FILTER.ATTRIBUTE_LABELS.FALSE') },
 ]);
+const filterErrorTranslations = computed(() => {
+  const raw = tm('FILTER.ERRORS');
+  return raw && typeof raw === 'object' ? JSON.parse(JSON.stringify(raw)) : {};
+});
 
 const validationError = computed(() => {
   // TOOD: Migrate validateSingleFilter to use camelcase and then remove useSnakeCase here too
@@ -105,6 +109,7 @@ const validationError = computed(() => {
 
 const inputFieldType = computed(() => {
   if (inputType.value === 'date') return 'date';
+  if (inputType.value === 'datetime') return 'datetime-local';
   if (inputType.value === 'number') return 'number';
   return 'text';
 });
@@ -209,7 +214,7 @@ defineExpose({ validate, resetValidation });
       />
     </div>
     <span v-if="showErrors && validationError" class="text-sm text-n-ruby-11">
-      {{ t(`FILTER.ERRORS.${validationError}`) }}
+      {{ filterErrorTranslations[validationError] || '' }}
     </span>
   </li>
 </template>

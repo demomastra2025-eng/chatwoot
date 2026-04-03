@@ -12,12 +12,14 @@ class AsyncDispatcher < BaseDispatcher
     [
       AutomationRuleListener.instance,
       CampaignListener.instance,
+      CrmAutomationRuleListener.instance,
       CsatSurveyListener.instance,
       HookListener.instance,
       InstallationWebhookListener.instance,
       NotificationListener.instance,
       ParticipationListener.instance,
       ReportingEventListener.instance,
+      SchedulingAutomationRuleListener.instance,
       WebhookListener.instance
     ]
   end

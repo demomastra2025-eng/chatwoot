@@ -28,8 +28,9 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     payment_status
   ].freeze
 
-  before_action :set_appointment, only: [:show, :update, :cancel]
-  before_action :ensure_editable_appointment!, only: [:update, :cancel]
+  before_action :set_appointment, only: [:show, :update, :cancel, :destroy]
+  before_action :ensure_editable_appointment!, only: [:update, :cancel, :destroy]
+  before_action :ensure_destroyable_appointment!, only: [:destroy]
 
   def index
     appointments = filtered_appointments
@@ -78,6 +79,11 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     render_payload(Scheduling::PayloadBuilder.appointment(appointment))
   end
 
+  def destroy
+    @appointment.destroy!
+    head :no_content
+  end
+
   private
 
   def appointment_params
@@ -106,7 +112,12 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     scope = filter_by_range(scope)
     scope = filter_by_csv(scope, :resource_id, params[:resource_ids])
     scope = filter_by_csv(scope, :status, params[:status])
-    filter_by_csv(scope, :payment_status, params[:payment_status])
+    scope = filter_by_csv(scope, :payment_status, params[:payment_status])
+
+    Scheduling::AppointmentCustomFieldFilterSet.new(
+      account: Current.account,
+      raw_filters: custom_attribute_filters_param
+    ).apply(scope).to_a
   end
 
   def set_appointment
@@ -125,6 +136,16 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     raise Scheduling::Error.new(
       code: 'APPOINTMENT_READ_ONLY',
       message: 'Imported Medelement appointments are read-only',
+      status: :unprocessable_content
+    )
+  end
+
+  def ensure_destroyable_appointment!
+    return if @appointment.status == 'cancelled'
+
+    raise Scheduling::Error.new(
+      code: 'APPOINTMENT_DELETE_REQUIRES_CANCELLED',
+      message: 'Only cancelled appointments can be deleted',
       status: :unprocessable_content
     )
   end

@@ -4,7 +4,7 @@ import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { DirectUpload } from 'activestorage';
 import { checkFileSizeLimit } from 'shared/helpers/FileHelper';
-import { getMaxUploadSizeByChannel } from '@chatwoot/utils';
+import { resolveConversationUploadLimit } from 'shared/helpers/FileHelper';
 
 vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables', () => ({
@@ -15,9 +15,9 @@ vi.mock('activestorage');
 vi.mock('shared/helpers/FileHelper', () => ({
   checkFileSizeLimit: vi.fn(),
   resolveMaximumFileUploadSize: vi.fn(value => Number(value) || 40),
+  resolveConversationUploadLimit: vi.fn(),
   DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE: 40,
 }));
-vi.mock('@chatwoot/utils');
 
 describe('useFileUpload', () => {
   const mockAttachFile = vi.fn();
@@ -49,7 +49,7 @@ describe('useFileUpload', () => {
 
     useI18n.mockReturnValue({ t: mockTranslate });
     checkFileSizeLimit.mockReturnValue(true);
-    getMaxUploadSizeByChannel.mockReturnValue(25); // default max size MB for tests
+    resolveConversationUploadLimit.mockReturnValue(25);
   });
 
   it('handles direct file upload when direct uploads enabled', () => {
@@ -66,10 +66,12 @@ describe('useFileUpload', () => {
     onFileUpload(mockFile);
 
     // size rules called with inbox + mime
-    expect(getMaxUploadSizeByChannel).toHaveBeenCalledWith({
+    expect(resolveConversationUploadLimit).toHaveBeenCalledWith({
       channelType: inbox.channel_type,
       medium: inbox.medium,
       mime: 'image/jpeg',
+      installationLimit: 40,
+      isPrivateNote: false,
     });
 
     // size check called with max from helper
@@ -107,7 +109,7 @@ describe('useFileUpload', () => {
     onFileUpload(mockFile);
 
     expect(DirectUpload).not.toHaveBeenCalled();
-    expect(getMaxUploadSizeByChannel).toHaveBeenCalled();
+    expect(resolveConversationUploadLimit).toHaveBeenCalled();
     expect(checkFileSizeLimit).toHaveBeenCalledWith(mockFile, 25);
     expect(mockAttachFile).toHaveBeenCalledWith({ file: mockFile });
   });
@@ -128,7 +130,7 @@ describe('useFileUpload', () => {
   });
 
   it('uses per-mime limits from helper', () => {
-    getMaxUploadSizeByChannel.mockImplementation(({ mime }) =>
+    resolveConversationUploadLimit.mockImplementation(({ mime }) =>
       mime.startsWith('image/') ? 10 : 50
     );
     const { onFileUpload } = useFileUpload({
@@ -142,12 +144,37 @@ describe('useFileUpload', () => {
 
     onFileUpload(mockFile);
 
-    expect(getMaxUploadSizeByChannel).toHaveBeenCalledWith({
+    expect(resolveConversationUploadLimit).toHaveBeenCalledWith({
       channelType: inbox.channel_type,
       medium: inbox.medium,
       mime: 'image/jpeg',
+      installationLimit: 40,
+      isPrivateNote: false,
     });
     expect(checkFileSizeLimit).toHaveBeenCalledWith(mockFile, 10);
+  });
+
+  it('allows WhatsApp videos up to 70 MB', () => {
+    const videoFile = {
+      file: new File(['video'], 'video.mp4', { type: 'video/mp4' }),
+    };
+    resolveConversationUploadLimit.mockReturnValue(70);
+
+    const { onFileUpload } = useFileUpload({
+      inbox,
+      attachFile: mockAttachFile,
+    });
+
+    onFileUpload(videoFile);
+
+    expect(resolveConversationUploadLimit).toHaveBeenCalledWith({
+      channelType: inbox.channel_type,
+      medium: inbox.medium,
+      mime: 'video/mp4',
+      installationLimit: 40,
+      isPrivateNote: false,
+    });
+    expect(checkFileSizeLimit).toHaveBeenCalledWith(videoFile, 70);
   });
 
   it('handles direct upload errors', () => {
@@ -176,7 +203,7 @@ describe('useFileUpload', () => {
     onFileUpload(null);
 
     expect(checkFileSizeLimit).not.toHaveBeenCalled();
-    expect(getMaxUploadSizeByChannel).not.toHaveBeenCalled();
+    expect(resolveConversationUploadLimit).not.toHaveBeenCalled();
     expect(mockAttachFile).not.toHaveBeenCalled();
     expect(useAlert).not.toHaveBeenCalled();
   });

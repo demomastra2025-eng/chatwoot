@@ -9,13 +9,28 @@ module Liquidable
   private
 
   def message_drops
-    {
+    drops = {
       'contact' => ContactDrop.new(conversation.contact),
       'agent' => UserDrop.new(sender),
       'conversation' => ConversationDrop.new(conversation),
       'inbox' => InboxDrop.new(inbox),
       'account' => AccountDrop.new(conversation.account)
     }
+
+    if defined?(Captain::ContextFields)
+      account = conversation.account
+      drops['deal'] = build_runtime_state_drop(
+        Captain::ContextFields.deal_state_for(account: account, conversation: conversation)
+      )
+      drops['task'] = build_runtime_state_drop(
+        Captain::ContextFields.task_state_for(account: account, conversation: conversation)
+      )
+      drops['appointment'] = build_runtime_state_drop(
+        Captain::ContextFields.appointment_state_for(account: account, conversation: conversation)
+      )
+    end
+
+    drops.compact
   end
 
   def liquid_processable_message?
@@ -25,9 +40,8 @@ module Liquidable
   def process_liquid_in_content
     return unless liquid_processable_message?
 
-    template = Liquid::Template.parse(modified_liquid_content)
-    self.content = template.render(message_drops)
-  rescue Liquid::Error
+    self.content = process_liquid_string(modified_liquid_content)
+  rescue StandardError
     # If there is an error in the liquid syntax, we don't want to process it
   end
 
@@ -88,9 +102,20 @@ module Liquidable
   def process_liquid_string(string)
     return string if string.blank?
 
+    string = field_reference_renderer.render(string)
     template = Liquid::Template.parse(string)
     template.render(message_drops)
   rescue Liquid::Error
     string
+  end
+
+  def build_runtime_state_drop(state)
+    return if state.blank?
+
+    RuntimeStateDrop.new(state)
+  end
+
+  def field_reference_renderer
+    @field_reference_renderer ||= FieldReferences::RendererService.new(message: self)
   end
 end

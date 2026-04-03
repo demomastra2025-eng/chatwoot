@@ -124,6 +124,26 @@ RSpec.describe Captain::CustomTool, type: :model do
         )
       end
 
+      it 'is invalid when a parameter name uses a reserved system context name' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'contact', 'type' => 'string', 'description' => 'Attempted override' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter contact uses a reserved name')
+      end
+
+      it 'is invalid when a parameter name uses a reserved CRM context name' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'deal', 'type' => 'string', 'description' => 'Attempted deal override' },
+                       { 'name' => 'task', 'type' => 'string', 'description' => 'Attempted task override' }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter deal uses a reserved name')
+        expect(tool.errors[:param_schema]).to include('parameter task uses a reserved name')
+      end
+
       it 'is invalid when parameter names are duplicated' do
         tool = build(:captain_custom_tool, account: account, param_schema: [
                        { 'name' => 'order_id', 'type' => 'string', 'description' => 'Primary order ID' },
@@ -168,6 +188,16 @@ RSpec.describe Captain::CustomTool, type: :model do
         tool.validate
 
         expect(tool.param_schema.first['source']).to eq('agent')
+      end
+
+      it 'defaults missing required flags to false' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       { 'name' => 'order_id', 'type' => 'string', 'description' => 'Order ID' }
+                     ])
+
+        tool.validate
+
+        expect(tool.param_schema.first['required']).to be(false)
       end
 
       it 'is valid with a known context field mapping' do
@@ -526,6 +556,32 @@ RSpec.describe Captain::CustomTool, type: :model do
       let(:tool) { create(:captain_custom_tool, account: account, slug: 'custom_test_tool') }
       let(:conversation) { create(:conversation, account: account) }
       let(:contact) { conversation.contact }
+      let(:deal) do
+        create(
+          :crm_deal,
+          account: account,
+          originating_conversation: conversation
+        )
+      end
+      let(:task) do
+        create(
+          :crm_task,
+          account: account,
+          originating_conversation: conversation
+        )
+      end
+      let(:appointment) do
+        create(
+          :scheduling_appointment,
+          account: account,
+          resource: create(:scheduling_resource, account: account),
+          service: create(:scheduling_service, account: account),
+          contact: contact,
+          conversation: conversation,
+          status: 'confirmed',
+          starts_at: Time.zone.parse('2026-03-29 10:00:00 UTC')
+        )
+      end
 
       let(:state) do
         {
@@ -543,6 +599,21 @@ RSpec.describe Captain::CustomTool, type: :model do
             id: contact.id,
             email: contact.email,
             phone_number: contact.phone_number
+          },
+          deal: {
+            id: deal.id,
+            title: deal.title,
+            stage_name: deal.stage.name
+          },
+          task: {
+            id: task.id,
+            title: task.title,
+            status_name: task.status.name
+          },
+          appointment: {
+            id: appointment.id,
+            status: appointment.status,
+            starts_at: appointment.starts_at.iso8601
           }
         }
       end
@@ -574,6 +645,30 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(headers['X-Chatwoot-Contact-Email']).to eq(contact.email)
       end
 
+      it 'includes deal metadata when present' do
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Deal-Id']).to eq(deal.id.to_s)
+        expect(headers['X-Chatwoot-Deal-Title']).to eq(deal.title)
+        expect(headers['X-Chatwoot-Deal-Stage']).to eq(deal.stage.name)
+      end
+
+      it 'includes task metadata when present' do
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Task-Id']).to eq(task.id.to_s)
+        expect(headers['X-Chatwoot-Task-Title']).to eq(task.title)
+        expect(headers['X-Chatwoot-Task-Status']).to eq(task.status.name)
+      end
+
+      it 'includes appointment metadata when present' do
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Appointment-Id']).to eq(appointment.id.to_s)
+        expect(headers['X-Chatwoot-Appointment-Status']).to eq('confirmed')
+        expect(headers['X-Chatwoot-Appointment-Starts-At']).to eq('2026-03-29T10:00:00Z')
+      end
+
       it 'prefers prompt_context metadata when present' do
         state[:prompt_context] = {
           contact: {
@@ -587,6 +682,40 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(headers['X-Chatwoot-Contact-Id']).to eq(contact.id.to_s)
         expect(headers['X-Chatwoot-Contact-Phone']).to eq('+1987654321')
         expect(headers['X-Chatwoot-Contact-Email']).to be_nil
+      end
+
+      it 'prefers filtered appointment metadata from prompt_context when present' do
+        state[:prompt_context] = {
+          appointment: {
+            id: appointment.id
+          }
+        }
+
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Appointment-Id']).to eq(appointment.id.to_s)
+        expect(headers['X-Chatwoot-Appointment-Status']).to be_nil
+        expect(headers['X-Chatwoot-Appointment-Starts-At']).to be_nil
+      end
+
+      it 'prefers filtered deal and task metadata from prompt_context when present' do
+        state[:prompt_context] = {
+          deal: {
+            id: deal.id
+          },
+          task: {
+            id: task.id
+          }
+        }
+
+        headers = tool.build_metadata_headers(state)
+
+        expect(headers['X-Chatwoot-Deal-Id']).to eq(deal.id.to_s)
+        expect(headers['X-Chatwoot-Deal-Title']).to be_nil
+        expect(headers['X-Chatwoot-Deal-Stage']).to be_nil
+        expect(headers['X-Chatwoot-Task-Id']).to eq(task.id.to_s)
+        expect(headers['X-Chatwoot-Task-Title']).to be_nil
+        expect(headers['X-Chatwoot-Task-Status']).to be_nil
       end
 
       it 'includes contact inbox verification metadata when present' do
@@ -717,11 +846,40 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(params[:include_details].required).to be false
       end
 
+      it 'treats agent parameters without an explicit required flag as optional' do
+        tool = create(:captain_custom_tool, account: account, param_schema: [
+                        {
+                          'name' => 'order_id',
+                          'type' => 'string',
+                          'description' => 'The order ID',
+                          'source' => 'agent'
+                        }
+                      ])
+
+        tool_instance = tool.tool(assistant)
+
+        expect(tool_instance.parameters[:order_id].required).to be(false)
+        expect(tool.parameter_definitions.first['required']).to be(false)
+      end
+
       it 'works with empty param_schema' do
         tool = create(:captain_custom_tool, account: account, param_schema: [])
 
         tool_instance = tool.tool(assistant)
         expect(tool_instance.parameters).to be_empty
+      end
+    end
+
+    describe '#copilot_tool' do
+      let(:assistant) { create(:captain_assistant, account: account) }
+
+      it 'returns the native copilot custom http tool wrapper' do
+        tool = create(:captain_custom_tool, account: account)
+
+        tool_instance = tool.copilot_tool(assistant)
+
+        expect(tool_instance).to be_a(Captain::Tools::Copilot::CustomHttpTool)
+        expect(tool_instance.name).to eq(tool.slug)
       end
     end
   end

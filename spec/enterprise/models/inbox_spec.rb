@@ -5,6 +5,10 @@ require 'rails_helper'
 RSpec.describe Inbox do
   let!(:inbox) { create(:inbox) }
 
+  before do
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+  end
+
   describe 'member_ids_with_assignment_capacity' do
     let!(:inbox_member_1) { create(:inbox_member, inbox: inbox) }
     let!(:inbox_member_2) { create(:inbox_member, inbox: inbox) }
@@ -103,14 +107,7 @@ RSpec.describe Inbox do
     let(:inbox) { channel.inbox }
 
     before do
-      stub_request(:get, 'https://graph.facebook.com/v14.0//message_templates?access_token=test_key')
-        .with(
-          headers: {
-            'Accept' => '*/*',
-            'Accept-Encoding' => 'gzip;q=1.0,deflate;q=0.6,identity;q=0.3',
-            'User-Agent' => 'Ruby'
-          }
-        )
+      stub_request(:get, 'https://graph.facebook.com/v22.0//message_templates')
         .to_return(status: 200, body: '', headers: {})
     end
 

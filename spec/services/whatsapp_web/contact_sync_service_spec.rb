@@ -29,7 +29,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox.contact.phone_number).to eq('+15551234567')
   end
 
-  it 'skips lid-only identities that do not map to a canonical phone jid' do
+  it 'imports lid-only identities as provisional contacts that can be upgraded later' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 
     contact_inbox = described_class.new(
@@ -40,8 +40,12 @@ RSpec.describe WhatsappWeb::ContactSyncService do
       }
     ).perform
 
-    expect(contact_inbox).to be_nil
-    expect(channel.inbox.contact_inboxes).to be_empty
+    expect(contact_inbox).to be_present
+    expect(contact_inbox.source_id).to eq('143907392331785@lid')
+    expect(contact_inbox.contact.phone_number).to be_nil
+    expect(contact_inbox.contact.identifier).to eq('whatsapp_web:143907392331785@lid')
+    expect(contact_inbox.contact.additional_attributes['canonical_jid']).to eq('143907392331785@lid')
+    expect(contact_inbox.contact.additional_attributes['provisional_whatsapp_identity']).to eq(true)
   end
 
   it 'imports lid identities when Evolution provides a canonical phone jid alternative' do
@@ -61,6 +65,61 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox.contact.phone_number).to eq('+15551234567')
     expect(contact_inbox.contact.additional_attributes['raw_jid']).to eq('143907392331785@lid')
     expect(contact_inbox.contact.additional_attributes['canonical_jid']).to eq('15551234567@s.whatsapp.net')
+  end
+
+  it 'reuses a provisional lid contact when the canonical phone jid arrives later' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    provisional_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '143907392331785@lid',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    resolved_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15551234567@s.whatsapp.net',
+        remoteLid: '143907392331785@lid',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    expect(resolved_contact_inbox).to be_present
+    expect(resolved_contact_inbox.contact_id).to eq(provisional_contact_inbox.contact_id)
+    expect(resolved_contact_inbox.source_id).to eq('15551234567')
+    expect(resolved_contact_inbox.contact.reload.phone_number).to eq('+15551234567')
+    expect(resolved_contact_inbox.contact.additional_attributes['lid_jid']).to eq('143907392331785@lid')
+  end
+
+  it 'replaces a technical lid-based name with the phone number when the canonical phone jid arrives later' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    provisional_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '249262822686958@lid',
+        pushName: '249262822686958'
+      }
+    ).perform
+
+    expect(provisional_contact_inbox.contact.reload.name).to eq('249262822686958@lid')
+
+    resolved_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077064008@s.whatsapp.net',
+        remoteLid: '249262822686958@lid',
+        pushName: '249262822686958'
+      }
+    ).perform
+
+    expect(resolved_contact_inbox).to be_present
+    expect(resolved_contact_inbox.contact_id).to eq(provisional_contact_inbox.contact_id)
+    expect(resolved_contact_inbox.contact.reload.phone_number).to eq('+77077064008')
+    expect(resolved_contact_inbox.contact.name).to eq('+77077064008')
   end
 
   it 'skips invalid zero phone jids' do

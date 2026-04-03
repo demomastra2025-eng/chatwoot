@@ -122,23 +122,11 @@ class WhatsappWeb::HistoryImportService
   end
 
   def find_or_create_conversation(contact_inbox, message_time)
-    contact_inbox.with_lock do
-      existing_conversation = contact_inbox.conversations.order(id: :desc).first
-      return existing_conversation if existing_conversation.present?
-
-      Conversation.new(
-        account_id: channel.account_id,
-        inbox_id: channel.inbox.id,
-        contact_id: contact_inbox.contact_id,
-        contact_inbox_id: contact_inbox.id,
-        created_at: message_time,
-        updated_at: message_time,
-        last_activity_at: message_time
-      ).tap do |conversation|
-        conversation.skip_runtime_events = true
-        conversation.save!
-      end
-    end
+    WhatsappWeb::ConversationSyncService.new(
+      channel: channel,
+      contact_inbox: contact_inbox,
+      activity_at: message_time
+    ).perform
   end
 
   def attach_history_payload(message, attachment_payload, attachment_file)
@@ -153,7 +141,7 @@ class WhatsappWeb::HistoryImportService
         filename: attachment_file.original_filename,
         content_type: attachment_file.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def attach_location(message, attachment_payload)
@@ -164,7 +152,7 @@ class WhatsappWeb::HistoryImportService
       coordinates_long: attachment_payload[:longitude],
       fallback_title: attachment_payload[:title],
       external_url: attachment_payload[:url]
-    )
+    ).skip_storage_limit_validation!
   end
 
   def restore_history_reply_reference!(message, reply_to:)
@@ -235,10 +223,18 @@ class WhatsappWeb::HistoryImportService
     attachment_file = file_from_base64_payload(attachment_payload)
     return attachment_file if attachment_file.present?
 
+    if prefer_provider_media_for_history?
+      provider_result = download_provider_attachment(record, attachment_payload, source_id: source_id)
+      return provider_result[:file] if provider_result[:file].present?
+      return if provider_result[:unavailable]
+
+      return download_remote_attachment(attachment_payload, source_id: source_id, fallback: true)
+    end
+
     attachment_file = download_remote_attachment(attachment_payload, source_id: source_id)
     return attachment_file if attachment_file.present?
 
-    download_provider_attachment(record, attachment_payload, source_id: source_id)
+    download_provider_attachment(record, attachment_payload, source_id: source_id)[:file]
   rescue StandardError => e
     Rails.logger.warn("[WHATSAPP WEB] Failed to import history attachment #{source_id}: #{e.message}")
     nil
@@ -254,15 +250,18 @@ class WhatsappWeb::HistoryImportService
     annotate_attachment_file(tempfile, attachment_payload)
   end
 
-  def download_remote_attachment(attachment_payload, source_id:)
+  def download_remote_attachment(attachment_payload, source_id:, fallback: false)
     return if attachment_payload[:media_url].blank?
 
     file = Down.download(attachment_payload[:media_url])
     annotate_attachment_file(file, attachment_payload)
   rescue StandardError => e
-    Rails.logger.info(
-      "[WHATSAPP WEB] Direct history attachment download failed for #{source_id}: #{e.message}; trying provider fallback"
-    )
+    log_message = if fallback
+                    "[WHATSAPP WEB] Direct history attachment fallback failed for #{source_id}: #{e.message}"
+                  else
+                    "[WHATSAPP WEB] Direct history attachment download failed for #{source_id}: #{e.message}; trying provider fallback"
+                  end
+    Rails.logger.info(log_message)
     nil
   end
 
@@ -291,15 +290,17 @@ class WhatsappWeb::HistoryImportService
 
   def download_provider_attachment(record, attachment_payload, source_id:)
     provider_payload = fetch_provider_attachment_payload(record, source_id: source_id)
-    return build_provider_attachment_file(provider_payload, attachment_payload) if provider_attachment_available?(provider_payload)
+    return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false } if provider_attachment_available?(provider_payload)
+    return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
     refreshed_record = refetch_provider_message(record)
-    return if refreshed_record.blank?
+    return { file: nil, unavailable: false } if refreshed_record.blank?
 
     provider_payload = fetch_provider_attachment_payload(refreshed_record, source_id: source_id, refreshed: true)
-    return unless provider_attachment_available?(provider_payload)
+    return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false } if provider_attachment_available?(provider_payload)
+    return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
-    build_provider_attachment_file(provider_payload, attachment_payload)
+    { file: nil, unavailable: false }
   end
 
   def fetch_provider_attachment_payload(record, source_id:, refreshed: false)
@@ -314,6 +315,10 @@ class WhatsappWeb::HistoryImportService
     provider_payload.present? &&
       provider_payload[:unavailable] != true &&
       provider_payload[:base64].present?
+  end
+
+  def provider_attachment_unavailable?(provider_payload)
+    provider_payload.present? && provider_payload[:unavailable] == true
   end
 
   def build_provider_attachment_file(provider_payload, attachment_payload)
@@ -336,8 +341,6 @@ class WhatsappWeb::HistoryImportService
       from_me: from_me
     )
     return if provider_record.blank?
-
-    Rails.logger.info("[WHATSAPP WEB] Refetched provider record for history attachment #{source_id}")
     provider_record.deep_symbolize_keys
   rescue StandardError => e
     Rails.logger.info("[WHATSAPP WEB] Provider message lookup failed for #{source_id}: #{e.message}")
@@ -440,10 +443,19 @@ class WhatsappWeb::HistoryImportService
   end
 
   def outside_import_window?(record)
-    message_time_for(record) < channel.history_lookback_window.ago
+    window = channel.history_lookback_window
+    return false if window.blank?
+
+    message_time_for(record) < window.ago
   end
 
   def ignored_remote_jid?(remote_jid)
     channel.ignored_remote_jid?(remote_jid)
+  end
+
+  def prefer_provider_media_for_history?
+    channel.provider_service.prefer_provider_media_for_history?
+  rescue StandardError
+    false
   end
 end

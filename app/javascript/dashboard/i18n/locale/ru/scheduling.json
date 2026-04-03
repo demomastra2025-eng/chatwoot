@@ -19,6 +19,7 @@
       "ACTIVE": "Активно",
       "ACTIVATE": "Активировать",
       "AMOUNT": "Сумма",
+      "APPLY": "Применить",
       "CANCEL": "Отмена",
       "CLEAR": "Очистить",
       "COMMENTS": "Комментарии",
@@ -52,6 +53,19 @@
       "VALUE": "Значение",
       "YES": "Да"
     },
+    "CUSTOM_FIELD_FILTERS": {
+      "OPERATORS": {
+        "AFTER": "После",
+        "BEFORE": "До",
+        "CONTAINS": "Содержит",
+        "EQUALS": "Равно",
+        "GREATER_THAN": "Больше чем",
+        "IS_NOT_PRESENT": "Пусто",
+        "IS_PRESENT": "Заполнено",
+        "LESS_THAN": "Меньше чем",
+        "ON": "На дату"
+      }
+    },
     "TOOLBAR": {
       "ALL_RESOURCES": "Все специалисты",
       "FILTERS": "Фильтры",
@@ -77,6 +91,10 @@
       "APPOINTMENT_TITLE": "Детали записи",
       "APPOINTMENT_TYPE": "Тип записи",
       "CANCEL_APPOINTMENT": "Отменить запись",
+      "DELETE_APPOINTMENT": "Удалить запись",
+      "DELETE_CONFIRM": "Удалить запись",
+      "DELETE_DESCRIPTION": "Запись «{name}» будет удалена без возможности восстановления.",
+      "DELETE_TITLE": "Удалить отменённую запись?",
       "CLIENT_BIRTH_DATE": "Дата рождения",
       "CLIENT_GENDER": "Пол",
       "CLIENT_IDENTIFIER": "Идентификатор",
@@ -91,8 +109,12 @@
       "CONTACT_SEARCH": "Поиск контактов",
       "CONTACT_TITLE": "Контакт",
       "CREATE_TITLE": "Создать запись",
+      "CUSTOM_FIELDS_DESCRIPTION": "Фиксируйте дополнительные данные по записи через управляемые пользовательские поля.",
+      "CUSTOM_FIELDS_TITLE": "Пользовательские поля",
       "EDIT_TITLE": "Редактировать запись",
       "ENDS_AT": "Окончание",
+      "INTAKE_FIELDS_DESCRIPTION": "Собирайте управляемые поля, которые должны заполняться прямо во время оформления записи.",
+      "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
       "NOTES_TITLE": "Заметки",
       "PREPAID_AMOUNT": "Предоплата",
@@ -102,6 +124,7 @@
       "STARTS_AT": "Начало",
       "STATUS": "Статус",
       "SUCCESS_CANCEL": "Запись отменена",
+      "SUCCESS_DELETE": "Запись удалена",
       "SUCCESS_SAVE": "Запись сохранена",
       "ERRORS": {
         "END_BEFORE_START": "Время окончания должно быть позже времени начала",
@@ -330,8 +353,10 @@
       "TOTAL_UNPAID_DESCRIPTION": "Расходы, ожидающие выплаты."
     },
     "ERRORS": {
+      "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Заполните обязательные поля перед переводом записи в статус «Оплачено»: {fields}.",
       "GENERIC": "Что-то пошло не так. Попробуйте еще раз.",
       "APPOINTMENT_NOT_FOUND": "Запись не найдена.",
+      "APPOINTMENT_DELETE_REQUIRES_CANCELLED": "Сначала переведите запись в статус «Отменено», затем удаляйте её.",
       "BLOCKED_BY_BREAK": "Это время пересекается с перерывом.",
       "BLOCKED_BY_HOLIDAY": "Эта дата заблокирована праздником.",
       "BLOCKED_BY_VACATION": "Это время пересекается с блокировкой.",
@@ -353,7 +378,7 @@
       "OUTSIDE_WORKING_HOURS": "Это время вне рабочих часов.",
       "PAYMENT_AMOUNT_EXCEEDS_BALANCE": "Сумма оплаты превышает остаток к оплате.",
       "PAYMENT_AMOUNT_REQUIRED": "Сумма оплаты должна быть больше 0.",
-      "RESOURCE_HAS_APPOINTMENTS": "У этого специалиста уже есть записи. Удаление доступно только для специалистов без истории записей.",
+      "RESOURCE_HAS_APPOINTMENTS": "У этого специалиста есть активные записи. Сначала отмените или удалите их.",
       "RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING": "Этот специалист недоступен для новых записей.",
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Выберите специалиста для цены по специалисту.",
       "SERVICE_AMOUNT_REQUIRED": "Укажите стоимость услуги больше 0.",

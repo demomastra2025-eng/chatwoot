@@ -5,18 +5,16 @@ description: "Use for Onelink omnichannel and external integration work: channel
 
 # Onelink Integrations
 
-## Overview
-
-Use this skill when the task is about how Onelink talks to external channels, providers, and connected systems.
+Use this skill when the task is about how One Link talks to external channels, providers, and connected systems.
 
 This skill owns provider-specific placement, channel lifecycle behavior, inbox integration rules, and the distinction between integration definitions, installed hooks, and AI tools.
 
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 ## Use This Skill When
 
 - changing channel providers such as WhatsApp, Instagram, Facebook, Telegram, Line, TikTok, email, SMS, or website chat
-- changing inbox/channel setup logic
+- changing inbox or channel setup logic
 - changing `Integrations::App` or `Integrations::Hook` behavior
 - editing callback, webhook, or provider-specific service flows
 - adding or fixing external system connectivity
@@ -24,11 +22,12 @@ All repo paths below are relative to the Onelink repository root.
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/platform/current-architecture.mdx`
-3. `docs/platform/integrations-architecture.mdx`
-4. `docs/platform/repository-map.mdx`
-5. `docs/contributing-guide/implementation-examples-map.mdx`
-6. the relevant integration setup page under `contributing-guide/` or `self-hosted/` when one exists
+2. `docs/platform/integrations-architecture.mdx`
+3. `docs/platform/communication-workflows.mdx`
+4. `docs/internal/automation-and-integrations.mdx`
+5. `docs/internal/communication-core.mdx`
+6. `docs/internal/api-and-routes.mdx`
+7. the relevant provider code paths
 
 ## Workflow
 
@@ -47,20 +46,23 @@ All repo paths below are relative to the Onelink repository root.
 
 ## Documentation Discipline
 
-- Read the relevant integration docs before editing.
-- If setup steps, provider behavior, message constraints, or operator flow changed, update `docs/` in the same task.
-- Keep product code commits in `onelink` and provider/setup docs commits in `docs/`.
+- If provider behavior, message constraints, setup model, or operator flow changed, update docs in the same task.
+- Keep public docs focused on product behavior and integrator setup.
+- Keep internal docs focused on runtime callbacks, provider contracts, and architecture.
 
 ## Placement Rules
 
 - provider services:
   - `app/services/` and provider subfolders
 - channel and integration models:
-  - `app/models/channel/`, `app/models/integrations/`, related inbox models
+  - `app/models/channel/`
+  - `app/models/integrations/`
+  - related inbox models
 - callbacks and webhooks:
   - relevant controllers under `app/controllers/`
 - provider docs:
-  - `onelink/docs/contributing-guide/` or `onelink/docs/self-hosted/`
+  - public docs under `onelink/docs/platform/` and `onelink/docs/integrators/`
+  - internal docs under `onelink/docs/internal/`
 
 ## Integration Guardrails
 
@@ -77,10 +79,11 @@ All repo paths below are relative to the Onelink repository root.
 
 ## Repo Boundary Rule
 
-Integration code lives in `onelink`. Integration setup and operator docs live in `onelink/docs`.
+Integration code lives in `onelink`. Integration docs live in `onelink/docs`.
 
 ## References
 
 - `docs/platform/integrations-architecture.mdx`
-- `docs/platform/current-architecture.mdx`
-- `docs/contributing-guide/implementation-examples-map.mdx`
+- `docs/platform/communication-workflows.mdx`
+- `docs/internal/automation-and-integrations.mdx`
+- `docs/internal/communication-core.mdx`

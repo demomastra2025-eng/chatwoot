@@ -77,6 +77,7 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     fieldDefinitions: {
       deal: [],
       task: [],
+      appointment: [],
     },
     pipelines: [],
     taskStatuses: [],
@@ -86,6 +87,7 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
   getters: {
     dealFieldDefinitions: state => state.fieldDefinitions.deal,
     taskFieldDefinitions: state => state.fieldDefinitions.task,
+    appointmentFieldDefinitions: state => state.fieldDefinitions.appointment,
   },
 
   actions: {

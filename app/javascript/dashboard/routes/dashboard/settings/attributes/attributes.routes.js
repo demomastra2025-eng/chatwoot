@@ -20,7 +20,7 @@ const hasLegacyAttributesAccess = accountId => {
   );
 };
 
-const hasCrmFieldAccess = accountId => {
+const hasManagedFieldAccess = accountId => {
   const permissions = getUserPermissions(
     store.getters.getCurrentUser,
     Number(accountId)
@@ -40,12 +40,18 @@ const hasCrmFieldAccess = accountId => {
       store.getters['accounts/isFeatureEnabledonAccount'](
         accountId,
         FEATURE_FLAGS.CRM_TASKS
+      ) ||
+      store.getters['accounts/isFeatureEnabledonAccount'](
+        accountId,
+        FEATURE_FLAGS.SCHEDULING
       ))
   );
 };
 
 const hasUnifiedAttributeAccess = accountId => {
-  return hasLegacyAttributesAccess(accountId) || hasCrmFieldAccess(accountId);
+  return (
+    hasLegacyAttributesAccess(accountId) || hasManagedFieldAccess(accountId)
+  );
 };
 
 export default {

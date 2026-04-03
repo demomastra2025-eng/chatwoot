@@ -1,0 +1,4 @@
+interface:
+  display_name: "One Link Integrator"
+  short_description: "External API integration guidance for One Link"
+  default_prompt: "Use $onelink-integrator to design or implement an external integration against One Link Cloud APIs, including surface selection, auth, endpoint discovery, and webhook planning."

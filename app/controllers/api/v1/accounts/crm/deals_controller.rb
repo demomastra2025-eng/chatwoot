@@ -173,8 +173,15 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_exact(scope, :owner_id)
     scope = filter_by_exact(scope, :team_id)
     scope = filter_by_exact(scope, :company_id)
+    scope = filter_by_exact(scope, :originating_conversation_id)
     scope = filter_by_contact(scope)
-    filter_by_query(scope)
+    scope = filter_by_query(scope)
+
+    ::Crm::CustomFieldFilterSet.new(
+      account: Current.account,
+      entity_kind: 'deal',
+      raw_filters: custom_attribute_filters_param
+    ).apply(scope)
   end
 
   def idempotent_deal

@@ -162,7 +162,7 @@ class Telegram::IncomingMessageService
         filename: attachment_file.original_filename,
         content_type: attachment_file.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def attach_location
@@ -174,7 +174,7 @@ class Telegram::IncomingMessageService
       fallback_title: location_fallback_title,
       coordinates_lat: location['latitude'],
       coordinates_long: location['longitude']
-    )
+    ).skip_storage_limit_validation!
   end
 
   def attach_contact
@@ -188,7 +188,7 @@ class Telegram::IncomingMessageService
         first_name: contact_card['first_name'],
         last_name: contact_card['last_name']
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def file

@@ -1,3 +1,31 @@
-<% JSON.parse(field.to_s).each do |k,v| %>
-<%= k %>: <%= v %> </br>
-<% end %>
+<%
+  format_value = lambda do |row|
+    next 'Inherited' if row[:value].nil?
+
+    if row[:bytes]
+      "#{number_to_human_size(row[:value])} (#{number_with_delimiter(row[:value])} bytes)"
+    else
+      number_with_delimiter(row[:value])
+    end
+  end
+%>
+
+<div class="space-y-3">
+  <p class="text-xs text-gray-500">
+    Account-level overrides only. Blank in the edit form means the account inherits the global or plan value. <code>0</code> means the account is blocked at that limit.
+  </p>
+
+  <% field.rows.each do |row| %>
+    <div class="p-3 bg-white rounded-md outline outline-1 outline-n-container">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <div class="font-medium text-n-slate-12"><%= row[:label] %></div>
+          <div class="mt-1 text-xs text-gray-500"><%= row[:hint] %></div>
+        </div>
+        <div class="text-sm font-medium text-n-slate-12 text-right">
+          <%= format_value.call(row) %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>

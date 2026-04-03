@@ -7,9 +7,11 @@ module Captain::ChatResponseHelper
     Rails.logger.debug { "#{self.class.name} Assistant: #{@assistant.id}, Received response #{response}" }
 
     parsed = parse_json_response(response.content)
+    parsed['usage'] = usage_payload(response)
     apply_credit_usage_metadata(parsed)
 
-    persist_message(parsed, 'assistant')
+    persist_message(persistable_response(parsed), 'assistant')
+    attach_tool_trace(parsed)
     parsed
   end
 
@@ -42,10 +44,23 @@ module Captain::ChatResponseHelper
     feature_name == 'assistant' && !@assistant.account.feature_enabled?('captain_integration_v2')
   end
 
-  def persist_thinking_message(tool_call)
-    return if @copilot_thread.blank?
+  def usage_payload(response)
+    {
+      'prompt_tokens' => response.try(:input_tokens),
+      'completion_tokens' => response.try(:output_tokens),
+      'total_tokens' => response.try(:input_tokens).to_i + response.try(:output_tokens).to_i
+    }
+  end
 
+  def persistable_response(parsed_response)
+    parsed_response.except('usage', 'captain_trace')
+  end
+
+  def persist_thinking_message(tool_call)
     tool_name = tool_call.name.to_s
+    append_tool_trace_step(tool_name, 'start')
+
+    return if @copilot_thread.blank?
 
     persist_message(
       {
@@ -57,12 +72,13 @@ module Captain::ChatResponseHelper
   end
 
   def persist_tool_completion
-    return if @copilot_thread.blank?
-
     tool_call = @pending_tool_calls&.pop
     return unless tool_call
 
     tool_name = tool_call.name.to_s
+    append_tool_trace_step(tool_name, 'complete')
+
+    return if @copilot_thread.blank?
 
     persist_message(
       {
@@ -70,6 +86,21 @@ module Captain::ChatResponseHelper
         'function_name' => tool_name
       },
       'assistant_thinking'
+    )
+  end
+
+  def attach_tool_trace(parsed_response)
+    payload = Captain::ToolTraceBuilder.payload(@tool_trace_steps)
+    parsed_response['captain_trace'] = payload if payload.present?
+  end
+
+  def append_tool_trace_step(tool_name, event)
+    @tool_trace_steps ||= []
+    @tool_trace_sequence = @tool_trace_sequence.to_i + 1
+    @tool_trace_steps << Captain::ToolTraceBuilder.step(
+      tool_name: tool_name,
+      event: event,
+      sequence: @tool_trace_sequence
     )
   end
 end

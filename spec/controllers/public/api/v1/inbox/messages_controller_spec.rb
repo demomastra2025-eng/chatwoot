@@ -37,7 +37,7 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
 
       json_response = response.parsed_body
 
-      expect(json_response['message']).to eq('Content is too long (maximum is 150000 characters)')
+      expect(json_response['message']).to include(I18n.t('errors.messages.too_long', count: 150_000))
     end
 
     it 'creates attachment message in conversation' do
@@ -51,6 +51,17 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
 
       expect(conversation.messages.last.attachments.first.file.present?).to be(true)
       expect(conversation.messages.last.attachments.first.file_type).to eq('image')
+    end
+
+    it 'returns payment required when account storage limit is reached for attachments' do
+      conversation.account.update!(limits: { storage_bytes: 1000 })
+      file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+      post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/#{conversation.display_id}/messages",
+           params: { content: 'hello', attachments: [file] }
+
+      expect(response).to have_http_status(:payment_required)
+      expect(response.parsed_body['error']).to eq('Account storage limit exceeded')
     end
   end
 

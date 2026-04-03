@@ -26,7 +26,10 @@ class Api::V1::Widget::ContactsController < Api::V1::Widget::BaseController
 
   # TODO : clean up this with proper routes delete contacts/custom_attributes
   def destroy_custom_attributes
-    @contact.custom_attributes = @contact.custom_attributes.excluding(params[:custom_attributes])
+    @contact.custom_attributes = CustomAttributes::MutationService.destroy(
+      @contact.custom_attributes,
+      params.permit(custom_attributes: [])[:custom_attributes]
+    )
     @contact.save!
     render json: @contact
   end

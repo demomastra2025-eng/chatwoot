@@ -3,11 +3,16 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
+import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import SchedulingStatusMenu from './SchedulingStatusMenu.vue';
 import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   appointments: {
+    type: Array,
+    default: () => [],
+  },
+  customFieldDefinitions: {
     type: Array,
     default: () => [],
   },
@@ -182,7 +187,8 @@ const handleColumnChange = (event, status) => {
           >
             <div class="flex min-w-0 items-center gap-2">
               <span
-                :class="[column.icon, 'size-4 shrink-0 text-n-slate-11']"
+                class="size-4 shrink-0 text-n-slate-11"
+                :class="column.icon"
                 aria-hidden="true"
               />
               <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
@@ -235,6 +241,13 @@ const handleColumnChange = (event, status) => {
                   <span>{{ formatDateLabel(element.startsAt) }}</span>
                   <span>{{ formatTimeRange(element) }}</span>
                 </div>
+
+                <CrmCustomFieldsSummary
+                  class="mt-3"
+                  :definitions="customFieldDefinitions"
+                  :values="element.customAttributes"
+                  :max-items="2"
+                />
               </article>
             </template>
 

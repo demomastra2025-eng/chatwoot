@@ -166,6 +166,65 @@
 
 # ------------  Application API routes  ------------#
 
+x-crm-error-schema: &crm_error_schema
+  type: object
+  required:
+    - error
+    - code
+  properties:
+    error:
+      type: string
+    code:
+      type: string
+      enum:
+        - VALIDATION_ERROR
+        - FEATURE_DISABLED
+        - DUPLICATE_EXTERNAL_REF
+        - DUPLICATE_IDEMPOTENCY_KEY
+        - NOT_FOUND
+        - STALE_RECORD
+    details:
+      type: object
+      nullable: true
+      additionalProperties: true
+
+x-crm-field-definition-schema: &crm_field_definition_schema
+  type: object
+  properties:
+    id: { type: integer }
+    account_id: { type: integer }
+    entity_kind:
+      type: string
+      enum: [deal, task, appointment]
+    key: { type: string }
+    label: { type: string }
+    description: { type: string, nullable: true }
+    field_type:
+      type: string
+      enum: [text, textarea, number, currency, percent, checkbox, date, datetime, select, multiselect, url]
+    required: { type: boolean }
+    active: { type: boolean }
+    position: { type: integer }
+    default_value:
+      nullable: true
+      oneOf:
+        - { type: string }
+        - { type: number }
+        - { type: boolean }
+        - { type: array, items: { type: string } }
+        - { type: object, additionalProperties: true }
+    options:
+      type: array
+      items:
+        oneOf:
+          - { type: string }
+          - { type: object, additionalProperties: true }
+    rules:
+      type: object
+      additionalProperties: true
+    created_at: { type: string, format: date-time }
+    updated_at: { type: string, format: date-time }
+
 x-scheduling-error-schema: &scheduling_error_schema
   type: object
   required:
@@ -434,6 +493,14 @@ x-scheduling-expense-schema: &scheduling_expense_schema
       - in: query
         name: duration_min
         schema: { type: integer, minimum: 5 }
+      - in: query
+        name: custom_attribute_filters
+        description: Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.
+        style: deepObject
+        explode: true
+        schema:
+          type: object
+          additionalProperties: true
     responses:
       '200':
         description: Calendar payload
@@ -963,6 +1030,199 @@ x-scheduling-expense-schema: &scheduling_expense_schema
           application/json:
             schema: *scheduling_error_schema
 
+/api/v1/accounts/{account_id}/crm/field_definitions:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    tags: [CRM]
+    operationId: list-crm-field-definitions
+    summary: List managed custom field definitions
+    description: Returns field definitions for deal, task, or appointment entities. `appointment` definitions require the scheduling feature.
+    security:
+      - userApiKey: []
+    parameters:
+      - in: query
+        name: entity_kind
+        schema:
+          type: string
+          enum: [deal, task, appointment]
+    responses:
+      '200':
+        description: Managed field definitions
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: array
+                  items: *crm_field_definition_schema
+                meta:
+                  type: object
+                  properties:
+                    count: { type: integer }
+      '403':
+        description: Relevant CRM or scheduling feature is disabled for this account
+        content:
+          application/json:
+            schema: *crm_error_schema
+  post:
+    tags: [CRM]
+    operationId: create-crm-field-definition
+    summary: Create a managed custom field definition
+    description: Creates a field definition for `deal`, `task`, or `appointment`. Built-in entity fields are reserved and cannot be reused as custom keys.
+    security:
+      - userApiKey: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [entity_kind, key, label, field_type]
+            properties:
+              entity_kind:
+                type: string
+                enum: [deal, task, appointment]
+              key: { type: string }
+              label: { type: string }
+              description: { type: string }
+              field_type:
+                type: string
+                enum: [text, textarea, number, currency, percent, checkbox, date, datetime, select, multiselect, url]
+              required: { type: boolean }
+              active: { type: boolean }
+              position: { type: integer }
+              default_value:
+                nullable: true
+                oneOf:
+                  - { type: string }
+                  - { type: number }
+                  - { type: boolean }
+                  - { type: array, items: { type: string } }
+                  - { type: object, additionalProperties: true }
+              options:
+                type: array
+                items:
+                  oneOf:
+                    - { type: string }
+                    - { type: object, additionalProperties: true }
+              rules:
+                type: object
+                additionalProperties: true
+    responses:
+      '201':
+        description: Field definition created
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: *crm_field_definition_schema
+      '403':
+        description: Relevant CRM or scheduling feature is disabled for this account
+        content:
+          application/json:
+            schema: *crm_error_schema
+      '422':
+        description: Invalid field definition payload
+        content:
+          application/json:
+            schema: *crm_error_schema
+
+/api/v1/accounts/{account_id}/crm/field_definitions/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: path
+      name: id
+      required: true
+      schema: { type: integer }
+  patch:
+    tags: [CRM]
+    operationId: update-crm-field-definition
+    summary: Update a managed custom field definition
+    security:
+      - userApiKey: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              entity_kind:
+                type: string
+                enum: [deal, task, appointment]
+              key: { type: string }
+              label: { type: string }
+              description: { type: string }
+              field_type:
+                type: string
+                enum: [text, textarea, number, currency, percent, checkbox, date, datetime, select, multiselect, url]
+              required: { type: boolean }
+              active: { type: boolean }
+              position: { type: integer }
+              default_value:
+                nullable: true
+                oneOf:
+                  - { type: string }
+                  - { type: number }
+                  - { type: boolean }
+                  - { type: array, items: { type: string } }
+                  - { type: object, additionalProperties: true }
+              options:
+                type: array
+                items:
+                  oneOf:
+                    - { type: string }
+                    - { type: object, additionalProperties: true }
+              rules:
+                type: object
+                additionalProperties: true
+    responses:
+      '200':
+        description: Field definition updated
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: *crm_field_definition_schema
+      '403':
+        description: Relevant CRM or scheduling feature is disabled for this account
+        content:
+          application/json:
+            schema: *crm_error_schema
+      '404':
+        description: Field definition not found
+        content:
+          application/json:
+            schema: *crm_error_schema
+      '422':
+        description: Invalid field definition payload
+        content:
+          application/json:
+            schema: *crm_error_schema
+  delete:
+    tags: [CRM]
+    operationId: delete-crm-field-definition
+    summary: Delete a managed custom field definition
+    security:
+      - userApiKey: []
+    responses:
+      '204':
+        description: Field definition deleted
+      '403':
+        description: Relevant CRM or scheduling feature is disabled for this account
+        content:
+          application/json:
+            schema: *crm_error_schema
+      '404':
+        description: Field definition not found
+        content:
+          application/json:
+            schema: *crm_error_schema
+
 /api/v1/accounts/{account_id}/scheduling/services:
   parameters:
     - $ref: '#/components/parameters/account_id'
@@ -1185,6 +1445,14 @@ x-scheduling-expense-schema: &scheduling_expense_schema
       - in: query
         name: payment_status
         schema: { type: string }
+      - in: query
+        name: custom_attribute_filters
+        description: Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.
+        style: deepObject
+        explode: true
+        schema:
+          type: object
+          additionalProperties: true
     responses:
       '200':
         description: Appointment list
@@ -1246,6 +1514,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               custom_attributes:
                 type: object
                 additionalProperties: true
+                description: Free-form attributes by default. When active `appointment` field definitions exist for the account, unknown keys are rejected, field defaults may be applied on create, and deleted managed field values are removed on the next update while preserved system integration keys remain.
     responses:
       '200':
         description: Existing appointment returned for a replayed idempotency key
@@ -2310,6 +2579,13 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     - $ref: '#/components/parameters/conversation_id'
   post:
     $ref: ./application/conversation/custom_attributes.yml
+
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/destroy_custom_attributes:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  post:
+    $ref: ./application/conversation/destroy_custom_attributes.yml
 
 # Conversations Assignments
 

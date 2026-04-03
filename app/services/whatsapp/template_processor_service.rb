@@ -1,4 +1,15 @@
 class Whatsapp::TemplateProcessorService
+  UNSUPPORTED_COMPONENT_TYPES = %w[
+    LIST
+    PRODUCT
+    CATALOG
+    CAROUSEL
+    LIMITED_TIME_OFFER
+    CALL_PERMISSION_REQUEST
+  ].freeze
+  UNSUPPORTED_CATEGORIES = %w[AUTHENTICATION].freeze
+  UNSUPPORTED_HEADER_FORMATS = %w[LOCATION].freeze
+
   pattr_initialize [:channel!, :template_params, :message]
 
   def call
@@ -19,10 +30,14 @@ class Whatsapp::TemplateProcessorService
   end
 
   def find_template
-    channel.message_templates.find do |t|
-      t['name'] == template_params['name'] &&
-        t['language']&.downcase == template_params['language']&.downcase &&
-        t['status']&.downcase == 'approved'
+    return unless channel.message_templates.is_a?(Array)
+
+    channel.message_templates.find do |template|
+      template['name'] == template_params['name'] &&
+        template['language']&.downcase == template_params['language']&.downcase &&
+        template['status']&.downcase == 'approved' &&
+        namespace_matches?(template) &&
+        supported_template?(template)
     end
   end
 
@@ -126,5 +141,31 @@ class Whatsapp::TemplateProcessorService
 
   def parameter_builder
     @parameter_builder ||= Whatsapp::PopulateTemplateParametersService.new
+  end
+
+  def namespace_matches?(template)
+    requested_namespace = template_params['namespace']
+    template_namespace = template['namespace']
+
+    requested_namespace.blank? || template_namespace.blank? || template_namespace == requested_namespace
+  end
+
+  def supported_template?(template)
+    return false if UNSUPPORTED_CATEGORIES.include?(template['category'].to_s.upcase)
+
+    components = template['components']
+    return false unless components.is_a?(Array)
+
+    components.none? do |component|
+      unsupported_component_type?(component) || unsupported_header_format?(component)
+    end
+  end
+
+  def unsupported_component_type?(component)
+    UNSUPPORTED_COMPONENT_TYPES.include?(component['type'].to_s.upcase)
+  end
+
+  def unsupported_header_format?(component)
+    component['type'].to_s.upcase == 'HEADER' && UNSUPPORTED_HEADER_FORMATS.include?(component['format'].to_s.upcase)
   end
 end

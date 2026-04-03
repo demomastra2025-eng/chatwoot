@@ -3,6 +3,31 @@ module Enterprise::Account
   # this is a temporary method since current administrate doesn't support virtual attributes
   def manually_managed_features; end
 
+  def billing_limits_overview
+    usage_overview = account_usage_overview
+
+    {
+      agents: usage_overview[:agents],
+      inboxes: usage_overview[:inboxes],
+      conversation: usage_overview[:conversations],
+      non_web_inboxes: usage_overview[:non_web_inboxes],
+      storage: usage_overview[:storage],
+      captain: usage_overview[:captain]
+    }.with_indifferent_access
+  end
+
+  def account_usage_overview
+    {
+      agents: agent_usage_summary(consumed: users.count),
+      inboxes: usage_limit_summary(:inboxes, consumed: inboxes.count),
+      conversations: usage_limit_summary(:conversations, consumed: conversations_this_month_count),
+      non_web_inboxes: usage_limit_summary(:non_web_inboxes, consumed: non_web_inboxes_count),
+      emails: email_usage_summary(consumed: emails_sent_today),
+      storage: usage_limits[:storage],
+      captain: usage_limits[:captain]
+    }.with_indifferent_access
+  end
+
   # Auto-sync advanced_assignment with assignment_v2 when features are bulk-updated via admin UI
   def selected_feature_flags=(features)
     super

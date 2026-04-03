@@ -811,6 +811,16 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         expect(contact.reload.custom_attributes).to eq({ 'test1' => 'test1' })
       end
+
+      it 'deletes multiple custom attributes when requested' do
+        post "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/destroy_custom_attributes",
+             headers: admin.create_new_auth_token,
+             params: { custom_attributes: %w[test test1] },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.custom_attributes).to eq({})
+      end
     end
   end
 

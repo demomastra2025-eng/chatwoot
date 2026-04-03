@@ -33,6 +33,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def import
     render json: { error: I18n.t('errors.contacts.import.failed') }, status: :unprocessable_content and return if params[:import_file].blank?
+    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?(params[:import_file].size)
 
     ActiveRecord::Base.transaction do
       import = Current.account.data_imports.create!(data_type: 'contacts')
@@ -78,7 +79,10 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   # TODO : refactor this method into dedicated contacts/custom_attributes controller class and routes
   def destroy_custom_attributes
-    @contact.custom_attributes = @contact.custom_attributes.excluding(params[:custom_attributes])
+    @contact.custom_attributes = CustomAttributes::MutationService.destroy(
+      @contact.custom_attributes,
+      params.permit(custom_attributes: [])[:custom_attributes]
+    )
     @contact.save!
   end
 
@@ -175,7 +179,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def contact_custom_attributes
-    return @contact.custom_attributes.merge(permitted_params[:custom_attributes]) if permitted_params[:custom_attributes]
+    return CustomAttributes::MutationService.merge(@contact.custom_attributes, permitted_params[:custom_attributes]) if permitted_params[:custom_attributes]
 
     @contact.custom_attributes
   end
@@ -190,6 +194,10 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     permitted_params.except(:custom_attributes, :avatar_url)
                     .merge({ custom_attributes: contact_custom_attributes })
                     .merge({ additional_attributes: contact_additional_attributes })
+  end
+
+  def storage_limit_available?(extra_bytes)
+    AccountLimits::StorageUsageService.new(account: Current.account).within_limit?(extra_bytes: extra_bytes)
   end
 
   def set_include_contact_inboxes

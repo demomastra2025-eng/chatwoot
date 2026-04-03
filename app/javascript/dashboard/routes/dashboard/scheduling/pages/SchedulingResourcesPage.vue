@@ -37,6 +37,10 @@ import {
   getUnavailableResourceColors,
   pickResourceColor,
 } from '../resourceColors';
+import {
+  getEditableResourcePhotoUrl,
+  getResourceDisplayPhoto,
+} from '../resourcePhotos';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t } = useI18n();
@@ -376,15 +380,13 @@ const linkedUser = resource => {
 };
 
 const profilePhoto = resource => {
-  return resource.photoUrl || linkedUser(resource)?.thumbnail || '';
+  return getResourceDisplayPhoto(resource, linkedUser(resource));
 };
 
 const roleLabel = resource => linkedUser(resource)?.role || '';
 
 const handleUserSelection = userId => {
   resourceForm.userId = userId;
-  const user = accountUsersById.value[userId];
-  resourceForm.photoUrl = user?.thumbnail || '';
 };
 
 const loadAccountUsers = async () => {
@@ -411,10 +413,7 @@ const openEditResource = resource => {
     description: resource.description || '',
     id: resource.id,
     name: resource.name,
-    photoUrl:
-      accountUsersById.value[resource.userId]?.thumbnail ||
-      resource.photoUrl ||
-      '',
+    photoUrl: getEditableResourcePhotoUrl(resource),
     slotDurationMin: resource.slotDurationMin || 30,
     specialty: resource.specialty || '',
     timezone: resource.timezone || 'Asia/Almaty',

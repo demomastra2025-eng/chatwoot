@@ -1,4 +1,4 @@
 interface:
-  display_name: "Onelink GitOps"
-  short_description: "Git, GitHub, and upstream flow for Onelink"
-  default_prompt: "Use $onelink-gitops to handle GitHub workflow, submodule updates, skill sync, or upstream sync from Chatwoot in Onelink."
+  display_name: "One Link GitOps"
+  short_description: "Git, GitHub, and repo flow for One Link"
+  default_prompt: "Use $onelink-gitops to handle GitHub workflow, submodule updates, skill sync, or upstream sync in One Link."

@@ -141,13 +141,17 @@ export const actions = {
     }
   },
 
-  limits: async ({ commit }) => {
+  limits: async ({ commit }, { silent = true } = {}) => {
     commit(types.default.SET_ACCOUNT_UI_FLAG, { isFetchingLimits: true });
     try {
       const response = await EnterpriseAccountAPI.getLimits();
       commit(types.default.SET_ACCOUNT_LIMITS, response.data);
+      return response.data;
     } catch (error) {
-      // silent error
+      if (!silent) {
+        throwErrorMessage(error);
+      }
+      return null;
     } finally {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isFetchingLimits: false });
     }

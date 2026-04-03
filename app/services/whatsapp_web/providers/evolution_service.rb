@@ -197,6 +197,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     request(:post, "/chat/findMessages/#{channel.instance_name}", body: body)
   end
 
+  def fetch_chats(page: 1, offset: 100)
+    request(:post, "/chat/findChats/#{channel.instance_name}", body: {
+      page: page,
+      offset: offset,
+      where: {}
+    })
+  end
+
   def fetch_message_by_source_id(source_id:, remote_jid: nil, from_me: true)
     response = request(:post, "/chat/findMessages/#{channel.instance_name}", body: {
       page: 1,
@@ -227,6 +235,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       status: e.status,
       error: e.message
     }
+  end
+
+  def prefer_provider_media_for_history?
+    true
   end
 
   def fetch_labels

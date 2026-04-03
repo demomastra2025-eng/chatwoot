@@ -56,12 +56,26 @@ export function useCaptain() {
     return null;
   });
 
+  const tokenLimits = computed(() => {
+    if (captainLimits.value?.tokens) {
+      return useCamelCase(captainLimits.value.tokens);
+    }
+    return null;
+  });
+
   const isFetchingLimits = computed(() => uiFlags.value.isFetchingLimits);
 
-  const fetchLimits = () => {
+  const fetchLimits = async ({ silent = true } = {}) => {
     if (isEnterprise && isOnChatwootCloud.value) {
-      store.dispatch('accounts/limits');
+      try {
+        return await store.dispatch('accounts/limits', { silent });
+      } catch (error) {
+        useAlert(error.message || t('GENERAL_SETTINGS.UPDATE.ERROR'));
+        return null;
+      }
     }
+
+    return Promise.resolve();
   };
 
   // === Error Handling ===
@@ -230,6 +244,7 @@ export function useCaptain() {
     captainLimits,
     documentLimits,
     responseLimits,
+    tokenLimits,
     fetchLimits,
     isFetchingLimits,
 

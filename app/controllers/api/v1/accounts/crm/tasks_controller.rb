@@ -174,7 +174,13 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_exact(scope, :priority)
     scope = filter_by_exact(scope, :deal_id)
     scope = filter_by_due_range(scope)
-    filter_by_query(scope)
+    scope = filter_by_query(scope)
+
+    ::Crm::CustomFieldFilterSet.new(
+      account: Current.account,
+      entity_kind: 'task',
+      raw_filters: custom_attribute_filters_param
+    ).apply(scope)
   end
 
   def idempotent_task

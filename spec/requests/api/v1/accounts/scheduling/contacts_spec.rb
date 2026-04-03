@@ -55,4 +55,46 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('INVALID_IIN')
   end
+
+  it 'merges scheduling contact custom attributes on update' do
+    contact = create(:contact, account: account, name: 'Patient', custom_attributes: { existing_key: 'existing value' })
+
+    patch "#{path}/#{contact.id}",
+          params: {
+            birth_date: '1994-07-20',
+            custom_attributes: { new_key: 'new value' }
+          },
+          headers:,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+      {
+        'existing_key' => 'existing value',
+        'new_key' => 'new value',
+        'birth_date' => '1994-07-20'
+      }
+    )
+    expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
+  end
+
+  it 'initializes scheduling contact custom attributes when persisted value is nil' do
+    contact = create(:contact, account: account, name: 'Patient')
+    contact.update_columns(custom_attributes: nil)
+
+    patch "#{path}/#{contact.id}",
+          params: {
+            custom_attributes: { new_key: 'new value' }
+          },
+          headers:,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+      {
+        'new_key' => 'new value'
+      }
+    )
+    expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
+  end
 end

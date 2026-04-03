@@ -6,6 +6,7 @@ import {
   compactPayload,
   extractSchedulingError,
   normalizePayload,
+  removeRecord,
   upsertRecord,
 } from './shared';
 
@@ -59,6 +60,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveResource(resource) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const payload = compactPayload(resource);
@@ -78,6 +80,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async deleteResource(resourceId) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           await SchedulingResourcesAPI.delete(resourceId);
@@ -115,6 +118,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveWorkRules(resourceId, rules) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const { data } = await SchedulingResourcesAPI.updateWorkRules(
@@ -147,6 +151,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveBreakRules(resourceId, rules) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const { data } = await SchedulingResourcesAPI.updateBreakRules(
@@ -185,6 +190,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveService(service) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const payload = compactPayload(service);
@@ -204,6 +210,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async deleteService(serviceId) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           await SchedulingServicesAPI.delete(serviceId);
@@ -249,6 +256,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveHoliday(holiday) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const payload = compactPayload(holiday);
@@ -270,6 +278,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async deleteHoliday(id) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           await SchedulingExceptionsAPI.deleteHoliday(id);
@@ -284,6 +293,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveWorkdayOverride(override) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const payload = compactPayload(override);
@@ -309,6 +319,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async deleteWorkdayOverride(id) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           await SchedulingExceptionsAPI.deleteWorkdayOverride(id);
@@ -323,6 +334,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async saveTimeOff(timeOff) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           const payload = compactPayload(timeOff);
@@ -342,6 +354,7 @@ export const useSchedulingReferencesStore = defineStore(
 
       async deleteTimeOff(id) {
         this.ui.isSaving = true;
+        this.ui.error = null;
 
         try {
           await SchedulingExceptionsAPI.deleteTimeOff(id);

@@ -2,9 +2,11 @@ import { ref, reactive, computed } from 'vue';
 import { useStoreGetters } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 
 import {
   generateCustomAttributeTypes,
+  generateManagedCustomAttributeTypes,
   getDefaultConditions,
   getDefaultActions,
   generateCustomAttributes,
@@ -23,6 +25,7 @@ import {
  */
 export function useAutomation(startValue = null) {
   const getters = useStoreGetters();
+  const crmReferencesStore = useCrmReferencesStore();
   const { t } = useI18n();
 
   const {
@@ -42,13 +45,42 @@ export function useAutomation(startValue = null) {
   const automation = ref(startValue);
   const automationTypes = reactive(structuredClone(AUTOMATIONS));
   const eventName = computed(() => automation.value?.event_name);
+  const currentAccountId = computed(() => getters.getCurrentAccountId.value);
+  const isSchedulingEnabled = computed(() =>
+    getters['accounts/isFeatureEnabledonAccount'].value(
+      currentAccountId.value,
+      'scheduling'
+    )
+  );
+  const isCrmDealsEnabled = computed(() =>
+    getters['accounts/isFeatureEnabledonAccount'].value(
+      currentAccountId.value,
+      'crm_deals'
+    )
+  );
+  const isCrmTasksEnabled = computed(() =>
+    getters['accounts/isFeatureEnabledonAccount'].value(
+      currentAccountId.value,
+      'crm_tasks'
+    )
+  );
+
+  const appointmentFieldDefinitions = computed(
+    () => crmReferencesStore.appointmentFieldDefinitions || []
+  );
+  const dealFieldDefinitions = computed(
+    () => crmReferencesStore.dealFieldDefinitions || []
+  );
+  const taskFieldDefinitions = computed(
+    () => crmReferencesStore.taskFieldDefinitions || []
+  );
 
   /**
    * Handles the event change for an automation.value.
    */
   const onEventChange = () => {
     automation.value.conditions = getDefaultConditions(eventName.value);
-    automation.value.actions = getDefaultActions();
+    automation.value.actions = getDefaultActions(eventName.value);
   };
 
   /**
@@ -66,7 +98,7 @@ export function useAutomation(startValue = null) {
    * Appends a new action to the automation.value.
    */
   const appendNewAction = () => {
-    const defaultAction = getDefaultActions();
+    const defaultAction = getDefaultActions(eventName.value);
     automation.value.actions = [...automation.value.actions, ...defaultAction];
   };
 
@@ -163,7 +195,53 @@ export function useAutomation(startValue = null) {
     const CUSTOM_ATTR_HEADER_KEYS = new Set([
       'conversation_custom_attribute',
       'contact_custom_attribute',
+      'appointment_custom_attribute',
+      'deal_custom_attribute',
+      'task_custom_attribute',
     ]);
+
+    const appointmentCustomAttributeTypes = generateManagedCustomAttributeTypes(
+      appointmentFieldDefinitions.value,
+      'appointment_attribute'
+    );
+    const appointmentCustomAttributes = appointmentCustomAttributeTypes.length
+      ? [
+          {
+            key: 'appointment_custom_attribute',
+            name: t('AUTOMATION.CONDITION.APPOINTMENT_CUSTOM_ATTR_LABEL'),
+            disabled: true,
+          },
+          ...appointmentCustomAttributeTypes,
+        ]
+      : [];
+    const dealCustomAttributeTypes = generateManagedCustomAttributeTypes(
+      dealFieldDefinitions.value,
+      'deal_attribute'
+    );
+    const dealCustomAttributes = dealCustomAttributeTypes.length
+      ? [
+          {
+            key: 'deal_custom_attribute',
+            name: t('AUTOMATION.CONDITION.DEAL_CUSTOM_ATTR_LABEL'),
+            disabled: true,
+          },
+          ...dealCustomAttributeTypes,
+        ]
+      : [];
+    const taskCustomAttributeTypes = generateManagedCustomAttributeTypes(
+      taskFieldDefinitions.value,
+      'task_attribute'
+    );
+    const taskCustomAttributes = taskCustomAttributeTypes.length
+      ? [
+          {
+            key: 'task_custom_attribute',
+            name: t('AUTOMATION.CONDITION.TASK_CUSTOM_ATTR_LABEL'),
+            disabled: true,
+          },
+          ...taskCustomAttributeTypes,
+        ]
+      : [];
 
     [
       'message_created',
@@ -181,6 +259,98 @@ export function useAutomation(startValue = null) {
         ...manifestedCustomAttributes,
       ];
     });
+
+    [
+      'appointment_created',
+      'appointment_updated',
+      'appointment_cancelled',
+      'appointment_completed',
+    ].forEach(eventToUpdate => {
+      const standardConditions = automationTypes[
+        eventToUpdate
+      ].conditions.filter(
+        c => !c.customAttributeType && !CUSTOM_ATTR_HEADER_KEYS.has(c.key)
+      );
+      automationTypes[eventToUpdate].conditions = [
+        ...standardConditions,
+        ...appointmentCustomAttributes,
+      ];
+    });
+
+    [
+      'deal_created',
+      'deal_updated',
+      'deal_stage_changed',
+      'deal_archived',
+      'deal_unarchived',
+    ].forEach(eventToUpdate => {
+      const standardConditions = automationTypes[
+        eventToUpdate
+      ].conditions.filter(
+        c => !c.customAttributeType && !CUSTOM_ATTR_HEADER_KEYS.has(c.key)
+      );
+      automationTypes[eventToUpdate].conditions = [
+        ...standardConditions,
+        ...dealCustomAttributes,
+      ];
+    });
+
+    [
+      'task_created',
+      'task_updated',
+      'task_status_changed',
+      'task_archived',
+      'task_unarchived',
+    ].forEach(eventToUpdate => {
+      const standardConditions = automationTypes[
+        eventToUpdate
+      ].conditions.filter(
+        c => !c.customAttributeType && !CUSTOM_ATTR_HEADER_KEYS.has(c.key)
+      );
+      automationTypes[eventToUpdate].conditions = [
+        ...standardConditions,
+        ...taskCustomAttributes,
+      ];
+    });
+  };
+
+  const loadFieldDefinitions = async entityKind => {
+    try {
+      return await crmReferencesStore.loadFieldDefinitions(entityKind);
+    } catch (_error) {
+      return crmReferencesStore.fieldDefinitions[entityKind] || [];
+    }
+  };
+
+  const loadAutomationReferences = async eventNameToLoad => {
+    const jobs = [];
+
+    if (
+      isSchedulingEnabled.value ||
+      eventNameToLoad?.startsWith('appointment_')
+    ) {
+      jobs.push(loadFieldDefinitions('appointment'));
+    }
+
+    if (isCrmDealsEnabled.value || eventNameToLoad?.startsWith('deal_')) {
+      jobs.push(loadFieldDefinitions('deal'));
+      jobs.push(
+        crmReferencesStore
+          .loadPipelines()
+          .catch(() => crmReferencesStore.pipelines || [])
+      );
+    }
+
+    if (isCrmTasksEnabled.value || eventNameToLoad?.startsWith('task_')) {
+      jobs.push(loadFieldDefinitions('task'));
+      jobs.push(
+        crmReferencesStore
+          .loadTaskStatuses()
+          .catch(() => crmReferencesStore.taskStatuses || [])
+      );
+    }
+
+    return Promise.all(jobs);
   };
 
   return {
@@ -205,5 +375,12 @@ export function useAutomation(startValue = null) {
     resetAction,
     getActionDropdownValues,
     manifestCustomAttributes,
+    loadAutomationReferences,
+    appointmentFieldDefinitions,
+    dealFieldDefinitions,
+    taskFieldDefinitions,
+    isSchedulingEnabled,
+    isCrmDealsEnabled,
+    isCrmTasksEnabled,
   };
 }

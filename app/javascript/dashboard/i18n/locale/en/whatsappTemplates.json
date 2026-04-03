@@ -41,7 +41,14 @@
       "COUPON_CODE": "Enter coupon code (max 15 chars)",
       "MEDIA_URL_LABEL": "Enter {type} URL",
       "DOCUMENT_NAME_PLACEHOLDER": "Enter document filename (e.g., Invoice_2025.pdf)",
-      "BUTTON_PARAMETER": "Enter button parameter"
+      "BUTTON_PARAMETER": "Enter button parameter",
+      "INSERT_ATTRIBUTE": "Insert attribute",
+      "CHANGE_ATTRIBUTE": "Change attribute",
+      "CLEAR_ATTRIBUTE": "Clear attribute",
+      "FIELD_PICKER_SEARCH_PLACEHOLDER": "Search attributes",
+      "FIELD_PICKER_EMPTY": "No matching attributes found",
+      "FIELD_PICKER_LOADING": "Loading attributes...",
+      "FIELD_PICKER_DEFAULT": "Attributes"
     }
   }
 }

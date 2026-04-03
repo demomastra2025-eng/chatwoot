@@ -14,6 +14,8 @@ module AttachmentConcern
       result
     end
 
+    return [nil, nil, AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE] unless storage_limit_available?(blobs, record)
+
     [blobs, sanitized, nil]
   end
 
@@ -31,5 +33,13 @@ module AttachmentConcern
 
   def blob_already_attached?(record, blob_id)
     record&.files&.any? { |f| f.blob_id == blob_id.to_i }
+  end
+
+  def storage_limit_available?(blobs, record)
+    account = record&.account || Current.account
+    return true if account.blank?
+
+    extra_bytes = blobs.sum(&:byte_size)
+    AccountLimits::StorageUsageService.new(account: account).within_limit?(extra_bytes: extra_bytes)
   end
 end

@@ -1,4 +1,6 @@
 class SearchService
+  MIN_PHONE_SEARCH_DIGITS = 10
+
   pattr_initialize [:current_user!, :current_account!, :params!, :search_type!]
 
   def account_user
@@ -31,10 +33,25 @@ class SearchService
   end
 
   def filter_conversations
+    search_bindings = base_search_bindings
+    search_conditions = [
+      'cast(conversations.display_id as text) ILIKE :search',
+      'contacts.name ILIKE :search',
+      'contacts.email ILIKE :search',
+      'contacts.phone_number ILIKE :search',
+      'contacts.identifier ILIKE :search'
+    ]
+
+    append_phone_search_clause!(
+      search_conditions: search_conditions,
+      search_bindings: search_bindings,
+      column_name: 'contacts.phone_number',
+      bindings_prefix: 'conversation_phone'
+    )
+
     conversations_query = current_account.conversations.where(inbox_id: accessable_inbox_ids)
                                          .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
-                                         .where("cast(conversations.display_id as text) ILIKE :search OR contacts.name ILIKE :search OR contacts.email
-                            ILIKE :search OR contacts.phone_number ILIKE :search OR contacts.identifier ILIKE :search", search: "%#{search_query}%")
+                                         .where(search_conditions.join(' OR '), search_bindings)
 
     if current_account.feature_enabled?('advanced_search')
       conversations_query = apply_time_filter(conversations_query,
@@ -162,10 +179,22 @@ class SearchService
   end
 
   def filter_contacts
-    contacts_query = current_account.contacts.where(
-      "name ILIKE :search OR email ILIKE :search OR phone_number
-      ILIKE :search OR identifier ILIKE :search", search: "%#{search_query}%"
+    search_bindings = base_search_bindings
+    search_conditions = [
+      'contacts.name ILIKE :search',
+      'contacts.email ILIKE :search',
+      'contacts.phone_number ILIKE :search',
+      'contacts.identifier ILIKE :search'
+    ]
+
+    append_phone_search_clause!(
+      search_conditions: search_conditions,
+      search_bindings: search_bindings,
+      column_name: 'contacts.phone_number',
+      bindings_prefix: 'contact_phone'
     )
+
+    contacts_query = current_account.contacts.where(search_conditions.join(' OR '), search_bindings)
 
     contacts_query = apply_time_filter(contacts_query, 'last_activity_at') if current_account.feature_enabled?('advanced_search')
 
@@ -202,6 +231,54 @@ class SearchService
     requested_time = Time.zone.at(until_param.to_i)
 
     [requested_time, max_future].min
+  end
+
+  def base_search_bindings
+    { search: "%#{search_query}%" }
+  end
+
+  def append_phone_search_clause!(search_conditions:, search_bindings:, column_name:, bindings_prefix:)
+    phone_search_clause, phone_search_bindings = build_phone_search_clause(column_name, bindings_prefix)
+    return if phone_search_clause.blank?
+
+    search_conditions << phone_search_clause
+    search_bindings.merge!(phone_search_bindings)
+  end
+
+  def build_phone_search_clause(column_name, bindings_prefix)
+    variants = phone_search_variants
+    return ['', {}] if variants.blank?
+
+    normalized_column_sql = "regexp_replace(COALESCE(#{column_name}, ''), '\\D', '', 'g')"
+    clauses = variants.each_with_index.map do |variant, index|
+      "#{normalized_column_sql} LIKE :#{bindings_prefix}_#{index}"
+    end
+
+    bindings = variants.each_with_index.to_h do |variant, index|
+      ["#{bindings_prefix}_#{index}".to_sym, "%#{variant}%"]
+    end
+
+    [clauses.join(' OR '), bindings]
+  end
+
+  def phone_search_variants
+    return @phone_search_variants if defined?(@phone_search_variants)
+
+    @phone_search_variants = begin
+      digits = search_query.gsub(/\D/, '')
+      if digits.length < MIN_PHONE_SEARCH_DIGITS || !phone_search_input?
+        []
+      else
+        variants = [digits]
+        variants << "7#{digits[1..]}" if digits.length >= 11 && digits.start_with?('8')
+        variants << "8#{digits[1..]}" if digits.length >= 11 && digits.start_with?('7')
+        variants.uniq
+      end
+    end
+  end
+
+  def phone_search_input?
+    search_query.match?(/\A[\d+\s\-\(\)]+\z/)
   end
 end
 

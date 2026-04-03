@@ -36,17 +36,22 @@ class WhatsappWeb::ContactSyncService
 
   def source_id
     @source_id ||= begin
+      return canonical_remote_jid if lid_only_identity?
+
       candidate = canonical_remote_jid.to_s.split('@').first.to_s.gsub(/\D/, '')
       candidate.presence if candidate.present? && candidate != '0'
     end
   end
 
   def phone_number
-    source_id.present? ? "+#{source_id}" : nil
+    return if lid_only_identity?
+    return if source_id.blank?
+
+    "+#{source_id}"
   end
 
   def display_name
-    value = preferred_display_name || phone_number
+    value = preferred_display_name || phone_number || source_id
     value.to_s.truncate(100)
   end
 
@@ -58,6 +63,7 @@ class WhatsappWeb::ContactSyncService
     {
       name: display_name,
       phone_number: phone_number,
+      identifier: contact_identifier,
       additional_attributes: additional_attributes,
       avatar_url: profile_pic_url
     }.compact
@@ -67,6 +73,8 @@ class WhatsappWeb::ContactSyncService
     {
       raw_jid: raw_remote_jid,
       canonical_jid: canonical_remote_jid,
+      lid_jid: lid_jid,
+      provisional_whatsapp_identity: lid_only_identity?,
       provider: 'whatsapp_web',
       profile_pic_url: profile_pic_url
     }.compact
@@ -79,6 +87,7 @@ class WhatsappWeb::ContactSyncService
 
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
     updates[:phone_number] = phone_number if contact.phone_number.blank? && phone_number.present?
+    updates[:identifier] = contact_identifier if contact.identifier.blank? && contact_identifier.present?
 
     if should_replace_contact_name?(contact)
       updates[:name] = display_name
@@ -88,6 +97,12 @@ class WhatsappWeb::ContactSyncService
 
     contact.skip_runtime_events = true
     contact.update!(updates)
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless identifier_conflict?(e, updates)
+
+    merge_identifier_contact!(target_contact: contact)
+    contact.reload
+    retry
   end
 
   def sync_avatar(contact)
@@ -98,7 +113,7 @@ class WhatsappWeb::ContactSyncService
 
   def preferred_display_name
     [contact_payload[:pushName], contact_payload[:name]].find do |value|
-      value.present? && !placeholder_display_name?(value)
+      value.present? && !placeholder_display_name?(value) && !technical_identity_name?(value)
     end
   end
 
@@ -111,6 +126,7 @@ class WhatsappWeb::ContactSyncService
     return false if display_name.blank?
     return true if contact.name.blank?
     return true if placeholder_display_name?(contact.name)
+    return true if technical_identity_name?(contact.name, contact: contact)
     return true if contact.name == contact.phone_number
     return true if phone_number.present? && contact.name == phone_number
 
@@ -119,11 +135,131 @@ class WhatsappWeb::ContactSyncService
     normalized_name == normalized_phone
   end
 
+  def technical_identity_name?(value, contact: nil)
+    normalized = value.to_s.strip
+    return false if normalized.blank?
+
+    identity_aliases_for(contact).include?(normalized)
+  end
+
+  def identity_aliases_for(contact = nil)
+    aliases = [
+      source_id,
+      raw_remote_jid,
+      canonical_remote_jid,
+      lid_jid,
+      contact_identifier
+    ]
+
+    if contact.present?
+      attributes = (contact.additional_attributes || {}).deep_stringify_keys
+      aliases.concat([
+        attributes['raw_jid'],
+        attributes['canonical_jid'],
+        attributes['lid_jid'],
+        contact.identifier
+      ])
+    end
+
+    aliases
+      .filter_map { |value| normalized_identity_aliases(value) }
+      .flatten
+      .uniq
+  end
+
+  def normalized_identity_aliases(value)
+    normalized = value.to_s.strip
+    return if normalized.blank?
+
+    aliases = [normalized]
+    aliases << normalized.delete_prefix('whatsapp_web:')
+
+    if normalized.include?('@')
+      aliases << normalized.split('@').first
+    end
+
+    aliases.uniq
+  end
+
   def ignored_remote_jid?
     [raw_remote_jid, canonical_remote_jid].compact.any? { |jid| channel.ignored_remote_jid?(jid) }
   end
 
   def supported_personal_remote_jid?
-    canonical_remote_jid.end_with?('@s.whatsapp.net')
+    canonical_remote_jid.end_with?('@s.whatsapp.net', '@lid')
+  end
+
+  def lid_jid
+    @lid_jid ||= [contact_payload[:remoteLid], raw_remote_jid, canonical_remote_jid]
+      .filter_map { |value| value.to_s.presence }
+      .find { |jid| jid.end_with?('@lid') }
+  end
+
+  def lid_only_identity?
+    canonical_remote_jid.end_with?('@lid')
+  end
+
+  def contact_identifier
+    return if lid_jid.blank?
+
+    "whatsapp_web:#{lid_jid}"
+  end
+
+  def identifier_conflict?(error, updates)
+    updates[:identifier].present? && error.record.errors.of_kind?(:identifier, :taken)
+  end
+
+  def merge_identifier_contact!(target_contact:)
+    source_contact = channel.inbox.account.contacts.find_by(identifier: contact_identifier)
+    return if source_contact.blank? || source_contact.id == target_contact.id
+
+    ActiveRecord::Base.transaction do
+      merge_contact_records!(source_contact: source_contact, target_contact: target_contact)
+    end
+  end
+
+  def merge_contact_records!(source_contact:, target_contact:)
+    now = Time.current
+
+    source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
+    Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
+    Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
+
+    {
+      'Note' => :contact_id,
+      'CampaignDelivery' => :contact_id,
+      'CsatSurveyResponse' => :contact_id,
+      'Scheduling::Appointment' => :contact_id
+    }.each do |class_name, foreign_key|
+      klass = class_name.safe_constantize
+      next if klass.blank?
+
+      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, updated_at: now)
+    end
+
+    merged_additional_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
+      .merge((target_contact.additional_attributes || {}).deep_stringify_keys)
+
+    source_contact.update_columns(identifier: nil, updated_at: now)
+
+    target_contact.skip_runtime_events = true
+    target_contact.update!(
+      additional_attributes: merged_additional_attributes,
+      name: preferred_contact_name(target_contact, source_contact),
+      phone_number: target_contact.phone_number.presence || source_contact.phone_number,
+      identifier: target_contact.identifier.presence || source_contact.identifier
+    )
+
+    source_contact.skip_runtime_events = true
+    source_contact.destroy!
+  rescue ActiveRecord::RecordNotDestroyed
+    source_contact.update_columns(identifier: nil, updated_at: now)
+  end
+
+  def preferred_contact_name(target_contact, source_contact)
+    return display_name if should_replace_contact_name?(target_contact)
+    return source_contact.name if target_contact.name.blank? && source_contact.name.present?
+
+    target_contact.name
   end
 end

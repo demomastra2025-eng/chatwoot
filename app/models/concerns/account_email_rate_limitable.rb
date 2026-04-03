@@ -29,13 +29,21 @@ module AccountEmailRateLimitable
     end
   end
 
+  def reset_email_sent_count(date: Time.zone.today)
+    Redis::Alfred.delete(email_count_cache_key_for(date))
+  end
+
   private
 
   def email_count_cache_key
-    @email_count_cache_key ||= format(
+    email_count_cache_key_for(Time.zone.today)
+  end
+
+  def email_count_cache_key_for(date)
+    format(
       Redis::Alfred::ACCOUNT_OUTBOUND_EMAIL_COUNT_KEY,
       account_id: id,
-      date: Time.zone.today.to_s
+      date: date.to_s
     )
   end
 

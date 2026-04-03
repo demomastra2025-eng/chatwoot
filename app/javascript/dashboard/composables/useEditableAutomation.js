@@ -49,9 +49,12 @@ export function useEditableAutomation() {
       return {
         ...condition,
         query_operator: condition.query_operator || 'and',
-        values: [...getConditionDropdownValues(condition.attribute_key)].filter(
-          item => [...condition.values].includes(item.id)
-        ),
+        values: [
+          ...getConditionDropdownValues(
+            condition.attribute_key,
+            automation.event_name
+          ),
+        ].filter(item => [...condition.values].includes(item.id)),
       };
     });
   };

@@ -3,7 +3,9 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
+import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
+import { formatDealAmount } from './dealAmount';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
@@ -12,6 +14,10 @@ const props = defineProps({
     default: false,
   },
   deals: {
+    type: Array,
+    default: () => [],
+  },
+  fieldDefinitions: {
     type: Array,
     default: () => [],
   },
@@ -99,11 +105,12 @@ const formatDateLabel = value => {
 };
 
 const formatAmountLabel = deal => {
-  if (!deal.amountMinor) {
-    return t('CRM.GENERAL.EMPTY_VALUE');
-  }
-
-  return `${deal.amountMinor}${deal.currency ? ` ${deal.currency}` : ''}`;
+  return formatDealAmount({
+    amount: deal.amountMinor,
+    currency: deal.currency,
+    emptyValue: t('CRM.GENERAL.EMPTY_VALUE'),
+    locale: localeCode.value,
+  });
 };
 
 const dealSubtitle = deal => {
@@ -200,28 +207,28 @@ const handleOwnerChange = (deal, ownerId) => {
                     </p>
                   </div>
 
-                  <CrmDealOwnerMenu
-                    :disabled="!canManage"
-                    :model-value="element.ownerId"
-                    :owners="owners"
-                    @update:model-value="handleOwnerChange(element, $event)"
-                  />
-                </div>
-
-                <div class="mt-2 flex items-center justify-between gap-2">
                   <span
-                    v-if="element.archivedAt"
-                    class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
-                  >
-                    {{ $t('CRM.GENERAL.ARCHIVED') }}
-                  </span>
-                  <span
-                    v-else
-                    class="text-[10px] font-medium leading-none tracking-normal text-n-slate-10"
+                    class="shrink-0 text-right text-[10px] font-medium tabular-nums text-n-slate-10"
                   >
                     {{ formatAmountLabel(element) }}
                   </span>
+                </div>
 
+                <div class="mt-2 flex items-start justify-between gap-2">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <CrmDealOwnerMenu
+                      :disabled="!canManage"
+                      :model-value="element.ownerId"
+                      :owners="owners"
+                      @update:model-value="handleOwnerChange(element, $event)"
+                    />
+                    <span
+                      v-if="element.archivedAt"
+                      class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
+                    >
+                      {{ $t('CRM.GENERAL.ARCHIVED') }}
+                    </span>
+                  </div>
                   <span class="text-[9px] text-n-slate-10/90">
                     {{
                       formatDateLabel(
@@ -230,34 +237,21 @@ const handleOwnerChange = (deal, ownerId) => {
                     }}
                   </span>
                 </div>
+
+                <CrmCustomFieldsSummary
+                  class="mt-2"
+                  :definitions="fieldDefinitions"
+                  :values="element.customAttributes"
+                />
               </article>
             </template>
 
             <template #footer>
               <template v-if="!column.deals.length">
-                <div
-                  class="grid gap-0.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-left"
-                  :class="
-                    canManage
-                      ? 'block group-hover/crm-column:hidden group-focus-within/crm-column:hidden'
-                      : 'block'
-                  "
-                >
-                  <p class="mb-0 text-xs font-medium text-n-slate-12">
-                    {{ $t('CRM.DEALS.BOARD.EMPTY_COLUMN') }}
-                  </p>
-                  <p class="mb-0 text-[10px] text-n-slate-11">
-                    {{ $t('CRM.DEALS.BOARD.EMPTY_COLUMN_DESCRIPTION') }}
-                  </p>
-                </div>
-
-                <div
-                  v-if="canManage"
-                  class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
-                >
+                <div v-if="canManage" class="block">
                   <button
                     type="button"
-                    class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                    class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
                     @click.stop="
                       emit('createDeal', {
                         pipelineId: column.pipelineId,
@@ -277,7 +271,7 @@ const handleOwnerChange = (deal, ownerId) => {
               >
                 <button
                   type="button"
-                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
                   @click.stop="
                     emit('createDeal', {
                       pipelineId: column.pipelineId,

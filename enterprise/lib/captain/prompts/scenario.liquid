@@ -8,17 +8,29 @@ You are a specialized agent called "{{ title }}", your task is to handle the fol
 
 If you believe the user's request is not within the scope of your role, you can assign this conversation back to the orchestrator agent using the `handoff_to_{{ assistant_name }}` tool
 
-{% if conversation or contact or campaign.id %}
+{% if conversation or contact or deal or task or appointment or campaign.id %}
 # Current Context
 
-Here's the metadata we have about the current conversation and the contact associated with it:
+Here's the metadata we have about the current conversation, the contact associated with it, the most relevant linked deal or task when available, and any appointment explicitly linked to this thread:
 
 {% if conversation -%}
-{% render 'conversation', conversation: conversation %}
+{% render 'conversation', conversation: conversation, conversation_visible_fields: conversation_visible_fields %}
 {% endif -%}
 
 {% if contact -%}
-{% render 'contact', contact: contact %}
+{% render 'contact', contact: contact, contact_visible_fields: contact_visible_fields %}
+{% endif -%}
+
+{% if deal -%}
+{% render 'deal', deal: deal, deal_visible_fields: deal_visible_fields %}
+{% endif -%}
+
+{% if task -%}
+{% render 'task', task: task, task_visible_fields: task_visible_fields %}
+{% endif -%}
+
+{% if appointment -%}
+{% render 'appointment', appointment: appointment, appointment_visible_fields: appointment_visible_fields %}
 {% endif -%}
 
 {% if campaign.id -%}

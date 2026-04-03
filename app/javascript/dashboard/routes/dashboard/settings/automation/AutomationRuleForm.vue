@@ -2,6 +2,7 @@
 import { ref, computed, h, useTemplateRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useStoreGetters } from 'dashboard/composables/store';
 import { useOperators } from 'dashboard/components-next/filter/operators';
 import ConditionRow from 'dashboard/components-next/filter/ConditionRow.vue';
 import AutomationActionInput from 'dashboard/components/widgets/AutomationActionInput.vue';
@@ -69,10 +70,12 @@ const INPUT_TYPE_MAP = {
   plain_text: 'plainText',
   comma_separated_plain_text: 'plainText',
   date: 'date',
+  datetime: 'datetime',
 };
 
-const { t } = useI18n();
+const { t, tm } = useI18n();
 const { isCloudFeatureEnabled } = useAccount();
+const getters = useStoreGetters();
 const { operators } = useOperators();
 
 const dialogRef = ref(null);
@@ -81,35 +84,83 @@ const errors = ref({});
 
 const isEditMode = computed(() => props.mode === 'edit');
 
-const titleKey = computed(() =>
-  isEditMode.value ? 'AUTOMATION.EDIT.TITLE' : 'AUTOMATION.ADD.TITLE'
+const cloneTranslations = key => {
+  const raw = tm(key);
+  return raw && typeof raw === 'object' ? JSON.parse(JSON.stringify(raw)) : {};
+};
+
+const automationAttributeTranslations = computed(() =>
+  cloneTranslations('AUTOMATION.ATTRIBUTES')
 );
-const cancelKey = computed(() =>
+const automationEventTranslations = computed(() =>
+  cloneTranslations('AUTOMATION.EVENTS')
+);
+const automationActionTranslations = computed(() =>
+  cloneTranslations('AUTOMATION.ACTIONS')
+);
+const automationErrorTranslations = computed(() =>
+  cloneTranslations('AUTOMATION.ERRORS')
+);
+const filterOperatorTranslations = computed(() =>
+  cloneTranslations('FILTER.OPERATOR_LABELS')
+);
+const dialogTitle = computed(() =>
+  isEditMode.value ? t('AUTOMATION.EDIT.TITLE') : t('AUTOMATION.ADD.TITLE')
+);
+const cancelLabel = computed(() =>
   isEditMode.value
-    ? 'AUTOMATION.EDIT.CANCEL_BUTTON_TEXT'
-    : 'AUTOMATION.ADD.CANCEL_BUTTON_TEXT'
+    ? t('AUTOMATION.EDIT.CANCEL_BUTTON_TEXT')
+    : t('AUTOMATION.ADD.CANCEL_BUTTON_TEXT')
 );
-const submitKey = computed(() =>
-  isEditMode.value ? 'AUTOMATION.EDIT.SUBMIT' : 'AUTOMATION.ADD.SUBMIT'
+const submitLabel = computed(() =>
+  isEditMode.value ? t('AUTOMATION.EDIT.SUBMIT') : t('AUTOMATION.ADD.SUBMIT')
 );
 
 const getTranslatedAttributes = (type, event) => {
   return getAttributes(type, event).map(attribute => {
     const skipTranslation =
       attribute.customAttributeType ||
-      ['contact_custom_attribute', 'conversation_custom_attribute'].includes(
-        attribute.key
-      );
+      [
+        'contact_custom_attribute',
+        'conversation_custom_attribute',
+        'appointment_custom_attribute',
+      ].includes(attribute.key);
     return {
       ...attribute,
       name: skipTranslation
         ? attribute.name
-        : t(`AUTOMATION.ATTRIBUTES.${attribute.name}`),
+        : automationAttributeTranslations.value[attribute.name] ||
+          attribute.name,
     };
   });
 };
 
 const eventName = computed(() => automation.value?.event_name);
+const currentAccountId = computed(() => getters.getCurrentAccountId.value);
+const isSchedulingFinanceEnabled = computed(() =>
+  getters['accounts/isFeatureEnabledonAccount'].value(
+    currentAccountId.value,
+    'scheduling_finance'
+  )
+);
+const isSchedulingEnabled = computed(() =>
+  getters['accounts/isFeatureEnabledonAccount'].value(
+    currentAccountId.value,
+    'scheduling'
+  )
+);
+const isCrmDealsEnabled = computed(() =>
+  getters['accounts/isFeatureEnabledonAccount'].value(
+    currentAccountId.value,
+    'crm_deals'
+  )
+);
+const isCrmTasksEnabled = computed(() =>
+  getters['accounts/isFeatureEnabledonAccount'].value(
+    currentAccountId.value,
+    'crm_tasks'
+  )
+);
 
 const filterTypes = computed(() => {
   const event = eventName.value;
@@ -123,14 +174,15 @@ const filterTypes = computed(() => {
     }
 
     const mappedInputType = INPUT_TYPE_MAP[attr.inputType] || 'plainText';
-    const options = props.getConditionDropdownValues(attr.key) || [];
+    const options = props.getConditionDropdownValues(attr.key, event) || [];
 
     const filterOperators = (attr.filterOperators || []).map(op => {
       const enriched = operators.value[op.value];
       if (enriched) return enriched;
       return {
         value: op.value,
-        label: t(`FILTER.OPERATOR_LABELS.${op.value}`),
+        label:
+          filterOperatorTranslations.value[op.value] || op.label || op.value,
         hasInput: true,
         inputOverride: null,
         icon: h('span', { class: 'i-ph-equals-bold !text-n-blue-11' }),
@@ -152,9 +204,29 @@ const filterTypes = computed(() => {
 });
 
 const automationRuleEvents = computed(() =>
-  AUTOMATION_RULE_EVENTS.map(event => ({
+  AUTOMATION_RULE_EVENTS.filter(event => {
+    if (event.key.startsWith('appointment_')) {
+      return (
+        isSchedulingEnabled.value || event.key === automation.value?.event_name
+      );
+    }
+
+    if (event.key.startsWith('deal_')) {
+      return (
+        isCrmDealsEnabled.value || event.key === automation.value?.event_name
+      );
+    }
+
+    if (event.key.startsWith('task_')) {
+      return (
+        isCrmTasksEnabled.value || event.key === automation.value?.event_name
+      );
+    }
+
+    return true;
+  }).map(event => ({
     ...event,
-    value: t(`AUTOMATION.EVENTS.${event.value}`),
+    value: automationEventTranslations.value[event.value] || event.value,
   }))
 );
 
@@ -166,14 +238,26 @@ const hasAutomationMutated = computed(() => {
 });
 
 const automationActionTypes = computed(() => {
+  const allowedActions = new Set(
+    (props.automationTypes[eventName.value]?.actions || []).map(
+      action => action.key
+    )
+  );
   const actionTypes = isCloudFeatureEnabled('sla')
     ? AUTOMATION_ACTION_TYPES
     : AUTOMATION_ACTION_TYPES.filter(({ key }) => key !== 'add_sla');
 
-  return actionTypes.map(action => ({
-    ...action,
-    label: t(`AUTOMATION.ACTIONS.${action.label}`),
-  }));
+  return actionTypes
+    .filter(
+      action =>
+        action.key !== 'cancel_appointment_payment' ||
+        isSchedulingFinanceEnabled.value
+    )
+    .filter(action => allowedActions.has(action.key))
+    .map(action => ({
+      ...action,
+      label: automationActionTranslations.value[action.label] || action.label,
+    }));
 });
 
 const hasConditionErrors = computed(() =>
@@ -236,6 +320,11 @@ const emitSaveAutomation = () => {
   }
 };
 
+const getActionErrorMessage = index => {
+  const errorKey = errors.value[`action_${index}`];
+  return errorKey ? automationErrorTranslations.value[errorKey] || '' : '';
+};
+
 defineExpose({ open, close });
 </script>
 
@@ -244,7 +333,7 @@ defineExpose({ open, close });
     ref="dialogRef"
     width="3xl"
     position="top"
-    :title="$t(titleKey)"
+    :title="dialogTitle"
     :show-cancel-button="false"
     :show-confirm-button="false"
     overflow-y-auto
@@ -269,7 +358,7 @@ defineExpose({ open, close });
       <div class="mb-6">
         <label :class="{ error: errors.event_name }">
           {{ $t('AUTOMATION.ADD.FORM.EVENT.LABEL') }}
-          <Select
+          <select
             v-model="automation.event_name"
             class="m-0"
             @change="onEventChange()"
@@ -281,7 +370,7 @@ defineExpose({ open, close });
             >
               {{ event.value }}
             </option>
-          </Select>
+          </select>
           <span v-if="errors.event_name" class="message">
             {{ $t('AUTOMATION.ADD.FORM.EVENT.ERROR') }}
           </span>
@@ -367,11 +456,7 @@ defineExpose({ open, close });
             :show-action-input="
               showActionInput(automationActionTypes, action.action_name)
             "
-            :error-message="
-              errors[`action_${i}`]
-                ? $t(`AUTOMATION.ERRORS.${errors[`action_${i}`]}`)
-                : ''
-            "
+            :error-message="getActionErrorMessage(i)"
             :initial-file-name="
               isEditMode ? getFileName(action, automation.files) : ''
             "
@@ -397,14 +482,14 @@ defineExpose({ open, close });
             faded
             slate
             type="reset"
-            :label="$t(cancelKey)"
+            :label="cancelLabel"
             @click.prevent="close"
           />
           <NextButton
             solid
             blue
             type="submit"
-            :label="$t(submitKey)"
+            :label="submitLabel"
             @click="emitSaveAutomation"
           />
         </div>

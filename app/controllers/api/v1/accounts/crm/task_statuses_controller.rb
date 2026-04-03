@@ -17,6 +17,7 @@ class Api::V1::Accounts::Crm::TaskStatusesController < Api::V1::Accounts::Crm::B
     authorize ::Crm::TaskStatus
 
     task_status = Current.account.crm_task_statuses.new(task_status_params)
+    task_status.position = nil unless params.key?(:position)
     task_status.save!
 
     render_payload(::Crm::PayloadBuilder.task_status(task_status.reload), status: :created)

@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Google::CallbacksController', type: :request do
   let(:account) { create(:account) }
+  let(:base_url) { ENV.fetch('FRONTEND_URL', 'http://localhost:3000') }
   let(:code) { SecureRandom.hex(10) }
   let(:email) { Faker::Internet.email }
   let(:state) { account.to_sgid(expires_in: 15.minutes).to_s }
@@ -20,7 +21,7 @@ RSpec.describe 'Google::CallbacksController', type: :request do
     it 'creates inboxes if authentication is successful' do
       stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
         .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
-                      'redirect_uri' => "#{ENV.fetch('FRONTEND_URL', 'http://localhost:3000')}/google/callback" })
+                      'redirect_uri' => "#{base_url}/google/callback" })
         .to_return(status: 200, body: response_body_success.to_json, headers: { 'Content-Type' => 'application/json' })
 
       get google_callback_url, params: { code: code, state: state }
@@ -41,7 +42,7 @@ RSpec.describe 'Google::CallbacksController', type: :request do
 
       stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
         .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
-                      'redirect_uri' => "#{ENV.fetch('FRONTEND_URL', 'http://localhost:3000')}/google/callback" })
+                      'redirect_uri' => "#{base_url}/google/callback" })
         .to_return(status: 200, body: response_body_success.to_json, headers: { 'Content-Type' => 'application/json' })
 
       get google_callback_url, params: { code: code, state: state }
@@ -56,7 +57,7 @@ RSpec.describe 'Google::CallbacksController', type: :request do
     it 'creates inboxes with fallback_name when account name is not present in id_token' do
       stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
         .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
-                      'redirect_uri' => "#{ENV.fetch('FRONTEND_URL', 'http://localhost:3000')}/google/callback" })
+                      'redirect_uri' => "#{base_url}/google/callback" })
         .to_return(status: 200, body: response_body_success_without_name.to_json, headers: { 'Content-Type' => 'application/json' })
 
       get google_callback_url, params: { code: code, state: state }
@@ -67,15 +68,78 @@ RSpec.describe 'Google::CallbacksController', type: :request do
       expect(inbox.name).to eq email.split('@').first.parameterize.titleize
     end
 
+    it 'preserves the existing refresh token when google does not return a new one' do
+      existing_refresh_token = SecureRandom.hex(10)
+      channel_email = create(
+        :channel_email,
+        account: account,
+        imap_login: email,
+        provider_config: {
+          access_token: SecureRandom.hex(10),
+          refresh_token: existing_refresh_token,
+          expires_on: 1.hour.from_now.utc.to_s
+        }
+      )
+
+      stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
+        .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
+                      'redirect_uri' => "#{base_url}/google/callback" })
+        .to_return(
+          status: 200,
+          body: response_body_success.except(:refresh_token).to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      get google_callback_url, params: { code: code, state: state }
+
+      expect(response).to redirect_to app_email_inbox_settings_url(account_id: account.id, inbox_id: channel_email.inbox.id)
+      expect(channel_email.reload.provider_config['refresh_token']).to eq(existing_refresh_token)
+    end
+
+    it 'does not create an inbox when google callback does not include a refresh token for a new connection' do
+      stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
+        .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
+                      'redirect_uri' => "#{base_url}/google/callback" })
+        .to_return(
+          status: 200,
+          body: response_body_success.except(:refresh_token).to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      expect do
+        get google_callback_url, params: { code: code, state: state }
+      end.not_to change(account.inboxes, :count)
+
+      expect(response).to redirect_to("#{base_url}/app/accounts/#{account.id}/settings/inboxes/new/google?error=oauth_callback_failed")
+    end
+
     it 'redirects to google app in case of error' do
       stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
         .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
-                      'redirect_uri' => "#{ENV.fetch('FRONTEND_URL', 'http://localhost:3000')}/google/callback" })
+                      'redirect_uri' => "#{base_url}/google/callback" })
         .to_return(status: 401)
 
       get google_callback_url, params: { code: code, state: state }
 
-      expect(response).to redirect_to '/'
+      expect(response).to redirect_to("#{base_url}/app/accounts/#{account.id}/settings/inboxes/new/google?error=oauth_callback_failed")
+    end
+
+    it 'uses expires_in from the oauth response when provided' do
+      freeze_time do
+        stub_request(:post, 'https://accounts.google.com/o/oauth2/token')
+          .with(body: { 'code' => code, 'grant_type' => 'authorization_code',
+                        'redirect_uri' => "#{base_url}/google/callback" })
+          .to_return(
+            status: 200,
+            body: response_body_success.merge(expires_in: 7200).to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+
+        get google_callback_url, params: { code: code, state: state }
+
+        expires_on = Time.zone.parse(account.inboxes.last.channel.reload.provider_config['expires_on'])
+        expect(expires_on).to be_within(1.second).of(2.hours.from_now)
+      end
     end
   end
 end

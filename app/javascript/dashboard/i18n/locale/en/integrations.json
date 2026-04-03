@@ -479,8 +479,16 @@
         "SUCCESS_MESSAGE": "The AI agent has been successfully created",
         "ERROR_MESSAGE": "There was an error creating the AI agent, please try again."
       },
+      "AVATAR": {
+        "CREATE_UPLOAD_ERROR": "The AI agent was created, but the avatar could not be uploaded.",
+        "EDIT_UPLOAD_ERROR": "The AI agent was updated, but the avatar could not be uploaded.",
+        "EDIT_DELETE_ERROR": "The AI agent was updated, but the avatar could not be removed."
+      },
       "FORM": {
         "UPDATE": "Update",
+        "AVATAR": {
+          "LABEL": "AI agent avatar"
+        },
         "SECTIONS": {
           "BASIC_INFO": "Basic Information",
           "SYSTEM_MESSAGES": "System Messages",
@@ -542,7 +550,7 @@
         },
         "CONTEXT_ACCESS": {
           "TITLE": "Context access",
-          "DESCRIPTION": "Choose which contact and conversation fields the AI agent can read in live conversations.",
+          "DESCRIPTION": "Choose which contact, conversation, CRM, and scheduling fields the AI agent can read in live conversations.",
           "HINT": "Use $ inside scenario instructions, descriptions, handoff messages, and resolution messages to insert any enabled field.",
           "LOADING": "Loading available fields...",
           "EMPTY": "No fields are available for this section yet.",
@@ -555,6 +563,48 @@
             "CONVERSATION": {
               "TITLE": "Conversation fields",
               "DESCRIPTION": "Case-specific context that is only relevant to the current thread."
+            },
+            "DEAL": {
+              "TITLE": "Deal fields",
+              "DESCRIPTION": "CRM deal details linked to this conversation, with priority on the most relevant active deal."
+            },
+            "TASK": {
+              "TITLE": "Task fields",
+              "DESCRIPTION": "CRM task details linked to this conversation, with priority on the most relevant active task."
+            },
+            "APPOINTMENT": {
+              "TITLE": "Appointment fields",
+              "DESCRIPTION": "Scheduling details that are linked directly to the current conversation."
+            }
+          }
+        },
+        "TOOL_ACCESS": {
+          "TITLE": "Tool access",
+          "DESCRIPTION": "Choose which tools the AI agent and the assistant copilot can use.",
+          "HINT": "Agent tools affect the live AI agent and scenario agents. Assistant tools affect the internal assistant copilot.",
+          "LOADING": "Loading available tools...",
+          "ERROR": "The tool catalog could not be loaded. Refresh or retry to get the current configuration.",
+          "RETRY": "Retry",
+          "EMPTY": "No tools are available for this section yet.",
+          "DISABLED_MESSAGE": "This tool group is disabled. The AI runtime will not be able to call any of these tools.",
+          "BADGES": {
+            "CUSTOM": "Custom",
+            "REQUIRES_CONFIRMATION": "Needs confirmation",
+            "RISK_LEVELS": {
+              "LOW": "Low risk",
+              "MEDIUM": "Medium risk",
+              "HIGH": "High risk",
+              "CUSTOM": "Custom"
+            }
+          },
+          "SCOPES": {
+            "AGENT": {
+              "TITLE": "Agent tools",
+              "DESCRIPTION": "Tools the AI agent can call in live conversations and scenarios."
+            },
+            "ASSISTANT": {
+              "TITLE": "Assistant tools",
+              "DESCRIPTION": "Tools the internal assistant copilot can use while helping teammates."
             }
           }
         },
@@ -975,7 +1025,7 @@
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
           "PLACEHOLDER": "https://api.example.com/orders/{'{{'} order_id {'}}'}",
-          "HELP_TEXT": "You can use Liquid variables from tool parameters and the agent's allowed context, for example params.order_id, contact.phone_number, conversation.custom_attributes.order_id, assistant.name, or account.locale.",
+          "HELP_TEXT": "You can use Liquid variables from tool parameters and the agent's allowed context, for example params.order_id, contact.phone_number, conversation.custom_attributes.order_id, deal.stage_name, task.status_name, appointment.starts_at, assistant.name, or account.locale.",
           "ERROR": "Valid URL is required"
         },
         "AUTH_TYPE": {
@@ -1052,6 +1102,7 @@
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required",
           "PARAM_NAME_INVALID": "Use letters, numbers, and underscores only, and start with a letter or underscore",
+          "PARAM_NAME_RESERVED": "This parameter name is reserved for system context. Use a different name and reference your value via {{ params.your_name }} if needed.",
           "PARAM_DESCRIPTION_REQUIRED": "Parameter description is required",
           "PARAM_CONTEXT_PATH_REQUIRED": "Select a context field for this parameter",
           "PARAM_FIXED_VALUE_REQUIRED": "Fixed value is required for this parameter"

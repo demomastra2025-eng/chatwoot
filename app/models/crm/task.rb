@@ -55,6 +55,8 @@
 class Crm::Task < ApplicationRecord
   self.table_name = 'crm_tasks'
 
+  include LlmFormattable
+
   PRIORITIES = %w[low medium high urgent].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -84,6 +86,43 @@ class Crm::Task < ApplicationRecord
   before_validation :normalize_title
   before_validation :normalize_description
   before_validation :prepare_custom_attributes
+
+  def automation_webhook_data
+    payload = {
+      account: account.webhook_data,
+      task: {
+        id: id,
+        title: title,
+        description: description,
+        priority: priority,
+        start_at: start_at,
+        due_at: due_at,
+        completed_at: completed_at,
+        external_ref: external_ref,
+        status_id: status_id,
+        assignee_id: assignee_id,
+        creator_id: creator_id,
+        team_id: team_id,
+        deal_id: deal_id,
+        originating_conversation_id: originating_conversation_id,
+        archived_at: archived_at,
+        custom_attributes: custom_attributes
+      },
+      status: {
+        id: status.id,
+        name: status.name,
+        category: status.category
+      }
+    }
+
+    payload[:assignee] = assignee.webhook_data if assignee.present?
+    payload[:creator] = creator.webhook_data if creator.present?
+    payload[:team] = { id: team.id, name: team.name } if team.present?
+    payload[:deal] = { id: deal.id, title: deal.title } if deal.present?
+    payload[:conversation] = originating_conversation.webhook_data if originating_conversation.present?
+
+    payload
+  end
 
   private
 

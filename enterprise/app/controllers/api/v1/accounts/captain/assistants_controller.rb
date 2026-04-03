@@ -2,7 +2,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action :current_account
   before_action -> { check_authorization(Captain::Assistant) }
 
-  before_action :set_assistant, only: [:show, :update, :destroy, :playground]
+  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar]
 
   def index
     @assistants = account_assistants.ordered
@@ -16,6 +16,14 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def update
     @assistant.update!(assistant_params)
+  end
+
+  def avatar
+    if request.patch?
+      @assistant.update!(avatar: avatar_params[:avatar])
+    elsif request.delete?
+      @assistant.avatar.purge if @assistant.avatar.attached?
+    end
   end
 
   def destroy
@@ -49,6 +57,11 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     @tools = assistant.available_agent_tools
   end
 
+  def tool_access
+    assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
+    @tools = Captain::ToolAccess.definitions_for(assistant)
+  end
+
   def context_fields
     assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
     allowed_ids = assistant.allowed_context_field_ids
@@ -65,7 +78,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def account_assistants
-    @account_assistants ||= Captain::Assistant.for_account(Current.account.id)
+    @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
   end
 
   def assistant_params
@@ -91,7 +104,17 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       permitted[:config][:context_access] = context_access.respond_to?(:permit!) ? context_access.permit!.to_h : context_access
     end
 
+    if assistant_config.respond_to?(:key?) && assistant_config.key?(:tool_access)
+      tool_access = assistant_config[:tool_access]
+      permitted[:config] ||= {}
+      permitted[:config][:tool_access] = tool_access.respond_to?(:permit!) ? tool_access.permit!.to_h : tool_access
+    end
+
     permitted
+  end
+
+  def avatar_params
+    params.permit(:avatar)
   end
 
   def playground_params

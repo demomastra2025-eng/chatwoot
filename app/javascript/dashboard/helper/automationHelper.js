@@ -2,22 +2,65 @@ import {
   OPERATOR_TYPES_1,
   OPERATOR_TYPES_3,
   OPERATOR_TYPES_4,
+  OPERATOR_TYPES_7,
 } from 'dashboard/routes/dashboard/settings/automation/operators';
 import {
   DEFAULT_MESSAGE_CREATED_CONDITION,
   DEFAULT_CONVERSATION_CONDITION,
   DEFAULT_OTHER_CONDITION,
+  DEFAULT_DEAL_CONDITION,
+  DEFAULT_TASK_CONDITION,
   DEFAULT_ACTIONS,
+  DEFAULT_APPOINTMENT_ACTIONS,
+  DEFAULT_CRM_ACTIONS,
 } from 'dashboard/constants/automation';
 import filterQueryGenerator from './filterQueryGenerator';
 import actionQueryGenerator from './actionQueryGenerator';
 
+const getAttributeKey = attribute =>
+  attribute?.attribute_key || attribute?.key || '';
+
+const getAttributeLabel = attribute =>
+  attribute?.attribute_display_name || attribute?.label || '';
+
+const getAttributeType = attribute =>
+  attribute?.attribute_display_type ||
+  attribute?.fieldType ||
+  attribute?.field_type;
+
+const getAttributeValues = attribute =>
+  attribute?.attribute_values || attribute?.options || [];
+
+const mapAttributeOption = option => {
+  if (typeof option === 'string') {
+    return { id: option, name: option };
+  }
+
+  const value = option?.value ?? option?.id;
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  return {
+    id: value,
+    name: option?.label || option?.name || value,
+  };
+};
+
 export const getCustomAttributeInputType = key => {
   const customAttributeMap = {
     date: 'date',
+    datetime: 'datetime',
     text: 'plain_text',
+    textarea: 'plain_text',
+    number: 'plain_text',
+    currency: 'plain_text',
+    percent: 'plain_text',
     list: 'search_select',
+    select: 'search_select',
+    multiselect: 'multi_select',
     checkbox: 'search_select',
+    url: 'plain_text',
   };
 
   return customAttributeMap[key] || 'plain_text';
@@ -25,7 +68,7 @@ export const getCustomAttributeInputType = key => {
 
 export const isACustomAttribute = (customAttributes, key) => {
   return customAttributes.find(attr => {
-    return attr.attribute_key === key;
+    return getAttributeKey(attr) === key;
   });
 };
 
@@ -33,20 +76,16 @@ export const getCustomAttributeListDropdownValues = (
   customAttributes,
   type
 ) => {
-  return customAttributes
-    .find(attr => attr.attribute_key === type)
-    .attribute_values.map(item => {
-      return {
-        id: item,
-        name: item,
-      };
-    });
+  const attribute = customAttributes.find(
+    attr => getAttributeKey(attr) === type
+  );
+  return getAttributeValues(attribute).map(mapAttributeOption).filter(Boolean);
 };
 
 export const isCustomAttributeCheckbox = (customAttributes, key) => {
   return customAttributes.find(attr => {
     return (
-      attr.attribute_key === key && attr.attribute_display_type === 'checkbox'
+      getAttributeKey(attr) === key && getAttributeType(attr) === 'checkbox'
     );
   });
 };
@@ -54,7 +93,8 @@ export const isCustomAttributeCheckbox = (customAttributes, key) => {
 export const isCustomAttributeList = (customAttributes, type) => {
   return customAttributes.find(attr => {
     return (
-      attr.attribute_key === type && attr.attribute_display_type === 'list'
+      ['list', 'select', 'multiselect'].includes(getAttributeType(attr)) &&
+      getAttributeKey(attr) === type
     );
   });
 };
@@ -63,10 +103,17 @@ export const getOperatorTypes = key => {
   const operatorMap = {
     list: OPERATOR_TYPES_1,
     text: OPERATOR_TYPES_3,
-    number: OPERATOR_TYPES_1,
+    textarea: OPERATOR_TYPES_7,
+    number: OPERATOR_TYPES_4,
+    currency: OPERATOR_TYPES_4,
+    percent: OPERATOR_TYPES_4,
     link: OPERATOR_TYPES_1,
     date: OPERATOR_TYPES_4,
+    datetime: OPERATOR_TYPES_4,
     checkbox: OPERATOR_TYPES_1,
+    select: OPERATOR_TYPES_3,
+    multiselect: OPERATOR_TYPES_3,
+    url: OPERATOR_TYPES_7,
   };
 
   return operatorMap[key] || OPERATOR_TYPES_1;
@@ -75,14 +122,105 @@ export const getOperatorTypes = key => {
 export const generateCustomAttributeTypes = (customAttributes, type) => {
   return customAttributes.map(attr => {
     return {
-      key: attr.attribute_key,
-      name: attr.attribute_display_name,
-      inputType: getCustomAttributeInputType(attr.attribute_display_type),
-      filterOperators: getOperatorTypes(attr.attribute_display_type),
+      key: getAttributeKey(attr),
+      name: getAttributeLabel(attr),
+      inputType: getCustomAttributeInputType(getAttributeType(attr)),
+      filterOperators: getOperatorTypes(getAttributeType(attr)),
       customAttributeType: type,
     };
   });
 };
+
+const getManagedFieldOperatorTypes = fieldType => {
+  if (['select', 'multiselect', 'checkbox'].includes(fieldType)) {
+    return OPERATOR_TYPES_3;
+  }
+
+  if (
+    ['number', 'currency', 'percent', 'date', 'datetime'].includes(fieldType)
+  ) {
+    return OPERATOR_TYPES_4;
+  }
+
+  if (['text', 'textarea', 'url'].includes(fieldType)) {
+    return OPERATOR_TYPES_7;
+  }
+
+  return OPERATOR_TYPES_1;
+};
+
+const getManagedFieldInputType = fieldType => {
+  if (fieldType === 'multiselect') {
+    return 'multi_select';
+  }
+
+  return getCustomAttributeInputType(fieldType);
+};
+
+export const generateManagedCustomAttributeTypes = (
+  fieldDefinitions,
+  type = 'managed_attribute'
+) => {
+  return fieldDefinitions.map(fieldDefinition => ({
+    key: fieldDefinition.key,
+    name: fieldDefinition.label,
+    inputType: getManagedFieldInputType(fieldDefinition.fieldType),
+    filterOperators: getManagedFieldOperatorTypes(fieldDefinition.fieldType),
+    customAttributeType: type,
+  }));
+};
+
+const getManagedFieldDefinitionsForEvent = (
+  eventName,
+  appointmentFieldDefinitions,
+  dealFieldDefinitions,
+  taskFieldDefinitions
+) => {
+  if (eventName?.startsWith('appointment_')) {
+    return appointmentFieldDefinitions || [];
+  }
+
+  if (eventName?.startsWith('deal_')) {
+    return dealFieldDefinitions || [];
+  }
+
+  if (eventName?.startsWith('task_')) {
+    return taskFieldDefinitions || [];
+  }
+
+  return [];
+};
+
+const getManagedConditionFilterMaps = ({
+  appointmentPaymentStatusOptions,
+  appointmentStatusOptions,
+  appointmentTypeOptions,
+  crmDealOwnerOptions,
+  crmPipelineOptions,
+  crmStageOptions,
+  crmTaskAssigneeOptions,
+  crmTaskStatusOptions,
+  priorityOptions,
+  teams,
+}) => ({
+  appointment: {
+    status: appointmentStatusOptions,
+    payment_status: appointmentPaymentStatusOptions,
+    appointment_type: appointmentTypeOptions,
+  },
+  deal: {
+    pipeline_id: crmPipelineOptions,
+    stage_id: crmStageOptions,
+    owner_id: crmDealOwnerOptions,
+    team_id: teams,
+  },
+  task: {
+    status_id: crmTaskStatusOptions,
+    assignee_id: crmTaskAssigneeOptions,
+    team_id: teams,
+    priority: priorityOptions,
+  },
+});
 
 export const generateConditionOptions = (options, key = 'id') => {
   if (!options || !Array.isArray(options)) return [];
@@ -96,6 +234,10 @@ export const generateConditionOptions = (options, key = 'id') => {
 
 export const getActionOptions = ({
   agents,
+  appointmentStatusOptions,
+  crmDealOwnerOptions,
+  crmStageOptions,
+  crmTaskStatusOptions,
   teams,
   labels,
   slaPolicies,
@@ -110,6 +252,16 @@ export const getActionOptions = ({
     add_label: generateConditionOptions(labels, 'title'),
     remove_label: generateConditionOptions(labels, 'title'),
     change_priority: priorityOptions,
+    change_appointment_status: appointmentStatusOptions,
+    change_deal_stage: crmStageOptions,
+    assign_deal_owner: addNoneToListFn
+      ? addNoneToListFn(crmDealOwnerOptions)
+      : crmDealOwnerOptions,
+    assign_deal_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
+    change_task_status: crmTaskStatusOptions,
+    assign_task_assignee: addNoneToListFn ? addNoneToListFn(agents) : agents,
+    assign_task_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
+    change_task_priority: priorityOptions,
     add_sla: slaPolicies,
   };
   return actionsMap[type];
@@ -117,15 +269,26 @@ export const getActionOptions = ({
 
 export const getConditionOptions = ({
   agents,
+  appointmentFieldDefinitions,
+  appointmentPaymentStatusOptions,
+  appointmentStatusOptions,
+  appointmentTypeOptions,
   booleanFilterOptions,
   campaigns,
+  crmDealOwnerOptions,
+  crmPipelineOptions,
+  crmStageOptions,
+  crmTaskStatusOptions,
+  dealFieldDefinitions,
   contacts,
   countries,
   customAttributes,
+  eventName,
   inboxes,
   languages,
   labels,
   statusFilterOptions,
+  taskFieldDefinitions,
   teams,
   type,
   priorityOptions,
@@ -137,6 +300,55 @@ export const getConditionOptions = ({
 
   if (isCustomAttributeList(customAttributes, type)) {
     return getCustomAttributeListDropdownValues(customAttributes, type);
+  }
+
+  const managedFieldDefinitions = getManagedFieldDefinitionsForEvent(
+    eventName,
+    appointmentFieldDefinitions,
+    dealFieldDefinitions,
+    taskFieldDefinitions
+  );
+
+  const managedField = managedFieldDefinitions.find(
+    fieldDefinition => fieldDefinition.key === type
+  );
+
+  if (managedField) {
+    if (managedField.fieldType === 'checkbox') {
+      return booleanFilterOptions;
+    }
+
+    if (['select', 'multiselect'].includes(managedField.fieldType)) {
+      return getCustomAttributeListDropdownValues(
+        managedFieldDefinitions,
+        type
+      );
+    }
+  }
+
+  const managedConditionFilterMaps = getManagedConditionFilterMaps({
+    appointmentPaymentStatusOptions,
+    appointmentStatusOptions,
+    appointmentTypeOptions,
+    crmDealOwnerOptions,
+    crmPipelineOptions,
+    crmStageOptions,
+    crmTaskAssigneeOptions: agents,
+    crmTaskStatusOptions,
+    priorityOptions,
+    teams,
+  });
+
+  if (eventName?.startsWith('appointment_')) {
+    return managedConditionFilterMaps.appointment[type];
+  }
+
+  if (eventName?.startsWith('deal_')) {
+    return managedConditionFilterMaps.deal[type];
+  }
+
+  if (eventName?.startsWith('task_')) {
+    return managedConditionFilterMaps.task[type];
   }
 
   const conditionFilterMaps = {
@@ -177,19 +389,37 @@ export const getDefaultConditions = eventName => {
   ) {
     return structuredClone(DEFAULT_CONVERSATION_CONDITION);
   }
+  if (eventName?.startsWith('deal_')) {
+    return structuredClone(DEFAULT_DEAL_CONDITION);
+  }
+  if (eventName?.startsWith('task_')) {
+    return structuredClone(DEFAULT_TASK_CONDITION);
+  }
   return structuredClone(DEFAULT_OTHER_CONDITION);
 };
 
-export const getDefaultActions = () => {
+export const getDefaultActions = eventName => {
+  if (
+    eventName?.startsWith('appointment_') ||
+    eventName?.startsWith('deal_') ||
+    eventName?.startsWith('task_')
+  ) {
+    if (eventName?.startsWith('appointment_')) {
+      return structuredClone(DEFAULT_APPOINTMENT_ACTIONS);
+    }
+
+    return structuredClone(DEFAULT_CRM_ACTIONS);
+  }
+
   return structuredClone(DEFAULT_ACTIONS);
 };
 
 export const filterCustomAttributes = customAttributes => {
   return customAttributes.map(attr => {
     return {
-      key: attr.attribute_key,
-      name: attr.attribute_display_name,
-      type: attr.attribute_display_type,
+      key: getAttributeKey(attr),
+      name: getAttributeLabel(attr),
+      type: getAttributeType(attr),
     };
   });
 };

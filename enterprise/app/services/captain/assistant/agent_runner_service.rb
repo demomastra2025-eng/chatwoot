@@ -115,8 +115,12 @@ class Captain::Assistant::AgentRunnerService
     state[:conversation] = slice_attrs(@conversation, Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES)
     state[:channel_type] = @conversation.inbox&.channel_type
     state[:contact] = slice_attrs(@conversation.contact, Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
+    state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
+    state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
+    state[:appointment] = Captain::ContextFields.appointment_state_for(account: @assistant.account, conversation: @conversation)
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
+    state.compact!
   end
 
   def slice_attrs(record, keys)

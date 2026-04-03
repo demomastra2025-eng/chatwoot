@@ -14,6 +14,7 @@ const baseProps = {
   anchorDate: '2026-03-09T00:00:00.000Z',
   appointments: [],
   breakRules: [],
+  customFieldDefinitions: [],
   holidays: [],
   resources: [
     {
@@ -51,7 +52,14 @@ describe('SchedulingVueCalCalendar', () => {
     HTMLElement.prototype.scrollTo = vi.fn();
     useI18n.mockReturnValue({
       locale: { value: 'en' },
-      t: vi.fn(key => key),
+      t: vi.fn(key => {
+        const labels = {
+          'CHOICE_TOGGLE.NO': 'No',
+          'CHOICE_TOGGLE.YES': 'Yes',
+        };
+
+        return labels[key] || key;
+      }),
     });
   });
 
@@ -172,6 +180,48 @@ describe('SchedulingVueCalCalendar', () => {
     expect(summary.exists()).toBe(true);
     expect(summary.text()).toMatch(/\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/);
     expect(summary.text()).toContain('Alexandria Very Long Name');
+  });
+
+  it('includes managed custom field summary in appointment tooltips', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        {
+          clientName: 'Alex Doe',
+          customAttributes: {
+            needs_lab: true,
+            visit_reason: 'follow_up',
+          },
+          durationMin: 30,
+          endsAt: '2026-03-09T11:30:00.000Z',
+          id: 46,
+          resourceId: 12,
+          serviceNameSnapshot: 'Consultation',
+          startsAt: '2026-03-09T11:00:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+      customFieldDefinitions: [
+        {
+          fieldType: 'select',
+          key: 'visit_reason',
+          label: 'Visit Reason',
+          options: [{ label: 'Follow-up', value: 'follow_up' }],
+        },
+        {
+          fieldType: 'checkbox',
+          key: 'needs_lab',
+          label: 'Needs Lab',
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCard = wrapper.find('.scheduling-vue-cal__event-card');
+
+    expect(eventCard.attributes('title')).toContain('Visit Reason: Follow-up');
+    expect(eventCard.attributes('title')).toContain('Needs Lab: Yes');
   });
 
   it('marks hour and half-hour cells in the time column', async () => {

@@ -18,6 +18,7 @@
 #
 class Macro < ApplicationRecord
   include Rails.application.routes.url_helpers
+  include AccountStorageLimitable
 
   belongs_to :account
   belongs_to :created_by,
@@ -25,6 +26,7 @@ class Macro < ApplicationRecord
   belongs_to :updated_by,
              class_name: :User, optional: true
   has_many_attached :files
+  account_storage_attachments :files
 
   enum visibility: { personal: 0, global: 1 }
 

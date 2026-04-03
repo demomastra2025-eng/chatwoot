@@ -23,6 +23,7 @@
 
 class Attachment < ApplicationRecord
   include Rails.application.routes.url_helpers
+  include AccountStorageLimitable
 
   ACCEPTABLE_FILE_TYPES = %w[
     text/csv text/plain text/rtf
@@ -37,10 +38,13 @@ class Attachment < ApplicationRecord
   belongs_to :account
   belongs_to :message
   has_one_attached :file
+  account_storage_attachments :file
   validate :acceptable_file
   validates :external_url, length: { maximum: Limits::URL_LENGTH_LIMIT }
   enum file_type: { :image => 0, :audio => 1, :video => 2, :file => 3, :location => 4, :fallback => 5, :share => 6, :story_mention => 7,
                     :contact => 8, :ig_reel => 9, :ig_post => 10, :ig_story => 11, :embed => 12 }
+
+  attr_writer :skip_storage_limit_validation
 
   def push_event_data
     return unless file_type
@@ -72,6 +76,15 @@ class Attachment < ApplicationRecord
 
   def with_attached_file?
     [:image, :audio, :video, :file].include?(file_type.to_sym)
+  end
+
+  def skip_storage_limit_validation!
+    self.skip_storage_limit_validation = true
+    self
+  end
+
+  def skip_storage_limit_validation?
+    ActiveModel::Type::Boolean.new.cast(@skip_storage_limit_validation)
   end
 
   private

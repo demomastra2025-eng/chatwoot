@@ -9,6 +9,8 @@ export const generateCustomAttributesInputType = type => {
   const filterInputTypes = {
     text: 'string',
     number: 'string',
+    currency: 'string',
+    percent: 'string',
     date: 'string',
     checkbox: 'multi_select',
     list: 'multi_select',

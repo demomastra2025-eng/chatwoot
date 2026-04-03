@@ -5,18 +5,16 @@ description: "Use for broad or cross-cutting work in the Onelink project. This i
 
 # Onelink Builder
 
-## Overview
-
-Use this skill when the task is specific to the Onelink project but is too broad to start directly in one implementation surface.
+Use this skill when the task is specific to One Link but is too broad to start directly in one implementation surface.
 
 This skill is the coordinator. It should:
 
 - classify the task
 - identify the owning repo and directory
-- load the minimum set of project docs needed
+- load the minimum current docs needed
 - select the correct specialized skill when the task becomes narrow
 
-All repo paths below are relative to the Onelink repository root.
+All repo paths below are relative to the One Link repository root.
 
 If the task is already clearly backend-only, frontend-only, docs-only, and so on, use the specialized skill directly instead of loading this skill first.
 
@@ -28,7 +26,7 @@ Use `onelink-builder` when the user asks for any of the following:
 - a task that spans app code, docs, skills, GitHub flow, or deployment
 - a task where the correct repo or directory is not obvious
 - a task that may touch more than one specialized skill surface
-- a request to understand how Onelink is structured before editing
+- a request to understand how One Link is structured before editing
 - a request to decide which project skill should own the work
 
 ## Skill Family
@@ -43,27 +41,27 @@ Use `onelink-builder` when the user asks for any of the following:
   - API contracts, request/response behavior, Swagger, and OpenAPI docs sync
 - `onelink-integrations`
   - inbox channels, hooks, providers, and omnichannel external systems
+- `onelink-integrator`
+  - external API-consumer guidance for partners and customers integrating with One Link Cloud
 - `onelink-captain`
   - Captain, copilot, documents, custom tools, and AI-connected flows
 - `onelink-documentation`
-  - Mintlify docs structure, docs content, docs navigation, and docs repo workflow
+  - public and internal docs structure, docs navigation, and docs repo workflow
 - `onelink-deployment`
-  - runtime operations, Docker, self-hosted docs, deployment scripts, and operator guidance
+  - runtime operations, Docker, environment config, deployment assets, and internal operator guidance
 - `onelink-gitops`
-  - GitHub flow, branching, submodules, skill sync, and upstream sync from Chatwoot
+  - GitHub flow, branching, submodules, skill sync, and upstream sync
 
 ## Read First
 
 For broad tasks, build context in this order:
 
 1. `AGENTS.md`
-2. `docs/platform/current-architecture.mdx`
-3. `docs/platform/repository-map.mdx`
-4. `docs/contributing-guide/project-operations.mdx`
-5. `docs/contributing-guide/ai-agent-operating-model.mdx`
-6. `docs/contributing-guide/skill-map.mdx`
-
-Load target-direction pages only when current-state docs and concrete code are not enough.
+2. `docs/AGENTS.md`
+3. `docs/internal/index.mdx`
+4. `docs/internal/architecture-overview.mdx`
+5. `docs/internal/repository-structure.mdx`
+6. the most relevant internal or public page for the touched subsystem
 
 ## Coordinator Workflow
 
@@ -87,7 +85,9 @@ Load target-direction pages only when current-state docs and concrete code are n
 
 ## Documentation Discipline
 
-- Start from the relevant docs page before editing.
+- Start from the docs contour that matches the task:
+  - public docs for client-facing product behavior
+  - internal docs for architecture, repo ownership, and runtime logic
 - If runtime behavior, architecture meaning, API contracts, operator flow, repo workflow, or skill workflow changed, update docs in the same task.
 - Keep docs commits separate in `docs/` when the change belongs to the docs repository.
 
@@ -103,9 +103,9 @@ Load target-direction pages only when current-state docs and concrete code are n
 ## Project Rules
 
 - Treat current code as the source of truth for what exists today.
-- Treat target-direction docs as intent, not proof of runtime implementation.
 - Search both `app/` and `enterprise/` before changing shared behavior.
 - Prefer native entities and existing extension points before introducing new abstractions.
+- Treat One Link as one shared cloud core customized through access, fields, automation, integrations, and Captain configuration.
 - For frontend behavior and utility needs, hand off to `onelink-frontend`, which already applies the project's `VueUse`-first rule before adding helper packages or bespoke low-level composables.
 - Use the narrowest verification that meaningfully covers the touched surface.
 - Do not mix unrelated staged files into a task commit just because they are already staged.

@@ -36,9 +36,9 @@
       }
     },
     "INBOX": {
-      "ADD": "{agentName} создал новый почтовый ящик (#{id})",
-      "EDIT": "{agentName} обновил почтовый ящик (#{id})",
-      "DELETE": "{agentName} удалил почтовый ящик (#{id})"
+      "ADD": "{agentName} создал новый канал{channelTypeSuffix} (#{id})",
+      "EDIT": "{agentName} обновил канал{channelTypeSuffix} (#{id})",
+      "DELETE": "{agentName} удалил канал{channelTypeSuffix} (#{id})"
     },
     "WEBHOOK": {
       "ADD": "{agentName} создал новый вебхук (#{id})",
@@ -60,8 +60,8 @@
       "DELETE": "{agentName} удалил макрос (#{id})"
     },
     "INBOX_MEMBER": {
-      "ADD": "{agentName} добавил {user} в почтовый ящик (#{inbox_id})",
-      "REMOVE": "{agentName} удалил {user} из почтового ящика (#{inbox_id})"
+      "ADD": "{agentName} добавил {user} в канал{channelTypeSuffix} (#{inbox_id})",
+      "REMOVE": "{agentName} удалил {user} из канала{channelTypeSuffix} (#{inbox_id})"
     },
     "TEAM_MEMBER": {
       "ADD": "{agentName} добавил {user} в команду (#{team_id})",

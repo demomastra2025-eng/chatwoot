@@ -3,16 +3,44 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { computed } from 'vue';
+import { CRM_DEAL_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import {
+  getUserPermissions,
+  hasPermissions,
+} from 'dashboard/helper/permissionsHelper';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 
 const { updateUISettings } = useUISettings();
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
+
+const userPermissions = computed(() =>
+  getUserPermissions(
+    { accounts: currentUser.value?.accounts || [] },
+    currentAccountId.value
+  )
+);
+
+const showCrmDealTab = computed(() => {
+  const crmDealsEnabled = isFeatureEnabledonAccount.value(
+    currentAccountId.value,
+    FEATURE_FLAGS.CRM_DEALS
+  );
+
+  return (
+    crmDealsEnabled &&
+    hasPermissions(
+      ['administrator', CRM_DEAL_MANAGE_PERMISSION],
+      userPermissions.value
+    )
+  );
+});
 
 const showCopilotTab = computed(() =>
   isFeatureEnabledonAccount.value(currentAccountId.value, FEATURE_FLAGS.CAPTAIN)
@@ -22,6 +50,9 @@ const { uiSettings } = useUISettings();
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open
 );
+const isCrmDealPanelOpen = computed(
+  () => uiSettings.value.is_crm_deal_panel_open
+);
 const isCopilotPanelOpen = computed(
   () => uiSettings.value.is_copilot_panel_open
 );
@@ -29,6 +60,7 @@ const isCopilotPanelOpen = computed(
 const toggleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: !isContactSidebarOpen.value,
+    is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
   });
 };
@@ -36,6 +68,15 @@ const toggleConversationSidebarToggle = () => {
 const handleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: true,
+    is_crm_deal_panel_open: false,
+    is_copilot_panel_open: false,
+  });
+};
+
+const handleCrmDealSidebarToggle = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: true,
     is_copilot_panel_open: false,
   });
 };
@@ -43,6 +84,7 @@ const handleConversationSidebarToggle = () => {
 const handleCopilotSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
     is_copilot_panel_open: true,
   });
 };
@@ -70,6 +112,20 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-ph-user-bold"
       @click="handleConversationSidebarToggle"
+    />
+    <Button
+      v-if="showCrmDealTab"
+      v-tooltip.bottom="$t('CONVERSATION.SIDEBAR.DEAL')"
+      ghost
+      slate
+      sm
+      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
+      :class="{
+        'bg-n-alpha-2 active:!brightness-105 active:shadow-sm':
+          isCrmDealPanelOpen,
+      }"
+      icon="i-lucide-briefcase-business"
+      @click="handleCrmDealSidebarToggle"
     />
     <Button
       v-if="showCopilotTab"

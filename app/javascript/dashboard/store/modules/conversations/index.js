@@ -142,10 +142,7 @@ export const mutations = {
       c => c.id === conversationId
     );
     if (conversation) {
-      conversation.custom_attributes = {
-        ...conversation.custom_attributes,
-        ...customAttributes,
-      };
+      conversation.custom_attributes = customAttributes || {};
     }
   },
 

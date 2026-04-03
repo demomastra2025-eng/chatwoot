@@ -48,7 +48,9 @@ RSpec.describe 'Conversation Messages API', type: :request do
 
         json_response = response.parsed_body
 
-        expect(json_response['error']).to eq('Validation failed: Content is too long (maximum is 150000 characters)')
+        expect(json_response['error']).to include(
+          I18n.t('errors.messages.too_long', count: 150_000, locale: account.locale)
+        )
       end
 
       it 'creates an outgoing text message with a specific bot sender' do

@@ -409,6 +409,19 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
+      it 'does not create a non-web inbox when the account non-web inbox limit is reached' do
+        account.update!(limits: { non_web_inboxes: 1 })
+        create(:channel_api, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes",
+             headers: admin.create_new_auth_token,
+             params: { name: 'Email Inbox', channel: { type: 'email', email: 'test@test.com' } },
+             as: :json
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to include('Account non-web inbox limit exceeded')
+      end
+
       it 'creates a whatsapp web inbox when administrator' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',
@@ -698,6 +711,30 @@ RSpec.describe 'Inboxes API', type: :request do
           expect(whatsapp_web_channel.import_contacts).to be(false)
           expect(whatsapp_web_channel.import_messages).to be(false)
           expect(whatsapp_web_channel.sync_labels).to be(false)
+        end
+      end
+
+      it 'accepts zero lookback days for unlimited whatsapp web history' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account, history_lookback_days: 30)
+          whatsapp_web_inbox = whatsapp_web_channel.inbox
+
+          patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_web_inbox.id}",
+                headers: admin.create_new_auth_token,
+                params: {
+                  channel: {
+                    history_lookback_days: 0
+                  }
+                },
+                as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body['history_lookback_days']).to eq(0)
+          expect(whatsapp_web_channel.reload.history_lookback_days).to eq(0)
         end
       end
 

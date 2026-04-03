@@ -57,6 +57,167 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/{account.id}/captain/assistants/context_fields' do
+    let!(:deal_field_definition) do
+      create(
+        :crm_field_definition,
+        account: account,
+        entity_kind: 'deal',
+        key: 'sales_region',
+        label: 'Sales Region'
+      )
+    end
+    let!(:task_field_definition) do
+      create(
+        :crm_field_definition,
+        account: account,
+        entity_kind: 'task',
+        key: 'follow_up_channel',
+        label: 'Follow Up Channel'
+      )
+    end
+    let!(:appointment_field_definition) do
+      create(
+        :crm_field_definition,
+        account: account,
+        entity_kind: 'appointment',
+        key: 'visit_room',
+        label: 'Visit Room'
+      )
+    end
+    let(:assistant) do
+      create(
+        :captain_assistant,
+        account: account,
+        config: {
+          'context_access' => {
+            'deal' => {
+              'enabled' => true,
+              'field_ids' => ['deal.stage_name', 'deal.custom_attributes.sales_region']
+            },
+            'task' => {
+              'enabled' => true,
+              'field_ids' => ['task.status_name', 'task.custom_attributes.follow_up_channel']
+            },
+            'appointment' => {
+              'enabled' => true,
+              'field_ids' => ['appointment.status', 'appointment.custom_attributes.visit_room']
+            }
+          }
+        }
+      )
+    end
+
+    before do
+      account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
+    end
+
+    it 'returns CRM and appointment fields when their features are enabled' do
+      get "/api/v1/accounts/#{account.id}/captain/assistants/context_fields",
+          params: { assistant_id: assistant.id },
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to include(
+        hash_including(
+          id: 'deal.stage_name',
+          table_name: 'deal',
+          selected: true
+        ),
+        hash_including(
+          id: 'deal.custom_attributes.sales_region',
+          table_name: 'deal',
+          selected: true
+        ),
+        hash_including(
+          id: 'task.status_name',
+          table_name: 'task',
+          selected: true
+        ),
+        hash_including(
+          id: 'task.custom_attributes.follow_up_channel',
+          table_name: 'task',
+          selected: true
+        ),
+        hash_including(
+          id: 'appointment.status',
+          table_name: 'appointment',
+          selected: true
+        ),
+        hash_including(
+          id: 'appointment.custom_attributes.visit_room',
+          table_name: 'appointment',
+          selected: true
+        )
+      )
+    end
+  end
+
+  describe 'GET /api/v1/accounts/{account.id}/captain/assistants/tool_access' do
+    let(:custom_tool) { create(:captain_custom_tool, account: account, title: 'Lookup booking') }
+    let(:assistant) do
+      create(
+        :captain_assistant,
+        account: account,
+        config: {
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            },
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['search_documentation', custom_tool.slug]
+            }
+          }
+        }
+      )
+    end
+
+    it 'returns grouped agent and assistant tools with selection state' do
+      get "/api/v1/accounts/#{account.id}/captain/assistants/tool_access",
+          params: { assistant_id: assistant.id },
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to include(
+        hash_including(
+          id: 'faq_lookup',
+          scope_name: 'agent',
+          selected: true,
+          risk_level: 'low',
+          custom: false
+        ),
+        hash_including(
+          id: 'handoff',
+          scope_name: 'agent',
+          selected: false,
+          risk_level: 'medium'
+        ),
+        hash_including(
+          id: 'faq_lookup',
+          scope_name: 'assistant',
+          selected: false
+        ),
+        hash_including(
+          id: 'search_documentation',
+          scope_name: 'assistant',
+          selected: true,
+          risk_level: 'low'
+        ),
+        hash_including(
+          id: custom_tool.slug,
+          scope_name: 'assistant',
+          selected: true,
+          custom: true,
+          risk_level: 'custom'
+        )
+      )
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants' do
     let(:valid_attributes) do
       {
@@ -138,6 +299,40 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(created_assistant.config['context_access']).to eq({})
         expect(json_response.dig(:config, :context_access)).to eq({})
+      end
+
+      it 'stores tool_access when provided on create' do
+        attributes_with_tool_access = valid_attributes.deep_dup
+        attributes_with_tool_access[:assistant][:config][:tool_access] = {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup']
+          },
+          assistant: {
+            enabled: true,
+            tool_ids: ['search_documentation']
+          }
+        }
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants",
+               params: attributes_with_tool_access,
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::Assistant, :count).by(1)
+
+        created_assistant = Captain::Assistant.order(:id).last
+
+        expect(created_assistant.config['tool_access']).to eq(
+          'agent' => {
+            'enabled' => true,
+            'tool_ids' => ['faq_lookup']
+          },
+          'assistant' => {
+            'enabled' => true,
+            'tool_ids' => ['search_documentation']
+          }
+        )
       end
     end
   end
@@ -243,6 +438,48 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(assistant.reload.config['context_access']).to eq({})
         expect(json_response.dig(:config, :context_access)).to eq({})
       end
+
+      it 'updates tool_access config' do
+        assistant.update!(
+          config: {
+            'tool_access' => {
+              'agent' => { 'enabled' => true, 'tool_ids' => ['handoff'] }
+            }
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    tool_access: {
+                      agent: {
+                        enabled: false,
+                        tool_ids: ['faq_lookup']
+                      },
+                      assistant: {
+                        enabled: true,
+                        tool_ids: ['search_documentation']
+                      }
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['tool_access']).to eq(
+          'agent' => {
+            'enabled' => false,
+            'tool_ids' => ['faq_lookup']
+          },
+          'assistant' => {
+            'enabled' => true,
+            'tool_ids' => ['search_documentation']
+          }
+        )
+      end
     end
   end
 
@@ -275,6 +512,48 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         end.to change(Captain::Assistant, :count).by(-1)
 
         expect(response).to have_http_status(:no_content)
+      end
+    end
+  end
+
+  describe 'PATCH /api/v1/accounts/{account.id}/captain/assistants/{id}/avatar' do
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    context 'when it is an admin' do
+      it 'uploads an avatar and returns avatar_url' do
+        file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/avatar",
+              params: { avatar: file },
+              headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.avatar).to be_attached
+        expect(json_response[:avatar_url]).to be_present
+      end
+    end
+  end
+
+  describe 'DELETE /api/v1/accounts/{account.id}/captain/assistants/{id}/avatar' do
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    before do
+      assistant.avatar.attach(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'avatar.png',
+        content_type: 'image/png'
+      )
+    end
+
+    context 'when it is an admin' do
+      it 'deletes the avatar and returns a blank avatar_url' do
+        delete "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/avatar",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.avatar).not_to be_attached
+        expect(json_response[:avatar_url]).to be_nil
       end
     end
   end

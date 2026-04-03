@@ -15,6 +15,8 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
 
   def create_from_file
     attachment = params[:attachment]
+    return render_error(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE, :payment_required) unless storage_limit_available?(attachment.size)
+
     create_and_save_blob(attachment.tempfile, attachment.original_filename, attachment.content_type)
   end
 
@@ -40,6 +42,8 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
 
   def fetch_and_process_file_from_uri(uri)
     uri.open do |file|
+      return render_error(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE, :payment_required) unless storage_limit_available?(file.size)
+
       create_and_save_blob(file, File.basename(uri.path), file.content_type)
     end
   rescue OpenURI::HTTPError => e
@@ -64,5 +68,9 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
 
   def render_error(message, status)
     render json: { error: message }, status: status
+  end
+
+  def storage_limit_available?(extra_bytes)
+    AccountLimits::StorageUsageService.new(account: Current.account).within_limit?(extra_bytes: extra_bytes)
   end
 end

@@ -1,11 +1,16 @@
 ---
 ru:
   activerecord:
+    attributes:
+      message:
+        content: Сообщение
+        processed_message_content: Сообщение
     errors:
       messages:
         blank: не может быть пустым
         record_invalid: "Ошибка валидации: %{errors}"
         taken: уже используется
+        too_long: "слишком длинное (максимум %{count} символов)"
   hello: Привет мир
   inbox:
     reauthorization:
@@ -28,6 +33,9 @@ ru:
     messages:
       blank: не может быть пустым
       taken: уже используется
+      too_long: "слишком длинное (максимум %{count} символов)"
+      search:
+        time_range_limit_exceeded: Поиск ограничен последними %{days} днями
     validations:
       presence: не должен быть пустым
     webhook:
@@ -63,9 +71,6 @@ ru:
         invalid: должно быть корректным доменным именем
       search:
         query_missing: Укажите строку поиска с параметром q
-    messages:
-      search:
-        time_range_limit_exceeded: Поиск ограничен последними %{days} днями
     categories:
       locale:
         unique: Должны быть уникальными в категории и портале

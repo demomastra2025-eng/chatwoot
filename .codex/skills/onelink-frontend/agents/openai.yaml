@@ -1,4 +1,4 @@
 interface:
-  display_name: "Onelink Frontend"
-  short_description: "Frontend work for Onelink surfaces"
-  default_prompt: "Use $onelink-frontend to build or refactor Vue dashboard, widget, portal, survey, or SDK features in Onelink."
+  display_name: "One Link Frontend"
+  short_description: "Frontend work for One Link surfaces"
+  default_prompt: "Use $onelink-frontend to build or refactor Vue dashboard, widget, portal, survey, or SDK features in One Link."

@@ -14,7 +14,7 @@ module Concerns::Toolable
         param param_def['name'].to_sym,
               type: param_def['type'],
               desc: param_def['description'],
-              required: param_def.fetch('required', true)
+              required: param_def.fetch('required', false)
       end
     end
 
@@ -29,6 +29,15 @@ module Concerns::Toolable
     Captain::Tools.const_set(class_name, tool_class)
 
     tool_class.new(assistant, self)
+  end
+
+  def copilot_tool(assistant, user: nil, conversation: nil)
+    Captain::Tools::Copilot::CustomHttpTool.new(
+      assistant,
+      self,
+      user: user,
+      conversation: conversation
+    )
   end
 
   def build_request_url(params, template_context: params)
@@ -71,11 +80,17 @@ module Concerns::Toolable
     prompt_context = prompt_context.with_indifferent_access if prompt_context.respond_to?(:with_indifferent_access)
     conversation_context = state.key?(:prompt_context) ? prompt_context[:conversation] : state[:conversation]
     contact_context = state.key?(:prompt_context) ? prompt_context[:contact] : state[:contact]
+    deal_context = state.key?(:prompt_context) ? prompt_context[:deal] : state[:deal]
+    task_context = state.key?(:prompt_context) ? prompt_context[:task] : state[:task]
+    appointment_context = state.key?(:prompt_context) ? prompt_context[:appointment] : state[:appointment]
 
     {}.tap do |headers|
       add_base_headers(headers, state)
       add_conversation_headers(headers, conversation_context) if conversation_context
       add_contact_headers(headers, contact_context) if contact_context
+      add_deal_headers(headers, deal_context) if deal_context
+      add_task_headers(headers, task_context) if task_context
+      add_appointment_headers(headers, appointment_context) if appointment_context
       add_contact_inbox_headers(headers, state[:contact_inbox])
     end
   end
@@ -95,6 +110,24 @@ module Concerns::Toolable
     headers['X-Chatwoot-Contact-Id'] = contact[:id].to_s if contact[:id]
     headers['X-Chatwoot-Contact-Email'] = contact[:email].to_s if contact[:email].present?
     headers['X-Chatwoot-Contact-Phone'] = contact[:phone_number].to_s if contact[:phone_number].present?
+  end
+
+  def add_deal_headers(headers, deal)
+    headers['X-Chatwoot-Deal-Id'] = deal[:id].to_s if deal[:id]
+    headers['X-Chatwoot-Deal-Title'] = deal[:title].to_s if deal[:title].present?
+    headers['X-Chatwoot-Deal-Stage'] = deal[:stage_name].to_s if deal[:stage_name].present?
+  end
+
+  def add_task_headers(headers, task)
+    headers['X-Chatwoot-Task-Id'] = task[:id].to_s if task[:id]
+    headers['X-Chatwoot-Task-Title'] = task[:title].to_s if task[:title].present?
+    headers['X-Chatwoot-Task-Status'] = task[:status_name].to_s if task[:status_name].present?
+  end
+
+  def add_appointment_headers(headers, appointment)
+    headers['X-Chatwoot-Appointment-Id'] = appointment[:id].to_s if appointment[:id]
+    headers['X-Chatwoot-Appointment-Status'] = appointment[:status].to_s if appointment[:status].present?
+    headers['X-Chatwoot-Appointment-Starts-At'] = appointment[:starts_at].to_s if appointment[:starts_at].present?
   end
 
   def add_contact_inbox_headers(headers, contact_inbox)

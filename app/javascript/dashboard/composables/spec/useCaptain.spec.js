@@ -64,6 +64,44 @@ describe('useCaptain', () => {
     expect(draftMessage.value).toBe('Draft message');
   });
 
+  it('returns token limits and dispatches limits fetch in cloud enterprise mode', async () => {
+    useAccount.mockReturnValue({
+      isCloudFeatureEnabled: vi.fn().mockReturnValue(true),
+      isOnChatwootCloud: { value: true },
+      currentAccount: {
+        value: {
+          limits: {
+            captain: {
+              tokens: {
+                total_count: 1200,
+                current_available: 900,
+                consumed: 300,
+                unlimited: false,
+              },
+            },
+          },
+        },
+      },
+    });
+    useConfig.mockReturnValue({
+      isEnterprise: true,
+    });
+    mockStore.dispatch.mockResolvedValue();
+
+    const { tokenLimits, fetchLimits } = useCaptain();
+    await fetchLimits();
+
+    expect(tokenLimits.value).toEqual({
+      totalCount: 1200,
+      currentAvailable: 900,
+      consumed: 300,
+      unlimited: false,
+    });
+    expect(mockStore.dispatch).toHaveBeenCalledWith('accounts/limits', {
+      silent: true,
+    });
+  });
+
   it('rewrites content', async () => {
     TasksAPI.rewrite.mockResolvedValue({
       data: { message: 'Rewritten content', follow_up_context: { id: 'ctx1' } },

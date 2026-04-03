@@ -62,7 +62,7 @@ const deleteCustomAttribute = async customAttribute => {
   return API.post(
     `/api/v1/widget/conversations/destroy_custom_attributes${window.location.search}`,
     {
-      custom_attribute: [customAttribute],
+      custom_attributes: [customAttribute],
     }
   );
 };

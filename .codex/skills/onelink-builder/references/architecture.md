@@ -5,7 +5,8 @@
 - Rails 7.1 monolith on Ruby 3.4.4.
 - Vue 3 frontend built with Vite 5, `vite-plugin-ruby`, pnpm 10, Tailwind 3, Vitest, and ESLint.
 - Postgres 16 with `pgvector`, Redis, Sidekiq, ActionCable, and a large service-object layer.
-- Repo is a Chatwoot fork; current working branch and intended base branch are `onelink-main`.
+- Current working branch and intended base branch are `onelink-main`.
+- The repository still maintains an upstream sync path, but daily product work should be reasoned about as One Link Cloud rather than as an upstream patch layer.
 
 ## Repository Shape
 
@@ -34,7 +35,7 @@
 ## Runtime And Ownership Surfaces
 
 - Main app code, specs, migrations, routes, and deployment assets live in `onelink`.
-- Docs content, `docs.json`, and local OpenAPI files live in `onelink/docs`.
+- Docs content, `docs/docs.json`, and local OpenAPI files live in `onelink/docs`.
 - Versioned project skills live in `onelink/.codex/skills`.
 - Installed Codex runtime skills live in `$CODEX_HOME/skills`.
 
@@ -58,7 +59,7 @@ The practical ownership rule is:
 - `api/v2`: reports and summary reporting endpoints.
 - `platform/api/v1`: provisioning-style APIs for users, accounts, account users, and agent bots.
 - `public/api/v1`: client-facing contact, conversation, message, and CSAT APIs.
-- `enterprise/api/v1`: Enterprise-only endpoints.
+- Enterprise API v1 surface: Enterprise-only endpoints.
 - Other route groups include `survey`, `super_admin`, `installation`, third-party callbacks, and widget test routes.
 - API documentation source lives under `swagger/`; changes should keep OpenAPI docs aligned.
 
@@ -68,6 +69,7 @@ The practical ownership rule is:
 - Channel-specific behavior is implemented in services plus inbox/channel models and controllers. Check existing provider-specific folders before adding new abstractions.
 - Help center lives across `article`, `category`, `portal`, related controllers, and frontend `portal/`.
 - Feature flags live in `config/features.yml`; use them instead of hardcoding plan- or rollout-specific behavior.
+- Treat One Link as one shared cloud platform. Customer variation should come from access, configuration, custom fields, automation, integrations, and Captain setup rather than separate domain runtimes.
 
 ## Captain and AI
 

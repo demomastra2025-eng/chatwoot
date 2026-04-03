@@ -19,6 +19,14 @@ class Crm::FieldCatalog
     definitions.find { |definition| definition.key == key.to_s }
   end
 
+  def missing_required_definitions(attributes)
+    resolved_attributes = attributes.to_h.deep_stringify_keys
+
+    definitions.select(&:required?).reject do |definition|
+      value_present?(resolved_attributes[definition.key])
+    end
+  end
+
   def resolve_custom_attributes(current_attributes:, incoming_attributes:, apply_defaults:)
     resolved = current_attributes
                .to_h
@@ -45,8 +53,9 @@ class Crm::FieldCatalog
   def applicable_to_context?(definition)
     contexts = Array(rule_value(definition, 'contexts')).presence
     return true if contexts.blank?
+    return false if context.blank?
 
-    context.present? && contexts.map(&:to_s).include?(context)
+    contexts.map(&:to_s).include?(context)
   end
 
   def apply_default_values!(resolved)
@@ -85,7 +94,7 @@ class Crm::FieldCatalog
   end
 
   def normalize_multiselect(definition, value)
-    items = Array(value).map { |item| normalize_text(item) }.compact
+    items = Array(value).filter_map { |item| normalize_text(item) }
     invalid_values = items - option_values(definition)
     raise_validation_error("custom_attributes.#{definition.key}", 'contains a value outside allowed options') if invalid_values.any?
 
@@ -173,9 +182,7 @@ class Crm::FieldCatalog
   end
 
   def validate_required_fields!(resolved)
-    definitions.select(&:required?).each do |definition|
-      next if value_present?(resolved[definition.key])
-
+    missing_required_definitions(resolved).each do |definition|
       raise_validation_error("custom_attributes.#{definition.key}", 'is required')
     end
   end

@@ -18,6 +18,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  displayLabel: {
+    type: String,
+    default: '',
+  },
   placeholder: {
     type: String,
     default: '',
@@ -25,6 +29,14 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false,
+  },
+  hideIcon: {
+    type: Boolean,
+    default: false,
+  },
+  inputClass: {
+    type: String,
+    default: '',
   },
   message: {
     type: String,
@@ -109,10 +121,13 @@ const messageClass = computed(() => {
   return 'text-n-slate-11 dark:text-n-slate-11';
 });
 
-const inputClass = computed(() => {
-  return props.messageType === 'error'
-    ? 'scheduling-date-time-field__input scheduling-date-time-field__input--error'
-    : 'scheduling-date-time-field__input';
+const resolvedInputClass = computed(() => {
+  const baseClass =
+    props.messageType === 'error'
+      ? 'scheduling-date-time-field__input scheduling-date-time-field__input--error'
+      : 'scheduling-date-time-field__input';
+
+  return [baseClass, props.inputClass].filter(Boolean).join(' ');
 });
 
 const handleChange = value => {
@@ -129,12 +144,14 @@ const handleChange = value => {
     <DateTimePicker
       :value="pickerValue"
       :type="type"
+      :display-label="displayLabel"
       :format="displayFormat"
       :minute-step="minuteStep"
       :time-picker-variant="timePickerVariant"
       :disabled="disabled"
+      :hide-icon="hideIcon"
+      :input-class="resolvedInputClass"
       :placeholder="placeholder"
-      :input-class="inputClass"
       popup-class="scheduling-date-time-field__popup"
       @change="handleChange"
     />

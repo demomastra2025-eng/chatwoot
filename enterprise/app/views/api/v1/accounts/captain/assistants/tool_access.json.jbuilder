@@ -1,0 +1,14 @@
+json.array! @tools do |tool|
+  json.id tool[:id]
+  json.title tool[:title]
+  json.group_name tool[:group_name]
+  json.scope_name tool[:scope_name]
+  json.description tool[:description]
+  json.icon tool[:icon]
+  json.selected tool[:selected]
+  json.custom tool[:custom]
+  json.risk_level tool[:risk_level]
+  json.requires_confirmation tool[:requires_confirmation]
+  json.required_features tool[:required_features]
+  json.required_permissions tool[:required_permissions]
+end

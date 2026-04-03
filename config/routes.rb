@@ -44,6 +44,7 @@ Rails.application.routes.draw do
     namespace :v1 do
       # ----------------------------------
       # start of account scoped api routes
+      get 'accounts/:account_id/context_fields', to: 'accounts/context_fields#index'
       resources :accounts, only: [:create, :show, :update] do
         member do
           post :update_active_at
@@ -62,10 +63,13 @@ Rails.application.routes.draw do
             resource :preferences, only: [:show, :update]
             resources :assistants do
               member do
+                patch :avatar
+                delete :avatar
                 post :playground
               end
               collection do
                 get :tools
+                get :tool_access
                 get :context_fields
               end
               resources :inboxes, only: [:index, :create, :destroy], param: :inbox_id
@@ -142,7 +146,7 @@ Rails.application.routes.draw do
             end
             resources :contacts, only: [:index, :create, :update]
             resources :services, only: [:index, :show, :create, :update, :destroy]
-            resources :appointments, only: [:index, :show, :create, :update] do
+            resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
               resources :payments, only: [:create], controller: 'appointment_payments'
               delete :payments, on: :member, to: 'appointment_payments#destroy'
@@ -222,6 +226,7 @@ Rails.application.routes.draw do
               post :update_last_seen
               post :unread
               post :custom_attributes
+              post :destroy_custom_attributes
               get :attachments
               get :inbox_assistant
               get :reporting_events if ChatwootApp.enterprise?
@@ -671,6 +676,7 @@ Rails.application.routes.draw do
   post 'webhooks/instagram', to: 'webhooks/instagram#events'
   post 'webhooks/tiktok', to: 'webhooks/tiktok#events'
   post 'webhooks/shopify', to: 'webhooks/shopify#events'
+  post 'webhooks/macrocrm/:webhook_key/manager_changed', to: 'webhooks/macrocrm#manager_changed'
 
   namespace :twitter do
     resource :callback, only: [:show]
@@ -728,6 +734,11 @@ Rails.application.routes.draw do
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
+        if ChatwootApp.enterprise?
+          post :reset_captain_responses_usage, on: :member
+          post :reset_captain_tokens_usage, on: :member
+          post :reset_email_usage, on: :member
+        end
       end
       resources :users, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         delete :avatar, on: :member, action: :destroy_avatar

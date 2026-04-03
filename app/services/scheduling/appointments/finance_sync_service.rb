@@ -5,34 +5,12 @@ class Scheduling::Appointments::FinanceSyncService
   end
 
   def add_payment!(amount:, payment_method:)
-    raise ArgumentError, 'Set service_amount before adding payment' if appointment.service_amount.to_i <= 0
-    raise ArgumentError, 'Cancelled payments cannot be updated' if appointment.payment_status == 'cancelled'
+    ensure_payment_can_be_updated!
 
-    already_received = appointment.prepaid_amount.to_i + appointment.settlement_amount.to_i
-    remaining = [appointment.service_amount.to_i - already_received, 0].max
-    payment_amount = amount.present? ? amount.to_i : remaining
-
-    raise ArgumentError, 'Payment amount must be greater than 0' unless payment_amount.positive?
-    raise ArgumentError, 'Payment amount exceeds remaining balance' if already_received + payment_amount > appointment.service_amount.to_i
-
-    appointment.payments.create!(
-      account: appointment.account,
-      recorded_by: actor,
-      amount: payment_amount,
-      payment_method: payment_method,
-      payment_kind: 'payment'
-    )
-
-    appointment.update!(
-      settlement_amount: appointment.settlement_amount.to_i + payment_amount,
-      settlement_payment_method: payment_method,
-      payment_status: derive_payment_status(
-        appointment.service_amount,
-        appointment.prepaid_amount,
-        appointment.settlement_amount.to_i + payment_amount,
-        appointment.payment_status
-      )
-    )
+    payment_amount = resolve_payment_amount(amount)
+    ensure_required_fields_for_paid_payment! if next_payment_status_for(payment_amount) == 'paid'
+    create_manual_payment!(payment_amount, payment_method)
+    apply_payment!(payment_amount, payment_method)
 
     sync!
   end
@@ -74,6 +52,74 @@ class Scheduling::Appointments::FinanceSyncService
 
   attr_reader :actor, :appointment
 
+  def apply_payment!(payment_amount, payment_method)
+    next_settlement_amount = appointment.settlement_amount.to_i + payment_amount
+
+    appointment.update!(
+      settlement_amount: next_settlement_amount,
+      settlement_payment_method: payment_method,
+      payment_status: derive_payment_status(
+        appointment.service_amount,
+        appointment.prepaid_amount,
+        next_settlement_amount,
+        appointment.payment_status
+      )
+    )
+  end
+
+  def create_manual_payment!(payment_amount, payment_method)
+    appointment.payments.create!(
+      account: appointment.account,
+      recorded_by: actor,
+      amount: payment_amount,
+      payment_method: payment_method,
+      payment_kind: 'payment'
+    )
+  end
+
+  def ensure_required_fields_for_paid_payment!
+    inspector = Crm::RequiredFieldsInspector.new(
+      account: appointment.account,
+      entity_kind: 'appointment',
+      custom_attributes: appointment.custom_attributes
+    )
+    return if inspector.complete?
+
+    raise Scheduling::Error.new(
+      code: 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS',
+      message: "Complete required fields before marking the appointment as paid: #{inspector.missing_field_labels.join(', ')}",
+      status: :unprocessable_content,
+      details: {
+        missing_fields: inspector.missing_field_details
+      }
+    )
+  end
+
+  def next_payment_status_for(payment_amount)
+    derive_payment_status(
+      appointment.service_amount,
+      appointment.prepaid_amount,
+      appointment.settlement_amount.to_i + payment_amount.to_i,
+      appointment.payment_status
+    )
+  end
+
+  def ensure_payment_can_be_updated!
+    raise ArgumentError, 'Set service_amount before adding payment' if appointment.service_amount.to_i <= 0
+    raise ArgumentError, 'Cancelled payments cannot be updated' if appointment.payment_status == 'cancelled'
+  end
+
+  def resolve_payment_amount(amount)
+    already_received = appointment.prepaid_amount.to_i + appointment.settlement_amount.to_i
+    remaining = [appointment.service_amount.to_i - already_received, 0].max
+    payment_amount = amount.present? ? amount.to_i : remaining
+
+    raise ArgumentError, 'Payment amount must be greater than 0' unless payment_amount.positive?
+    raise ArgumentError, 'Payment amount exceeds remaining balance' if already_received + payment_amount > appointment.service_amount.to_i
+
+    payment_amount
+  end
+
   def compute_expense_amount
     return 0 if appointment.compensation_type_snapshot.blank?
     return appointment.compensation_value_snapshot.to_i if appointment.compensation_type_snapshot == 'fixed'
@@ -98,30 +144,9 @@ class Scheduling::Appointments::FinanceSyncService
 
   def sync_expense!
     existing_expense = appointment.expense
+    return remove_unpaid_expense!(existing_expense) unless appointment_paid?
 
-    if appointment.payment_status != 'paid'
-      existing_expense.destroy! if existing_expense.present? && existing_expense.status != 'paid'
-      return existing_expense
-    end
-
-    amount = compute_expense_amount
-    return existing_expense if existing_expense.present? && existing_expense.status == 'paid'
-
-    if existing_expense.present?
-      existing_expense.update!(
-        resource: appointment.resource,
-        amount: amount,
-        status: 'unpaid'
-      )
-      return existing_expense
-    end
-
-    appointment.create_expense!(
-      account: appointment.account,
-      resource: appointment.resource,
-      amount: amount,
-      status: 'unpaid'
-    )
+    upsert_expense!(existing_expense)
   end
 
   def upsert_payment_by_kind(kind, amount, payment_method)
@@ -154,5 +179,35 @@ class Scheduling::Appointments::FinanceSyncService
        appointment.prepaid_amount.to_i + appointment.settlement_amount.to_i > appointment.service_amount.to_i
       raise ArgumentError, 'Total received amount cannot exceed service_amount'
     end
+  end
+
+  def appointment_paid?
+    appointment.payment_status == 'paid'
+  end
+
+  def remove_unpaid_expense!(existing_expense)
+    existing_expense.destroy! if existing_expense.present? && existing_expense.status != 'paid'
+    existing_expense
+  end
+
+  def upsert_expense!(existing_expense)
+    return existing_expense if existing_expense.present? && existing_expense.status == 'paid'
+    return update_existing_expense!(existing_expense) if existing_expense.present?
+
+    appointment.create_expense!(
+      account: appointment.account,
+      resource: appointment.resource,
+      amount: compute_expense_amount,
+      status: 'unpaid'
+    )
+  end
+
+  def update_existing_expense!(existing_expense)
+    existing_expense.update!(
+      resource: appointment.resource,
+      amount: compute_expense_amount,
+      status: 'unpaid'
+    )
+    existing_expense
   end
 end

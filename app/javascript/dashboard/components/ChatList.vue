@@ -65,6 +65,7 @@ import {
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { ASSIGNEE_TYPE_TAB_PERMISSIONS } from 'dashboard/constants/permissions.js';
+import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
 
 const props = defineProps({
   conversationInbox: { type: [String, Number], default: 0 },
@@ -101,6 +102,7 @@ const showAddFoldersModal = ref(false);
 const showDeleteFoldersModal = ref(false);
 const isContextMenuOpen = ref(false);
 const appliedFilter = ref([]);
+const localSearchQuery = ref('');
 const advancedFilterTypes = ref(
   advancedFilterOptions.map(filter => ({
     ...filter,
@@ -124,6 +126,7 @@ const inboxesList = useMapGetter('inboxes/getInboxes');
 const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const getContact = useMapGetter('contacts/getContact');
 // We can't useFunctionGetter here since it needs to be called on setup?
 const getTeamFn = useMapGetter('teams/getTeam');
 const getConversationById = useMapGetter('getConversationById');
@@ -173,6 +176,10 @@ const activeFolder = computed(() => {
 
 const activeFolderName = computed(() => {
   return activeFolder.value?.name;
+});
+
+const hasLocalSearch = computed(() => {
+  return Boolean(localSearchQuery.value.trim());
 });
 
 const hasActiveFolders = computed(() => {
@@ -337,18 +344,40 @@ const conversationList = computed(() => {
   return localConversationList;
 });
 
+const displayedConversationList = computed(() => {
+  if (!hasLocalSearch.value) {
+    return conversationList.value;
+  }
+
+  return conversationList.value.filter(conversation => {
+    const senderId = conversation?.meta?.sender?.id;
+    const contact = senderId ? getContact.value(senderId) : {};
+
+    return conversationMatchesLocalSearch(
+      conversation,
+      contact,
+      localSearchQuery.value
+    );
+  });
+});
+
 const showEndOfListMessage = computed(() => {
   return (
-    conversationList.value.length &&
+    displayedConversationList.value.length &&
     hasCurrentPageEndReached.value &&
     !chatListLoading.value
   );
 });
 
 const allConversationsSelected = computed(() => {
+  if (!displayedConversationList.value.length) {
+    return false;
+  }
+
   return (
-    conversationList.value.length === selectedConversations.value.length &&
-    conversationList.value.every(el =>
+    displayedConversationList.value.length ===
+      selectedConversations.value.length &&
+    displayedConversationList.value.every(el =>
       selectedConversations.value.includes(el.id)
     )
   );
@@ -372,6 +401,11 @@ function setFiltersFromUISettings() {
 
 function emitConversationLoaded() {
   emit('conversationLoad');
+}
+
+function clearLocalSearch() {
+  localSearchQuery.value = '';
+  emitter.emit('clearSearchInput');
 }
 
 function fetchFilteredConversations(payload) {
@@ -594,7 +628,7 @@ const intersectionObserverOptions = computed(() => ({
 function updateAssigneeTab(selectedTab) {
   if (activeAssigneeTab.value !== selectedTab) {
     resetBulkActions();
-    emitter.emit('clearSearchInput');
+    clearLocalSearch();
     activeAssigneeTab.value = selectedTab;
     if (!currentPage.value) {
       fetchConversations();
@@ -787,7 +821,7 @@ function onContextMenuToggle(state) {
 }
 
 function toggleSelectAll(check) {
-  selectAllConversations(check, conversationList);
+  selectAllConversations(check, displayedConversationList);
 }
 
 useEmitter('fetch_conversation_stats', () => {
@@ -840,25 +874,38 @@ provide('assignPriority', assignPriority);
 provide('isConversationSelected', isConversationSelected);
 provide('deleteConversation', handleDelete);
 
-watch(activeTeam, () => resetAndFetchData());
+watch(activeTeam, () => {
+  clearLocalSearch();
+  resetAndFetchData();
+});
 
 watch(
   computed(() => props.conversationInbox),
-  () => resetAndFetchData()
+  () => {
+    clearLocalSearch();
+    resetAndFetchData();
+  }
 );
 watch(
   computed(() => props.label),
-  () => resetAndFetchData()
+  () => {
+    clearLocalSearch();
+    resetAndFetchData();
+  }
 );
 watch(
   computed(() => props.conversationType),
-  () => resetAndFetchData()
+  () => {
+    clearLocalSearch();
+    resetAndFetchData();
+  }
 );
 
 watch(activeFolder, (newVal, oldVal) => {
   if (newVal !== oldVal) {
     store.dispatch('customViews/setActiveConversationFolder', newVal || null);
   }
+  clearLocalSearch();
   resetAndFetchData();
 });
 
@@ -883,6 +930,7 @@ watch(conversationFilters, (newVal, oldVal) => {
   >
     <slot />
     <ChatListHeader
+      v-model:local-search-query="localSearchQuery"
       :page-title="pageTitle"
       :has-applied-filters="hasAppliedFilters"
       :has-active-folders="hasActiveFolders"
@@ -927,7 +975,7 @@ watch(conversationFilters, (newVal, oldVal) => {
     />
 
     <p
-      v-if="!chatListLoading && !conversationList.length"
+      v-if="!chatListLoading && !conversationList.length && !hasLocalSearch"
       class="flex overflow-auto justify-center items-center p-4"
     >
       {{ $t('CHAT_LIST.LIST.404') }}
@@ -952,9 +1000,10 @@ watch(conversationFilters, (newVal, oldVal) => {
       :class="{ '!overflow-hidden': isContextMenuOpen }"
     >
       <Virtualizer
+        v-if="displayedConversationList.length"
         ref="virtualListRef"
         v-slot="{ item, index }"
-        :data="conversationList"
+        :data="displayedConversationList"
       >
         <ConversationItem
           :source="item"
@@ -968,6 +1017,12 @@ watch(conversationFilters, (newVal, oldVal) => {
           @de-select-conversation="deSelectConversation"
         />
       </Virtualizer>
+      <p
+        v-else-if="!chatListLoading && hasLocalSearch"
+        class="flex overflow-auto justify-center items-center p-4 text-center text-n-slate-11"
+      >
+        {{ $t('CHAT_LIST.LOCAL_SEARCH.EMPTY') }}
+      </p>
       <div v-if="chatListLoading" class="flex justify-center my-4">
         <Spinner class="text-n-brand" />
       </div>

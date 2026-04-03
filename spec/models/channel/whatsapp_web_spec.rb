@@ -91,6 +91,14 @@ RSpec.describe Channel::WhatsappWeb do
       expect(channel.import_messages).to be(false)
       expect(channel.sync_labels).to be(false)
     end
+
+    it 'treats zero lookback days as unlimited history' do
+      channel = create(:channel_whatsapp_web)
+
+      expect(channel.update(history_lookback_days: 0)).to be(true)
+      expect(channel.reload.history_unlimited?).to be(true)
+      expect(channel.history_lookback_window).to be_nil
+    end
   end
 
   describe '#evolution_state_payload' do
@@ -386,6 +394,47 @@ RSpec.describe Channel::WhatsappWeb do
       )
 
       expect(channel.preferred_history_sync_mode).to eq('incremental')
+    end
+
+    it 'falls back to a full sync when a newer provider history snapshot makes the baseline stale' do
+      channel = create(:channel_whatsapp_web)
+      contact = create(:contact, account: channel.account, phone_number: '+15551234567')
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '15551234567')
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+      create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        sender: contact,
+        message_type: :incoming,
+        source_id: 'history-msg-1',
+        content_attributes: { imported_history: true }
+      )
+
+      older_snapshot = 30.minutes.ago.change(usec: 0)
+      newer_snapshot = 5.minutes.ago.change(usec: 0)
+
+      channel.update!(
+        sync_state: channel.sync_state_payload.merge(
+          'history_synced_at' => older_snapshot.iso8601,
+          'last_local_history_sync_finished_at' => older_snapshot.iso8601,
+          'last_history_sync_mode' => 'full',
+          'last_history_message_count' => 1,
+          'last_history_contact_count' => 1,
+          'provider_history_synced_at' => newer_snapshot.iso8601,
+          'local_history_provider_synced_at' => older_snapshot.iso8601,
+          'provider_history_message_count' => 1448
+        )
+      )
+
+      expect(channel.preferred_history_sync_mode).to eq('full')
     end
   end
 

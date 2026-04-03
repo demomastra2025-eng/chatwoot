@@ -10,7 +10,9 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ContextAccessSettings from './ContextAccessSettings.vue';
+import ToolAccessSettings from './ToolAccessSettings.vue';
 
 const props = defineProps({
   mode: {
@@ -43,6 +45,10 @@ const initialState = {
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
   contextAccess: {},
+  toolAccess: {},
+  avatarFile: null,
+  avatarUrl: '',
+  removeAvatar: false,
 };
 
 const state = reactive({ ...initialState });
@@ -71,6 +77,18 @@ const formErrors = computed(() => ({
 
 const handleCancel = () => emit('cancel');
 
+const handleAvatarUpload = ({ file, url }) => {
+  state.avatarFile = file;
+  state.avatarUrl = url;
+  state.removeAvatar = false;
+};
+
+const handleAvatarDelete = () => {
+  state.avatarFile = null;
+  state.avatarUrl = '';
+  state.removeAvatar = Boolean(props.assistant?.avatar_url);
+};
+
 const normalizeNonNegativeInteger = value => {
   const normalizedValue = Number(value);
   if (!Number.isFinite(normalizedValue) || normalizedValue <= 0) {
@@ -80,10 +98,11 @@ const normalizeNonNegativeInteger = value => {
   return Math.floor(normalizedValue);
 };
 
-const prepareAssistantDetails = () => ({
-  name: state.name,
-  description: state.description,
-  config: {
+const assistantHasConfiguredToolAccess = assistant =>
+  Object.prototype.hasOwnProperty.call(assistant?.config || {}, 'tool_access');
+
+const prepareAssistantDetails = () => {
+  const config = {
     product_name: state.productName,
     feature_faq: state.featureFaq,
     feature_memory: state.featureMemory,
@@ -96,8 +115,25 @@ const prepareAssistantDetails = () => ({
       state.historyMessageLimit
     ),
     context_access: state.contextAccess,
-  },
-});
+  };
+
+  if (
+    assistantHasConfiguredToolAccess(props.assistant) ||
+    Object.keys(state.toolAccess || {}).length
+  ) {
+    config.tool_access = state.toolAccess;
+  }
+
+  return {
+    assistant: {
+      name: state.name,
+      description: state.description,
+      config,
+    },
+    avatar: state.avatarFile,
+    removeAvatar: state.removeAvatar,
+  };
+};
 
 const handleSubmit = async () => {
   const isFormValid = await v$.value.$validate();
@@ -126,6 +162,10 @@ const updateStateFromAssistant = assistant => {
     ),
     historyMessageLimit: Number(config.history_message_limit || 0),
     contextAccess: config.context_access || {},
+    toolAccess: config.tool_access || {},
+    avatarFile: null,
+    avatarUrl: assistant.avatar_url || '',
+    removeAvatar: false,
   });
 };
 
@@ -142,6 +182,21 @@ watch(
 
 <template>
   <form class="flex flex-col gap-4" @submit.prevent="handleSubmit">
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium text-n-slate-12">
+        {{ t('CAPTAIN.ASSISTANTS.FORM.AVATAR.LABEL') }}
+      </span>
+      <Avatar
+        :src="state.avatarUrl"
+        :name="state.name || t('CAPTAIN.PLAYGROUND.ASSISTANT')"
+        :size="72"
+        icon-name="i-woot-captain"
+        allow-upload
+        @upload="handleAvatarUpload"
+        @delete="handleAvatarDelete"
+      />
+    </div>
+
     <Input
       v-model="state.name"
       :label="t('CAPTAIN.ASSISTANTS.FORM.NAME.LABEL')"
@@ -253,6 +308,11 @@ watch(
     </div>
 
     <ContextAccessSettings v-model="state.contextAccess" />
+
+    <ToolAccessSettings
+      v-model="state.toolAccess"
+      :assistant-id="assistant.id"
+    />
 
     <div class="flex items-center justify-between w-full gap-3">
       <Button

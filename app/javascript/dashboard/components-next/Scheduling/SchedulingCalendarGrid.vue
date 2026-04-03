@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import {
   buildDayListForView,
   formatDateKey,
@@ -21,6 +22,10 @@ const props = defineProps({
     default: () => [],
   },
   breakRules: {
+    type: Array,
+    default: () => [],
+  },
+  customFieldDefinitions: {
     type: Array,
     default: () => [],
   },
@@ -116,17 +121,21 @@ const resourceNamesById = computed(() =>
 );
 
 const listAppointments = computed(() => {
-  return listDays.value.map(day => ({
-    appointments: props.appointments
-      .filter(appointment => getAppointmentDisplayRangeForDay(appointment, day))
-      .sort(
-        (left, right) =>
-          getAppointmentDisplayRangeForDay(left, day).start -
-          getAppointmentDisplayRangeForDay(right, day).start
-      ),
-    day,
-    key: formatDateKey(day),
-  }));
+  return listDays.value
+    .map(day => ({
+      appointments: props.appointments
+        .filter(appointment =>
+          getAppointmentDisplayRangeForDay(appointment, day)
+        )
+        .sort(
+          (left, right) =>
+            getAppointmentDisplayRangeForDay(left, day).start -
+            getAppointmentDisplayRangeForDay(right, day).start
+        ),
+      day,
+      key: formatDateKey(day),
+    }))
+    .filter(day => day.appointments.length > 0);
 });
 
 const formatListDayLabel = day =>
@@ -171,6 +180,7 @@ const handleStatusChange = payload => {
         :anchor-date="anchorDate"
         :appointments="appointments"
         :break-rules="breakRules"
+        :custom-field-definitions="customFieldDefinitions"
         :holidays="holidays"
         :resources="resources"
         :slots="slots"
@@ -186,7 +196,7 @@ const handleStatusChange = payload => {
     </template>
 
     <template v-else-if="isListView">
-      <div class="flex flex-col gap-4">
+      <div v-if="listAppointments.length" class="flex flex-col gap-4">
         <section
           v-for="day in listAppointments"
           :key="day.key"
@@ -207,21 +217,25 @@ const handleStatusChange = payload => {
             <div
               v-for="appointment in day.appointments"
               :key="appointment.id"
-              class="grid items-center gap-3 px-4 py-3 md:grid-cols-[110px_1fr_auto] hover:bg-n-alpha-1"
+              class="grid gap-3 px-4 py-3 hover:bg-n-alpha-1 md:grid-cols-[110px_minmax(0,1fr)_auto] md:items-start"
             >
               <button
                 type="button"
-                class="grid min-w-0 items-center gap-3 text-left md:col-span-2 md:grid-cols-[110px_1fr]"
+                class="grid min-w-0 items-start gap-3 text-left md:col-span-2 md:grid-cols-[110px_minmax(0,1fr)]"
                 @click="emit('selectAppointment', appointment)"
               >
-                <span class="font-medium text-n-slate-12">
+                <span class="pt-0.5 font-medium text-n-slate-12">
                   {{ formatAppointmentTimeRange(appointment, day.day) }}
                 </span>
-                <div class="flex min-w-0 flex-col">
-                  <span class="truncate font-medium text-n-slate-12">
+                <div class="flex min-w-0 flex-col gap-1">
+                  <span
+                    class="font-medium whitespace-normal break-words text-n-slate-12"
+                  >
                     {{ appointment.clientName }}
                   </span>
-                  <span class="truncate text-xs text-n-slate-11">
+                  <span
+                    class="text-xs whitespace-normal break-words text-n-slate-11"
+                  >
                     {{
                       [
                         appointment.serviceNameSnapshot,
@@ -231,10 +245,19 @@ const handleStatusChange = payload => {
                         .join(' · ')
                     }}
                   </span>
+                  <CrmCustomFieldsSummary
+                    :definitions="customFieldDefinitions"
+                    :values="appointment.customAttributes"
+                    :max-items="2"
+                    :truncate="false"
+                  />
                 </div>
               </button>
 
-              <div class="flex justify-start md:justify-end" @click.stop>
+              <div
+                class="flex justify-start md:self-start md:justify-end"
+                @click.stop
+              >
                 <SchedulingStatusMenu
                   :model-value="appointment.status"
                   @update:model-value="
@@ -246,6 +269,12 @@ const handleStatusChange = payload => {
           </div>
         </section>
       </div>
+      <div
+        v-else
+        class="px-4 py-6 text-sm rounded-2xl outline outline-1 outline-n-container bg-n-solid-2 text-n-slate-11"
+      >
+        {{ $t('SCHEDULING.CALENDAR.NO_APPOINTMENTS_DAY') }}
+      </div>
     </template>
 
     <template v-else-if="isKanbanView">
@@ -253,6 +282,7 @@ const handleStatusChange = payload => {
         <SchedulingKanbanBoard
           class="min-h-0 flex-1"
           :appointments="appointments"
+          :custom-field-definitions="customFieldDefinitions"
           :resources="resources"
           @change-status="handleStatusChange"
           @select-appointment="emit('selectAppointment', $event)"

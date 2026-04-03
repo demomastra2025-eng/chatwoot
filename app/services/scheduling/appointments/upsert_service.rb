@@ -1,4 +1,8 @@
 class Scheduling::Appointments::UpsertService
+  APPOINTMENT_BOOKING_INTAKE_CONTEXT = 'booking_intake'.freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
+
   def initialize(account:, params:, appointment: nil, actor: nil)
     @account = account
     @params = params.to_h.deep_symbolize_keys
@@ -169,9 +173,46 @@ class Scheduling::Appointments::UpsertService
 
   def resolve_custom_attributes
     incoming = params[:custom_attributes]
-    return appointment.custom_attributes if incoming.nil?
+    catalog = appointment_field_catalog
 
-    appointment.custom_attributes.merge(incoming.to_h)
+    if catalog.definitions.blank?
+      return appointment.custom_attributes if incoming.nil?
+
+      return CustomAttributes::MutationService.merge(appointment.custom_attributes, incoming)
+    end
+
+    preserved_system_custom_attributes.merge(
+      catalog.resolve_custom_attributes(
+        current_attributes: appointment.custom_attributes,
+        incoming_attributes: incoming,
+        apply_defaults: appointment.new_record?
+      )
+    )
+  end
+
+  def appointment_field_catalog
+    @appointment_field_catalog ||= Crm::FieldCatalog.new(
+      account: account,
+      entity_kind: 'appointment',
+      context: appointment_field_context
+    )
+  end
+
+  def appointment_field_context
+    return APPOINTMENT_BOOKING_INTAKE_CONTEXT if appointment.new_record?
+    return APPOINTMENT_BOOKING_INTAKE_CONTEXT if params.key?(:custom_attributes)
+
+    nil
+  end
+
+  def preserved_system_custom_attributes
+    appointment.custom_attributes
+               .to_h
+               .deep_stringify_keys
+               .select do |key, _value|
+      PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.include?(key) ||
+        PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES.any? { |prefix| key.start_with?(prefix) }
+    end
   end
 
   def resolve_date(key, current:)
@@ -340,6 +381,7 @@ class Scheduling::Appointments::UpsertService
 
   def validate_availability!
     return if appointment.status == 'cancelled'
+    return unless availability_validation_required?
 
     result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
     return if result.available?
@@ -349,5 +391,15 @@ class Scheduling::Appointments::UpsertService
       message: result.message,
       status: result.code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
     )
+  end
+
+  def availability_validation_required?
+    return true if appointment.new_record?
+    return true if appointment.will_save_change_to_resource_id?
+    return true if appointment.will_save_change_to_starts_at?
+    return true if appointment.will_save_change_to_ends_at?
+
+    appointment.will_save_change_to_status? &&
+      appointment.attribute_in_database('status') == 'cancelled'
   end
 end

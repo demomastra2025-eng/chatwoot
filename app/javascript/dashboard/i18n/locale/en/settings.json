@@ -58,6 +58,13 @@
           "UPDATE_SUCCESS": "Your Language settings have been updated successfully",
           "UPDATE_ERROR": "There is an error while updating the language settings, please try again",
           "USE_ACCOUNT_DEFAULT": "Use account default"
+        },
+        "SIDEBAR_VISIBILITY": {
+          "TITLE": "Left sidebar sections",
+          "NOTE": "Choose which sections stay visible in the left sidebar. By default, every section is shown.",
+          "SAVE": "Save sidebar visibility",
+          "UPDATE_SUCCESS": "Sidebar visibility has been updated successfully",
+          "UPDATE_ERROR": "There is an error while updating the sidebar visibility, please try again"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -308,8 +315,10 @@
     "SETTINGS": "Settings",
     "CONTACTS": "Contacts",
     "CRM": "CRM",
+    "PIPELINES": "Pipelines",
     "CRM_DEALS": "Deals",
     "CRM_TASKS": "Tasks",
+    "CRM_TASK_SETTINGS": "Task settings",
     "ACTIVE": "Active",
     "COMPANIES": "Companies",
     "ALL_COMPANIES": "All Companies",
@@ -443,6 +452,7 @@
   "BILLING_SETTINGS": {
     "TITLE": "Billing",
     "DESCRIPTION": "Manage your subscription here, upgrade your plan and get more for your team.",
+    "UNLIMITED": "Unlimited",
     "CURRENT_PLAN": {
       "TITLE": "Current Plan",
       "PLAN_NOTE": "You are currently subscribed to the **{plan}** plan with **{quantity}** licenses",
@@ -455,12 +465,19 @@
       "DESCRIPTION": "View your previous invoices, edit your billing details, or cancel your subscription.",
       "BUTTON_TXT": "Go to the billing portal"
     },
+    "ACCOUNT_USAGE": {
+      "TITLE": "Account usage",
+      "DESCRIPTION": "Track how much of your account quota has already been consumed.",
+      "NON_WEB_INBOXES": "Connected channels",
+      "STORAGE": "Storage"
+    },
     "CAPTAIN": {
       "TITLE": "AI Agents",
       "DESCRIPTION": "Manage usage and credits for AI Agents.",
       "BUTTON_TXT": "Buy more credits",
       "DOCUMENTS": "Documents",
       "RESPONSES": "Credits",
+      "TOKENS": "Tokens",
       "UPGRADE": "AI Agents are not available on the free plan, upgrade now to get access to AI agents, assistants and more.",
       "REFRESH_CREDITS": "Refresh"
     },

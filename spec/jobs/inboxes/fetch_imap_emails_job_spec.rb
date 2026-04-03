@@ -85,6 +85,16 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
 
         described_class.perform_now(microsoft_imap_email_channel)
       end
+
+      it 'prompts reauthorization when the refresh token is missing' do
+        allow(Imap::MicrosoftFetchEmailService).to receive(:new)
+          .with(channel: microsoft_imap_email_channel, interval: 1)
+          .and_raise(BaseRefreshOauthTokenService::MissingRefreshTokenError, 'A refresh_token is not available')
+
+        expect(microsoft_imap_email_channel).to receive(:prompt_reauthorization!)
+
+        described_class.perform_now(microsoft_imap_email_channel)
+      end
     end
 
     context 'when the fetch service returns the email objects' do

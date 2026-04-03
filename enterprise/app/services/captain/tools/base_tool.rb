@@ -1,11 +1,26 @@
 class Captain::Tools::BaseTool < RubyLLM::Tool
-  prepend Captain::Tools::Instrumentation
-
   attr_accessor :assistant
 
-  def initialize(assistant, user: nil)
+  class << self
+    def new(...)
+      prepend_runtime_instrumentation!
+      super
+    end
+
+    private
+
+    def prepend_runtime_instrumentation!
+      return if @_captain_runtime_instrumentation_prepared
+
+      prepend(Captain::Tools::Instrumentation)
+      @_captain_runtime_instrumentation_prepared = true
+    end
+  end
+
+  def initialize(assistant, user: nil, conversation: nil)
     @assistant = assistant
     @user = user
+    @conversation = conversation
     super()
   end
 
@@ -14,6 +29,24 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   private
+
+  def tool_scope_name
+    Captain::ToolAccess::SCOPE_ASSISTANT
+  end
+
+  def tool_definition
+    definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}
+    definition[:id] ||= name
+    definition[:title] ||= name.to_s.humanize
+    definition
+  end
+
+  def tool_runtime_context
+    {
+      conversation_id: @conversation&.id,
+      conversation_display_id: @conversation&.display_id
+    }.compact
+  end
 
   def user_has_permission(permission)
     return false if @user.blank?

@@ -180,5 +180,71 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(outgoing_message.attachments.first.file_type).to eq('file')
       expect(outgoing_message.attachments.first.file.attached?).to be(true)
     end
+
+    it 'creates live conversations for lid-only contacts so they remain replyable before phone resolution' do
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'LID_ONLY_MESSAGE_1',
+            remoteJid: '143907392331785@lid',
+            remoteLid: '143907392331785@lid'
+          },
+          pushName: 'LID User',
+          message: {
+            conversation: 'Hello from a provisional LID'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      lid_contact_inbox = inbox.contact_inboxes.find_by(source_id: '143907392331785@lid')
+      lid_message = inbox.messages.find_by(source_id: 'LID_ONLY_MESSAGE_1')
+
+      expect(lid_contact_inbox).to be_present
+      expect(lid_contact_inbox.contact.phone_number).to be_nil
+      expect(lid_message).to be_present
+      expect(lid_message.conversation.contact_inbox_id).to eq(lid_contact_inbox.id)
+    end
+
+    it 'reuses the same conversation when a provisional lid contact later resolves to a canonical phone jid' do
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'LID_ALIAS_MESSAGE_1',
+            remoteJid: '143907392331785@lid',
+            remoteLid: '143907392331785@lid'
+          },
+          pushName: 'Alias Contact',
+          message: {
+            conversation: 'First via LID'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      first_message = inbox.messages.find_by(source_id: 'LID_ALIAS_MESSAGE_1')
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'LID_ALIAS_MESSAGE_2',
+            remoteJid: '15551234567@s.whatsapp.net',
+            remoteLid: '143907392331785@lid'
+          },
+          pushName: 'Alias Contact',
+          message: {
+            conversation: 'Then via PN'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      second_message = inbox.messages.find_by(source_id: 'LID_ALIAS_MESSAGE_2')
+
+      expect(first_message).to be_present
+      expect(second_message).to be_present
+      expect(second_message.conversation_id).to eq(first_message.conversation_id)
+      expect(second_message.conversation.contact.reload.phone_number).to eq('+15551234567')
+    end
   end
 end

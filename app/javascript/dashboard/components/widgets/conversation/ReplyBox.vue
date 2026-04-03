@@ -171,9 +171,9 @@ export default {
     showWhatsappTemplates() {
       // We support templates for API channels if someone updates templates manually via API
       // That's why we don't explicitly check for channel type here
-      const templates = this.$store.getters['inboxes/getWhatsAppTemplates'](
-        this.inboxId
-      );
+      const templates = this.$store.getters[
+        'inboxes/getFilteredWhatsAppTemplates'
+      ](this.inboxId);
       return !!(templates && templates.length) && !this.isPrivate;
     },
     showContentTemplates() {

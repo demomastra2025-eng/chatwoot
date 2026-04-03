@@ -3,6 +3,7 @@
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
+import { useUISettings } from 'dashboard/composables/useUISettings';
 import {
   CRM_DEAL_MANAGE_PERMISSION,
   CRM_TASK_MANAGE_PERMISSION,
@@ -35,8 +36,10 @@ export default {
   },
   setup() {
     const { agentsList } = useAgentsList();
+    const { updateUISettings } = useUISettings();
     return {
       agentsList,
+      updateUISettings,
     };
   },
   data() {
@@ -86,11 +89,6 @@ export default {
     },
     hasAnAssignedTeam() {
       return !!this.currentChat?.meta?.team;
-    },
-    crmDealRouteQuery() {
-      return this.buildCrmRouteQuery({
-        ownerId: this.currentChat?.meta?.assignee?.id,
-      });
     },
     crmTasksEnabled() {
       return this.isFeatureEnabledonAccount(
@@ -296,7 +294,11 @@ export default {
       });
     },
     onCreateDeal() {
-      this.openCrmRoute('crm_deals_index', this.crmDealRouteQuery);
+      this.updateUISettings({
+        is_contact_sidebar_open: false,
+        is_crm_deal_panel_open: true,
+        is_copilot_panel_open: false,
+      });
     },
     onCreateTask() {
       this.openCrmRoute('crm_tasks_index', this.crmTaskRouteQuery);

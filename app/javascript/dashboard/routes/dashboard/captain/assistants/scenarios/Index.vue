@@ -109,12 +109,12 @@ const getToolsFromInstruction = instruction => [
   ),
 ];
 
-const getScenarioErrorMessage = (error, fallbackKey) =>
+const getScenarioErrorMessage = (error, fallbackMessage) =>
   error?.message ||
   error?.response?.data?.message ||
   error?.response?.data?.error ||
   error?.response?.message ||
-  t(fallbackKey);
+  fallbackMessage;
 
 const updateScenario = async scenario => {
   try {
@@ -128,7 +128,7 @@ const updateScenario = async scenario => {
   } catch (error) {
     const errorMessage = getScenarioErrorMessage(
       error,
-      'CAPTAIN.ASSISTANTS.SCENARIOS.API.UPDATE.ERROR'
+      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.UPDATE.ERROR')
     );
     useAlert(errorMessage);
   }
@@ -144,7 +144,7 @@ const deleteScenario = async id => {
   } catch (error) {
     const errorMessage = getScenarioErrorMessage(
       error,
-      'CAPTAIN.ASSISTANTS.SCENARIOS.API.DELETE.ERROR'
+      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.DELETE.ERROR')
     );
     useAlert(errorMessage);
   }
@@ -176,7 +176,7 @@ const addScenario = async scenario => {
   } catch (error) {
     const errorMessage = getScenarioErrorMessage(
       error,
-      'CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR'
+      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR')
     );
     useAlert(errorMessage);
   }
@@ -194,7 +194,7 @@ const addAllExampleScenarios = async () => {
   } catch (error) {
     const errorMessage = getScenarioErrorMessage(
       error,
-      'CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR'
+      t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR')
     );
     useAlert(errorMessage);
   }
@@ -259,7 +259,9 @@ onMounted(() => {
         </SuggestedScenarios>
       </div>
       <div class="flex mt-7 flex-col gap-4">
-        <div class="flex justify-between items-center">
+        <div
+          class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+        >
           <BulkSelectBar
             v-model="bulkSelectedIds"
             :all-items="scenarios"
@@ -299,7 +301,10 @@ onMounted(() => {
             {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.SEARCH_EMPTY_MESSAGE') }}
           </span>
         </div>
-        <div v-else class="flex flex-col gap-2">
+        <div
+          v-else
+          class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
+        >
           <ScenariosCard
             v-for="scenario in filteredScenarios"
             :id="scenario.id"

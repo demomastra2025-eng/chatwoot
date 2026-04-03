@@ -16,7 +16,7 @@ defineProps({
   },
   title: {
     type: String,
-    required: true,
+    default: '',
   },
 });
 
@@ -32,7 +32,9 @@ defineEmits(['action']);
       :class="icon"
     />
     <div class="flex flex-col gap-1">
-      <h3 class="mb-0 text-lg font-semibold text-n-slate-12">{{ title }}</h3>
+      <h3 v-if="title" class="mb-0 text-lg font-semibold text-n-slate-12">
+        {{ title }}
+      </h3>
       <p v-if="description" class="max-w-xl mb-0 text-sm text-n-slate-11">
         {{ description }}
       </p>

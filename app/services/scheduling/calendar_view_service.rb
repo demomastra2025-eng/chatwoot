@@ -1,5 +1,5 @@
 class Scheduling::CalendarViewService
-  def initialize(account:, view:, from:, to:, resource_ids: nil, include_slots: false, duration_min: nil)
+  def initialize(account:, view:, from:, to:, resource_ids: nil, include_slots: false, duration_min: nil, custom_attribute_filters: nil)
     @account = account
     @view = view
     @from = from
@@ -7,6 +7,7 @@ class Scheduling::CalendarViewService
     @resource_ids = Array(resource_ids).compact_blank
     @include_slots = ActiveModel::Type::Boolean.new.cast(include_slots)
     @duration_min = duration_min.presence&.to_i
+    @custom_attribute_filters = custom_attribute_filters
   end
 
   def perform
@@ -32,12 +33,9 @@ class Scheduling::CalendarViewService
   private
 
   def appointments
-    @appointments ||= account.scheduling_appointments
-                             .includes(:expense, :payments)
-                             .where(resource_id: resource_ids)
-                             .where('starts_at < ? AND ends_at > ?', @to, @from)
-                             .ordered
-                             .to_a
+    @appointments ||= begin
+      appointment_custom_field_filter_set.apply(base_appointments_scope).to_a
+    end
   end
 
   def break_rules
@@ -117,11 +115,30 @@ class Scheduling::CalendarViewService
       holidays: holidays,
       workday_overrides: workday_overrides.select { |item| item.resource_id == resource.id },
       time_offs: time_offs.select { |item| item.resource_id.nil? || item.resource_id == resource.id },
-      appointments: appointments.select { |item| item.resource_id == resource.id }
+      appointments: blocking_appointments.select { |item| item.resource_id == resource.id }
     )
   end
 
   def local_date_window
     (@from.to_date - 1)..(@to.to_date + 1)
+  end
+
+  def base_appointments_scope
+    @base_appointments_scope ||= account.scheduling_appointments
+                                        .includes(:expense, :payments)
+                                        .where(resource_id: resource_ids)
+                                        .where('starts_at < ? AND ends_at > ?', @to, @from)
+                                        .ordered
+  end
+
+  def blocking_appointments
+    @blocking_appointments ||= base_appointments_scope.to_a
+  end
+
+  def appointment_custom_field_filter_set
+    @appointment_custom_field_filter_set ||= Scheduling::AppointmentCustomFieldFilterSet.new(
+      account: account,
+      raw_filters: @custom_attribute_filters
+    )
   end
 end

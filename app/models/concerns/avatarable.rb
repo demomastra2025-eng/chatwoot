@@ -3,10 +3,12 @@
 module Avatarable
   extend ActiveSupport::Concern
   include Rails.application.routes.url_helpers
+  include AccountStorageLimitable
 
   included do
     has_one_attached :avatar
     validate :acceptable_avatar, if: -> { avatar.changed? }
+    account_storage_attachments :avatar
     after_save :fetch_avatar_from_gravatar
   end
 

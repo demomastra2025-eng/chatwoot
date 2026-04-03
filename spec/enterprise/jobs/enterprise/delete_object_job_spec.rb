@@ -16,7 +16,7 @@ RSpec.describe DeleteObjectJob, type: :job do
 
       audit_log = Audited::Audit.where(auditable_type: 'Inbox', action: 'destroy', username: user.uid, remote_address: '127.0.0.1').first
       expect(audit_log).to be_present
-      expect(audit_log.audited_changes.keys).to include('id', 'name', 'account_id')
+      expect(audit_log.audited_changes.keys).to include('id', 'name', 'account_id', 'channel_type')
       expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -24,6 +24,23 @@ RSpec.describe DeleteObjectJob, type: :job do
       described_class.perform_later(account, user, '127.0.0.1')
       perform_enqueued_jobs
       expect(Audited::Audit.where(auditable_type: 'Team', action: 'destroy').count).to eq 0
+    end
+
+    it 'stores medium for twilio whatsapp inboxes before deletion' do
+      twilio_whatsapp_inbox = create(:channel_twilio_sms, :whatsapp, account: account).inbox
+
+      described_class.perform_later(twilio_whatsapp_inbox, user, '127.0.0.1')
+      perform_enqueued_jobs
+
+      audit_log = Audited::Audit.where(
+        auditable_type: 'Inbox',
+        action: 'destroy',
+        auditable_id: twilio_whatsapp_inbox.id
+      ).first
+
+      expect(audit_log).to be_present
+      expect(audit_log.audited_changes['channel_type']).to eq('Channel::TwilioSms')
+      expect(audit_log.audited_changes['medium']).to eq('whatsapp')
     end
   end
 end

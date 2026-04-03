@@ -1,6 +1,6 @@
 class Captain::ContextFields
   FIELD_REFERENCE_REGEX = %r{\[([^\]]+)\]\(field://([^)]+)\)}
-  SCOPES = %i[contact conversation].freeze
+  SCOPES = %i[contact conversation deal task appointment].freeze
   CONTACT_STATE_ATTRIBUTES = %i[
     id name email phone_number identifier contact_type
     custom_attributes additional_attributes
@@ -8,6 +8,27 @@ class Captain::ContextFields
   CONVERSATION_STATE_ATTRIBUTES = %i[
     id display_id inbox_id contact_id status priority
     label_list custom_attributes additional_attributes
+  ].freeze
+  DEAL_STATE_ATTRIBUTES = %i[
+    id title description amount_minor currency expected_close_on win_probability
+    closed_at external_ref pipeline_id stage_id owner_id creator_id team_id company_id
+    originating_conversation_id pipeline_name stage_name owner_name creator_name
+    team_name company_name custom_attributes
+  ].freeze
+  TASK_STATE_ATTRIBUTES = %i[
+    id title description due_at start_at priority completed_at external_ref
+    status_id assignee_id creator_id team_id deal_id originating_conversation_id
+    status_name assignee_name creator_name team_name deal_title custom_attributes
+  ].freeze
+  APPOINTMENT_STATE_ATTRIBUTES = %i[
+    id resource_id contact_id service_id company_id conversation_id created_by_id
+    starts_at ends_at duration_min status appointment_type
+    client_name client_phone client_identifier client_birth_date client_gender
+    client_comment source external_ref payment_status
+    service_name_snapshot service_type_snapshot service_duration_min_snapshot service_amount
+    compensation_type_snapshot compensation_value_snapshot compensation_percent_snapshot
+    prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method
+    custom_attributes
   ].freeze
 
   CONTACT_FIELD_DEFINITIONS = [
@@ -28,6 +49,85 @@ class Captain::ContextFields
     { key: 'priority', title: 'Priority', description: 'conversation.priority' },
     { key: 'label_list', title: 'Labels', description: 'conversation.label_list' }
   ].freeze
+  DEAL_FIELD_DEFINITIONS = [
+    { key: 'id', title: 'Deal ID', description: 'deal.id' },
+    { key: 'title', title: 'Title', description: 'deal.title' },
+    { key: 'description', title: 'Description', description: 'deal.description' },
+    { key: 'amount_minor', title: 'Amount (minor units)', description: 'deal.amount_minor' },
+    { key: 'currency', title: 'Currency', description: 'deal.currency' },
+    { key: 'expected_close_on', title: 'Expected Close Date', description: 'deal.expected_close_on' },
+    { key: 'win_probability', title: 'Win Probability', description: 'deal.win_probability' },
+    { key: 'closed_at', title: 'Closed At', description: 'deal.closed_at' },
+    { key: 'external_ref', title: 'External Reference', description: 'deal.external_ref' },
+    { key: 'pipeline_id', title: 'Pipeline ID', description: 'deal.pipeline_id' },
+    { key: 'pipeline_name', title: 'Pipeline Name', description: 'deal.pipeline_name' },
+    { key: 'stage_id', title: 'Stage ID', description: 'deal.stage_id' },
+    { key: 'stage_name', title: 'Stage Name', description: 'deal.stage_name' },
+    { key: 'owner_id', title: 'Owner User ID', description: 'deal.owner_id' },
+    { key: 'owner_name', title: 'Owner Name', description: 'deal.owner_name' },
+    { key: 'creator_id', title: 'Created By User ID', description: 'deal.creator_id' },
+    { key: 'creator_name', title: 'Creator Name', description: 'deal.creator_name' },
+    { key: 'team_id', title: 'Team ID', description: 'deal.team_id' },
+    { key: 'team_name', title: 'Team Name', description: 'deal.team_name' },
+    { key: 'company_id', title: 'Company ID', description: 'deal.company_id' },
+    { key: 'company_name', title: 'Company Name', description: 'deal.company_name' },
+    { key: 'originating_conversation_id', title: 'Conversation ID', description: 'deal.originating_conversation_id' }
+  ].freeze
+  TASK_FIELD_DEFINITIONS = [
+    { key: 'id', title: 'Task ID', description: 'task.id' },
+    { key: 'title', title: 'Title', description: 'task.title' },
+    { key: 'description', title: 'Description', description: 'task.description' },
+    { key: 'due_at', title: 'Due At', description: 'task.due_at' },
+    { key: 'start_at', title: 'Start At', description: 'task.start_at' },
+    { key: 'priority', title: 'Priority', description: 'task.priority' },
+    { key: 'completed_at', title: 'Completed At', description: 'task.completed_at' },
+    { key: 'external_ref', title: 'External Reference', description: 'task.external_ref' },
+    { key: 'status_id', title: 'Status ID', description: 'task.status_id' },
+    { key: 'status_name', title: 'Status Name', description: 'task.status_name' },
+    { key: 'assignee_id', title: 'Assignee User ID', description: 'task.assignee_id' },
+    { key: 'assignee_name', title: 'Assignee Name', description: 'task.assignee_name' },
+    { key: 'creator_id', title: 'Created By User ID', description: 'task.creator_id' },
+    { key: 'creator_name', title: 'Creator Name', description: 'task.creator_name' },
+    { key: 'team_id', title: 'Team ID', description: 'task.team_id' },
+    { key: 'team_name', title: 'Team Name', description: 'task.team_name' },
+    { key: 'deal_id', title: 'Deal ID', description: 'task.deal_id' },
+    { key: 'deal_title', title: 'Deal Title', description: 'task.deal_title' },
+    { key: 'originating_conversation_id', title: 'Conversation ID', description: 'task.originating_conversation_id' }
+  ].freeze
+  APPOINTMENT_FIELD_DEFINITIONS = [
+    { key: 'id', title: 'Appointment ID', description: 'appointment.id' },
+    { key: 'resource_id', title: 'Specialist ID', description: 'appointment.resource_id' },
+    { key: 'contact_id', title: 'Contact ID', description: 'appointment.contact_id' },
+    { key: 'service_id', title: 'Service ID', description: 'appointment.service_id' },
+    { key: 'company_id', title: 'Company ID', description: 'appointment.company_id' },
+    { key: 'conversation_id', title: 'Conversation ID', description: 'appointment.conversation_id' },
+    { key: 'created_by_id', title: 'Created By User ID', description: 'appointment.created_by_id' },
+    { key: 'starts_at', title: 'Start Time', description: 'appointment.starts_at' },
+    { key: 'ends_at', title: 'End Time', description: 'appointment.ends_at' },
+    { key: 'duration_min', title: 'Duration (minutes)', description: 'appointment.duration_min' },
+    { key: 'status', title: 'Status', description: 'appointment.status' },
+    { key: 'appointment_type', title: 'Appointment Type', description: 'appointment.appointment_type' },
+    { key: 'client_name', title: 'Client Name', description: 'appointment.client_name' },
+    { key: 'client_phone', title: 'Client Phone', description: 'appointment.client_phone' },
+    { key: 'client_identifier', title: 'Client Identifier', description: 'appointment.client_identifier' },
+    { key: 'client_birth_date', title: 'Client Birth Date', description: 'appointment.client_birth_date' },
+    { key: 'client_gender', title: 'Client Gender', description: 'appointment.client_gender' },
+    { key: 'client_comment', title: 'Client Comment', description: 'appointment.client_comment' },
+    { key: 'source', title: 'Source', description: 'appointment.source' },
+    { key: 'external_ref', title: 'External Reference', description: 'appointment.external_ref' },
+    { key: 'payment_status', title: 'Payment Status', description: 'appointment.payment_status' },
+    { key: 'service_name_snapshot', title: 'Service Name', description: 'appointment.service_name_snapshot' },
+    { key: 'service_type_snapshot', title: 'Service Type', description: 'appointment.service_type_snapshot' },
+    { key: 'service_duration_min_snapshot', title: 'Service Duration (minutes)', description: 'appointment.service_duration_min_snapshot' },
+    { key: 'service_amount', title: 'Service Amount', description: 'appointment.service_amount' },
+    { key: 'compensation_type_snapshot', title: 'Compensation Type', description: 'appointment.compensation_type_snapshot' },
+    { key: 'compensation_value_snapshot', title: 'Compensation Value', description: 'appointment.compensation_value_snapshot' },
+    { key: 'compensation_percent_snapshot', title: 'Compensation Percent', description: 'appointment.compensation_percent_snapshot' },
+    { key: 'prepaid_amount', title: 'Prepaid Amount', description: 'appointment.prepaid_amount' },
+    { key: 'prepaid_payment_method', title: 'Prepaid Payment Method', description: 'appointment.prepaid_payment_method' },
+    { key: 'settlement_amount', title: 'Settlement Amount', description: 'appointment.settlement_amount' },
+    { key: 'settlement_payment_method', title: 'Settlement Payment Method', description: 'appointment.settlement_payment_method' }
+  ].freeze
 
   ATTRIBUTE_MODELS = {
     'contact' => 'contact_attribute',
@@ -38,16 +138,124 @@ class Captain::ContextFields
     'contact' => 'Contact',
     'contact_custom_attributes' => 'Contact Attributes',
     'conversation' => 'Conversation',
-    'conversation_custom_attributes' => 'Conversation Attributes'
+    'conversation_custom_attributes' => 'Conversation Attributes',
+    'deal' => 'Deal',
+    'deal_custom_attributes' => 'Deal Attributes',
+    'task' => 'Task',
+    'task_custom_attributes' => 'Task Attributes',
+    'appointment' => 'Appointment',
+    'appointment_custom_attributes' => 'Appointment Attributes'
   }.freeze
 
   class << self
     def definitions_for(account)
-      contact_fields + conversation_fields + custom_attribute_fields(account, 'contact') + custom_attribute_fields(account, 'conversation')
+      contact_fields +
+        conversation_fields +
+        deal_fields(account) +
+        task_fields(account) +
+        appointment_fields(account) +
+        custom_attribute_fields(account, 'contact') +
+        custom_attribute_fields(account, 'conversation') +
+        managed_custom_attribute_fields(account, 'deal') +
+        managed_custom_attribute_fields(account, 'task') +
+        appointment_custom_attribute_fields(account)
+    end
+
+    def definitions_for_user(account:, user:)
+      filter_definitions_for_user(
+        definitions_for(account),
+        account: account,
+        user: user
+      )
+    end
+
+    def scope_visible_for_user?(scope:, account:, user:)
+      return false unless scope_context_enabled?(scope, account)
+
+      case scope.to_s
+      when 'deal'
+        user_has_any_permission?(
+          account: account,
+          user: user,
+          permissions: %w[crm_deal_view crm_deal_manage]
+        )
+      when 'task'
+        user_has_any_permission?(
+          account: account,
+          user: user,
+          permissions: %w[crm_task_view crm_task_manage]
+        )
+      else
+        true
+      end
     end
 
     def field_ids_for(account)
       definitions_for(account).map { |field| field[:id] }
+    end
+
+    def appointment_state_for(account:, conversation:)
+      appointment = appointment_for(account: account, conversation: conversation)
+      appointment&.attributes&.symbolize_keys&.slice(*APPOINTMENT_STATE_ATTRIBUTES)
+    end
+
+    def deal_state_for(account:, conversation:)
+      deal = deal_for(account: account, conversation: conversation)
+      return if deal.blank?
+
+      deal.attributes.symbolize_keys.slice(*DEAL_STATE_ATTRIBUTES).merge(
+        pipeline_name: deal.pipeline&.name,
+        stage_name: deal.stage&.name,
+        owner_name: deal.owner&.name,
+        creator_name: deal.creator&.name,
+        team_name: deal.team&.name,
+        company_name: deal.company&.name
+      ).slice(*DEAL_STATE_ATTRIBUTES)
+    end
+
+    def task_state_for(account:, conversation:)
+      task = task_for(account: account, conversation: conversation)
+      return if task.blank?
+
+      task.attributes.symbolize_keys.slice(*TASK_STATE_ATTRIBUTES).merge(
+        status_name: task.status&.name,
+        assignee_name: task.assignee&.name,
+        creator_name: task.creator&.name,
+        team_name: task.team&.name,
+        deal_title: task.deal&.title
+      ).slice(*TASK_STATE_ATTRIBUTES)
+    end
+
+    def appointment_for(account:, conversation:)
+      return if account.blank? || conversation.blank?
+      return unless appointment_context_enabled?(account)
+
+      appointments = account.scheduling_appointments.where(conversation_id: conversation.id)
+
+      appointments.active_statuses.order(starts_at: :desc, id: :desc).first ||
+        appointments.order(starts_at: :desc, id: :desc).first
+    end
+
+    def deal_for(account:, conversation:)
+      return if account.blank? || conversation.blank?
+      return unless deal_context_enabled?(account)
+
+      deals = account.crm_deals.where(originating_conversation_id: conversation.id)
+
+      deals.kept.where(closed_at: nil).order(updated_at: :desc, id: :desc).first ||
+        deals.kept.order(updated_at: :desc, id: :desc).first ||
+        deals.order(updated_at: :desc, id: :desc).first
+    end
+
+    def task_for(account:, conversation:)
+      return if account.blank? || conversation.blank?
+      return unless task_context_enabled?(account)
+
+      tasks = account.crm_tasks.where(originating_conversation_id: conversation.id)
+
+      tasks.kept.where(completed_at: nil).order(updated_at: :desc, id: :desc).first ||
+        tasks.kept.order(updated_at: :desc, id: :desc).first ||
+        tasks.order(updated_at: :desc, id: :desc).first
     end
 
     def allowed_definitions_for(assistant)
@@ -70,7 +278,7 @@ class Captain::ContextFields
       raw_access = assistant.config&.with_indifferent_access&.dig(:context_access) || {}
 
       SCOPES.index_with do |scope|
-        normalize_scope_access(raw_access[scope], available_ids_by_scope[scope] || [])
+        normalize_scope_access(scope, raw_access[scope], available_ids_by_scope[scope] || [])
       end
     end
 
@@ -145,6 +353,24 @@ class Captain::ContextFields
       build_field_group('conversation', CONVERSATION_FIELD_DEFINITIONS)
     end
 
+    def deal_fields(account)
+      return [] unless deal_context_enabled?(account)
+
+      build_field_group('deal', DEAL_FIELD_DEFINITIONS)
+    end
+
+    def task_fields(account)
+      return [] unless task_context_enabled?(account)
+
+      build_field_group('task', TASK_FIELD_DEFINITIONS)
+    end
+
+    def appointment_fields(account)
+      return [] unless appointment_context_enabled?(account)
+
+      build_field_group('appointment', APPOINTMENT_FIELD_DEFINITIONS)
+    end
+
     def build_field_group(scope, definitions)
       definitions.map do |definition|
         {
@@ -178,11 +404,50 @@ class Captain::ContextFields
       end
     end
 
-    def field_definitions_for(scope)
-      scope.to_s == 'contact' ? CONTACT_FIELD_DEFINITIONS : CONVERSATION_FIELD_DEFINITIONS
+    def appointment_custom_attribute_fields(account)
+      return [] unless appointment_context_enabled?(account)
+
+      managed_custom_attribute_fields(account, 'appointment')
     end
 
-    def normalize_scope_access(raw_scope, available_field_ids)
+    def managed_custom_attribute_fields(account, scope)
+      return [] unless scope_context_enabled?(scope, account)
+
+      account.crm_field_definitions
+             .active
+             .for_entity_kind(scope)
+             .ordered
+             .map do |definition|
+        {
+          id: "#{scope}.custom_attributes.#{definition.key}",
+          title: definition.label,
+          description: "#{scope}.custom_attributes.#{definition.key}",
+          group_name: GROUP_NAMES.fetch("#{scope}_custom_attributes"),
+          table_name: scope,
+          field_type: 'custom_attribute',
+          field_key: definition.key
+        }
+      end
+    end
+
+    def field_definitions_for(scope)
+      case scope.to_s
+      when 'contact'
+        CONTACT_FIELD_DEFINITIONS
+      when 'conversation'
+        CONVERSATION_FIELD_DEFINITIONS
+      when 'deal'
+        DEAL_FIELD_DEFINITIONS
+      when 'task'
+        TASK_FIELD_DEFINITIONS
+      when 'appointment'
+        APPOINTMENT_FIELD_DEFINITIONS
+      else
+        []
+      end
+    end
+
+    def normalize_scope_access(scope, raw_scope, available_field_ids)
       raw_scope = raw_scope.to_h.with_indifferent_access if raw_scope.respond_to?(:to_h)
       raw_scope ||= {}
 
@@ -194,9 +459,61 @@ class Captain::ContextFields
         end
 
       {
-        enabled: raw_scope.key?(:enabled) ? ActiveModel::Type::Boolean.new.cast(raw_scope[:enabled]) : true,
+        enabled: raw_scope.key?(:enabled) ? ActiveModel::Type::Boolean.new.cast(raw_scope[:enabled]) : default_scope_enabled(scope, available_field_ids),
         field_ids: field_ids & available_field_ids
       }
+    end
+
+    def default_scope_enabled(scope, available_field_ids)
+      return false if available_field_ids.blank?
+      return false if %i[deal task appointment].include?(scope.to_sym)
+
+      true
+    end
+
+    def deal_context_enabled?(account)
+      account.feature_enabled?('crm_deals')
+    end
+
+    def task_context_enabled?(account)
+      account.feature_enabled?('crm_tasks')
+    end
+
+    def appointment_context_enabled?(account)
+      account.feature_enabled?('scheduling')
+    end
+
+    def scope_context_enabled?(scope, account)
+      case scope.to_s
+      when 'deal'
+        deal_context_enabled?(account)
+      when 'task'
+        task_context_enabled?(account)
+      when 'appointment'
+        appointment_context_enabled?(account)
+      else
+        true
+      end
+    end
+
+    def filter_definitions_for_user(definitions, account:, user:)
+      definitions.select do |field|
+        scope_visible_for_user?(
+          scope: field[:table_name],
+          account: account,
+          user: user
+        )
+      end
+    end
+
+    def user_has_any_permission?(account:, user:, permissions:)
+      return false if account.blank? || user.blank? || !user.respond_to?(:account_users)
+
+      account_user = user.account_users.find_by(account_id: account.id)
+      return false if account_user.blank?
+
+      tokens = Array(account_user.permissions)
+      tokens.include?('administrator') || permissions.any? { |token| tokens.include?(token) }
     end
 
     def build_scoped_prompt_state(scope:, raw_scope_state:, allowed_field_ids:, include_additional_attributes: false)

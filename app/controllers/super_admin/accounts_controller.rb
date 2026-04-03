@@ -35,7 +35,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   #
   def resource_params
     permitted_params = super
-    permitted_params[:limits] = permitted_params[:limits].to_h.compact
+    permitted_params[:limits] = normalize_limits(permitted_params[:limits])
     permitted_params[:selected_feature_flags] = params[:enabled_features].keys.map(&:to_sym) if params[:enabled_features].present?
     permitted_params
   end
@@ -52,9 +52,28 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def reset_cache
     requested_resource.reset_cache_keys
-    # rubocop:disable Rails/I18nLocaleTexts
-    redirect_back(fallback_location: [namespace, requested_resource], notice: 'Cache keys cleared')
-    # rubocop:enable Rails/I18nLocaleTexts
+    redirect_to_account(notice: 'Cache keys cleared')
+  end
+
+  def reset_captain_responses_usage
+    if requested_resource.reset_response_usage
+      redirect_to_account(notice: 'Captain responses usage reset')
+    else
+      redirect_to_account(alert: 'Unable to reset Captain responses usage')
+    end
+  end
+
+  def reset_captain_tokens_usage
+    if requested_resource.reset_token_usage
+      redirect_to_account(notice: 'Captain tokens usage reset')
+    else
+      redirect_to_account(alert: 'Unable to reset Captain tokens usage')
+    end
+  end
+
+  def reset_email_usage
+    requested_resource.reset_email_sent_count
+    redirect_to_account(notice: 'Email usage counter reset')
   end
 
   def destroy
@@ -63,6 +82,28 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     DeleteObjectJob.perform_later(account) if account.present?
     # rubocop:disable Rails/I18nLocaleTexts
     redirect_back(fallback_location: [namespace, requested_resource], notice: 'Account deletion is in progress.')
+    # rubocop:enable Rails/I18nLocaleTexts
+  end
+
+  private
+
+  def normalize_limits(raw_limits)
+    raw_limits.to_h.each_with_object({}) do |(key, value), normalized|
+      next if value.blank?
+
+      normalized[key] = Integer(value, 10)
+    rescue ArgumentError, TypeError
+      normalized[key] = value
+    end
+  end
+
+  def redirect_to_account(notice: nil, alert: nil)
+    options = { fallback_location: [namespace, requested_resource] }
+    options[:notice] = notice if notice.present?
+    options[:alert] = alert if alert.present?
+
+    # rubocop:disable Rails/I18nLocaleTexts
+    redirect_back(**options)
     # rubocop:enable Rails/I18nLocaleTexts
   end
 end

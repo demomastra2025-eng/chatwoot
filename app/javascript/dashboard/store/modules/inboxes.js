@@ -11,6 +11,11 @@ import AnalyticsHelper from '../../helper/AnalyticsHelper';
 import camelcaseKeys from 'camelcase-keys';
 import { ACCOUNT_EVENTS } from '../../helper/AnalyticsHelper/events';
 import { channelActions, buildInboxData } from './inboxes/channelActions';
+import {
+  COMPONENT_TYPES,
+  UNSUPPORTED_TEMPLATE_COMPONENT_TYPES,
+  UNSUPPORTED_TEMPLATE_HEADER_FORMATS,
+} from 'dashboard/helper/templateHelper';
 
 export const state = {
   records: [],
@@ -71,7 +76,12 @@ export const getters = {
 
     return templates.filter(template => {
       // Ensure template has required properties
-      if (!template || !template.status || !template.components) {
+      if (
+        !template ||
+        !template.name ||
+        !template.status ||
+        !Array.isArray(template.components)
+      ) {
         return false;
       }
 
@@ -81,7 +91,16 @@ export const getters = {
       }
 
       // Filter out authentication templates
-      if (template.category === 'AUTHENTICATION') {
+      if (String(template.category).toUpperCase() === 'AUTHENTICATION') {
+        return false;
+      }
+
+      // Only show templates we can preview and populate reliably
+      const hasBodyComponent = template.components.some(
+        component =>
+          String(component.type).toUpperCase() === COMPONENT_TYPES.BODY
+      );
+      if (!hasBodyComponent) {
         return false;
       }
 
@@ -93,13 +112,16 @@ export const getters = {
         return false;
       }
 
-      // Filter out interactive templates (LIST, PRODUCT, CATALOG), location templates, and call permission templates
+      // Filter out templates with interactive/header formats we do not support end-to-end yet.
       const hasUnsupportedComponents = template.components.some(
         component =>
-          ['LIST', 'PRODUCT', 'CATALOG', 'CALL_PERMISSION_REQUEST'].includes(
-            component.type
+          UNSUPPORTED_TEMPLATE_COMPONENT_TYPES.includes(
+            String(component.type).toUpperCase()
           ) ||
-          (component.type === 'HEADER' && component.format === 'LOCATION')
+          (String(component.type).toUpperCase() === COMPONENT_TYPES.HEADER &&
+            UNSUPPORTED_TEMPLATE_HEADER_FORMATS.includes(
+              String(component.format).toUpperCase()
+            ))
       );
 
       if (hasUnsupportedComponents) {

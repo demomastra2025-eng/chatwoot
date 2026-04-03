@@ -6,7 +6,7 @@ class Messages::Messenger::MessageBuilder
     return if unsupported_file_type?(attachment['type'])
 
     params = attachment_params(attachment)
-    attachment_obj = @message.attachments.new(params.except(:remote_file_url))
+    attachment_obj = @message.attachments.new(params.except(:remote_file_url)).skip_storage_limit_validation!
     attachment_obj.save!
     if facebook_reel?(attachment)
       update_facebook_reel_content(attachment)

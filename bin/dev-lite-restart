@@ -192,7 +192,23 @@ configure_active_storage_root() {
 
 ensure_rbenv() {
   if command -v rbenv >/dev/null 2>&1; then
-    eval "$(rbenv init -)"
+    local rbenv_root shims_path bin_path path_with_separators
+
+    rbenv_root="${RBENV_ROOT:-${HOME}/.rbenv}"
+    shims_path="${rbenv_root}/shims"
+    bin_path="${rbenv_root}/bin"
+    path_with_separators=":${PATH}:"
+
+    if [[ -d "$bin_path" && "$path_with_separators" != *":${bin_path}:"* ]]; then
+      export PATH="${bin_path}:${PATH}"
+      path_with_separators=":${PATH}:"
+    fi
+
+    if [[ -d "$shims_path" && "$path_with_separators" != *":${shims_path}:"* ]]; then
+      export PATH="${shims_path}:${PATH}"
+    fi
+
+    eval "$(rbenv init - bash)"
   fi
 }
 

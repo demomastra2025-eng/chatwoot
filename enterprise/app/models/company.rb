@@ -19,6 +19,8 @@
 #
 class Company < ApplicationRecord
   include Avatarable
+  include LlmFormattable
+
   validates :account_id, presence: true
   validates :name, presence: true, length: { maximum: Limits::COMPANY_NAME_LENGTH_LIMIT }
   validates :domain, allow_blank: true, format: {
@@ -29,8 +31,10 @@ class Company < ApplicationRecord
   validates :description, length: { maximum: Limits::COMPANY_DESCRIPTION_LENGTH_LIMIT }
 
   belongs_to :account
+  has_many :crm_deals, dependent: :nullify, class_name: '::Crm::Deal'
   has_many :contacts, dependent: :nullify
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
+  before_validation :normalize_domain
   after_create_commit :fetch_favicon, if: -> { domain.present? }
 
   scope :ordered_by_name, -> { order(:name) }
@@ -47,6 +51,10 @@ class Company < ApplicationRecord
   }
 
   private
+
+  def normalize_domain
+    self.domain = domain.to_s.strip.downcase.presence
+  end
 
   def fetch_favicon
     Avatar::AvatarFromFaviconJob.set(wait: 5.seconds).perform_later(self)

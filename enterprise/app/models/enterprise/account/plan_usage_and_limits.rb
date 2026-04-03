@@ -1,22 +1,62 @@
 module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleLength
   CAPTAIN_RESPONSES = 'captain_responses'.freeze
   CAPTAIN_DOCUMENTS = 'captain_documents'.freeze
+  CAPTAIN_TOKENS = 'captain_tokens'.freeze
   CAPTAIN_RESPONSES_USAGE = 'captain_responses_usage'.freeze
   CAPTAIN_DOCUMENTS_USAGE = 'captain_documents_usage'.freeze
+  CAPTAIN_TOKENS_USAGE = 'captain_tokens_usage'.freeze
 
   def usage_limits
     {
-      agents: agent_limits.to_i,
-      inboxes: get_limits(:inboxes).to_i,
+      agents: agent_limit_metadata[:value].to_i,
+      inboxes: usage_limit_metadata(:inboxes)[:value].to_i,
+      conversations: usage_limit_metadata(:conversations)[:value].to_i,
+      non_web_inboxes: usage_limit_metadata(:non_web_inboxes)[:value].to_i,
+      storage: AccountLimits::StorageUsageService.new(account: self).summary,
       captain: {
         documents: get_captain_limits(:documents),
-        responses: get_captain_limits(:responses)
+        responses: get_captain_limits(:responses),
+        tokens: get_captain_limits(:tokens)
       }
     }
   end
 
+  def usage_limit_summary(limit_name, consumed:)
+    metadata = usage_limit_metadata(limit_name)
+    get_usage_summary(total_count: metadata[:value], consumed: consumed, unlimited: metadata[:unlimited])
+  end
+
+  def agent_usage_summary(consumed:)
+    get_usage_summary(total_count: agent_limit_metadata[:value], consumed: consumed, unlimited: agent_limit_metadata[:unlimited])
+  end
+
+  def email_usage_summary(consumed:)
+    get_usage_summary(total_count: email_limit_metadata[:value], consumed: consumed, unlimited: email_limit_metadata[:unlimited])
+  end
+
+  def usage_limit_metadata(limit_name)
+    config_name = "ACCOUNT_#{limit_name.to_s.upcase}_LIMIT"
+    account_value = self[:limits]&.[](limit_name.to_s)
+    global_value = GlobalConfig.get(config_name)[config_name]
+
+    if account_value.present?
+      { value: account_value, unlimited: false }.with_indifferent_access
+    elsif global_value.present?
+      { value: global_value, unlimited: false }.with_indifferent_access
+    else
+      { value: ChatwootApp.max_limit, unlimited: true }.with_indifferent_access
+    end
+  end
+
+  def agent_limit_metadata
+    subscribed_quantity = custom_attributes['subscribed_quantity']
+    return { value: subscribed_quantity, unlimited: false }.with_indifferent_access if subscribed_quantity.present?
+
+    usage_limit_metadata(:agents)
+  end
+
   def increment_response_usage
-    current_usage = custom_attributes[CAPTAIN_RESPONSES_USAGE].to_i || 0
+    current_usage = custom_attributes[CAPTAIN_RESPONSES_USAGE].to_i
     custom_attributes[CAPTAIN_RESPONSES_USAGE] = current_usage + 1
     save
   end
@@ -30,6 +70,42 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     # this will ensure that the document count is always accurate
     custom_attributes[CAPTAIN_DOCUMENTS_USAGE] = captain_documents.count
     save
+  end
+
+  def increment_token_usage(token_count)
+    token_count = token_count.to_i
+    return if token_count <= 0
+
+    custom_attributes[CAPTAIN_TOKENS_USAGE] = captain_tokens_usage + token_count
+    save
+  end
+
+  def reset_token_usage
+    custom_attributes[CAPTAIN_TOKENS_USAGE] = 0
+    save
+  end
+
+  def captain_tokens_usage
+    consumed_usage(CAPTAIN_TOKENS_USAGE)
+  end
+
+  def conversations_this_month_count
+    conversations.where('created_at > ?', 30.days.ago).count
+  end
+
+  def non_web_inboxes_count
+    inboxes.where.not(channel_type: Channel::WebWidget.to_s).count
+  end
+
+  def storage_usage_bytes
+    AccountLimits::StorageUsageService.new(account: self).usage_bytes
+  end
+
+  def captain_quota_available?
+    response_available = usage_limits.dig(:captain, :responses, :current_available)
+    token_available = usage_limits.dig(:captain, :tokens, :current_available)
+
+    [response_available, token_available].compact.all?(&:positive?)
   end
 
   def email_transcript_enabled?
@@ -51,32 +127,27 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   end
 
   def captain_monthly_limit
-    default_limits = default_captain_limits
-
     {
-      documents: self[:limits][CAPTAIN_DOCUMENTS] || default_limits['documents'],
-      responses: self[:limits][CAPTAIN_RESPONSES] || default_limits['responses']
+      documents: captain_limit_metadata(:documents)[:value],
+      responses: captain_limit_metadata(:responses)[:value],
+      tokens: captain_limit_metadata(:tokens)[:value]
     }.with_indifferent_access
   end
 
   private
 
   def get_captain_limits(type)
-    total_count = captain_monthly_limit[type.to_s].to_i
-
-    consumed = if type == :documents
-                 custom_attributes[CAPTAIN_DOCUMENTS_USAGE].to_i || 0
+    consumed = case type
+               when :documents
+                 consumed_usage(CAPTAIN_DOCUMENTS_USAGE)
+               when :tokens
+                 consumed_usage(CAPTAIN_TOKENS_USAGE)
                else
-                 custom_attributes[CAPTAIN_RESPONSES_USAGE].to_i || 0
+                 consumed_usage(CAPTAIN_RESPONSES_USAGE)
                end
 
-    consumed = 0 if consumed.negative?
-
-    {
-      total_count: total_count,
-      current_available: (total_count - consumed).clamp(0, total_count),
-      consumed: consumed
-    }
+    metadata = captain_limit_metadata(type)
+    get_usage_summary(total_count: metadata[:value], consumed: consumed, unlimited: metadata[:unlimited])
   end
 
   def plan_email_limit
@@ -89,45 +160,45 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     nil
   end
 
-  def default_captain_limits
-    max_limits = { documents: ChatwootApp.max_limit, responses: ChatwootApp.max_limit }.with_indifferent_access
-    zero_limits = { documents: 0, responses: 0 }.with_indifferent_access
+  def captain_limit_metadata(type)
+    account_limit = self[:limits]&.[](captain_limit_key(type))
+    return { value: account_limit, unlimited: false }.with_indifferent_access if account_limit.present?
+
     plan_quota = InstallationConfig.find_by(name: 'CAPTAIN_CLOUD_PLAN_LIMITS')&.value
 
-    # If there are no limits configured, we allow max usage
-    return max_limits if plan_quota.blank?
-
-    # if there is plan_quota configred, but plan_name is not present, we return zero limits
-    return zero_limits if plan_name.blank?
+    return default_captain_limit_metadata(type) if plan_quota.blank?
+    return { value: 0, unlimited: false }.with_indifferent_access if plan_name.blank?
 
     begin
-      # Now we parse the plan_quota and return the limits for the plan name
-      # but if there's no plan_name present in the plan_quota, we return zero limits
-      plan_quota = JSON.parse(plan_quota) if plan_quota.present?
-      plan_quota[plan_name.downcase] || zero_limits
+      parsed_plan_quota = plan_quota.is_a?(String) ? JSON.parse(plan_quota) : plan_quota
+      plan_limits = (parsed_plan_quota || plan_quota)[plan_name.downcase]
+      return { value: 0, unlimited: false }.with_indifferent_access if plan_limits.blank?
+
+      planned_value = plan_limits[type.to_s]
+      return { value: planned_value, unlimited: false }.with_indifferent_access if planned_value.present?
+
+      type.to_sym == :tokens ? usage_limit_metadata(:captain_tokens) : { value: 0, unlimited: false }.with_indifferent_access
     rescue StandardError
-      # if there's any error in parsing the plan_quota, we return max limits
-      # this is to ensure that we don't block the user from using the product
-      max_limits
+      default_captain_limit_metadata(type)
     end
+  end
+
+  def default_captain_limit_metadata(type)
+    return usage_limit_metadata(:captain_tokens) if type.to_sym == :tokens
+
+    { value: ChatwootApp.max_limit, unlimited: true }.with_indifferent_access
   end
 
   def plan_name
     custom_attributes['plan_name']
   end
 
-  def agent_limits
-    subscribed_quantity = custom_attributes['subscribed_quantity']
-    subscribed_quantity || get_limits(:agents)
+  def captain_limit_key(type)
+    "captain_#{type}"
   end
 
   def get_limits(limit_name)
-    config_name = "ACCOUNT_#{limit_name.to_s.upcase}_LIMIT"
-    return self[:limits][limit_name.to_s] if self[:limits][limit_name.to_s].present?
-
-    return GlobalConfig.get(config_name)[config_name] if GlobalConfig.get(config_name)[config_name].present?
-
-    ChatwootApp.max_limit
+    usage_limit_metadata(limit_name)[:value]
   end
 
   def validate_limit_keys
@@ -137,16 +208,59 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     limit_schema = {
       'type' => 'object',
       'properties' => {
-        'inboxes' => { 'type': 'number' },
-        'agents' => { 'type': 'number' },
-        'captain_responses' => { 'type': 'number' },
-        'captain_documents' => { 'type': 'number' },
-        'emails' => { 'type': 'number' }
+        'inboxes' => { 'type': 'number', 'minimum': 0 },
+        'agents' => { 'type': 'number', 'minimum': 0 },
+        'conversations' => { 'type': 'number', 'minimum': 0 },
+        'non_web_inboxes' => { 'type': 'number', 'minimum': 0 },
+        'storage_bytes' => { 'type': 'number', 'minimum': 0 },
+        'captain_responses' => { 'type': 'number', 'minimum': 0 },
+        'captain_documents' => { 'type': 'number', 'minimum': 0 },
+        'captain_tokens' => { 'type': 'number', 'minimum': 0 },
+        'emails' => { 'type': 'number', 'minimum': 0 }
       },
       'required' => [],
       'additionalProperties' => false
     }
 
-    errors.add(:limits, ': Invalid data') unless JSONSchemer.schema(limit_schema).valid?(self[:limits])
+    schema = JSONSchemer.schema(limit_schema)
+    errors.add(:limits, ': Invalid data') unless schema.valid?(self[:limits])
+    errors.add(:limits, ': Invalid data') if contains_negative_limit?
+  end
+
+  def consumed_usage(attribute_key)
+    value = custom_attributes[attribute_key].to_i
+    value.negative? ? 0 : value
+  end
+
+  def email_limit_metadata
+    if account_limit.present?
+      { value: account_limit, unlimited: false }.with_indifferent_access
+    elsif plan_email_limit.present?
+      { value: plan_email_limit, unlimited: false }.with_indifferent_access
+    elsif global_limit.present?
+      { value: global_limit, unlimited: false }.with_indifferent_access
+    else
+      { value: default_limit, unlimited: true }.with_indifferent_access
+    end
+  end
+
+  def get_usage_summary(total_count:, consumed:, unlimited: false)
+    total_count = total_count.to_i
+    consumed = consumed.to_i
+
+    {
+      total_count: total_count,
+      current_available: unlimited ? ChatwootApp.max_limit.to_i : (total_count - consumed).clamp(0, total_count),
+      consumed: consumed,
+      unlimited: unlimited
+    }
+  end
+
+  def contains_negative_limit?
+    self[:limits].to_h.values.any? do |value|
+      next false if value.blank?
+
+      value.to_f.negative?
+    end
   end
 end

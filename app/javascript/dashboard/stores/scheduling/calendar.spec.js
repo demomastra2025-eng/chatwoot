@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { CALENDAR_STORAGE_KEY } from 'dashboard/routes/dashboard/scheduling/constants';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingCalendarStore } from './calendar';
 
 const { showMock } = vi.hoisted(() => ({
@@ -72,6 +73,48 @@ describe('useSchedulingCalendarStore', () => {
     );
     expect(payload.resources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
     expect(store.visibleResources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
+  });
+
+  it('passes appointment custom field filters to the calendar request', async () => {
+    showMock.mockResolvedValue({
+      data: {
+        payload: {
+          appointments: [],
+          break_rules: [],
+          expenses: [],
+          holidays: [],
+          payments: [],
+          range: {
+            from: '2026-03-09T00:00:00.000Z',
+            to: '2026-03-16T00:00:00.000Z',
+          },
+          resources: [],
+          slots: [],
+          time_offs: [],
+          work_rules: [],
+          workday_overrides: [],
+        },
+      },
+    });
+
+    const store = useSchedulingCalendarStore();
+    store.setCustomAttributeFilters({
+      notes: { operator: 'contains', value: 'follow-up' },
+      needs_lab: [true],
+      visit_reason: ['follow_up'],
+    });
+
+    await store.fetchCalendar();
+
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        custom_attribute_filters: {
+          notes: { operator: 'contains', value: 'follow-up' },
+          needs_lab: [true],
+          visit_reason: ['follow_up'],
+        },
+      })
+    );
   });
 
   it('merges updated appointment finance snapshots into the calendar payload', () => {
@@ -201,6 +244,93 @@ describe('useSchedulingCalendarStore', () => {
         resourceId: 5,
         startsAt: '2026-03-11T09:00:00.000Z',
         endsAt: '2026-03-11T09:30:00.000Z',
+        status: 'confirmed',
+      },
+    ]);
+  });
+
+  it('removes synced appointments that no longer match active custom field filters', () => {
+    const store = useSchedulingCalendarStore();
+    const crmReferencesStore = useCrmReferencesStore();
+    crmReferencesStore.fieldDefinitions.appointment = [
+      {
+        fieldType: 'select',
+        key: 'visit_reason',
+      },
+    ];
+
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.setCustomAttributeFilters({
+      visit_reason: ['follow_up'],
+    });
+    store.payload = {
+      appointments: [
+        {
+          customAttributes: { visit_reason: 'follow_up' },
+          endsAt: '2026-03-11T08:30:00.000Z',
+          id: 3,
+          resourceId: 5,
+          startsAt: '2026-03-11T08:00:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+      breakRules: [],
+      expenses: [],
+      holidays: [],
+      payments: [],
+      range: { from: null, to: null },
+      resources: [],
+      slots: [],
+      timeOffs: [],
+      workRules: [],
+      workdayOverrides: [],
+    };
+
+    store.syncAppointment({
+      custom_attributes: { visit_reason: 'initial' },
+      ends_at: '2026-03-11T08:30:00.000Z',
+      id: 3,
+      resource_id: 5,
+      starts_at: '2026-03-11T08:00:00.000Z',
+      status: 'confirmed',
+    });
+
+    expect(store.payload.appointments).toEqual([]);
+  });
+
+  it('keeps synced appointments that still match active custom field filters', () => {
+    const store = useSchedulingCalendarStore();
+    const crmReferencesStore = useCrmReferencesStore();
+    crmReferencesStore.fieldDefinitions.appointment = [
+      {
+        fieldType: 'select',
+        key: 'visit_reason',
+      },
+    ];
+
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    store.setCustomAttributeFilters({
+      visit_reason: ['follow_up'],
+    });
+
+    store.syncAppointment({
+      custom_attributes: { visit_reason: 'follow_up' },
+      ends_at: '2026-03-11T09:30:00.000Z',
+      id: 7,
+      resource_id: 5,
+      starts_at: '2026-03-11T09:00:00.000Z',
+      status: 'confirmed',
+    });
+
+    expect(store.payload.appointments).toEqual([
+      {
+        customAttributes: { visit_reason: 'follow_up' },
+        endsAt: '2026-03-11T09:30:00.000Z',
+        id: 7,
+        resourceId: 5,
+        startsAt: '2026-03-11T09:00:00.000Z',
         status: 'confirmed',
       },
     ]);

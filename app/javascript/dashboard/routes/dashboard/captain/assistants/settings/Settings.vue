@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -7,12 +7,15 @@ import { useStore } from 'dashboard/composables/store';
 import { useMapGetter } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useAccount } from 'dashboard/composables/useAccount';
+import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Button from 'dashboard/components-next/button/Button.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
 import AssistantControlItems from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantControlItems.vue';
+import ContextAccessSettings from 'dashboard/components-next/captain/pageComponents/assistant/ContextAccessSettings.vue';
+import ToolAccessSettings from 'dashboard/components-next/captain/pageComponents/assistant/ToolAccessSettings.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 
 const { t } = useI18n();
@@ -26,6 +29,8 @@ const router = useRouter();
 const store = useStore();
 
 const deleteAssistantDialog = ref(null);
+const basicContextAccess = ref({});
+const basicToolAccess = ref({});
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const assistants = useMapGetter('captainAssistants/getRecords');
@@ -33,6 +38,15 @@ const isFetching = computed(() => uiFlags.value.fetchingItem);
 const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
+);
+
+watch(
+  assistant,
+  currentAssistant => {
+    basicContextAccess.value = currentAssistant?.config?.context_access || {};
+    basicToolAccess.value = currentAssistant?.config?.tool_access || {};
+  },
+  { immediate: true }
 );
 
 const controlItems = computed(() => {
@@ -58,12 +72,52 @@ const controlItems = computed(() => {
   ];
 });
 
+const syncAvatar = async ({ avatar, removeAvatar }) => {
+  if (removeAvatar) {
+    try {
+      await CaptainAssistantAPI.deleteAvatar(assistantId.value);
+      await store.dispatch('captainAssistants/show', assistantId.value);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'delete' };
+    }
+  }
+
+  if (avatar) {
+    try {
+      await CaptainAssistantAPI.updateAvatar(assistantId.value, avatar);
+      await store.dispatch('captainAssistants/show', assistantId.value);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'upload' };
+    }
+  }
+
+  return { ok: true };
+};
+
 const handleSubmit = async updatedAssistant => {
   try {
+    const assistantPayload = updatedAssistant?.assistant || updatedAssistant;
+    const avatar = updatedAssistant?.avatar;
+    const removeAvatar = updatedAssistant?.removeAvatar || false;
+
     await store.dispatch('captainAssistants/update', {
       id: assistantId.value,
-      ...updatedAssistant,
+      ...assistantPayload,
     });
+
+    const avatarSyncResult = await syncAvatar({ avatar, removeAvatar });
+
+    if (!avatarSyncResult.ok) {
+      const avatarErrorKey =
+        avatarSyncResult.reason === 'delete'
+          ? 'CAPTAIN.ASSISTANTS.AVATAR.EDIT_DELETE_ERROR'
+          : 'CAPTAIN.ASSISTANTS.AVATAR.EDIT_UPLOAD_ERROR';
+      useAlert(t(avatarErrorKey));
+      return;
+    }
+
     useAlert(t('CAPTAIN.ASSISTANTS.EDIT.SUCCESS_MESSAGE'));
   } catch (error) {
     const errorMessage =
@@ -74,6 +128,14 @@ const handleSubmit = async updatedAssistant => {
 
 const handleDelete = () => {
   deleteAssistantDialog.value.dialogRef.open();
+};
+
+const handleContextAccessUpdate = nextContextAccess => {
+  basicContextAccess.value = nextContextAccess;
+};
+
+const handleToolAccessUpdate = nextToolAccess => {
+  basicToolAccess.value = nextToolAccess;
 };
 
 const handleDeleteSuccess = () => {
@@ -108,14 +170,17 @@ const handleDeleteSuccess = () => {
     :show-pagination-footer="false"
     :show-know-more="false"
     :class="{
-      '[&>header>div]:max-w-[80rem] [&>main>div]:max-w-[80rem]':
+      '[&>header>div]:max-w-[84rem] [&>main>div]:max-w-[84rem]':
         isCaptainV2Enabled,
     }"
   >
     <template #body>
       <div
-        class="gap-6 lg:gap-16 pb-8"
-        :class="{ 'grid grid-cols-2': isCaptainV2Enabled }"
+        class="gap-6 pb-8"
+        :class="{
+          'grid lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,1fr)] lg:items-start lg:gap-10 xl:gap-12':
+            isCaptainV2Enabled,
+        }"
       >
         <div class="flex flex-col gap-6">
           <div class="flex flex-col gap-6">
@@ -127,6 +192,14 @@ const handleDeleteSuccess = () => {
             />
             <AssistantBasicSettingsForm
               :assistant="assistant"
+              :context-access="
+                isCaptainV2Enabled ? basicContextAccess : undefined
+              "
+              :tool-access="isCaptainV2Enabled ? basicToolAccess : undefined"
+              :show-context-access="!isCaptainV2Enabled"
+              :show-tool-access="!isCaptainV2Enabled"
+              @update:context-access="handleContextAccessUpdate"
+              @update:tool-access="handleToolAccessUpdate"
               @submit="handleSubmit"
             />
           </div>
@@ -167,19 +240,33 @@ const handleDeleteSuccess = () => {
             </div>
           </div>
         </div>
-        <div v-if="isCaptainV2Enabled" class="flex flex-col gap-6">
-          <SettingsHeader
-            :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.TITLE')"
-            :description="
-              t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.DESCRIPTION')
-            "
+        <div
+          v-if="isCaptainV2Enabled"
+          class="flex flex-col gap-6 lg:self-start"
+        >
+          <ContextAccessSettings
+            v-model="basicContextAccess"
+            :assistant-id="assistant?.id"
           />
+          <ToolAccessSettings
+            v-model="basicToolAccess"
+            :assistant-id="assistant?.id"
+          />
+          <span class="h-px w-full bg-n-weak" />
           <div class="flex flex-col gap-6">
-            <AssistantControlItems
-              v-for="item in controlItems"
-              :key="item.name"
-              :control-item="item"
+            <SettingsHeader
+              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.TITLE')"
+              :description="
+                t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.DESCRIPTION')
+              "
             />
+            <div class="flex flex-col gap-6">
+              <AssistantControlItems
+                v-for="item in controlItems"
+                :key="item.name"
+                :control-item="item"
+              />
+            </div>
           </div>
         </div>
       </div>

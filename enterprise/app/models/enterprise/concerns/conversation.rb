@@ -6,11 +6,20 @@ module Enterprise::Concerns::Conversation
     has_one :applied_sla, dependent: :destroy_async
     has_many :sla_events, dependent: :destroy_async
     has_many :captain_responses, class_name: 'Captain::AssistantResponse', dependent: :nullify, as: :documentable
+    validate :ensure_within_conversation_limit, on: :create
     before_validation :validate_sla_policy, if: -> { sla_policy_id_changed? }
     around_save :ensure_applied_sla_is_created, if: -> { sla_policy_id_changed? }
   end
 
   private
+
+  def ensure_within_conversation_limit
+    allowed = account.usage_limits.fetch(:conversations, ChatwootApp.max_limit).to_i
+    return if allowed >= ChatwootApp.max_limit.to_i
+    return if account.conversations_this_month_count < allowed
+
+    errors.add(:base, 'Account conversation limit exceeded')
+  end
 
   def validate_sla_policy
     # TODO: remove these validations once we figure out how to deal with these cases

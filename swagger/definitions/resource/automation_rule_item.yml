@@ -16,15 +16,36 @@ properties:
     example: Add label support and sales on message create event if incoming message content contains text help
   event_name:
     type: string
-    description: Automation Rule event, on which we call the actions(conversation_created, conversation_updated, message_created)
+    description: Automation Rule event, on which we call the actions
     enum:
       - conversation_created
       - conversation_updated
+      - conversation_resolved
+      - conversation_opened
       - message_created
+      - appointment_created
+      - appointment_updated
+      - appointment_cancelled
+      - appointment_completed
+      - deal_created
+      - deal_updated
+      - deal_stage_changed
+      - deal_archived
+      - deal_unarchived
+      - task_created
+      - task_updated
+      - task_status_changed
+      - task_archived
+      - task_unarchived
     example: message_created
   conditions:
     type: array
-    description: Array of conditions on which conversation/message filter would work
+    description: |
+      Array of conditions on which conversation/message filter would work.
+      Appointment automations use `status`, `payment_status`, `appointment_type`, `source`,
+      and active managed appointment custom field keys.
+      Deal automations use standard CRM deal fields and active managed deal custom field keys.
+      Task automations use standard CRM task fields and active managed task custom field keys.
     items:
       type: object
       properties:
@@ -34,36 +55,45 @@ properties:
             type: string
         attribute_key:
           type: string
+          description: Condition attribute key.
         query_operator:
           type: string
         filter_operator:
           type: string
       example:
-        attribute_key: content
-        filter_operator: contains
+        attribute_key: status
+        filter_operator: equal_to
         values:
-          - help
+          - confirmed
         query_operator: and
   actions:
     type: array
-    description: Array of actions which we perform when condition matches
+    description: |
+      Array of actions which we perform when condition matches.
+      Appointment automations support `send_webhook_event`, `change_appointment_status`, and,
+      when `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.
+      Deal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,
+      `assign_deal_team`, `archive_deal`, and `unarchive_deal`.
+      Task automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,
+      `assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.
     items:
       type: object
       properties:
         action_name:
           type: string
+          description: Action identifier.
         action_params:
           type: array
+          description: Action params. `cancel_appointment_payment` uses an empty array.
           items:
             type: string
       example:
-        action_name: add_label
+        action_name: change_appointment_status
         action_params:
-          - support
-          - sales
+          - confirmed
   created_on:
     type: integer
     description: The timestamp when the rule was created
   active:
     type: boolean
-    description: Enable/disable automation rule 
+    description: Enable/disable automation rule

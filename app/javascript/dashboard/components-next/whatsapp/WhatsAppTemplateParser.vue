@@ -14,6 +14,7 @@ import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
 
 import Input from 'dashboard/components-next/input/Input.vue';
+import TemplateParamInput from './TemplateParamInput.vue';
 import {
   buildTemplateParameters,
   allKeysRequired,
@@ -59,6 +60,11 @@ const bodyComponent = computed(() => {
   return findComponentByType(props.template, COMPONENT_TYPES.BODY);
 });
 
+const textHeader = computed(() => {
+  if (headerComponent.value?.format !== 'TEXT') return '';
+  return headerComponent.value?.text || '';
+});
+
 const bodyText = computed(() => {
   return bodyComponent.value?.text || '';
 });
@@ -82,6 +88,12 @@ const hasVariables = computed(() => {
 
 const renderedTemplate = computed(() => {
   return replaceTemplateVariables(bodyText.value, processedParams.value);
+});
+
+const rawRenderedTemplate = computed(() => {
+  return replaceTemplateVariables(bodyText.value, processedParams.value, {
+    previewMode: false,
+  });
 });
 
 const isFormInvalid = computed(() => {
@@ -142,7 +154,7 @@ const sendMessage = () => {
   const { name, category, language, namespace } = props.template;
 
   const payload = {
-    message: renderedTemplate.value,
+    message: rawRenderedTemplate.value,
     templateParams: {
       name,
       category,
@@ -180,6 +192,7 @@ defineExpose({
   isDocumentTemplate,
   headerComponent,
   renderedTemplate,
+  rawRenderedTemplate,
   v$,
   updateMediaUrl,
   updateMediaName,
@@ -203,6 +216,12 @@ defineExpose({
 
       <div class="flex flex-col gap-2">
         <div class="rounded-md">
+          <div
+            v-if="textHeader"
+            class="mb-2 text-sm font-medium whitespace-pre-wrap text-n-slate-12"
+          >
+            {{ textHeader }}
+          </div>
           <div class="text-sm whitespace-pre-wrap text-n-slate-12">
             {{ renderedTemplate }}
           </div>
@@ -259,7 +278,7 @@ defineExpose({
           :key="`body-${key}`"
           class="flex items-center mb-2.5"
         >
-          <Input
+          <TemplateParamInput
             v-model="processedParams.body[key]"
             type="text"
             class="flex-1"
@@ -282,7 +301,7 @@ defineExpose({
           :key="`button-${index}`"
           class="flex items-center mb-2.5"
         >
-          <Input
+          <TemplateParamInput
             v-model="processedParams.buttons[index].parameter"
             type="text"
             class="flex-1"

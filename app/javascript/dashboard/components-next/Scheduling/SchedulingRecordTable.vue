@@ -16,7 +16,51 @@ const props = defineProps({
     type: [Function, String],
     default: '',
   },
+  sortState: {
+    type: Object,
+    default: () => ({
+      direction: '',
+      key: '',
+    }),
+  },
 });
+
+const emit = defineEmits(['sort']);
+
+const resolveSortDirection = columnKey => {
+  return props.sortState?.key === columnKey ? props.sortState?.direction : '';
+};
+
+const resolveSortIcon = columnKey => {
+  const direction = resolveSortDirection(columnKey);
+
+  if (direction === 'asc') return 'i-lucide-chevron-up';
+  if (direction === 'desc') return 'i-lucide-chevron-down';
+  return 'i-lucide-arrow-up-down';
+};
+
+const resolveNextSortDirection = column => {
+  const currentDirection = resolveSortDirection(column.key);
+
+  if (currentDirection === 'asc') {
+    return 'desc';
+  }
+
+  if (currentDirection === 'desc') {
+    return 'asc';
+  }
+
+  return column.defaultSortDirection || 'asc';
+};
+
+const handleHeaderSort = column => {
+  if (!column.sortable) return;
+
+  emit('sort', {
+    direction: resolveNextSortDirection(column),
+    key: column.key,
+  });
+};
 </script>
 
 <template>
@@ -39,9 +83,36 @@ const props = defineProps({
         :key="column.key"
         class="min-w-0 truncate"
         :title="column.label"
-        :class="[column.align === 'end' ? 'text-end' : 'text-start']"
+        :class="[
+          column.align === 'end' ? 'text-end' : 'text-start',
+          column.headerClass,
+        ]"
       >
-        {{ column.label }}
+        <button
+          v-if="column.sortable"
+          type="button"
+          class="inline-flex w-full items-center gap-1 border-0 bg-transparent p-0 text-inherit"
+          :class="[
+            column.align === 'end' ? 'justify-end' : 'justify-start',
+            resolveSortDirection(column.key)
+              ? 'text-n-slate-12'
+              : 'text-inherit',
+          ]"
+          @click="handleHeaderSort(column)"
+        >
+          <span class="truncate">{{ column.label }}</span>
+          <span
+            class="size-3.5 shrink-0 transition-opacity"
+            :class="[
+              resolveSortIcon(column.key),
+              resolveSortDirection(column.key) ? 'opacity-100' : 'opacity-55',
+            ]"
+            aria-hidden="true"
+          />
+        </button>
+        <span v-else>
+          {{ column.label }}
+        </span>
       </div>
     </div>
 
@@ -74,7 +145,10 @@ const props = defineProps({
           v-for="column in columns"
           :key="column.key"
           class="min-w-0"
-          :class="[column.align === 'end' ? 'text-end' : 'text-start']"
+          :class="[
+            column.align === 'end' ? 'text-end' : 'text-start',
+            column.cellClass,
+          ]"
         >
           <slot :name="`cell-${column.key}`" :row="row">
             {{ row[column.key] }}

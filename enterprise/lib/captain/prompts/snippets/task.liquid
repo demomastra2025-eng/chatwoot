@@ -1,0 +1,63 @@
+# Linked Task Context
+{% if task_visible_fields contains 'id' -%}
+- Task ID: {{ task.id }}
+{% endif -%}
+{% if task_visible_fields contains 'title' -%}
+- Title: {{ task.title | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'description' -%}
+- Description: {{ task.description | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'due_at' -%}
+- Due At: {{ task.due_at | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'start_at' -%}
+- Start At: {{ task.start_at | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'priority' -%}
+- Priority: {{ task.priority | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'completed_at' -%}
+- Completed At: {{ task.completed_at | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'external_ref' -%}
+- External Reference: {{ task.external_ref | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'status_id' -%}
+- Status ID: {{ task.status_id }}
+{% endif -%}
+{% if task_visible_fields contains 'status_name' -%}
+- Status Name: {{ task.status_name | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'assignee_id' -%}
+- Assignee User ID: {{ task.assignee_id }}
+{% endif -%}
+{% if task_visible_fields contains 'assignee_name' -%}
+- Assignee Name: {{ task.assignee_name | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'creator_id' -%}
+- Created By User ID: {{ task.creator_id }}
+{% endif -%}
+{% if task_visible_fields contains 'creator_name' -%}
+- Creator Name: {{ task.creator_name | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'team_id' -%}
+- Team ID: {{ task.team_id }}
+{% endif -%}
+{% if task_visible_fields contains 'team_name' -%}
+- Team Name: {{ task.team_name | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'deal_id' -%}
+- Deal ID: {{ task.deal_id }}
+{% endif -%}
+{% if task_visible_fields contains 'deal_title' -%}
+- Deal Title: {{ task.deal_title | default: "None" }}
+{% endif -%}
+{% if task_visible_fields contains 'originating_conversation_id' -%}
+- Conversation ID: {{ task.originating_conversation_id }}
+{% endif -%}
+{% if task.custom_attributes -%}
+  {% for attribute in task.custom_attributes -%}
+- {{ attribute[0] }}: {{ attribute[1] }}
+  {% endfor -%}
+{% endif -%}

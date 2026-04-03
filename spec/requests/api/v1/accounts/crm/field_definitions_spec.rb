@@ -26,6 +26,48 @@ RSpec.describe 'CRM Field Definitions API', type: :request do
     expect(response.parsed_body.dig('payload', 'key')).to eq('lead_source_code')
   end
 
+  it 'creates a field definition for appointment custom fields when scheduling is enabled' do
+    account.disable_features!('crm_deals')
+    account.enable_features!('scheduling')
+
+    post path,
+         params: {
+           entity_kind: 'appointment',
+           key: 'visit_reason',
+           label: 'Visit reason',
+           field_type: 'text',
+           active: true
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'entity_kind')).to eq('appointment')
+    expect(response.parsed_body.dig('payload', 'key')).to eq('visit_reason')
+  end
+
+  it 'creates a field definition at the end for the entity kind when position is omitted' do
+    create(:crm_field_definition, account: account, entity_kind: 'deal', key: 'deal_size', position: 0)
+    create(:crm_field_definition, account: account, entity_kind: 'deal', key: 'lead_temperature', position: 1)
+
+    post path,
+         params: {
+           entity_kind: 'deal',
+           key: 'budget_band',
+           label: 'Budget band',
+           field_type: 'text',
+           active: true
+         },
+         headers: headers,
+         as: :json
+
+    created_definition = account.crm_field_definitions.find_by!(key: 'budget_band')
+
+    expect(response).to have_http_status(:created)
+    expect(created_definition.position).to eq(2)
+    expect(account.crm_field_definitions.for_entity_kind('deal').ordered.last.id).to eq(created_definition.id)
+  end
+
   it 'rejects keys that conflict with built-in fields' do
     post path,
          params: {
@@ -39,6 +81,58 @@ RSpec.describe 'CRM Field Definitions API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body.dig('details', 'key')).to include('Key conflicts with a built-in field')
+  end
+
+  it 'rejects appointment keys that conflict with built-in fields' do
+    account.disable_features!('crm_deals')
+    account.enable_features!('scheduling')
+
+    post path,
+         params: {
+           entity_kind: 'appointment',
+           key: 'starts_at',
+           label: 'Starts at',
+           field_type: 'datetime'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig('details', 'key')).to include('Key conflicts with a built-in field')
+  end
+
+  it 'removes deleted appointment field values from existing appointments without touching unmanaged keys' do
+    account.disable_features!('crm_deals')
+    account.enable_features!('scheduling')
+
+    field_definition = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      field_type: 'text'
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: create(:scheduling_resource, account: account),
+      service: create(:scheduling_service, account: account),
+      contact: create(:contact, account: account),
+      custom_attributes: {
+        'visit_reason' => 'follow up',
+        'legacy_key' => 'keep me'
+      }
+    )
+
+    delete "#{path}/#{field_definition.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(appointment.reload.custom_attributes).to eq(
+      {
+        'legacy_key' => 'keep me'
+      }
+    )
   end
 
   it 'filters definitions by entity_kind' do

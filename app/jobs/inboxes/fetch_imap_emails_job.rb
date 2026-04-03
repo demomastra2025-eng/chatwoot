@@ -42,6 +42,9 @@ class Inboxes::FetchImapEmailsJob < MutexApplicationJob
   rescue OAuth2::Error => e
     Rails.logger.error "Error for email channel - #{channel.inbox.id} : #{e.message}"
     channel.authorization_error!
+  rescue BaseRefreshOauthTokenService::MissingRefreshTokenError => e
+    Rails.logger.error "Reauthorization required for email channel - #{channel.inbox.id} : #{e.message}"
+    channel.prompt_reauthorization!
   end
 
   def process_mail(inbound_mail, channel)

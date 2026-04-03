@@ -6,6 +6,7 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
   rescue_from ActiveRecord::RecordNotUnique, with: :render_record_not_unique
   rescue_from ActionController::ParameterMissing, with: :render_unprocessable_entity
   rescue_from ArgumentError, with: :render_unprocessable_entity
+  rescue_from ::Crm::Error, with: :render_crm_error
   rescue_from Scheduling::Error, with: :render_scheduling_error
 
   private
@@ -51,6 +52,20 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     raise ArgumentError, "#{field_name} must be a valid datetime" if parsed.blank?
 
     parsed
+  end
+
+  def custom_attribute_filters_param
+    raw_filters = params[:custom_attribute_filters]
+    return {} if raw_filters.blank?
+
+    case raw_filters
+    when ActionController::Parameters
+      raw_filters.to_unsafe_h
+    when Hash
+      raw_filters
+    else
+      {}
+    end
   end
 
   def render_error(code:, error:, status:, details: nil)
@@ -110,6 +125,10 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     render_error(code: error.code, error: error.message, details: error.details, status: error.status)
   end
 
+  def render_crm_error(error)
+    render_error(code: error.code, error: error.message, details: error.details, status: error.status)
+  end
+
   def render_unprocessable_entity(error)
     render_error(code: 'VALIDATION_ERROR', error: error.message, status: :unprocessable_content)
   end
@@ -126,7 +145,11 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
   end
 
   def duplicate_error?(record, attribute)
-    record.errors.attribute_names.include?(attribute) && record.errors[attribute].any? { |message| message.to_s.match?(/taken|unique/i) }
+    record.errors.details.fetch(attribute, []).any? { |detail| detail[:error] == :taken } ||
+      (
+        record.errors.attribute_names.include?(attribute) &&
+        record.errors[attribute].any? { |message| message.to_s.match?(/taken|unique/i) }
+      )
   end
 
   def not_found_code(error)

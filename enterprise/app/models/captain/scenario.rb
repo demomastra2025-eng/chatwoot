@@ -103,7 +103,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def agent_tools
-    resolved_tools.map { |tool| resolve_tool_instance(tool) }
+    resolved_tools.filter_map { |tool| resolve_tool_instance(tool) }
   end
 
   def resolved_instructions
@@ -113,9 +113,15 @@ class Captain::Scenario < ApplicationRecord
   def resolved_tools
     return [] if tools.blank?
 
-    available_tools = assistant.available_agent_tools
+    available_tools = assistant.allowed_agent_tools
     tools.filter_map do |tool_id|
       available_tools.find { |tool| tool[:id] == tool_id }
+    end.select do |tool_definition|
+      Captain::ToolPolicy.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
     end
   end
 
@@ -151,7 +157,7 @@ class Captain::Scenario < ApplicationRecord
     tool_ids = extract_tool_ids_from_text(instruction)
     return if tool_ids.empty?
 
-    all_available_tool_ids = assistant.available_tool_ids
+    all_available_tool_ids = assistant.allowed_agent_tool_ids
     invalid_tools = tool_ids - all_available_tool_ids
 
     return unless invalid_tools.any?

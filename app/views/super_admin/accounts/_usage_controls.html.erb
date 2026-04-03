@@ -1,0 +1,44 @@
+<section class="main-content__body">
+  <hr/>
+
+  <div class="space-y-4">
+    <div>
+      <h2 class="text-base font-medium">Usage controls</h2>
+      <p class="mt-2 text-sm text-gray-600">
+        Edit account limits to change allowed quota. The actions below reset mutable usage counters only.
+      </p>
+      <p class="mt-1 text-sm text-gray-600">
+        Conversations, inbox counts, storage, and Captain documents are derived from account data and stay read-only here.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
+        <div class="font-medium">Captain responses</div>
+        <p class="mt-2 text-sm text-gray-600">
+          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:captain, :responses, :consumed).to_i) %>
+        </p>
+        <p class="mt-1 text-sm text-gray-600">Resets the consumed counter to <code>0</code>. The allowed limit is not changed.</p>
+        <%= button_to 'Reset Captain Responses Usage', [:reset_captain_responses_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+      </div>
+
+      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
+        <div class="font-medium">Captain tokens</div>
+        <p class="mt-2 text-sm text-gray-600">
+          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:captain, :tokens, :consumed).to_i) %>
+        </p>
+        <p class="mt-1 text-sm text-gray-600">Resets the consumed token counter to <code>0</code>. The allowed limit is not changed.</p>
+        <%= button_to 'Reset Captain Tokens Usage', [:reset_captain_tokens_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+      </div>
+
+      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
+        <div class="font-medium">Emails today</div>
+        <p class="mt-2 text-sm text-gray-600">
+          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:emails, :consumed).to_i) %>
+        </p>
+        <p class="mt-1 text-sm text-gray-600">Clears today's outbound email counter in Redis. The daily limit is not changed.</p>
+        <%= button_to 'Reset Email Usage Counter', [:reset_email_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+      </div>
+    </div>
+  </div>
+</section>

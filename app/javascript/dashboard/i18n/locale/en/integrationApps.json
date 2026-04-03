@@ -73,6 +73,17 @@
         "ERROR": "Could not start Medelement sync. Please try again later."
       }
     },
+    "MACROCRM": {
+      "WEBHOOK": {
+        "DESCRIPTION": "Paste this URL into MacroCRM outgoing webhook settings.",
+        "METHOD": "POST",
+        "EVENT": "Event: estate.managerChanged",
+        "URL_LABEL": "Webhook endpoint",
+        "KEY_LABEL": "Webhook key",
+        "COPY": "Copy endpoint",
+        "COPY_SUCCESS": "Webhook endpoint copied to clipboard"
+      }
+    },
     "SIDEBAR_DESCRIPTION": {
       "DIALOGFLOW": "Dialogflow is a natural language processing platform for building conversational interfaces. Integrating it with {installationName} lets bots handle queries first and transfer them to agents when needed. It helps qualify leads and reduce agent workload by answering FAQs. To add Dialogflow, create a Service Account in Google Console and share the credentials. Refer to the docs for details"
     }

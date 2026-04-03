@@ -211,17 +211,33 @@
           },
           "event_name": {
             "type": "string",
-            "description": "Automation Rule event, on which we call the actions(conversation_created, conversation_updated, message_created)",
+            "description": "Automation Rule event, on which we call the actions",
             "enum": [
               "conversation_created",
               "conversation_updated",
-              "message_created"
+              "conversation_resolved",
+              "conversation_opened",
+              "message_created",
+              "appointment_created",
+              "appointment_updated",
+              "appointment_cancelled",
+              "appointment_completed",
+              "deal_created",
+              "deal_updated",
+              "deal_stage_changed",
+              "deal_archived",
+              "deal_unarchived",
+              "task_created",
+              "task_updated",
+              "task_status_changed",
+              "task_archived",
+              "task_unarchived"
             ],
             "example": "message_created"
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation/message filter would work",
+            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `payment_status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -232,7 +248,8 @@
                   }
                 },
                 "attribute_key": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Condition attribute key."
                 },
                 "query_operator": {
                   "type": "string"
@@ -242,10 +259,10 @@
                 }
               },
               "example": {
-                "attribute_key": "content",
-                "filter_operator": "contains",
+                "attribute_key": "status",
+                "filter_operator": "equal_to",
                 "values": [
-                  "help"
+                  "confirmed"
                 ],
                 "query_operator": "and"
               }
@@ -253,25 +270,26 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which we perform when condition matches",
+            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
                 "action_name": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Action identifier."
                 },
                 "action_params": {
                   "type": "array",
+                  "description": "Action params. `cancel_appointment_payment` uses an empty array.",
                   "items": {
                     "type": "string"
                   }
                 }
               },
               "example": {
-                "action_name": "add_label",
+                "action_name": "change_appointment_status",
                 "action_params": [
-                  "support",
-                  "sales"
+                  "confirmed"
                 ]
               }
             }
@@ -1328,6 +1346,41 @@
             ],
             "description": "Phone number associated with the inbox"
           },
+          "conversation_pending": {
+            "type": "boolean",
+            "description": "Whether new live inbound WhatsApp Web conversations start in pending"
+          },
+          "history_lookback_days": {
+            "type": "integer",
+            "description": "Number of days imported during the first WhatsApp Web history sync"
+          },
+          "ignore_jids": {
+            "type": "array",
+            "description": "WhatsApp JIDs ignored by the native WhatsApp Web channel",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sign_messages": {
+            "type": "boolean",
+            "description": "Whether outgoing WhatsApp Web messages are signed with the agent name"
+          },
+          "sign_delimiter": {
+            "type": "string",
+            "description": "Delimiter used between the agent signature and message body for WhatsApp Web"
+          },
+          "import_contacts": {
+            "type": "boolean",
+            "description": "Whether WhatsApp Web address book contacts are imported"
+          },
+          "import_messages": {
+            "type": "boolean",
+            "description": "Whether WhatsApp Web history messages are imported"
+          },
+          "sync_labels": {
+            "type": "boolean",
+            "description": "Whether WhatsApp labels are synced into Onelink labels"
+          },
           "medium": {
             "type": "string",
             "description": "Medium of communication (e.g., sms, email)"
@@ -1338,6 +1391,14 @@
               "null"
             ],
             "description": "Provider of the channel"
+          },
+          "provider_config": {
+            "type": "object",
+            "description": "Provider-specific configuration returned for administrator users on supported channels"
+          },
+          "additional_attributes": {
+            "type": "object",
+            "description": "Channel-specific additional attributes, including WhatsApp Web runtime state"
           }
         }
       },
@@ -3291,6 +3352,7 @@
                 "enum": [
                   "web_widget",
                   "api",
+                  "whatsapp_web",
                   "email",
                   "line",
                   "telegram",
@@ -3318,6 +3380,60 @@
                 "type": "string",
                 "description": "A Hex-color string used to customize the widget",
                 "example": "#FF5733"
+              },
+              "phone_number": {
+                "type": "string",
+                "description": "E.164 phone number for SMS or WhatsApp Web channels",
+                "example": "+15551234567"
+              },
+              "conversation_pending": {
+                "type": "boolean",
+                "description": "Start new live inbound WhatsApp Web conversations as pending",
+                "example": false
+              },
+              "history_lookback_days": {
+                "type": "integer",
+                "description": "Number of days to import during the initial WhatsApp Web history sync",
+                "example": 365
+              },
+              "ignore_jids": {
+                "type": "array",
+                "description": "WhatsApp JIDs that should be ignored by the native WhatsApp Web channel",
+                "items": {
+                  "type": "string"
+                },
+                "example": [
+                  "15550001111@s.whatsapp.net"
+                ]
+              },
+              "sign_messages": {
+                "type": "boolean",
+                "description": "Prefix outgoing WhatsApp Web message bodies with the agent name",
+                "example": false
+              },
+              "sign_delimiter": {
+                "type": "string",
+                "description": "Delimiter inserted between the agent signature and the message body. Use \\\\n for a newline.",
+                "example": "\\\\n"
+              },
+              "import_contacts": {
+                "type": "boolean",
+                "description": "Enable address book import for WhatsApp Web contact sync",
+                "example": true
+              },
+              "import_messages": {
+                "type": "boolean",
+                "description": "Enable history import for WhatsApp Web message sync",
+                "example": true
+              },
+              "sync_labels": {
+                "type": "boolean",
+                "description": "Sync WhatsApp labels into Onelink conversation labels",
+                "example": true
+              },
+              "provider_config": {
+                "type": "object",
+                "description": "Provider-specific configuration for channels that support it"
               }
             }
           }
@@ -3606,7 +3722,22 @@
               "conversation_created",
               "conversation_updated",
               "conversation_resolved",
-              "message_created"
+              "conversation_opened",
+              "message_created",
+              "appointment_created",
+              "appointment_updated",
+              "appointment_cancelled",
+              "appointment_completed",
+              "deal_created",
+              "deal_updated",
+              "deal_stage_changed",
+              "deal_archived",
+              "deal_unarchived",
+              "task_created",
+              "task_updated",
+              "task_status_changed",
+              "task_archived",
+              "task_unarchived"
             ],
             "example": "message_created",
             "description": "The event when you want to execute the automation actions"
@@ -3617,28 +3748,93 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which you want to perform when condition matches, e.g add label support if message contains content help.",
+            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
+              "properties": {
+                "action_name": {
+                  "type": "string",
+                  "description": "Action identifier. Supported values depend on the selected event family.",
+                  "enum": [
+                    "send_message",
+                    "add_label",
+                    "remove_label",
+                    "send_email_to_team",
+                    "assign_team",
+                    "assign_agent",
+                    "send_webhook_event",
+                    "mute_conversation",
+                    "send_attachment",
+                    "change_status",
+                    "resolve_conversation",
+                    "open_conversation",
+                    "pending_conversation",
+                    "snooze_conversation",
+                    "change_priority",
+                    "send_email_transcript",
+                    "add_private_note",
+                    "change_appointment_status",
+                    "cancel_appointment_payment",
+                    "change_deal_stage",
+                    "assign_deal_owner",
+                    "assign_deal_team",
+                    "archive_deal",
+                    "unarchive_deal",
+                    "change_task_status",
+                    "assign_task_assignee",
+                    "assign_task_team",
+                    "change_task_priority",
+                    "archive_task",
+                    "unarchive_task"
+                  ]
+                },
+                "action_params": {
+                  "type": "array",
+                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`cancel_appointment_payment` does not require params.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
               "example": {
-                "action_name": "add_label",
+                "action_name": "change_appointment_status",
                 "action_params": [
-                  "support"
+                  "confirmed"
                 ]
               }
             }
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation filter would work, e.g message content contains text help.",
+            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
             "items": {
               "type": "object",
+              "properties": {
+                "attribute_key": {
+                  "type": "string",
+                  "description": "Condition attribute key. Supported keys depend on the selected event family and can include conversation, appointment, deal, or task fields."
+                },
+                "filter_operator": {
+                  "type": "string",
+                  "description": "Filter operator. Supported operators depend on the selected field type."
+                },
+                "query_operator": {
+                  "type": "string",
+                  "description": "Logical operator between conditions."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
               "example": {
-                "attribute_key": "content",
-                "filter_operator": "contains",
+                "attribute_key": "status",
+                "filter_operator": "equal_to",
                 "query_operator": "OR",
                 "values": [
-                  "help"
+                  "confirmed"
                 ]
               }
             }

@@ -8,6 +8,8 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
 
   def create
     @message = conversation.messages.new(message_params)
+    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?
+
     build_attachment
     @message.save!
   end
@@ -40,6 +42,13 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
 
       attachment.file_type = helpers.file_type(uploaded_attachment&.content_type) if uploaded_attachment.is_a?(ActionDispatch::Http::UploadedFile)
     end
+  end
+
+  def storage_limit_available?
+    return true if params[:message][:attachments].blank?
+
+    extra_bytes = params[:message][:attachments].sum { |uploaded_attachment| uploaded_attachment.size.to_i }
+    AccountLimits::StorageUsageService.new(account: @message.account).within_limit?(extra_bytes: extra_bytes)
   end
 
   def set_conversation

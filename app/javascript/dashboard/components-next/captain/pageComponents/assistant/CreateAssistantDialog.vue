@@ -5,6 +5,7 @@ import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import AssistantForm from './AssistantForm.vue';
 
 const props = defineProps({
@@ -37,25 +38,79 @@ const i18nKey = computed(
 
 const createAssistant = async assistantDetails => {
   try {
-    const newAssistant = await store.dispatch(
-      'captainAssistants/create',
-      assistantDetails
-    );
-    emit('created', newAssistant);
+    return await store.dispatch('captainAssistants/create', assistantDetails);
   } catch (error) {
     const errorMessage = error?.message || t(`${i18nKey.value}.ERROR_MESSAGE`);
     useAlert(errorMessage);
+    return null;
   }
+};
+
+const syncAvatar = async ({ assistantId, avatar, removeAvatar }) => {
+  if (!assistantId) return { ok: true };
+
+  if (removeAvatar) {
+    try {
+      await CaptainAssistantAPI.deleteAvatar(assistantId);
+      const refreshedAssistant = await store.dispatch(
+        'captainAssistants/show',
+        assistantId
+      );
+      return { ok: true, assistant: refreshedAssistant };
+    } catch {
+      return { ok: false, reason: 'delete' };
+    }
+  }
+
+  if (avatar) {
+    try {
+      await CaptainAssistantAPI.updateAvatar(assistantId, avatar);
+      const refreshedAssistant = await store.dispatch(
+        'captainAssistants/show',
+        assistantId
+      );
+      return { ok: true, assistant: refreshedAssistant };
+    } catch {
+      return { ok: false, reason: 'upload' };
+    }
+  }
+
+  return { ok: true };
 };
 
 const handleSubmit = async updatedAssistant => {
   try {
+    const { assistant, avatar, removeAvatar } = updatedAssistant;
+    let savedAssistant;
+
     if (props.type === 'edit') {
-      await updateAssistant(updatedAssistant);
+      savedAssistant = await updateAssistant(assistant);
     } else {
-      await createAssistant(updatedAssistant);
+      savedAssistant = await createAssistant(assistant);
     }
-    useAlert(t(`${i18nKey.value}.SUCCESS_MESSAGE`));
+
+    if (!savedAssistant) return;
+
+    const avatarSyncResult = await syncAvatar({
+      assistantId: savedAssistant.id,
+      avatar,
+      removeAvatar,
+    });
+
+    if (props.type === 'create') {
+      emit('created', avatarSyncResult.assistant || savedAssistant);
+    }
+
+    if (!avatarSyncResult.ok) {
+      const avatarErrorKey =
+        avatarSyncResult.reason === 'delete'
+          ? 'CAPTAIN.ASSISTANTS.AVATAR.EDIT_DELETE_ERROR'
+          : `CAPTAIN.ASSISTANTS.AVATAR.${props.type.toUpperCase()}_UPLOAD_ERROR`;
+      useAlert(t(avatarErrorKey));
+    } else {
+      useAlert(t(`${i18nKey.value}.SUCCESS_MESSAGE`));
+    }
+
     dialogRef.value.close();
   } catch (error) {
     const errorMessage = error?.message || t(`${i18nKey.value}.ERROR_MESSAGE`);

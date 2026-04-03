@@ -2,13 +2,11 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { DirectUpload } from 'activestorage';
-import { checkFileSizeLimit } from 'shared/helpers/FileHelper';
-import { getMaxUploadSizeByChannel } from '@chatwoot/utils';
 import {
-  DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE,
+  checkFileSizeLimit,
   resolveMaximumFileUploadSize,
+  resolveConversationUploadLimit,
 } from 'shared/helpers/FileHelper';
-import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
 /**
  * Composable for handling file uploads in conversations
@@ -31,28 +29,13 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
 
   // helper: compute max upload size for a given file's mime
   const maxSizeFor = mime => {
-    // Use default/installation limit for private notes
-    if (isPrivateNote) {
-      return installationLimit;
-    }
-
-    const channelType = inbox?.channel_type;
-
-    if (!channelType || channelType === INBOX_TYPES.WEB) {
-      return installationLimit;
-    }
-
-    const channelLimit = getMaxUploadSizeByChannel({
-      channelType,
-      medium: inbox?.medium, // e.g. 'sms' | 'whatsapp' | etc.
-      mime, // e.g. 'image/png'
+    return resolveConversationUploadLimit({
+      channelType: inbox?.channel_type,
+      medium: inbox?.medium,
+      mime,
+      installationLimit,
+      isPrivateNote,
     });
-
-    if (channelLimit === DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE) {
-      return installationLimit;
-    }
-
-    return Math.min(channelLimit, installationLimit);
   };
 
   const alertOverLimit = maxSizeMB =>

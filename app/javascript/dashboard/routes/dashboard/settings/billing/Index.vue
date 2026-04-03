@@ -1,11 +1,15 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useMapGetter, useStore } from 'dashboard/composables/store.js';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useCaptain } from 'dashboard/composables/useCaptain';
+import { useCamelCase } from 'dashboard/composables/useTransformKeys';
+import { normalizeAccountLimit } from 'dashboard/helper/accountLimits';
 import { format } from 'date-fns';
 import sessionStorage from 'shared/helpers/sessionStorage';
+import { formatBytes } from 'shared/helpers/FileHelper';
 
 import BillingMeter from './components/BillingMeter.vue';
 import BillingCard from './components/BillingCard.vue';
@@ -17,12 +21,14 @@ import SettingsLayout from '../SettingsLayout.vue';
 import ButtonV4 from 'next/button/Button.vue';
 
 const router = useRouter();
+const { t } = useI18n();
 const { currentAccount, isOnChatwootCloud } = useAccount();
 const {
   captainEnabled,
   captainLimits,
   documentLimits,
   responseLimits,
+  tokenLimits,
   fetchLimits,
   isFetchingLimits,
 } = useCaptain();
@@ -38,6 +44,56 @@ const purchaseCreditsModalRef = ref(null);
 
 const customAttributes = computed(() => {
   return currentAccount.value.custom_attributes || {};
+});
+
+const accountLimits = computed(() => {
+  const limits = currentAccount.value?.limits;
+
+  if (!limits?.conversation && !limits?.inboxes) {
+    return {};
+  }
+
+  return useCamelCase(limits, { deep: true });
+});
+
+const decorateLimit = (limit, formatter = value => `${value}`) => {
+  const normalized = normalizeAccountLimit(limit);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    displayConsumed: formatter(normalized.consumed),
+    displayTotal: normalized.unlimited
+      ? t('BILLING_SETTINGS.UNLIMITED')
+      : formatter(normalized.totalCount),
+  };
+};
+
+const accountUsageLimits = computed(() => {
+  return {
+    agents: decorateLimit(accountLimits.value.agents),
+    inboxes: decorateLimit(accountLimits.value.inboxes),
+    conversations: decorateLimit(accountLimits.value.conversation),
+    nonWebInboxes: decorateLimit(accountLimits.value.nonWebInboxes),
+    storage: decorateLimit(accountLimits.value.storage, value =>
+      formatBytes(value)
+    ),
+  };
+});
+
+const hasAccountUsageLimits = computed(() => {
+  return Object.values(accountUsageLimits.value).some(Boolean);
+});
+
+const captainUsageLimits = computed(() => {
+  return {
+    responses: decorateLimit(responseLimits.value),
+    documents: decorateLimit(documentLimits.value),
+    tokens: decorateLimit(tokenLimits.value),
+  };
 });
 
 /**
@@ -81,7 +137,7 @@ const fetchAccountDetails = async () => {
     await store.dispatch('accounts/subscription');
   }
   // Always fetch limits for billing page to show credit usage
-  fetchLimits();
+  await fetchLimits();
 };
 
 const handleBillingPageLogic = async () => {
@@ -132,9 +188,13 @@ const openPurchaseCreditsModal = () => {
   purchaseCreditsModalRef.value?.open();
 };
 
+const refreshLimits = () => {
+  return fetchLimits({ silent: false });
+};
+
 const handleTopupSuccess = () => {
   // Refresh limits to show updated credit balance
-  fetchLimits();
+  refreshLimits();
 };
 
 onMounted(handleBillingPageLogic);
@@ -191,6 +251,54 @@ onMounted(handleBillingPageLogic);
           </div>
         </BillingCard>
         <BillingCard
+          v-if="hasAccountUsageLimits"
+          :title="$t('BILLING_SETTINGS.ACCOUNT_USAGE.TITLE')"
+          :description="$t('BILLING_SETTINGS.ACCOUNT_USAGE.DESCRIPTION')"
+        >
+          <template #action>
+            <ButtonV4
+              sm
+              flushed
+              slate
+              icon="i-lucide-refresh-cw"
+              :is-loading="isFetchingLimits"
+              @click="refreshLimits"
+            >
+              {{ $t('BILLING_SETTINGS.CAPTAIN.REFRESH_CREDITS') }}
+            </ButtonV4>
+          </template>
+          <div v-if="accountUsageLimits.agents" class="px-5">
+            <BillingMeter
+              :title="$t('SIDEBAR.AGENTS')"
+              v-bind="accountUsageLimits.agents"
+            />
+          </div>
+          <div v-if="accountUsageLimits.inboxes" class="px-5">
+            <BillingMeter
+              :title="$t('SIDEBAR.INBOXES')"
+              v-bind="accountUsageLimits.inboxes"
+            />
+          </div>
+          <div v-if="accountUsageLimits.conversations" class="px-5">
+            <BillingMeter
+              :title="$t('SIDEBAR.CONVERSATIONS')"
+              v-bind="accountUsageLimits.conversations"
+            />
+          </div>
+          <div v-if="accountUsageLimits.nonWebInboxes" class="px-5">
+            <BillingMeter
+              :title="$t('BILLING_SETTINGS.ACCOUNT_USAGE.NON_WEB_INBOXES')"
+              v-bind="accountUsageLimits.nonWebInboxes"
+            />
+          </div>
+          <div v-if="accountUsageLimits.storage" class="px-5">
+            <BillingMeter
+              :title="$t('BILLING_SETTINGS.ACCOUNT_USAGE.STORAGE')"
+              v-bind="accountUsageLimits.storage"
+            />
+          </div>
+        </BillingCard>
+        <BillingCard
           v-if="captainEnabled"
           :title="$t('BILLING_SETTINGS.CAPTAIN.TITLE')"
           :description="$t('BILLING_SETTINGS.CAPTAIN.DESCRIPTION')"
@@ -203,7 +311,7 @@ onMounted(handleBillingPageLogic);
                 slate
                 icon="i-lucide-refresh-cw"
                 :is-loading="isFetchingLimits"
-                @click="fetchLimits"
+                @click="refreshLimits"
               >
                 {{ $t('BILLING_SETTINGS.CAPTAIN.REFRESH_CREDITS') }}
               </ButtonV4>
@@ -218,16 +326,28 @@ onMounted(handleBillingPageLogic);
               </ButtonV4>
             </div>
           </template>
-          <div v-if="captainLimits && responseLimits" class="px-5">
+          <div
+            v-if="captainLimits && captainUsageLimits.responses"
+            class="px-5"
+          >
             <BillingMeter
               :title="$t('BILLING_SETTINGS.CAPTAIN.RESPONSES')"
-              v-bind="responseLimits"
+              v-bind="captainUsageLimits.responses"
             />
           </div>
-          <div v-if="captainLimits && documentLimits" class="px-5">
+          <div
+            v-if="captainLimits && captainUsageLimits.documents"
+            class="px-5"
+          >
             <BillingMeter
               :title="$t('BILLING_SETTINGS.CAPTAIN.DOCUMENTS')"
-              v-bind="documentLimits"
+              v-bind="captainUsageLimits.documents"
+            />
+          </div>
+          <div v-if="captainLimits && captainUsageLimits.tokens" class="px-5">
+            <BillingMeter
+              :title="$t('BILLING_SETTINGS.CAPTAIN.TOKENS')"
+              v-bind="captainUsageLimits.tokens"
             />
           </div>
         </BillingCard>

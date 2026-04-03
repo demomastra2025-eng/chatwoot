@@ -704,7 +704,7 @@
         "CONVERSATION_PENDING": "Start new inbound conversations as pending",
         "CONVERSATION_PENDING_HINT": "When enabled, the first live inbound message from a contact starts the conversation in pending instead of open.",
         "HISTORY_LOOKBACK_DAYS": "History lookback days",
-        "HISTORY_LOOKBACK_DAYS_HINT": "Full history sync imports messages from this many days back on the first successful connection.",
+        "HISTORY_LOOKBACK_DAYS_HINT": "Set 0 to import the full available history. Any value above 0 limits the first full sync to that many days back.",
         "IGNORE_JIDS": "Ignore JIDs",
         "IGNORE_JIDS_PLACEHOLDER": "{sample_jids}",
         "IGNORE_JIDS_HINT": "One WhatsApp JID per line. Ignored chats are skipped during inbound processing and history sync.",

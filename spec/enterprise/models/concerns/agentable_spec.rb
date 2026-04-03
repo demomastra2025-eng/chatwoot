@@ -110,6 +110,33 @@ RSpec.describe Concerns::Agentable do
       dummy_instance.agent_instructions(context_double)
     end
 
+    it 'derives visible fields from raw state when prompt_context is absent' do
+      context_double = instance_double(Agents::RunContext,
+                                       context: {
+                                         state: {
+                                           assistant_config: { 'feature_contact_attributes' => true },
+                                           conversation: { id: 123, status: 'open' },
+                                           contact: { name: 'John' },
+                                           deal: { title: 'Enterprise renewal', stage_name: 'Negotiation' },
+                                           task: { title: 'Follow up', status_name: 'In progress' },
+                                           appointment: { status: 'confirmed' }
+                                         }
+                                       })
+
+      expect(Captain::PromptRenderer).to receive(:render).with(
+        'dummy_class',
+        hash_including(
+          conversation_visible_fields: %w[id status],
+          contact_visible_fields: ['name'],
+          deal_visible_fields: %w[title stage_name],
+          task_visible_fields: %w[title status_name],
+          appointment_visible_fields: ['status']
+        )
+      )
+
+      dummy_instance.agent_instructions(context_double)
+    end
+
     it 'merges campaign data from context state' do
       context_double = instance_double(Agents::RunContext,
                                        context: {
@@ -124,6 +151,42 @@ RSpec.describe Concerns::Agentable do
         'dummy_class',
         hash_including(
           campaign: { id: 10, title: 'Summer Sale', message: 'Check it out' }
+        )
+      )
+
+      dummy_instance.agent_instructions(context_double)
+    end
+
+    it 'prefers appointment data from prompt context when present' do
+      context_double = instance_double(Agents::RunContext,
+                                       context: {
+                                         state: {
+                                           assistant_config: { 'context_access' => {} },
+                                           deal: { id: 33, stage_name: 'Prospecting' },
+                                           task: { id: 34, status_name: 'Open' },
+                                           appointment: { id: 44, status: 'scheduled' },
+                                           prompt_context: {
+                                             deal: { 'stage_name' => 'Negotiation' },
+                                             task: { 'status_name' => 'In progress' },
+                                             appointment: { 'status' => 'confirmed' },
+                                             visible_fields: {
+                                               deal: ['stage_name'],
+                                               task: ['status_name'],
+                                               appointment: ['status']
+                                             }
+                                           }
+                                         }
+                                       })
+
+      expect(Captain::PromptRenderer).to receive(:render).with(
+        'dummy_class',
+        hash_including(
+          deal: { 'stage_name' => 'Negotiation' },
+          task: { 'status_name' => 'In progress' },
+          appointment: { 'status' => 'confirmed' },
+          deal_visible_fields: ['stage_name'],
+          task_visible_fields: ['status_name'],
+          appointment_visible_fields: ['status']
         )
       )
 

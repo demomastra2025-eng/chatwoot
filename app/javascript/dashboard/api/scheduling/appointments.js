@@ -18,6 +18,10 @@ class SchedulingAppointmentsAPI extends ApiClient {
     return axios.patch(`${this.url}/${id}`, data);
   }
 
+  delete(id) {
+    return axios.delete(`${this.url}/${id}`);
+  }
+
   cancel(id) {
     return axios.post(`${this.url}/${id}/cancel`);
   }

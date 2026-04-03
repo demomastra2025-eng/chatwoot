@@ -1,9 +1,12 @@
 import {
   DEFAULT_MAXIMUM_FILE_UPLOAD_SIZE,
+  WHATSAPP_DOCUMENT_UPLOAD_SIZE,
+  WHATSAPP_VIDEO_UPLOAD_SIZE,
   formatBytes,
   fileSizeInMegaBytes,
   checkFileSizeLimit,
   resolveMaximumFileUploadSize,
+  resolveConversationUploadLimit,
   isFileTypeAllowedForChannel,
 } from '../FileHelper';
 
@@ -60,6 +63,53 @@ describe('#File Helpers', () => {
     it('should parse numeric strings and numbers', () => {
       expect(resolveMaximumFileUploadSize('50')).toBe(50);
       expect(resolveMaximumFileUploadSize(75)).toBe(75);
+    });
+  });
+
+  describe('resolveConversationUploadLimit', () => {
+    it('returns installation limit for private notes', () => {
+      expect(
+        resolveConversationUploadLimit({
+          channelType: 'Channel::Whatsapp',
+          medium: 'whatsapp',
+          mime: 'video/mp4',
+          installationLimit: 40,
+          isPrivateNote: true,
+        })
+      ).toBe(40);
+    });
+
+    it('allows WhatsApp videos up to 70 MB', () => {
+      expect(
+        resolveConversationUploadLimit({
+          channelType: 'Channel::Whatsapp',
+          medium: 'whatsapp',
+          mime: 'video/mp4',
+          installationLimit: 40,
+        })
+      ).toBe(WHATSAPP_VIDEO_UPLOAD_SIZE);
+    });
+
+    it('keeps WhatsApp image limit unchanged', () => {
+      expect(
+        resolveConversationUploadLimit({
+          channelType: 'Channel::Whatsapp',
+          medium: 'whatsapp',
+          mime: 'image/png',
+          installationLimit: 40,
+        })
+      ).toBe(5);
+    });
+
+    it('caps larger channel limits by installation limit for non-video files', () => {
+      expect(
+        resolveConversationUploadLimit({
+          channelType: 'Channel::Whatsapp',
+          medium: 'whatsapp',
+          mime: 'application/pdf',
+          installationLimit: 40,
+        })
+      ).toBe(WHATSAPP_DOCUMENT_UPLOAD_SIZE);
     });
   });
 

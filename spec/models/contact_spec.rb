@@ -81,7 +81,10 @@ RSpec.describe Contact do
 
   context 'when city and country code passed in additional attributes' do
     it 'updates location and country code' do
-      contact = create(:contact, additional_attributes: { city: 'New York', country: 'US' })
+      contact = create(
+        :contact,
+        additional_attributes: { city: 'New York', country: 'United States', country_code: 'US' }
+      )
       expect(contact.location).to eq 'New York'
       expect(contact.country_code).to eq 'US'
     end

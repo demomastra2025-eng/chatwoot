@@ -154,6 +154,23 @@ RSpec.describe 'Profile API', type: :request do
         json_response = response.parsed_body
         expect(json_response['ui_settings']['is_contact_sidebar_open']).to be(false)
       end
+
+      it 'updates sidebar visibility preferences in ui settings' do
+        put '/api/v1/profile',
+            params: {
+              profile: {
+                ui_settings: {
+                  dashboard_sidebar_hidden_items: %w[Reports Settings]
+                }
+              }
+            },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        json_response = response.parsed_body
+        expect(json_response['ui_settings']['dashboard_sidebar_hidden_items']).to eq(%w[Reports Settings])
+      end
     end
 
     context 'when an authenticated user updates email' do
@@ -221,6 +238,8 @@ RSpec.describe 'Profile API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:success)
+        json_response = response.parsed_body
+        expect(json_response['accounts'].first['availability']).to eq('busy')
         expect(OnlineStatusTracker.get_status(account.id, agent.id)).to eq('busy')
       end
     end

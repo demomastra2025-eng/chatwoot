@@ -83,4 +83,42 @@ describe('validateAutomation', () => {
     const errors = validateAutomation(automationWithNoParamAction);
     expect(errors).toEqual({});
   });
+
+  it('should not require action params for native appointment cancel payment action', () => {
+    const automationWithNoParamAction = {
+      name: 'Test',
+      description: 'Test',
+      event_name: 'appointment_updated',
+      conditions: [
+        {
+          attribute_key: 'status',
+          filter_operator: 'equal_to',
+          values: 'scheduled',
+        },
+      ],
+      actions: [{ action_name: 'cancel_appointment_payment' }],
+    };
+
+    const errors = validateAutomation(automationWithNoParamAction);
+    expect(errors).toEqual({});
+  });
+
+  it('should not require action params for native CRM archive actions', () => {
+    const automationWithNoParamAction = {
+      name: 'Archive deal',
+      description: 'Archive on trigger',
+      event_name: 'deal_updated',
+      conditions: [
+        {
+          attribute_key: 'stage_id',
+          filter_operator: 'equal_to',
+          values: '1',
+        },
+      ],
+      actions: [{ action_name: 'archive_deal' }],
+    };
+
+    const errors = validateAutomation(automationWithNoParamAction);
+    expect(errors).toEqual({});
+  });
 });

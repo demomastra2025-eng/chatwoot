@@ -244,6 +244,14 @@ describe WhatsappWeb::Providers::EvolutionService do
     end
   end
 
+  describe '#prefer_provider_media_for_history?' do
+    it 'uses provider media as the primary source for historical attachments' do
+      service = described_class.new(channel: channel)
+
+      expect(service.prefer_provider_media_for_history?).to be(true)
+    end
+  end
+
   describe '#diagnostics' do
     it 'includes echo backlog and status-miss counters' do
       service = described_class.new(channel: channel)

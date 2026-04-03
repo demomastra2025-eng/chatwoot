@@ -401,6 +401,53 @@ describe('#actions', () => {
         ],
       ]);
     });
+
+    it('commits server custom attributes before toggling status when provided', async () => {
+      axios.post
+        .mockResolvedValueOnce({
+          data: {
+            custom_attributes: {
+              existing_key: 'existing value',
+              required_key: 'new value',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            payload: {
+              conversation_id: 1,
+              current_status: 'resolved',
+              snoozed_until: null,
+            },
+          },
+        });
+
+      await actions.toggleStatus(
+        { commit },
+        {
+          conversationId: 1,
+          status: 'resolved',
+          customAttributes: { required_key: 'new value' },
+        }
+      );
+
+      expect(commit.mock.calls).toEqual([
+        [
+          types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES,
+          {
+            conversationId: 1,
+            customAttributes: {
+              existing_key: 'existing value',
+              required_key: 'new value',
+            },
+          },
+        ],
+        [
+          types.CHANGE_CONVERSATION_STATUS,
+          { conversationId: 1, status: 'resolved', snoozedUntil: null },
+        ],
+      ]);
+    });
   });
 
   describe('#assignTeam', () => {
@@ -542,7 +589,7 @@ describe('#deleteMessage', () => {
   describe('#updateCustomAttributes', () => {
     it('update conversation custom attributes', async () => {
       axios.post.mockResolvedValue({
-        data: { custom_attributes: { order_d: '1001' } },
+        data: { custom_attributes: { order_d: '1001', existing_key: 'value' } },
       });
       await actions.updateCustomAttributes(
         { commit },
@@ -556,7 +603,29 @@ describe('#deleteMessage', () => {
           types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES,
           {
             conversationId: 1,
-            customAttributes: { order_d: '1001' },
+            customAttributes: { order_d: '1001', existing_key: 'value' },
+          },
+        ],
+      ]);
+    });
+
+    it('delete conversation custom attributes', async () => {
+      axios.post.mockResolvedValue({
+        data: { custom_attributes: { existing_key: 'value' } },
+      });
+      await actions.deleteCustomAttributes(
+        { commit },
+        {
+          conversationId: 1,
+          customAttributes: ['order_d'],
+        }
+      );
+      expect(commit.mock.calls).toEqual([
+        [
+          types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES,
+          {
+            conversationId: 1,
+            customAttributes: { existing_key: 'value' },
           },
         ],
       ]);

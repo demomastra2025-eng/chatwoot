@@ -6,7 +6,10 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
 import { debounce } from '@chatwoot/utils';
 import { useCompaniesStore } from 'dashboard/stores/companies';
-import { companyMatchesSearch } from '../helpers';
+import {
+  companyMatchesSearch,
+  resolveCompaniesPageAfterDelete,
+} from '../helpers';
 
 import CompaniesListLayout from 'dashboard/components-next/Companies/CompaniesListLayout.vue';
 import CompaniesCard from 'dashboard/components-next/Companies/CompaniesCard/CompaniesCard.vue';
@@ -143,10 +146,21 @@ const createCompany = async company => {
   }
 };
 
-const collapseDeletedCompany = companyId => {
+const refreshCompaniesAfterUpdate = async () => {
+  await fetchCompanies(pageNumber.value, searchValue.value, sortParam.value);
+};
+
+const handleCompanyDeleted = async companyId => {
   if (expandedCompanyId.value === companyId) {
     expandedCompanyId.value = null;
   }
+
+  const targetPage = resolveCompaniesPageAfterDelete({
+    currentPage: pageNumber.value,
+    remainingItemsOnPage: companies.value.length,
+  });
+
+  await fetchCompanies(targetPage, searchValue.value, sortParam.value);
 };
 
 const handleSort = async ({ sort, order }) => {
@@ -207,7 +221,8 @@ onMounted(() => {
         :updated-at="company.updatedAt"
         :is-expanded="expandedCompanyId === company.id"
         @toggle="toggleCompany(company.id)"
-        @deleted="collapseDeletedCompany"
+        @updated="refreshCompaniesAfterUpdate"
+        @deleted="handleCompanyDeleted"
       />
     </div>
   </CompaniesListLayout>

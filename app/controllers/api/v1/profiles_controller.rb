@@ -22,10 +22,12 @@ class Api::V1::ProfilesController < Api::BaseController
 
   def auto_offline
     @user.account_users.find_by!(account_id: auto_offline_params[:account_id]).update!(auto_offline: auto_offline_params[:auto_offline] || false)
+    @user.reload
   end
 
   def availability
     @user.account_users.find_by!(account_id: availability_params[:account_id]).update!(availability: availability_params[:availability])
+    @user.reload
   end
 
   def set_active_account

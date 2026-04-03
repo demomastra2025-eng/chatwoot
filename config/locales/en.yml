@@ -48,6 +48,10 @@ en:
     inbox_deletetion_response: Your inbox deletion request will be processed in some time.
 
   errors:
+    messages:
+      too_long: 'is too long (maximum is %{count} characters)'
+      search:
+        time_range_limit_exceeded: 'Search is limited to the last %{days} days'
     account:
       reporting_timezone:
         invalid: is not a valid timezone
@@ -86,9 +90,6 @@ en:
         invalid: must be a valid domain name
       search:
         query_missing: Specify search string with parameter q
-    messages:
-      search:
-        time_range_limit_exceeded: 'Search is limited to the last %{days} days'
     categories:
       locale:
         unique: should be unique in the category and portal

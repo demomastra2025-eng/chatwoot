@@ -66,6 +66,11 @@
 #
 
 class Scheduling::Appointment < ApplicationRecord
+  include LlmFormattable
+
+  after_create_commit :dispatch_created_event
+  after_update_commit :dispatch_updated_events
+
   belongs_to :account
   belongs_to :company, optional: true
   belongs_to :contact, optional: true
@@ -106,7 +111,95 @@ class Scheduling::Appointment < ApplicationRecord
     payments.where(payment_kind: 'payment').sum(:amount)
   end
 
+  def automation_webhook_data
+    payload = {
+      account: account.webhook_data,
+      appointment: {
+        id: id,
+        starts_at: starts_at&.iso8601,
+        ends_at: ends_at&.iso8601,
+        duration_min: duration_min,
+        status: status,
+        payment_status: payment_status,
+        appointment_type: appointment_type,
+        source: source,
+        client_name: client_name,
+        client_phone: client_phone,
+        client_identifier: client_identifier,
+        service_amount: service_amount,
+        prepaid_amount: prepaid_amount,
+        settlement_amount: settlement_amount,
+        contact_id: contact_id,
+        company_id: company_id,
+        conversation_id: conversation_id,
+        resource_id: resource_id,
+        service_id: service_id,
+        custom_attributes: custom_attributes
+      },
+      resource: {
+        id: resource.id,
+        name: resource.name
+      }
+    }
+
+    payload[:contact] = contact.webhook_data if contact.present?
+    payload[:company] = { id: company.id, name: company.name, domain: company.domain } if company.present?
+    payload[:conversation] = conversation.webhook_data if conversation.present?
+    payload[:service] = { id: service.id, name: service.name } if service.present?
+    payload[:created_by] = created_by.webhook_data if created_by.present?
+
+    payload
+  end
+
   private
+
+  def changed_attributes_payload
+    previous_changes.except('updated_at', :updated_at)
+  end
+
+  def dispatch_created_event
+    Rails.configuration.dispatcher.dispatch(
+      APPOINTMENT_CREATED,
+      Time.zone.now,
+      appointment: self,
+      performed_by: Current.executed_by
+    )
+  end
+
+  def dispatch_updated_events
+    changed_attributes = changed_attributes_payload
+    return if changed_attributes.blank?
+
+    Rails.configuration.dispatcher.dispatch(
+      APPOINTMENT_UPDATED,
+      Time.zone.now,
+      appointment: self,
+      performed_by: Current.executed_by,
+      changed_attributes: changed_attributes
+    )
+
+    dispatch_status_event(changed_attributes) if saved_change_to_status?
+  end
+
+  def dispatch_status_event(changed_attributes)
+    event_name =
+      case status
+      when 'cancelled'
+        APPOINTMENT_CANCELLED
+      when 'completed'
+        APPOINTMENT_COMPLETED
+      end
+
+    return if event_name.blank?
+
+    Rails.configuration.dispatcher.dispatch(
+      event_name,
+      Time.zone.now,
+      appointment: self,
+      performed_by: Current.executed_by,
+      changed_attributes: changed_attributes
+    )
+  end
 
   def assign_duration_min
     return if starts_at.blank? || ends_at.blank?

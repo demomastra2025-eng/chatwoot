@@ -4,6 +4,7 @@
       "ACTIVE": "Active",
       "ARCHIVE": "Archive",
       "ARCHIVED": "Archived",
+      "CHAT": "Chat",
       "ID": "ID",
       "CONVERSATION_SOURCE": "Keeps the inbox conversation as source context",
       "CREATE": "Create",
@@ -47,6 +48,7 @@
       "UNKNOWN_CONTACT": "Unknown contact"
     },
     "ERRORS": {
+      "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to a closed stage: {fields}.",
       "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
       "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
       "FEATURE_DISABLED": "CRM is not enabled for this account.",
@@ -57,6 +59,7 @@
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
       "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
+      "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
       "VALIDATION_ERROR": "Please fix the form errors and try again."
     },
@@ -86,6 +89,7 @@
         "CONTACTS": "Contacts",
         "CONTACTS_EMPTY_STATE": "No contacts found",
         "CONTACTS_SEARCH_PLACEHOLDER": "Search by name, phone or email",
+        "CREATE_COMPANY": "Create",
         "CREATE_CONTACT": "Create",
         "CURRENCY": "Currency",
         "DESCRIPTION": "Description",
@@ -183,14 +187,20 @@
     },
     "SETTINGS": {
       "DESCRIPTION": "Configure pipelines and task statuses using the same dashboard settings shell.",
+      "TASK_SETTINGS": {
+        "TITLE": "Task settings",
+        "DESCRIPTION": "Manage statuses used on the CRM task board and across the task lifecycle."
+      },
       "FIELD_TABS": {
         "DEALS": "Deals",
-        "TASKS": "Tasks"
+        "TASKS": "Tasks",
+        "APPOINTMENTS": "Appointments"
       },
       "FIELDS": {
         "ADD": "Add field",
         "ALL_CONTEXTS": "All contexts",
         "CONTEXTS": {
+          "booking_intake": "Booking intake",
           "deal_task": "Deal tasks",
           "standalone_task": "Standalone tasks"
         },
@@ -202,7 +212,7 @@
           "ACTIVE": "Field is active",
           "BASICS": "Field basics",
           "BASICS_DESCRIPTION": "Core metadata that defines how the field behaves in runtime forms.",
-          "CONTEXTS": "Task contexts",
+          "CONTEXTS": "Field contexts",
           "DEFAULT_VALUE": "Default value",
           "DESCRIPTION": "Description",
           "ENTITY": "Entity",
@@ -216,7 +226,7 @@
           "REGEX": "Regex",
           "REQUIRED": "Field is required",
           "RULES": "Validation rules",
-          "RULES_DESCRIPTION": "Optional rules for numeric limits, regex checks, and task contexts.",
+          "RULES_DESCRIPTION": "Optional rules for numeric limits, regex checks, and entity-specific contexts.",
           "TYPE": "Type"
         },
         "SUCCESS_DELETE": "Field deleted",

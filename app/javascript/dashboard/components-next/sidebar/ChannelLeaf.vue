@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import Icon from 'next/icon/Icon.vue';
-import ChannelIcon from 'next/icon/ChannelIcon.vue';
+import ChannelStatusIcon from './ChannelStatusIcon.vue';
 
 const props = defineProps({
   label: {
@@ -26,7 +26,7 @@ const reauthorizationRequired = computed(() => {
 
 <template>
   <span class="size-4 grid place-content-center rounded-full">
-    <ChannelIcon :inbox="inbox" class="size-4" />
+    <ChannelStatusIcon :inbox="inbox" />
   </span>
   <div class="flex-1 truncate min-w-0">{{ label }}</div>
   <div

@@ -97,6 +97,22 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.where(code: 'новая_воронка_продаж')).to exist
   end
 
+  it 'creates a pipeline at the end when position is omitted' do
+    get path, headers: headers, as: :json
+    previous_last_position = account.crm_pipelines.maximum(:position)
+
+    post path,
+         params: { name: 'Channel Sales', default: false },
+         headers: headers,
+         as: :json
+
+    created_pipeline = account.crm_pipelines.find_by!(code: 'channel_sales')
+
+    expect(response).to have_http_status(:created)
+    expect(created_pipeline.position).to eq(previous_last_position + 1)
+    expect(account.crm_pipelines.ordered.last.id).to eq(created_pipeline.id)
+  end
+
   it 'deletes an archived pipeline without deals' do
     pipeline = create(:crm_pipeline, account: account, active: false, default: false)
     create(:crm_stage, account: account, pipeline: pipeline)

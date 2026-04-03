@@ -58,6 +58,13 @@
           "UPDATE_SUCCESS": "Your Language settings have been updated successfully",
           "UPDATE_ERROR": "There is an error while updating the language settings, please try again",
           "USE_ACCOUNT_DEFAULT": "Use account default"
+        },
+        "SIDEBAR_VISIBILITY": {
+          "TITLE": "Left sidebar sections",
+          "NOTE": "Choose which sections stay visible in the left sidebar. By default, every section is shown.",
+          "SAVE": "Save sidebar visibility",
+          "UPDATE_SUCCESS": "Sidebar visibility has been updated successfully",
+          "UPDATE_ERROR": "There is an error while updating the sidebar visibility, please try again"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -311,8 +318,10 @@
     "COMPANIES": "Companies",
     "ALL_COMPANIES": "All Companies",
     "CRM": "CRM",
+    "PIPELINES": "Воронкалар",
     "CRM_DEALS": "Мәмілелер",
     "CRM_TASKS": "Міндеттер",
+    "CRM_TASK_SETTINGS": "Міндет баптаулары",
     "SCHEDULING": "Жазбалар",
     "SCHEDULING_CALENDAR": "Күнтізбе",
     "SCHEDULING_RESOURCES": "Ресурстар",
@@ -443,6 +452,7 @@
   "BILLING_SETTINGS": {
     "TITLE": "Billing",
     "DESCRIPTION": "Manage your subscription here, upgrade your plan and get more for your team.",
+    "UNLIMITED": "Unlimited",
     "CURRENT_PLAN": {
       "TITLE": "Current Plan",
       "PLAN_NOTE": "You are currently subscribed to the **{plan}** plan with **{quantity}** licenses",
@@ -455,12 +465,19 @@
       "DESCRIPTION": "View your previous invoices, edit your billing details, or cancel your subscription.",
       "BUTTON_TXT": "Go to the billing portal"
     },
+    "ACCOUNT_USAGE": {
+      "TITLE": "Account usage",
+      "DESCRIPTION": "Track how much of your account quota has already been consumed.",
+      "NON_WEB_INBOXES": "Non-web inboxes",
+      "STORAGE": "Storage"
+    },
     "CAPTAIN": {
       "TITLE": "Captain",
       "DESCRIPTION": "Manage usage and credits for Captain AI.",
       "BUTTON_TXT": "Buy more credits",
       "DOCUMENTS": "Documents",
       "RESPONSES": "Credits",
+      "TOKENS": "Tokens",
       "UPGRADE": "Captain is not available on the free plan, upgrade now to get access to assistants, copilot and more.",
       "REFRESH_CREDITS": "Refresh"
     },

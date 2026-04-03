@@ -2,8 +2,20 @@
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field">
+  <p class="text-xs text-gray-500 mb-4">
+    Leave a field blank to inherit the global or plan value. Use <code>0</code> to block that capability for the account.
+  </p>
 
-  <% JSON.parse(field.to_s).each do |key,val| %>
-    <%= key %>: <%= number_field "account[limits]", key, value: val %> </br>
-  <% end %>
+  <div class="space-y-4">
+    <% field.rows.each do |row| %>
+      <div>
+        <label class="block font-medium mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
+        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: 1, class: "w-full" %>
+        <p class="mt-1 text-xs text-gray-500"><%= row[:hint] %></p>
+        <% if row[:bytes] && row[:value].present? %>
+          <p class="mt-1 text-xs text-gray-500">Current override: <%= number_to_human_size(row[:value]) %> (<%= number_with_delimiter(row[:value]) %> bytes)</p>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
 </div>

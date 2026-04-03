@@ -18,6 +18,7 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
     authorize ::Crm::FieldDefinition
 
     field_definition = Current.account.crm_field_definitions.new(field_definition_params)
+    field_definition.position = nil unless params.key?(:position)
     field_definition.save!
 
     render_payload(::Crm::PayloadBuilder.field_definition(field_definition.reload), status: :created)
@@ -32,7 +33,17 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
 
   def destroy
     authorize @field_definition
-    @field_definition.destroy!
+
+    cleanup_service = ::Crm::FieldDefinitionValueCleanupService.new(
+      account: Current.account,
+      entity_kind: @field_definition.entity_kind,
+      key: @field_definition.key
+    )
+
+    @field_definition.class.transaction do
+      @field_definition.destroy!
+      cleanup_service.perform
+    end
 
     head :no_content
   end
@@ -47,13 +58,15 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
 
     raise ::Crm::Error.new(
       code: 'FEATURE_DISABLED',
-      message: 'CRM deals or CRM tasks must be enabled for this account',
+      message: 'CRM deals, CRM tasks, or scheduling must be enabled for this account',
       status: :forbidden
     )
   end
 
   def crm_foundation_enabled?
-    Current.account.feature_enabled?('crm_deals') || Current.account.feature_enabled?('crm_tasks')
+    Current.account.feature_enabled?('crm_deals') ||
+      Current.account.feature_enabled?('crm_tasks') ||
+      Current.account.feature_enabled?('scheduling')
   end
 
   def feature_requirement
@@ -62,6 +75,8 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
       ['crm_deals', 'CRM deals are not enabled for this account']
     when 'task'
       ['crm_tasks', 'CRM tasks are not enabled for this account']
+    when 'appointment'
+      ['scheduling', 'Scheduling is not enabled for this account']
     else
       [nil, nil]
     end

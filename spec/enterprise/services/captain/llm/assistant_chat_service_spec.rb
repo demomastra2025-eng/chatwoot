@@ -145,6 +145,46 @@ RSpec.describe Captain::Llm::AssistantChatService do
     end
   end
 
+  describe 'tool execution trace' do
+    it 'attaches tool steps to the assistant response payload' do
+      tool_call_callback = nil
+      tool_result_callback = nil
+      tool_call = instance_double('RubyLLM::ToolCall', name: 'search_documentation', arguments: {})
+
+      allow(mock_chat).to receive(:on_tool_call) do |&block|
+        tool_call_callback = block
+        mock_chat
+      end
+      allow(mock_chat).to receive(:on_tool_result) do |&block|
+        tool_result_callback = block
+        mock_chat
+      end
+      allow(mock_chat).to receive(:ask) do
+        tool_call_callback.call(tool_call)
+        tool_result_callback.call('done')
+        mock_response
+      end
+
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      response = service.generate_response(message_history: [{ role: 'user', content: 'Hello' }])
+
+      expect(response['captain_trace']).to eq(
+        Captain::ToolTraceBuilder.payload([
+          Captain::ToolTraceBuilder.step(
+            tool_name: 'search_documentation',
+            event: 'start',
+            sequence: 1
+          ),
+          Captain::ToolTraceBuilder.step(
+            tool_name: 'search_documentation',
+            event: 'complete',
+            sequence: 2
+          )
+        ])
+      )
+    end
+  end
+
   describe 'contact attributes in system prompt' do
     let(:contact) { create(:contact, account: account, name: 'Diep Bui', email: 'diep@example.com', custom_attributes: { 'plan' => 'pro' }) }
     let(:conversation) { create(:conversation, account: account, contact: contact) }

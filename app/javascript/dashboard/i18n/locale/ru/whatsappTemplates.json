@@ -41,7 +41,14 @@
       "COUPON_CODE": "Введите код купона (не более 15 символов)",
       "MEDIA_URL_LABEL": "Введите {type} URL",
       "DOCUMENT_NAME_PLACEHOLDER": "Введите имя файла документа (например, Invoice_2025.pdf)",
-      "BUTTON_PARAMETER": "Введите параметр кнопки"
+      "BUTTON_PARAMETER": "Введите параметр кнопки",
+      "INSERT_ATTRIBUTE": "Вставить атрибут",
+      "CHANGE_ATTRIBUTE": "Изменить атрибут",
+      "CLEAR_ATTRIBUTE": "Очистить атрибут",
+      "FIELD_PICKER_SEARCH_PLACEHOLDER": "Найти атрибуты",
+      "FIELD_PICKER_EMPTY": "Подходящие атрибуты не найдены",
+      "FIELD_PICKER_LOADING": "Загружаем атрибуты...",
+      "FIELD_PICKER_DEFAULT": "Атрибуты"
     }
   }
 }

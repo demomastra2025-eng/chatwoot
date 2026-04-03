@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
+import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import { useSchedulingAppointmentFormStore } from './appointmentForm';
 
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
     create: vi.fn(),
+    delete: vi.fn(),
     update: vi.fn(),
   },
 }));
@@ -21,6 +23,7 @@ vi.mock('dashboard/api/scheduling/contacts', () => ({
 describe('useSchedulingAppointmentFormStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    vi.clearAllMocks();
   });
 
   it('keeps the saved price when editing an appointment without changing service/resource', () => {
@@ -163,5 +166,35 @@ describe('useSchedulingAppointmentFormStore', () => {
       prepaid_amount: 0,
     });
     expect(store.buildPayload()).not.toHaveProperty('prepaid_payment_method');
+  });
+
+  it('deletes a cancelled appointment and resets the form state', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      currentView: 'week',
+      refresh: vi.fn(),
+      removeAppointment: vi.fn(),
+    };
+
+    SchedulingAppointmentsAPI.delete.mockResolvedValue({});
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      serviceAmount: 20000,
+      serviceId: 5,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'cancelled',
+    });
+
+    const deletedId = await store.destroy(calendarStore);
+
+    expect(SchedulingAppointmentsAPI.delete).toHaveBeenCalledWith(11);
+    expect(calendarStore.removeAppointment).toHaveBeenCalledWith(11);
+    expect(calendarStore.refresh).not.toHaveBeenCalled();
+    expect(deletedId).toBe(11);
+    expect(store.isOpen).toBe(false);
+    expect(store.recordId).toBe(null);
+    expect(store.mode).toBe('create');
   });
 });

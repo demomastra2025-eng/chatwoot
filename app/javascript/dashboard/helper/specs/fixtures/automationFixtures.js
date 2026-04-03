@@ -105,6 +105,57 @@ export const customAttributes = [
     updated_at: '2022-04-21T05:48:16.168Z',
   },
 ];
+
+export const appointmentFieldDefinitions = [
+  {
+    id: 201,
+    key: 'visit_reason',
+    label: 'Visit reason',
+    fieldType: 'select',
+    options: [{ label: 'Follow-up', value: 'follow_up' }],
+  },
+  {
+    id: 202,
+    key: 'visit_tags',
+    label: 'Visit tags',
+    fieldType: 'multiselect',
+    options: ['VIP', 'Urgent'],
+  },
+  {
+    id: 203,
+    key: 'needs_lab',
+    label: 'Needs lab',
+    fieldType: 'checkbox',
+    options: [],
+  },
+  {
+    id: 204,
+    key: 'triage_note',
+    label: 'Triage note',
+    fieldType: 'text',
+    options: [],
+  },
+];
+
+export const dealFieldDefinitions = [
+  {
+    id: 301,
+    key: 'deal_region',
+    label: 'Deal region',
+    fieldType: 'select',
+    options: [{ label: 'EMEA', value: 'emea' }],
+  },
+];
+
+export const taskFieldDefinitions = [
+  {
+    id: 401,
+    key: 'task_channel',
+    label: 'Task channel',
+    fieldType: 'select',
+    options: [{ label: 'Chat', value: 'chat' }],
+  },
+];
 export const emptyAutomation = {
   name: null,
   description: null,

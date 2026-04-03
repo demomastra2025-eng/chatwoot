@@ -154,7 +154,7 @@ class Twilio::IncomingMessageService
         filename: attachment_file.original_filename,
         content_type: attachment_file.content_type
       }
-    )
+    ).skip_storage_limit_validation!
   end
 
   def download_attachment_file(media_url)
@@ -193,7 +193,7 @@ class Twilio::IncomingMessageService
       file_type: :location,
       coordinates_lat: params[:Latitude].to_f,
       coordinates_long: params[:Longitude].to_f
-    )
+    ).skip_storage_limit_validation!
   end
 
   def update_contact_name_if_needed

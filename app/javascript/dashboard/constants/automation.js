@@ -28,9 +28,43 @@ export const DEFAULT_OTHER_CONDITION = [
   },
 ];
 
+export const DEFAULT_DEAL_CONDITION = [
+  {
+    attribute_key: 'stage_id',
+    filter_operator: 'equal_to',
+    values: '',
+    query_operator: 'and',
+    custom_attribute_type: '',
+  },
+];
+
+export const DEFAULT_TASK_CONDITION = [
+  {
+    attribute_key: 'status_id',
+    filter_operator: 'equal_to',
+    values: '',
+    query_operator: 'and',
+    custom_attribute_type: '',
+  },
+];
+
 export const DEFAULT_ACTIONS = [
   {
     action_name: 'assign_agent',
+    action_params: [],
+  },
+];
+
+export const DEFAULT_APPOINTMENT_ACTIONS = [
+  {
+    action_name: 'send_webhook_event',
+    action_params: [],
+  },
+];
+
+export const DEFAULT_CRM_ACTIONS = [
+  {
+    action_name: 'send_webhook_event',
     action_params: [],
   },
 ];

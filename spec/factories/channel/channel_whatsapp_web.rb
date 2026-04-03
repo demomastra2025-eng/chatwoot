@@ -8,7 +8,7 @@ FactoryBot.define do
     connection_state { 'close' }
     qr_code { {} }
     conversation_pending { false }
-    history_lookback_days { 365 }
+    history_lookback_days { 0 }
     ignore_jids { [] }
     sign_messages { false }
     sign_delimiter { '\\n' }

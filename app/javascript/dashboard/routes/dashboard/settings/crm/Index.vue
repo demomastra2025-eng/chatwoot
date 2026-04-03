@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import Draggable from 'vuedraggable';
+import { getContrastingTextColor } from '@chatwoot/utils';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -29,12 +30,6 @@ import {
   getUnavailableStageColors,
   pickStageColor,
 } from 'dashboard/stores/crm/stageColors';
-import {
-  DEFAULT_TASK_STATUS_COLOR,
-  TASK_STATUS_STANDARD_COLORS,
-  getUnavailableTaskStatusColors,
-  pickTaskStatusColor,
-} from 'dashboard/stores/crm/taskStatusColors';
 
 const referencesStore = useCrmReferencesStore();
 const route = useRoute();
@@ -44,21 +39,8 @@ const { t } = useI18n();
 const normalizedDefaultStageColor = String(DEFAULT_STAGE_COLOR || '')
   .trim()
   .toUpperCase();
-const normalizedDefaultTaskStatusColor = String(DEFAULT_TASK_STATUS_COLOR || '')
-  .trim()
-  .toUpperCase();
 
 const stageDrawerOpen = ref(false);
-const stageOrderDrawerOpen = ref(false);
-const stageOrderSaving = ref(false);
-const stageOrderPipeline = ref(null);
-const stageOrderRows = ref([]);
-const taskStatusDrawerOpen = ref(false);
-const taskStatusDeleteDialogRef = ref(null);
-const taskStatusPendingDelete = ref(null);
-const taskStatusRows = ref([]);
-const draggingTaskStatuses = ref(false);
-const taskStatusOrderSaving = ref(false);
 const pipelineDeleteDialogRef = ref(null);
 const pipelinePendingDelete = ref(null);
 const stageDeleteDialogRef = ref(null);
@@ -70,6 +52,9 @@ const pipelineSavingIds = reactive({});
 const pipelineRows = ref([]);
 const draggingPipelines = ref(false);
 const pipelineOrderSaving = ref(false);
+const stageRowsByPipeline = reactive({});
+const draggingStagePipelineIds = reactive({});
+const stageOrderSavingPipelineIds = reactive({});
 const newPipelineDraft = ref(null);
 const pipelineCreateSaving = ref(false);
 
@@ -81,30 +66,18 @@ const isFeatureEnabledonAccount = useMapGetter(
 const dealsEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS)
 );
-const tasksEnabled = computed(() =>
-  isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS)
-);
 const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
 );
 
 const stageForm = reactive({
   active: true,
-  code: '',
   color: DEFAULT_STAGE_COLOR,
   id: null,
   name: '',
   outcome: 'open',
   pipelineId: '',
   position: '',
-});
-
-const taskStatusForm = reactive({
-  active: true,
-  category: 'open',
-  color: DEFAULT_TASK_STATUS_COLOR,
-  id: null,
-  name: '',
 });
 
 const pipelineColumns = computed(() => [
@@ -141,34 +114,6 @@ const pipelineGridTemplate = computed(() =>
     .join(' ')
 );
 
-const taskStatusColumns = computed(() => [
-  {
-    key: 'name',
-    label: t('CRM.SETTINGS.TASK_STATUSES.TABLE.NAME'),
-    width: '1.3fr',
-  },
-  {
-    key: 'category',
-    label: t('CRM.SETTINGS.TASK_STATUSES.TABLE.CATEGORY'),
-    width: '0.9fr',
-  },
-  {
-    key: 'default',
-    label: t('CRM.SETTINGS.TASK_STATUSES.TABLE.DEFAULT'),
-    width: '0.8fr',
-  },
-  { key: 'actions', label: '', width: '116px', align: 'end' },
-]);
-
-const taskStatusGridTemplate = computed(() =>
-  taskStatusColumns.value
-    .map(column => {
-      const width = String(column.width || '1fr');
-      return width.endsWith('fr') ? `minmax(0, ${width})` : width;
-    })
-    .join(' ')
-);
-
 const pipelineOptions = computed(() =>
   referencesStore.pipelines.map(pipeline => ({
     label: pipeline.name,
@@ -181,26 +126,17 @@ const stageOutcomeOptions = computed(() => [
   { label: t('CRM.SETTINGS.STAGES.OUTCOMES.lost'), value: 'lost' },
 ]);
 
-const taskStatusCategoryOptions = computed(() => [
-  { label: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.open'), value: 'open' },
-  {
-    label: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.in_progress'),
-    value: 'in_progress',
-  },
-  { label: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.done'), value: 'done' },
-]);
-
-const taskStatusCategoryLabel = category => {
-  const labelsByCategory = {
-    open: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.open'),
-    in_progress: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.in_progress'),
-    done: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.done'),
-  };
-
-  return labelsByCategory[category] || category;
-};
-
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
+
+function sortStages(stages) {
+  return [...(stages || [])].sort(
+    (left, right) => Number(left.position ?? 0) - Number(right.position ?? 0)
+  );
+}
+
+function cloneStages(stages) {
+  return sortStages(stages).map(stage => ({ ...stage }));
+}
 
 watch(
   () =>
@@ -254,24 +190,48 @@ watch(
 );
 
 watch(
-  () => referencesStore.taskStatuses,
-  taskStatuses => {
-    if (draggingTaskStatuses.value || taskStatusOrderSaving.value) {
-      return;
-    }
+  visiblePipelines,
+  pipelines => {
+    const nextIds = new Set(pipelines.map(pipeline => String(pipeline.id)));
 
-    taskStatusRows.value = [...taskStatuses];
+    pipelines.forEach(pipeline => {
+      const pipelineId = String(pipeline.id);
+
+      if (
+        draggingStagePipelineIds[pipelineId] ||
+        stageOrderSavingPipelineIds[pipelineId]
+      ) {
+        return;
+      }
+
+      stageRowsByPipeline[pipelineId] = cloneStages(pipeline.stages);
+    });
+
+    Object.keys(stageRowsByPipeline).forEach(id => {
+      if (!nextIds.has(id)) {
+        delete stageRowsByPipeline[id];
+      }
+    });
+
+    Object.keys(draggingStagePipelineIds).forEach(id => {
+      if (!nextIds.has(id)) {
+        delete draggingStagePipelineIds[id];
+      }
+    });
+
+    Object.keys(stageOrderSavingPipelineIds).forEach(id => {
+      if (!nextIds.has(id)) {
+        delete stageOrderSavingPipelineIds[id];
+      }
+    });
   },
-  { immediate: true }
+  { deep: true, immediate: true }
 );
 
 const pipelineRowClass = pipeline =>
   pipeline.active
     ? ''
     : 'bg-n-slate-2/70 text-n-slate-10 hover:!bg-n-slate-2/80';
-
-const pipelineSubtextClass = pipeline =>
-  pipeline.active ? 'text-n-slate-11' : 'text-n-slate-9';
 
 const pipelineNameInputClass = pipeline =>
   pipeline.active
@@ -295,7 +255,6 @@ const syncPipelineRows = () => {
 
 const buildPipelineSavePayload = (pipeline, overrides = {}) => ({
   active: overrides.active ?? pipeline.active,
-  code: (overrides.code ?? pipeline.code) || undefined,
   default: overrides.default ?? pipeline.default,
   id: pipeline.id,
   name:
@@ -400,71 +359,6 @@ const deletePipeline = async () => {
   }
 };
 
-const canToggleTaskStatusDefault = taskStatus =>
-  taskStatus.category === 'open' && taskStatus.active;
-
-const saveInlineTaskStatusDefault = async (taskStatus, nextDefault) => {
-  try {
-    await referencesStore.saveTaskStatus({
-      id: taskStatus.id,
-      default: nextDefault,
-    });
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const handleTaskStatusDragStart = () => {
-  draggingTaskStatuses.value = true;
-};
-
-const syncTaskStatusRows = () => {
-  taskStatusRows.value = [...referencesStore.taskStatuses];
-};
-
-const persistTaskStatusOrder = async () => {
-  taskStatusOrderSaving.value = true;
-
-  try {
-    const taskStatusUpdates = taskStatusRows.value
-      .map((taskStatus, index) => ({
-        ...taskStatus,
-        nextPosition: index,
-      }))
-      .filter(
-        taskStatus => Number(taskStatus.position) !== taskStatus.nextPosition
-      );
-
-    await Promise.all(
-      taskStatusUpdates.map(taskStatus =>
-        referencesStore.saveTaskStatus({
-          id: taskStatus.id,
-          position: taskStatus.nextPosition,
-        })
-      )
-    );
-
-    await referencesStore.loadTaskStatuses();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-    await referencesStore.loadTaskStatuses();
-  } finally {
-    taskStatusOrderSaving.value = false;
-    draggingTaskStatuses.value = false;
-    syncTaskStatusRows();
-  }
-};
-
-const handleTaskStatusDragEnd = async event => {
-  if (event.oldIndex === event.newIndex) {
-    draggingTaskStatuses.value = false;
-    syncTaskStatusRows();
-    return;
-  }
-
-  await persistTaskStatusOrder();
-};
-
 const persistPipelineOrder = async () => {
   pipelineOrderSaving.value = true;
 
@@ -489,7 +383,6 @@ const persistPipelineOrder = async () => {
       pipelineUpdates.map(pipeline =>
         referencesStore.savePipeline({
           active: pipeline.active,
-          code: pipeline.code || undefined,
           default: pipeline.default,
           id: pipeline.id,
           name: pipeline.name,
@@ -531,10 +424,58 @@ const pipelineStagesById = pipelineId => {
   );
 };
 
-const sortStages = stages => {
-  return [...(stages || [])].sort(
-    (left, right) => Number(left.position ?? 0) - Number(right.position ?? 0)
-  );
+const getStageRows = pipelineId => {
+  return stageRowsByPipeline[String(pipelineId)] || [];
+};
+
+const setStageRows = (pipelineId, rows) => {
+  stageRowsByPipeline[String(pipelineId)] = [...rows];
+};
+
+const isStageOrderSaving = pipelineId =>
+  Boolean(stageOrderSavingPipelineIds[String(pipelineId)]);
+
+const setStageOrderSaving = (pipelineId, isSaving) => {
+  const key = String(pipelineId);
+
+  if (isSaving) {
+    stageOrderSavingPipelineIds[key] = true;
+    return;
+  }
+
+  delete stageOrderSavingPipelineIds[key];
+};
+
+const setDraggingStagePipeline = (pipelineId, isDragging) => {
+  const key = String(pipelineId);
+
+  if (isDragging) {
+    draggingStagePipelineIds[key] = true;
+    return;
+  }
+
+  delete draggingStagePipelineIds[key];
+};
+
+const syncStageRowsForPipeline = pipelineId => {
+  const pipeline =
+    visiblePipelines.value.find(
+      item => Number(item.id) === Number(pipelineId)
+    ) ||
+    referencesStore.pipelines.find(
+      item => Number(item.id) === Number(pipelineId)
+    );
+
+  stageRowsByPipeline[String(pipelineId)] = cloneStages(pipeline?.stages);
+};
+
+const stageOrderBadgeStyle = color => {
+  const resolvedColor = color || DEFAULT_STAGE_COLOR;
+
+  return {
+    backgroundColor: resolvedColor,
+    color: getContrastingTextColor(resolvedColor),
+  };
 };
 
 const defaultStageColor = ({
@@ -590,64 +531,11 @@ const stageStandardColorTitle = color => {
   return `${color} · ${t('CRM.SETTINGS.STAGES.FORM.COLOR_UNAVAILABLE')}`;
 };
 
-const defaultTaskStatusColor = ({
-  currentTaskStatusId = taskStatusForm.id,
-} = {}) => {
-  return pickTaskStatusColor(
-    referencesStore.taskStatuses,
-    TASK_STATUS_STANDARD_COLORS,
-    currentTaskStatusId
-  );
-};
-
-const unavailableTaskStatusStandardColors = computed(
-  () =>
-    new Set(
-      getUnavailableTaskStatusColors(
-        referencesStore.taskStatuses,
-        TASK_STATUS_STANDARD_COLORS,
-        taskStatusForm.id
-      )
-    )
-);
-
-const isTaskStatusStandardColorDisabled = color => {
-  const normalizedColor = String(color || '')
-    .trim()
-    .toUpperCase();
-
-  if (normalizedColor === normalizedDefaultTaskStatusColor) {
-    return false;
-  }
-
-  return (
-    unavailableTaskStatusStandardColors.value.has(normalizedColor) &&
-    taskStatusForm.color?.toUpperCase() !== normalizedColor
-  );
-};
-
-const taskStatusStandardColorAriaLabel = color => {
-  const suffix = isTaskStatusStandardColorDisabled(color)
-    ? `, ${t('CRM.SETTINGS.TASK_STATUSES.FORM.COLOR_UNAVAILABLE')}`
-    : '';
-
-  return `${t('CRM.SETTINGS.TASK_STATUSES.FORM.COLOR')} ${color}${suffix}`;
-};
-
-const taskStatusStandardColorTitle = color => {
-  if (!isTaskStatusStandardColorDisabled(color)) {
-    return color;
-  }
-
-  return `${color} · ${t('CRM.SETTINGS.TASK_STATUSES.FORM.COLOR_UNAVAILABLE')}`;
-};
-
 const resetStageForm = () => {
   const firstPipelineId = pipelineOptions.value[0]?.value || '';
 
   Object.assign(stageForm, {
     active: true,
-    code: '',
     color: defaultStageColor({
       currentStageId: null,
       pipelineId: firstPipelineId,
@@ -657,18 +545,6 @@ const resetStageForm = () => {
     outcome: 'open',
     pipelineId: firstPipelineId,
     position: '',
-  });
-};
-
-const resetTaskStatusForm = () => {
-  Object.assign(taskStatusForm, {
-    active: true,
-    category: 'open',
-    color: defaultTaskStatusColor({
-      currentTaskStatusId: null,
-    }),
-    id: null,
-    name: '',
   });
 };
 
@@ -689,7 +565,6 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
   if (stage) {
     Object.assign(stageForm, {
       active: stage.active,
-      code: stage.code || '',
       color:
         stage.color ||
         defaultStageColor({
@@ -713,22 +588,6 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
   }
 
   stageDrawerOpen.value = true;
-};
-
-const openStageOrderDrawer = pipeline => {
-  if (!pipeline?.id) return;
-
-  stageOrderPipeline.value = pipeline;
-  stageOrderRows.value = sortStages(pipeline.stages);
-  stageOrderDrawerOpen.value = true;
-};
-
-const closeStageOrderDrawer = (force = false) => {
-  if (stageOrderSaving.value && !force) return;
-
-  stageOrderDrawerOpen.value = false;
-  stageOrderPipeline.value = null;
-  stageOrderRows.value = [];
 };
 
 const handleStagePipelineSelection = pipelineId => {
@@ -755,55 +614,6 @@ const handleStagePipelineSelection = pipelineId => {
       currentStageId: null,
       pipelineId,
     });
-  }
-};
-
-const openTaskStatusDrawer = taskStatus => {
-  if (taskStatus) {
-    Object.assign(taskStatusForm, {
-      active: taskStatus.active,
-      category: taskStatus.category || 'open',
-      color:
-        taskStatus.color ||
-        defaultTaskStatusColor({ currentTaskStatusId: taskStatus.id }),
-      id: taskStatus.id,
-      name: taskStatus.name,
-    });
-  } else {
-    resetTaskStatusForm();
-  }
-
-  taskStatusDrawerOpen.value = true;
-};
-
-const openDeleteTaskStatusDialog = taskStatus => {
-  if (!taskStatus?.id) return;
-
-  taskStatusPendingDelete.value = taskStatus;
-  taskStatusDeleteDialogRef.value?.open();
-};
-
-const closeDeleteTaskStatusDialog = () => {
-  taskStatusPendingDelete.value = null;
-};
-
-const deleteTaskStatus = async () => {
-  if (!taskStatusPendingDelete.value) return;
-
-  try {
-    await referencesStore.deleteTaskStatus(taskStatusPendingDelete.value);
-    taskStatusDeleteDialogRef.value?.close();
-
-    if (
-      Number(taskStatusForm.id) === Number(taskStatusPendingDelete.value.id)
-    ) {
-      taskStatusDrawerOpen.value = false;
-      resetTaskStatusForm();
-    }
-
-    useAlert(t('CRM.SETTINGS.TASK_STATUSES.SUCCESS_DELETE'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
   }
 };
 
@@ -846,13 +656,13 @@ const saveStage = async () => {
   }
 };
 
-const saveStageOrder = async () => {
-  if (!stageOrderPipeline.value || stageOrderSaving.value) return;
+const persistInlineStageOrder = async pipelineId => {
+  if (!pipelineId || isStageOrderSaving(pipelineId)) return;
 
-  stageOrderSaving.value = true;
+  setStageOrderSaving(pipelineId, true);
 
   try {
-    const stageUpdates = stageOrderRows.value
+    const stageUpdates = getStageRows(pipelineId)
       .map((stage, index) => ({
         ...stage,
         nextPosition: index,
@@ -863,17 +673,16 @@ const saveStageOrder = async () => {
       stageUpdates.map(stage =>
         referencesStore.saveStage({
           active: stage.active,
-          code: stage.code || undefined,
           color:
             stage.color ||
             defaultStageColor({
               currentStageId: stage.id,
-              pipelineId: stage.pipelineId || stageOrderPipeline.value.id,
+              pipelineId: stage.pipelineId || pipelineId,
             }),
           id: stage.id,
           name: stage.name,
           outcome: stage.outcome || 'open',
-          pipelineId: Number(stage.pipelineId || stageOrderPipeline.value.id),
+          pipelineId: Number(stage.pipelineId || pipelineId),
           position: stage.nextPosition,
         })
       )
@@ -881,12 +690,28 @@ const saveStageOrder = async () => {
 
     await referencesStore.loadPipelines();
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_REORDER'));
-    closeStageOrderDrawer(true);
   } catch (error) {
     useAlert(formatErrorMessage(error));
+    await referencesStore.loadPipelines();
   } finally {
-    stageOrderSaving.value = false;
+    setStageOrderSaving(pipelineId, false);
+    setDraggingStagePipeline(pipelineId, false);
+    syncStageRowsForPipeline(pipelineId);
   }
+};
+
+const handleStageDragStart = pipelineId => {
+  setDraggingStagePipeline(pipelineId, true);
+};
+
+const handleStageDragEnd = async (pipelineId, event) => {
+  if (event.oldIndex === event.newIndex) {
+    setDraggingStagePipeline(pipelineId, false);
+    syncStageRowsForPipeline(pipelineId);
+    return;
+  }
+
+  await persistInlineStageOrder(pipelineId);
 };
 
 const openDeleteStageDialog = stage => {
@@ -919,23 +744,6 @@ const deleteStage = async () => {
     stageDrawerOpen.value = false;
     resetStageForm();
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_DELETE'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const saveTaskStatus = async () => {
-  try {
-    await referencesStore.saveTaskStatus({
-      active: taskStatusForm.active,
-      category: taskStatusForm.category,
-      color: taskStatusForm.color,
-      id: taskStatusForm.id,
-      name: taskStatusForm.name.trim(),
-    });
-    useAlert(t('CRM.SETTINGS.TASK_STATUSES.SUCCESS_SAVE'));
-    taskStatusDrawerOpen.value = false;
-    resetTaskStatusForm();
   } catch (error) {
     useAlert(formatErrorMessage(error));
   }
@@ -975,27 +783,14 @@ const consumeRouteAction = async () => {
     }
 
     await clearRouteActionQuery(['pipelineId']);
-    return;
-  }
-
-  if (action === 'create-task-status' && tasksEnabled.value) {
-    openTaskStatusDrawer();
-    await clearRouteActionQuery([]);
   }
 };
 
 onMounted(async () => {
-  const requests = [];
-
   if (dealsEnabled.value) {
-    requests.push(referencesStore.loadPipelines());
+    await referencesStore.loadPipelines();
   }
 
-  if (tasksEnabled.value) {
-    requests.push(referencesStore.loadTaskStatuses());
-  }
-
-  await Promise.all(requests);
   resetStageForm();
   await consumeRouteAction();
 });
@@ -1003,10 +798,7 @@ onMounted(async () => {
 
 <template>
   <SettingsLayout
-    :is-loading="
-      referencesStore.ui.isLoadingPipelines ||
-      referencesStore.ui.isLoadingTaskStatuses
-    "
+    :is-loading="referencesStore.ui.isLoadingPipelines"
     :loading-message="$t('CRM.SETTINGS.LOADING')"
   >
     <template #header>
@@ -1076,10 +868,10 @@ onMounted(async () => {
                   :style="{ gridTemplateColumns: pipelineGridTemplate }"
                 >
                   <div class="min-w-0">
-                    <div class="flex items-start gap-3">
+                    <div class="flex items-center gap-3">
                       <button
                         type="button"
-                        class="drag-handle mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors"
+                        class="drag-handle inline-flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors"
                         :class="
                           row.active && !pipelineOrderSaving
                             ? 'cursor-grab text-n-slate-10 hover:bg-n-alpha-black2 hover:text-n-slate-12 active:cursor-grabbing'
@@ -1121,12 +913,6 @@ onMounted(async () => {
                             {{ $t('CRM.SETTINGS.PIPELINES.ARCHIVED_STATUS') }}
                           </span>
                         </div>
-                        <span
-                          class="pl-1 text-xs"
-                          :class="pipelineSubtextClass(row)"
-                        >
-                          {{ row.code || '—' }}
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -1148,54 +934,82 @@ onMounted(async () => {
                   </div>
 
                   <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                      <div
+                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                      <Draggable
+                        v-if="getStageRows(row.id).length"
+                        :model-value="getStageRows(row.id)"
+                        item-key="id"
+                        handle=".pipeline-stage-drag-handle"
+                        animation="200"
+                        ghost-class="pipeline-ghost"
+                        class="inline-flex min-w-0 flex-wrap items-center gap-2"
+                        :disabled="
+                          !canManage ||
+                          !row.active ||
+                          isStageOrderSaving(row.id)
+                        "
+                        @update:model-value="setStageRows(row.id, $event)"
+                        @start="handleStageDragStart(row.id)"
+                        @end="handleStageDragEnd(row.id, $event)"
+                      >
+                        <template #item="{ element: stage, index }">
+                          <div
+                            class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full px-0.5 py-0.5 text-xs outline outline-1"
+                            :class="
+                              row.active
+                                ? 'bg-n-alpha-black2 text-n-slate-12 outline-n-weak'
+                                : 'bg-n-slate-2 text-n-slate-10 outline-n-container'
+                            "
+                          >
+                            <button
+                              type="button"
+                              class="inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border-0 bg-transparent px-2 py-1 text-left"
+                              :disabled="
+                                !row.active || isStageOrderSaving(row.id)
+                              "
+                              @click="openStageDrawer({ stage })"
+                            >
+                              <span
+                                class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[9px] font-semibold tabular-nums border border-black/10 dark:border-white/10"
+                                :style="stageOrderBadgeStyle(stage.color)"
+                              >
+                                {{ index + 1 }}
+                              </span>
+                              <span class="truncate">{{ stage.name }}</span>
+                            </button>
+                            <button
+                              v-if="canManage && row.active"
+                              type="button"
+                              class="pipeline-stage-drag-handle inline-flex size-7 shrink-0 items-center justify-center rounded-full text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
+                              :disabled="isStageOrderSaving(row.id)"
+                              :title="$t('CRM.SETTINGS.STAGES.REORDER')"
+                            >
+                              <span
+                                class="i-lucide-grip-vertical size-4"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </div>
+                        </template>
+                      </Draggable>
+
+                      <button
                         v-if="canManage && row.active"
-                        class="flex shrink-0 items-center gap-1"
+                        type="button"
+                        class="inline-flex min-w-0 items-center gap-2 rounded-full border border-dashed border-n-container bg-transparent px-3 py-1.5 text-xs font-medium text-n-slate-10 transition-colors hover:border-n-slate-8 hover:bg-n-alpha-black2 hover:text-n-slate-12"
+                        :disabled="isStageOrderSaving(row.id)"
+                        @click="openStageDrawer({ pipeline: row })"
                       >
-                        <Button
-                          size="sm"
-                          color="slate"
-                          variant="ghost"
-                          icon="i-lucide-plus"
-                          @click="openStageDrawer({ pipeline: row })"
-                        />
-                        <Button
-                          v-if="row.stages?.length"
-                          size="sm"
-                          color="slate"
-                          variant="ghost"
-                          icon="i-lucide-arrow-up-down"
-                          :title="$t('CRM.SETTINGS.STAGES.REORDER')"
-                          @click="openStageOrderDrawer(row)"
-                        />
-                      </div>
-                      <div
-                        class="min-w-0 flex flex-1 flex-wrap items-center gap-2"
-                      >
-                        <button
-                          v-for="stage in row.stages"
-                          :key="stage.id"
-                          type="button"
-                          class="inline-flex items-center gap-2 rounded-full px-2 py-1 text-xs outline outline-1"
-                          :disabled="!row.active"
-                          :class="
-                            row.active
-                              ? 'bg-n-alpha-black2 text-n-slate-12 outline-n-weak'
-                              : 'bg-n-slate-2 text-n-slate-10 outline-n-container cursor-default pointer-events-none'
-                          "
-                          @click="openStageDrawer({ stage })"
+                        <span
+                          class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-alpha-black2"
+                          aria-hidden="true"
                         >
-                          <span
-                            class="size-2 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
-                            :style="{
-                              backgroundColor:
-                                stage.color || DEFAULT_STAGE_COLOR,
-                            }"
-                          />
-                          {{ stage.name }}
-                        </button>
-                      </div>
+                          <span class="i-lucide-plus size-3" />
+                        </span>
+                        <span class="truncate">
+                          {{ $t('CRM.SETTINGS.STAGES.CREATE_TITLE') }}
+                        </span>
+                      </button>
                     </div>
                   </div>
 
@@ -1318,220 +1132,8 @@ onMounted(async () => {
             </div>
           </template>
         </SchedulingFormFieldGroup>
-
-        <SchedulingFormFieldGroup
-          v-if="tasksEnabled"
-          :framed="false"
-          :title="$t('CRM.SETTINGS.TASK_STATUSES.TITLE')"
-          :description="$t('CRM.SETTINGS.TASK_STATUSES.DESCRIPTION')"
-        >
-          <div
-            class="mt-3 overflow-hidden rounded-2xl bg-n-solid-2 outline outline-1 outline-n-container shadow-sm"
-          >
-            <div
-              class="grid border-b border-n-weak bg-n-surface-2/80 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-n-slate-10 backdrop-blur"
-              :style="{ gridTemplateColumns: taskStatusGridTemplate }"
-            >
-              <div
-                v-for="column in taskStatusColumns"
-                :key="column.key"
-                class="min-w-0 truncate"
-                :class="[column.align === 'end' ? 'text-end' : 'text-start']"
-              >
-                {{ column.label }}
-              </div>
-            </div>
-
-            <div
-              v-if="taskStatusRows.length === 0"
-              class="px-5 py-10 text-sm text-center text-n-slate-11"
-            >
-              {{ $t('SCHEDULING.GENERAL.NO_DATA') }}
-            </div>
-
-            <Draggable
-              v-else
-              v-model="taskStatusRows"
-              item-key="id"
-              handle=".task-status-drag-handle"
-              :disabled="!canManage || taskStatusOrderSaving"
-              animation="200"
-              ghost-class="pipeline-ghost"
-              class="divide-y divide-n-weak"
-              @start="handleTaskStatusDragStart"
-              @end="handleTaskStatusDragEnd"
-            >
-              <template #item="{ element: row }">
-                <div
-                  class="grid items-center gap-3 px-5 py-3 text-sm text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                  :style="{ gridTemplateColumns: taskStatusGridTemplate }"
-                >
-                  <div class="min-w-0">
-                    <div class="flex items-start gap-3">
-                      <button
-                        type="button"
-                        class="task-status-drag-handle mt-0.5 inline-flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors"
-                        :class="
-                          canManage && !taskStatusOrderSaving
-                            ? 'cursor-grab text-n-slate-10 hover:bg-n-alpha-black2 hover:text-n-slate-12 active:cursor-grabbing'
-                            : 'cursor-default text-n-slate-8'
-                        "
-                        :disabled="!canManage || taskStatusOrderSaving"
-                        :title="$t('CRM.SETTINGS.TASK_STATUSES.DRAG')"
-                      >
-                        <span
-                          class="i-lucide-grip-vertical size-5"
-                          aria-hidden="true"
-                        />
-                      </button>
-
-                      <div class="min-w-0 flex-1 grid gap-1">
-                        <span
-                          class="inline-flex min-w-0 items-center gap-2 font-medium text-n-slate-12"
-                        >
-                          <span
-                            class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
-                            :style="{
-                              backgroundColor:
-                                row.color || DEFAULT_TASK_STATUS_COLOR,
-                            }"
-                          />
-                          <span class="truncate">{{ row.name }}</span>
-                        </span>
-                        <span class="pl-1 text-xs text-n-slate-11">
-                          {{ row.code || '—' }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="min-w-0">
-                    <span class="text-sm text-n-slate-12">
-                      {{ taskStatusCategoryLabel(row.category) }}
-                    </span>
-                  </div>
-
-                  <div class="min-w-0">
-                    <div class="flex justify-start">
-                      <Switch
-                        :model-value="row.default"
-                        :disabled="
-                          !canManage ||
-                          !canToggleTaskStatusDefault(row) ||
-                          taskStatusOrderSaving ||
-                          referencesStore.ui.isSaving
-                        "
-                        @update:model-value="
-                          saveInlineTaskStatusDefault(row, $event)
-                        "
-                      />
-                    </div>
-                  </div>
-
-                  <div class="min-w-0 text-end">
-                    <div v-if="canManage" class="flex justify-end gap-1">
-                      <Button
-                        size="sm"
-                        color="slate"
-                        variant="ghost"
-                        icon="i-lucide-pen-line"
-                        @click="openTaskStatusDrawer(row)"
-                      />
-                      <Button
-                        size="sm"
-                        color="ruby"
-                        variant="ghost"
-                        icon="i-lucide-trash"
-                        @click="openDeleteTaskStatusDialog(row)"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </Draggable>
-          </div>
-
-          <template #headerActions>
-            <Button
-              v-if="canManage"
-              size="sm"
-              icon="i-lucide-plus"
-              :label="$t('CRM.SETTINGS.TASK_STATUSES.ADD')"
-              @click="openTaskStatusDrawer()"
-            />
-          </template>
-        </SchedulingFormFieldGroup>
       </div>
     </template>
-
-    <SchedulingDrawer
-      v-model="stageOrderDrawerOpen"
-      width="md"
-      :title="$t('CRM.SETTINGS.STAGES.REORDER_TITLE')"
-      :description="
-        $t('CRM.SETTINGS.STAGES.REORDER_DESCRIPTION', {
-          name: stageOrderPipeline?.name || '',
-        })
-      "
-      :confirm-label="$t('CRM.GENERAL.SAVE')"
-      :is-loading="stageOrderSaving"
-      :disable-confirm="stageOrderSaving || stageOrderRows.length === 0"
-      @close="closeStageOrderDrawer"
-      @confirm="saveStageOrder"
-    >
-      <div class="grid gap-3">
-        <div
-          v-if="!stageOrderRows.length"
-          class="py-10 text-sm text-center text-n-slate-11"
-        >
-          {{ $t('SCHEDULING.GENERAL.NO_DATA') }}
-        </div>
-
-        <Draggable
-          v-else
-          v-model="stageOrderRows"
-          item-key="id"
-          handle=".stage-order-drag-handle"
-          animation="200"
-          ghost-class="pipeline-ghost"
-          class="grid gap-2"
-        >
-          <template #item="{ element: stage, index }">
-            <div
-              class="flex items-center gap-3 rounded-2xl bg-n-surface-1 px-4 py-3 outline outline-1 outline-n-weak"
-            >
-              <span
-                class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-n-alpha-black2 text-xs font-semibold text-n-slate-11"
-              >
-                {{ index + 1 }}
-              </span>
-              <span
-                class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
-                :style="{ backgroundColor: stage.color || DEFAULT_STAGE_COLOR }"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="mb-0 truncate text-sm font-medium text-n-slate-12">
-                  {{ stage.name }}
-                </p>
-                <p class="mb-0 truncate text-xs text-n-slate-10">
-                  {{ stage.code || '—' }}
-                </p>
-              </div>
-              <button
-                type="button"
-                class="stage-order-drag-handle inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
-                :title="$t('CRM.SETTINGS.STAGES.REORDER')"
-              >
-                <span
-                  class="i-lucide-grip-vertical size-5"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-          </template>
-        </Draggable>
-      </div>
-    </SchedulingDrawer>
 
     <SchedulingDrawer
       v-model="stageDrawerOpen"
@@ -1682,99 +1284,6 @@ onMounted(async () => {
       @close="closeDeleteStageDialog"
       @confirm="deleteStage"
     />
-
-    <Dialog
-      ref="taskStatusDeleteDialogRef"
-      width="md"
-      type="alert"
-      :title="$t('CRM.SETTINGS.TASK_STATUSES.DELETE_TITLE')"
-      :description="
-        $t('CRM.SETTINGS.TASK_STATUSES.DELETE_DESCRIPTION', {
-          name: taskStatusPendingDelete?.name || '',
-        })
-      "
-      :confirm-button-label="$t('CRM.SETTINGS.TASK_STATUSES.DELETE_CONFIRM')"
-      :is-loading="referencesStore.ui.isSaving"
-      @close="closeDeleteTaskStatusDialog"
-      @confirm="deleteTaskStatus"
-    />
-
-    <SchedulingDrawer
-      v-model="taskStatusDrawerOpen"
-      width="sm"
-      :title="
-        taskStatusForm.id
-          ? $t('CRM.SETTINGS.TASK_STATUSES.EDIT_TITLE')
-          : $t('CRM.SETTINGS.TASK_STATUSES.CREATE_TITLE')
-      "
-      :confirm-label="$t('CRM.GENERAL.SAVE')"
-      :is-loading="referencesStore.ui.isSaving"
-      :disable-confirm="!taskStatusForm.name.trim()"
-      @confirm="saveTaskStatus"
-    >
-      <div class="mx-auto grid w-full max-w-[26rem] gap-4">
-        <Input
-          :label="$t('CRM.SETTINGS.TASK_STATUSES.FORM.NAME')"
-          :model-value="taskStatusForm.name"
-          @update:model-value="taskStatusForm.name = $event"
-        />
-        <div class="grid gap-3">
-          <span class="text-sm font-medium text-n-slate-12">
-            {{ $t('CRM.SETTINGS.TASK_STATUSES.FORM.COLOR') }}
-          </span>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="color in TASK_STATUS_STANDARD_COLORS"
-              :key="color"
-              type="button"
-              class="relative size-8 rounded-full border-2 transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:scale-100"
-              :class="[
-                taskStatusForm.color?.toUpperCase() === color.toUpperCase()
-                  ? 'ring-2 ring-offset-2 ring-offset-n-surface-1 ring-n-slate-8 border-n-slate-9'
-                  : 'border-n-container',
-                isTaskStatusStandardColorDisabled(color)
-                  ? 'border-n-slate-8 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]'
-                  : '',
-              ]"
-              :style="{ backgroundColor: color }"
-              :disabled="isTaskStatusStandardColorDisabled(color)"
-              :aria-label="taskStatusStandardColorAriaLabel(color)"
-              :title="taskStatusStandardColorTitle(color)"
-              @click="taskStatusForm.color = color"
-            >
-              <span
-                v-if="isTaskStatusStandardColorDisabled(color)"
-                class="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-n-surface-1 text-n-slate-12 outline outline-1 outline-n-container shadow-sm"
-                aria-hidden="true"
-              >
-                <span class="size-2.5 i-lucide-slash" />
-              </span>
-            </button>
-          </div>
-          <div class="grid gap-2 md:max-w-xs">
-            <span class="text-sm font-medium text-n-slate-12">
-              {{ $t('CRM.SETTINGS.TASK_STATUSES.FORM.CUSTOM_COLOR') }}
-            </span>
-            <SchedulingColorPicker v-model="taskStatusForm.color" />
-          </div>
-        </div>
-        <SchedulingSelectField
-          :label="$t('CRM.SETTINGS.TASK_STATUSES.FORM.CATEGORY')"
-          :model-value="taskStatusForm.category"
-          :options="taskStatusCategoryOptions"
-          @update:model-value="taskStatusForm.category = $event"
-        />
-        <div v-if="taskStatusForm.id" class="flex items-center gap-3">
-          <Checkbox
-            :model-value="!taskStatusForm.active"
-            @update:model-value="taskStatusForm.active = !$event"
-          />
-          <span class="text-sm text-n-slate-12">
-            {{ $t('CRM.SETTINGS.TASK_STATUSES.FORM.DEACTIVATE') }}
-          </span>
-        </div>
-      </div>
-    </SchedulingDrawer>
   </SettingsLayout>
 </template>
 

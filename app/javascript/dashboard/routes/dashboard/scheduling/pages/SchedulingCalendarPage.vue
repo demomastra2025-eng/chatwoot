@@ -5,11 +5,14 @@ import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
+import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNumberInput.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCalendarGrid from 'dashboard/components-next/Scheduling/SchedulingCalendarGrid.vue';
+import SchedulingCustomFieldAdvancedFilter from 'dashboard/components-next/Scheduling/SchedulingCustomFieldAdvancedFilter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
@@ -29,16 +32,39 @@ import {
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCalendarTitle } from '../helpers';
+import {
+  appointmentMatchesCustomFieldFilters,
+  buildSchedulingAdvancedCustomFieldOperatorOptions,
+  buildSchedulingCustomFieldFilterSummary,
+  buildSchedulingCustomFieldFilterOptions,
+  isAdvancedFilterableCustomFieldDefinition,
+  isDiscreteFilterableCustomFieldDefinition,
+  isFilterableCustomFieldDefinition,
+  normalizeSchedulingCustomFieldFilters,
+} from '../customFieldFilters';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import {
+  buildDefaultCustomAttributes,
+  mergeMissingDefaultCustomAttributes,
+} from 'dashboard/stores/crm/customFieldDefaults';
+import {
+  APPOINTMENT_BOOKING_INTAKE_CONTEXT,
+  fieldDefinitionHasContext,
+} from 'dashboard/stores/crm/fieldContexts';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 const { t, locale } = useI18n();
 const calendarStore = useSchedulingCalendarStore();
+const crmReferencesStore = useCrmReferencesStore();
 const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
+const customFieldFilters = ref({});
+const pendingCreateCustomFieldDefaultsHydration = ref(false);
+const appointmentDeleteDialogRef = ref(null);
 
 const inlineContactForm = reactive({
   birthDate: '',
@@ -226,6 +252,42 @@ const genderOptions = computed(() => [
 const selectedStatusFilters = computed(() => calendarStore.statusFilters);
 const isContactEditorOpen = computed(() => !!contactEditorMode.value);
 const isEditingContact = computed(() => contactEditorMode.value === 'edit');
+const appointmentFieldDefinitions = computed(
+  () => crmReferencesStore.appointmentFieldDefinitions
+);
+const intakeAppointmentFieldDefinitions = computed(() =>
+  appointmentFieldDefinitions.value.filter(definition =>
+    fieldDefinitionHasContext(definition, APPOINTMENT_BOOKING_INTAKE_CONTEXT)
+  )
+);
+const generalAppointmentFieldDefinitions = computed(() =>
+  appointmentFieldDefinitions.value.filter(
+    definition =>
+      !fieldDefinitionHasContext(definition, APPOINTMENT_BOOKING_INTAKE_CONTEXT)
+  )
+);
+const filterableAppointmentFieldDefinitions = computed(() =>
+  appointmentFieldDefinitions.value.filter(isFilterableCustomFieldDefinition)
+);
+const discreteAppointmentFieldDefinitions = computed(() =>
+  appointmentFieldDefinitions.value.filter(
+    isDiscreteFilterableCustomFieldDefinition
+  )
+);
+const advancedAppointmentFieldDefinitions = computed(() =>
+  appointmentFieldDefinitions.value.filter(
+    isAdvancedFilterableCustomFieldDefinition
+  )
+);
+const visibleAppointments = computed(() =>
+  calendarStore.appointments.filter(appointment =>
+    appointmentMatchesCustomFieldFilters(
+      appointment,
+      filterableAppointmentFieldDefinitions.value,
+      customFieldFilters.value
+    )
+  )
+);
 
 const drawerTitle = computed(() =>
   formStore.mode === 'edit'
@@ -250,6 +312,23 @@ const contactEditorActionLabel = computed(() =>
     ? t('SCHEDULING.CONTACT.EDIT_ACTION')
     : t('SCHEDULING.CONTACT.CREATE_ACTION')
 );
+const customFieldFilterLabels = computed(() => ({
+  noLabel: t('SCHEDULING.GENERAL.NO'),
+  operators: {
+    after: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.AFTER'),
+    before: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.BEFORE'),
+    contains: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.CONTAINS'),
+    equals: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.EQUALS'),
+    greater_than: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.GREATER_THAN'),
+    is_not_present: t(
+      'SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.IS_NOT_PRESENT'
+    ),
+    is_present: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.IS_PRESENT'),
+    less_than: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.LESS_THAN'),
+    on: t('SCHEDULING.CUSTOM_FIELD_FILTERS.OPERATORS.ON'),
+  },
+  yesLabel: t('SCHEDULING.GENERAL.YES'),
+}));
 
 const normalizeIin = value =>
   String(value || '')
@@ -333,6 +412,44 @@ const resetInlineContactForm = () => {
   });
 };
 
+const customFieldFilterOptions = definition =>
+  buildSchedulingCustomFieldFilterOptions(
+    definition,
+    customFieldFilterLabels.value
+  );
+
+const customFieldAdvancedOperatorOptions = definition =>
+  buildSchedulingAdvancedCustomFieldOperatorOptions(
+    definition,
+    customFieldFilterLabels.value
+  );
+
+const customFieldAdvancedFilterSummary = definition =>
+  buildSchedulingCustomFieldFilterSummary(
+    definition,
+    customFieldFilters.value?.[definition.key],
+    customFieldFilterLabels.value
+  );
+
+const updateCustomFieldFilter = (definitionKey, values) => {
+  const nextFilters = normalizeSchedulingCustomFieldFilters(
+    filterableAppointmentFieldDefinitions.value,
+    {
+      ...customFieldFilters.value,
+      [definitionKey]: values,
+    },
+    customFieldFilterLabels.value
+  );
+
+  customFieldFilters.value = nextFilters;
+  calendarStore.setCustomAttributeFilters(nextFilters);
+};
+
+const handleCustomFieldFilterChange = async (definitionKey, values) => {
+  updateCustomFieldFilter(definitionKey, values);
+  await calendarStore.fetchCalendar();
+};
+
 const syncSelectedResources = () => {
   const activeResourceIds = filterableResources.value.map(
     resource => resource.id
@@ -352,11 +469,21 @@ const syncSelectedResources = () => {
 
 const loadPage = async () => {
   await Promise.all([
+    crmReferencesStore.loadFieldDefinitions('appointment'),
     referencesStore.loadResources({ include_inactive: true }),
     referencesStore.loadServices({ include_inactive: true }),
   ]);
   syncSelectedResources();
   await calendarStore.fetchCalendar();
+};
+
+const openCreateAppointment = slot => {
+  pendingCreateCustomFieldDefaultsHydration.value = true;
+  formStore.openCreate(slot, {
+    customAttributes: buildDefaultCustomAttributes(
+      appointmentFieldDefinitions.value
+    ),
+  });
 };
 
 const handleAnchorDateSelect = async nextDate => {
@@ -407,7 +534,7 @@ const openNewAppointment = () => {
     endsAt.setMinutes(endsAt.getMinutes() + primaryDurationMin);
   }
 
-  formStore.openCreate({
+  openCreateAppointment({
     endsAt: endsAt.toISOString(),
     resourceId: nextSlot?.resourceId || primaryResourceId,
     startsAt: startsAt.toISOString(),
@@ -415,6 +542,7 @@ const openNewAppointment = () => {
 };
 
 const handleDrawerClose = () => {
+  appointmentDeleteDialogRef.value?.close();
   formStore.close();
   formStore.reset();
   contactEditorMode.value = null;
@@ -482,6 +610,42 @@ const handleInlineContactSave = async () => {
     useAlert(formatErrorMessage(error));
   }
 };
+
+watch(
+  appointmentFieldDefinitions,
+  definitions => {
+    if (
+      !formStore.isOpen ||
+      formStore.mode !== 'create' ||
+      !pendingCreateCustomFieldDefaultsHydration.value ||
+      !definitions.length
+    ) {
+      return;
+    }
+
+    formStore.form.customAttributes = mergeMissingDefaultCustomAttributes(
+      formStore.form.customAttributes,
+      definitions
+    );
+    pendingCreateCustomFieldDefaultsHydration.value = false;
+  },
+  { immediate: true }
+);
+
+watch(
+  filterableAppointmentFieldDefinitions,
+  definitions => {
+    const nextFilters = normalizeSchedulingCustomFieldFilters(
+      definitions,
+      customFieldFilters.value,
+      customFieldFilterLabels.value
+    );
+
+    customFieldFilters.value = nextFilters;
+    calendarStore.setCustomAttributeFilters(nextFilters);
+  },
+  { immediate: true, deep: true }
+);
 
 watch(
   () => inlineContactForm.iin,
@@ -554,6 +718,21 @@ const handleAppointmentCancel = async () => {
   try {
     await formStore.cancel(calendarStore);
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
+    handleDrawerClose();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const openAppointmentDeleteDialog = () => {
+  appointmentDeleteDialogRef.value?.open();
+};
+
+const handleAppointmentDelete = async () => {
+  try {
+    await formStore.destroy(calendarStore);
+    appointmentDeleteDialogRef.value?.close();
+    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
     handleDrawerClose();
   } catch (error) {
     useAlert(formatErrorMessage(error));
@@ -655,6 +834,32 @@ onMounted(async () => {
           :placeholder="$t('SCHEDULING.TOOLBAR.STATUS')"
           @update:model-value="handleStatusFiltersChange"
         />
+        <SchedulingMultiSelectFilter
+          v-for="definition in discreteAppointmentFieldDefinitions"
+          :key="definition.key"
+          :model-value="customFieldFilters[definition.key] || []"
+          :options="customFieldFilterOptions(definition)"
+          :placeholder="definition.label"
+          :show-trigger-icon="false"
+          @update:model-value="
+            handleCustomFieldFilterChange(definition.key, $event)
+          "
+        />
+        <SchedulingCustomFieldAdvancedFilter
+          v-for="definition in advancedAppointmentFieldDefinitions"
+          :key="definition.key"
+          :definition="definition"
+          :model-value="customFieldFilters[definition.key] || null"
+          :operator-options="customFieldAdvancedOperatorOptions(definition)"
+          :placeholder="definition.label"
+          :summary-label="customFieldAdvancedFilterSummary(definition)"
+          :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
+          :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
+          :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
+          @update:model-value="
+            handleCustomFieldFilterChange(definition.key, $event)
+          "
+        />
       </div>
     </div>
 
@@ -695,8 +900,9 @@ onMounted(async () => {
           v-else
           class="min-h-0 flex-1"
           :anchor-date="calendarStore.anchorDate"
-          :appointments="calendarStore.appointments"
+          :appointments="visibleAppointments"
           :break-rules="calendarStore.breakRules"
+          :custom-field-definitions="appointmentFieldDefinitions"
           :holidays="calendarStore.holidays"
           :presentation="currentPresentation"
           :resources="calendarStore.visibleResources"
@@ -710,7 +916,7 @@ onMounted(async () => {
               status: $event.status,
             })
           "
-          @create-appointment="formStore.openCreate($event)"
+          @create-appointment="openCreateAppointment($event)"
           @move-appointment="
             updateAppointmentMutation($event.appointment, {
               ends_at: $event.endsAt,
@@ -958,6 +1164,16 @@ onMounted(async () => {
           </div>
         </SchedulingFormFieldGroup>
 
+        <CrmCustomFieldsSection
+          v-model="formStore.form.customAttributes"
+          :definitions="intakeAppointmentFieldDefinitions"
+          :title="$t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_TITLE')"
+          :description="
+            $t('SCHEDULING.APPOINTMENT_FORM.INTAKE_FIELDS_DESCRIPTION')
+          "
+          :framed="false"
+        />
+
         <SchedulingFormFieldGroup :framed="false">
           <TextArea
             v-model="formStore.form.clientComment"
@@ -966,6 +1182,16 @@ onMounted(async () => {
             :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')"
           />
         </SchedulingFormFieldGroup>
+
+        <CrmCustomFieldsSection
+          v-model="formStore.form.customAttributes"
+          :definitions="generalAppointmentFieldDefinitions"
+          :title="$t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_TITLE')"
+          :description="
+            $t('SCHEDULING.APPOINTMENT_FORM.CUSTOM_FIELDS_DESCRIPTION')
+          "
+          :framed="false"
+        />
       </div>
 
       <template #footer>
@@ -987,6 +1213,18 @@ onMounted(async () => {
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
               @click="handleAppointmentCancel"
             />
+            <Button
+              v-if="
+                formStore.mode === 'edit' &&
+                formStore.form.status === 'cancelled'
+              "
+              size="sm"
+              variant="ghost"
+              color="ruby"
+              :is-loading="formStore.ui.isSaving"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_APPOINTMENT')"
+              @click="openAppointmentDeleteDialog"
+            />
           </div>
           <Button
             size="sm"
@@ -998,5 +1236,20 @@ onMounted(async () => {
         </div>
       </template>
     </SchedulingDrawer>
+
+    <Dialog
+      ref="appointmentDeleteDialogRef"
+      width="md"
+      type="alert"
+      :title="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_TITLE')"
+      :description="
+        $t('SCHEDULING.APPOINTMENT_FORM.DELETE_DESCRIPTION', {
+          name: formStore.form.clientName || '',
+        })
+      "
+      :confirm-button-label="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_CONFIRM')"
+      :is-loading="formStore.ui.isSaving"
+      @confirm="handleAppointmentDelete"
+    />
   </section>
 </template>

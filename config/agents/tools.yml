@@ -39,3 +39,63 @@
   title: 'Handoff to Human'
   description: 'Hand off the conversation to a human agent'
   icon: 'user-switch'
+
+- id: update_contact
+  title: 'Update Contact'
+  description: 'Update the current conversation contact'
+  icon: 'user-edit'
+
+- id: create_company
+  title: 'Create Company'
+  description: 'Create a company for the current conversation contact'
+  icon: 'briefcase'
+
+- id: update_company
+  title: 'Update Company'
+  description: 'Update the company linked to the current conversation contact'
+  icon: 'briefcase-edit'
+
+- id: create_deal
+  title: 'Create Deal'
+  description: 'Create a CRM deal from the current conversation context'
+  icon: 'money'
+
+- id: update_deal
+  title: 'Update Deal'
+  description: 'Update the CRM deal linked to the current conversation'
+  icon: 'money-edit'
+
+- id: transition_deal_stage
+  title: 'Transition Deal Stage'
+  description: 'Move the current CRM deal to another stage'
+  icon: 'arrow-right'
+
+- id: create_task
+  title: 'Create Task'
+  description: 'Create a CRM task from the current conversation context'
+  icon: 'checklist'
+
+- id: update_task
+  title: 'Update Task'
+  description: 'Update the CRM task linked to the current conversation'
+  icon: 'checklist-edit'
+
+- id: change_task_status
+  title: 'Change Task Status'
+  description: 'Change the status of the CRM task linked to the current conversation'
+  icon: 'shuffle'
+
+- id: create_appointment
+  title: 'Create Appointment'
+  description: 'Create an appointment for the current conversation contact'
+  icon: 'calendar-plus'
+
+- id: update_appointment
+  title: 'Update Appointment'
+  description: 'Update the appointment linked to the current conversation'
+  icon: 'calendar-edit'
+
+- id: cancel_appointment
+  title: 'Cancel Appointment'
+  description: 'Cancel the appointment linked to the current conversation'
+  icon: 'calendar-x'

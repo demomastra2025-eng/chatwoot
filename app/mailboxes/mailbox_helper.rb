@@ -51,7 +51,7 @@ module MailboxHelper
       attachment = @message.attachments.new(
         account_id: @conversation.account_id,
         file_type: 'file'
-      )
+      ).skip_storage_limit_validation!
       attachment.file.attach(mail_attachment[:blob])
     end
   end

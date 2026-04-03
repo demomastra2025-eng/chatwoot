@@ -13,7 +13,7 @@ module Concerns::CaptainToolsHelpers
     #
     # @return [Array<Hash>] Array of tool hashes with :id, :title, :description, :icon
     def built_in_agent_tools
-      @built_in_agent_tools ||= load_agent_tools
+      Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT)
     end
 
     # Resolves a tool class from a tool ID.
@@ -22,8 +22,7 @@ module Concerns::CaptainToolsHelpers
     # @param tool_id [String] The snake_case tool identifier
     # @return [Class, nil] The tool class if found, nil if not resolvable
     def resolve_tool_class(tool_id)
-      class_name = "Captain::Tools::#{tool_id.classify}Tool"
-      class_name.safe_constantize
+      Captain::ToolRegistry.resolve_agent_tool_class(tool_id)
     end
 
     # Returns an array of all built-in tool IDs.
@@ -31,34 +30,7 @@ module Concerns::CaptainToolsHelpers
     #
     # @return [Array<String>] Array of built-in tool IDs
     def built_in_tool_ids
-      @built_in_tool_ids ||= built_in_agent_tools.map { |tool| tool[:id] }
-    end
-
-    private
-
-    # Loads agent tools from the YAML configuration file.
-    # Filters out tools that cannot be resolved to actual classes.
-    #
-    # @return [Array<Hash>] Array of resolvable tools with metadata
-    # @api private
-    def load_agent_tools
-      tools_config = YAML.load_file(Rails.root.join('config/agents/tools.yml'))
-
-      tools_config.filter_map do |tool_config|
-        tool_class = resolve_tool_class(tool_config['id'])
-
-        if tool_class
-          {
-            id: tool_config['id'],
-            title: tool_config['title'],
-            description: tool_config['description'],
-            icon: tool_config['icon']
-          }
-        else
-          Rails.logger.warn "Tool class not found for ID: #{tool_config['id']}"
-          nil
-        end
-      end
+      built_in_agent_tools.map { |tool| tool[:id] }
     end
   end
 

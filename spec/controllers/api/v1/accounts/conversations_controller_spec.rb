@@ -411,6 +411,19 @@ RSpec.describe 'Conversations API', type: :request do
           expect(response_data[:meta][:assignee][:name]).to eq(agent.name)
           expect(response_data[:meta][:team][:name]).to eq(team.name)
         end
+
+        it 'does not create a conversation when the account conversation limit is reached' do
+          account.update!(limits: { conversations: 1 })
+          create(:conversation, account: account)
+
+          post "/api/v1/accounts/#{account.id}/conversations",
+               headers: agent.create_new_auth_token,
+               params: { source_id: contact_inbox.source_id, additional_attributes: { test: 'test' } },
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['message']).to include('Account conversation limit exceeded')
+        end
       end
     end
   end
@@ -964,6 +977,57 @@ RSpec.describe 'Conversations API', type: :request do
         expect(conversation.reload.custom_attributes).not_to be_nil
         expect(conversation.reload.custom_attributes.count).to eq 3
       end
+
+      it 'merges incoming custom attributes with existing values' do
+        conversation.update!(custom_attributes: { existing_key: 'existing value' })
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/custom_attributes",
+             headers: agent.create_new_auth_token,
+             params: valid_params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['custom_attributes']).to eq(
+          {
+            'existing_key' => 'existing value',
+            'user_id' => 1001,
+            'created_date' => '23/12/2012',
+            'subscription_id' => 12
+          }
+        )
+        expect(conversation.reload.custom_attributes).to eq(response.parsed_body['custom_attributes'])
+      end
+
+      it 'initializes custom attributes when persisted value is nil' do
+        conversation.update_columns(custom_attributes: nil)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/custom_attributes",
+             headers: agent.create_new_auth_token,
+             params: valid_params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq(
+          {
+            'user_id' => 1001,
+            'created_date' => '23/12/2012',
+            'subscription_id' => 12
+          }
+        )
+      end
+
+      it 'clears all custom attributes when an explicit empty object is provided' do
+        conversation.update!(custom_attributes: { existing_key: 'existing value' })
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/custom_attributes",
+             headers: agent.create_new_auth_token,
+             params: { custom_attributes: {} },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['custom_attributes']).to eq({})
+        expect(conversation.reload.custom_attributes).to eq({})
+      end
     end
 
     context 'when it is a bot' do
@@ -984,6 +1048,66 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         expect(conversation.reload.custom_attributes).not_to be_nil
         expect(conversation.reload.custom_attributes.count).to eq 3
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/conversations/:id/destroy_custom_attributes' do
+    let(:conversation) do
+      create(
+        :conversation,
+        account: account,
+        custom_attributes: { removable_key: 'remove me', retained_key: 'keep me' }
+      )
+    end
+
+    context 'when it is an authenticated user' do
+      let(:agent) { create(:user, account: account, role: :agent) }
+
+      before do
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+      end
+
+      it 'destroys only the requested custom attributes' do
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/destroy_custom_attributes",
+             headers: agent.create_new_auth_token,
+             params: { custom_attributes: ['removable_key'] },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['custom_attributes']).to eq({ 'retained_key' => 'keep me' })
+        expect(conversation.reload.custom_attributes).to eq({ 'retained_key' => 'keep me' })
+      end
+
+      it 'treats nil custom attributes as an empty hash during deletion' do
+        conversation.update_columns(custom_attributes: nil)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/destroy_custom_attributes",
+             headers: agent.create_new_auth_token,
+             params: { custom_attributes: ['removable_key'] },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['custom_attributes']).to eq({})
+        expect(conversation.reload.custom_attributes).to eq({})
+      end
+    end
+
+    context 'when it is a bot' do
+      let(:agent_bot) { create(:agent_bot, account: account) }
+
+      before do
+        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: conversation.inbox)
+      end
+
+      it 'destroys custom attributes' do
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/destroy_custom_attributes",
+             headers: { api_access_token: agent_bot.access_token.token },
+             params: { custom_attributes: ['removable_key'] },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq({ 'retained_key' => 'keep me' })
       end
     end
   end

@@ -96,7 +96,7 @@ class Sms::IncomingMessageService
           filename: attachment_file.original_filename,
           content_type: attachment_file.content_type
         }
-      )
+      ).skip_storage_limit_validation!
     end
   end
 end

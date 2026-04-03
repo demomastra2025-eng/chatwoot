@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
+import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmTaskAssigneeMenu from './CrmTaskAssigneeMenu.vue';
 import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
 
@@ -14,6 +15,10 @@ const props = defineProps({
   canManage: {
     type: Boolean,
     default: false,
+  },
+  fieldDefinitions: {
+    type: Array,
+    default: () => [],
   },
   dealNames: {
     type: Object,
@@ -238,34 +243,21 @@ const handleAssigneeChange = (task, assigneeId) => {
                     {{ formatDateLabel(element.dueAt || element.updatedAt) }}
                   </span>
                 </div>
+
+                <CrmCustomFieldsSummary
+                  class="mt-2"
+                  :definitions="fieldDefinitions"
+                  :values="element.customAttributes"
+                />
               </article>
             </template>
 
             <template #footer>
               <template v-if="!column.tasks.length">
-                <div
-                  class="grid gap-0.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-left"
-                  :class="
-                    canManage
-                      ? 'block group-hover/crm-column:hidden group-focus-within/crm-column:hidden'
-                      : 'block'
-                  "
-                >
-                  <p class="mb-0 text-xs font-medium text-n-slate-12">
-                    {{ $t('CRM.TASKS.BOARD.EMPTY_COLUMN') }}
-                  </p>
-                  <p class="mb-0 text-[10px] text-n-slate-11">
-                    {{ $t('CRM.TASKS.BOARD.EMPTY_COLUMN_DESCRIPTION') }}
-                  </p>
-                </div>
-
-                <div
-                  v-if="canManage"
-                  class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
-                >
+                <div v-if="canManage" class="block">
                   <button
                     type="button"
-                    class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                    class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
                     @click.stop="
                       emit('createTask', {
                         statusId: column.statusId,
@@ -284,7 +276,7 @@ const handleAssigneeChange = (task, assigneeId) => {
               >
                 <button
                   type="button"
-                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-n-alpha-black2 px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-black3"
+                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
                   @click.stop="
                     emit('createTask', {
                       statusId: column.statusId,

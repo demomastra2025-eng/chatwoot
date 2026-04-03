@@ -17,6 +17,16 @@ const emit = defineEmits(['remove']);
 const { t } = useI18n();
 const showErrors = ref(false);
 const PARAM_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const RESERVED_PARAM_NAMES = [
+  'contact',
+  'conversation',
+  'appointment',
+  'assistant',
+  'account',
+  'params',
+  'p',
+  'visible_fields',
+];
 
 const name = defineModel('name', {
   type: String,
@@ -92,6 +102,9 @@ const validationErrorMessages = computed(() => ({
     'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_REQUIRED'
   ),
   PARAM_NAME_INVALID: t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_INVALID'),
+  PARAM_NAME_RESERVED: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_RESERVED'
+  ),
   PARAM_DESCRIPTION_REQUIRED: t(
     'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_DESCRIPTION_REQUIRED'
   ),
@@ -109,6 +122,9 @@ const validationError = computed(() => {
   }
   if (!PARAM_NAME_REGEX.test(name.value.trim())) {
     return 'PARAM_NAME_INVALID';
+  }
+  if (RESERVED_PARAM_NAMES.includes(name.value.trim())) {
+    return 'PARAM_NAME_RESERVED';
   }
   if (!description.value || description.value.trim() === '') {
     return 'PARAM_DESCRIPTION_REQUIRED';

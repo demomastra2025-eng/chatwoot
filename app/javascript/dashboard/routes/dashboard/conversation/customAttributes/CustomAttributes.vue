@@ -221,11 +221,10 @@ const onUpdate = async (key, value) => {
 
 const onDelete = async key => {
   try {
-    const { [key]: remove, ...updatedAttributes } = customAttributes.value;
     if (props.attributeType === 'conversation_attribute') {
-      await store.dispatch('updateCustomAttributes', {
+      await store.dispatch('deleteCustomAttributes', {
         conversationId: conversationId.value,
-        customAttributes: updatedAttributes,
+        customAttributes: [key],
       });
     } else {
       store.dispatch('contacts/deleteCustomAttributes', {

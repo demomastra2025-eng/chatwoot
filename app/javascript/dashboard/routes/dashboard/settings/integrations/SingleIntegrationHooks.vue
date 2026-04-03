@@ -3,6 +3,7 @@ import { computed, defineProps, defineEmits } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
+import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
 import { useBranding } from 'shared/composables/useBranding';
 import BaseSettingsHeader from 'dashboard/routes/dashboard/settings/components/BaseSettingsHeader.vue';
@@ -28,7 +29,9 @@ const { t, locale } = useI18n();
 const connectedHook = computed(() => integration.value?.hooks?.[0]);
 const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
 const isMedelement = computed(() => props.integrationId === 'medelement');
+const isMacrocrm = computed(() => props.integrationId === 'macrocrm');
 const medelementMetadata = computed(() => connectedHook.value?.metadata || {});
+const macrocrmMetadata = computed(() => connectedHook.value?.metadata || {});
 
 const hasCustomLogo = computed(
   () =>
@@ -162,6 +165,14 @@ const medelementScheduleDetails = computed(() => {
   ];
 });
 
+const macrocrmWebhookUrl = computed(
+  () => macrocrmMetadata.value.webhook_url || ''
+);
+
+const macrocrmWebhookKey = computed(
+  () => connectedHook.value?.reference_id || ''
+);
+
 async function runSyncNow() {
   try {
     const response = await store.dispatch(
@@ -176,6 +187,19 @@ async function runSyncNow() {
       error?.response?.data?.message ||
       t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR');
     useAlert(errorMessage);
+  }
+}
+
+async function copyMacrocrmWebhookUrl() {
+  if (!macrocrmWebhookUrl.value) {
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(macrocrmWebhookUrl.value);
+    useAlert(t('INTEGRATION_APPS.MACROCRM.WEBHOOK.COPY_SUCCESS'));
+  } catch (error) {
+    useAlert(error.message);
   }
 }
 </script>
@@ -286,6 +310,58 @@ async function runSyncNow() {
               </p>
               <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
                 {{ detail.value }}
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-if="isMacrocrm && macrocrmWebhookUrl"
+            class="mt-4 rounded-md bg-n-alpha-2 p-4"
+          >
+            <p class="text-sm leading-6 text-n-slate-11">
+              {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.DESCRIPTION') }}
+            </p>
+
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span
+                class="inline-flex items-center rounded-full bg-n-alpha-3 px-3 py-1 text-xs font-medium text-n-slate-12"
+              >
+                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.METHOD') }}
+              </span>
+              <span
+                class="inline-flex items-center rounded-full bg-n-alpha-3 px-3 py-1 text-xs font-medium text-n-slate-12"
+              >
+                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.EVENT') }}
+              </span>
+            </div>
+
+            <div
+              class="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
+                  {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.URL_LABEL') }}
+                </p>
+                <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
+                  {{ macrocrmWebhookUrl }}
+                </p>
+              </div>
+              <NextButton
+                faded
+                slate
+                size="sm"
+                icon="i-lucide-clipboard"
+                :label="$t('INTEGRATION_APPS.MACROCRM.WEBHOOK.COPY')"
+                @click="copyMacrocrmWebhookUrl"
+              />
+            </div>
+
+            <div v-if="macrocrmWebhookKey" class="mt-4">
+              <p class="text-xs uppercase tracking-[1px] text-n-slate-10">
+                {{ $t('INTEGRATION_APPS.MACROCRM.WEBHOOK.KEY_LABEL') }}
+              </p>
+              <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
+                {{ macrocrmWebhookKey }}
               </p>
             </div>
           </div>

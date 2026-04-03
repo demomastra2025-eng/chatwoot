@@ -94,6 +94,21 @@
   display_title: 'Attachment size limit (MB)'
   description: 'Maximum attachment size in MB allowed for uploads'
   locked: false
+- name: ACCOUNT_CONVERSATIONS_LIMIT
+  value: 500
+  display_title: 'Account Conversation Limit (30 Days)'
+  description: 'Maximum number of conversations an account can create within a rolling 30-day window'
+  locked: false
+- name: ACCOUNT_NON_WEB_INBOXES_LIMIT
+  value: 0
+  display_title: 'Account Non-Web Inbox Limit'
+  description: 'Maximum number of non-web inboxes an account can create'
+  locked: false
+- name: ACCOUNT_STORAGE_BYTES_LIMIT
+  value:
+  display_title: 'Account Storage Limit (Bytes)'
+  description: 'Maximum total storage bytes allowed for account-owned uploads. Blank means unlimited.'
+  locked: false
 # ------- End of Account Related Config ------- #
 
 # ------- Email Related Config ------- #
@@ -209,6 +224,11 @@
   description: 'The limits for the AI Agents service for different plans'
   value:
   type: code
+- name: ACCOUNT_CAPTAIN_TOKENS_LIMIT
+  display_title: 'AI Tokens Limit'
+  description: 'Maximum number of AI tokens available to an account. Blank means unlimited.'
+  value:
+  locked: false
 # End of AI Agents Config
 
 # ------- Onelink Internal Config for Cloud ----#

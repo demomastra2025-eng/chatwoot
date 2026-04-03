@@ -19,6 +19,7 @@ class Integrations::Hook < ApplicationRecord
 
   attr_readonly :app_id, :account_id, :inbox_id, :hook_type
   before_validation :ensure_hook_type
+  before_validation :ensure_reference_id
   after_create :trigger_setup_if_crm
   after_commit :sync_medelement_schedule, on: [:create, :update], if: :medelement?
   after_destroy_commit :destroy_medelement_schedule, if: :medelement?
@@ -35,6 +36,7 @@ class Integrations::Hook < ApplicationRecord
   validate :ensure_required_access_token
   validate :ensure_required_secret_settings
   validates :app_id, uniqueness: { scope: [:account_id], unless: -> { app.present? && app.params[:allow_multiple_hooks].present? } }
+  validates :reference_id, uniqueness: { scope: [:app_id] }, if: :macrocrm?
 
   # TODO: This seems to be only used for slack at the moment
   # We can add a validator when storing the integration settings and toggle this in future
@@ -67,6 +69,17 @@ class Integrations::Hook < ApplicationRecord
 
   def medelement?
     app_id == 'medelement'
+  end
+
+  def macrocrm?
+    app_id == 'macrocrm'
+  end
+
+  def macrocrm_manager_changed_webhook_url
+    frontend_url = ENV.fetch('FRONTEND_URL', nil)
+    return if frontend_url.blank? || reference_id.blank? || !macrocrm?
+
+    "#{frontend_url}/webhooks/macrocrm/#{reference_id}/manager_changed"
   end
 
   def secret_settings
@@ -124,6 +137,13 @@ class Integrations::Hook < ApplicationRecord
     return if missing_keys.blank?
 
     errors.add(:access_token, "is missing required Medelement credentials: #{missing_keys.join(', ')}")
+  end
+
+  def ensure_reference_id
+    return unless macrocrm?
+    return if reference_id.present?
+
+    self.reference_id = SecureRandom.hex(16)
   end
 
   def validate_settings_json_schema

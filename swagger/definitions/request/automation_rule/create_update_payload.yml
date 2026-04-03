@@ -14,7 +14,22 @@ properties:
       - conversation_created
       - conversation_updated
       - conversation_resolved
+      - conversation_opened
       - message_created
+      - appointment_created
+      - appointment_updated
+      - appointment_cancelled
+      - appointment_completed
+      - deal_created
+      - deal_updated
+      - deal_stage_changed
+      - deal_archived
+      - deal_unarchived
+      - task_created
+      - task_updated
+      - task_status_changed
+      - task_archived
+      - task_unarchived
     example: message_created
     description: The event when you want to execute the automation actions
   active:
@@ -22,21 +37,96 @@ properties:
     description: Enable/disable automation rule
   actions:
     type: array
-    description: Array of actions which you want to perform when condition matches, e.g add label support if message contains content help.
+    description: |
+      Array of actions which you want to perform when condition matches.
+      For appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,
+      when `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.
+      Deal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,
+      `assign_deal_team`, `archive_deal`, and `unarchive_deal`.
+      Task events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,
+      `assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.
     items:
       type: object
-      example:
-        action_name: add_label
+      properties:
+        action_name:
+          type: string
+          description: Action identifier. Supported values depend on the selected event family.
+          enum:
+            - send_message
+            - add_label
+            - remove_label
+            - send_email_to_team
+            - assign_team
+            - assign_agent
+            - send_webhook_event
+            - mute_conversation
+            - send_attachment
+            - change_status
+            - resolve_conversation
+            - open_conversation
+            - pending_conversation
+            - snooze_conversation
+            - change_priority
+            - send_email_transcript
+            - add_private_note
+            - change_appointment_status
+            - cancel_appointment_payment
+            - change_deal_stage
+            - assign_deal_owner
+            - assign_deal_team
+            - archive_deal
+            - unarchive_deal
+            - change_task_status
+            - assign_task_assignee
+            - assign_task_team
+            - change_task_priority
+            - archive_task
+            - unarchive_task
         action_params:
-          - support
+          type: array
+          description: |
+            Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.
+            `cancel_appointment_payment` does not require params.
+            `change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,
+            `assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.
+            `change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.
+          items:
+            type: string
+      example:
+        action_name: change_appointment_status
+        action_params:
+          - confirmed
   conditions:
     type: array
-    description: Array of conditions on which conversation filter would work, e.g message content contains text help.
+    description: |
+      Array of conditions on which automation filter would work.
+      Appointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`
+      and active managed appointment custom field keys.
+      Deal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,
+      `title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,
+      `expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.
+      Task automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,
+      `priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,
+      plus active managed task custom field keys.
     items:
       type: object
+      properties:
+        attribute_key:
+          type: string
+          description: Condition attribute key. Supported keys depend on the selected event family and can include conversation, appointment, deal, or task fields.
+        filter_operator:
+          type: string
+          description: Filter operator. Supported operators depend on the selected field type.
+        query_operator:
+          type: string
+          description: Logical operator between conditions.
+        values:
+          type: array
+          items:
+            type: string
       example:
-        attribute_key: content
-        filter_operator: contains
+        attribute_key: status
+        filter_operator: equal_to
         query_operator: OR
         values:
-          - help
+          - confirmed

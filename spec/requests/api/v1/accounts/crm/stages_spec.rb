@@ -44,6 +44,26 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(pipeline.stages.find_by!(code: 'этап_продажи').name).to eq('Этап продажи')
   end
 
+  it 'creates a stage at the end of the pipeline when position is omitted' do
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    previous_last_position = pipeline.stages.maximum(:position)
+
+    post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
+         params: {
+           name: 'Final review',
+           color: '#14B8A6',
+           outcome: 'open'
+         },
+         headers: headers,
+         as: :json
+
+    created_stage = pipeline.stages.find_by!(code: 'final_review')
+
+    expect(response).to have_http_status(:created)
+    expect(created_stage.position).to eq(previous_last_position + 1)
+    expect(pipeline.reload.stages.ordered.last.id).to eq(created_stage.id)
+  end
+
   it 'updates a stage color' do
     stage = account.crm_stages.find_by!(code: 'proposal')
 

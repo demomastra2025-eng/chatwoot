@@ -46,6 +46,7 @@ RSpec.describe Account, type: :model do
       before do
         create_list(:captain_document, 3, account: account, assistant: assistant, status: :available)
         create(:installation_config, name: 'CAPTAIN_CLOUD_PLAN_LIMITS', value: captain_limits.to_json)
+        create(:installation_config, name: 'ACCOUNT_CAPTAIN_TOKENS_LIMIT', value: 100_000)
       end
 
       ## Document
@@ -99,7 +100,9 @@ RSpec.describe Account, type: :model do
         %w[startups business enterprise].each do |plan|
           account.custom_attributes = { 'plan_name': plan }
           account.save!
-          expect(account.captain_monthly_limit).to eq captain_limits[plan]
+          expect(account.captain_monthly_limit).to eq(
+            captain_limits[plan].merge(tokens: 100_000).with_indifferent_access
+          )
         end
       end
 
@@ -124,7 +127,7 @@ RSpec.describe Account, type: :model do
       it 'returns default values' do
         account.custom_attributes = { 'plan_name': 'unknown' }
         expect(account.captain_monthly_limit).to eq(
-          { documents: ChatwootApp.max_limit, responses: ChatwootApp.max_limit }.with_indifferent_access
+          { documents: ChatwootApp.max_limit, responses: ChatwootApp.max_limit, tokens: ChatwootApp.max_limit }.with_indifferent_access
         )
       end
     end
@@ -149,8 +152,11 @@ RSpec.describe Account, type: :model do
       end
 
       it 'creates audit logs when account is updated' do
-        account.update(name: 'New Name')
-        expect(Audited::Audit.where(auditable_type: 'Account', action: 'update').count).to eq 1
+        expect do
+          account.update(name: 'New Name')
+        end.to change {
+          Audited::Audit.where(auditable_type: 'Account', auditable_id: account.id, action: 'update').count
+        }.by(1)
       end
     end
 
@@ -161,6 +167,36 @@ RSpec.describe Account, type: :model do
     it 'returns max limits from account when enterprise version' do
       account.update(limits: { agents: 10 })
       expect(account.usage_limits[:agents]).to eq(10)
+    end
+
+    it 'builds a billing-friendly limits overview with summary payloads' do
+      create(:installation_config, name: 'ACCOUNT_INBOXES_LIMIT', value: 2)
+      create(:installation_config, name: 'ACCOUNT_CONVERSATIONS_LIMIT', value: 500)
+      create(:installation_config, name: 'ACCOUNT_NON_WEB_INBOXES_LIMIT', value: 1)
+      create(:conversation, account: account)
+      create(:channel_api, account: account)
+
+      limits_overview = account.billing_limits_overview
+      inboxes_count = account.inboxes.count
+
+      expect(limits_overview[:inboxes]).to include(
+        total_count: 2,
+        current_available: [2 - inboxes_count, 0].max,
+        consumed: inboxes_count,
+        unlimited: false
+      )
+      expect(limits_overview[:conversation]).to include(
+        total_count: 500,
+        current_available: 499,
+        consumed: 1,
+        unlimited: false
+      )
+      expect(limits_overview[:non_web_inboxes]).to include(
+        total_count: 1,
+        current_available: 0,
+        consumed: 1,
+        unlimited: false
+      )
     end
 
     it 'returns limits based on subscription' do
@@ -178,6 +214,13 @@ RSpec.describe Account, type: :model do
       InstallationConfig.where(name: 'ACCOUNT_AGENTS_LIMIT').update(value: '')
 
       expect(account.usage_limits[:agents]).to eq(ChatwootApp.max_limit)
+    end
+
+    it 'rejects negative limit overrides' do
+      account.limits = { 'agents' => -1 }
+
+      expect(account).not_to be_valid
+      expect(account.errors[:limits]).to include(': Invalid data')
     end
   end
 

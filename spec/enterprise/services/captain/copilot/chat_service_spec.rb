@@ -22,7 +22,12 @@ RSpec.describe Captain::Copilot::ChatService do
   # RubyLLM mocks
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:mock_response) do
-    instance_double(RubyLLM::Message, content: '{ "content": "Hey", "reasoning": "Test reasoning", "reply_suggestion": false }')
+    instance_double(
+      RubyLLM::Message,
+      content: '{ "content": "Hey", "reasoning": "Test reasoning", "reply_suggestion": false }',
+      input_tokens: 20,
+      output_tokens: 10
+    )
   end
 
   before do
@@ -63,6 +68,68 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(messages.second[:role]).to eq('system')
       expect(messages.second[:content]).to include(account.id.to_s)
     end
+
+    it 'filters copilot tools through assistant tool access' do
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['search_documentation']
+            }
+          }
+        }
+      )
+
+      service = described_class.new(assistant, config)
+      tool_classes = service.instance_variable_get(:@tools).map(&:class)
+
+      expect(tool_classes).to contain_exactly(Captain::Tools::SearchDocumentationService)
+    end
+
+    it 'instantiates selected custom assistant tools through the native copilot wrapper' do
+      custom_tool = create(:captain_custom_tool, account: account)
+
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => [custom_tool.slug]
+            }
+          }
+        }
+      )
+
+      service = described_class.new(assistant, config)
+      tools = service.instance_variable_get(:@tools)
+
+      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Copilot::CustomHttpTool)
+      expect(tools.first.name).to eq(custom_tool.slug)
+    end
+
+    it 'instantiates shared agent tools in the assistant runtime catalog' do
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      service = described_class.new(assistant, config)
+      tools = service.instance_variable_get(:@tools)
+
+      expect(tools.map(&:class)).to contain_exactly(Captain::Tools::Copilot::FaqLookupService)
+      expect(tools.first.name).to eq('faq_lookup')
+      expect(tools.first.instance_variable_get(:@conversation)).to eq(conversation)
+    end
   end
 
   describe '#generate_response' do
@@ -87,13 +154,43 @@ RSpec.describe Captain::Copilot::ChatService do
     it 'returns the response from request_chat_completion' do
       result = service.generate_response('Hello')
 
-      expect(result).to eq({ 'content' => 'Hey', 'reasoning' => 'Test reasoning', 'reply_suggestion' => false })
+      expect(result).to eq(
+        {
+          'content' => 'Hey',
+          'reasoning' => 'Test reasoning',
+          'reply_suggestion' => false,
+          'usage' => {
+            'prompt_tokens' => 20,
+            'completion_tokens' => 10,
+            'total_tokens' => 30
+          }
+        }
+      )
     end
 
     it 'increments response usage for the account' do
       expect do
         service.generate_response('Hello')
       end.to(change { account.reload.custom_attributes['captain_responses_usage'].to_i }.by(1))
+    end
+
+    it 'increments token usage for the account' do
+      expect do
+        service.generate_response('Hello')
+      end.to(change { account.reload.custom_attributes['captain_tokens_usage'].to_i }.by(30))
+    end
+
+    it 'persists assistant messages without transient usage metadata' do
+      service.generate_response('Hello')
+
+      persisted_message = copilot_thread.reload.copilot_messages.assistant.last.message
+
+      expect(persisted_message).to include(
+        'content' => 'Hey',
+        'reasoning' => 'Test reasoning',
+        'reply_suggestion' => false
+      )
+      expect(persisted_message).not_to have_key('usage')
     end
   end
 

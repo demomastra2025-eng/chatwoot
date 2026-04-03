@@ -1,0 +1,32 @@
+class Captain::Tools::Copilot::UpdatePriorityService < Captain::Tools::Copilot::BaseAccountTool
+  def self.name
+    'update_priority'
+  end
+
+  description 'Update the priority of the current conversation'
+  param :priority, type: :string, desc: 'Priority value: low, medium, high, urgent, or none', required: true
+
+  def execute(priority:)
+    conversation = conversation_operations.update_priority(priority: priority)
+    "Updated conversation ##{conversation.display_id} priority to #{conversation.priority || 'none'}"
+  rescue StandardError => e
+    e.message
+  end
+
+  def active?
+    current_conversation.present? &&
+      (user_has_permission('conversation_manage') ||
+       user_has_permission('conversation_unassigned_manage') ||
+       user_has_permission('conversation_participating_manage'))
+  end
+
+  private
+
+  def conversation_operations
+    Captain::Tools::Operations::ConversationOperations.new(
+      assistant: assistant,
+      conversation: current_conversation,
+      actor: @user
+    )
+  end
+end

@@ -59,6 +59,8 @@
 class Crm::Deal < ApplicationRecord
   self.table_name = 'crm_deals'
 
+  include LlmFormattable
+
   belongs_to :account, class_name: '::Account'
   belongs_to :pipeline, class_name: '::Crm::Pipeline'
   belongs_to :stage, class_name: '::Crm::Stage'
@@ -103,6 +105,51 @@ class Crm::Deal < ApplicationRecord
 
   def closed?
     closed_at.present?
+  end
+
+  def automation_webhook_data
+    payload = {
+      account: account.webhook_data,
+      deal: {
+        id: id,
+        title: title,
+        description: description,
+        amount_minor: amount_minor,
+        currency: currency,
+        expected_close_on: expected_close_on,
+        win_probability: win_probability,
+        closed_at: closed_at,
+        external_ref: external_ref,
+        pipeline_id: pipeline_id,
+        stage_id: stage_id,
+        owner_id: owner_id,
+        creator_id: creator_id,
+        team_id: team_id,
+        company_id: company_id,
+        originating_conversation_id: originating_conversation_id,
+        primary_contact_id: primary_contact_id,
+        archived_at: archived_at,
+        custom_attributes: custom_attributes
+      },
+      pipeline: {
+        id: pipeline.id,
+        name: pipeline.name
+      },
+      stage: {
+        id: stage.id,
+        name: stage.name,
+        outcome: stage.outcome
+      }
+    }
+
+    payload[:owner] = owner.webhook_data if owner.present?
+    payload[:creator] = creator.webhook_data if creator.present?
+    payload[:team] = { id: team.id, name: team.name } if team.present?
+    payload[:company] = { id: company.id, name: company.name, domain: company.domain } if company.present?
+    payload[:conversation] = originating_conversation.webhook_data if originating_conversation.present?
+    payload[:contacts] = contacts.map(&:webhook_data) if contacts.exists?
+
+    payload
   end
 
   private

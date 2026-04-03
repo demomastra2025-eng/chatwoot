@@ -259,6 +259,26 @@ RSpec.describe 'Companies API', type: :request do
         expect(response_body['payload']['domain']).to eq('newcompany.com')
       end
 
+      it 'creates multiple companies without domain' do
+        post "/api/v1/accounts/#{account.id}/companies",
+             params: { company: { name: 'Company Without Domain 1', domain: '' } },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'domain')).to be_nil
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/companies",
+               params: { company: { name: 'Company Without Domain 2', domain: '' } },
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Company, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'domain')).to be_nil
+      end
+
       it 'returns error for invalid params' do
         invalid_params = { company: { name: '' } }
 
@@ -302,6 +322,19 @@ RSpec.describe 'Companies API', type: :request do
         expect(response_body['payload']['name']).to eq('Updated Company Name')
         expect(response_body['payload']['domain']).to eq('updated.com')
       end
+
+      it 'normalizes blank domain to nil on update' do
+        company.update!(domain: 'existing.com')
+
+        patch "/api/v1/accounts/#{account.id}/companies/#{company.id}",
+              params: { company: { domain: '   ' } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'domain')).to be_nil
+        expect(company.reload.domain).to be_nil
+      end
     end
   end
 
@@ -326,6 +359,19 @@ RSpec.describe 'Companies API', type: :request do
                  as: :json
         end.to change(Company, :count).by(-1)
         expect(response).to have_http_status(:ok)
+      end
+
+      it 'deletes a company that is referenced by crm deals' do
+        deal = create(:crm_deal, account: account, company: company)
+
+        expect do
+          delete "/api/v1/accounts/#{account.id}/companies/#{company.id}",
+                 headers: admin.create_new_auth_token,
+                 as: :json
+        end.to change(Company, :count).by(-1)
+
+        expect(response).to have_http_status(:ok)
+        expect(deal.reload.company_id).to be_nil
       end
     end
 

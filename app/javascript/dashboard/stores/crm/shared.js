@@ -1,8 +1,15 @@
 import camelcaseKeys from 'camelcase-keys';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
+import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
-export const normalizePayload = data =>
-  camelcaseKeys(data?.payload || [], { deep: true });
+const normalizeRecord = payload => {
+  return preserveCustomAttributeKeys(
+    payload,
+    camelcaseKeys(payload, { deep: true })
+  );
+};
+
+export const normalizePayload = data => normalizeRecord(data?.payload || []);
 
 export const normalizeMeta = data =>
   camelcaseKeys(data?.meta || {}, { deep: true });
@@ -26,14 +33,35 @@ const resolveCrmErrorPayload = error => {
   return extractCrmError(error);
 };
 
+const resolveMissingFieldLabels = payload => {
+  return (payload.details?.missingFields || [])
+    .map(field => field?.label)
+    .filter(Boolean)
+    .join(', ');
+};
+
+const translateOrFallback = (t, key, fallback, params = {}) => {
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  const translated = t(key, params);
+  return translated === key ? fallback : translated;
+};
+
 export const formatCrmErrorMessage = (error, t) => {
   const payload = resolveCrmErrorPayload(error);
+  const missingFields = resolveMissingFieldLabels(payload);
 
   switch (payload.code) {
     case 'DUPLICATE_EXTERNAL_REF':
       return t('CRM.ERRORS.DUPLICATE_EXTERNAL_REF');
     case 'DUPLICATE_IDEMPOTENCY_KEY':
       return t('CRM.ERRORS.DUPLICATE_IDEMPOTENCY_KEY');
+    case 'DEAL_STAGE_REQUIRES_FIELDS':
+      return translateOrFallback(
+        t,
+        'CRM.ERRORS.DEAL_STAGE_REQUIRES_FIELDS',
+        payload.message,
+        { fields: missingFields }
+      );
     case 'FEATURE_DISABLED':
       return t('CRM.ERRORS.FEATURE_DISABLED');
     case 'NOT_FOUND':
@@ -46,6 +74,13 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.STAGE_HAS_DEALS');
     case 'TASK_STATUS_HAS_TASKS':
       return t('CRM.ERRORS.TASK_STATUS_HAS_TASKS');
+    case 'TASK_STATUS_REQUIRES_FIELDS':
+      return translateOrFallback(
+        t,
+        'CRM.ERRORS.TASK_STATUS_REQUIRES_FIELDS',
+        payload.message,
+        { fields: missingFields }
+      );
     case 'STALE_RECORD':
       return t('CRM.ERRORS.STALE_RECORD');
     case 'VALIDATION_ERROR':
@@ -76,7 +111,7 @@ export const removeRecord = (records, recordId) =>
   records.filter(item => item.id !== Number(recordId));
 
 export const upsertRecord = (records, record) => {
-  const normalizedRecord = camelcaseKeys(record, { deep: true });
+  const normalizedRecord = normalizeRecord(record);
   const existingIndex = records.findIndex(
     item => item.id === normalizedRecord.id
   );

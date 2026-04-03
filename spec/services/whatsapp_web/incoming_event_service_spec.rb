@@ -457,6 +457,70 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       end
     end
 
+    it 're-requests a full sync when a newer provider history snapshot arrives after an earlier full baseline' do
+      contact = create(:contact, account: channel.account, phone_number: '+15551234567')
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '15551234567')
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+      create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        sender: contact,
+        message_type: :incoming,
+        source_id: 'history-msg-baseline',
+        content_attributes: { imported_history: true }
+      )
+
+      older_snapshot = 20.minutes.ago.change(usec: 0)
+      channel.update!(
+        sync_state: channel.sync_state_payload.merge(
+          'history_synced_at' => older_snapshot.iso8601,
+          'last_local_history_sync_finished_at' => older_snapshot.iso8601,
+          'last_history_sync_mode' => 'full',
+          'last_history_message_count' => 1,
+          'last_history_contact_count' => 1,
+          'provider_history_synced_at' => older_snapshot.iso8601,
+          'local_history_provider_synced_at' => older_snapshot.iso8601,
+          'provider_history_message_count' => 62,
+          'provider_history_contact_count' => 41
+        )
+      )
+
+      freeze_time do
+        expect do
+          described_class.new(
+            channel: channel,
+            payload: {
+              event: 'messaging-history.set',
+              data: {
+                messageCount: 2657,
+                contactCount: 50
+              }
+            }.with_indifferent_access
+          ).perform
+        end.to have_enqueued_job(Channels::WhatsappWeb::HistorySyncJob).with(
+          channel.id,
+          'full',
+          hash_including(
+            'requested_at' => Time.current.iso8601,
+            'expected_provider_history_synced_at' => Time.current.iso8601
+          )
+        )
+
+        channel.reload
+        expect(channel.provider_history_synced_at).to be_within(1.second).of(Time.current)
+        expect(channel.local_history_provider_synced_at).to be_within(1.second).of(older_snapshot)
+        expect(channel.preferred_history_sync_mode).to eq('full')
+      end
+    end
+
     it 'does not enqueue a duplicate reconnect sync while a provider-snapshot catchup is already pending' do
       channel.update!(
         sync_state: channel.sync_state_payload.merge(

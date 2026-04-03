@@ -95,23 +95,27 @@ const handleSystemMessagesUpdate = async () => {
   if (!result) return;
 
   const payload = {
-    config: {
-      ...props.assistant.config,
-      handoff_message: state.handoffMessage,
-      resolution_message: state.resolutionMessage,
-      temperature: state.temperature || 1,
-      auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
-      message_collapse_window_seconds: normalizeNonNegativeInteger(
-        state.messageCollapseWindowSeconds
-      ),
-      history_message_limit: normalizeNonNegativeInteger(
-        state.historyMessageLimit
-      ),
+    assistant: {
+      config: {
+        ...props.assistant.config,
+        handoff_message: state.handoffMessage,
+        resolution_message: state.resolutionMessage,
+        temperature: state.temperature || 1,
+        auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
+        message_collapse_window_seconds: normalizeNonNegativeInteger(
+          state.messageCollapseWindowSeconds
+        ),
+        history_message_limit: normalizeNonNegativeInteger(
+          state.historyMessageLimit
+        ),
+      },
     },
+    avatar: null,
+    removeAvatar: false,
   };
 
   if (!isCaptainV2Enabled.value) {
-    payload.config.instructions = state.instructions;
+    payload.assistant.config.instructions = state.instructions;
   }
 
   emit('submit', payload);

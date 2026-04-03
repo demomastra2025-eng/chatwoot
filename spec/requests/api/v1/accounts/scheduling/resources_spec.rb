@@ -77,4 +77,38 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
   end
+
+  it 'rejects deleting a specialist with active appointments' do
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'confirmed'
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_HAS_APPOINTMENTS')
+  end
+
+  it 'archives a specialist when only cancelled appointments remain' do
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'cancelled',
+      payment_status: 'cancelled'
+    )
+
+    delete "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+           headers: headers,
+           as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(resource.reload.active).to be(false)
+    expect(resource.deleted_from_scheduling?).to be(true)
+  end
 end

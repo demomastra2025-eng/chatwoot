@@ -38,7 +38,7 @@ class Captain::Assistant < ApplicationRecord
 
   store_accessor :config, :temperature, :feature_faq, :feature_memory, :product_name,
                  :message_collapse_window_seconds, :history_message_limit,
-                 :auto_reply_on_last_incoming, :context_access
+                 :auto_reply_on_last_incoming, :context_access, :tool_access
   store_accessor :config, :feature_contact_attributes
 
   before_validation :initialize_context_access_config, on: :create
@@ -62,7 +62,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def available_agent_tools
-    tools = self.class.built_in_agent_tools.dup
+    tools = self.class.built_in_agent_tools.map(&:dup)
 
     custom_tools = account.captain_custom_tools.enabled.map(&:to_tool_metadata)
     tools.concat(custom_tools)
@@ -72,6 +72,14 @@ class Captain::Assistant < ApplicationRecord
 
   def available_tool_ids
     available_agent_tools.pluck(:id)
+  end
+
+  def available_assistant_tools
+    Captain::Copilot::ToolCatalog.tools_for(self)
+  end
+
+  def available_assistant_tool_ids
+    available_assistant_tools.pluck(:id)
   end
 
   def available_context_fields
@@ -88,6 +96,38 @@ class Captain::Assistant < ApplicationRecord
 
   def normalized_context_access
     Captain::ContextFields.normalized_access_for(self, available_context_fields)
+  end
+
+  def normalized_tool_access
+    Captain::ToolAccess.normalized_access_for(self)
+  end
+
+  def allowed_agent_tool_ids
+    Captain::ToolAccess.allowed_tool_ids_for(
+      self,
+      Captain::ToolAccess::SCOPE_AGENT,
+      fallback_ids: available_tool_ids
+    )
+  end
+
+  def direct_agent_tool_ids
+    Captain::ToolAccess.allowed_tool_ids_for(
+      self,
+      Captain::ToolAccess::SCOPE_AGENT,
+      fallback_ids: Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
+    )
+  end
+
+  def allowed_agent_tools
+    available_agent_tools.select { |tool| allowed_agent_tool_ids.include?(tool[:id]) }
+  end
+
+  def allowed_assistant_tool_ids
+    Captain::ToolAccess.allowed_tool_ids_for(
+      self,
+      Captain::ToolAccess::SCOPE_ASSISTANT,
+      fallback_ids: available_assistant_tool_ids
+    )
   end
 
   def prompt_context_state(runtime_state = {})
@@ -109,7 +149,7 @@ class Captain::Assistant < ApplicationRecord
     {
       id: id,
       name: name,
-      avatar_url: avatar_url.presence || default_avatar_url,
+      avatar_url: avatar_url,
       description: description,
       created_at: created_at,
       type: 'captain_assistant'
@@ -120,7 +160,7 @@ class Captain::Assistant < ApplicationRecord
     {
       id: id,
       name: name,
-      avatar_url: avatar_url.presence || default_avatar_url,
+      avatar_url: avatar_url,
       description: description,
       created_at: created_at,
       type: 'captain_assistant'
@@ -146,10 +186,16 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def agent_tools
-    [
-      self.class.resolve_tool_class('faq_lookup').new(self),
-      self.class.resolve_tool_class('handoff').new(self)
-    ]
+    available_agent_tools.filter_map do |tool_metadata|
+      next unless direct_agent_tool_ids.include?(tool_metadata[:id])
+      next unless Captain::ToolPolicy.runtime_allowed?(
+        tool_metadata,
+        assistant: self,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      resolve_agent_tool_instance(tool_metadata)
+    end
   end
 
   def prompt_context
@@ -187,14 +233,20 @@ class Captain::Assistant < ApplicationRecord
   def runtime_state_for(conversation)
     return {} unless conversation
 
-    {
+    runtime_state = {
       conversation: conversation.attributes.symbolize_keys.slice(*Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
       contact: conversation.contact&.attributes&.symbolize_keys&.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES)
     }.compact
-  end
 
-  def default_avatar_url
-    "#{ENV.fetch('FRONTEND_URL', nil)}/assets/images/dashboard/captain/logo.svg"
+    deal_state = Captain::ContextFields.deal_state_for(account: account, conversation: conversation)
+    runtime_state[:deal] = deal_state if deal_state.present?
+
+    task_state = Captain::ContextFields.task_state_for(account: account, conversation: conversation)
+    runtime_state[:task] = task_state if task_state.present?
+
+    appointment_state = Captain::ContextFields.appointment_state_for(account: account, conversation: conversation)
+    runtime_state[:appointment] = appointment_state if appointment_state.present?
+    runtime_state
   end
 
   def config_integer_value(key)
@@ -205,5 +257,13 @@ class Captain::Assistant < ApplicationRecord
   def initialize_context_access_config
     self.config = (config || {}).deep_stringify_keys
     config['context_access'] ||= {}
+  end
+
+  def resolve_agent_tool_instance(tool_metadata)
+    if tool_metadata[:custom]
+      account.captain_custom_tools.enabled.find_by(slug: tool_metadata[:id])&.tool(self)
+    else
+      self.class.resolve_tool_class(tool_metadata[:id])&.new(self)
+    end
   end
 end

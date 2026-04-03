@@ -1,4 +1,4 @@
 interface:
-  display_name: "Onelink Deployment"
-  short_description: "Deployment and runtime ops for Onelink"
-  default_prompt: "Use $onelink-deployment to work on Docker, runtime configuration, self-hosted docs, or deployment operations for Onelink."
+  display_name: "One Link Deployment"
+  short_description: "Cloud runtime ops for One Link"
+  default_prompt: "Use $onelink-deployment to work on Docker, runtime configuration, deployment assets, or internal operator guidance for One Link."

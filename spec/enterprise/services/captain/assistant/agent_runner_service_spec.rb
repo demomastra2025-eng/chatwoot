@@ -431,6 +431,119 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
     end
 
+    context 'when the conversation has linked CRM and scheduling records' do
+      let!(:deal_field_definition) do
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'deal',
+          key: 'sales_region',
+          label: 'Sales Region'
+        )
+      end
+      let!(:task_field_definition) do
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'task',
+          key: 'follow_up_channel',
+          label: 'Follow Up Channel'
+        )
+      end
+      let!(:appointment_field_definition) do
+        create(
+          :crm_field_definition,
+          account: account,
+          entity_kind: 'appointment',
+          key: 'visit_room',
+          label: 'Visit Room'
+        )
+      end
+      let!(:deal) do
+        create(
+          :crm_deal,
+          account: account,
+          originating_conversation: conversation,
+          custom_attributes: { 'sales_region' => 'EMEA' }
+        )
+      end
+      let!(:task) do
+        create(
+          :crm_task,
+          account: account,
+          originating_conversation: conversation,
+          custom_attributes: { 'follow_up_channel' => 'phone' }
+        )
+      end
+      let!(:appointment) do
+        create(
+          :scheduling_appointment,
+          account: account,
+          contact: contact,
+          conversation: conversation,
+          resource: create(:scheduling_resource, account: account),
+          custom_attributes: { 'visit_room' => 'B12' }
+        )
+      end
+
+      before do
+        account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
+        assistant.update!(
+          config: {
+            'context_access' => {
+              'deal' => {
+                'enabled' => true,
+                'field_ids' => ['deal.stage_name', 'deal.custom_attributes.sales_region']
+              },
+              'task' => {
+                'enabled' => true,
+                'field_ids' => ['task.status_name', 'task.custom_attributes.follow_up_channel']
+              },
+              'appointment' => {
+                'enabled' => true,
+                'field_ids' => ['appointment.status', 'appointment.custom_attributes.visit_room']
+              }
+            }
+          }
+        )
+      end
+
+      it 'includes appointment state and prompt context' do
+        state = service.send(:build_state)
+
+        expect(state[:deal]).to include(
+          id: deal.id,
+          originating_conversation_id: conversation.id,
+          stage_name: deal.stage.name
+        )
+        expect(state.dig(:prompt_context, :deal)).to eq(
+          'stage_name' => deal.stage.name,
+          custom_attributes: { 'sales_region' => 'EMEA' }
+        )
+        expect(state.dig(:prompt_context, :visible_fields, :deal)).to eq(['stage_name'])
+        expect(state[:task]).to include(
+          id: task.id,
+          originating_conversation_id: conversation.id,
+          status_name: task.status.name
+        )
+        expect(state.dig(:prompt_context, :task)).to eq(
+          'status_name' => task.status.name,
+          custom_attributes: { 'follow_up_channel' => 'phone' }
+        )
+        expect(state.dig(:prompt_context, :visible_fields, :task)).to eq(['status_name'])
+        expect(state[:appointment]).to include(
+          id: appointment.id,
+          conversation_id: conversation.id,
+          status: appointment.status
+        )
+        expect(state.dig(:prompt_context, :appointment)).to eq(
+          'status' => appointment.status,
+          custom_attributes: { 'visit_room' => 'B12' }
+        )
+        expect(state.dig(:prompt_context, :visible_fields, :appointment)).to eq(['status'])
+      end
+    end
+
     context 'when conversation is nil' do
       subject(:service) { described_class.new(assistant: assistant, conversation: nil) }
 
@@ -505,13 +618,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   describe 'constants' do
     it 'defines conversation state attributes' do
-      expect(described_class::CONVERSATION_STATE_ATTRIBUTES).to include(
+      expect(Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES).to include(
         :id, :display_id, :inbox_id, :contact_id, :status, :priority
       )
     end
 
     it 'defines contact state attributes' do
-      expect(described_class::CONTACT_STATE_ATTRIBUTES).to include(
+      expect(Captain::ContextFields::CONTACT_STATE_ATTRIBUTES).to include(
         :id, :name, :email, :phone_number, :identifier, :contact_type
       )
     end

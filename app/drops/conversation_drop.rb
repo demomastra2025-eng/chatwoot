@@ -24,6 +24,10 @@ class ConversationDrop < BaseDrop
     custom_attributes.transform_keys(&:to_s)
   end
 
+  def custom_attributes
+    custom_attribute
+  end
+
   private
 
   def message_sender_name(sender)

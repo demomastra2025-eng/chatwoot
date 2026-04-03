@@ -226,6 +226,10 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
     context 'when user end conversation from widget' do
       it 'resolves the conversation' do
         expect(conversation.open?).to be true
+        expected_content = I18n.t(
+          'conversations.activity.status.contact_resolved',
+          contact_name: contact.name.capitalize
+        )
 
         get '/api/v1/widget/conversations/toggle_status',
             headers: { 'X-Auth-Token' => token },
@@ -240,7 +244,7 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
             account_id: conversation.account_id,
             inbox_id: conversation.inbox_id,
             message_type: :activity,
-            content: "Conversation was resolved by #{contact.name}"
+            content: expected_content
           }
         )
       end
@@ -299,11 +303,59 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
         # conversation custom attributes should have "product_name" key with value "Chatwoot"
         expect(conversation.custom_attributes).to include('product_name' => 'Chatwoot')
       end
+
+      it 'merges incoming values with existing custom attributes' do
+        conversation.update!(custom_attributes: { 'existing_key' => 'existing value' })
+
+        post '/api/v1/widget/conversations/set_custom_attributes',
+             headers: { 'X-Auth-Token' => token },
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq(
+          {
+            'existing_key' => 'existing value',
+            'product_name' => 'Chatwoot'
+          }
+        )
+      end
+
+      it 'initializes custom attributes when persisted value is nil' do
+        conversation.update_columns(custom_attributes: nil)
+
+        post '/api/v1/widget/conversations/set_custom_attributes',
+             headers: { 'X-Auth-Token' => token },
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq(
+          {
+            'product_name' => 'Chatwoot'
+          }
+        )
+      end
+
+      it 'clears all custom attributes when an explicit empty object is provided' do
+        conversation.update!(custom_attributes: { 'existing_key' => 'existing value' })
+
+        post '/api/v1/widget/conversations/set_custom_attributes',
+             headers: { 'X-Auth-Token' => token },
+             params: {
+               website_token: web_widget.website_token,
+               custom_attributes: {}
+             },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq({})
+      end
     end
   end
 
   describe 'POST /api/v1/widget/conversations/destroy_custom_attributes' do
-    let(:params) { { website_token: web_widget.website_token, custom_attribute: ['product_name'] } }
+    let(:params) { { website_token: web_widget.website_token, custom_attributes: ['product_name'] } }
 
     context 'with invalid website token' do
       it 'returns unauthorized' do
@@ -315,7 +367,7 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
     context 'with correct website token' do
       it 'sets the values when provided' do
         # ensure conversation has the attribute
-        conversation.custom_attributes = { 'product_name': 'Chatwoot' }
+        conversation.custom_attributes = { 'product_name': 'Chatwoot', 'existing_key': 'existing value' }
         conversation.save!
         expect(conversation.custom_attributes).to include('product_name' => 'Chatwoot')
 
@@ -328,6 +380,38 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
         conversation.reload
         # conversation custom attributes should not have "product_name" key with value "Chatwoot"
         expect(conversation.custom_attributes).not_to include('product_name' => 'Chatwoot')
+        expect(conversation.custom_attributes).to include('existing_key' => 'existing value')
+      end
+
+      it 'treats nil custom attributes as an empty hash during deletion' do
+        conversation.update_columns(custom_attributes: nil)
+
+        post '/api/v1/widget/conversations/destroy_custom_attributes',
+             headers: { 'X-Auth-Token' => token },
+             params: params,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq({})
+      end
+
+      it 'keeps compatibility with the legacy custom_attribute param' do
+        conversation.update!(custom_attributes: { 'product_name' => 'Chatwoot', 'existing_key' => 'existing value' })
+
+        post '/api/v1/widget/conversations/destroy_custom_attributes',
+             headers: { 'X-Auth-Token' => token },
+             params: {
+               website_token: web_widget.website_token,
+               custom_attribute: ['product_name']
+             },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.custom_attributes).to eq(
+          {
+            'existing_key' => 'existing value'
+          }
+        )
       end
     end
   end
