@@ -23,6 +23,7 @@ import GreetingsEditor from 'shared/components/GreetingsEditor.vue';
 import ConfigurationPage from './settingsPage/ConfigurationPage.vue';
 import CustomerSatisfactionPage from './settingsPage/CustomerSatisfactionPage.vue';
 import CollaboratorsPage from './settingsPage/CollaboratorsPage.vue';
+import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
 import BotConfiguration from './components/BotConfiguration.vue';
 import AccountHealth from './components/AccountHealth.vue';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
@@ -50,6 +51,7 @@ export default {
     CustomerSatisfactionPage,
     FacebookReauthorize,
     GreetingsEditor,
+    WhatsAppTemplatesPage,
     PreChatFormSettings,
     SettingIntroBanner,
     SettingsToggleSection,
@@ -255,6 +257,10 @@ export default {
       if (this.shouldShowWhatsAppConfiguration) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,
+          {
+            key: 'whatsapp-templates',
+            name: this.$t('INBOX_MGMT.TABS.WHATSAPP_TEMPLATES'),
+          },
           {
             key: 'whatsapp-health',
             name: this.$t('INBOX_MGMT.TABS.ACCOUNT_HEALTH'),
@@ -1836,6 +1842,9 @@ export default {
             :is-registering-webhook="isRegisteringWebhook"
             @register-webhook="registerWebhook"
           />
+        </div>
+        <div v-if="selectedTabKey === 'whatsapp-templates'">
+          <WhatsAppTemplatesPage :inbox="inbox" />
         </div>
       </div>
     </section>

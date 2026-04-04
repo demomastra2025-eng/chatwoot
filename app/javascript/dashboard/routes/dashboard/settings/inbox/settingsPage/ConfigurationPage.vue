@@ -499,16 +499,6 @@ export default {
           </div>
         </SettingsFieldSection>
       </template>
-      <SettingsFieldSection
-        :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_TITLE')"
-        :help-text="
-          $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUBHEADER')
-        "
-      >
-        <NextButton :disabled="isSyncingTemplates" @click="syncTemplates">
-          {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON') }}
-        </NextButton>
-      </SettingsFieldSection>
     </div>
     <WhatsappReauthorize
       v-if="isEmbeddedSignupWhatsApp"

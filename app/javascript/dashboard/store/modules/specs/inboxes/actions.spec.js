@@ -256,6 +256,47 @@ describe('#actions', () => {
     });
   });
 
+  describe('#createWhatsAppTemplate', () => {
+    it('updates the inbox when create succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.createWhatsAppTemplate(
+        { commit },
+        { inboxId: 123, template: { name: 'order_update' } }
+      );
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_templates',
+        { template: { name: 'order_update' } }
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#deleteWhatsAppTemplate', () => {
+    it('updates the inbox when delete succeeds', async () => {
+      axios.delete.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.deleteWhatsAppTemplate(
+        { commit },
+        { inboxId: 123, templateName: 'order_update' }
+      );
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.delete).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_templates/order_update'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
   describe('#refreshWhatsappWebQr', () => {
     it('updates the inbox when the qr refresh succeeds', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });

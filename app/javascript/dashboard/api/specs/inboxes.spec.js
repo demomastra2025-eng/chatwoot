@@ -13,6 +13,8 @@ describe('#InboxesAPI', () => {
     expect(inboxesAPI).toHaveProperty('getAgentBot');
     expect(inboxesAPI).toHaveProperty('setAgentBot');
     expect(inboxesAPI).toHaveProperty('syncTemplates');
+    expect(inboxesAPI).toHaveProperty('createWhatsAppTemplate');
+    expect(inboxesAPI).toHaveProperty('deleteWhatsAppTemplate');
   });
 
   describe('API calls', () => {
@@ -46,6 +48,22 @@ describe('#InboxesAPI', () => {
       inboxesAPI.syncTemplates(2);
       expect(axiosMock.post).toHaveBeenCalledWith(
         '/api/v1/inboxes/2/sync_templates'
+      );
+    });
+
+    it('#createWhatsAppTemplate', () => {
+      const template = { name: 'order_update' };
+      inboxesAPI.createWhatsAppTemplate(2, template);
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/2/whatsapp_templates',
+        { template }
+      );
+    });
+
+    it('#deleteWhatsAppTemplate', () => {
+      inboxesAPI.deleteWhatsAppTemplate(2, 'order_update');
+      expect(axiosMock.delete).toHaveBeenCalledWith(
+        '/api/v1/inboxes/2/whatsapp_templates/order_update'
       );
     });
   });

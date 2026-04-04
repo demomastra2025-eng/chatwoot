@@ -446,6 +446,30 @@ export const actions = {
     const response = await InboxesAPI.createCSATTemplate(inboxId, template);
     return response.data;
   },
+  createWhatsAppTemplate: async ({ commit }, { inboxId, template }) => {
+    try {
+      const response = await InboxesAPI.createWhatsAppTemplate(
+        inboxId,
+        template
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  deleteWhatsAppTemplate: async ({ commit }, { inboxId, templateName }) => {
+    try {
+      const response = await InboxesAPI.deleteWhatsAppTemplate(
+        inboxId,
+        templateName
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
   getCSATTemplateStatus: async (_, { inboxId }) => {
     const response = await InboxesAPI.getCSATTemplateStatus(inboxId);
     return response.data;

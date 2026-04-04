@@ -42,6 +42,98 @@
       "MEDIA_URL_LABEL": "Enter {type} URL",
       "DOCUMENT_NAME_PLACEHOLDER": "Enter document filename (e.g., Invoice_2025.pdf)",
       "BUTTON_PARAMETER": "Enter button parameter"
+    },
+    "MANAGEMENT": {
+      "PAGE_TITLE": "WhatsApp template library",
+      "PAGE_DESCRIPTION": "Create and manage WhatsApp Cloud templates for this channel. New templates are submitted to Meta for review and appear here as soon as the local cache updates.",
+      "SUPPORTED_TITLE": "Supported template builder",
+      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, and URL buttons.",
+      "LAST_SYNC": "Last sync: {timestamp}",
+      "NOT_SYNCED_YET": "Not synced yet",
+      "SEARCH_PLACEHOLDER": "Search templates by name, status, language, or text",
+      "EMPTY_TITLE": "No templates yet",
+      "EMPTY_DESCRIPTION": "Create your first template or sync from WhatsApp to load the existing library.",
+      "NO_RESULTS_TITLE": "No templates match this search",
+      "NO_RESULTS_DESCRIPTION": "Try a different name, status, or text fragment.",
+      "CREATE_TITLE": "Create WhatsApp template",
+      "CREATE_DESCRIPTION": "Build a supported WhatsApp Cloud template and send it to Meta for review.",
+      "CREATE_ACTION": "Create template",
+      "CREATE_SUCCESS": "Template submitted to Meta for review.",
+      "DELETE_TITLE": "Delete template",
+      "DELETE_DESCRIPTION": "Delete template \"{templateName}\" from WhatsApp Cloud? This removes every language version that uses the same template name.",
+      "DELETE_ACTION": "Delete template",
+      "DELETE_SUCCESS": "Template deleted successfully.",
+      "CSAT_BADGE": "Managed by CSAT",
+      "LANGUAGES": "Languages: {languages}",
+      "REJECTION_REASON": "Rejection reason for {language}",
+      "BODY_SECTION": "Body content",
+      "VARIABLE_HINT": "Use sequential variables like {{1}}, {{2}} when you need dynamic values.",
+      "BUTTONS_SECTION": "Buttons",
+      "BUTTONS_HINT": "You can add up to {count} supported buttons.",
+      "ADD_BUTTON": "Add button",
+      "NO_BUTTONS": "Buttons are optional. Leave this empty for a simple text template.",
+      "BUTTON_TITLE": "Button {index}",
+      "CATEGORY_OPTIONS": {
+        "UTILITY": "Utility",
+        "MARKETING": "Marketing"
+      },
+      "HEADER_OPTIONS": {
+        "NONE": "No header",
+        "TEXT": "Text header",
+        "IMAGE": "Image header",
+        "VIDEO": "Video header",
+        "DOCUMENT": "Document header"
+      },
+      "BUTTON_OPTIONS": {
+        "QUICK_REPLY": "Quick reply",
+        "URL": "URL button"
+      },
+      "FIELDS": {
+        "LANGUAGE": "Language",
+        "CATEGORY": "Category",
+        "HEADER_TYPE": "Header type",
+        "HEADER_TEXT": "Header text",
+        "HEADER_PLACEHOLDER": "Your order {{1}} is on the way",
+        "HEADER_EXAMPLE": "Header example for {variable}",
+        "HEADER_EXAMPLE_PLACEHOLDER": "Example value for {variable}",
+        "NAME": {
+          "LABEL": "Template name",
+          "PLACEHOLDER": "order_update"
+        },
+        "BODY_TEXT": "Body text",
+        "BODY_PLACEHOLDER": "Hello {{1}}, your order is now {{2}}.",
+        "BODY_EXAMPLE": "Body example for {variable}",
+        "BODY_EXAMPLE_PLACEHOLDER": "Example value for {variable}",
+        "MEDIA_URL": "Sample media URL",
+        "MEDIA_URL_PLACEHOLDER": "https://example.com/sample.pdf",
+        "FOOTER_TEXT": "Footer text",
+        "FOOTER_PLACEHOLDER": "Reply STOP to unsubscribe",
+        "BUTTON_TYPE": "Button type",
+        "BUTTON_TEXT": "Button text",
+        "BUTTON_TEXT_PLACEHOLDER": "Track order",
+        "BUTTON_URL": "Button URL",
+        "BUTTON_URL_PLACEHOLDER": "https://example.com/orders/{{1}}",
+        "BUTTON_EXAMPLE": "Sample URL suffix",
+        "BUTTON_EXAMPLE_PLACEHOLDER": "12345"
+      },
+      "ERRORS": {
+        "NAME_REQUIRED": "Template name is required.",
+        "NAME_FORMAT": "Template name can only use lowercase letters, numbers, and underscores.",
+        "BODY_REQUIRED": "Body text is required.",
+        "BODY_VARIABLE_POSITION": "Body text cannot start or end with a variable.",
+        "BODY_EXAMPLE_REQUIRED": "Body example for {variable} is required.",
+        "HEADER_TEXT_REQUIRED": "Header text is required.",
+        "HEADER_VARIABLE_POSITION": "Header text cannot start or end with a variable.",
+        "HEADER_EXAMPLE_REQUIRED": "Header example for {variable} is required.",
+        "MEDIA_URL_REQUIRED": "Sample media URL is required for media headers.",
+        "BUTTON_LIMIT": "You can add up to {count} buttons.",
+        "BUTTON_TEXT_REQUIRED": "Button {index} text is required.",
+        "BUTTON_URL_REQUIRED": "Button {index} URL is required.",
+        "BUTTON_URL_INVALID": "Button {index} uses an invalid variable format.",
+        "BUTTON_URL_SINGLE_VARIABLE": "Button {index} URL can contain at most one variable.",
+        "BUTTON_URL_SUFFIX": "Button {index} URL variable must be the final suffix.",
+        "BUTTON_EXAMPLE_REQUIRED": "Button {index} needs a sample suffix for review."
+      }
     }
   }
 }

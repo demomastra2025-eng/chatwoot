@@ -43,6 +43,22 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     )
   end
 
+  def create_template(request_body)
+    HTTParty.post(
+      "#{business_account_path}/message_templates",
+      headers: api_headers,
+      body: request_body.to_json
+    )
+  end
+
+  def delete_template(template_name)
+    HTTParty.delete(
+      "#{business_account_path}/message_templates",
+      headers: api_headers,
+      query: { name: template_name }
+    )
+  end
+
   def fetch_whatsapp_templates(url)
     response = HTTParty.get(url, headers: api_headers)
     return nil unless response.success?

@@ -49,6 +49,98 @@
       "FIELD_PICKER_EMPTY": "Подходящие атрибуты не найдены",
       "FIELD_PICKER_LOADING": "Загружаем атрибуты...",
       "FIELD_PICKER_DEFAULT": "Атрибуты"
+    },
+    "MANAGEMENT": {
+      "PAGE_TITLE": "Библиотека шаблонов WhatsApp",
+      "PAGE_DESCRIPTION": "Создавайте и управляйте шаблонами WhatsApp Cloud для этого канала. Новые шаблоны отправляются в Meta на проверку и появляются здесь после обновления локального кэша.",
+      "SUPPORTED_TITLE": "Поддерживаемый конструктор шаблонов",
+      "SUPPORTED_DESCRIPTION": "Этот конструктор поддерживает основной текст, текстовый или медиа-заголовок, футер, кнопки быстрого ответа и URL-кнопки.",
+      "LAST_SYNC": "Последняя синхронизация: {timestamp}",
+      "NOT_SYNCED_YET": "Синхронизация ещё не выполнялась",
+      "SEARCH_PLACEHOLDER": "Найти шаблоны по имени, статусу, языку или тексту",
+      "EMPTY_TITLE": "Шаблонов пока нет",
+      "EMPTY_DESCRIPTION": "Создайте первый шаблон или синхронизируйте библиотеку из WhatsApp.",
+      "NO_RESULTS_TITLE": "По этому запросу шаблоны не найдены",
+      "NO_RESULTS_DESCRIPTION": "Попробуйте другое имя, статус или фрагмент текста.",
+      "CREATE_TITLE": "Создать шаблон WhatsApp",
+      "CREATE_DESCRIPTION": "Соберите поддерживаемый шаблон WhatsApp Cloud и отправьте его в Meta на проверку.",
+      "CREATE_ACTION": "Создать шаблон",
+      "CREATE_SUCCESS": "Шаблон отправлен в Meta на проверку.",
+      "DELETE_TITLE": "Удалить шаблон",
+      "DELETE_DESCRIPTION": "Удалить шаблон \"{templateName}\" из WhatsApp Cloud? Будут удалены все языковые версии с этим именем.",
+      "DELETE_ACTION": "Удалить шаблон",
+      "DELETE_SUCCESS": "Шаблон успешно удален.",
+      "CSAT_BADGE": "Управляется через CSAT",
+      "LANGUAGES": "Языки: {languages}",
+      "REJECTION_REASON": "Причина отклонения для языка {language}",
+      "BODY_SECTION": "Основной текст",
+      "VARIABLE_HINT": "Используйте последовательные переменные вида {{1}}, {{2}}, если нужны динамические значения.",
+      "BUTTONS_SECTION": "Кнопки",
+      "BUTTONS_HINT": "Можно добавить до {count} поддерживаемых кнопок.",
+      "ADD_BUTTON": "Добавить кнопку",
+      "NO_BUTTONS": "Кнопки необязательны. Оставьте этот блок пустым для простого текстового шаблона.",
+      "BUTTON_TITLE": "Кнопка {index}",
+      "CATEGORY_OPTIONS": {
+        "UTILITY": "Сервисный",
+        "MARKETING": "Маркетинговый"
+      },
+      "HEADER_OPTIONS": {
+        "NONE": "Без заголовка",
+        "TEXT": "Текстовый заголовок",
+        "IMAGE": "Заголовок с изображением",
+        "VIDEO": "Заголовок с видео",
+        "DOCUMENT": "Заголовок с документом"
+      },
+      "BUTTON_OPTIONS": {
+        "QUICK_REPLY": "Быстрый ответ",
+        "URL": "URL-кнопка"
+      },
+      "FIELDS": {
+        "LANGUAGE": "Язык",
+        "CATEGORY": "Категория",
+        "HEADER_TYPE": "Тип заголовка",
+        "HEADER_TEXT": "Текст заголовка",
+        "HEADER_PLACEHOLDER": "Заказ {{1}} уже в пути",
+        "HEADER_EXAMPLE": "Пример заголовка для {variable}",
+        "HEADER_EXAMPLE_PLACEHOLDER": "Значение-пример для {variable}",
+        "NAME": {
+          "LABEL": "Имя шаблона",
+          "PLACEHOLDER": "order_update"
+        },
+        "BODY_TEXT": "Основной текст",
+        "BODY_PLACEHOLDER": "Здравствуйте, {{1}}. Ваш заказ сейчас {{2}}.",
+        "BODY_EXAMPLE": "Пример основного текста для {variable}",
+        "BODY_EXAMPLE_PLACEHOLDER": "Значение-пример для {variable}",
+        "MEDIA_URL": "URL тестового медиа",
+        "MEDIA_URL_PLACEHOLDER": "https://example.com/sample.pdf",
+        "FOOTER_TEXT": "Футер",
+        "FOOTER_PLACEHOLDER": "Ответьте STOP, чтобы отписаться",
+        "BUTTON_TYPE": "Тип кнопки",
+        "BUTTON_TEXT": "Текст кнопки",
+        "BUTTON_TEXT_PLACEHOLDER": "Отследить заказ",
+        "BUTTON_URL": "URL кнопки",
+        "BUTTON_URL_PLACEHOLDER": "https://example.com/orders/{{1}}",
+        "BUTTON_EXAMPLE": "Пример суффикса URL",
+        "BUTTON_EXAMPLE_PLACEHOLDER": "12345"
+      },
+      "ERRORS": {
+        "NAME_REQUIRED": "Имя шаблона обязательно.",
+        "NAME_FORMAT": "Имя шаблона может содержать только строчные буквы, цифры и подчеркивания.",
+        "BODY_REQUIRED": "Основной текст обязателен.",
+        "BODY_VARIABLE_POSITION": "Основной текст не может начинаться или заканчиваться переменной.",
+        "BODY_EXAMPLE_REQUIRED": "Нужен пример основного текста для {variable}.",
+        "HEADER_TEXT_REQUIRED": "Текст заголовка обязателен.",
+        "HEADER_VARIABLE_POSITION": "Текст заголовка не может начинаться или заканчиваться переменной.",
+        "HEADER_EXAMPLE_REQUIRED": "Нужен пример заголовка для {variable}.",
+        "MEDIA_URL_REQUIRED": "Для медиа-заголовка нужен URL тестового файла.",
+        "BUTTON_LIMIT": "Можно добавить до {count} кнопок.",
+        "BUTTON_TEXT_REQUIRED": "Для кнопки {index} нужен текст.",
+        "BUTTON_URL_REQUIRED": "Для кнопки {index} нужен URL.",
+        "BUTTON_URL_INVALID": "У кнопки {index} некорректный формат переменной в URL.",
+        "BUTTON_URL_SINGLE_VARIABLE": "URL кнопки {index} может содержать только одну переменную.",
+        "BUTTON_URL_SUFFIX": "Переменная в URL кнопки {index} должна быть финальным суффиксом.",
+        "BUTTON_EXAMPLE_REQUIRED": "Для кнопки {index} нужен пример суффикса URL."
+      }
     }
   }
 }
