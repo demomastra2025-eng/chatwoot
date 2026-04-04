@@ -191,6 +191,15 @@ const showFormattedResponse = computed(
       state.response.formatted_body !== state.response.body)
 );
 
+const testPanelTooltip = computed(() =>
+  [
+    t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.DESCRIPTION'),
+    t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.ENCODING_HINT'),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+);
+
 const fixedValueSummary = value => {
   if (value === null || value === undefined || value === '') {
     return '""';
@@ -300,16 +309,14 @@ const handleTest = async () => {
   <section
     class="flex flex-col gap-3 p-4 rounded-xl border border-n-weak bg-n-alpha-2"
   >
-    <div class="flex flex-col gap-1">
+    <div class="flex items-center gap-2">
       <h3 class="text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TITLE') }}
       </h3>
-      <p class="text-xs text-n-slate-11">
-        {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.DESCRIPTION') }}
-      </p>
-      <p class="text-xs text-n-slate-10">
-        {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.ENCODING_HINT') }}
-      </p>
+      <i
+        v-tooltip.top="testPanelTooltip"
+        class="i-lucide-info h-4 w-4 cursor-help text-n-slate-10"
+      />
     </div>
 
     <div v-if="fixedParamDefinitions.length" class="flex flex-col gap-2">
