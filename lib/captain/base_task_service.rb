@@ -56,38 +56,29 @@ class Captain::BaseTaskService
 
   def execute_ruby_llm_request(model:, messages:, schema: nil, tools: [])
     Llm::Config.with_api_key(api_key, api_base: api_base) do |context|
-      chat = build_chat(context, model: model, messages: messages, schema: schema, tools: tools)
+      response = Llm::ChatRequestRunner.new(
+        context: context,
+        model: model,
+        messages: messages,
+        schema: schema,
+        tools: tools,
+        on_end_message: build_generation_callback(model, tools)
+      ).call
 
-      conversation_messages = messages.reject { |m| m[:role] == 'system' }
-      return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if conversation_messages.empty?
+      return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
 
-      add_messages_if_needed(chat, conversation_messages)
-      build_ruby_llm_response(chat.ask(conversation_messages.last[:content]), messages)
+      build_ruby_llm_response(response, messages)
     end
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: account).capture_exception
     { error: e.message, request_messages: messages }
   end
 
-  def build_chat(context, model:, messages:, schema: nil, tools: [])
-    chat = context.chat(model: model)
-    system_msg = messages.find { |m| m[:role] == 'system' }
-    chat.with_instructions(system_msg[:content]) if system_msg
-    chat.with_schema(schema) if schema
+  def build_generation_callback(model, tools)
+    return nil if tools.blank?
 
-    if tools.any?
-      tools.each { |tool| chat = chat.with_tool(tool) }
-      chat.on_end_message { |message| record_generation(chat, message, model) }
-    end
-
-    chat
-  end
-
-  def add_messages_if_needed(chat, conversation_messages)
-    return if conversation_messages.length == 1
-
-    conversation_messages[0...-1].each do |msg|
-      chat.add_message(role: msg[:role].to_sym, content: msg[:content])
+    lambda do |chat, message|
+      record_generation(chat, message, model)
     end
   end
 
@@ -163,7 +154,13 @@ class Captain::BaseTaskService
   end
 
   def prompt_from_file(file_name)
-    Rails.root.join('lib/integrations/openai/openai_prompts', "#{file_name}.liquid").read
+    Captain::PromptRegistry.fetch_task!(file_name)
+  end
+
+  def render_task_prompt(file_name, variables = {})
+    return prompt_from_file(file_name) if variables.blank?
+
+    Captain::PromptRegistry.render!(file_name, category: :tasks, variables: variables)
   end
 
   # Follow-up context for client-side refinement

@@ -56,7 +56,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'renders deal and task context using explicitly passed visible fields' do
       context_double = instance_double(
-        Agents::RunContext,
+        Captain::Runtime::RunContext,
         context: {
           state: {
             assistant_config: { 'context_access' => {} },
@@ -86,7 +86,7 @@ RSpec.describe Captain::Assistant, type: :model do
 
     it 'renders appointment context using explicitly passed visible fields' do
       context_double = instance_double(
-        Agents::RunContext,
+        Captain::Runtime::RunContext,
         context: {
           state: {
             assistant_config: { 'context_access' => {} },

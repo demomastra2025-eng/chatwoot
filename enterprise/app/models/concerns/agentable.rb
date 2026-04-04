@@ -2,7 +2,7 @@ module Concerns::Agentable
   extend ActiveSupport::Concern
 
   def agent
-    Agents::Agent.new(
+    Captain::Runtime::Agent.new(
       name: agent_name,
       instructions: ->(context) { agent_instructions(context) },
       tools: agent_tools,

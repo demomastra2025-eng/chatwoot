@@ -1,0 +1,15 @@
+Analyze the provided website content and extract business information.
+Return a JSON response with the following structure:
+
+{
+  "business_name": "The company or business name",
+  "suggested_assistant_name": "A friendly assistant name (e.g., 'Captain Assistant', 'Support Genie', etc.)",
+  "description": "Persona of the assistant based on the business type"
+}
+
+Guidelines:
+- business_name: Extract the actual company or brand name from the content.
+- suggested_assistant_name: Create a friendly, professional name that customers would want to interact with.
+- description: Provide context about the business and what the assistant can help with. Keep it general and adaptable rather than overly specific.
+
+Return only valid JSON, with no additional text.

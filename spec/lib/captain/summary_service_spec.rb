@@ -10,7 +10,7 @@ RSpec.describe Captain::SummaryService do
   let(:mock_response) { instance_double(RubyLLM::Message, content: 'Summary of conversation', input_tokens: 100, output_tokens: 50) }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
     allow(mock_chat).to receive(:with_instructions)
     allow(mock_chat).to receive(:ask).and_return(mock_response)

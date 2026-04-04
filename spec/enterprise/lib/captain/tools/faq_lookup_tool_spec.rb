@@ -8,7 +8,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
   before do
     # Create installation config for OpenAI API key to avoid errors
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
 
     # Mock embedding service to avoid actual API calls
     embedding_service = instance_double(Captain::Llm::EmbeddingService)

@@ -10,7 +10,7 @@ RSpec.describe Captain::ReplySuggestionService do
   let(:captured_messages) { [] }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     create(:message, conversation: conversation, message_type: :incoming, content: 'I need help')
     allow(account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
 
@@ -56,8 +56,9 @@ RSpec.describe Captain::ReplySuggestionService do
     end
 
     context 'with email channel' do
-      let(:email_channel) { create(:channel_email, account: account) }
-      let(:inbox) { create(:inbox, account: account, channel: email_channel) }
+      let(:account) { create(:account, limits: { 'non_web_inboxes' => 10 }) }
+
+      let(:inbox) { create(:inbox, :with_email, account: account) }
 
       it 'uses email-specific instructions' do
         service.perform

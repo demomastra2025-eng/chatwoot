@@ -145,8 +145,7 @@ module Concerns::Toolable
   private
 
   def render_template(template, context)
-    liquid_template = Liquid::Template.parse(template, error_mode: :strict)
-    liquid_template.render(context.deep_stringify_keys, registers: {}, strict_variables: true, strict_filters: true)
+    Captain::PromptRegistry.render_inline!(template, variables: context)
   rescue Liquid::SyntaxError, Liquid::UndefinedVariable, Liquid::UndefinedFilter => e
     Rails.logger.error("Liquid template error: #{e.message}")
     raise "Template rendering failed: #{e.message}"

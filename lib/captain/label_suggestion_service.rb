@@ -14,7 +14,7 @@ class Captain::LabelSuggestionService < Captain::BaseTaskService
     response = make_api_call(
       model: GPT_MODEL, # TODO: Use separate model for label suggestion
       messages: [
-        { role: 'system', content: prompt_from_file('label_suggestion') },
+        { role: 'system', content: render_task_prompt('label_suggestion') },
         { role: 'user', content: content }
       ]
     )

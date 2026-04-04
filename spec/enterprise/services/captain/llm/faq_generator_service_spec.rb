@@ -16,7 +16,7 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
   end
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)

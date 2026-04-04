@@ -88,7 +88,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
     it 'renders deal and task context when provided through prompt context state' do
       context_double = instance_double(
-        Agents::RunContext,
+        Captain::Runtime::RunContext,
         context: {
           state: {
             assistant_config: { 'context_access' => {} },
@@ -118,7 +118,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
     it 'renders appointment context when provided through prompt context state' do
       context_double = instance_double(
-        Agents::RunContext,
+        Captain::Runtime::RunContext,
         context: {
           state: {
             assistant_config: { 'context_access' => {} },

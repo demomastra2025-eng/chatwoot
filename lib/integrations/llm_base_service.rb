@@ -102,42 +102,14 @@ class Integrations::LlmBaseService
     model = parsed_body['model']
 
     Llm::Config.with_api_key(hook.settings['api_key'], api_base: api_base) do |context|
-      chat = context.chat(model: model)
-      setup_chat_with_messages(chat, messages)
+      response = Llm::ChatRequestRunner.new(context: context, model: model, messages: messages).call
+      return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
+
+      build_ruby_llm_response(response, messages)
     end
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: hook.account).capture_exception
     build_error_response_from_exception(e, messages)
-  end
-
-  def setup_chat_with_messages(chat, messages)
-    apply_system_instructions(chat, messages)
-    response = send_conversation_messages(chat, messages)
-    return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
-
-    build_ruby_llm_response(response, messages)
-  end
-
-  def apply_system_instructions(chat, messages)
-    system_msg = messages.find { |m| m['role'] == 'system' }
-    chat.with_instructions(system_msg['content']) if system_msg
-  end
-
-  def send_conversation_messages(chat, messages)
-    conversation_messages = messages.reject { |m| m['role'] == 'system' }
-
-    return nil if conversation_messages.empty?
-
-    return chat.ask(conversation_messages.first['content']) if conversation_messages.length == 1
-
-    add_conversation_history(chat, conversation_messages[0...-1])
-    chat.ask(conversation_messages.last['content'])
-  end
-
-  def add_conversation_history(chat, messages)
-    messages.each do |msg|
-      chat.add_message(role: msg['role'].to_sym, content: msg['content'])
-    end
   end
 
   def build_ruby_llm_response(response, messages)

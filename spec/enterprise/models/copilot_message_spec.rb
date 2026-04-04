@@ -60,4 +60,23 @@ RSpec.describe CopilotMessage, type: :model do
       expect(event_data[:copilot_thread]).to eq(copilot_thread.push_event_data)
     end
   end
+
+  describe 'message attribute validation' do
+    it 'accepts richer runtime metadata used by Captain and RubyLLM-adjacent flows' do
+      message = build(
+        :captain_copilot_message,
+        copilot_thread: copilot_thread,
+        message: {
+          'content' => 'Test message',
+          'agent_name' => 'copilot_specialist',
+          'tool_calls' => [{ 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }],
+          'usage' => { 'total_tokens' => 12 },
+          'captain_trace' => { 'steps' => [] },
+          'thinking' => 'Used FAQ search first'
+        }
+      )
+
+      expect(message).to be_valid
+    end
+  end
 end

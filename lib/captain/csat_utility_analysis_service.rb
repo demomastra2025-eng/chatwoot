@@ -32,8 +32,7 @@ class Captain::CsatUtilityAnalysisService < Captain::BaseTaskService
   end
 
   def system_prompt
-    template = prompt_from_file('csat_utility_analysis')
-    Liquid::Template.parse(template).render(prompt_variables)
+    render_task_prompt('csat_utility_analysis', prompt_variables)
   end
 
   def prompt_variables

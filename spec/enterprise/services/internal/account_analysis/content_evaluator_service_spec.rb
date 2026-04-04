@@ -13,8 +13,8 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
   end
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
-    allow(RubyLLM).to receive(:moderate).and_return(mock_moderation_result)
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
+    allow(Llm::ApiClient).to receive(:moderate).and_return(mock_moderation_result)
   end
 
   describe '#evaluate' do
@@ -99,7 +99,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
       let(:blank_content) { '' }
 
       it 'returns default evaluation without calling moderation API' do
-        expect(RubyLLM).not_to receive(:moderate)
+        expect(Llm::ApiClient).not_to receive(:moderate)
 
         result = service.evaluate(blank_content)
 
@@ -115,7 +115,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
 
     context 'when error occurs during evaluation' do
       before do
-        allow(RubyLLM).to receive(:moderate).and_raise(StandardError.new('Test error'))
+        allow(Llm::ApiClient).to receive(:moderate).and_raise(StandardError.new('Test error'))
       end
 
       it 'logs error and returns default evaluation with error type' do
@@ -141,7 +141,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
           flagged_categories: ['harassment'],
           category_scores: { 'harassment' => 0.85 }
         )
-        allow(RubyLLM).to receive(:moderate).and_return(mock_result)
+        allow(Llm::ApiClient).to receive(:moderate).and_return(mock_result)
 
         result = service.evaluate(content)
         expect(result['threat_level']).to eq('critical')
@@ -154,7 +154,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
           flagged_categories: ['harassment'],
           category_scores: { 'harassment' => 0.65 }
         )
-        allow(RubyLLM).to receive(:moderate).and_return(mock_result)
+        allow(Llm::ApiClient).to receive(:moderate).and_return(mock_result)
 
         result = service.evaluate(content)
         expect(result['threat_level']).to eq('high')
@@ -167,7 +167,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
           flagged_categories: ['harassment'],
           category_scores: { 'harassment' => 0.35 }
         )
-        allow(RubyLLM).to receive(:moderate).and_return(mock_result)
+        allow(Llm::ApiClient).to receive(:moderate).and_return(mock_result)
 
         result = service.evaluate(content)
         expect(result['threat_level']).to eq('medium')
@@ -180,7 +180,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
           flagged_categories: ['harassment'],
           category_scores: { 'harassment' => 0.15 }
         )
-        allow(RubyLLM).to receive(:moderate).and_return(mock_result)
+        allow(Llm::ApiClient).to receive(:moderate).and_return(mock_result)
 
         result = service.evaluate(content)
         expect(result['threat_level']).to eq('low')
@@ -191,7 +191,7 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
       let(:long_content) { 'a' * 15_000 }
 
       it 'truncates content to 10000 characters before sending to moderation' do
-        expect(RubyLLM).to receive(:moderate).with('a' * 10_000).and_return(mock_moderation_result)
+        expect(Llm::ApiClient).to receive(:moderate).with('a' * 10_000).and_return(mock_moderation_result)
         service.evaluate(long_content)
       end
     end

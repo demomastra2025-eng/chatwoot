@@ -14,20 +14,16 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   private
 
   def system_prompt
-    template = prompt_from_file('reply')
-    render_liquid_template(template, prompt_variables)
+    render_task_prompt('reply', prompt_variables)
   end
 
   def prompt_variables
     {
       'channel_type' => conversation.inbox.channel_type,
       'agent_name' => user.name,
-      'agent_signature' => user.message_signature.presence
+      'agent_signature' => user.message_signature.presence,
+      'has_search_tool' => false
     }
-  end
-
-  def render_liquid_template(template_content, variables = {})
-    Liquid::Template.parse(template_content).render(variables)
   end
 
   def formatted_conversation

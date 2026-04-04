@@ -24,7 +24,7 @@ RSpec.describe Captain::BaseTaskService, type: :model do
   let(:service) { test_service_class.new(account: account, conversation_display_id: conversation.display_id) }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
   end
 
   describe '#perform with enterprise usage tracking' do

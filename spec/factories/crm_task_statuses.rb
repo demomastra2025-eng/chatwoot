@@ -5,7 +5,7 @@ FactoryBot.define do
     sequence(:code) { |n| "task_status_#{n}" }
     sequence(:position) { |n| n }
     category { 'open' }
-    color { Crm::TaskStatus::STANDARD_COLORS.first }
+    sequence(:color) { |n| Crm::TaskStatus::STANDARD_COLORS[(n - 1) % Crm::TaskStatus::STANDARD_COLORS.length] }
     active { true }
     default { false }
   end

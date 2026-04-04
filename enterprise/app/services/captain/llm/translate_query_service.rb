@@ -46,10 +46,6 @@ class Captain::Llm::TranslateQueryService < Captain::BaseTaskService
   end
 
   def system_prompt(target_language)
-    <<~SYSTEM_PROMPT_MESSAGE
-      You are a helpful assistant that translates queries from one language to another.
-      Translate the query to #{target_language}.
-      Return just the translated query, no other text.
-    SYSTEM_PROMPT_MESSAGE
+    render_task_prompt('translate_query', target_language: target_language)
   end
 end

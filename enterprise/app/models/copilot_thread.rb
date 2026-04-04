@@ -39,10 +39,14 @@ class CopilotThread < ApplicationRecord
       .where(message_type: %w[user assistant])
       .order(created_at: :asc)
       .map do |copilot_message|
-        {
+        message = {
           content: copilot_message.message['content'],
           role: copilot_message.message_type
         }
+
+        message[:agent_name] = copilot_message.message['agent_name'] if copilot_message.message['agent_name'].present?
+        message[:tool_calls] = copilot_message.message['tool_calls'] if copilot_message.message['tool_calls'].present?
+        message
       end
   end
 end

@@ -39,7 +39,16 @@ RSpec.describe CopilotThread, type: :model do
       before do
         create(:captain_copilot_message, copilot_thread: copilot_thread, message_type: 'user', message: { 'content' => 'User message' })
         create(:captain_copilot_message, copilot_thread: copilot_thread, message_type: 'assistant_thinking', message: { 'content' => 'Thinking...' })
-        create(:captain_copilot_message, copilot_thread: copilot_thread, message_type: 'assistant', message: { 'content' => 'Assistant message' })
+        create(
+          :captain_copilot_message,
+          copilot_thread: copilot_thread,
+          message_type: 'assistant',
+          message: {
+            'content' => 'Assistant message',
+            'agent_name' => 'copilot_specialist',
+            'tool_calls' => [{ 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }]
+          }
+        )
       end
 
       it 'returns only user and assistant messages in chronological order' do
@@ -50,6 +59,8 @@ RSpec.describe CopilotThread, type: :model do
         expect(history[0][:content]).to eq('User message')
         expect(history[1][:role]).to eq('assistant')
         expect(history[1][:content]).to eq('Assistant message')
+        expect(history[1][:agent_name]).to eq('copilot_specialist')
+        expect(history[1][:tool_calls]).to eq([{ 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }])
       end
     end
 

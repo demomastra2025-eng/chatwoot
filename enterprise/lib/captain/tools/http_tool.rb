@@ -1,6 +1,4 @@
-require 'agents'
-
-class Captain::Tools::HttpTool < Agents::Tool
+class Captain::Tools::HttpTool < Captain::Runtime::Tool
   def initialize(assistant, custom_tool)
     @assistant = assistant
     @custom_tool = custom_tool

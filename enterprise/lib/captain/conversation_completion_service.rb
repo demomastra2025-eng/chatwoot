@@ -18,7 +18,7 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
     response = make_api_call(
       model: InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value.presence || GPT_MODEL,
       messages: [
-        { role: 'system', content: prompt_from_file('conversation_completion') },
+        { role: 'system', content: render_task_prompt('conversation_completion') },
         { role: 'user', content: content }
       ],
       schema: RESPONSE_SCHEMA
@@ -30,10 +30,6 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
   end
 
   private
-
-  def prompt_from_file(file_name)
-    Rails.root.join('enterprise/lib/captain/prompts', "#{file_name}.liquid").read
-  end
 
   def format_messages_as_string
     messages = conversation_messages(start_from: 0)

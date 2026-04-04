@@ -1,8 +1,7 @@
-require 'agents'
-require 'agents/instrumentation'
-
 class Captain::Assistant::AgentRunnerService
   include Integrations::LlmInstrumentationConstants
+  include Captain::Assistant::LlmContextHelper
+  include Captain::Assistant::RunPayloadHelper
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
 
@@ -17,8 +16,17 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def generate_response(message_history: [])
+    Llm::Config.initialize!
+
     message_to_process, context = run_payload(message_history)
-    result = runner.run(message_to_process, context: context, max_turns: 100)
+    result = runner.run(
+      message_to_process,
+      context: context,
+      max_turns: 100,
+      runtime_options: {
+        llm_context: llm_context_for_run
+      }
+    )
 
     process_agent_result(result)
   rescue StandardError => e
@@ -31,57 +39,6 @@ class Captain::Assistant::AgentRunnerService
   end
 
   private
-
-  def build_context(message_history)
-    conversation_history = message_history.map do |msg|
-      content = msg[:content]
-      # Preserve multimodal arrays (with image_url entries) as-is for the runner to restore with attachments.
-      # Only extract text from non-array formats (hashes from agent structured output, plain strings).
-      content = extract_text_from_content(content) unless content.is_a?(Array)
-
-      {
-        role: msg[:role].to_sym,
-        content: content,
-        agent_name: msg[:agent_name]
-      }
-    end
-
-    {
-      session_id: "#{@assistant.account_id}_#{@conversation&.display_id}",
-      conversation_history: conversation_history,
-      state: build_state
-    }
-  end
-
-  def extract_last_user_message(message_history)
-    last_user_msg = message_history.reverse.find { |msg| msg[:role] == 'user' }
-    return '' if last_user_msg.blank?
-
-    content = last_user_msg[:content]
-    return extract_text_from_content(content) unless content.is_a?(Array)
-
-    text, attachments = Captain::OpenAiMessageBuilderService.extract_text_and_attachments(content)
-    return text if attachments.blank?
-
-    RubyLLM::Content.new(text, attachments)
-  end
-
-  def message_history_without_last_user_message(message_history)
-    last_user_index = message_history.rindex { |msg| msg[:role] == 'user' }
-    return message_history if last_user_index.nil?
-
-    message_history.reject.with_index { |_msg, index| index == last_user_index }
-  end
-
-  def extract_text_from_content(content)
-    # Handle structured output from agents
-    return content[:response] || content['response'] || content.to_s if content.is_a?(Hash)
-
-    return content unless content.is_a?(Array)
-
-    text_parts = content.select { |part| part[:type] == 'text' }.pluck(:text)
-    text_parts.join(' ')
-  end
 
   def process_agent_result(result)
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
@@ -112,15 +69,25 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def build_conversation_state(state)
-    state[:conversation] = slice_attrs(@conversation, Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES)
-    state[:channel_type] = @conversation.inbox&.channel_type
+    state.merge!(base_conversation_state)
     state[:contact] = slice_attrs(@conversation.contact, Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
+    add_related_record_state(state)
+    state.compact!
+  end
+
+  def base_conversation_state
+    {
+      conversation: slice_attrs(@conversation, Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
+      channel_type: @conversation.inbox&.channel_type
+    }
+  end
+
+  def add_related_record_state(state)
     state[:deal] = Captain::ContextFields.deal_state_for(account: @assistant.account, conversation: @conversation)
     state[:task] = Captain::ContextFields.task_state_for(account: @assistant.account, conversation: @conversation)
     state[:appointment] = Captain::ContextFields.appointment_state_for(account: @assistant.account, conversation: @conversation)
     state[:campaign] = slice_attrs(@conversation.campaign, CAMPAIGN_STATE_ATTRIBUTES) if @conversation.campaign
     state[:contact_inbox] = slice_attrs(@conversation.contact_inbox, CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
-    state.compact!
   end
 
   def slice_attrs(record, keys)
@@ -140,7 +107,7 @@ class Captain::Assistant::AgentRunnerService
   def install_instrumentation(runner)
     return unless ChatwootApp.otel_enabled?
 
-    Agents::Instrumentation.install(
+    Captain::Runtime::Instrumentation.install(
       runner,
       tracer: OpentelemetryConfig.tracer,
       trace_name: 'llm.captain_v2',
@@ -201,7 +168,7 @@ class Captain::Assistant::AgentRunnerService
 
   def runner
     @runner ||= begin
-      configured_runner = Agents::Runner.with_agents(*build_and_wire_agents)
+      configured_runner = Captain::Runtime::Runner.with_agents(*build_and_wire_agents)
       configured_runner = add_usage_metadata_callback(configured_runner)
       configured_runner = add_callbacks_to_runner(configured_runner) if @callbacks.any?
       install_instrumentation(configured_runner)

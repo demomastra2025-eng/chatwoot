@@ -15,7 +15,11 @@ class Llm::BaseAiService
   end
 
   def chat(model: @model, temperature: @temperature)
-    RubyLLM.chat(model: model).with_temperature(temperature)
+    Llm::ChatClient.build(model: model, temperature: temperature)
+  end
+
+  def ask_chat(chat, content)
+    Llm::ChatClient.ask(chat, content)
   end
 
   private

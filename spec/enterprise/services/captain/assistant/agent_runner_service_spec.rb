@@ -10,10 +10,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:scenario) { create(:captain_scenario, assistant: assistant, enabled: true) }
 
-  let(:mock_runner) { instance_double(Agents::Runner) }
-  let(:mock_agent) { instance_double(Agents::Agent) }
-  let(:mock_scenario_agent) { instance_double(Agents::Agent) }
-  let(:mock_result) { instance_double(Agents::RunResult, output: { 'response' => 'Test response' }, context: nil) }
+  let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
+  let(:mock_agent) { instance_double(Captain::Runtime::Agent) }
+  let(:mock_scenario_agent) { instance_double(Captain::Runtime::Agent) }
+  let(:mock_result) { instance_double(Captain::Runtime::Result, output: { 'response' => 'Test response' }, context: nil) }
 
   let(:message_history) do
     [
@@ -24,12 +24,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   before do
+    allow(Llm::Config).to receive(:initialize!)
     allow(assistant).to receive(:agent).and_return(mock_agent)
     scenarios_relation = instance_double(Captain::Scenario)
     allow(scenarios_relation).to receive(:enabled).and_return([scenario])
     allow(assistant).to receive(:scenarios).and_return(scenarios_relation)
     allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
-    allow(Agents::Runner).to receive(:with_agents).and_return(mock_runner)
+    allow(Captain::Runtime::Runner).to receive(:with_agents).and_return(mock_runner)
     allow(mock_runner).to receive(:run).and_return(mock_result)
     allow(mock_agent).to receive(:register_handoffs)
     allow(mock_scenario_agent).to receive(:register_handoffs)
@@ -55,6 +56,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   describe '#generate_response' do
     subject(:service) { described_class.new(assistant: assistant, conversation: conversation) }
 
+    it 'initializes RubyLLM configuration before running the agent' do
+      expect(Llm::Config).to receive(:initialize!)
+
+      service.generate_response(message_history: message_history)
+    end
+
     it 'builds agents and wires them together' do
       expect(assistant).to receive(:agent).and_return(mock_agent)
       scenarios_relation = instance_double(Captain::Scenario)
@@ -68,31 +75,31 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'creates runner with agents' do
-      expect(Agents::Runner).to receive(:with_agents).with(mock_agent, mock_scenario_agent)
+      expect(Captain::Runtime::Runner).to receive(:with_agents).with(mock_agent, mock_scenario_agent)
 
       service.generate_response(message_history: message_history)
     end
 
     it 'runs agent with extracted user message and context' do
-      expected_context = hash_including(
-        session_id: "#{account.id}_#{conversation.display_id}",
-        conversation_history: [
-          { role: :user, content: 'Hello there', agent_name: nil },
-          { role: :assistant, content: 'Hi! How can I help you?', agent_name: 'Assistant' }
-        ],
-        state: hash_including(
-          account_id: account.id,
-          assistant_id: assistant.id,
-          conversation: hash_including(id: conversation.id),
-          contact: hash_including(id: contact.id)
+      expect(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
+        expect(input).to eq('I need help with my account')
+        expect(context).to include(
+          session_id: "#{account.id}_#{conversation.display_id}",
+          conversation_history: [
+            { role: :user, content: 'Hello there' },
+            { role: :assistant, content: 'Hi! How can I help you?', agent_name: 'Assistant' }
+          ],
+          state: hash_including(
+            account_id: account.id,
+            assistant_id: assistant.id,
+            conversation: hash_including(id: conversation.id),
+            contact: hash_including(id: contact.id)
+          )
         )
-      )
-
-      expect(mock_runner).to receive(:run).with(
-        'I need help with my account',
-        context: expected_context,
-        max_turns: 100
-      )
+        expect(context[:captain_v2_trace_input]).to include('I need help with my account')
+        expect(max_turns).to eq(100)
+        expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+      end
 
       service.generate_response(message_history: message_history)
     end
@@ -112,12 +119,13 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       it 'passes image attachments to the runner input' do
-        expect(mock_runner).to receive(:run) do |input, context:, max_turns:|
+        expect(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
           expect(input).to be_a(RubyLLM::Content)
           expect(input.text).to eq('What does this error mean?')
           expect(input.attachments.first.source.to_s).to eq('https://example.com/error.png')
-          expect(context[:conversation_history]).to eq([{ role: :assistant, content: 'Please share a screenshot', agent_name: nil }])
+          expect(context[:conversation_history]).to eq([{ role: :assistant, content: 'Please share a screenshot' }])
           expect(max_turns).to eq(100)
+          expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
         end
 
         service.generate_response(message_history: multimodal_message_history)
@@ -136,7 +144,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           { role: 'user', content: 'It still does not work' }
         ]
 
-        expect(mock_runner).to receive(:run) do |input, context:, max_turns:|
+        expect(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
           expect(input).to eq('It still does not work')
           # The earlier user message with the image should preserve the multimodal array
           first_history_msg = context[:conversation_history].first
@@ -146,16 +154,18 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             { type: 'image_url', image_url: { url: 'https://example.com/error.png' } }
           )
           expect(max_turns).to eq(100)
+          expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
         end
 
         service.generate_response(message_history: history_with_prior_image)
       end
 
       it 'stores multimodal trace payloads in runner context' do
-        expect(mock_runner).to receive(:run) do |_input, context:, max_turns:|
+        expect(mock_runner).to receive(:run) do |_input, context:, max_turns:, runtime_options:|
           expect(context[:captain_v2_trace_input]).to include('image_url')
           expect(context[:captain_v2_trace_current_input]).to include('image_url')
           expect(max_turns).to eq(100)
+          expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
         end
 
         service.generate_response(message_history: multimodal_message_history)
@@ -176,15 +186,31 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       it 'only uses assistant agent' do
-        expect(Agents::Runner).to receive(:with_agents).with(mock_agent)
+        expect(Captain::Runtime::Runner).to receive(:with_agents).with(mock_agent)
         expect(mock_agent).not_to receive(:register_handoffs)
 
         service.generate_response(message_history: message_history)
       end
     end
 
+    it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do
+      hook = create(:integrations_hook, account: account, app_id: 'openai', status: 'enabled', settings: { api_key: 'account-key' })
+      allow(account.hooks).to receive(:find_by).with(app_id: 'openai', status: 'enabled').and_return(hook)
+
+      expect(mock_runner).to receive(:run).with(
+        anything,
+        context: anything,
+        max_turns: 100,
+        runtime_options: {
+          llm_context: an_instance_of(RubyLLM::Context)
+        }
+      )
+
+      service.generate_response(message_history: message_history)
+    end
+
     context 'when agent result is a string' do
-      let(:mock_result) { instance_double(Agents::RunResult, output: 'Simple string response', context: nil) }
+      let(:mock_result) { instance_double(Captain::Runtime::Result, output: 'Simple string response', context: nil) }
 
       it 'formats string response correctly' do
         result = service.generate_response(message_history: message_history)
@@ -249,14 +275,16 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       context = service.send(:build_context, message_history)
 
       expect(context).to include(
-        conversation_history: array_including(
-          { role: :user, content: 'Hello there', agent_name: nil },
-          { role: :assistant, content: 'Hi! How can I help you?', agent_name: 'Assistant' }
-        ),
+        conversation_history: [
+          { role: :user, content: 'Hello there' },
+          { role: :assistant, content: 'Hi! How can I help you?', agent_name: 'Assistant' },
+          { role: :user, content: 'I need help with my account' }
+        ],
         state: hash_including(
           account_id: account.id,
           assistant_id: assistant.id
-        )
+        ),
+        session_id: "#{account.id}_#{conversation.display_id}"
       )
     end
 
@@ -277,6 +305,45 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
         expect(context[:conversation_history].first[:content]).to eq(multimodal_content)
       end
+    end
+
+    it 'preserves assistant tool calls and tool result metadata from prior history' do
+      context = service.send(
+        :build_context,
+        [
+          {
+            'role' => 'assistant',
+            'content' => '',
+            'agent_name' => 'faq_agent',
+            'tool_calls' => [
+              { 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }
+            ]
+          },
+          {
+            'role' => 'tool',
+            'content' => 'Refund policy found',
+            'tool_call_id' => 'call_1'
+          }
+        ]
+      )
+
+      expect(context[:conversation_history]).to eq(
+        [
+          {
+            role: :assistant,
+            content: '',
+            agent_name: 'faq_agent',
+            tool_calls: [
+              { 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }
+            ]
+          },
+          {
+            role: :tool,
+            content: 'Refund policy found',
+            tool_call_id: 'call_1'
+          }
+        ]
+      )
     end
   end
 
@@ -432,39 +499,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     context 'when the conversation has linked CRM and scheduling records' do
-      let!(:deal_field_definition) do
-        create(
-          :crm_field_definition,
-          account: account,
-          entity_kind: 'deal',
-          key: 'sales_region',
-          label: 'Sales Region'
-        )
-      end
-      let!(:task_field_definition) do
-        create(
-          :crm_field_definition,
-          account: account,
-          entity_kind: 'task',
-          key: 'follow_up_channel',
-          label: 'Follow Up Channel'
-        )
-      end
-      let!(:appointment_field_definition) do
-        create(
-          :crm_field_definition,
-          account: account,
-          entity_kind: 'appointment',
-          key: 'visit_room',
-          label: 'Visit Room'
-        )
-      end
       let!(:deal) do
         create(
           :crm_deal,
           account: account,
           originating_conversation: conversation,
-          custom_attributes: { 'sales_region' => 'EMEA' }
+          custom_attributes: { sales_region: 'EMEA' }
         )
       end
       let!(:task) do
@@ -472,7 +512,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           :crm_task,
           account: account,
           originating_conversation: conversation,
-          custom_attributes: { 'follow_up_channel' => 'phone' }
+          custom_attributes: { follow_up_channel: 'phone' }
         )
       end
       let!(:appointment) do
@@ -482,11 +522,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           contact: contact,
           conversation: conversation,
           resource: create(:scheduling_resource, account: account),
-          custom_attributes: { 'visit_room' => 'B12' }
+          custom_attributes: { visit_room: 'B12' }
         )
       end
 
       before do
+        create_field_definition(:deal, 'sales_region', 'Sales Region')
+        create_field_definition(:task, 'follow_up_channel', 'Follow Up Channel')
+        create_field_definition(:appointment, 'visit_room', 'Visit Room')
         account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
         assistant.update!(
           config: {
@@ -508,7 +551,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
       end
 
-      it 'includes appointment state and prompt context' do
+      it 'includes appointment state and prompt context', :aggregate_failures do
         state = service.send(:build_state)
 
         expect(state[:deal]).to include(
@@ -518,7 +561,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
         expect(state.dig(:prompt_context, :deal)).to eq(
           'stage_name' => deal.stage.name,
-          custom_attributes: { 'sales_region' => 'EMEA' }
+          :custom_attributes => { 'sales_region' => 'EMEA' }
         )
         expect(state.dig(:prompt_context, :visible_fields, :deal)).to eq(['stage_name'])
         expect(state[:task]).to include(
@@ -528,7 +571,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
         expect(state.dig(:prompt_context, :task)).to eq(
           'status_name' => task.status.name,
-          custom_attributes: { 'follow_up_channel' => 'phone' }
+          :custom_attributes => { 'follow_up_channel' => 'phone' }
         )
         expect(state.dig(:prompt_context, :visible_fields, :task)).to eq(['status_name'])
         expect(state[:appointment]).to include(
@@ -538,7 +581,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         )
         expect(state.dig(:prompt_context, :appointment)).to eq(
           'status' => appointment.status,
-          custom_attributes: { 'visit_room' => 'B12' }
+          :custom_attributes => { 'visit_room' => 'B12' }
         )
         expect(state.dig(:prompt_context, :visible_fields, :appointment)).to eq(['status'])
       end
@@ -565,7 +608,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   describe '#add_usage_metadata_callback' do
     it 'sets credit_used=false when handoff tool is used' do
       service = described_class.new(assistant: assistant, conversation: conversation)
-      runner = instance_double(Agents::AgentRunner)
+      runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
       run_complete_callback = nil
       span_class = Class.new do
@@ -594,7 +637,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'sets credit_used=true when handoff tool is not used' do
       service = described_class.new(assistant: assistant, conversation: conversation)
-      runner = instance_double(Agents::AgentRunner)
+      runner = instance_double(Captain::Runtime::AgentRunner)
       run_complete_callback = nil
       span_class = Class.new do
         def set_attribute(*); end
@@ -634,5 +677,15 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         :id, :title, :message, :campaign_type, :description
       )
     end
+  end
+
+  def create_field_definition(entity_kind, key, label)
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: entity_kind,
+      key: key,
+      label: label
+    )
   end
 end

@@ -1,6 +1,4 @@
-require 'agents'
-
-class Captain::Tools::BasePublicTool < Agents::Tool
+class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   def initialize(assistant)
     @assistant = assistant
     super()

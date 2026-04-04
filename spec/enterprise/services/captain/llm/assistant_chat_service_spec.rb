@@ -14,7 +14,7 @@ RSpec.describe Captain::Llm::AssistantChatService do
   end
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
 
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
@@ -121,20 +121,21 @@ RSpec.describe Captain::Llm::AssistantChatService do
         ]
       end
 
+      # rubocop:disable RSpec/MultipleExpectations
       it 'includes images from conversation history in context' do
         # First historical message should include the image via RubyLLM::Content
-        expect(mock_chat).to receive(:add_message) do |args|
-          expect(args[:role]).to eq(:user)
-          expect(args[:content]).to be_a(RubyLLM::Content)
-          expect(args[:content].text).to eq('Here is my error screenshot')
-          expect(args[:content].attachments.first.source.to_s).to eq('https://example.com/error.png')
+        expect(mock_chat).to receive(:add_message) do |message|
+          expect(message.role).to eq(:user)
+          expect(message.content).to be_a(RubyLLM::Content)
+          expect(message.content.text).to eq('Here is my error screenshot')
+          expect(message.content.attachments.first.source.to_s).to eq('https://example.com/error.png')
         end.ordered
 
         # Second historical message is plain text
-        expect(mock_chat).to receive(:add_message).with(
-          role: :assistant,
-          content: 'I see the error. Try restarting.'
-        ).ordered
+        expect(mock_chat).to receive(:add_message).ordered do |message|
+          expect(message.role).to eq(:assistant)
+          expect(message.content.text).to eq('I see the error. Try restarting.')
+        end
 
         # Current message asked via chat.ask
         expect(mock_chat).to receive(:ask).with('It still does not work').and_return(mock_response)
@@ -142,6 +143,7 @@ RSpec.describe Captain::Llm::AssistantChatService do
         service = described_class.new(assistant: assistant, conversation: conversation)
         service.generate_response(message_history: message_history)
       end
+      # rubocop:enable RSpec/MultipleExpectations
     end
   end
 
@@ -149,7 +151,7 @@ RSpec.describe Captain::Llm::AssistantChatService do
     it 'attaches tool steps to the assistant response payload' do
       tool_call_callback = nil
       tool_result_callback = nil
-      tool_call = instance_double('RubyLLM::ToolCall', name: 'search_documentation', arguments: {})
+      tool_call = instance_double(RubyLLM::ToolCall, name: 'search_documentation', arguments: {})
 
       allow(mock_chat).to receive(:on_tool_call) do |&block|
         tool_call_callback = block
@@ -169,18 +171,20 @@ RSpec.describe Captain::Llm::AssistantChatService do
       response = service.generate_response(message_history: [{ role: 'user', content: 'Hello' }])
 
       expect(response['captain_trace']).to eq(
-        Captain::ToolTraceBuilder.payload([
-          Captain::ToolTraceBuilder.step(
-            tool_name: 'search_documentation',
-            event: 'start',
-            sequence: 1
-          ),
-          Captain::ToolTraceBuilder.step(
-            tool_name: 'search_documentation',
-            event: 'complete',
-            sequence: 2
-          )
-        ])
+        Captain::ToolTraceBuilder.payload(
+          [
+            Captain::ToolTraceBuilder.step(
+              tool_name: 'search_documentation',
+              event: 'start',
+              sequence: 1
+            ),
+            Captain::ToolTraceBuilder.step(
+              tool_name: 'search_documentation',
+              event: 'complete',
+              sequence: 2
+            )
+          ]
+        )
       )
     end
   end

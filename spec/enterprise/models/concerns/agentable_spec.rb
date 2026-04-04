@@ -31,18 +31,18 @@ RSpec.describe Concerns::Agentable do
   end
 
   let(:dummy_instance) { dummy_class.new }
-  let(:mock_agents_agent) { instance_double(Agents::Agent) }
+  let(:mock_runtime_agent) { instance_double(Captain::Runtime::Agent) }
   let(:mock_installation_config) { instance_double(InstallationConfig, value: 'gpt-4-turbo') }
 
   before do
-    allow(Agents::Agent).to receive(:new).and_return(mock_agents_agent)
+    allow(Captain::Runtime::Agent).to receive(:new).and_return(mock_runtime_agent)
     allow(InstallationConfig).to receive(:find_by).with(name: 'CAPTAIN_OPEN_AI_MODEL').and_return(mock_installation_config)
     allow(Captain::PromptRenderer).to receive(:render).and_return('rendered_template')
   end
 
   describe '#agent' do
-    it 'creates an Agents::Agent with correct parameters' do
-      expect(Agents::Agent).to receive(:new).with(
+    it 'creates a Captain::Runtime::Agent with correct parameters' do
+      expect(Captain::Runtime::Agent).to receive(:new).with(
         name: 'Test Agent',
         instructions: instance_of(Proc),
         tools: [],
@@ -57,7 +57,7 @@ RSpec.describe Concerns::Agentable do
     it 'converts nil temperature to 0.0' do
       dummy_instance.temperature = nil
 
-      expect(Agents::Agent).to receive(:new).with(
+      expect(Captain::Runtime::Agent).to receive(:new).with(
         hash_including(temperature: 0.0)
       )
 
@@ -67,7 +67,7 @@ RSpec.describe Concerns::Agentable do
     it 'converts temperature to float' do
       dummy_instance.temperature = '0.5'
 
-      expect(Agents::Agent).to receive(:new).with(
+      expect(Captain::Runtime::Agent).to receive(:new).with(
         hash_including(temperature: 0.5)
       )
 
@@ -86,7 +86,7 @@ RSpec.describe Concerns::Agentable do
     end
 
     it 'merges context state when provided' do
-      context_double = instance_double(Agents::RunContext,
+      context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
                                            assistant_config: { 'feature_contact_attributes' => true },
@@ -111,7 +111,7 @@ RSpec.describe Concerns::Agentable do
     end
 
     it 'derives visible fields from raw state when prompt_context is absent' do
-      context_double = instance_double(Agents::RunContext,
+      context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
                                            assistant_config: { 'feature_contact_attributes' => true },
@@ -138,7 +138,7 @@ RSpec.describe Concerns::Agentable do
     end
 
     it 'merges campaign data from context state' do
-      context_double = instance_double(Agents::RunContext,
+      context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
                                            conversation: { id: 123 },
@@ -158,7 +158,7 @@ RSpec.describe Concerns::Agentable do
     end
 
     it 'prefers appointment data from prompt context when present' do
-      context_double = instance_double(Agents::RunContext,
+      context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
                                            assistant_config: { 'context_access' => {} },
@@ -194,7 +194,7 @@ RSpec.describe Concerns::Agentable do
     end
 
     it 'handles context without state' do
-      context_double = instance_double(Agents::RunContext, context: {})
+      context_double = instance_double(Captain::Runtime::RunContext, context: {})
 
       expect(Captain::PromptRenderer).to receive(:render).with(
         'dummy_class',

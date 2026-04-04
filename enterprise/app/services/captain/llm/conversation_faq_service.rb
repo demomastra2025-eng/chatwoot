@@ -84,10 +84,11 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
 
   def generate
     response = instrument_llm_call(instrumentation_params) do
-      chat
+      llm_chat = chat
         .with_params(response_format: { type: 'json_object' })
         .with_instructions(system_prompt)
-        .ask(@content)
+
+      ask_chat(llm_chat, @content)
     end
     parse_response(response.content)
   rescue RubyLLM::Error => e

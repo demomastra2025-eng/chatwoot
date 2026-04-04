@@ -4,7 +4,7 @@ RSpec.describe Llm::BaseAiService do
   subject(:service) { described_class.new }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
   end
 
   describe '#sanitize_json_response' do
@@ -30,6 +30,16 @@ RSpec.describe Llm::BaseAiService do
     it 'strips surrounding whitespace' do
       input = "  \n{\"key\": \"value\"}\n  "
       expect(service.send(:sanitize_json_response, input)).to eq('{"key": "value"}')
+    end
+  end
+
+  describe '#chat' do
+    let(:chat) { instance_double(RubyLLM::Chat) }
+
+    it 'delegates chat construction to Llm::ChatClient' do
+      expect(Llm::ChatClient).to receive(:build).with(model: service.model, temperature: service.temperature).and_return(chat)
+
+      expect(service.chat).to eq(chat)
     end
   end
 end

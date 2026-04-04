@@ -1,6 +1,6 @@
 class Captain::Tools::FirecrawlService
   DEFAULT_API_URL = 'https://api.firecrawl.dev/v2'.freeze
-  DEFAULT_MAP_LIMIT = 100.freeze
+  DEFAULT_MAP_LIMIT = 100
 
   class << self
     def api_key
@@ -26,6 +26,8 @@ class Captain::Tools::FirecrawlService
   def perform(url, webhook_url, crawl_limit = 10, options = {})
     crawl(url, webhook_url, crawl_limit, options)
   rescue StandardError => e
+    raise if e.message.start_with?('Failed to crawl URL:')
+
     raise "Failed to crawl URL: #{e.message.sub('Failed Firecrawl request: ', '')}"
   end
 
@@ -56,8 +58,8 @@ class Captain::Tools::FirecrawlService
                  get("/crawl/#{job_id}/errors")
                end
 
-    parsed_response = response.parsed_response || {}
-    errors = Array(parsed_response['errors']).map { |item| item['url'] }
+    parsed_response = parse_json_response(response)
+    errors = Array(parsed_response['errors']).pluck('url')
     robots_blocked = Array(parsed_response['robotsBlocked'])
 
     (errors + robots_blocked).map { |url| url.to_s.delete_suffix('/') }.reject(&:blank?).uniq
@@ -166,5 +168,15 @@ class Captain::Tools::FirecrawlService
       'Authorization' => "Bearer #{@api_key}",
       'Content-Type' => 'application/json'
     }
+  end
+
+  def parse_json_response(response)
+    parsed = response.respond_to?(:parsed_response) ? response.parsed_response : response
+    return parsed if parsed.is_a?(Hash)
+    return {} if parsed.blank?
+
+    JSON.parse(parsed)
+  rescue JSON::ParserError
+    {}
   end
 end

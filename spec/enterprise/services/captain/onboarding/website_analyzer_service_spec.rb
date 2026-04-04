@@ -17,7 +17,7 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
   end
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(Captain::Tools::SimplePageCrawlService).to receive(:new).and_return(mock_crawler)
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
@@ -50,6 +50,15 @@ RSpec.describe Captain::Onboarding::WebsiteAnalyzerService do
 
       it 'uses low temperature for deterministic analysis' do
         expect(mock_chat).to receive(:with_temperature).with(0.1).and_return(mock_chat)
+        service.analyze
+      end
+
+      it 'keeps website content out of the system prompt and sends it as user content once' do
+        expect(mock_chat).to receive(:with_instructions).with(satisfy { |prompt| !prompt.include?('Welcome to Example Corp') })
+          .and_return(mock_chat)
+        expect(mock_chat).to receive(:ask).with('Title: Example Corp - Home Description: Leading provider of business solutions Welcome to Example Corp')
+          .and_return(mock_response)
+
         service.analyze
       end
     end

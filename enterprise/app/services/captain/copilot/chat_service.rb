@@ -17,7 +17,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     setup_user(config)
     setup_message_history(config)
     @tools = build_tools
-    @messages = build_messages(config)
+    @messages = build_messages
   end
 
   def generate_response(input)
@@ -40,11 +40,11 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     @user = @account.users.find_by(id: config[:user_id]) if config[:user_id].present?
   end
 
-  def build_messages(config)
-    messages= [system_message]
-    messages << account_id_context
+  def build_messages
+    messages = [system_message, account_context_message]
     messages += @previous_history if @previous_history.present?
-    messages += current_viewing_history(config[:conversation_id]) if config[:conversation_id].present?
+    conversation_context = conversation_context_message
+    messages << conversation_context if conversation_context.present?
     messages
   end
 
@@ -97,27 +97,24 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     @tools.map { |tool| "- #{tool.name}: #{tool.description}" }.join("\n")
   end
 
-  def account_id_context
+  def account_context_message
     {
       role: 'system',
-      content: "The current account id is #{@account.id}. The account is using #{@account.locale_english_name} as the language."
+      content: Captain::Llm::SystemPromptsService.copilot_account_context(@account)
     }
   end
 
-  def current_viewing_history(conversation_id)
-    conversation = @account.conversations.find_by(display_id: conversation_id)
-    return [] unless conversation
+  def conversation_context_message
+    return if @conversation.blank?
 
-    Rails.logger.info("#{self.class.name} Assistant: #{@assistant.id}, Setting viewing history for conversation_id=#{conversation_id}")
-    contact_id = conversation.contact_id
-    [{
+    Rails.logger.info(
+      "#{self.class.name} Assistant: #{@assistant.id}, Setting viewing history for conversation_id=#{@conversation.display_id}"
+    )
+
+    {
       role: 'system',
-      content: <<~HISTORY.strip
-        You are currently viewing the conversation with the following details:
-        Conversation ID: #{conversation_id}
-        Contact ID: #{contact_id}
-      HISTORY
-    }]
+      content: Captain::Llm::SystemPromptsService.copilot_conversation_context(@conversation)
+    }
   end
 
   def persist_message(message, message_type = 'assistant')

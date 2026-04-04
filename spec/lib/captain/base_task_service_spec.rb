@@ -21,7 +21,7 @@ RSpec.describe Captain::BaseTaskService do
   let(:service) { test_service_class.new(account: account, conversation_display_id: conversation.display_id) }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     # Stub captain enabled check to allow OSS specs to test base functionality
     # without enterprise module interference
     allow(account).to receive(:feature_enabled?).and_call_original
@@ -32,6 +32,14 @@ RSpec.describe Captain::BaseTaskService do
     it 'returns the expected result' do
       result = service.perform
       expect(result).to eq({ message: 'Test response' })
+    end
+  end
+
+  describe '#prompt_from_file lookup' do
+    it 'loads prompts from the unified Captain task prompt tree' do
+      prompt = service.send(:prompt_from_file, 'summary')
+
+      expect(prompt).to include('As an AI-powered summarization tool')
     end
   end
 
@@ -210,12 +218,20 @@ RSpec.describe Captain::BaseTaskService do
       end
 
       it 'adds conversation history before asking' do
+        history_messages = []
+
         expect(mock_chat).to receive(:with_instructions).with('You are helpful')
-        expect(mock_chat).to receive(:add_message).with(role: :user, content: 'First message').ordered
-        expect(mock_chat).to receive(:add_message).with(role: :assistant, content: 'First response').ordered
+        allow(mock_chat).to receive(:add_message) { |message| history_messages << message }
         expect(mock_chat).to receive(:ask).with('Second message').and_return(mock_response)
 
         service.send(:make_api_call, model: model, messages: messages)
+
+        expect(history_messages.map(&:role)).to eq(%i[user assistant])
+        history_contents = history_messages.map do |message|
+          message.content.respond_to?(:text) ? message.content.text : message.content
+        end
+
+        expect(history_contents).to eq(['First message', 'First response'])
       end
     end
 
@@ -279,8 +295,9 @@ RSpec.describe Captain::BaseTaskService do
   end
 
   describe '#prompt_from_file' do
-    it 'reads prompt from file' do
-      allow(Rails.root).to receive(:join).and_return(instance_double(Pathname, read: 'Test prompt content'))
+    it 'delegates prompt lookup to the Captain prompt registry' do
+      expect(Captain::PromptRegistry).to receive(:fetch_task!).with('test').and_return('Test prompt content')
+
       expect(service.send(:prompt_from_file, 'test')).to eq('Test prompt content')
     end
   end

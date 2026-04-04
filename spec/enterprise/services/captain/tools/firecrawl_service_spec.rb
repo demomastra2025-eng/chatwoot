@@ -8,7 +8,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
   let(:default_api_url) { 'https://api.firecrawl.dev/v2' }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_FIRECRAWL_API_KEY', value: api_key)
+    upsert_installation_config('CAPTAIN_FIRECRAWL_API_KEY', api_key)
   end
 
   describe '#initialize' do

@@ -12,7 +12,7 @@ RSpec.describe Captain::LabelSuggestionService do
   let(:mock_response) { instance_double(RubyLLM::Message, content: 'bug, feature-request', input_tokens: 100, output_tokens: 20) }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     label1
     label2
     allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)

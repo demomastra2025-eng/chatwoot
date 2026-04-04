@@ -12,7 +12,7 @@ RSpec.describe Captain::RewriteService do
   let(:mock_response) { instance_double(RubyLLM::Message, content: 'Rewritten text', input_tokens: 10, output_tokens: 5) }
 
   before do
-    create(:installation_config, name: 'CAPTAIN_OPEN_AI_API_KEY', value: 'test-key')
+    upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
     allow(mock_chat).to receive(:with_instructions)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
@@ -26,7 +26,7 @@ RSpec.describe Captain::RewriteService do
     let(:operation) { 'fix_spelling_grammar' }
 
     it 'uses fix_spelling_grammar prompt' do
-      expect(service).to receive(:prompt_from_file).with('fix_spelling_grammar').and_return('Fix errors')
+      expect(service).to receive(:render_task_prompt).with('fix_spelling_grammar').and_return('Fix errors')
 
       expect(service).to receive(:make_api_call) do |args|
         expect(args[:messages][0][:content]).to eq('Fix errors')
@@ -39,10 +39,10 @@ RSpec.describe Captain::RewriteService do
   end
 
   describe 'tone rewrite methods' do
-    let(:tone_prompt_template) { 'Rewrite in {{ tone }} tone' }
-
     before do
-      allow(service).to receive(:prompt_from_file).with('tone_rewrite').and_return(tone_prompt_template)
+      allow(service).to receive(:render_task_prompt).with('tone_rewrite', tone: anything) do |_template, tone:|
+        "Rewrite in #{tone} tone"
+      end
     end
 
     describe '#perform with casual operation' do
@@ -113,11 +113,14 @@ RSpec.describe Captain::RewriteService do
 
   describe '#perform with improve operation' do
     let(:operation) { 'improve' }
-    let(:improve_template) { 'Context: {{ conversation_context }}\nDraft: {{ draft_message }}' }
 
     before do
       create(:message, conversation: conversation, message_type: :incoming, content: 'Customer message')
-      allow(service).to receive(:prompt_from_file).with('improve').and_return(improve_template)
+      allow(service).to receive(:render_task_prompt).with(
+        'improve',
+        conversation_context: anything,
+        draft_message: content
+      ).and_return("Context: Customer message\nDraft: #{content}")
     end
 
     it 'uses conversation context and draft message with Liquid template' do

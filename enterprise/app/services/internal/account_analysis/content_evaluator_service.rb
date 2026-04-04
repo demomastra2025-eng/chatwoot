@@ -9,7 +9,7 @@ class Internal::AccountAnalysis::ContentEvaluatorService
     return default_evaluation if content.blank?
 
     moderation_result = instrument_moderation_call(instrumentation_params(content)) do
-      RubyLLM.moderate(content.to_s[0...10_000])
+      Llm::ApiClient.moderate(content.to_s[0...10_000])
     end
 
     build_evaluation(moderation_result)

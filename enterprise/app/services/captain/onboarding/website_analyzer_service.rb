@@ -59,11 +59,12 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
 
   def extract_business_info
     response = instrument_llm_call(instrumentation_params) do
-      chat
+      llm_chat = chat
         .with_params(response_format: { type: 'json_object' }, max_tokens: 1000)
         .with_temperature(0.1)
-        .with_instructions(build_analysis_prompt)
-        .ask(@website_content)
+        .with_instructions(analysis_prompt)
+
+      ask_chat(llm_chat, @website_content)
     end
 
     parse_llm_response(response.content)
@@ -76,37 +77,19 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
       temperature: 0.1,
       feature_name: 'website_analyzer',
       messages: [
-        { role: 'system', content: build_analysis_prompt },
+        { role: 'system', content: analysis_prompt },
         { role: 'user', content: @website_content }
       ],
       metadata: { website_url: @website_url }
     }
   end
 
-  def build_analysis_prompt
-    <<~PROMPT
-      Analyze the following website content and extract business information. Return a JSON response with the following structure:
-
-      {
-        "business_name": "The company or business name",
-        "suggested_assistant_name": "A friendly assistant name (e.g., 'Captain Assistant', 'Support Genie', etc.)",
-        "description": "Persona of the assistant based on the business type"
-      }
-
-      Guidelines:
-      - business_name: Extract the actual company/brand name from the content
-      - suggested_assistant_name: Create a friendly, professional name that customers would want to interact with
-      - description: Provide context about the business and what the assistant can help with. Keep it general and adaptable rather than overly specific. For example: "You specialize in helping customers with their orders and product questions" or "You assist customers with their account needs and general inquiries"
-
-      Website content:
-      #{@website_content}
-
-      Return only valid JSON, no additional text.
-    PROMPT
+  def analysis_prompt
+    Captain::Llm::SystemPromptsService.website_analysis
   end
 
   def parse_llm_response(response_text)
-    parsed_response = JSON.parse(response_text.strip)
+    parsed_response = JSON.parse(sanitize_json_response(response_text.to_s))
 
     {
       success: true,
