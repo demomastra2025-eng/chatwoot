@@ -28,6 +28,22 @@ class CaptainCustomTools extends ApiClient {
     });
   }
 
+  preview({ customTool = {}, testPayload = {} } = {}) {
+    return axios.post(`${this.url}/test`, {
+      custom_tool: customTool,
+      test_payload: testPayload,
+      preview_only: true,
+    });
+  }
+
+  test({ customTool = {}, testPayload = {} } = {}) {
+    return axios.post(`${this.url}/test`, {
+      custom_tool: customTool,
+      test_payload: testPayload,
+      preview_only: false,
+    });
+  }
+
   delete(id) {
     return axios.delete(`${this.url}/${id}`);
   }

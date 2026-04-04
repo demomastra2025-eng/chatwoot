@@ -21,12 +21,8 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def call(params = {})
-    request_params = resolve_request_params(params, @state)
-    template_context = build_template_context(request_params, @state)
-    url = @custom_tool.build_request_url(request_params, template_context: template_context)
-    body = @custom_tool.build_request_body(request_params, template_context: template_context)
-
-    response = execute_http_request(url, body)
+    request_preview = preview(params)
+    response = execute_http_request(request_preview[:url], request_preview[:body])
     @custom_tool.format_response(response.body)
   rescue MissingRequiredParametersError => e
     Rails.logger.warn("HttpTool missing parameters for #{@custom_tool.slug}: #{e.message}")
@@ -39,7 +35,42 @@ class Captain::Tools::HttpRequestExecutor
     'An error occurred while executing the request'
   end
 
+  def preview(params = {})
+    build_request_preview(params)
+  end
+
+  def execute_with_details(params = {}, raise_on_http_error: false)
+    request_preview = build_request_preview(params)
+    response = execute_http_request(
+      request_preview[:url],
+      request_preview[:body],
+      raise_on_http_error: raise_on_http_error
+    )
+
+    {
+      preview: request_preview,
+      response: {
+        successful: response.is_a?(Net::HTTPSuccess),
+        status: response.code.to_i,
+        body: response.body,
+        formatted_body: @custom_tool.format_response(response.body),
+        headers: normalize_response_headers(response.to_hash)
+      }
+    }
+  end
+
   private
+
+  def build_request_preview(params)
+    request_params = resolve_request_params(params, @state)
+    template_context = build_template_context(request_params, @state)
+
+    {
+      resolved_params: request_params,
+      url: @custom_tool.build_request_url(request_params, template_context: template_context),
+      body: @custom_tool.build_request_body(request_params, template_context: template_context)
+    }
+  end
 
   def build_template_context(params, state)
     stringified_params = params.deep_stringify_keys
@@ -161,7 +192,7 @@ class Captain::Tools::HttpRequestExecutor
     }
   end
 
-  def execute_http_request(url, body)
+  def execute_http_request(url, body, raise_on_http_error: true)
     uri = URI.parse(url)
     resolved_ip = resolve_public_ip!(uri.host)
 
@@ -177,10 +208,9 @@ class Captain::Tools::HttpRequestExecutor
     apply_metadata_headers(request)
 
     response = http.request(request)
-
-    raise "HTTP request failed with status #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-
     validate_response!(response)
+    raise "HTTP request failed with status #{response.code}" if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
+
     response
   end
 
@@ -241,5 +271,11 @@ class Captain::Tools::HttpRequestExecutor
   def apply_metadata_headers(request)
     metadata_headers = @custom_tool.build_metadata_headers(@state)
     metadata_headers.each { |key, value| request[key] = value }
+  end
+
+  def normalize_response_headers(headers)
+    headers.to_h.transform_values do |value|
+      value.is_a?(Array) && value.one? ? value.first : value
+    end
   end
 end

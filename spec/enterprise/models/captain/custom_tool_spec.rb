@@ -807,8 +807,15 @@ RSpec.describe Captain::CustomTool, type: :model do
                                  id: 'custom_test-tool',
                                  title: 'Test Tool',
                                  description: 'A test tool',
-                                 group_name: nil,
-                                 custom: true
+                                 group_name: 'Custom tools',
+                                 icon: 'plug',
+                                 custom: true,
+                                 allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+                                 required_features: [],
+                                 required_permissions: [],
+                                 risk_level: 'custom',
+                                 requires_confirmation: false,
+                                 idempotent: false
                                })
       end
     end

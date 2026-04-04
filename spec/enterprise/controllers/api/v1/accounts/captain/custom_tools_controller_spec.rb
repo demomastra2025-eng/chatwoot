@@ -369,6 +369,144 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/{account.id}/captain/custom_tools/test' do
+    let(:test_attributes) do
+      {
+        custom_tool: {
+          title: 'Sync lead',
+          description: 'Sends lead updates to an external system',
+          endpoint_url: 'https://api.example.com/hooks/{{ manager_name }}/{{ pipeline }}?contact_id={{ customer_id }}',
+          http_method: 'POST',
+          request_template: '{"manager":"{{ manager_name }}","pipeline":"{{ pipeline }}","contact_id":{{ customer_id }},"phone":"{{ customer_phone }}"}',
+          response_template: '{{ response.status }}',
+          auth_type: 'none',
+          auth_config: {},
+          param_schema: [
+            {
+              name: 'manager_name',
+              type: 'string',
+              description: 'Manager selected by the agent',
+              source: 'agent',
+              required: true
+            },
+            {
+              name: 'customer_id',
+              type: 'number',
+              description: 'Contact id from context',
+              source: 'context',
+              context_path: 'contact.id',
+              required: true
+            },
+            {
+              name: 'customer_phone',
+              type: 'string',
+              description: 'Phone number from context',
+              source: 'context',
+              context_path: 'contact.phone_number',
+              required: true
+            },
+            {
+              name: 'pipeline',
+              type: 'string',
+              description: 'Fixed pipeline',
+              source: 'fixed',
+              fixed_value: 'sales',
+              required: true
+            }
+          ]
+        },
+        test_payload: {
+          agent_params: {
+            manager_name: 'alice'
+          },
+          context_values: {
+            'contact.id': '42',
+            'contact.phone_number': '+1234567890'
+          }
+        }
+      }
+    end
+
+    before do
+      allow(Resolv).to receive(:getaddresses).and_call_original
+      allow(Resolv).to receive(:getaddresses).with('api.example.com').and_return(['93.184.216.34'])
+    end
+
+    context 'when it is an agent' do
+      it 'returns unauthorized status' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes,
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an admin' do
+      it 'returns a preview without executing the outbound request' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: true),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:preview]).to eq({
+                                                resolved_params: {
+                                                  manager_name: 'alice',
+                                                  customer_id: 42,
+                                                  customer_phone: '+1234567890',
+                                                  pipeline: 'sales'
+                                                },
+                                                url: 'https://api.example.com/hooks/alice/sales?contact_id=42',
+                                                body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}'
+                                              })
+        expect(WebMock).not_to have_requested(:post, /api\.example\.com/)
+      end
+
+      it 'executes the tool and returns preview plus response details' do
+        stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
+          .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
+          .to_return(status: 200, body: '{"status":"accepted"}', headers: { 'Content-Type' => 'application/json' })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: false),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:preview][:url]).to eq('https://api.example.com/hooks/alice/sales?contact_id=42')
+        expect(json_response[:response]).to include(
+          successful: true,
+          status: 200,
+          body: '{"status":"accepted"}',
+          formatted_body: 'accepted'
+        )
+      end
+
+      it 'returns non-successful downstream responses without dropping the preview' do
+        stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
+          .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
+          .to_return(status: 422, body: '{"error":"invalid manager"}', headers: { 'Content-Type' => 'application/json' })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: false),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:preview][:body]).to eq(
+          '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}'
+        )
+        expect(json_response[:response]).to include(
+          successful: false,
+          status: 422,
+          body: '{"error":"invalid manager"}'
+        )
+      end
+    end
+  end
+
   describe 'DELETE /api/v1/accounts/{account.id}/captain/custom_tools/{id}' do
     let!(:custom_tool) { create(:captain_custom_tool, account: account) }
 

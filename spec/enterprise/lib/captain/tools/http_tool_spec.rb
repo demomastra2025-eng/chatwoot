@@ -331,6 +331,65 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    context 'with mixed agent, context, and fixed parameters in URL' do
+      let(:tool_context_with_prompt_context) do
+        Struct.new(:state).new({
+                                 prompt_context: {
+                                   contact: {
+                                     id: 42
+                                   }
+                                 }
+                               })
+      end
+
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/hooks/{{ manager_name }}/changed/{{ pipeline }}?contact_id={{ customer_id }}',
+          request_template: '{"ok":true}',
+          response_template: nil,
+          param_schema: [
+            {
+              'name' => 'manager_name',
+              'type' => 'string',
+              'description' => 'Manager chosen by the agent',
+              'source' => 'agent',
+              'required' => true
+            },
+            {
+              'name' => 'customer_id',
+              'type' => 'number',
+              'description' => 'Contact id from context',
+              'source' => 'context',
+              'context_path' => 'contact.id',
+              'required' => true
+            },
+            {
+              'name' => 'pipeline',
+              'type' => 'string',
+              'description' => 'Static pipeline name',
+              'source' => 'fixed',
+              'fixed_value' => 'sales',
+              'required' => true
+            }
+          ]
+        )
+        stub_request(:post, 'https://example.com/hooks/alice/changed/sales?contact_id=42')
+          .with(body: '{"ok":true}')
+          .to_return(status: 200, body: '{"ok": true}')
+      end
+
+      it 'resolves all parameter sources before rendering the URL template' do
+        result = tool.perform(tool_context_with_prompt_context, manager_name: 'alice')
+
+        expect(result).to eq('{"ok": true}')
+        expect(WebMock).to have_requested(
+          :post,
+          'https://example.com/hooks/alice/changed/sales?contact_id=42'
+        ).with(body: '{"ok":true}')
+      end
+    end
+
     context 'with a legacy tool using a reserved parameter name' do
       let(:tool_context_with_prompt_context) do
         Struct.new(:state).new({

@@ -31,5 +31,29 @@ export default createStore({
         return throwErrorMessage(error);
       }
     },
+
+    previewTool: async ({ commit }, payload) => {
+      commit(mutations.SET_UI_FLAG, { previewingTool: true });
+      try {
+        const response = await CaptainCustomTools.preview(payload);
+        commit(mutations.SET_UI_FLAG, { previewingTool: false });
+        return response.data;
+      } catch (error) {
+        commit(mutations.SET_UI_FLAG, { previewingTool: false });
+        return throwErrorMessage(error);
+      }
+    },
+
+    testTool: async ({ commit }, payload) => {
+      commit(mutations.SET_UI_FLAG, { testingTool: true });
+      try {
+        const response = await CaptainCustomTools.test(payload);
+        commit(mutations.SET_UI_FLAG, { testingTool: false });
+        return response.data;
+      } catch (error) {
+        commit(mutations.SET_UI_FLAG, { testingTool: false });
+        return throwErrorMessage(error);
+      }
+    },
   }),
 });

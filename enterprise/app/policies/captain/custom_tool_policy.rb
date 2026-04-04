@@ -15,6 +15,10 @@ class Captain::CustomToolPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def test?
+    @account_user.administrator?
+  end
+
   def destroy?
     @account_user.administrator?
   end

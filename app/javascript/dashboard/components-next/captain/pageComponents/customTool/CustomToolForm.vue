@@ -19,6 +19,7 @@ import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
 import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
+import ToolTestPanel from './ToolTestPanel.vue';
 
 const props = defineProps({
   mode: {
@@ -234,6 +235,19 @@ const isParamsValid = () => {
   return paramsRef.value.every(param => param.validate());
 };
 
+const toolDraftForTesting = computed(() => ({
+  title: state.title,
+  group_name: state.group_name,
+  description: state.description,
+  endpoint_url: state.endpoint_url,
+  http_method: state.http_method,
+  request_template: showRequestTemplate.value ? state.request_template : '',
+  response_template: state.response_template,
+  auth_type: state.auth_type,
+  auth_config: { ...state.auth_config },
+  param_schema: state.param_schema.map(normalizeParam),
+}));
+
 const removeParam = index => {
   state.param_schema.splice(index, 1);
 };
@@ -290,9 +304,13 @@ watch(
 
 const handleCancel = () => emit('cancel');
 
-const handleSubmit = async () => {
+const validateBeforeToolTest = async () => {
   const isFormValid = await v$.value.$validate();
-  if (!isFormValid || !isParamsValid()) {
+  return isFormValid && isParamsValid();
+};
+
+const handleSubmit = async () => {
+  if (!(await validateBeforeToolTest())) {
     return;
   }
 
@@ -426,6 +444,12 @@ const handleSubmit = async () => {
     <p class="text-xs text-n-slate-11 -mt-2">
       {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.HELP_TEXT') }}
     </p>
+
+    <ToolTestPanel
+      :custom-tool="toolDraftForTesting"
+      :disabled="isLoading"
+      :validate-before-run="validateBeforeToolTest"
+    />
 
     <div class="flex gap-3 justify-between items-center w-full">
       <Button

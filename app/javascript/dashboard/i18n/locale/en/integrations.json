@@ -1099,6 +1099,44 @@
           "PLACEHOLDER": "Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'}; {'{{'} status {'}}'} will not work",
           "HELP_TEXT": "Response templates receive the parsed API result as response and r. Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'} instead of root-level fields like {'{{'} status {'}}'}."
         },
+        "TEST_PANEL": {
+          "TITLE": "Preview and test request",
+          "DESCRIPTION": "Use sample values to resolve agent and context parameters before you save or call the external endpoint.",
+          "ENCODING_HINT": "Query placeholders are inserted as-is before the request is sent. Spaces are usually normalized, but reserved characters like &, =, and ? inside a value can change query parsing. Prefer the JSON body for complex text or send pre-encoded query values.",
+          "FIXED_PARAMS_LABEL": "Fixed parameters",
+          "AGENT_PARAMS_LABEL": "Agent sample values",
+          "CONTEXT_PARAMS_LABEL": "Context sample values",
+          "CONTEXT_FIELD_HINT": "Maps to context field: {field}",
+          "NO_SAMPLES_REQUIRED": "This tool only uses fixed values or direct template references, so no sample parameter input is required for a basic preview.",
+          "VALIDATION_ERROR": "Fix the form errors before previewing or testing this tool.",
+          "INPUT": {
+            "TEXT_PLACEHOLDER": "Enter a sample value",
+            "NUMBER_PLACEHOLDER": "Enter a sample number",
+            "BOOLEAN_PLACEHOLDER": "true or false",
+            "JSON_PLACEHOLDER": "Enter sample JSON"
+          },
+          "PREVIEW": {
+            "ACTION": "Preview request",
+            "ERROR_MESSAGE": "Failed to preview this request",
+            "RESULT_TITLE": "Resolved request preview",
+            "URL_LABEL": "Final URL",
+            "BODY_LABEL": "Final body",
+            "RESOLVED_PARAMS_LABEL": "Resolved parameters",
+            "NO_BODY_FOR_METHOD": "No request body will be sent for this HTTP method.",
+            "NO_BODY_TEMPLATE": "No request body template is configured.",
+            "RUN_TEST_HINT": "Run Test tool to send this request and inspect the response."
+          },
+          "TEST": {
+            "ACTION": "Test tool",
+            "ERROR_MESSAGE": "Failed to test this tool"
+          },
+          "RESPONSE": {
+            "SUCCESS_STATUS": "HTTP {status}",
+            "ERROR_STATUS": "HTTP {status}",
+            "RAW_LABEL": "Raw response",
+            "FORMATTED_LABEL": "Formatted response"
+          }
+        },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required",
           "PARAM_NAME_INVALID": "Use letters, numbers, and underscores only, and start with a letter or underscore",
