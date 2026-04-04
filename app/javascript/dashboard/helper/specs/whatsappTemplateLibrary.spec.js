@@ -59,9 +59,47 @@ describe('whatsappTemplateLibrary', () => {
             text: 'Track',
             url: 'https://example.com',
             example: '',
+            phone_number: '',
           },
         ],
       });
+    });
+
+    it('includes copy code and phone number button fields in the payload', () => {
+      const form = createEmptyWhatsAppTemplateForm();
+      form.buttons = [
+        {
+          type: 'COPY_CODE',
+          text: '',
+          url: '',
+          example: ' SAVE20 ',
+          phoneNumber: '',
+        },
+        {
+          type: 'PHONE_NUMBER',
+          text: ' Call us ',
+          url: '',
+          example: '',
+          phoneNumber: ' +16505551234 ',
+        },
+      ];
+
+      expect(buildWhatsAppTemplatePayload(form).buttons).toEqual([
+        {
+          type: 'COPY_CODE',
+          text: '',
+          url: '',
+          example: 'SAVE20',
+          phone_number: '',
+        },
+        {
+          type: 'PHONE_NUMBER',
+          text: 'Call us',
+          url: '',
+          example: '',
+          phone_number: '+16505551234',
+        },
+      ]);
     });
   });
 

@@ -47,7 +47,7 @@
       "PAGE_TITLE": "WhatsApp template library",
       "PAGE_DESCRIPTION": "Create and manage WhatsApp Cloud templates for this channel. New templates are submitted to Meta for review and appear here as soon as the local cache updates.",
       "SUPPORTED_TITLE": "Supported template builder",
-      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, and URL buttons.",
+      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, URL buttons, copy code buttons, and phone number buttons.",
       "LAST_SYNC": "Last sync: {timestamp}",
       "NOT_SYNCED_YET": "Not synced yet",
       "SEARCH_PLACEHOLDER": "Search templates by name, status, language, or text",
@@ -67,7 +67,7 @@
       "LANGUAGES": "Languages: {languages}",
       "REJECTION_REASON": "Rejection reason for {language}",
       "BODY_SECTION": "Body content",
-      "VARIABLE_HINT": "Use sequential variables like {{1}}, {{2}} when you need dynamic values.",
+      "VARIABLE_HINT": "Use sequential variables like {'{{'}1{'}}'}, {'{{'}2{'}}'} when you need dynamic values.",
       "BUTTONS_SECTION": "Buttons",
       "BUTTONS_HINT": "You can add up to {count} supported buttons.",
       "ADD_BUTTON": "Add button",
@@ -86,14 +86,16 @@
       },
       "BUTTON_OPTIONS": {
         "QUICK_REPLY": "Quick reply",
-        "URL": "URL button"
+        "URL": "URL button",
+        "COPY_CODE": "Copy code",
+        "PHONE_NUMBER": "Phone number"
       },
       "FIELDS": {
         "LANGUAGE": "Language",
         "CATEGORY": "Category",
         "HEADER_TYPE": "Header type",
         "HEADER_TEXT": "Header text",
-        "HEADER_PLACEHOLDER": "Your order {{1}} is on the way",
+        "HEADER_PLACEHOLDER": "Your order {'{{'}1{'}}'} is on the way",
         "HEADER_EXAMPLE": "Header example for {variable}",
         "HEADER_EXAMPLE_PLACEHOLDER": "Example value for {variable}",
         "NAME": {
@@ -101,7 +103,7 @@
           "PLACEHOLDER": "order_update"
         },
         "BODY_TEXT": "Body text",
-        "BODY_PLACEHOLDER": "Hello {{1}}, your order is now {{2}}.",
+        "BODY_PLACEHOLDER": "Hello {'{{'}1{'}}'}, your order is now {'{{'}2{'}}'}.",
         "BODY_EXAMPLE": "Body example for {variable}",
         "BODY_EXAMPLE_PLACEHOLDER": "Example value for {variable}",
         "MEDIA_URL": "Sample media URL",
@@ -112,9 +114,13 @@
         "BUTTON_TEXT": "Button text",
         "BUTTON_TEXT_PLACEHOLDER": "Track order",
         "BUTTON_URL": "Button URL",
-        "BUTTON_URL_PLACEHOLDER": "https://example.com/orders/{{1}}",
+        "BUTTON_URL_PLACEHOLDER": "https://example.com/orders/{'{{'}1{'}}'}",
         "BUTTON_EXAMPLE": "Sample URL suffix",
-        "BUTTON_EXAMPLE_PLACEHOLDER": "12345"
+        "BUTTON_EXAMPLE_PLACEHOLDER": "12345",
+        "BUTTON_COPY_CODE": "Sample coupon code",
+        "BUTTON_COPY_CODE_PLACEHOLDER": "SAVE20",
+        "BUTTON_PHONE_NUMBER": "Phone number",
+        "BUTTON_PHONE_NUMBER_PLACEHOLDER": "+16505551234"
       },
       "ERRORS": {
         "NAME_REQUIRED": "Template name is required.",
@@ -132,7 +138,11 @@
         "BUTTON_URL_INVALID": "Button {index} uses an invalid variable format.",
         "BUTTON_URL_SINGLE_VARIABLE": "Button {index} URL can contain at most one variable.",
         "BUTTON_URL_SUFFIX": "Button {index} URL variable must be the final suffix.",
-        "BUTTON_EXAMPLE_REQUIRED": "Button {index} needs a sample suffix for review."
+        "BUTTON_EXAMPLE_REQUIRED": "Button {index} needs a sample suffix for review.",
+        "BUTTON_COPY_CODE_REQUIRED": "Button {index} needs a sample coupon code.",
+        "BUTTON_COPY_CODE_LENGTH": "Button {index} coupon code can be up to 15 characters.",
+        "BUTTON_PHONE_NUMBER_REQUIRED": "Button {index} phone number is required.",
+        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format."
       }
     }
   }

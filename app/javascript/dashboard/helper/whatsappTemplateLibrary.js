@@ -20,6 +20,8 @@ export const TEMPLATE_HEADER_TYPE_OPTIONS = [
 export const TEMPLATE_BUTTON_TYPE_OPTIONS = [
   { label: 'Quick reply', value: 'QUICK_REPLY' },
   { label: 'URL button', value: 'URL' },
+  { label: 'Copy code', value: 'COPY_CODE' },
+  { label: 'Phone number', value: 'PHONE_NUMBER' },
 ];
 
 export const createEmptyTemplateButton = () => ({
@@ -27,6 +29,7 @@ export const createEmptyTemplateButton = () => ({
   text: '',
   url: '',
   example: '',
+  phoneNumber: '',
 });
 
 export const createEmptyWhatsAppTemplateForm = () => ({
@@ -66,6 +69,10 @@ function compactObject(value) {
   return Object.fromEntries(
     Object.entries(value || {}).filter(([, entryValue]) => entryValue?.trim?.())
   );
+}
+
+function compactString(value) {
+  return String(value || '').trim();
 }
 
 export const hasDanglingTemplateVariable = text => {
@@ -123,21 +130,22 @@ export const extractSequentialTemplateVariables = text => {
 
 export const buildWhatsAppTemplatePayload = form => {
   return {
-    name: form.name.trim(),
+    name: compactString(form.name),
     language: form.language,
     category: form.category,
     header_type: form.headerType,
-    header_text: form.headerText.trim(),
-    body_text: form.bodyText.trim(),
-    footer_text: form.footerText.trim(),
-    sample_media_url: form.sampleMediaUrl.trim(),
+    header_text: compactString(form.headerText),
+    body_text: compactString(form.bodyText),
+    footer_text: compactString(form.footerText),
+    sample_media_url: compactString(form.sampleMediaUrl),
     body_examples: compactObject(form.bodyExamples),
     header_examples: compactObject(form.headerExamples),
     buttons: form.buttons.map(button => ({
       type: button.type,
-      text: button.text.trim(),
-      url: button.url.trim(),
-      example: button.example.trim(),
+      text: compactString(button.text),
+      url: compactString(button.url),
+      example: compactString(button.example),
+      phone_number: compactString(button.phoneNumber),
     })),
   };
 };

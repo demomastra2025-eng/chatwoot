@@ -210,5 +210,87 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
         ).call
       end.to raise_error(ArgumentError, 'Dynamic URL button variable must be the final URL suffix')
     end
+
+    it 'builds copy code and phone number buttons' do
+      template_config = {
+        name: 'support_offer',
+        language: 'en',
+        category: 'marketing',
+        body_text: 'Use the code below or call us for help.',
+        buttons: [
+          {
+            type: 'COPY_CODE',
+            example: 'SAVE20'
+          },
+          {
+            type: 'PHONE_NUMBER',
+            text: 'Call support',
+            phone_number: '+16505551234'
+          }
+        ]
+      }
+
+      result = described_class.new(
+        template_config: template_config,
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].last[:buttons]).to eq([
+                                                         {
+                                                           type: 'COPY_CODE',
+                                                           example: 'SAVE20'
+                                                         },
+                                                         {
+                                                           type: 'PHONE_NUMBER',
+                                                           text: 'Call support',
+                                                           phone_number: '+16505551234'
+                                                         }
+                                                       ])
+    end
+
+    it 'raises when a copy code example exceeds the supported length' do
+      template_config = {
+        name: 'broken_copy_code',
+        language: 'en',
+        category: 'marketing',
+        body_text: 'Special offer',
+        buttons: [
+          {
+            type: 'COPY_CODE',
+            example: 'SAVE20_WITH_TOO_LONG_CODE'
+          }
+        ]
+      }
+
+      expect do
+        described_class.new(
+          template_config: template_config,
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Copy code example cannot exceed 15 characters')
+    end
+
+    it 'raises when a phone number button does not use E.164 format' do
+      template_config = {
+        name: 'broken_phone_button',
+        language: 'en',
+        category: 'utility',
+        body_text: 'Contact support',
+        buttons: [
+          {
+            type: 'PHONE_NUMBER',
+            text: 'Call support',
+            phone_number: '6505551234'
+          }
+        ]
+      }
+
+      expect do
+        described_class.new(
+          template_config: template_config,
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Phone number buttons must use E.164 format')
+    end
   end
 end

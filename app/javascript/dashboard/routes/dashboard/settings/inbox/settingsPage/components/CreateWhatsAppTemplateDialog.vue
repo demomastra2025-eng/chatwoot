@@ -34,6 +34,7 @@ const emit = defineEmits(['created']);
 
 const { t } = useI18n();
 const store = useStore();
+const PHONE_NUMBER_PATTERN = /^\+[1-9]\d{1,14}$/;
 
 const dialogRef = ref(null);
 const isSubmitting = ref(false);
@@ -100,7 +101,20 @@ const buttonTypeOptions = computed(() => [
     ...TEMPLATE_BUTTON_TYPE_OPTIONS[1],
     label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.URL'),
   },
+  {
+    ...TEMPLATE_BUTTON_TYPE_OPTIONS[2],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.COPY_CODE'),
+  },
+  {
+    ...TEMPLATE_BUTTON_TYPE_OPTIONS[3],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.PHONE_NUMBER'),
+  },
 ]);
+
+const buttonUsesText = buttonType => buttonType !== 'COPY_CODE';
+const buttonUsesUrl = buttonType => buttonType === 'URL';
+const buttonUsesCopyCode = buttonType => buttonType === 'COPY_CODE';
+const buttonUsesPhoneNumber = buttonType => buttonType === 'PHONE_NUMBER';
 
 const bodyVariableInfo = computed(() =>
   extractSequentialTemplateVariables(form.bodyText)
@@ -190,7 +204,7 @@ const validationErrors = computed(() => {
   form.buttons.forEach((button, index) => {
     const buttonIndex = index + 1;
 
-    if (!button.text.trim()) {
+    if (buttonUsesText(button.type) && !button.text.trim()) {
       errors.push(
         t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_TEXT_REQUIRED', {
           index: buttonIndex,
@@ -198,7 +212,7 @@ const validationErrors = computed(() => {
       );
     }
 
-    if (button.type === 'URL') {
+    if (buttonUsesUrl(button.type)) {
       const urlVariableInfo = extractSequentialTemplateVariables(button.url);
 
       if (!button.url.trim()) {
@@ -241,6 +255,44 @@ const validationErrors = computed(() => {
           t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_EXAMPLE_REQUIRED', {
             index: buttonIndex,
           })
+        );
+      }
+    }
+
+    if (buttonUsesCopyCode(button.type)) {
+      if (!button.example.trim()) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_COPY_CODE_REQUIRED', {
+            index: buttonIndex,
+          })
+        );
+      } else if (button.example.trim().length > 15) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_COPY_CODE_LENGTH', {
+            index: buttonIndex,
+          })
+        );
+      }
+    }
+
+    if (buttonUsesPhoneNumber(button.type)) {
+      if (!button.phoneNumber.trim()) {
+        errors.push(
+          t(
+            'WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_PHONE_NUMBER_REQUIRED',
+            {
+              index: buttonIndex,
+            }
+          )
+        );
+      } else if (!PHONE_NUMBER_PATTERN.test(button.phoneNumber.trim())) {
+        errors.push(
+          t(
+            'WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_PHONE_NUMBER_INVALID',
+            {
+              index: buttonIndex,
+            }
+          )
         );
       }
     }
@@ -293,8 +345,13 @@ const updateButtonType = (index, type) => {
   form.buttons[index] = {
     ...currentButton,
     type,
-    url: type === 'URL' ? currentButton.url : '',
-    example: type === 'URL' ? currentButton.example : '',
+    text: buttonUsesText(type) ? currentButton.text : '',
+    url: buttonUsesUrl(type) ? currentButton.url : '',
+    example:
+      buttonUsesUrl(type) || buttonUsesCopyCode(type)
+        ? currentButton.example
+        : '',
+    phoneNumber: buttonUsesPhoneNumber(type) ? currentButton.phoneNumber : '',
   };
 };
 
@@ -567,6 +624,7 @@ defineExpose({
               />
             </div>
             <Input
+              v-if="buttonUsesText(button.type)"
               v-model="button.text"
               :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_TEXT')"
               :placeholder="
@@ -578,7 +636,7 @@ defineExpose({
           </div>
 
           <div
-            v-if="button.type === 'URL'"
+            v-if="buttonUsesUrl(button.type)"
             class="grid grid-cols-1 gap-4 md:grid-cols-2"
           >
             <Input
@@ -602,6 +660,30 @@ defineExpose({
               "
             />
           </div>
+
+          <Input
+            v-if="buttonUsesCopyCode(button.type)"
+            v-model="button.example"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_COPY_CODE')"
+            :placeholder="
+              t(
+                'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_COPY_CODE_PLACEHOLDER'
+              )
+            "
+          />
+
+          <Input
+            v-if="buttonUsesPhoneNumber(button.type)"
+            v-model="button.phoneNumber"
+            :label="
+              t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_PHONE_NUMBER')
+            "
+            :placeholder="
+              t(
+                'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_PHONE_NUMBER_PLACEHOLDER'
+              )
+            "
+          />
         </div>
       </div>
 

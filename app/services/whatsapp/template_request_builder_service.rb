@@ -2,8 +2,9 @@
 class Whatsapp::TemplateRequestBuilderService
   SUPPORTED_CATEGORIES = %w[UTILITY MARKETING].freeze
   SUPPORTED_HEADER_TYPES = %w[none text image video document].freeze
-  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL].freeze
+  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER].freeze
   TEMPLATE_NAME_FORMAT = /\A[a-z0-9_]+\z/
+  PHONE_NUMBER_FORMAT = /\A\+[1-9]\d{1,14}\z/
   VARIABLE_PATTERN = /{{\s*(\d+)\s*}}/
   NUMERIC_PLACEHOLDER_PATTERN = /\A\d+\z/
   LEADING_VARIABLE_PATTERN = /\A#{VARIABLE_PATTERN}/o
@@ -120,13 +121,21 @@ class Whatsapp::TemplateRequestBuilderService
 
     case button_type
     when 'QUICK_REPLY'
-      {
-        type: 'QUICK_REPLY',
-        text: required_value(button[:text], 'Quick reply button text is required')
-      }
+      build_quick_reply_button(button)
     when 'URL'
       build_url_button(button)
+    when 'COPY_CODE'
+      build_copy_code_button(button)
+    when 'PHONE_NUMBER'
+      build_phone_number_button(button)
     end
+  end
+
+  def build_quick_reply_button(button)
+    {
+      type: 'QUICK_REPLY',
+      text: required_value(button[:text], 'Quick reply button text is required')
+    }
   end
 
   def build_url_button(button)
@@ -148,6 +157,31 @@ class Whatsapp::TemplateRequestBuilderService
     end
 
     button_payload
+  end
+
+  def build_copy_code_button(button)
+    coupon_code = required_value(button[:example], 'Copy code example is required')
+    raise ArgumentError, 'Copy code example cannot exceed 15 characters' if coupon_code.length > 15
+
+    button_payload = {
+      type: 'COPY_CODE',
+      example: coupon_code
+    }
+
+    text = button[:text].to_s.strip
+    button_payload[:text] = text if text.present?
+    button_payload
+  end
+
+  def build_phone_number_button(button)
+    phone_number = required_value(button[:phone_number], 'Phone number button target is required')
+    validate_phone_number!(phone_number)
+
+    {
+      type: 'PHONE_NUMBER',
+      text: required_value(button[:text], 'Phone number button text is required'),
+      phone_number: phone_number
+    }
   end
 
   def example_values_for(key, variables, label)
@@ -278,6 +312,12 @@ class Whatsapp::TemplateRequestBuilderService
     uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
   rescue URI::InvalidURIError
     false
+  end
+
+  def validate_phone_number!(value)
+    return if value.match?(PHONE_NUMBER_FORMAT)
+
+    raise ArgumentError, 'Phone number buttons must use E.164 format'
   end
 end
 # rubocop:enable Metrics/ClassLength

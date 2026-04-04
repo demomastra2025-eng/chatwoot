@@ -35,6 +35,42 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
         }
       }
     end
+    let(:phone_number_button) do
+      {
+        type: 'PHONE_NUMBER',
+        text: 'Call support',
+        phone_number: '+18005551234'
+      }
+    end
+    let(:phone_number_template_params) do
+      {
+        template: {
+          name: 'delivery_failed',
+          language: 'en',
+          category: 'UTILITY',
+          header_type: 'none',
+          body_text: 'Call us if you need help.',
+          buttons: [phone_number_button]
+        }
+      }
+    end
+    let(:phone_number_template) do
+      {
+        'name' => 'delivery_failed',
+        'language' => 'en',
+        'status' => 'PENDING',
+        'category' => 'UTILITY',
+        'components' => [
+          { 'type' => 'BODY', 'text' => 'Call us if you need help.' },
+          {
+            'type' => 'BUTTONS',
+            'buttons' => [
+              phone_number_button.deep_stringify_keys
+            ]
+          }
+        ]
+      }
+    end
 
     it 'returns unauthorized for unauthenticated users' do
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
@@ -89,6 +125,32 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response).to have_http_status(:created)
       expect(response.parsed_body['id']).to eq(whatsapp_inbox.id)
       expect(response.parsed_body['message_templates'].first['name']).to eq('order_update')
+    end
+
+    it 'passes phone number button params through to template management' do
+      whatsapp_channel.update!(message_templates: [phone_number_template])
+
+      expect(management_service).to receive(:create_template).with(
+        hash_including(
+          'buttons' => [
+            hash_including(
+              'type' => phone_number_button[:type],
+              'text' => phone_number_button[:text],
+              'phone_number' => phone_number_button[:phone_number]
+            )
+          ]
+        )
+      ).and_return({
+                     success: true,
+                     template: whatsapp_channel.message_templates.first
+                   })
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: phone_number_template_params,
+           as: :json
+
+      expect(response).to have_http_status(:created)
     end
   end
 
