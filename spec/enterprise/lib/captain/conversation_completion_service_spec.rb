@@ -41,6 +41,14 @@ RSpec.describe Captain::ConversationCompletionService do
         expect(result[:complete]).to be true
         expect(result[:reason]).to eq('Customer question was fully answered')
       end
+
+      it 'uses the account assistant model when configured' do
+        account.update!(captain_models: { 'assistant' => 'gpt-5.2' })
+
+        expect(mock_context).to receive(:chat).with(model: 'gpt-5.2').and_return(mock_chat)
+
+        service.perform
+      end
     end
 
     context 'when conversation is incomplete' do

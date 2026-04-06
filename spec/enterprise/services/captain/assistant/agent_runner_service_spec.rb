@@ -92,13 +92,18 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           state: hash_including(
             account_id: account.id,
             assistant_id: assistant.id,
+            captain_runtime: hash_including(
+              'assistant_thinking_effort' => 'none',
+              'assistant_moderation' => false
+            ),
             conversation: hash_including(id: conversation.id),
             contact: hash_including(id: contact.id)
           )
         )
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')
-        expect(max_turns).to eq(100)
+        expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
         expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+        mock_result
       end
 
       service.generate_response(message_history: message_history)
@@ -124,8 +129,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           expect(input.text).to eq('What does this error mean?')
           expect(input.attachments.first.source.to_s).to eq('https://example.com/error.png')
           expect(context[:conversation_history]).to eq([{ role: :assistant, content: 'Please share a screenshot' }])
-          expect(max_turns).to eq(100)
+          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+          mock_result
         end
 
         service.generate_response(message_history: multimodal_message_history)
@@ -153,8 +159,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             { type: 'text', text: 'Here is my error screenshot' },
             { type: 'image_url', image_url: { url: 'https://example.com/error.png' } }
           )
-          expect(max_turns).to eq(100)
+          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+          mock_result
         end
 
         service.generate_response(message_history: history_with_prior_image)
@@ -164,8 +171,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(mock_runner).to receive(:run) do |_input, context:, max_turns:, runtime_options:|
           expect(context[:captain_v2_trace_input]).to include('image_url')
           expect(context[:captain_v2_trace_current_input]).to include('image_url')
-          expect(max_turns).to eq(100)
+          expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
           expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+          mock_result
         end
 
         service.generate_response(message_history: multimodal_message_history)
@@ -193,6 +201,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
     end
 
+    it 'returns a handoff response when moderation blocks the input' do
+      account.update!(captain_runtime: { 'assistant_moderation' => true })
+      moderation_result = instance_double(RubyLLM::Moderation, flagged?: true)
+      allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to eq(
+        {
+          'response' => 'conversation_handoff',
+          'reasoning' => 'Agent input blocked by moderation policy'
+        }
+      )
+    end
+
     it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do
       hook = create(:integrations_hook, account: account, app_id: 'openai', status: 'enabled', settings: { api_key: 'account-key' })
       allow(account.hooks).to receive(:find_by).with(app_id: 'openai', status: 'enabled').and_return(hook)
@@ -200,7 +223,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(mock_runner).to receive(:run).with(
         anything,
         context: anything,
-        max_turns: 100,
+        max_turns: described_class::MAX_RUNTIME_TURNS,
         runtime_options: {
           llm_context: an_instance_of(RubyLLM::Context)
         }

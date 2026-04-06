@@ -31,6 +31,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:runtime_metadata)
       end
     end
 
@@ -44,6 +46,18 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
+      end
+
+      it 'includes runtime metadata for resolved providers and feature models' do
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to have_key(:runtime_metadata)
+        expect(json_response.dig(:runtime_metadata, :providers, :openai)).to include(:configured, :display_name)
+        expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
       end
     end
   end
@@ -81,6 +95,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
         expect(account.reload.captain_models['editor']).to eq('gpt-4.1-mini')
       end
 
@@ -94,7 +109,30 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
         expect(account.reload.captain_features['editor']).to be true
+      end
+
+      it 'updates captain_runtime' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_runtime: {
+                assistant_thinking_effort: 'high',
+                assistant_moderation: true
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:runtime]).to include(
+          assistant_thinking_effort: 'high',
+          assistant_moderation: true
+        )
+        expect(account.reload.captain_runtime).to include(
+          'assistant_thinking_effort' => 'high',
+          'assistant_moderation' => true
+        )
       end
 
       it 'merges with existing captain_models' do
@@ -109,6 +147,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
         models = account.reload.captain_models
         expect(models['editor']).to eq('gpt-4.1')
         expect(models['assistant']).to eq('gpt-5.1') # Preserved
@@ -126,9 +165,28 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
         features = account.reload.captain_features
         expect(features['editor']).to be false
         expect(features['assistant']).to be false # Preserved
+      end
+
+      it 'merges with existing captain_runtime' do
+        account.update!(captain_runtime: {
+                          'assistant_thinking_effort' => 'medium',
+                          'assistant_moderation' => false
+                        })
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_runtime: { assistant_moderation: true } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_runtime).to include(
+          'assistant_thinking_effort' => 'medium',
+          'assistant_moderation' => true
+        )
       end
 
       it 'updates both models and features in single request' do
@@ -144,6 +202,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:providers)
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
+        expect(json_response).to have_key(:runtime)
         account.reload
         expect(account.captain_models['editor']).to eq('gpt-4.1-mini')
         expect(account.captain_features['editor']).to be true

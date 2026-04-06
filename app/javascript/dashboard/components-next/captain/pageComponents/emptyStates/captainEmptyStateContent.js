@@ -3,7 +3,7 @@ import { INBOX_TYPES } from 'dashboard/helper/inbox';
 export const assistantsList = [
   {
     account_id: 2,
-    config: { product_name: 'OneLink Support' },
+    config: {},
     created_at: 1736033561,
     description:
       'Умный ассистент для поддержки клиентов: автоматизирует рутинные задачи и помогает отвечать быстрее.',
@@ -12,7 +12,7 @@ export const assistantsList = [
   },
   {
     account_id: 3,
-    config: { product_name: 'OneLink CRM' },
+    config: {},
     created_at: 1736033562,
     description:
       'Помогает вести контакты, напоминания и следующие шаги по клиентам в одном месте.',
@@ -21,7 +21,7 @@ export const assistantsList = [
   },
   {
     account_id: 4,
-    config: { product_name: 'OneLink Sales' },
+    config: {},
     created_at: 1736033563,
     description:
       'Упрощает работу с воронкой продаж, помогает отслеживать лиды и автоматизировать процессы.',
@@ -30,7 +30,7 @@ export const assistantsList = [
   },
   {
     account_id: 5,
-    config: { product_name: 'OneLink Tickets' },
+    config: {},
     created_at: 1736033564,
     description:
       'Автоматически распределяет обращения, подбирает категории и ускоряет обработку запросов.',
@@ -39,7 +39,7 @@ export const assistantsList = [
   },
   {
     account_id: 6,
-    config: { product_name: 'OneLink Analytics' },
+    config: {},
     created_at: 1736033565,
     description:
       'Помогает анализировать показатели, собирать отчеты и находить полезные инсайты по данным.',
@@ -48,7 +48,7 @@ export const assistantsList = [
   },
   {
     account_id: 8,
-    config: { product_name: 'OneLink HR' },
+    config: {},
     created_at: 1736033567,
     description:
       'Упрощает внутренние HR-процессы, связанные с сотрудниками, доступами и согласованиями.',
@@ -143,9 +143,10 @@ export const responsesList = [
     status: 'pending',
     assistant: {
       account_id: 1,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033280,
-      description: 'Помогает с общими вопросами по системе и настройкам workspace.',
+      description:
+        'Помогает с общими вопросами по системе и настройкам workspace.',
       id: 1,
       name: 'Ассистент 2',
     },
@@ -159,7 +160,7 @@ export const responsesList = [
     question: 'Как подключить WhatsApp к OneLink?',
     assistant: {
       account_id: 2,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033281,
       description: 'Помогает с подключением интеграций и первичной настройкой.',
       id: 2,
@@ -169,15 +170,16 @@ export const responsesList = [
   {
     account_id: 3,
     answer:
-      "Чтобы сбросить пароль, откройте страницу входа, нажмите «Забыли пароль?» и следуйте инструкции из письма.",
+      'Чтобы сбросить пароль, откройте страницу входа, нажмите «Забыли пароль?» и следуйте инструкции из письма.',
     created_at: 1736283350,
     id: 89,
     question: 'Как сбросить пароль в OneLink?',
     assistant: {
       account_id: 3,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033282,
-      description: 'Помогает с доступом, восстановлением входа и управлением workspace.',
+      description:
+        'Помогает с доступом, восстановлением входа и управлением workspace.',
       id: 3,
       name: 'Ассистент 4',
     },
@@ -185,15 +187,16 @@ export const responsesList = [
   {
     account_id: 4,
     answer:
-      "Темную тему можно включить в настройках интерфейса, выбрав нужный режим отображения.",
+      'Темную тему можно включить в настройках интерфейса, выбрав нужный режим отображения.',
     created_at: 1736283360,
     id: 90,
     question: 'Как включить темную тему в OneLink?',
     assistant: {
       account_id: 4,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033283,
-      description: 'Подсказывает по интерфейсу, отображению и пользовательским настройкам.',
+      description:
+        'Подсказывает по интерфейсу, отображению и пользовательским настройкам.',
       id: 4,
       name: 'Ассистент 5',
     },
@@ -201,13 +204,13 @@ export const responsesList = [
   {
     account_id: 5,
     answer:
-      "Чтобы добавить нового сотрудника, откройте настройки, перейдите в раздел сотрудников и нажмите «Добавить сотрудника».",
+      'Чтобы добавить нового сотрудника, откройте настройки, перейдите в раздел сотрудников и нажмите «Добавить сотрудника».',
     created_at: 1736283370,
     id: 91,
     question: 'Как добавить нового сотрудника в OneLink?',
     assistant: {
       account_id: 5,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033284,
       description: 'Помогает с управлением сотрудниками и правами доступа.',
       id: 5,
@@ -217,13 +220,13 @@ export const responsesList = [
   {
     account_id: 6,
     answer:
-      "Кампании позволяют отправлять целевые сообщения выбранным сегментам пользователей. Создать кампанию можно в соответствующем разделе.",
+      'Кампании позволяют отправлять целевые сообщения выбранным сегментам пользователей. Создать кампанию можно в соответствующем разделе.',
     created_at: 1736283380,
     id: 92,
     question: 'Что такое кампании в OneLink?',
     assistant: {
       account_id: 6,
-      config: { product_name: 'OneLink' },
+      config: {},
       created_at: 1736033285,
       description:
         'Специализируется на маркетинге, кампаниях и сценариях коммуникации.',

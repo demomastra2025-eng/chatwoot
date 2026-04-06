@@ -1,0 +1,54 @@
+# frozen_string_literal: true
+
+require 'ruby_llm/schema'
+
+module Captain
+  module Llm
+    module Schemas
+      class FaqItem < RubyLLM::Schema
+        string :question, description: 'The FAQ question'
+        string :answer, description: 'The FAQ answer'
+      end
+
+      class FaqCollection < RubyLLM::Schema
+        array :faqs, of: FaqItem, description: 'Generated FAQ entries'
+      end
+
+      class NoteCollection < RubyLLM::Schema
+        array :notes, of: :string, description: 'Generated CRM notes'
+      end
+
+      class ContactAttributeItem < RubyLLM::Schema
+        string :attribute, description: 'Contact attribute key'
+
+        any_of :value, description: 'Contact attribute value' do
+          string
+          number
+          boolean
+          null
+        end
+      end
+
+      class ContactAttributeCollection < RubyLLM::Schema
+        array :attributes, of: ContactAttributeItem, description: 'Generated contact attributes'
+      end
+
+      class PaginatedFaqChunk < RubyLLM::Schema
+        array :faqs, of: FaqItem, description: 'FAQ entries found in the current chunk'
+        boolean :has_content, description: 'Whether the processed chunk still has meaningful document content'
+      end
+
+      class WebsiteAnalysis < RubyLLM::Schema
+        string :business_name, description: 'The detected business or brand name'
+        string :suggested_assistant_name, description: 'Suggested friendly assistant name'
+        string :description, description: 'High-level assistant persona and business scope'
+      end
+
+      class CopilotResponse < RubyLLM::Schema
+        string :reasoning, description: 'Why the copilot chose this response'
+        string :content, description: 'The response content for the operator'
+        boolean :reply_suggestion, description: 'Whether this content is a suggested reply to send to the customer'
+      end
+    end
+  end
+end

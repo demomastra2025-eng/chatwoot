@@ -1,29 +1,19 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import { useMapGetter } from 'dashboard/composables/store';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { useAccount } from 'dashboard/composables/useAccount';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Button from 'dashboard/components-next/button/Button.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
-import AssistantControlItems from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantControlItems.vue';
-import ContextAccessSettings from 'dashboard/components-next/captain/pageComponents/assistant/ContextAccessSettings.vue';
-import ToolAccessSettings from 'dashboard/components-next/captain/pageComponents/assistant/ToolAccessSettings.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 
 const { t } = useI18n();
-const { isCloudFeatureEnabled } = useAccount();
-
-const isCaptainV2Enabled = computed(() =>
-  isCloudFeatureEnabled(FEATURE_FLAGS.CAPTAIN_V2)
-);
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
@@ -31,6 +21,9 @@ const store = useStore();
 const deleteAssistantDialog = ref(null);
 const basicContextAccess = ref({});
 const basicToolAccess = ref({});
+const generalBasicFormRef = ref(null);
+const generalSystemFormRef = ref(null);
+const draftUsageMode = ref('external_agent');
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const assistants = useMapGetter('captainAssistants/getRecords');
@@ -39,38 +32,27 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
+const effectiveUsageMode = computed(
+  () => draftUsageMode.value || assistant.value?.usage_mode || 'external_agent'
+);
+const isInternalAssistant = computed(
+  () => effectiveUsageMode.value === 'internal_assistant'
+);
+const isExternalAgent = computed(() => !isInternalAssistant.value);
+
+onMounted(() => {
+  store.dispatch('captainAssistants/show', assistantId.value);
+});
 
 watch(
   assistant,
   currentAssistant => {
     basicContextAccess.value = currentAssistant?.config?.context_access || {};
     basicToolAccess.value = currentAssistant?.config?.tool_access || {};
+    draftUsageMode.value = currentAssistant?.usage_mode || 'external_agent';
   },
   { immediate: true }
 );
-
-const controlItems = computed(() => {
-  return [
-    {
-      name: t(
-        'CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.OPTIONS.GUARDRAILS.TITLE'
-      ),
-      description: t(
-        'CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.OPTIONS.GUARDRAILS.DESCRIPTION'
-      ),
-      routeName: 'captain_assistants_guardrails_index',
-    },
-    {
-      name: t(
-        'CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.OPTIONS.RESPONSE_GUIDELINES.TITLE'
-      ),
-      description: t(
-        'CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.OPTIONS.RESPONSE_GUIDELINES.DESCRIPTION'
-      ),
-      routeName: 'captain_assistants_guidelines_index',
-    },
-  ];
-});
 
 const syncAvatar = async ({ avatar, removeAvatar }) => {
   if (removeAvatar) {
@@ -110,11 +92,11 @@ const handleSubmit = async updatedAssistant => {
     const avatarSyncResult = await syncAvatar({ avatar, removeAvatar });
 
     if (!avatarSyncResult.ok) {
-      const avatarErrorKey =
+      const avatarErrorMessage =
         avatarSyncResult.reason === 'delete'
-          ? 'CAPTAIN.ASSISTANTS.AVATAR.EDIT_DELETE_ERROR'
-          : 'CAPTAIN.ASSISTANTS.AVATAR.EDIT_UPLOAD_ERROR';
-      useAlert(t(avatarErrorKey));
+          ? t('CAPTAIN.ASSISTANTS.AVATAR.EDIT_DELETE_ERROR')
+          : t('CAPTAIN.ASSISTANTS.AVATAR.EDIT_UPLOAD_ERROR');
+      useAlert(avatarErrorMessage);
       return;
     }
 
@@ -124,6 +106,51 @@ const handleSubmit = async updatedAssistant => {
       error?.message || t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE');
     useAlert(errorMessage);
   }
+};
+
+const mergeAssistantPayloads = (...payloads) =>
+  payloads.filter(Boolean).reduce(
+    (result, payload) => {
+      const nextAssistant = payload.assistant || {};
+      const nextConfig = nextAssistant.config || {};
+      const currentAssistant = result.assistant || {};
+
+      result.assistant = {
+        ...currentAssistant,
+        ...nextAssistant,
+        config: {
+          ...(currentAssistant.config || {}),
+          ...nextConfig,
+        },
+      };
+
+      if (payload.avatar !== undefined && payload.avatar !== null) {
+        result.avatar = payload.avatar;
+      }
+
+      if (payload.removeAvatar) {
+        result.removeAvatar = true;
+      }
+
+      return result;
+    },
+    {
+      assistant: {
+        config: {},
+      },
+      avatar: null,
+      removeAvatar: false,
+    }
+  );
+
+const handleGeneralSave = async () => {
+  const basicPayload = await generalBasicFormRef.value?.buildPayload?.();
+  if (!basicPayload) return;
+
+  const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
+  if (!systemPayload) return;
+
+  await handleSubmit(mergeAssistantPayloads(basicPayload, systemPayload));
 };
 
 const handleDelete = () => {
@@ -138,14 +165,16 @@ const handleToolAccessUpdate = nextToolAccess => {
   basicToolAccess.value = nextToolAccess;
 };
 
+const handleUsageModeUpdate = nextUsageMode => {
+  draftUsageMode.value = nextUsageMode || 'external_agent';
+};
+
 const handleDeleteSuccess = () => {
-  // Get remaining assistants after deletion
   const remainingAssistants = assistants.value.filter(
     a => a.id !== assistantId.value
   );
 
   if (remainingAssistants.length > 0) {
-    // Navigate to the first available assistant's settings
     const nextAssistant = remainingAssistants[0];
     router.push({
       name: 'captain_assistants_settings_index',
@@ -155,7 +184,6 @@ const handleDeleteSuccess = () => {
       },
     });
   } else {
-    // No assistants left, redirect to create assistant page
     router.push({
       name: 'captain_assistants_create_index',
       params: { accountId: route.params.accountId },
@@ -166,71 +194,67 @@ const handleDeleteSuccess = () => {
 
 <template>
   <PageLayout
+    :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.GENERAL.LABEL')"
     :is-fetching="isFetching"
     :show-pagination-footer="false"
     :show-know-more="false"
-    :class="{
-      '[&>header>div]:max-w-[84rem] [&>main>div]:max-w-[84rem]':
-        isCaptainV2Enabled,
-    }"
   >
     <template #body>
-      <div
-        class="gap-6 pb-8"
-        :class="{
-          'grid lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,1fr)] lg:items-start lg:gap-10 xl:gap-12':
-            isCaptainV2Enabled,
-        }"
-      >
-        <div class="flex flex-col gap-6">
+      <div class="flex max-w-4xl flex-col gap-6">
+        <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
           <div class="flex flex-col gap-6">
-            <SettingsHeader
-              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.BASIC_SETTINGS.TITLE')"
-              :description="
-                t('CAPTAIN.ASSISTANTS.SETTINGS.BASIC_SETTINGS.DESCRIPTION')
-              "
-            />
             <AssistantBasicSettingsForm
+              ref="generalBasicFormRef"
               :assistant="assistant"
-              :context-access="
-                isCaptainV2Enabled ? basicContextAccess : undefined
-              "
-              :tool-access="isCaptainV2Enabled ? basicToolAccess : undefined"
-              :show-context-access="!isCaptainV2Enabled"
-              :show-tool-access="!isCaptainV2Enabled"
+              :context-access="basicContextAccess"
+              :tool-access="basicToolAccess"
+              :show-description-field="false"
+              :show-context-access="false"
+              :show-tool-access="false"
+              :show-submit-button="false"
               @update:context-access="handleContextAccessUpdate"
               @update:tool-access="handleToolAccessUpdate"
-              @submit="handleSubmit"
+              @update:usage-mode="handleUsageModeUpdate"
             />
           </div>
-          <span class="h-px w-full bg-n-weak mt-2" />
+        </div>
+
+        <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
           <div class="flex flex-col gap-6">
             <SettingsHeader
-              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.SYSTEM_SETTINGS.TITLE')"
+              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"
               :description="
-                t('CAPTAIN.ASSISTANTS.SETTINGS.SYSTEM_SETTINGS.DESCRIPTION')
+                t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.DESCRIPTION')
               "
             />
             <AssistantSystemSettingsForm
+              ref="generalSystemFormRef"
               :assistant="assistant"
-              @submit="handleSubmit"
+              :show-conversation-messages="isExternalAgent"
+              :show-automation-settings="isExternalAgent"
+              :show-submit-button="false"
             />
           </div>
-          <span class="h-px w-full bg-n-weak mt-2" />
-          <div class="flex items-end justify-between w-full gap-4">
-            <div class="flex flex-col gap-2">
-              <h6 class="text-n-slate-12 text-base font-medium">
-                {{ t('CAPTAIN.ASSISTANTS.SETTINGS.DELETE.TITLE') }}
-              </h6>
-              <span class="text-n-slate-11 text-sm">
-                {{ t('CAPTAIN.ASSISTANTS.SETTINGS.DELETE.DESCRIPTION') }}
-              </span>
-            </div>
+        </div>
+
+        <div class="flex justify-end">
+          <Button
+            :label="t('CAPTAIN.ASSISTANTS.FORM.UPDATE')"
+            @click="handleGeneralSave"
+          />
+        </div>
+
+        <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-5 md:p-6">
+          <SettingsHeader
+            :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.DELETE.TITLE')"
+            :description="t('CAPTAIN.ASSISTANTS.SETTINGS.DELETE.DESCRIPTION')"
+          />
+          <div class="mt-6 flex justify-end">
             <div class="flex-shrink-0">
               <Button
                 :label="
                   t('CAPTAIN.ASSISTANTS.SETTINGS.DELETE.BUTTON_TEXT', {
-                    assistantName: assistant.name,
+                    assistantName: assistant?.name,
                   })
                 "
                 color="ruby"
@@ -240,37 +264,9 @@ const handleDeleteSuccess = () => {
             </div>
           </div>
         </div>
-        <div
-          v-if="isCaptainV2Enabled"
-          class="flex flex-col gap-6 lg:self-start"
-        >
-          <ContextAccessSettings
-            v-model="basicContextAccess"
-            :assistant-id="assistant?.id"
-          />
-          <ToolAccessSettings
-            v-model="basicToolAccess"
-            :assistant-id="assistant?.id"
-          />
-          <span class="h-px w-full bg-n-weak" />
-          <div class="flex flex-col gap-6">
-            <SettingsHeader
-              :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.TITLE')"
-              :description="
-                t('CAPTAIN.ASSISTANTS.SETTINGS.CONTROL_ITEMS.DESCRIPTION')
-              "
-            />
-            <div class="flex flex-col gap-6">
-              <AssistantControlItems
-                v-for="item in controlItems"
-                :key="item.name"
-                :control-item="item"
-              />
-            </div>
-          </div>
-        </div>
       </div>
     </template>
+
     <DeleteDialog
       v-if="assistant"
       ref="deleteAssistantDialog"

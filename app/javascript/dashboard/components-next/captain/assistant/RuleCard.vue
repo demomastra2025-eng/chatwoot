@@ -19,9 +19,25 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  enableCaptainTools: {
+    type: Boolean,
+    default: false,
+  },
   captainContextAssistantId: {
     type: Number,
     default: null,
+  },
+  captainContextAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolScope: {
+    type: String,
+    default: 'agent',
   },
   selectable: {
     type: Boolean,
@@ -93,8 +109,12 @@ const renderRuleContent = content => () =>
       v-model="editedContent"
       focus-on-mount
       :show-character-count="false"
+      :enable-captain-tools="enableCaptainTools"
       :enable-captain-fields="enableCaptainFields"
       :captain-context-assistant-id="captainContextAssistantId"
+      :captain-context-access="captainContextAccess"
+      :captain-tool-access="captainToolAccess"
+      :captain-tool-scope="captainToolScope"
       class="flex-1"
     />
     <component :is="renderRuleContent(localContent)" v-else class="flex-1" />

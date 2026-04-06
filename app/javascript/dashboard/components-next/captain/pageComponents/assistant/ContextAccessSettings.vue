@@ -19,7 +19,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue']);
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const availableFields = ref([]);
 const isLoading = ref(false);
@@ -73,6 +73,164 @@ const tableMetadata = computed(() => ({
     ),
   },
 }));
+
+const localizedFieldCatalog = computed(() => {
+  if (locale.value !== 'ru') {
+    return {};
+  }
+
+  return {
+    'contact.id': 'ID контакта',
+    'contact.name': 'Имя',
+    'contact.email': 'Email',
+    'contact.phone_number': 'Телефон',
+    'contact.identifier': 'Идентификатор',
+    'contact.contact_type': 'Тип контакта',
+    'conversation.id': 'ID записи диалога',
+    'conversation.display_id': 'Номер диалога',
+    'conversation.inbox_id': 'ID inbox',
+    'conversation.contact_id': 'ID контакта',
+    'conversation.status': 'Статус',
+    'conversation.priority': 'Приоритет',
+    'conversation.label_list': 'Метки',
+    'deal.id': 'ID сделки',
+    'deal.title': 'Название',
+    'deal.description': 'Описание',
+    'deal.amount_minor': 'Сумма в минимальных единицах',
+    'deal.currency': 'Валюта',
+    'deal.expected_close_on': 'Плановая дата закрытия',
+    'deal.win_probability': 'Вероятность успеха',
+    'deal.closed_at': 'Дата закрытия',
+    'deal.external_ref': 'Внешний идентификатор',
+    'deal.pipeline_id': 'ID воронки',
+    'deal.pipeline_name': 'Воронка',
+    'deal.stage_id': 'ID этапа',
+    'deal.stage_name': 'Этап',
+    'deal.owner_id': 'ID ответственного',
+    'deal.owner_name': 'Ответственный',
+    'deal.creator_id': 'ID автора',
+    'deal.creator_name': 'Автор',
+    'deal.team_id': 'ID команды',
+    'deal.team_name': 'Команда',
+    'deal.company_id': 'ID компании',
+    'deal.company_name': 'Компания',
+    'deal.originating_conversation_id': 'ID исходного диалога',
+    'task.id': 'ID задачи',
+    'task.title': 'Название',
+    'task.description': 'Описание',
+    'task.due_at': 'Срок выполнения',
+    'task.start_at': 'Дата начала',
+    'task.priority': 'Приоритет',
+    'task.completed_at': 'Дата завершения',
+    'task.external_ref': 'Внешний идентификатор',
+    'task.status_id': 'ID статуса',
+    'task.status_name': 'Статус',
+    'task.assignee_id': 'ID исполнителя',
+    'task.assignee_name': 'Исполнитель',
+    'task.creator_id': 'ID автора',
+    'task.creator_name': 'Автор',
+    'task.team_id': 'ID команды',
+    'task.team_name': 'Команда',
+    'task.deal_id': 'ID сделки',
+    'task.deal_title': 'Название сделки',
+    'task.originating_conversation_id': 'ID исходного диалога',
+    'appointment.id': 'ID записи',
+    'appointment.resource_id': 'ID специалиста',
+    'appointment.contact_id': 'ID контакта',
+    'appointment.service_id': 'ID услуги',
+    'appointment.company_id': 'ID компании',
+    'appointment.conversation_id': 'ID диалога',
+    'appointment.created_by_id': 'ID автора',
+    'appointment.starts_at': 'Начало записи',
+    'appointment.ends_at': 'Окончание записи',
+    'appointment.duration_min': 'Длительность в минутах',
+    'appointment.status': 'Статус',
+    'appointment.appointment_type': 'Тип записи',
+    'appointment.client_name': 'Имя клиента',
+    'appointment.client_phone': 'Телефон клиента',
+    'appointment.client_identifier': 'Идентификатор клиента',
+    'appointment.client_birth_date': 'Дата рождения клиента',
+    'appointment.client_gender': 'Пол клиента',
+    'appointment.client_comment': 'Комментарий клиента',
+    'appointment.source': 'Источник',
+    'appointment.external_ref': 'Внешний идентификатор',
+    'appointment.payment_status': 'Статус оплаты',
+    'appointment.service_name_snapshot': 'Название услуги',
+    'appointment.service_type_snapshot': 'Тип услуги',
+    'appointment.service_duration_min_snapshot':
+      'Длительность услуги в минутах',
+    'appointment.service_amount': 'Стоимость услуги',
+    'appointment.compensation_type_snapshot': 'Тип компенсации',
+    'appointment.compensation_value_snapshot': 'Значение компенсации',
+    'appointment.compensation_percent_snapshot': 'Процент компенсации',
+    'appointment.prepaid_amount': 'Сумма предоплаты',
+    'appointment.prepaid_payment_method': 'Способ предоплаты',
+    'appointment.settlement_amount': 'Сумма расчета',
+    'appointment.settlement_payment_method': 'Способ расчета',
+  };
+});
+
+const localizedGroupCatalog = computed(() => ({
+  Contact: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.CONTACT.TITLE'),
+  Conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.CONVERSATION.TITLE'
+  ),
+  Deal: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.DEAL.TITLE'),
+  Task: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.TASK.TITLE'),
+  Appointment: t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.APPOINTMENT.TITLE'
+  ),
+  'Contact Attributes': t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.CONTACT_ATTRIBUTES'
+  ),
+  'Conversation Attributes': t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.CONVERSATION_ATTRIBUTES'
+  ),
+  'Deal Attributes': t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.DEAL_ATTRIBUTES'
+  ),
+  'Task Attributes': t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.TASK_ATTRIBUTES'
+  ),
+  'Appointment Attributes': t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.APPOINTMENT_ATTRIBUTES'
+  ),
+}));
+
+const scopeLabels = computed(() => ({
+  contact: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.CONTACT'),
+  conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.CONVERSATION'
+  ),
+  deal: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.DEAL'),
+  task: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.TASK'),
+  appointment: t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.APPOINTMENT'),
+}));
+
+const resolveGroupName = groupName =>
+  localizedGroupCatalog.value[groupName] || groupName;
+
+const resolveFieldTitle = field => {
+  if (field.field_type === 'custom_attribute') {
+    return field.title;
+  }
+
+  return localizedFieldCatalog.value[field.id] || field.title;
+};
+
+const resolveFieldDescription = field => {
+  if (field.field_type === 'custom_attribute') {
+    return t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELD_TYPES.CUSTOM', {
+      entity: scopeLabels.value[field.table_name] || field.table_name,
+    });
+  }
+
+  return t('CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELD_TYPES.DEFAULT', {
+    entity: scopeLabels.value[field.table_name] || field.table_name,
+  });
+};
+
+const resolveFieldVariable = field => field.description || field.id;
 
 const loadFields = async () => {
   isLoading.value = true;
@@ -342,7 +500,7 @@ watch(
               <div
                 class="min-w-0 break-words text-sm font-medium text-n-slate-12"
               >
-                {{ group.groupName }}
+                {{ resolveGroupName(group.groupName) }}
               </div>
             </div>
 
@@ -350,24 +508,31 @@ watch(
               <label
                 v-for="field in group.fields"
                 :key="field.id"
-                class="flex min-w-0 items-start gap-2 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
+                class="flex min-w-0 items-start gap-2.5 rounded-md px-1 py-0.5 transition-colors hover:bg-n-alpha-3"
               >
-                <Checkbox
-                  :model-value="
-                    normalizedAccess[tableName].fieldIds.includes(field.id)
-                  "
-                  @update:model-value="
-                    value => toggleFieldSelection(tableName, field.id, value)
-                  "
-                />
-                <span class="min-w-0">
+                <span class="mt-0.5 shrink-0">
+                  <Checkbox
+                    :model-value="
+                      normalizedAccess[tableName].fieldIds.includes(field.id)
+                    "
+                    @update:model-value="
+                      value => toggleFieldSelection(tableName, field.id, value)
+                    "
+                  />
+                </span>
+                <span class="flex min-w-0 flex-col gap-0.5">
                   <span
-                    class="block break-words text-sm font-medium text-n-slate-12"
+                    class="break-words text-sm font-medium leading-5 text-n-slate-12"
                   >
-                    {{ field.title }}
+                    {{ resolveFieldTitle(field) }}
                   </span>
-                  <span class="block break-words text-xs text-n-slate-10">
-                    {{ field.description }}
+                  <span class="break-words text-xs leading-4 text-n-slate-10">
+                    {{ resolveFieldDescription(field) }}
+                  </span>
+                  <span
+                    class="break-all font-mono text-[11px] leading-4 text-n-slate-9"
+                  >
+                    {{ resolveFieldVariable(field) }}
                   </span>
                 </span>
               </label>

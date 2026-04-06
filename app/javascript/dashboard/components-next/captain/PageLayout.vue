@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store.js';
 import { usePolicy } from 'dashboard/composables/usePolicy';
@@ -42,6 +42,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  buttonIcon: {
+    type: String,
+    default: 'i-lucide-plus',
+  },
   featureFlag: {
     type: String,
     default: '',
@@ -73,6 +77,7 @@ const emit = defineEmits(['click', 'close', 'update:currentPage']);
 const { t } = useI18n();
 
 const route = useRoute();
+const router = useRouter();
 const { shouldShowPaywall } = usePolicy();
 
 const showAssistantSwitcherDropdown = ref(false);
@@ -112,6 +117,18 @@ const handleCreateAssistant = () => {
   showAssistantSwitcherDropdown.value = false;
   createAssistantDialogRef.value.dialogRef.open();
 };
+
+const handleAssistantCreated = assistant => {
+  if (!assistant?.id) return;
+
+  router.push({
+    name: 'captain_assistants_settings_index',
+    params: {
+      accountId: route.params.accountId,
+      assistantId: assistant.id,
+    },
+  });
+};
 </script>
 
 <template>
@@ -127,7 +144,9 @@ const handleCreateAssistant = () => {
               v-if="showAssistantSwitcher && !showPaywall"
               class="flex items-center gap-2 min-w-0"
             >
-              <div class="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
+              <div
+                class="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap"
+              >
                 <span
                   v-if="!isFetchingAssistants"
                   class="min-w-0 text-xl font-medium truncate text-n-slate-12"
@@ -200,7 +219,7 @@ const handleCreateAssistant = () => {
               <Policy :permissions="buttonPolicy">
                 <Button
                   :label="buttonLabel"
-                  icon="i-lucide-plus"
+                  :icon="buttonIcon || undefined"
                   size="sm"
                   class="group-hover/captain-button:brightness-110"
                   @click="handleButtonClick"
@@ -241,6 +260,10 @@ const handleCreateAssistant = () => {
         @update:current-page="handlePageChange"
       />
     </footer>
-    <CreateAssistantDialog ref="createAssistantDialogRef" type="create" />
+    <CreateAssistantDialog
+      ref="createAssistantDialogRef"
+      type="create"
+      @created="handleAssistantCreated"
+    />
   </section>
 </template>

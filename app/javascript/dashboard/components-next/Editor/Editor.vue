@@ -24,6 +24,8 @@ const props = defineProps({
   enableCaptainFields: { type: Boolean, default: false },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
+  captainToolAccess: { type: Object, default: null },
+  captainToolScope: { type: String, default: 'agent' },
   signature: { type: String, default: '' },
   allowSignature: { type: Boolean, default: false },
   sendWithSignature: { type: Boolean, default: false },
@@ -113,6 +115,8 @@ watch(
         :enable-captain-fields="enableCaptainFields"
         :captain-context-assistant-id="captainContextAssistantId"
         :captain-context-access="captainContextAccess"
+        :captain-tool-access="captainToolAccess"
+        :captain-tool-scope="captainToolScope"
         :signature="signature"
         :allow-signature="allowSignature"
         :send-with-signature="sendWithSignature"

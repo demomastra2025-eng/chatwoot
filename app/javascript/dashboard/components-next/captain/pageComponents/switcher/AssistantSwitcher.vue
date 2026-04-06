@@ -22,6 +22,12 @@ const isAssistantActive = assistant => {
   return assistant.id === Number(currentAssistantId.value);
 };
 
+const assistantUsageBadge = assistant => {
+  return assistant?.usage_mode === 'internal_assistant'
+    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
+    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE');
+};
+
 const fetchDataForRoute = async (routeName, assistantId) => {
   const dataFetchMap = {
     captain_assistants_responses_index: async () => {
@@ -43,13 +49,27 @@ const fetchDataForRoute = async (routeName, assistantId) => {
     captain_assistants_playground_index: () => {
       // Playground doesn't need pre-fetching, it loads on interaction
     },
-    captain_assistants_inboxes_index: async () => {
+    captain_assistants_channels_index: async () => {
       await store.dispatch('captainInboxes/get', { assistantId });
+      await store.dispatch('captainAssistants/show', assistantId);
     },
     captain_tools_index: async () => {
       await store.dispatch('captainCustomTools/get', { page: 1 });
     },
     captain_assistants_settings_index: async () => {
+      await store.dispatch('captainAssistants/show', assistantId);
+    },
+    captain_assistants_prompts_index: async () => {
+      await store.dispatch('captainAssistants/show', assistantId);
+    },
+    captain_assistants_restrictions_index: async () => {
+      await store.dispatch('captainAssistants/show', assistantId);
+    },
+    captain_assistants_access_index: async () => {
+      await store.dispatch('captainAssistants/show', assistantId);
+    },
+    captain_assistants_inboxes_index: async () => {
+      await store.dispatch('captainInboxes/get', { assistantId });
       await store.dispatch('captainAssistants/show', assistantId);
     },
   };
@@ -110,8 +130,20 @@ const handleAssistantChange = async assistant => {
         size="sm"
         @click="handleAssistantChange(assistant)"
       >
-        <span class="text-sm font-medium truncate text-n-slate-12">
-          {{ assistant.name || '' }}
+        <span class="min-w-0 flex flex-row gap-2 items-center">
+          <span class="text-sm font-medium truncate text-n-slate-12">
+            {{ assistant.name || '' }}
+          </span>
+          <span
+            class="inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
+            :class="
+              assistant?.usage_mode === 'internal_assistant'
+                ? 'bg-n-alpha-2 text-n-slate-11'
+                : 'bg-n-brand/10 text-n-brand'
+            "
+          >
+            {{ assistantUsageBadge(assistant) }}
+          </span>
         </span>
         <Avatar
           v-if="assistant"

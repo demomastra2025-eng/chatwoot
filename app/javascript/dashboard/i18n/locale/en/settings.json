@@ -337,6 +337,10 @@
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Inboxes",
     "CAPTAIN_SETTINGS": "Settings",
+    "CAPTAIN_PROMPTS": "Prompts",
+    "CAPTAIN_RESTRICTIONS": "Restrictions",
+    "CAPTAIN_ACCESS": "Access",
+    "CAPTAIN_CHANNELS": "Channels",
     "HOME": "Home",
     "AGENTS": "Agents",
     "AGENT_BOTS": "Bots",
@@ -442,6 +446,72 @@
         "DESCRIPTION": "Automatically suggest relevant labels and tags for conversations based on content analysis and context.",
         "MODEL_TITLE": "Label Suggestion Model",
         "MODEL_DESCRIPTION": "Select the AI model to use for analyzing conversations and suggesting appropriate labels"
+      }
+    },
+    "RUNTIME": {
+      "TITLE": "Runtime & Safety",
+      "DESCRIPTION": "Control reasoning depth and safety checks for the customer-facing AI Agent and the internal Assistant.",
+      "MODERATION": {
+        "TITLE": "Moderation",
+        "DESCRIPTION": "Check text safety before and after model responses. Blocked AI Agent replies hand off to a human."
+      },
+      "THINKING": {
+        "TITLE": "Thinking Effort",
+        "DESCRIPTION": "Give reasoning-capable models more deliberation time for harder tasks.",
+        "OPTIONS": {
+          "NONE": "Disabled",
+          "LOW": "Low",
+          "MEDIUM": "Medium",
+          "HIGH": "High"
+        }
+      },
+      "ASSISTANT": {
+        "TITLE": "AI Agent Runtime",
+        "DESCRIPTION": "Applies to automated customer replies and scenario handoffs."
+      },
+      "COPILOT": {
+        "TITLE": "Assistant Runtime",
+        "DESCRIPTION": "Applies to internal copilot chats and operator-side tool use."
+      }
+    },
+    "RUNTIME_STATUS": {
+      "SECTION_TITLE": "Runtime Status",
+      "SECTION_DESCRIPTION": "Review provider readiness, registry coverage, and the exact models currently resolved for each AI feature.",
+      "TITLE": "Runtime Overview",
+      "DESCRIPTION": "This is the effective runtime state after account settings, installation defaults, and the RubyLLM model registry are applied.",
+      "SEPARATOR": "·",
+      "DEFAULT_MODEL": "Installation default model",
+      "MODERATION_MODEL": "Moderation model",
+      "REGISTRY": {
+        "TITLE": "Model registry",
+        "COUNTS": "{resolved}/{configured} configured models resolved, {total} runtime models loaded",
+        "LAST_REFRESH": "Last registry refresh",
+        "NEVER": "Not refreshed in this runtime",
+        "ERROR": "Last refresh error: {error}"
+      },
+      "PROVIDERS": {
+        "TITLE": "Providers",
+        "CONFIGURED": "Configured",
+        "NOT_CONFIGURED": "Missing API key",
+        "CUSTOM_ENDPOINT": "Custom endpoint",
+        "DEFAULT_ENDPOINT": "Default endpoint"
+      },
+      "FEATURES": {
+        "TITLE": "Resolved feature models",
+        "PROVIDER_READY": "Provider ready",
+        "PROVIDER_MISSING": "Provider missing",
+        "REGISTRY_READY": "Registry match",
+        "REGISTRY_MISSING": "Registry fallback",
+        "THINKING_READY": "Thinking ready",
+        "CAPABILITIES": "Capabilities: {capabilities}"
+      },
+      "FEATURE_LABELS": {
+        "EDITOR": "Editor",
+        "ASSISTANT": "AI Agent",
+        "COPILOT": "Assistant",
+        "LABEL_SUGGESTION": "Label Suggestion",
+        "AUDIO_TRANSCRIPTION": "Audio Transcription",
+        "HELP_CENTER_SEARCH": "Help Center Search"
       }
     },
     "API": {

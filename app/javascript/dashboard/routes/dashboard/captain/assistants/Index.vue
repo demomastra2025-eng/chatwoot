@@ -32,10 +32,9 @@ const handleCreateClose = () => {
 };
 
 const handleAfterCreate = newAssistant => {
-  // Navigate directly to documents page with the new assistant ID
   if (newAssistant?.id) {
     router.push({
-      name: 'captain_assistants_responses_index',
+      name: 'captain_assistants_settings_index',
       params: {
         accountId: router.currentRoute.value.params.accountId,
         assistantId: newAssistant.id,

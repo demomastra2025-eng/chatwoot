@@ -97,6 +97,7 @@
 {% endif -%}
 {% if appointment.custom_attributes -%}
   {% for attribute in appointment.custom_attributes -%}
-- {{ attribute[0] }}: {{ attribute[1] }}
+  {% assign attribute_label = appointment_custom_attribute_labels[attribute[0]] | default: attribute[0] -%}
+- {{ attribute_label }} ({{ attribute[0] }}): {{ attribute[1] }}
   {% endfor -%}
 {% endif -%}

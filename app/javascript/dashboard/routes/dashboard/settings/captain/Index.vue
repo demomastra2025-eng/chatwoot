@@ -13,6 +13,8 @@ import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import ModelSelector from './components/ModelSelector.vue';
 import FeatureToggle from './components/FeatureToggle.vue';
+import RuntimeSettingsCard from './components/RuntimeSettingsCard.vue';
+import RuntimeStatusCard from './components/RuntimeStatusCard.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
 const { t } = useI18n();
@@ -55,6 +57,21 @@ const featureToggles = computed(() => [
   },
   {
     key: 'audio_transcription',
+    enterprise: true,
+  },
+]);
+
+const runtimeFeatures = computed(() => [
+  {
+    key: 'assistant',
+    title: t('CAPTAIN_SETTINGS.RUNTIME.ASSISTANT.TITLE'),
+    description: t('CAPTAIN_SETTINGS.RUNTIME.ASSISTANT.DESCRIPTION'),
+    enterprise: true,
+  },
+  {
+    key: 'copilot',
+    title: t('CAPTAIN_SETTINGS.RUNTIME.COPILOT.TITLE'),
+    description: t('CAPTAIN_SETTINGS.RUNTIME.COPILOT.DESCRIPTION'),
     enterprise: true,
   },
 ]);
@@ -114,6 +131,18 @@ async function handleModelChange({ feature, model }) {
   }
 }
 
+async function handleRuntimeChange(runtime) {
+  try {
+    await captainConfigStore.updatePreferences({
+      captain_runtime: runtime,
+    });
+    useAlert(t('CAPTAIN_SETTINGS.API.SUCCESS'));
+  } catch (error) {
+    useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
+    captainConfigStore.fetch();
+  }
+}
+
 onMounted(() => {
   captainConfigStore.fetch();
 });
@@ -129,9 +158,7 @@ onMounted(() => {
       <BaseSettingsHeader
         :title="t('CAPTAIN_SETTINGS.TITLE')"
         :description="t('CAPTAIN_SETTINGS.DESCRIPTION')"
-        :link-text="t('CAPTAIN_SETTINGS.LINK_TEXT')"
         icon-name="captain"
-        feature-name="captain_billing"
       />
     </template>
     <template #body>
@@ -172,6 +199,43 @@ onMounted(() => {
               @model-change="handleModelChange"
             />
           </div>
+        </SectionLayout>
+
+        <SectionLayout
+          :title="t('CAPTAIN_SETTINGS.RUNTIME.TITLE')"
+          :description="t('CAPTAIN_SETTINGS.RUNTIME.DESCRIPTION')"
+          with-border
+        >
+          <div class="grid gap-4">
+            <RuntimeSettingsCard
+              v-for="feature in runtimeFeatures"
+              v-show="shouldShowFeature(feature)"
+              :key="feature.key"
+              :is-allowed="isFeatureAccessible(feature)"
+              :feature-key="feature.key"
+              :title="feature.title"
+              :description="feature.description"
+              :moderation-title="t('CAPTAIN_SETTINGS.RUNTIME.MODERATION.TITLE')"
+              :moderation-description="
+                t('CAPTAIN_SETTINGS.RUNTIME.MODERATION.DESCRIPTION')
+              "
+              :thinking-title="t('CAPTAIN_SETTINGS.RUNTIME.THINKING.TITLE')"
+              :thinking-description="
+                t('CAPTAIN_SETTINGS.RUNTIME.THINKING.DESCRIPTION')
+              "
+              @change="handleRuntimeChange"
+            />
+          </div>
+        </SectionLayout>
+
+        <SectionLayout
+          :title="t('CAPTAIN_SETTINGS.RUNTIME_STATUS.SECTION_TITLE')"
+          :description="
+            t('CAPTAIN_SETTINGS.RUNTIME_STATUS.SECTION_DESCRIPTION')
+          "
+          with-border
+        >
+          <RuntimeStatusCard />
         </SectionLayout>
       </div>
       <div v-else>

@@ -53,13 +53,18 @@ defineExpose({ dialogRef });
     :description="$t('CAPTAIN.DOCUMENTS.FORM_DESCRIPTION')"
     :show-cancel-button="false"
     :show-confirm-button="false"
+    overflow-y-auto
+    position="top"
+    width="xl"
     @close="handleClose"
   >
-    <DocumentForm
-      :assistant-id="assistantId"
-      @submit="handleSubmit"
-      @cancel="handleCancel"
-    />
+    <div class="max-h-[calc(100vh-11rem)] overflow-y-auto pr-1">
+      <DocumentForm
+        :assistant-id="assistantId"
+        @submit="handleSubmit"
+        @cancel="handleCancel"
+      />
+    </div>
     <template #footer />
   </Dialog>
 </template>

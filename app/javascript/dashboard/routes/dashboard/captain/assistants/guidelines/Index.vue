@@ -238,8 +238,14 @@ const addAllExample = async () => {
             <template #default-actions>
               <AddNewRulesDialog
                 v-model="newDialogRule"
+                enable-captain-tools
                 enable-captain-fields
                 :captain-context-assistant-id="assistantId"
+                :captain-context-access="
+                  assistant?.config?.context_access || {}
+                "
+                :captain-tool-access="assistant?.config?.tool_access || {}"
+                captain-tool-scope="agent"
                 :placeholder="
                   t(
                     'CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.ADD.NEW.PLACEHOLDER'
@@ -300,8 +306,12 @@ const addAllExample = async () => {
             :id="guideline.id"
             :key="guideline.id"
             :content="guideline.content"
+            enable-captain-tools
             enable-captain-fields
             :captain-context-assistant-id="assistantId"
+            :captain-context-access="assistant?.config?.context_access || {}"
+            :captain-tool-access="assistant?.config?.tool_access || {}"
+            captain-tool-scope="agent"
             :is-selected="bulkSelectedIds.has(guideline.id)"
             :selectable="
               hoveredCard === guideline.id || bulkSelectedIds.size > 0
@@ -314,8 +324,12 @@ const addAllExample = async () => {
         </div>
         <AddNewRulesInput
           v-model="newInlineRule"
+          enable-captain-tools
           enable-captain-fields
           :captain-context-assistant-id="assistantId"
+          :captain-context-access="assistant?.config?.context_access || {}"
+          :captain-tool-access="assistant?.config?.tool_access || {}"
+          captain-tool-scope="agent"
           :placeholder="
             t(
               'CAPTAIN.ASSISTANTS.RESPONSE_GUIDELINES.ADD.SUGGESTED.PLACEHOLDER'

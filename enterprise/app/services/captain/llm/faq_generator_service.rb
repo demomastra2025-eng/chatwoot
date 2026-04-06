@@ -11,8 +11,8 @@ class Captain::Llm::FaqGeneratorService < Llm::BaseAiService
   def generate
     response = instrument_llm_call(instrumentation_params) do
       llm_chat = chat
-        .with_params(response_format: { type: 'json_object' })
-        .with_instructions(system_prompt)
+                 .with_schema(Captain::Llm::Schemas::FaqCollection)
+                 .with_instructions(system_prompt)
 
       ask_chat(llm_chat, @content)
     end
@@ -34,7 +34,7 @@ class Captain::Llm::FaqGeneratorService < Llm::BaseAiService
   def instrumentation_params
     {
       span_name: 'llm.captain.faq_generator',
-      model: @model,
+      model: model,
       temperature: @temperature,
       feature_name: 'faq_generator',
       account_id: @account_id,
@@ -46,11 +46,11 @@ class Captain::Llm::FaqGeneratorService < Llm::BaseAiService
   end
 
   def parse_response(content)
-    return [] if content.nil?
+    return [] unless content.is_a?(Hash)
 
-    JSON.parse(sanitize_json_response(content)).fetch('faqs', [])
-  rescue JSON::ParserError => e
-    Rails.logger.error "Error in parsing GPT processed response: #{e.message}"
+    Array(content.with_indifferent_access[:faqs])
+  rescue StandardError => e
+    Rails.logger.error "Error in parsing FAQ generator response: #{e.message}"
     []
   end
 end

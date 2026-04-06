@@ -86,6 +86,10 @@ RSpec.describe Captain::Scenario, type: :model do
     let(:assistant) { create(:captain_assistant, account: account) }
     let(:scenario) { create(:captain_scenario, assistant: assistant, account: account) }
 
+    before do
+      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
+    end
+
     it 'renders deal and task context when provided through prompt context state' do
       context_double = instance_double(
         Captain::Runtime::RunContext,
@@ -138,6 +142,64 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(rendered).to include('Appointment')
       expect(rendered).to include('Status: confirmed')
+    end
+
+    it 'renders a single glossary section instead of a duplicated available tools block' do
+      scenario.update!(instruction: 'Use [@Handoff](tool://handoff) when finance approval is needed.')
+
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# Reference Glossary')
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+      expect(rendered).not_to include('# Available Tools')
+    end
+
+    it 'renders context glossary entries only for fields referenced in scenario prompt text' do
+      scenario.update!(
+        instruction: 'Ask for [Name](field://contact.name) before proceeding.',
+        assistant: assistant
+      )
+      assistant.update!(
+        guardrails: ['Do not expose [Conversation ID](field://conversation.display_id) unless required.']
+      )
+
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# Reference Glossary')
+      expect(rendered).to include('Name (contact.name)')
+      expect(rendered).to include('Conversation ID (conversation.display_id)')
+    end
+
+    it 'renders the installation-wide global system prompt in scenario prompts' do
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# Global System Instructions')
+      expect(rendered).to include('Never reveal internal routing.')
+    end
+
+    it 'renders custom attribute labels together with raw keys' do
+      context_double = instance_double(
+        Captain::Runtime::RunContext,
+        context: {
+          state: {
+            assistant_config: { 'context_access' => {} },
+            prompt_context: {
+              deal: {
+                custom_attributes: {
+                  'sales_region' => 'EMEA'
+                }
+              },
+              deal_custom_attribute_labels: {
+                'sales_region' => 'Sales Region'
+              }
+            }
+          }
+        }
+      )
+
+      rendered = scenario.agent_instructions(context_double)
+
+      expect(rendered).to include('Sales Region (sales_region): EMEA')
     end
   end
 

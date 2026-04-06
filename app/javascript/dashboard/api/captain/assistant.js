@@ -22,6 +22,10 @@ class CaptainAssistant extends ApiClient {
     });
   }
 
+  promptPreview(assistantId) {
+    return axios.get(`${this.url}/${assistantId}/prompt_preview`);
+  }
+
   updateAvatar(assistantId, avatar) {
     const formData = new FormData();
     formData.append('avatar', avatar);

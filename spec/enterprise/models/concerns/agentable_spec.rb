@@ -7,11 +7,12 @@ RSpec.describe Concerns::Agentable do
     Class.new do
       include Concerns::Agentable
 
-      attr_accessor :temperature
+      attr_accessor :temperature, :account
 
-      def initialize(name: 'Test Agent', temperature: 0.8)
+      def initialize(name: 'Test Agent', temperature: 0.8, account: nil)
         @name = name
         @temperature = temperature
+        @account = account
       end
 
       def self.name
@@ -32,11 +33,10 @@ RSpec.describe Concerns::Agentable do
 
   let(:dummy_instance) { dummy_class.new }
   let(:mock_runtime_agent) { instance_double(Captain::Runtime::Agent) }
-  let(:mock_installation_config) { instance_double(InstallationConfig, value: 'gpt-4-turbo') }
 
   before do
     allow(Captain::Runtime::Agent).to receive(:new).and_return(mock_runtime_agent)
-    allow(InstallationConfig).to receive(:find_by).with(name: 'CAPTAIN_OPEN_AI_MODEL').and_return(mock_installation_config)
+    allow(Llm::Config).to receive(:model_for).and_return('gpt-4-turbo')
     allow(Captain::PromptRenderer).to receive(:render).and_return('rendered_template')
   end
 
@@ -79,7 +79,14 @@ RSpec.describe Concerns::Agentable do
     it 'calls Captain::PromptRenderer with base context' do
       expect(Captain::PromptRenderer).to receive(:render).with(
         'dummy_class',
-        hash_including(base_key: 'base_value')
+        hash_including(
+          base_key: 'base_value',
+          conversation: nil,
+          contact: nil,
+          campaign: {},
+          conversation_visible_fields: [],
+          contact_visible_fields: []
+        )
       )
 
       dummy_instance.agent_instructions
@@ -89,7 +96,6 @@ RSpec.describe Concerns::Agentable do
       context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
-                                           assistant_config: { 'feature_contact_attributes' => true },
                                            conversation: { id: 123 },
                                            contact: { name: 'John' }
                                          }
@@ -114,7 +120,6 @@ RSpec.describe Concerns::Agentable do
       context_double = instance_double(Captain::Runtime::RunContext,
                                        context: {
                                          state: {
-                                           assistant_config: { 'feature_contact_attributes' => true },
                                            conversation: { id: 123, status: 'open' },
                                            contact: { name: 'John' },
                                            deal: { title: 'Enterprise renewal', stage_name: 'Negotiation' },
@@ -220,20 +225,21 @@ RSpec.describe Concerns::Agentable do
   end
 
   describe '#agent_model' do
-    it 'returns value from InstallationConfig when present' do
+    it 'delegates model resolution through Llm::Config' do
       expect(dummy_instance.send(:agent_model)).to eq('gpt-4-turbo')
     end
 
-    it 'returns default model when config not found' do
-      allow(InstallationConfig).to receive(:find_by).and_return(nil)
+    it 'passes the associated account when present' do
+      account = create(:account, captain_models: { 'assistant' => 'gpt-5.2' })
+      dummy_with_account = dummy_class.new(account: account)
 
-      expect(dummy_instance.send(:agent_model)).to eq('gpt-4.1')
-    end
+      expect(Llm::Config).to receive(:model_for).with(
+        feature: :assistant,
+        account: account,
+        fallback: LlmConstants::DEFAULT_MODEL
+      ).and_return('gpt-5.2')
 
-    it 'returns default model when config value is nil' do
-      allow(mock_installation_config).to receive(:value).and_return(nil)
-
-      expect(dummy_instance.send(:agent_model)).to eq('gpt-4.1')
+      expect(dummy_with_account.send(:agent_model)).to eq('gpt-5.2')
     end
   end
 

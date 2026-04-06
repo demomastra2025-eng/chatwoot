@@ -608,23 +608,17 @@ class Captain::ToolRegistry
     end
 
     def resolve_agent_tool_class(tool_id)
-      resolved_class_name = definition_for(tool_id)&.tool_class_for(Captain::ToolAccess::SCOPE_AGENT)&.inspect
-      resolved_class_name&.safe_constantize || fallback_agent_tool_class(tool_id)
+      definition_for(tool_id)&.tool_class_for(Captain::ToolAccess::SCOPE_AGENT)
     end
 
     def resolve_assistant_tool_class(tool_id)
-      resolved_class_name = definition_for(tool_id)&.tool_class_for(Captain::ToolAccess::SCOPE_ASSISTANT)&.inspect
-      resolved_class_name&.safe_constantize
+      definition_for(tool_id)&.tool_class_for(Captain::ToolAccess::SCOPE_ASSISTANT)
     end
 
     private
 
     def definition(**attributes)
       Definition.new(**attributes)
-    end
-
-    def fallback_agent_tool_class(tool_id)
-      "Captain::Tools::#{tool_id.classify}Tool".safe_constantize
     end
   end
 end

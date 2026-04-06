@@ -16,7 +16,7 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
     return default_incomplete_response('No messages found') if content.blank?
 
     response = make_api_call(
-      model: InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value.presence || GPT_MODEL,
+      model: task_model,
       messages: [
         { role: 'system', content: render_task_prompt('conversation_completion') },
         { role: 'user', content: content }
@@ -66,6 +66,10 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
 
   def build_follow_up_context?
     false
+  end
+
+  def llm_feature_key
+    'assistant'
   end
 end
 

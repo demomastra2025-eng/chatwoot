@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch, reactive } from 'vue';
+import { computed, watch, reactive, onMounted } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
+import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Policy from 'dashboard/components/policy.vue';
 import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
@@ -18,10 +19,16 @@ const route = useRoute();
 const { t } = useI18n();
 
 const assistantId = computed(() => Number(route.params.assistantId));
+const assistant = computed(() =>
+  store.getters['captainAssistants/getRecord'](assistantId.value)
+);
 const assistantUiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetchingAssistant = computed(() => assistantUiFlags.value.fetchingItem);
 const inboxUiFlags = useMapGetter('inboxes/getUIFlags');
 const isFetching = computed(() => inboxUiFlags.value.isFetching);
+const isInternalAssistant = computed(
+  () => assistant.value?.usage_mode === 'internal_assistant'
+);
 
 const inboxes = useMapGetter('inboxes/getInboxes');
 const connectionStateByInboxId = reactive({});
@@ -96,7 +103,11 @@ watch(
 );
 
 const toggleInboxConnection = async (inbox, nextValue) => {
-  if (!inbox?.id || isLockedToAnotherAssistant(inbox)) {
+  if (
+    !inbox?.id ||
+    isLockedToAnotherAssistant(inbox) ||
+    isInternalAssistant.value
+  ) {
     return;
   }
 
@@ -136,13 +147,17 @@ const toggleInboxConnection = async (inbox, nextValue) => {
 const toggleDisabled = inbox => {
   return isLockedToAnotherAssistant(inbox) || isUpdatingByInboxId[inbox.id];
 };
+
+onMounted(() => {
+  store.dispatch('captainAssistants/show', assistantId.value);
+});
 </script>
 
 <template>
   <PageLayout
-    :header-title="$t('CAPTAIN.INBOXES.HEADER')"
+    :header-title="$t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.LABEL')"
     :is-fetching="isFetchingAssistant || isFetching"
-    :is-empty="!sortedInboxes.length"
+    :is-empty="!isInternalAssistant && !sortedInboxes.length"
     :show-pagination-footer="false"
     :show-know-more="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
@@ -153,7 +168,29 @@ const toggleDisabled = inbox => {
 
     <template #body>
       <div class="flex flex-col gap-4">
-        <CardLayout v-for="inbox in sortedInboxes" :key="inbox.id">
+        <SettingsHeader
+          :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.LABEL')"
+          :description="
+            t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.DESCRIPTION')
+          "
+        />
+
+        <div
+          v-if="isInternalAssistant"
+          class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-6 py-10 text-center"
+        >
+          <h3 class="text-base font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_TITLE') }}
+          </h3>
+          <p class="mt-2 text-sm text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_DESCRIPTION') }}
+          </p>
+        </div>
+
+        <CardLayout
+          v-for="inbox in isInternalAssistant ? [] : sortedInboxes"
+          :key="inbox.id"
+        >
           <div class="flex justify-between items-center w-full gap-4">
             <div class="min-w-0">
               <span

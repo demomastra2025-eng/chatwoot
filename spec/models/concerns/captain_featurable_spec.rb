@@ -130,5 +130,28 @@ RSpec.describe CaptainFeaturable do
         expect(account.send("captain_#{feature_key}_model")).to eq(prefs[:models][feature_key])
       end
     end
+
+    it 'exposes runtime preferences with defaults' do
+      prefs = account.captain_preferences
+
+      expect(prefs[:runtime]).to include(
+        'assistant_thinking_effort' => 'none',
+        'copilot_thinking_effort' => 'none',
+        'assistant_moderation' => false,
+        'copilot_moderation' => false
+      )
+      expect(account.captain_assistant_thinking_effort).to eq('none')
+      expect(account.captain_copilot_moderation?).to be false
+    end
+
+    it 'returns stored runtime preferences when configured' do
+      account.update!(captain_runtime: {
+                        'assistant_thinking_effort' => 'high',
+                        'copilot_moderation' => true
+                      })
+
+      expect(account.captain_assistant_thinking_effort).to eq('high')
+      expect(account.captain_copilot_moderation?).to be true
+    end
   end
 end

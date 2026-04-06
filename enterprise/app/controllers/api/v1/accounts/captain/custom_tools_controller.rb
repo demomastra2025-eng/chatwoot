@@ -82,10 +82,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
     @preview_assistant ||= Captain::Assistant.new(
       account: Current.account,
       name: 'Preview Assistant',
-      description: 'Preview assistant used for custom tool testing',
-      config: {
-        'product_name' => Current.account.name
-      }
+      description: 'Preview assistant used for custom tool testing'
     )
   end
 

@@ -469,46 +469,41 @@ const menuItems = computed(() => {
         activeOn: ['captain_assistants_create_index'],
         children: [
           {
-            name: 'FAQs',
-            label: t('SIDEBAR.CAPTAIN_RESPONSES'),
+            name: 'Settings',
+            label: t('SIDEBAR.CAPTAIN_SETTINGS'),
+            activeOn: ['captain_assistants_settings_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_settings_index',
+            }),
+          },
+          {
+            name: 'Prompts',
+            label: t('SIDEBAR.CAPTAIN_PROMPTS'),
             activeOn: [
-              'captain_assistants_responses_index',
-              'captain_assistants_responses_pending',
+              'captain_assistants_prompts_index',
+              'captain_assistants_guidelines_index',
             ],
             to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_responses_index',
+              navigationPath: 'captain_assistants_prompts_index',
             }),
           },
           {
-            name: 'Documents',
-            label: t('SIDEBAR.CAPTAIN_DOCUMENTS'),
-            activeOn: ['captain_assistants_documents_index'],
+            name: 'Channels',
+            label: t('SIDEBAR.CAPTAIN_CHANNELS'),
+            activeOn: [
+              'captain_assistants_channels_index',
+              'captain_assistants_inboxes_index',
+            ],
             to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_documents_index',
+              navigationPath: 'captain_assistants_channels_index',
             }),
           },
           {
-            name: 'Scenarios',
-            label: t('SIDEBAR.CAPTAIN_SCENARIOS'),
-            activeOn: ['captain_assistants_scenarios_index'],
+            name: 'Access',
+            label: t('SIDEBAR.CAPTAIN_ACCESS'),
+            activeOn: ['captain_assistants_access_index'],
             to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_scenarios_index',
-            }),
-          },
-          {
-            name: 'Playground',
-            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
-            activeOn: ['captain_assistants_playground_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_playground_index',
-            }),
-          },
-          {
-            name: 'Inboxes',
-            label: t('SIDEBAR.CAPTAIN_INBOXES'),
-            activeOn: ['captain_assistants_inboxes_index'],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_inboxes_index',
+              navigationPath: 'captain_assistants_access_index',
             }),
           },
           {
@@ -520,15 +515,41 @@ const menuItems = computed(() => {
             }),
           },
           {
-            name: 'Settings',
-            label: t('SIDEBAR.CAPTAIN_SETTINGS'),
+            name: 'FAQs',
+            label: t('SIDEBAR.CAPTAIN_RESPONSES'),
             activeOn: [
-              'captain_assistants_settings_index',
-              'captain_assistants_guidelines_index',
+              'captain_assistants_responses_index',
+              'captain_assistants_responses_pending',
+            ],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_responses_index',
+            }),
+          },
+          {
+            name: 'Restrictions',
+            label: t('SIDEBAR.CAPTAIN_RESTRICTIONS'),
+            activeOn: [
+              'captain_assistants_restrictions_index',
               'captain_assistants_guardrails_index',
             ],
             to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_settings_index',
+              navigationPath: 'captain_assistants_restrictions_index',
+            }),
+          },
+          {
+            name: 'Documents',
+            label: t('SIDEBAR.CAPTAIN_DOCUMENTS'),
+            activeOn: ['captain_assistants_documents_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_documents_index',
+            }),
+          },
+          {
+            name: 'Playground',
+            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
+            activeOn: ['captain_assistants_playground_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_playground_index',
             }),
           },
         ],
@@ -768,12 +789,12 @@ const menuItems = computed(() => {
             icon: 'i-lucide-briefcase',
             to: accountScopedRoute('general_settings_index'),
           },
-          // {
-          //   name: 'Settings Captain',
-          //   label: t('SIDEBAR.CAPTAIN_AI'),
-          //   icon: 'i-woot-captain',
-          //   to: accountScopedRoute('captain_settings_index'),
-          // },
+          {
+            name: 'Settings Captain',
+            label: t('SIDEBAR.CAPTAIN_AI'),
+            icon: 'i-woot-captain',
+            to: accountScopedRoute('captain_settings_index'),
+          },
           {
             name: 'Settings Agents',
             label: t('SIDEBAR.AGENTS'),

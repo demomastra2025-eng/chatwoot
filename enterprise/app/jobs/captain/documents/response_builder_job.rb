@@ -56,9 +56,7 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
   end
 
   def should_use_pagination?(document)
-    # Auto-detect when to use pagination
-    # For now, use pagination for PDFs with OpenAI file ID
-    document.pdf_document? && document.openai_file_id.present?
+    document.pdf_document?
   end
 
   def reset_previous_responses(response_document)

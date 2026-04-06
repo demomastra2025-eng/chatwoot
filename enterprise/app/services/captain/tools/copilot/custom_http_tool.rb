@@ -15,14 +15,7 @@ class Captain::Tools::Copilot::CustomHttpTool < Captain::Tools::BaseTool
   end
 
   def parameters
-    @parameters ||= @custom_tool.agent_parameter_definitions.each_with_object({}) do |param_definition, memo|
-      memo[param_definition['name'].to_sym] = RubyLLM::Parameter.new(
-        param_definition['name'].to_sym,
-        type: param_definition['type'],
-        desc: param_definition['description'],
-        required: param_definition.fetch('required', false)
-      )
-    end
+    @parameters ||= @custom_tool.runtime_parameters(Captain::ToolAccess::SCOPE_ASSISTANT)
   end
 
   def execute(**params)

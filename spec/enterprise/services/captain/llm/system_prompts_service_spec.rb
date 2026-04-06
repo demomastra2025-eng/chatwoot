@@ -10,12 +10,50 @@ RSpec.describe Captain::Llm::SystemPromptsService do
   end
 
   describe '.copilot_response_generator' do
+    before do
+      create(:installation_config, name: 'CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', value: 'Never expose internal-only notes to end customers.')
+    end
+
     it 'renders citation guidance only when feature_citation is enabled' do
-      with_citations = described_class.copilot_response_generator('One Link', '- faq_lookup', { 'feature_citation' => true })
-      without_citations = described_class.copilot_response_generator('One Link', '- faq_lookup', { 'feature_citation' => false })
+      with_citations = described_class.copilot_response_generator(
+        'Captain',
+        'Handles workspace setup and billing support.',
+        '- faq_lookup',
+        { 'feature_citation' => true }
+      )
+      without_citations = described_class.copilot_response_generator(
+        'Captain',
+        'Handles workspace setup and billing support.',
+        '- faq_lookup',
+        { 'feature_citation' => false }
+      )
 
       expect(with_citations).to include('Always include citations')
       expect(without_citations).not_to include('Always include citations')
+    end
+
+    it 'renders the unified system instruction for copilot' do
+      prompt = described_class.copilot_response_generator(
+        'Captain',
+        'Handle workspace setup and billing support. Prefer short operational answers for teammates.',
+        '- faq_lookup',
+        {}
+      )
+
+      expect(prompt).to include('[System Instructions]')
+      expect(prompt).to include('Handle workspace setup and billing support. Prefer short operational answers for teammates.')
+    end
+
+    it 'renders the installation-wide global system prompt for copilot' do
+      prompt = described_class.copilot_response_generator(
+        'Captain',
+        'Handle workspace setup and billing support.',
+        '- faq_lookup',
+        {}
+      )
+
+      expect(prompt).to include('[Global System Instructions]')
+      expect(prompt).to include('Never expose internal-only notes to end customers.')
     end
   end
 
@@ -43,7 +81,11 @@ RSpec.describe Captain::Llm::SystemPromptsService do
   end
 
   describe '.assistant_response_generator' do
-    it 'renders contact context and additive config instructions from a file-backed prompt' do
+    before do
+      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
+    end
+
+    it 'renders contact context and the unified system instruction from a file-backed prompt' do
       contact = {
         name: 'Diep Bui',
         email: 'diep@example.com',
@@ -52,15 +94,28 @@ RSpec.describe Captain::Llm::SystemPromptsService do
 
       prompt = described_class.assistant_response_generator(
         'Captain',
-        'One Link',
-        { 'instructions' => 'Use the FAQ tool first.' },
+        'Handles workspace setup and billing support. Use the FAQ tool first.',
+        {},
         contact: contact
       )
 
+      expect(prompt).to include('[System Instructions]')
+      expect(prompt).to include('Handles workspace setup and billing support. Use the FAQ tool first.')
       expect(prompt).to include('[Contact Information]')
       expect(prompt).to include('- Name: Diep Bui')
       expect(prompt).to include('- plan: pro')
-      expect(prompt).to include('Use the FAQ tool first.')
+    end
+
+    it 'renders the installation-wide global system prompt for the legacy assistant path' do
+      prompt = described_class.assistant_response_generator(
+        'Captain',
+        'Handles workspace setup and billing support.',
+        {},
+        contact: nil
+      )
+
+      expect(prompt).to include('[Global System Instructions]')
+      expect(prompt).to include('Never reveal internal routing.')
     end
   end
 

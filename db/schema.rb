@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_02_131500) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_06_143000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -347,7 +347,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_02_131500) do
     t.jsonb "config", default: {}, null: false
     t.jsonb "response_guidelines", default: []
     t.jsonb "guardrails", default: []
+    t.string "usage_mode", default: "external_agent", null: false
     t.index ["account_id"], name: "index_captain_assistants_on_account_id"
+    t.index ["usage_mode"], name: "index_captain_assistants_on_usage_mode"
   end
 
   create_table "captain_custom_tools", force: :cascade do |t|

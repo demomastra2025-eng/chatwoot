@@ -175,12 +175,16 @@ RSpec.describe Captain::ContextFields do
           custom_attributes: { 'visit_room' => 'B12' }
         )
         expect(prompt_state.dig(:visible_fields, :appointment)).to eq(['status'])
+        expect(prompt_state[:contact_custom_attribute_labels]).to eq('vip_level' => 'VIP Level')
+        expect(prompt_state[:deal_custom_attribute_labels]).to eq('sales_region' => 'Sales Region')
+        expect(prompt_state[:task_custom_attribute_labels]).to eq('follow_up_channel' => 'Follow Up Channel')
+        expect(prompt_state[:appointment_custom_attribute_labels]).to eq('visit_room' => 'Visit Room')
         expect(prompt_state.dig(:contact, :additional_attributes)).to be_nil
       end
     end
 
     context 'when the assistant has not configured context access yet' do
-      it 'preserves legacy additional attributes in the prompt state' do
+      it 'still excludes additional attributes from the prompt state' do
         assistant.update_column(:config, {})
 
         prompt_state = described_class.prompt_state_for(
@@ -188,8 +192,8 @@ RSpec.describe Captain::ContextFields do
           runtime_state: runtime_state
         )
 
-        expect(prompt_state.dig(:contact, :additional_attributes)).to eq('locale' => 'en')
-        expect(prompt_state.dig(:conversation, :additional_attributes)).to eq('source' => 'whatsapp')
+        expect(prompt_state.dig(:contact, :additional_attributes)).to be_nil
+        expect(prompt_state.dig(:conversation, :additional_attributes)).to be_nil
         expect(prompt_state[:appointment]).to be_nil
       end
     end
@@ -213,6 +217,20 @@ RSpec.describe Captain::ContextFields do
         expect(prompt_state.dig(:conversation, 'display_id')).to eq(333)
         expect(prompt_state[:appointment]).to be_nil
       end
+    end
+  end
+
+  describe '.custom_attribute_label_maps_for_definitions' do
+    it 'builds per-scope label maps for custom attributes' do
+      definitions = described_class.definitions_for(account)
+
+      expect(described_class.custom_attribute_label_maps_for_definitions(definitions)).to eq(
+        contact: { 'vip_level' => 'VIP Level' },
+        conversation: { 'order_id' => 'Order ID' },
+        deal: { 'sales_region' => 'Sales Region' },
+        task: { 'follow_up_channel' => 'Follow Up Channel' },
+        appointment: { 'visit_room' => 'Visit Room' }
+      )
     end
   end
 

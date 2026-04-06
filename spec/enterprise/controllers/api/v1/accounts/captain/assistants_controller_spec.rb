@@ -57,8 +57,63 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/{account.id}/captain/assistants/{id}/prompt_preview' do
+    let(:assistant) do
+      create(
+        :captain_assistant,
+        account: account,
+        description: 'Handles billing and account setup questions.',
+        response_guidelines: ['Be concise'],
+        guardrails: ['Never guess'],
+        config: {
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] },
+            'assistant' => { 'enabled' => true, 'tool_ids' => ['search_documentation'] }
+          }
+        }
+      )
+    end
+    let(:scenario) do
+      create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        title: 'Billing disputes',
+        description: 'Handles disputed charge flows.',
+        instruction: 'Collect the dispute reason, then use [@Handoff](tool://handoff) if finance approval is needed.'
+      )
+    end
+
+    before do
+      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
+      create(:installation_config, name: 'CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', value: 'Never expose internal-only notes to end customers.')
+    end
+
+    it 'returns compiled assistant, copilot, and scenario prompts for settings inspection' do
+      scenario
+
+      get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/prompt_preview",
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:preview_mode]).to eq('settings_without_live_conversation_context')
+      expect(json_response.dig(:assistant, :compiled_prompt)).to include('Handles billing and account setup questions.')
+      expect(json_response.dig(:assistant, :compiled_prompt)).to include('Never reveal internal routing.')
+      expect(json_response.dig(:assistant, :prompt_id)).to eq('captain_v2.assistant.root')
+      expect(json_response.dig(:copilot, :compiled_prompt)).to include('Handles billing and account setup questions.')
+      expect(json_response.dig(:copilot, :compiled_prompt)).to include('Never expose internal-only notes to end customers.')
+      expect(json_response[:scenarios]).to include(
+        hash_including(
+          title: 'Billing disputes',
+          compiled_prompt: include('Collect the dispute reason')
+        )
+      )
+    end
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants/context_fields' do
-    let!(:deal_field_definition) do
+    let(:deal_field_definition) do
       create(
         :crm_field_definition,
         account: account,
@@ -67,7 +122,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         label: 'Sales Region'
       )
     end
-    let!(:task_field_definition) do
+    let(:task_field_definition) do
       create(
         :crm_field_definition,
         account: account,
@@ -76,7 +131,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         label: 'Follow Up Channel'
       )
     end
-    let!(:appointment_field_definition) do
+    let(:appointment_field_definition) do
       create(
         :crm_field_definition,
         account: account,
@@ -109,6 +164,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     before do
+      deal_field_definition
+      task_field_definition
+      appointment_field_definition
       account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
     end
 
@@ -218,6 +276,51 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/{account.id}/captain/assistants/tools' do
+    let(:custom_tool) { create(:captain_custom_tool, account: account, title: 'Lookup booking') }
+    let(:assistant) do
+      create(
+        :captain_assistant,
+        account: account,
+        config: {
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            },
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['search_documentation', custom_tool.slug]
+            }
+          }
+        }
+      )
+    end
+
+    it 'returns only selected tools for the requested assistant scope' do
+      get "/api/v1/accounts/#{account.id}/captain/assistants/tools",
+          params: { assistant_id: assistant.id, scope: 'assistant' },
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to include(
+        hash_including(
+          id: 'search_documentation',
+          scope_name: 'assistant',
+          selected: true
+        ),
+        hash_including(
+          id: custom_tool.slug,
+          scope_name: 'assistant',
+          selected: true,
+          title: 'Lookup booking'
+        )
+      )
+      expect(json_response).not_to include(hash_including(scope_name: 'agent'))
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants' do
     let(:valid_attributes) do
       {
@@ -227,7 +330,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           response_guidelines: ['Be helpful', 'Be concise'],
           guardrails: ['No harmful content', 'Stay on topic'],
           config: {
-            product_name: 'Chatwoot',
             feature_faq: true,
             feature_memory: false,
             feature_citation: true
@@ -267,7 +369,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:name]).to eq('New Assistant')
         expect(json_response[:response_guidelines]).to eq(['Be helpful', 'Be concise'])
         expect(json_response[:guardrails]).to eq(['No harmful content', 'Stay on topic'])
-        expect(json_response[:config][:product_name]).to eq('Chatwoot')
         expect(json_response[:config][:feature_citation]).to be(true)
         expect(response).to have_http_status(:success)
       end
@@ -285,6 +386,20 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(json_response[:config][:feature_citation]).to be(false)
         expect(response).to have_http_status(:success)
+      end
+
+      it 'creates an internal assistant when usage_mode is provided' do
+        attributes_with_usage_mode = valid_attributes.deep_dup
+        attributes_with_usage_mode[:assistant][:usage_mode] = 'internal_assistant'
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants",
+             params: attributes_with_usage_mode,
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:usage_mode]).to eq('internal_assistant')
+        expect(Captain::Assistant.order(:id).last.usage_mode).to eq('internal_assistant')
       end
 
       it 'stores an explicit empty context_access on create' do
@@ -424,6 +539,30 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:config][:feature_citation]).to be(false)
+      end
+
+      it 'updates usage_mode when the assistant is not connected to inboxes' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { usage_mode: 'internal_assistant' } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:usage_mode]).to eq('internal_assistant')
+        expect(assistant.reload.usage_mode).to eq('internal_assistant')
+      end
+
+      it 'does not allow switching a connected assistant to internal mode' do
+        create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { usage_mode: 'internal_assistant' } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include('Internal assistants cannot be connected to channels')
+        expect(assistant.reload.usage_mode).to eq('external_agent')
       end
 
       it 'allows clearing context_access to an explicit empty hash' do
@@ -569,7 +708,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         ]
       }
     end
-    let(:chat_service) { instance_double(Captain::Llm::AssistantChatService) }
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
 
     context 'when it is an un-authenticated user' do
@@ -582,62 +720,20 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
     end
 
-    context 'when captain v2 is disabled' do
-      it 'generates a response with the legacy assistant chat service' do
-        allow(Captain::Llm::AssistantChatService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground'
-        ).and_return(chat_service)
-        allow(chat_service).to receive(:generate_response).and_return({ content: 'Assistant response' })
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: valid_params,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(chat_service).to have_received(:generate_response).with(
-          additional_message: valid_params[:message_content],
-          message_history: valid_params[:message_history]
-        )
-        expect(json_response[:content]).to eq('Assistant response')
-      end
-
-      it 'uses empty array as default' do
-        params_without_history = { message_content: 'Hello assistant' }
-        allow(Captain::Llm::AssistantChatService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground'
-        ).and_return(chat_service)
-        allow(chat_service).to receive(:generate_response).and_return({ content: 'Assistant response' })
-        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: params_without_history,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(chat_service).to have_received(:generate_response).with(
-          additional_message: params_without_history[:message_content],
-          message_history: []
-        )
-      end
-    end
-
-    context 'when captain v2 is enabled' do
+    context 'when it is an authenticated user' do
       before do
-        account.enable_features('captain_integration_v2')
-      end
-
-      it 'generates a response with the agent runner service' do
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           source: 'playground'
         ).and_return(agent_runner_service)
         allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
-        expect(Captain::Llm::AssistantChatService).not_to receive(:new)
+      end
+
+      it 'generates a response with the agent runner service' do
+        expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+          assistant: assistant,
+          source: 'playground'
+        ).and_return(agent_runner_service)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
              params: valid_params,
@@ -651,16 +747,25 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:response]).to eq('Assistant response')
       end
 
+      it 'uses empty array as default' do
+        params_without_history = { message_content: 'Hello assistant' }
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: params_without_history,
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(agent_runner_service).to have_received(:generate_response).with(
+          message_history: [{ role: 'user', content: params_without_history[:message_content] }]
+        )
+      end
+
       it 'does not duplicate the latest user message if it is already in history' do
         params_with_latest_message = {
           message_content: 'Hello assistant',
           message_history: [{ role: 'user', content: 'Hello assistant' }]
         }
-        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
-          assistant: assistant,
-          source: 'playground'
-        ).and_return(agent_runner_service)
-        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
              params: params_with_latest_message,

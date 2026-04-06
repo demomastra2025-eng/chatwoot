@@ -11,6 +11,7 @@ RSpec.describe Llm::ChatClient do
       allow(chat).to receive(:with_temperature).and_return(chat)
       allow(chat).to receive(:with_params).and_return(chat)
       allow(chat).to receive(:with_headers).and_return(chat)
+      allow(chat).to receive(:with_thinking).and_return(chat)
       allow(RubyLLM).to receive(:chat).and_return(chat)
     end
 
@@ -48,6 +49,18 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'applies thinking options when provided' do
+      expect(RubyLLM).to receive(:chat).with(model: 'gpt-5.1').and_return(chat)
+      expect(chat).to receive(:with_thinking).with(effort: 'high').and_return(chat)
+
+      result = described_class.build(
+        model: 'gpt-5.1',
+        thinking: { effort: 'high' }
+      )
+
+      expect(result).to eq(chat)
+    end
+
     it 'reuses an existing chat instance when provided' do
       expect(RubyLLM).not_to receive(:chat)
       expect(context).not_to receive(:chat)
@@ -68,7 +81,19 @@ RSpec.describe Llm::ChatClient do
     it 'asks with multimodal content attachments when present' do
       content = RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])
 
-      expect(chat).to receive(:ask).with('Describe this', with: ['https://example.com/image.png'])
+      expect(chat).to receive(:ask).with(
+        'Describe this',
+        with: [instance_of(URI::HTTPS)]
+      )
+
+      described_class.ask(chat, content)
+    end
+
+    it 'preserves non-string attachment sources for RubyLLM multimodal uploads' do
+      io = StringIO.new('file-bytes')
+      content = RubyLLM::Content.new('Process this file', [io])
+
+      expect(chat).to receive(:ask).with('Process this file', with: [io])
 
       described_class.ask(chat, content)
     end

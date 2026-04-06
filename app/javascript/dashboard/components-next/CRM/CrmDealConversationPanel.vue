@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, reactive, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
@@ -31,6 +31,7 @@ const ui = reactive({
   error: null,
   isLoading: false,
 });
+const activationRequestId = ref(0);
 
 const normalizedConversationId = computed(() => {
   const conversationId = Number(props.conversationId);
@@ -53,18 +54,36 @@ const clearConversationState = () => {
 
 const closePanel = () => emit('close');
 
+const invalidateActivation = () => {
+  activationRequestId.value += 1;
+};
+
+const resetPanelState = () => {
+  ui.error = null;
+  ui.isLoading = false;
+};
+
 const activateConversation = async () => {
   if (!props.visible || !normalizedConversationId.value) {
-    clearConversationState();
     return;
   }
 
+  const requestId = activationRequestId.value + 1;
+  activationRequestId.value = requestId;
   ui.error = null;
   ui.isLoading = true;
 
   try {
     if (!activeConversation.value) {
       await store.dispatch('getConversation', normalizedConversationId.value);
+    }
+
+    if (
+      requestId !== activationRequestId.value ||
+      !props.visible ||
+      !normalizedConversationId.value
+    ) {
+      return;
     }
 
     const conversation =
@@ -76,19 +95,29 @@ const activateConversation = async () => {
 
     await store.dispatch('setActiveChat', { data: conversation });
   } catch (error) {
+    if (requestId !== activationRequestId.value) {
+      return;
+    }
+
     ui.error = error;
   } finally {
-    ui.isLoading = false;
+    if (requestId === activationRequestId.value) {
+      ui.isLoading = false;
+    }
   }
+};
+
+const handleAfterLeave = () => {
+  resetPanelState();
+  clearConversationState();
 };
 
 watch(
   [() => props.visible, normalizedConversationId],
   ([isVisible, conversationId]) => {
     if (!isVisible || !conversationId) {
-      ui.error = null;
-      ui.isLoading = false;
-      clearConversationState();
+      invalidateActivation();
+      resetPanelState();
       return;
     }
 
@@ -104,6 +133,7 @@ useEventListener(document, 'keydown', event => {
 });
 
 onBeforeUnmount(() => {
+  invalidateActivation();
   clearConversationState();
 });
 </script>
@@ -116,6 +146,7 @@ onBeforeUnmount(() => {
     leave-active-class="transition-all duration-150 ease-in"
     leave-from-class="translate-x-0 opacity-100"
     leave-to-class="translate-x-8 opacity-0"
+    @after-leave="handleAfterLeave"
   >
     <div
       v-if="visible && normalizedConversationId"

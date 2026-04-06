@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { format } from 'date-fns';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import ContactAPI from 'dashboard/api/contacts';
@@ -1548,6 +1548,15 @@ watch(
 watch(linkedConversationId, conversationId => {
   if (!conversationId) {
     showLinkedConversationPanel.value = false;
+  }
+});
+
+onBeforeRouteLeave(() => {
+  showLinkedConversationPanel.value = false;
+  filterDialogRef.value?.close?.();
+
+  if (drawerOpen.value) {
+    closeDrawer();
   }
 });
 

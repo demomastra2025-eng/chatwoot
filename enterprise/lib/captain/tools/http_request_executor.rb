@@ -179,8 +179,7 @@ class Captain::Tools::HttpRequestExecutor
     {
       'id' => @assistant.id,
       'name' => @assistant.name,
-      'description' => @assistant.description,
-      'product_name' => @assistant.config['product_name']
+      'description' => @assistant.description
     }
   end
 

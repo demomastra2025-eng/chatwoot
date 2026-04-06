@@ -312,6 +312,19 @@ RSpec.describe Account do
       end
     end
 
+    describe 'with saved runtime preferences' do
+      it 'returns saved runtime preferences merged with defaults' do
+        account.update!(captain_runtime: { 'assistant_thinking_effort' => 'high', 'assistant_moderation' => true })
+
+        prefs = account.captain_preferences
+
+        expect(prefs[:runtime]['assistant_thinking_effort']).to eq('high')
+        expect(prefs[:runtime]['assistant_moderation']).to be true
+        expect(prefs[:runtime]['copilot_thinking_effort']).to eq('none')
+        expect(prefs[:runtime]['copilot_moderation']).to be false
+      end
+    end
+
     describe 'validation' do
       it 'rejects invalid model for a feature' do
         account.captain_models = { 'label_suggestion' => 'gpt-5.1' }

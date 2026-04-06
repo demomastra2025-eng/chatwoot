@@ -336,7 +336,11 @@
     "CAPTAIN_SCENARIOS": "Сценарии",
     "CAPTAIN_PLAYGROUND": "Площадка",
     "CAPTAIN_INBOXES": "Каналы",
-    "CAPTAIN_SETTINGS": "Настройки",
+    "CAPTAIN_SETTINGS": "Профиль",
+    "CAPTAIN_PROMPTS": "Инструкции",
+    "CAPTAIN_RESTRICTIONS": "Ограничения",
+    "CAPTAIN_ACCESS": "Доступы",
+    "CAPTAIN_CHANNELS": "Каналы",
     "HOME": "Главная",
     "AGENTS": "Сотрудники",
     "AGENT_BOTS": "Роботы",
@@ -888,6 +892,72 @@
         "DESCRIPTION": "Автоматически предлагает подходящие метки для диалогов на основе анализа содержимого и контекста.",
         "MODEL_TITLE": "Модель подсказки меток",
         "MODEL_DESCRIPTION": "Выберите AI-модель для анализа диалогов и подбора подходящих меток"
+      }
+    },
+    "RUNTIME": {
+      "TITLE": "Рантайм и безопасность",
+      "DESCRIPTION": "Управляйте глубиной рассуждений и проверками безопасности для AI-агента и внутреннего ассистента.",
+      "MODERATION": {
+        "TITLE": "Модерация",
+        "DESCRIPTION": "Проверяет текст до и после ответа модели. Заблокированные ответы AI-агента переводятся на человека."
+      },
+      "THINKING": {
+        "TITLE": "Глубина рассуждений",
+        "DESCRIPTION": "Дает reasoning-моделям больше времени на сложные задачи.",
+        "OPTIONS": {
+          "NONE": "Отключено",
+          "LOW": "Низкая",
+          "MEDIUM": "Средняя",
+          "HIGH": "Высокая"
+        }
+      },
+      "ASSISTANT": {
+        "TITLE": "Рантайм AI-агента",
+        "DESCRIPTION": "Применяется к автоматическим ответам клиентам и handoff по сценариям."
+      },
+      "COPILOT": {
+        "TITLE": "Рантайм ассистента",
+        "DESCRIPTION": "Применяется к внутренним чатам copilot и вызовам инструментов оператором."
+      }
+    },
+    "RUNTIME_STATUS": {
+      "SECTION_TITLE": "Состояние рантайма",
+      "SECTION_DESCRIPTION": "Показывает готовность провайдеров, покрытие model registry и фактически выбранные модели для AI-функций.",
+      "TITLE": "Обзор рантайма",
+      "DESCRIPTION": "Это итоговое состояние после применения настроек workspace, installation defaults и RubyLLM model registry.",
+      "SEPARATOR": "·",
+      "DEFAULT_MODEL": "Модель по умолчанию для инсталляции",
+      "MODERATION_MODEL": "Модель модерации",
+      "REGISTRY": {
+        "TITLE": "Model registry",
+        "COUNTS": "{resolved}/{configured} продуктовых моделей сопоставлены, {total} runtime-моделей загружено",
+        "LAST_REFRESH": "Последнее обновление registry",
+        "NEVER": "В этом runtime ещё не обновлялся",
+        "ERROR": "Ошибка последнего обновления: {error}"
+      },
+      "PROVIDERS": {
+        "TITLE": "Провайдеры",
+        "CONFIGURED": "Настроен",
+        "NOT_CONFIGURED": "Нет API-ключа",
+        "CUSTOM_ENDPOINT": "Кастомный endpoint",
+        "DEFAULT_ENDPOINT": "Стандартный endpoint"
+      },
+      "FEATURES": {
+        "TITLE": "Разрешённые модели по функциям",
+        "PROVIDER_READY": "Провайдер готов",
+        "PROVIDER_MISSING": "Провайдер не настроен",
+        "REGISTRY_READY": "Есть в registry",
+        "REGISTRY_MISSING": "Через fallback",
+        "THINKING_READY": "Thinking поддерживается",
+        "CAPABILITIES": "Возможности: {capabilities}"
+      },
+      "FEATURE_LABELS": {
+        "EDITOR": "Редактор",
+        "ASSISTANT": "AI-агент",
+        "COPILOT": "Ассистент",
+        "LABEL_SUGGESTION": "Подсказка меток",
+        "AUDIO_TRANSCRIPTION": "Транскрибация аудио",
+        "HELP_CENTER_SEARCH": "Поиск по справке"
       }
     },
     "API": {

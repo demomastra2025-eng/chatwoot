@@ -52,7 +52,7 @@ class Captain::Scenario < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
 
-  delegate :temperature, :feature_faq, :feature_memory, :product_name, :response_guidelines, :guardrails, to: :assistant
+  delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, to: :assistant
 
   before_save :resolve_tool_references
 
@@ -61,13 +61,18 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def prompt_context
+    referenced_field_ids = referenced_field_ids_for_prompt
+
     {
       title: title,
+      global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
       tools: resolved_tools,
       assistant_name: assistant.name.downcase.gsub(/\s+/, '_'),
       response_guidelines: response_guidelines || [],
-      guardrails: guardrails || []
+      guardrails: guardrails || [],
+      context_glossary: assistant.context_glossary_groups(referenced_field_ids),
+      tool_glossary: assistant.tool_glossary_groups(resolved_tools)
     }
   end
 
@@ -107,7 +112,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolved_instructions
-    instruction.gsub(TOOL_REFERENCE_REGEX, '`\1` tool')
+    render_tool_references(instruction)
   end
 
   def resolved_tools
@@ -126,15 +131,11 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolve_tool_instance(tool_metadata)
-    tool_id = tool_metadata[:id]
-
-    if tool_metadata[:custom]
-      custom_tool = Captain::CustomTool.find_by(slug: tool_id, account_id: account_id, enabled: true)
-      custom_tool&.tool(assistant)
-    else
-      tool_class = self.class.resolve_tool_class(tool_id)
-      tool_class&.new(assistant)
-    end
+    Captain::ToolCatalog.build_tool(
+      tool_metadata,
+      assistant: assistant,
+      scope_name: Captain::ToolAccess::SCOPE_AGENT
+    )
   end
 
   # Validates that all tool references in the instruction are valid.
@@ -196,5 +197,11 @@ class Captain::Scenario < ApplicationRecord
 
     tool_ids = extract_tool_ids_from_text(instruction)
     self.tools = tool_ids.presence
+  end
+
+  def referenced_field_ids_for_prompt
+    Captain::ContextFields.extract_field_ids_from_text(
+      [instruction, response_guidelines, guardrails].flatten.compact.join("\n")
+    )
   end
 end

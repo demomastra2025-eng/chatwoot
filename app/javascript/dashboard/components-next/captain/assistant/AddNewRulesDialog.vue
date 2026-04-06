@@ -26,9 +26,25 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  enableCaptainTools: {
+    type: Boolean,
+    default: false,
+  },
   captainContextAssistantId: {
     type: Number,
     default: null,
+  },
+  captainContextAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolScope: {
+    type: String,
+    default: 'agent',
   },
 });
 
@@ -73,8 +89,12 @@ const onClickCancel = () => {
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"
+        :enable-captain-tools="enableCaptainTools"
         :enable-captain-fields="enableCaptainFields"
         :captain-context-assistant-id="captainContextAssistantId"
+        :captain-context-access="captainContextAccess"
+        :captain-tool-access="captainToolAccess"
+        :captain-tool-scope="captainToolScope"
       />
       <div class="flex gap-2 justify-between">
         <Button
@@ -85,7 +105,13 @@ const onClickCancel = () => {
           class="h-10 hover:!no-underline"
           @click="onClickCancel"
         />
-        <Button :label="confirmLabel" sm @click="onClickAdd" />
+        <Button
+          :label="confirmLabel"
+          sm
+          color="slate"
+          variant="outline"
+          @click="onClickAdd"
+        />
       </div>
     </div>
   </div>

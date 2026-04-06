@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute } from 'vue-router';
+import { onBeforeRouteLeave, useRoute } from 'vue-router';
 
 import CompanyAPI from 'dashboard/api/companies';
 import ContactAPI from 'dashboard/api/contacts';
@@ -702,6 +702,12 @@ watch(
     }
   }
 );
+
+onBeforeRouteLeave(() => {
+  if (props.modelValue) {
+    closePanel();
+  }
+});
 </script>
 
 <template>

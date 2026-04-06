@@ -7,6 +7,7 @@ class Captain::Assistant::AgentRunnerService
 
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
+  MAX_RUNTIME_TURNS = 24
 
   def initialize(assistant:, conversation: nil, callbacks: {}, source: nil)
     @assistant = assistant
@@ -19,10 +20,13 @@ class Captain::Assistant::AgentRunnerService
     Llm::Config.initialize!
 
     message_to_process, context = run_payload(message_history)
+    input_moderation_response = moderate_input(message_to_process, context)
+    return input_moderation_response if input_moderation_response
+
     result = runner.run(
       message_to_process,
       context: context,
-      max_turns: 100,
+      max_turns: MAX_RUNTIME_TURNS,
       runtime_options: {
         llm_context: llm_context_for_run
       }
@@ -45,7 +49,10 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
+    moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
+  rescue Llm::ModerationService::FlaggedContentError
+    blocked_by_moderation_response('Agent output blocked by moderation policy')
   end
 
   def error_response(error_message)
@@ -59,7 +66,8 @@ class Captain::Assistant::AgentRunnerService
     state = {
       account_id: @assistant.account_id,
       assistant_id: @assistant.id,
-      assistant_config: @assistant.config
+      assistant_config: @assistant.config,
+      captain_runtime: @assistant.account.captain_preferences[:runtime]
     }
     state[:source] = @source if @source.present?
 
@@ -181,5 +189,33 @@ class Captain::Assistant::AgentRunnerService
     context = build_context(message_history_without_last_user_message(message_history))
     enrich_context_with_trace_payload!(context, message_history, message_to_process)
     [message_to_process, context]
+  end
+
+  def moderate_input(message_to_process, context)
+    Llm::ModerationService.check!(
+      feature: :assistant,
+      stage: :input,
+      content: message_to_process,
+      preferences: context.dig(:state, :captain_runtime)
+    )
+    nil
+  rescue Llm::ModerationService::FlaggedContentError
+    blocked_by_moderation_response('Agent input blocked by moderation policy')
+  end
+
+  def moderate_output!(response, runtime_preferences)
+    Llm::ModerationService.check!(
+      feature: :assistant,
+      stage: :output,
+      content: response['response'],
+      preferences: runtime_preferences
+    )
+  end
+
+  def blocked_by_moderation_response(reason)
+    {
+      'response' => 'conversation_handoff',
+      'reasoning' => reason
+    }
   end
 end

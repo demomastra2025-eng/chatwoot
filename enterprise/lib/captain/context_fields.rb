@@ -284,10 +284,11 @@ class Captain::ContextFields
 
     def prompt_state_for(assistant:, runtime_state:)
       access = normalized_access_for(assistant)
-      assistant_config = assistant.config&.with_indifferent_access || {}
-      explicit_access_config = assistant_config.key?(:context_access)
       prompt_state = {}
       visible_fields = {}
+      custom_attribute_label_maps = custom_attribute_label_maps_for_definitions(
+        allowed_definitions_for(assistant)
+      )
 
       SCOPES.each do |scope|
         scope_access = access.fetch(scope)
@@ -296,8 +297,7 @@ class Captain::ContextFields
         scoped_prompt_state = build_scoped_prompt_state(
           scope: scope,
           raw_scope_state: runtime_state[scope],
-          allowed_field_ids: scope_access[:field_ids],
-          include_additional_attributes: !explicit_access_config
+          allowed_field_ids: scope_access[:field_ids]
         )
         next if scoped_prompt_state.blank?
 
@@ -306,7 +306,34 @@ class Captain::ContextFields
       end
 
       prompt_state[:visible_fields] = visible_fields if visible_fields.present?
+      custom_attribute_label_maps.each do |scope, labels|
+        next if labels.blank?
+
+        prompt_state[:"#{scope}_custom_attribute_labels"] = labels
+      end
       prompt_state
+    end
+
+    def custom_attribute_label_maps_for_definitions(definitions)
+      definitions
+        .select { |field| field[:field_type] == 'custom_attribute' }
+        .group_by { |field| field[:table_name].to_sym }
+        .transform_values do |fields|
+          fields.each_with_object({}) do |field, labels|
+            labels[field[:field_key].to_s] = field[:title]
+          end
+        end
+    end
+
+    def glossary_groups_for_definitions(definitions)
+      definitions
+        .group_by { |field| field[:group_name] }
+        .map do |group_name, fields|
+          {
+            group_name: group_name,
+            entries: fields.map { |field| glossary_entry_for(field) }
+          }
+        end
     end
 
     def extract_field_ids_from_text(text)
@@ -516,7 +543,7 @@ class Captain::ContextFields
       tokens.include?('administrator') || permissions.any? { |token| tokens.include?(token) }
     end
 
-    def build_scoped_prompt_state(scope:, raw_scope_state:, allowed_field_ids:, include_additional_attributes: false)
+    def build_scoped_prompt_state(scope:, raw_scope_state:, allowed_field_ids:)
       return {} if raw_scope_state.blank? || allowed_field_ids.blank?
 
       scope_state = raw_scope_state.with_indifferent_access
@@ -536,10 +563,6 @@ class Captain::ContextFields
         else
           prompt_state[path.first] = scope_state[path.first]
         end
-      end
-
-      if include_additional_attributes && scope_state[:additional_attributes].is_a?(Hash)
-        prompt_state[:additional_attributes] = scope_state[:additional_attributes]
       end
 
       prompt_state
@@ -599,6 +622,18 @@ class Captain::ContextFields
     def clean_reference_label(label, definition)
       sanitized_label = label.to_s.sub(/\A\$\s*/, '').squish
       sanitized_label.presence || definition&.dig(:title) || 'Field'
+    end
+
+    def glossary_entry_for(field)
+      field_id = field[:id].to_s
+      description = field[:description].to_s
+      normalized_description = description == field_id ? nil : description.presence
+
+      {
+        id: field_id,
+        title: field[:title].to_s,
+        description: normalized_description
+      }
     end
 
     def normalize_field_id(field_id)

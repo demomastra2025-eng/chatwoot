@@ -1,4 +1,4 @@
-class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
+class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
   # Default pages per chunk - easily configurable
@@ -15,11 +15,10 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
     @max_pages = options[:max_pages] # Optional limit from UI
     @total_pages_processed = 0
     @iterations_completed = 0
-    @model = LlmConstants::PDF_PROCESSING_MODEL
   end
 
   def generate
-    raise CustomExceptions::Pdf::FaqGenerationError, I18n.t('captain.documents.missing_openai_file_id') if @document&.openai_file_id.blank?
+    raise CustomExceptions::Pdf::FaqGenerationError, 'PDF source is missing' if pdf_source.blank?
 
     generate_paginated_faqs
   end
@@ -44,25 +43,7 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
 
   private
 
-  def generate_standard_faqs
-    params = standard_chat_parameters
-    instrumentation_params = {
-      span_name: 'llm.faq_generation',
-      account_id: @document&.account_id,
-      feature_name: 'faq_generation',
-      model: @model,
-      messages: params[:messages]
-    }
-
-    response = instrument_llm_call(instrumentation_params) do
-      @client.chat(parameters: params)
-    end
-
-    parse_response(response)
-  rescue OpenAI::Error => e
-    Rails.logger.error I18n.t('captain.documents.openai_api_error', error: e.message)
-    []
-  end
+  attr_reader :document
 
   def generate_paginated_faqs
     all_faqs = []
@@ -97,84 +78,42 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
   end
 
   def process_page_chunk(start_page, end_page)
-    params = build_chunk_parameters(start_page, end_page)
+    prompt = page_chunk_prompt(start_page, end_page)
 
-    instrumentation_params = build_instrumentation_params(params, start_page, end_page)
+    instrumentation_params = build_instrumentation_params(prompt, start_page, end_page)
 
     response = instrument_llm_call(instrumentation_params) do
-      @client.chat(parameters: params)
+      ask_chat(chat_with_structured_response, build_user_content(prompt))
     end
 
-    result = parse_chunk_response(response)
+    result = parse_chunk_response(response.content)
     { faqs: result['faqs'] || [], has_content: result['has_content'] != false }
-  rescue OpenAI::Error => e
+  rescue RubyLLM::Error => e
     Rails.logger.error I18n.t('captain.documents.page_processing_error', start: start_page, end: end_page, error: e.message)
     { faqs: [], has_content: false }
   end
 
-  def build_chunk_parameters(start_page, end_page)
-    {
-      model: @model,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'user',
-          content: build_user_content(start_page, end_page)
-        }
-      ]
-    }
-  end
-
-  def build_user_content(start_page, end_page)
-    [
-      {
-        type: 'file',
-        file: { file_id: @document.openai_file_id }
-      },
-      {
-        type: 'text',
-        text: page_chunk_prompt(start_page, end_page)
-      }
-    ]
+  def build_user_content(prompt)
+    RubyLLM::Content.new(prompt, pdf_source)
   end
 
   def page_chunk_prompt(start_page, end_page)
     Captain::Llm::SystemPromptsService.paginated_faq_generator(start_page, end_page, @language)
   end
 
-  def standard_chat_parameters
+  def chat_with_structured_response
+    chat(model: model).with_schema(Captain::Llm::Schemas::PaginatedFaqChunk)
+  end
+
+  def parse_chunk_response(content)
+    return { 'faqs' => [], 'has_content' => false } unless content.is_a?(Hash)
+
+    normalized = content.with_indifferent_access
     {
-      model: @model,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: Captain::Llm::SystemPromptsService.faq_generator(@language)
-        },
-        {
-          role: 'user',
-          content: @content
-        }
-      ]
+      'faqs' => Array(normalized[:faqs]),
+      'has_content' => normalized[:has_content] == true
     }
-  end
-
-  def parse_response(response)
-    content = response.dig('choices', 0, 'message', 'content')
-    return [] if content.nil?
-
-    JSON.parse(sanitize_json_response(content)).fetch('faqs', [])
-  rescue JSON::ParserError => e
-    Rails.logger.error "Error parsing response: #{e.message}"
-    []
-  end
-
-  def parse_chunk_response(response)
-    content = response.dig('choices', 0, 'message', 'content')
-    return { 'faqs' => [], 'has_content' => false } if content.nil?
-
-    JSON.parse(sanitize_json_response(content))
-  rescue JSON::ParserError => e
+  rescue StandardError => e
     Rails.logger.error "Error parsing chunk response: #{e.message}"
     { 'faqs' => [], 'has_content' => false }
   end
@@ -212,8 +151,8 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
       span_name: 'llm.paginated_faq_generation',
       account_id: @document&.account_id,
       feature_name: 'paginated_faq_generation',
-      model: @model,
-      messages: params[:messages],
+      model: model,
+      messages: [{ role: 'user', content: params }],
       metadata: {
         document_id: @document&.id,
         start_page: start_page,
@@ -221,5 +160,28 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::LegacyBaseOpenAiService
         iteration: @iterations_completed + 1
       }
     }
+  end
+
+  def pdf_source
+    return document.pdf_file if document.pdf_file.attached?
+    return document.external_link if document.remote_pdf_url?
+
+    nil
+  end
+
+  def llm_feature_key
+    nil
+  end
+
+  def llm_model_account
+    document.account
+  end
+
+  def resolved_model
+    Llm::Config.model_for(
+      feature: llm_feature_key,
+      account: llm_model_account,
+      fallback: LlmConstants::PDF_PROCESSING_MODEL
+    )
   end
 end

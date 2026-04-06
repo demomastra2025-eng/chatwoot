@@ -7,11 +7,11 @@ import AssistantsIndexPage from './pages/AssistantsIndexPage.vue';
 import AssistantEmptyStateIndex from './assistants/Index.vue';
 
 import AssistantSettingsIndex from './assistants/settings/Settings.vue';
-import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
+import AssistantPromptsIndex from './assistants/prompts/Index.vue';
+import AssistantAccessIndex from './assistants/access/Index.vue';
 import AssistantPlaygroundIndex from './assistants/playground/Index.vue';
 import AssistantGuardrailsIndex from './assistants/guardrails/Index.vue';
-import AssistantGuidelinesIndex from './assistants/guidelines/Index.vue';
-import AssistantScenariosIndex from './assistants/scenarios/Index.vue';
+import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
 import DocumentsIndex from './documents/Index.vue';
 import ResponsesIndex from './responses/Index.vue';
 import ResponsesPendingIndex from './responses/Pending.vue';
@@ -50,7 +50,11 @@ const assistantRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/scenarios'),
-    component: AssistantScenariosIndex,
+    redirect: to => ({
+      name: 'captain_assistants_prompts_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_scenarios_index',
     meta: metaV2,
   },
@@ -61,8 +65,18 @@ const assistantRoutes = [
     meta,
   },
   {
-    path: frontendURL('accounts/:accountId/captain/:assistantId/inboxes'),
+    path: frontendURL('accounts/:accountId/captain/:assistantId/channels'),
     component: AssistantInboxesIndex,
+    name: 'captain_assistants_channels_index',
+    meta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/inboxes'),
+    redirect: to => ({
+      name: 'captain_assistants_channels_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_inboxes_index',
     meta,
   },
@@ -78,12 +92,34 @@ const assistantRoutes = [
     name: 'captain_assistants_settings_index',
     meta,
   },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/prompts'),
+    component: AssistantPromptsIndex,
+    name: 'captain_assistants_prompts_index',
+    meta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/access'),
+    component: AssistantAccessIndex,
+    name: 'captain_assistants_access_index',
+    meta,
+  },
   // Settings sub-pages (guardrails and guidelines)
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/restrictions'),
+    component: AssistantGuardrailsIndex,
+    name: 'captain_assistants_restrictions_index',
+    meta: metaV2,
+  },
   {
     path: frontendURL(
       'accounts/:accountId/captain/:assistantId/settings/guardrails'
     ),
-    component: AssistantGuardrailsIndex,
+    redirect: to => ({
+      name: 'captain_assistants_restrictions_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_guardrails_index',
     meta: metaV2,
   },
@@ -91,7 +127,11 @@ const assistantRoutes = [
     path: frontendURL(
       'accounts/:accountId/captain/:assistantId/settings/guidelines'
     ),
-    component: AssistantGuidelinesIndex,
+    redirect: to => ({
+      name: 'captain_assistants_prompts_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_guidelines_index',
     meta: metaV2,
   },

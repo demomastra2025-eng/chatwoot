@@ -84,6 +84,8 @@ const props = defineProps({
   enableCaptainFields: { type: Boolean, default: false },
   captainContextAssistantId: { type: Number, default: null },
   captainContextAccess: { type: Object, default: null },
+  captainToolAccess: { type: Object, default: null },
+  captainToolScope: { type: String, default: 'agent' },
   variables: { type: Object, default: () => ({}) },
   signature: { type: String, default: '' },
   // allowSignature is a kill switch, ensuring no signature methods
@@ -933,6 +935,9 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
     <TagTools
       v-if="showToolsMenu"
       :search-key="toolSearchKey"
+      :assistant-id="captainContextAssistantId"
+      :tool-access="captainToolAccess"
+      :tool-scope="captainToolScope"
       @select-tool="content => insertSpecialContent('tool', content)"
     />
     <TagFields

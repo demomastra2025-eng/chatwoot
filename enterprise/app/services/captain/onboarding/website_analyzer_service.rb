@@ -59,10 +59,10 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
 
   def extract_business_info
     response = instrument_llm_call(instrumentation_params) do
-      llm_chat = chat
-        .with_params(response_format: { type: 'json_object' }, max_tokens: 1000)
-        .with_temperature(0.1)
-        .with_instructions(analysis_prompt)
+      llm_chat = chat(temperature: 0.1)
+                 .with_params(max_tokens: 1000)
+                 .with_schema(Captain::Llm::Schemas::WebsiteAnalysis)
+                 .with_instructions(analysis_prompt)
 
       ask_chat(llm_chat, @website_content)
     end
@@ -73,7 +73,7 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
   def instrumentation_params
     {
       span_name: 'llm.captain.website_analyzer',
-      model: @model,
+      model: model,
       temperature: 0.1,
       feature_name: 'website_analyzer',
       messages: [
@@ -89,7 +89,7 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
   end
 
   def parse_llm_response(response_text)
-    parsed_response = JSON.parse(sanitize_json_response(response_text.to_s))
+    parsed_response = response_text.is_a?(Hash) ? response_text.with_indifferent_access : {}
 
     {
       success: true,
@@ -101,9 +101,9 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
         favicon_url: @favicon_url
       }
     }
-  rescue JSON::ParserError => e
-    Rails.logger.error "[Captain Onboarding] JSON parsing error: #{e.message}"
-    Rails.logger.error "[Captain Onboarding] Raw response: #{response_text}"
+  rescue StandardError => e
+    Rails.logger.error "[Captain Onboarding] Structured response parsing error: #{e.message}"
+    Rails.logger.error "[Captain Onboarding] Raw response: #{response_text.inspect}"
     error_response('Failed to parse business information from website')
   end
 

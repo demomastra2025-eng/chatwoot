@@ -6,9 +6,12 @@ class CaptainTools extends ApiClient {
     super('captain/assistants/tools', { accountScoped: true });
   }
 
-  get(params = {}) {
+  get({ assistantId, scope } = {}) {
     return axios.get(this.url, {
-      params,
+      params: {
+        ...(assistantId ? { assistant_id: assistantId } : {}),
+        ...(scope ? { scope } : {}),
+      },
     });
   }
 }

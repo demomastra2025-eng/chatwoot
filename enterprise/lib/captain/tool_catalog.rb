@@ -1,0 +1,93 @@
+# frozen_string_literal: true
+
+class Captain::ToolCatalog
+  class << self
+    def available_tools_for(assistant, scope_name)
+      (built_in_tools_for(scope_name) + custom_tools_for(assistant, scope_name))
+        .map(&:dup)
+        .uniq { |tool_definition| tool_definition[:id] }
+    end
+
+    def available_tool_ids_for(assistant, scope_name)
+      available_tools_for(assistant, scope_name).pluck(:id)
+    end
+
+    def allowed_tools_for(assistant, scope_name, fallback_ids: nil)
+      selected_ids = allowed_tool_ids_for(
+        assistant,
+        scope_name,
+        fallback_ids: fallback_ids || available_tool_ids_for(assistant, scope_name)
+      )
+
+      available_tools_for(assistant, scope_name).select do |tool_definition|
+        selected_ids.include?(tool_definition[:id])
+      end
+    end
+
+    def allowed_tool_ids_for(assistant, scope_name, fallback_ids: nil)
+      Captain::ToolAccess.allowed_tool_ids_for(
+        assistant,
+        scope_name,
+        fallback_ids: fallback_ids || available_tool_ids_for(assistant, scope_name)
+      )
+    end
+
+    def build_tool(tool_definition, assistant:, scope_name:, user: nil, conversation: nil)
+      tool_definition = tool_definition.with_indifferent_access
+      tool_id = tool_definition[:id].to_s
+      return if tool_id.blank?
+
+      if ActiveModel::Type::Boolean.new.cast(tool_definition[:custom])
+        build_custom_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+      else
+        build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+      end
+    end
+
+    def summary_for(tools)
+      Array(tools).map { |tool| "- #{tool[:id]}: #{tool[:description]}" }.join("\n")
+    end
+
+    private
+
+    def built_in_tools_for(scope_name)
+      Captain::ToolRegistry.tools_for_scope(scope_name)
+    end
+
+    def custom_tools_for(assistant, scope_name)
+      assistant.account.captain_custom_tools.enabled
+               .map(&:to_tool_metadata)
+               .select { |tool| Array(tool[:allowed_scopes]).map(&:to_s).include?(scope_name.to_s) }
+    end
+
+    def build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+      tool_class =
+        case scope_name.to_s
+        when Captain::ToolAccess::SCOPE_AGENT
+          Captain::ToolRegistry.resolve_agent_tool_class(tool_id)
+        when Captain::ToolAccess::SCOPE_ASSISTANT
+          Captain::ToolRegistry.resolve_assistant_tool_class(tool_id)
+        end
+
+      return unless tool_class
+
+      if scope_name.to_s == Captain::ToolAccess::SCOPE_ASSISTANT
+        tool_class.new(assistant, user: user, conversation: conversation)
+      else
+        tool_class.new(assistant)
+      end
+    end
+
+    def build_custom_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+      custom_tool = assistant.account.captain_custom_tools.enabled.find_by(slug: tool_id)
+      return unless custom_tool
+
+      case scope_name.to_s
+      when Captain::ToolAccess::SCOPE_AGENT
+        custom_tool.tool(assistant)
+      when Captain::ToolAccess::SCOPE_ASSISTANT
+        custom_tool.copilot_tool(assistant, user: user, conversation: conversation)
+      end
+    end
+  end
+end

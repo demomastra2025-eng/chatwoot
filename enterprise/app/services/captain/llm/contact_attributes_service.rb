@@ -21,8 +21,8 @@ class Captain::Llm::ContactAttributesService < Llm::BaseAiService
   def generate_attributes
     response = instrument_llm_call(instrumentation_params) do
       llm_chat = chat
-        .with_params(response_format: { type: 'json_object' })
-        .with_instructions(system_prompt)
+                 .with_schema(Captain::Llm::Schemas::ContactAttributeCollection)
+                 .with_instructions(system_prompt)
 
       ask_chat(llm_chat, @content)
     end
@@ -35,7 +35,7 @@ class Captain::Llm::ContactAttributesService < Llm::BaseAiService
   def instrumentation_params
     {
       span_name: 'llm.captain.contact_attributes',
-      model: @model,
+      model: model,
       temperature: @temperature,
       account_id: @conversation.account_id,
       feature_name: 'contact_attributes',
@@ -52,11 +52,13 @@ class Captain::Llm::ContactAttributesService < Llm::BaseAiService
   end
 
   def parse_response(content)
-    return [] if content.nil?
+    return [] unless content.is_a?(Hash)
 
-    JSON.parse(sanitize_json_response(content)).fetch('attributes', [])
-  rescue JSON::ParserError => e
-    Rails.logger.error "Error in parsing GPT processed response: #{e.message}"
+    Array(content.with_indifferent_access[:attributes]).map do |attribute|
+      attribute.respond_to?(:with_indifferent_access) ? attribute.with_indifferent_access : attribute
+    end
+  rescue StandardError => e
+    Rails.logger.error "Error in parsing contact attributes response: #{e.message}"
     []
   end
 end

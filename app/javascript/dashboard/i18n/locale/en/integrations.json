@@ -473,7 +473,7 @@
         "SUCCESS_MESSAGE": "The AI agent has been successfully deleted",
         "ERROR_MESSAGE": "There was an error deleting the AI agent, please try again."
       },
-      "FORM_DESCRIPTION": "Fill out the details below to name your AI agent, describe its purpose, and specify the product it will support.",
+      "FORM_DESCRIPTION": "Set the name, type, and instruction for the AI agent.",
       "CREATE": {
         "TITLE": "Create an AI agent",
         "SUCCESS_MESSAGE": "The AI agent has been successfully created",
@@ -485,6 +485,7 @@
         "EDIT_DELETE_ERROR": "The AI agent was updated, but the avatar could not be removed."
       },
       "FORM": {
+        "SAVE": "Save",
         "UPDATE": "Update",
         "AVATAR": {
           "LABEL": "AI agent avatar"
@@ -520,6 +521,28 @@
           "PLACEHOLDER": "Enter AI agent description",
           "ERROR": "The description is required"
         },
+        "INSTRUCTION": {
+          "LABEL": "Instruction",
+          "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow",
+          "ERROR": "The instruction is required"
+        },
+        "USAGE_MODE": {
+          "TITLE": "Assistant type",
+          "DESCRIPTION": "Choose whether this assistant should reply to customers in channels or stay internal for your team only.",
+          "INTERNAL_ASSISTANT_HINT": "AI assistants stay inside the workspace. They cannot be connected to inboxes or reply directly to customers.",
+          "OPTIONS": {
+            "EXTERNAL_AGENT": {
+              "BADGE": "Customer-facing",
+              "TITLE": "AI agent",
+              "DESCRIPTION": "Use this assistant in connected channels to answer customers and handle live conversations."
+            },
+            "INTERNAL_ASSISTANT": {
+              "BADGE": "Team-only",
+              "TITLE": "AI assistant",
+              "DESCRIPTION": "Keep this assistant for teammates, internal copilots, and workspace-only guidance."
+            }
+          }
+        },
         "PRODUCT_NAME": {
           "LABEL": "Product Name",
           "PLACEHOLDER": "Enter product name",
@@ -531,15 +554,29 @@
         },
         "HANDOFF_MESSAGE": {
           "LABEL": "Handoff Message",
-          "PLACEHOLDER": "Enter handoff message"
+          "PLACEHOLDER": "Enter the message to send during handoff",
+          "INFO_TITLE": "Handoff message",
+          "INFO_DESCRIPTION": "This text is sent to the customer when the AI agent hands the conversation off to a human.",
+          "INFO_POINTS": {
+            "TRIGGER": "It is used during handoff, when the agent stops handling the conversation on its own.",
+            "FALLBACK": "If this field is disabled or empty, the system fallback handoff message is used.",
+            "FIELDS": "You can insert any allowed context field into this message."
+          }
         },
         "RESOLUTION_MESSAGE": {
-          "LABEL": "Resolution Message",
-          "PLACEHOLDER": "Enter resolution message"
+          "LABEL": "Auto-resolution message",
+          "PLACEHOLDER": "Enter the message to send during auto-resolution",
+          "INFO_TITLE": "Auto-resolution message",
+          "INFO_DESCRIPTION": "This text is sent when the system automatically resolves the conversation without an operator.",
+          "INFO_POINTS": {
+            "TRIGGER": "It is only used in the auto-resolution flow, not in every regular AI reply.",
+            "DEFAULT": "If this field is disabled or empty, the default system auto-resolution message is used.",
+            "USE_CASE": "Use it for a polite closing message, such as inviting the customer to write again if they need more help."
+          }
         },
         "INSTRUCTIONS": {
-          "LABEL": "Instructions",
-          "PLACEHOLDER": "Enter instructions for the AI agent"
+          "LABEL": "Instruction",
+          "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow"
         },
         "FEATURES": {
           "TITLE": "Features",
@@ -549,44 +586,63 @@
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         },
         "CONTEXT_ACCESS": {
-          "TITLE": "Context access",
-          "DESCRIPTION": "Choose which contact, conversation, CRM, and scheduling fields the AI agent can read in live conversations.",
-          "HINT": "Use $ inside scenario instructions, descriptions, handoff messages, and resolution messages to insert any enabled field.",
+          "TITLE": "Access to attributes and data",
+          "DESCRIPTION": "Fields available to the agent.",
+          "HINT": "Fields appear in context and the variable picker.",
+          "VARIABLE": "Variable",
           "LOADING": "Loading available fields...",
           "EMPTY": "No fields are available for this section yet.",
-          "DISABLED_MESSAGE": "This table is disabled. The AI agent will not see any of these fields in its prompt context.",
+          "DISABLED_MESSAGE": "These fields are unavailable to the agent.",
+          "ENTITIES": {
+            "CONTACT": "contact",
+            "CONVERSATION": "conversation",
+            "DEAL": "deal",
+            "TASK": "task",
+            "APPOINTMENT": "appointment"
+          },
+          "FIELD_TYPES": {
+            "DEFAULT": "{entity} field.",
+            "CUSTOM": "{entity} attribute."
+          },
+          "GROUPS": {
+            "CONTACT_ATTRIBUTES": "Contact attributes",
+            "CONVERSATION_ATTRIBUTES": "Conversation attributes",
+            "DEAL_ATTRIBUTES": "Deal attributes",
+            "TASK_ATTRIBUTES": "Task attributes",
+            "APPOINTMENT_ATTRIBUTES": "Appointment attributes"
+          },
           "TABLES": {
             "CONTACT": {
               "TITLE": "Contact fields",
-              "DESCRIPTION": "Profile data that should stay available across this customer's conversations."
+              "DESCRIPTION": "Customer data."
             },
             "CONVERSATION": {
               "TITLE": "Conversation fields",
-              "DESCRIPTION": "Case-specific context that is only relevant to the current thread."
+              "DESCRIPTION": "Conversation data."
             },
             "DEAL": {
               "TITLE": "Deal fields",
-              "DESCRIPTION": "CRM deal details linked to this conversation, with priority on the most relevant active deal."
+              "DESCRIPTION": "Deal data."
             },
             "TASK": {
               "TITLE": "Task fields",
-              "DESCRIPTION": "CRM task details linked to this conversation, with priority on the most relevant active task."
+              "DESCRIPTION": "Task data."
             },
             "APPOINTMENT": {
               "TITLE": "Appointment fields",
-              "DESCRIPTION": "Scheduling details that are linked directly to the current conversation."
+              "DESCRIPTION": "Appointment data."
             }
           }
         },
         "TOOL_ACCESS": {
           "TITLE": "Tool access",
-          "DESCRIPTION": "Choose which tools the AI agent and the assistant copilot can use.",
-          "HINT": "Agent tools affect the live AI agent and scenario agents. Assistant tools affect the internal assistant copilot.",
+          "DESCRIPTION": "Choose which actions the agent is allowed to execute. Allowed tools are exposed both to runtime and the prompt glossary.",
+          "HINT": "Keep only the tools the agent truly needs. Even an allowed tool is still enforced separately by runtime checks when called.",
           "LOADING": "Loading available tools...",
           "ERROR": "The tool catalog could not be loaded. Refresh or retry to get the current configuration.",
           "RETRY": "Retry",
           "EMPTY": "No tools are available for this section yet.",
-          "DISABLED_MESSAGE": "This tool group is disabled. The AI runtime will not be able to call any of these tools.",
+          "DISABLED_MESSAGE": "This group is disabled. The agent will not see these tools in the glossary and will not be able to call them at runtime.",
           "BADGES": {
             "CUSTOM": "Custom",
             "REQUIRES_CONFIRMATION": "Needs confirmation",
@@ -599,12 +655,193 @@
           },
           "SCOPES": {
             "AGENT": {
-              "TITLE": "Agent tools",
-              "DESCRIPTION": "Tools the AI agent can call in live conversations and scenarios."
+              "TITLE": "AI agent tools",
+              "DESCRIPTION": "Tools for the external AI agent: customer replies, scenarios, and actions across the conversation and linked records."
             },
             "ASSISTANT": {
-              "TITLE": "Assistant tools",
-              "DESCRIPTION": "Tools the internal assistant copilot can use while helping teammates."
+              "TITLE": "AI assistant tools",
+              "DESCRIPTION": "Tools for the internal AI assistant that helps teammates and does not reply to customers directly."
+            }
+          },
+          "GROUPS": {
+            "KNOWLEDGE": "Knowledge",
+            "CONVERSATIONS": "Conversations",
+            "CONTACTS": "Contacts",
+            "COMPANIES": "Companies",
+            "CRM_DEALS": "CRM Deals",
+            "CRM_TASKS": "CRM Tasks",
+            "SCHEDULING": "Scheduling",
+            "HELP_CENTER": "Help center",
+            "INTEGRATIONS": "Integrations"
+          },
+          "TOOLS": {
+            "search_documentation": {
+              "TITLE": "Search documentation",
+              "DESCRIPTION": "Search and retrieve materials from the knowledge base."
+            },
+            "faq_lookup": {
+              "TITLE": "FAQ lookup",
+              "DESCRIPTION": "Find matching FAQ answers using semantic similarity."
+            },
+            "add_contact_note": {
+              "TITLE": "Add contact note",
+              "DESCRIPTION": "Add a note to the contact profile."
+            },
+            "add_private_note": {
+              "TITLE": "Add private note",
+              "DESCRIPTION": "Add an internal note to the current conversation."
+            },
+            "add_label_to_conversation": {
+              "TITLE": "Add label to conversation",
+              "DESCRIPTION": "Attach a label to the current conversation."
+            },
+            "update_priority": {
+              "TITLE": "Update priority",
+              "DESCRIPTION": "Change the priority level of the current conversation."
+            },
+            "resolve_conversation": {
+              "TITLE": "Resolve conversation",
+              "DESCRIPTION": "Mark the conversation as resolved."
+            },
+            "handoff": {
+              "TITLE": "Handoff to human",
+              "DESCRIPTION": "Transfer the current conversation to a human teammate."
+            },
+            "get_conversation": {
+              "TITLE": "Open conversation",
+              "DESCRIPTION": "Open one conversation with its messages and contact context."
+            },
+            "search_conversations": {
+              "TITLE": "Search conversations",
+              "DESCRIPTION": "Search conversations by status, priority, contact, or labels."
+            },
+            "get_contact": {
+              "TITLE": "Open contact",
+              "DESCRIPTION": "Open one contact profile with its details."
+            },
+            "search_contacts": {
+              "TITLE": "Search contacts",
+              "DESCRIPTION": "Search contacts by name, email, or phone number."
+            },
+            "update_contact": {
+              "TITLE": "Update contact",
+              "DESCRIPTION": "Update the contact linked to the current conversation."
+            },
+            "get_company": {
+              "TITLE": "Open company",
+              "DESCRIPTION": "Open one company with its details."
+            },
+            "search_companies": {
+              "TITLE": "Search companies",
+              "DESCRIPTION": "Search companies by name or domain."
+            },
+            "create_company": {
+              "TITLE": "Create company",
+              "DESCRIPTION": "Create a company for the contact in the current conversation."
+            },
+            "update_company": {
+              "TITLE": "Update company",
+              "DESCRIPTION": "Update the company linked to the current contact."
+            },
+            "get_deal": {
+              "TITLE": "Open deal",
+              "DESCRIPTION": "Open one CRM deal with its details."
+            },
+            "search_deals": {
+              "TITLE": "Search deals",
+              "DESCRIPTION": "Search CRM deals by title, stage, owner, or company."
+            },
+            "get_deal_timeline": {
+              "TITLE": "Open deal timeline",
+              "DESCRIPTION": "Open the timeline for one CRM deal."
+            },
+            "create_deal": {
+              "TITLE": "Create deal",
+              "DESCRIPTION": "Create a CRM deal from the current conversation context."
+            },
+            "update_deal": {
+              "TITLE": "Update deal",
+              "DESCRIPTION": "Update the deal linked to the current conversation."
+            },
+            "transition_deal_stage": {
+              "TITLE": "Move deal stage",
+              "DESCRIPTION": "Move the current deal to another pipeline stage."
+            },
+            "add_deal_comment": {
+              "TITLE": "Add deal comment",
+              "DESCRIPTION": "Add a comment to the current deal."
+            },
+            "get_task": {
+              "TITLE": "Open task",
+              "DESCRIPTION": "Open one CRM task with its details."
+            },
+            "search_tasks": {
+              "TITLE": "Search tasks",
+              "DESCRIPTION": "Search CRM tasks by title, status, assignee, or deal."
+            },
+            "get_task_timeline": {
+              "TITLE": "Open task timeline",
+              "DESCRIPTION": "Open the timeline for one CRM task."
+            },
+            "create_task": {
+              "TITLE": "Create task",
+              "DESCRIPTION": "Create a CRM task from the current conversation context."
+            },
+            "update_task": {
+              "TITLE": "Update task",
+              "DESCRIPTION": "Update the task linked to the current conversation."
+            },
+            "change_task_status": {
+              "TITLE": "Change task status",
+              "DESCRIPTION": "Change the status of the current task."
+            },
+            "add_task_comment": {
+              "TITLE": "Add task comment",
+              "DESCRIPTION": "Add a comment to the current task."
+            },
+            "get_appointment": {
+              "TITLE": "Open appointment",
+              "DESCRIPTION": "Open one appointment with its details."
+            },
+            "search_appointments": {
+              "TITLE": "Search appointments",
+              "DESCRIPTION": "Search appointments by client, status, payment status, or specialist."
+            },
+            "search_scheduling_resources": {
+              "TITLE": "Search specialists",
+              "DESCRIPTION": "Search scheduling specialists by name or specialty."
+            },
+            "search_scheduling_services": {
+              "TITLE": "Search services",
+              "DESCRIPTION": "Search scheduling services by name, category, or direction."
+            },
+            "search_available_slots": {
+              "TITLE": "Search available slots",
+              "DESCRIPTION": "Search appointment slots for one or more specialists."
+            },
+            "create_appointment": {
+              "TITLE": "Create appointment",
+              "DESCRIPTION": "Create an appointment for the contact in the current conversation."
+            },
+            "update_appointment": {
+              "TITLE": "Update appointment",
+              "DESCRIPTION": "Update the appointment linked to the current conversation."
+            },
+            "cancel_appointment": {
+              "TITLE": "Cancel appointment",
+              "DESCRIPTION": "Cancel the appointment linked to the current conversation."
+            },
+            "get_article": {
+              "TITLE": "Open article",
+              "DESCRIPTION": "Open one help center article with its content and metadata."
+            },
+            "search_articles": {
+              "TITLE": "Search articles",
+              "DESCRIPTION": "Search help center articles by query, category, or status."
+            },
+            "search_linear_issues": {
+              "TITLE": "Search Linear issues",
+              "DESCRIPTION": "Search Linear issues when the integration is enabled."
             }
           }
         },
@@ -621,27 +858,114 @@
       },
       "SETTINGS": {
         "HEADER": "Settings",
+        "TABS": {
+          "GENERAL": {
+            "LABEL": "General",
+            "DESCRIPTION": "AI agent profile, operating mode, avatar, system messages, and live runtime settings."
+          },
+          "PROMPTS": {
+            "LABEL": "Prompts",
+            "DESCRIPTION": "Instruction, response rules, and compiled prompt preview.",
+            "SECTION": "Edit the live AI agent and Copilot instruction layers without changing the system prompt contract."
+          },
+          "FILTERS": {
+            "LABEL": "Restrictions",
+            "DESCRIPTION": "Restrictions and blocked topics for this assistant."
+          },
+          "ACCESS": {
+            "LABEL": "Access",
+            "DESCRIPTION": "Choose which data the agent can see in prompt context and which actions it can execute through tools."
+          },
+          "CHANNELS": {
+            "LABEL": "Channels",
+            "DESCRIPTION": "Connect this AI agent to inboxes and channel surfaces where it should be active."
+          },
+          "RUNTIME": {
+            "LABEL": "Runtime",
+            "DESCRIPTION": "Tune response creativity, auto-reply behavior, and history windows for the live runtime.",
+            "SECTION": "Runtime settings affect how the AI agent responds after prompts and tools are resolved."
+          },
+          "DANGER": {
+            "LABEL": "Danger zone",
+            "DESCRIPTION": "Permanent destructive action for this AI agent."
+          }
+        },
         "BASIC_SETTINGS": {
           "TITLE": "Basic settings",
-          "DESCRIPTION": "Customize what the AI agent says when ending a conversation or transferring to a human."
+          "DESCRIPTION": "Manage the AI agent identity, avatar, and enabled capabilities."
+        },
+        "CHANNELS": {
+          "TITLE": "Connected channels",
+          "DESCRIPTION": "Choose which inboxes this AI agent should handle. Each inbox can be connected to only one AI agent at a time.",
+          "INTERNAL_TITLE": "Channels are unavailable for AI assistants",
+          "INTERNAL_DESCRIPTION": "Switch this assistant to AI agent mode if it should reply to customers in connected inboxes."
         },
         "SYSTEM_SETTINGS": {
           "TITLE": "System settings",
-          "DESCRIPTION": "Customize what the AI agent says when ending a conversation or transferring to a human."
+          "DESCRIPTION": "Configure one system instruction and the prompt preview for the AI agent."
+        },
+        "PROMPT_DESCRIPTION": {
+          "DESCRIPTION": "This is the single system instruction for the AI agent. It is included in the final prompt."
+        },
+        "INSTRUCTIONS": {
+          "DESCRIPTION": "Use one instruction instead of a separate description and extra instructions."
+        },
+        "FILTERS": {
+          "TITLE": "Restrictions",
+          "DESCRIPTION": "Define restrictions and off-limit topics so the assistant stays within the expected boundaries."
         },
         "CONTROL_ITEMS": {
           "TITLE": "The Fun Stuff",
           "DESCRIPTION": "Add more control to the AI agent. (a bit more visual like a story : Query guardrail → scenarios → output) Nudges user to actually utilise these.",
           "OPTIONS": {
             "GUARDRAILS": {
-              "TITLE": "Guardrails",
-              "DESCRIPTION": "Keeps things on track—only the kinds of questions you want your AI agent to answer, nothing off-limits or off-topic."
+              "TITLE": "Restrictions",
+              "DESCRIPTION": "Keeps topics and stop-topics under control so the AI agent stays within the expected boundaries."
             },
             "RESPONSE_GUIDELINES": {
-              "TITLE": "Response guidelines",
-              "DESCRIPTION": "The vibe and structure of your AI agent's replies—clear and friendly? Short and snappy? Detailed and formal?"
+              "TITLE": "Rules",
+              "DESCRIPTION": "Rules for how the dialogue should be handled: tone, structure, clarifications, and how replies should be phrased."
             }
           }
+        },
+        "PROMPT_INSPECTOR": {
+          "TITLE": "Prompt inspector",
+          "DESCRIPTION": "Review the compiled prompts that currently drive the AI agent, Copilot, and scenario handoffs.",
+          "REFRESH": "Refresh",
+          "LOADING": "Loading the current prompt preview...",
+          "ERROR": "The current prompt preview could not be loaded. Retry to fetch the latest compiled prompts.",
+          "EMPTY": "No prompt preview is available yet.",
+          "INFO_TITLE": "How to read prompt preview",
+          "INFO_DESCRIPTION": "This is the compiled final prompt built from the assistant settings, without a specific live conversation.",
+          "INFO_POINTS": {
+            "NO_LIVE_CONTEXT": "The preview does not include the current customer, conversation, deal, or other live thread-specific data.",
+            "RUNTIME_ACCESS": "Even after the prompt is compiled, field and tool access are still enforced separately at runtime.",
+            "COMPILED_OUTPUT": "Use this screen to review the final instruction as one prompt, not the internal assembly layers."
+          },
+          "PREVIEW_MODE": "Preview mode",
+          "NOTES": "Notes",
+          "LAYERS": "Active layers",
+          "TOOLS": "Registered tools",
+          "USED_TOOLS": "Used tools",
+          "USED_ATTRIBUTES": "Used attributes",
+          "COMPILED_PROMPT": "Compiled prompt",
+          "SHA": "sha {hash}",
+          "ASSISTANT": {
+            "TITLE": "AI agent runtime prompt",
+            "DESCRIPTION": "The root prompt currently rendered for the live AI agent."
+          },
+          "COPILOT": {
+            "TITLE": "Copilot prompt",
+            "DESCRIPTION": "The operator-side AI assistant system prompt generated for this AI agent."
+          },
+          "SCENARIOS": {
+            "TITLE": "Scenario prompts",
+            "DESCRIPTION": "Compiled prompts for each enabled scenario handoff agent.",
+            "EMPTY": "No enabled scenarios are configured for this AI agent yet."
+          }
+        },
+        "INFO_DIALOG": {
+          "LEARN_MORE": "Learn more"
         },
         "DELETE": {
           "TITLE": "Delete AI Agent",
@@ -663,7 +987,7 @@
         }
       },
       "GUARDRAILS": {
-        "TITLE": "Guardrails",
+        "TITLE": "Restrictions",
         "DESCRIPTION": "Keeps things on track—only the kinds of questions you want your AI agent to answer, nothing off-limits or off-topic.",
         "BULK_ACTION": {
           "SELECTED": "{count} item selected | {count} items selected",
@@ -673,43 +997,48 @@
         },
         "ADD": {
           "SUGGESTED": {
-            "TITLE": "Example guardrails",
+            "TITLE": "Example restrictions",
             "ADD": "Add all",
             "ADD_SINGLE": "Add this",
             "SAVE": "Add and save (↵)",
-            "PLACEHOLDER": "Type in another guardrail..."
+            "PLACEHOLDER": "Type in another restriction..."
           },
           "NEW": {
-            "TITLE": "Add a guardrail",
+            "TITLE": "Add a restriction",
             "CREATE": "Create",
             "CANCEL": "Cancel",
-            "PLACEHOLDER": "Type in another guardrail...",
+            "PLACEHOLDER": "Type in another restriction...",
             "TEST_ALL": "Test all"
           }
+        },
+        "EXAMPLES": {
+          "SENSITIVE_INFO": "Block queries that share or request sensitive personal information, such as phone numbers or passwords.",
+          "UNSAFE_LANGUAGE": "Reject queries that include offensive, discriminatory, or threatening language.",
+          "DIAGNOSIS": "Deflect requests where the assistant is asked for legal or medical diagnosis or treatment."
         },
         "LIST": {
           "SEARCH_PLACEHOLDER": "Search..."
         },
-        "EMPTY_MESSAGE": "No guardrails found. Create or add examples to begin.",
-        "SEARCH_EMPTY_MESSAGE": "No guardrails found for this search.",
+        "EMPTY_MESSAGE": "No restrictions found. Create or add examples to begin.",
+        "SEARCH_EMPTY_MESSAGE": "No restrictions found for this search.",
         "API": {
           "ADD": {
-            "SUCCESS": "Guardrails added successfully",
-            "ERROR": "There was an error adding guardrails, please try again."
+            "SUCCESS": "Restrictions added successfully",
+            "ERROR": "There was an error adding restrictions, please try again."
           },
           "UPDATE": {
-            "SUCCESS": "Guardrails updated successfully",
-            "ERROR": "There was an error updating guardrails, please try again."
+            "SUCCESS": "Restrictions updated successfully",
+            "ERROR": "There was an error updating restrictions, please try again."
           },
           "DELETE": {
-            "SUCCESS": "Guardrails deleted successfully",
-            "ERROR": "There was an error deleting guardrails, please try again."
+            "SUCCESS": "Restrictions deleted successfully",
+            "ERROR": "There was an error deleting restrictions, please try again."
           }
         }
       },
       "RESPONSE_GUIDELINES": {
-        "TITLE": "Response Guidelines",
-        "DESCRIPTION": "The vibe and structure of your AI agent's replies—clear and friendly? Short and snappy? Detailed and formal?",
+        "TITLE": "Rules",
+        "DESCRIPTION": "Set the rules for how the dialogue should be handled: tone, structure, clarifications, and how to close the conversation.",
         "BULK_ACTION": {
           "SELECTED": "{count} item selected | {count} items selected",
           "SELECT_ALL": "Select all ({count})",
@@ -718,37 +1047,42 @@
         },
         "ADD": {
           "SUGGESTED": {
-            "TITLE": "Example response guidelines",
+            "TITLE": "Example rules",
             "ADD": "Add all",
             "ADD_SINGLE": "Add this",
             "SAVE": "Add and save (↵)",
-            "PLACEHOLDER": "Type in another response guideline..."
+            "PLACEHOLDER": "Type in another rule..."
           },
           "NEW": {
-            "TITLE": "Add a response guideline",
+            "TITLE": "Add a rule",
             "CREATE": "Create",
             "CANCEL": "Cancel",
-            "PLACEHOLDER": "Type in another response guideline...",
+            "PLACEHOLDER": "Type in another rule...",
             "TEST_ALL": "Test all"
           }
         },
         "LIST": {
           "SEARCH_PLACEHOLDER": "Search..."
         },
-        "EMPTY_MESSAGE": "No response guidelines found. Create or add examples to begin.",
-        "SEARCH_EMPTY_MESSAGE": "No response guidelines found for this search.",
+        "EXAMPLES": {
+          "OPEN_DIRECTLY": "Start with a short direct answer first, then add detail and explanation only when it helps.",
+          "CLARIFY_FIRST": "If there is not enough information for a confident answer, ask one clarifying question before proposing a solution.",
+          "CLOSE_WITH_NEXT_STEP": "End each reply with a clear next step: what the customer should do next or what information you still need."
+        },
+        "EMPTY_MESSAGE": "No rules found. Create or add examples to begin.",
+        "SEARCH_EMPTY_MESSAGE": "No rules found for this search.",
         "API": {
           "ADD": {
-            "SUCCESS": "Response Guidelines added successfully",
-            "ERROR": "There was an error adding response guidelines, please try again."
+            "SUCCESS": "Rules added successfully",
+            "ERROR": "There was an error adding rules, please try again."
           },
           "UPDATE": {
-            "SUCCESS": "Response Guidelines updated successfully",
-            "ERROR": "There was an error updating response guidelines, please try again."
+            "SUCCESS": "Rules updated successfully",
+            "ERROR": "There was an error updating rules, please try again."
           },
           "DELETE": {
-            "SUCCESS": "Response Guidelines deleted successfully",
-            "ERROR": "There was an error deleting response guidelines, please try again."
+            "SUCCESS": "Rules deleted successfully",
+            "ERROR": "There was an error deleting rules, please try again."
           }
         }
       },

@@ -12,14 +12,14 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
     ]
   end
   let(:mock_response) do
-    instance_double(RubyLLM::Message, content: { faqs: sample_faqs }.to_json)
+    instance_double(RubyLLM::Message, content: { faqs: sample_faqs })
   end
 
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
-    allow(mock_chat).to receive(:with_params).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
   end
@@ -31,8 +31,8 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
         expect(result).to eq(sample_faqs)
       end
 
-      it 'sends content to LLM with JSON response format' do
-        expect(mock_chat).to receive(:with_params).with(response_format: { type: 'json_object' }).and_return(mock_chat)
+      it 'attaches the FAQ schema to the chat' do
+        expect(mock_chat).to receive(:with_schema).with(Captain::Llm::Schemas::FaqCollection).and_return(mock_chat)
         service.generate
       end
 
@@ -76,20 +76,19 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
     end
 
     context 'when JSON parsing fails' do
-      let(:invalid_response) { instance_double(RubyLLM::Message, content: 'invalid json') }
+      let(:invalid_response) { instance_double(RubyLLM::Message, content: 'invalid data') }
 
       before do
         allow(mock_chat).to receive(:ask).and_return(invalid_response)
       end
 
       it 'logs error and returns empty array' do
-        expect(Rails.logger).to receive(:error).with(/Error in parsing GPT processed response:/)
         expect(service.generate).to eq([])
       end
     end
 
     context 'when response is missing faqs key' do
-      let(:missing_key_response) { instance_double(RubyLLM::Message, content: '{"data": []}') }
+      let(:missing_key_response) { instance_double(RubyLLM::Message, content: { data: [] }) }
 
       before do
         allow(mock_chat).to receive(:ask).and_return(missing_key_response)

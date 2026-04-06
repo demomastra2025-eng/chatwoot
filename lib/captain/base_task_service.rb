@@ -30,13 +30,9 @@ class Captain::BaseTaskService
     @conversation ||= account.conversations.find_by(display_id: conversation_display_id)
   end
 
-  def api_base
-    endpoint = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_ENDPOINT')&.value.presence || 'https://api.openai.com/'
-    endpoint = endpoint.chomp('/')
-    "#{endpoint}/v1"
-  end
-
   def make_api_call(model:, messages:, schema: nil, tools: [])
+    Llm::Config.initialize!
+
     # Community edition prerequisite checks
     # Enterprise module handles these with more specific error messages (cloud vs self-hosted)
     return { error: I18n.t('captain.disabled'), error_code: 403 } unless captain_tasks_enabled?
@@ -55,20 +51,18 @@ class Captain::BaseTaskService
   end
 
   def execute_ruby_llm_request(model:, messages:, schema: nil, tools: [])
-    Llm::Config.with_api_key(api_key, api_base: api_base) do |context|
-      response = Llm::ChatRequestRunner.new(
-        context: context,
-        model: model,
-        messages: messages,
-        schema: schema,
-        tools: tools,
-        on_end_message: build_generation_callback(model, tools)
-      ).call
+    response = Llm::ChatRequestRunner.new(
+      context: llm_context_for(model),
+      model: model,
+      messages: messages,
+      schema: schema,
+      tools: tools,
+      on_end_message: build_generation_callback(model, tools)
+    ).call
 
-      return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
+    return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
 
-      build_ruby_llm_response(response, messages)
-    end
+    build_ruby_llm_response(response, messages)
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: account).capture_exception
     { error: e.message, request_messages: messages }
@@ -141,16 +135,26 @@ class Captain::BaseTaskService
     api_key.present?
   end
 
-  def api_key
-    @api_key ||= openai_hook&.settings&.dig('api_key') || system_api_key
+  def api_key(provider_name = model_provider)
+    return openai_hook&.settings&.dig('api_key').presence || Llm::Config.api_key('openai') if provider_name.to_s == 'openai'
+
+    Llm::Config.api_key(provider_name)
   end
 
   def openai_hook
     @openai_hook ||= account.hooks.find_by(app_id: 'openai', status: 'enabled')
   end
 
-  def system_api_key
-    @system_api_key ||= InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
+  def task_model
+    Llm::Config.model_for(
+      feature: llm_feature_key,
+      account: account,
+      fallback: GPT_MODEL
+    )
+  end
+
+  def llm_feature_key
+    'editor'
   end
 
   def prompt_from_file(file_name)
@@ -183,6 +187,23 @@ class Captain::BaseTaskService
     # Get the most recent user message for follow-up context
     user_msg = messages.reverse.find { |m| m[:role] == 'user' }
     user_msg ? user_msg[:content] : nil
+  end
+
+  def llm_context_for(model)
+    provider_name = model_provider(model)
+    runtime_api_key = api_key(provider_name)
+    runtime_api_base = Llm::Config.api_base(provider_name)
+    return nil if runtime_api_key.blank? && runtime_api_base.blank?
+
+    Llm::Config.context(
+      model: model,
+      api_key: runtime_api_key,
+      api_base: runtime_api_base
+    )
+  end
+
+  def model_provider(model = task_model)
+    Llm::Config.provider_for_model(model)
   end
 end
 Captain::BaseTaskService.prepend_mod_with('Captain::BaseTaskService')

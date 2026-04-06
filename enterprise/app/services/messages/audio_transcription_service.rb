@@ -1,15 +1,13 @@
-class Messages::AudioTranscriptionService< Llm::LegacyBaseOpenAiService
+class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
-
-  WHISPER_MODEL = 'whisper-1'.freeze
 
   attr_reader :attachment, :message, :account
 
   def initialize(attachment)
-    super()
     @attachment = attachment
     @message = attachment.message
     @account = message.account
+    super()
   end
 
   def perform
@@ -19,7 +17,7 @@ class Messages::AudioTranscriptionService< Llm::LegacyBaseOpenAiService
     transcriptions = transcribe_audio
     Rails.logger.info "Audio transcription successful: #{transcriptions}"
     { success: true, transcriptions: transcriptions }
-  rescue Faraday::UnauthorizedError
+  rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
     Rails.logger.warn('Skipping audio transcription: OpenAI configuration is invalid or disabled (401 Unauthorized).')
     { error: 'OpenAI configuration is invalid or disabled (401)' }
   end
@@ -60,18 +58,17 @@ class Messages::AudioTranscriptionService< Llm::LegacyBaseOpenAiService
     return transcribed_text if transcribed_text.present?
 
     temp_file_path = fetch_audio_file
-    transcribed_text = nil
-
-    File.open(temp_file_path, 'rb') do |file|
-      response = @client.audio.transcribe(
-        parameters: {
-          model: WHISPER_MODEL,
-          file: file,
+    response = instrument_audio_transcription(instrumentation_params(temp_file_path)) do
+      Llm::Config.with_api_key(api_key, api_base: api_base) do |context|
+        Llm::ApiClient.transcribe(
+          temp_file_path,
+          context: context,
+          model: model,
           temperature: 0.4
-        }
-      )
-      transcribed_text = response['text']
+        )
+      end
     end
+    transcribed_text = response&.text.to_s
 
     update_transcription(transcribed_text)
     transcribed_text
@@ -82,11 +79,35 @@ class Messages::AudioTranscriptionService< Llm::LegacyBaseOpenAiService
   def instrumentation_params(file_path)
     {
       span_name: 'llm.messages.audio_transcription',
-      model: WHISPER_MODEL,
+      model: model,
       account_id: account&.id,
       feature_name: 'audio_transcription',
       file_path: file_path
     }
+  end
+
+  def llm_feature_key
+    'audio_transcription'
+  end
+
+  def llm_model_account
+    account
+  end
+
+  def api_key
+    @api_key ||= system_api_key.presence || openai_hook&.settings&.dig('api_key')
+  end
+
+  def api_base
+    Llm::Config.api_base
+  end
+
+  def openai_hook
+    @openai_hook ||= account.hooks.find_by(app_id: 'openai', status: 'enabled')
+  end
+
+  def system_api_key
+    @system_api_key ||= InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
   end
 
   def update_transcription(transcribed_text)

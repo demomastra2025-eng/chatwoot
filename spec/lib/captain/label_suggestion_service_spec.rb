@@ -68,6 +68,14 @@ RSpec.describe Captain::LabelSuggestionService do
 
         service.perform
       end
+
+      it 'uses the account label suggestion model when configured' do
+        account.update!(captain_models: { 'label_suggestion' => 'gpt-4.1-nano' })
+
+        expect(mock_context).to receive(:chat).with(model: 'gpt-4.1-nano').and_return(mock_chat)
+
+        service.perform
+      end
     end
 
     context 'with invalid conversation' do

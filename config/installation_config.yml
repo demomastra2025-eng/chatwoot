@@ -202,13 +202,40 @@
   description: 'The API key used to authenticate requests to OpenAI services for AI Agents.'
   locked: false
   type: secret
+- name: CAPTAIN_DEFAULT_MODEL
+  display_title: 'Default AI Model'
+  description: 'Optional installation-wide fallback model for AI Agents. Feature-specific defaults in llm.yml still apply when this is blank or unsupported.'
+  locked: false
 - name: CAPTAIN_OPEN_AI_MODEL
-  display_title: 'OpenAI Model'
-  description: 'The OpenAI model configured for use in AI Agents. Default: gpt-4.1-mini'
+  display_title: 'Legacy OpenAI Default Model'
+  description: 'Backward-compatible fallback for older AI Agents installations. Prefer CAPTAIN_DEFAULT_MODEL for new setups.'
   locked: false
 - name: CAPTAIN_OPEN_AI_ENDPOINT
   display_title: 'OpenAI API Endpoint (optional)'
   description: 'The OpenAI endpoint configured for use in AI Agents. Default: https://api.openai.com/'
+  locked: false
+- name: CAPTAIN_ANTHROPIC_API_KEY
+  display_title: 'Anthropic API Key'
+  description: 'The API key used to authenticate requests to Anthropic services for AI Agents.'
+  locked: false
+  type: secret
+- name: CAPTAIN_ANTHROPIC_ENDPOINT
+  display_title: 'Anthropic API Endpoint (optional)'
+  description: 'The Anthropic endpoint configured for use in AI Agents.'
+  locked: false
+- name: CAPTAIN_GEMINI_API_KEY
+  display_title: 'Gemini API Key'
+  description: 'The API key used to authenticate requests to Gemini services for AI Agents.'
+  locked: false
+  type: secret
+- name: CAPTAIN_GEMINI_ENDPOINT
+  display_title: 'Gemini API Endpoint (optional)'
+  description: 'The Gemini endpoint configured for use in AI Agents.'
+  locked: false
+- name: CAPTAIN_MODERATION_MODEL
+  display_title: 'Moderation Model'
+  description: 'The moderation model used for optional AI safety checks. Default: omni-moderation-latest'
+  value: 'omni-moderation-latest'
   locked: false
 - name: CAPTAIN_EMBEDDING_MODEL
   display_title: 'Embedding Model (optional)'
@@ -219,6 +246,16 @@
   description: 'The FireCrawl API key for the AI Agents service'
   locked: false
   type: secret
+- name: CAPTAIN_AI_AGENT_SYSTEM_PROMPT
+  display_title: 'AI Agent Global System Prompt'
+  description: 'Installation-wide system instructions appended to every customer-facing AI agent and scenario prompt.'
+  locked: false
+  type: code
+- name: CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT
+  display_title: 'AI Assistant Global System Prompt'
+  description: 'Installation-wide system instructions appended to every internal AI assistant and Copilot prompt.'
+  locked: false
+  type: code
 - name: CAPTAIN_CLOUD_PLAN_LIMITS
   display_title: 'AI Agents Cloud Plan Limits'
   description: 'The limits for the AI Agents service for different plans'

@@ -502,6 +502,16 @@
           "LABEL": "Instructions",
           "PLACEHOLDER": "Enter instructions for the assistant"
         },
+        "ADDITIONAL_INSTRUCTIONS": {
+          "LABEL": "AI-агентке арналған қосымша нұсқаулар",
+          "PLACEHOLDER": "Live AI-агент үшін қосымша нұсқауларды енгізіңіз",
+          "DESCRIPTION": "Міндетті емес. Бұл жерге system prompt үстіне өнімге, тонға немесе workflow-ға қатысты қосымша нұсқауларды жазыңыз."
+        },
+        "COPILOT_INSTRUCTIONS": {
+          "LABEL": "Copilot нұсқаулары",
+          "PLACEHOLDER": "Ішкі Copilot үшін қосымша нұсқауларды енгізіңіз",
+          "DESCRIPTION": "Міндетті емес. Бұл өріс командалық Copilot мінез-құлқын реттейді, бірақ live AI-агент prompt'ына әсер етпейді."
+        },
         "FEATURES": {
           "TITLE": "Features",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
@@ -543,13 +553,45 @@
       },
       "SETTINGS": {
         "HEADER": "Settings",
+        "TABS": {
+          "GENERAL": {
+            "LABEL": "General",
+            "DESCRIPTION": "Assistant profile, product context, avatar, core capabilities, runtime behavior, and lifecycle controls."
+          },
+          "PROMPTS": {
+            "LABEL": "Prompts",
+            "DESCRIPTION": "Agent messages, additive instructions, prompt visibility, and behavior controls.",
+            "SECTION": "Edit the live assistant and Copilot instruction layers without changing the base system prompt."
+          },
+          "ACCESS": {
+            "LABEL": "Access",
+            "DESCRIPTION": "Control which context fields and tools the assistant and Copilot can use."
+          },
+          "CHANNELS": {
+            "LABEL": "Channels",
+            "DESCRIPTION": "Connect this assistant to the inboxes and channel surfaces where it should operate."
+          },
+          "RUNTIME": {
+            "LABEL": "Runtime",
+            "DESCRIPTION": "Tune response creativity, auto-reply behavior, and runtime history windows.",
+            "SECTION": "These settings affect runtime behavior after prompts and tools are resolved."
+          },
+          "DANGER": {
+            "LABEL": "Danger zone",
+            "DESCRIPTION": "Permanent destructive action for this assistant."
+          }
+        },
         "BASIC_SETTINGS": {
           "TITLE": "Basic settings",
-          "DESCRIPTION": "Customize what the assistant says when ending a conversation or transferring to a human."
+          "DESCRIPTION": "Manage the assistant identity, avatar, and enabled capabilities."
+        },
+        "CHANNELS": {
+          "TITLE": "Connected channels",
+          "DESCRIPTION": "Choose which inboxes this assistant should handle. Each inbox can be connected to only one assistant at a time."
         },
         "SYSTEM_SETTINGS": {
           "TITLE": "System settings",
-          "DESCRIPTION": "Customize what the assistant says when ending a conversation or transferring to a human."
+          "DESCRIPTION": "Configure prompt-facing messages and runtime behavior for the assistant."
         },
         "CONTROL_ITEMS": {
           "TITLE": "The Fun Stuff",
@@ -563,6 +605,33 @@
               "TITLE": "Response guidelines",
               "DESCRIPTION": "The vibe and structure of your assistant’s replies—clear and friendly? Short and snappy? Detailed and formal?"
             }
+          }
+        },
+        "PROMPT_INSPECTOR": {
+          "TITLE": "Prompt инспекторы",
+          "DESCRIPTION": "AI-агент, Copilot және handoff сценарийлері үшін жиналған compiled prompt'тарды көрсетеді.",
+          "REFRESH": "Жаңарту",
+          "LOADING": "Ағымдағы prompt preview жүктеліп жатыр...",
+          "ERROR": "Ағымдағы prompt preview жүктелмеді. Қайталап көріңіз.",
+          "EMPTY": "Prompt preview әзірге қолжетімсіз.",
+          "PREVIEW_MODE": "Preview режимі",
+          "NOTES": "Ескертпелер",
+          "LAYERS": "Белсенді қабаттар",
+          "TOOLS": "Тіркелген құралдар",
+          "COMPILED_PROMPT": "Жиналған prompt",
+          "SHA": "sha {hash}",
+          "ASSISTANT": {
+            "TITLE": "AI-агенттің runtime prompt'ы",
+            "DESCRIPTION": "Live AI-агент үшін қазір рендерленетін түбірлік prompt."
+          },
+          "COPILOT": {
+            "TITLE": "Copilot prompt'ы",
+            "DESCRIPTION": "Осы AI-агентке байланысты ішкі Copilot үшін system prompt."
+          },
+          "SCENARIOS": {
+            "TITLE": "Сценарий prompt'тары",
+            "DESCRIPTION": "Әрбір қосылған scenario handoff-агент үшін жиналған prompt'тар.",
+            "EMPTY": "Бұл AI-агент үшін қосылған сценарийлер әлі жоқ."
           }
         },
         "DELETE": {

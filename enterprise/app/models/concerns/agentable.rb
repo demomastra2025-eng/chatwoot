@@ -13,28 +13,14 @@ module Concerns::Agentable
   end
 
   def agent_instructions(context = nil)
-    enhanced_context = prompt_context
     state = context&.context&.[](:state) || {}
     prompt_state = state[:prompt_context] || {}
+    enhanced_context = prompt_context.merge(default_prompt_runtime_context)
 
     if state.present?
-      assistant_config = state[:assistant_config]
-      assistant_config = assistant_config.with_indifferent_access if assistant_config.respond_to?(:with_indifferent_access)
-      assistant_config ||= {}
       explicit_prompt_context = state.key?(:prompt_context)
-      legacy_contact_attributes_enabled = ActiveModel::Type::Boolean.new.cast(assistant_config[:feature_contact_attributes])
-      context_access_configured = assistant_config.key?(:context_access)
       conversation_data = explicit_prompt_context ? prompt_state[:conversation].presence : state[:conversation].presence
-      contact_data =
-        if explicit_prompt_context
-          if context_access_configured
-            prompt_state[:contact].presence
-          elsif legacy_contact_attributes_enabled
-            prompt_state[:contact].presence || state[:contact].presence
-          end
-        elsif legacy_contact_attributes_enabled
-          state[:contact].presence
-        end
+      contact_data = explicit_prompt_context ? prompt_state[:contact].presence : state[:contact].presence
       deal_data = explicit_prompt_context ? prompt_state[:deal].presence : state[:deal].presence
       task_data = explicit_prompt_context ? prompt_state[:task].presence : state[:task].presence
       appointment_data = explicit_prompt_context ? prompt_state[:appointment].presence : state[:appointment].presence
@@ -62,13 +48,15 @@ module Concerns::Agentable
         contact_visible_fields: visible_fields[:contact] || [],
         deal_visible_fields: visible_fields[:deal] || [],
         task_visible_fields: visible_fields[:task] || [],
-        appointment_visible_fields: visible_fields[:appointment] || []
+        appointment_visible_fields: visible_fields[:appointment] || [],
+        **runtime_custom_attribute_label_context(
+          explicit_prompt_context: explicit_prompt_context,
+          prompt_state: prompt_state
+        )
       )
     end
 
-    if respond_to?(:resolve_runtime_prompt_context, true)
-      enhanced_context = resolve_runtime_prompt_context(enhanced_context, prompt_state)
-    end
+    enhanced_context = resolve_runtime_prompt_context(enhanced_context, prompt_state) if respond_to?(:resolve_runtime_prompt_context, true)
 
     Captain::PromptRenderer.render(template_name, enhanced_context.with_indifferent_access)
   end
@@ -88,7 +76,11 @@ module Concerns::Agentable
   end
 
   def agent_model
-    InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value.presence || LlmConstants::DEFAULT_MODEL
+    Llm::Config.model_for(
+      feature: :assistant,
+      account: respond_to?(:account) ? account : nil,
+      fallback: LlmConstants::DEFAULT_MODEL
+    )
   end
 
   def agent_response_schema
@@ -97,5 +89,66 @@ module Concerns::Agentable
 
   def prompt_context
     raise NotImplementedError, "#{self.class} must implement prompt_context"
+  end
+
+  def default_prompt_runtime_context
+    {
+      conversation: nil,
+      contact: nil,
+      deal: nil,
+      task: nil,
+      appointment: nil,
+      campaign: {},
+      conversation_visible_fields: [],
+      contact_visible_fields: [],
+      deal_visible_fields: [],
+      task_visible_fields: [],
+      appointment_visible_fields: [],
+      contact_custom_attribute_labels: {},
+      conversation_custom_attribute_labels: {},
+      deal_custom_attribute_labels: {},
+      task_custom_attribute_labels: {},
+      appointment_custom_attribute_labels: {}
+    }
+  end
+
+  def runtime_custom_attribute_label_context(explicit_prompt_context:, prompt_state:)
+    label_context =
+      if explicit_prompt_context
+        scoped_custom_attribute_label_context(prompt_state)
+      else
+        scoped_custom_attribute_label_context(default_custom_attribute_label_maps)
+      end
+
+    default_prompt_runtime_context.slice(
+      :contact_custom_attribute_labels,
+      :conversation_custom_attribute_labels,
+      :deal_custom_attribute_labels,
+      :task_custom_attribute_labels,
+      :appointment_custom_attribute_labels
+    ).merge(label_context)
+  end
+
+  def scoped_custom_attribute_label_context(source)
+    Captain::ContextFields::SCOPES.each_with_object({}) do |scope, context|
+      context[:"#{scope}_custom_attribute_labels"] =
+        source[:"#{scope}_custom_attribute_labels"] ||
+        source[scope.to_sym] ||
+        source[scope.to_s] ||
+        {}
+    end
+  end
+
+  def default_custom_attribute_label_maps
+    definitions =
+      if respond_to?(:allowed_context_fields)
+        allowed_context_fields
+      elsif respond_to?(:assistant) && assistant.respond_to?(:allowed_context_fields)
+        assistant.allowed_context_fields
+      else
+        []
+      end
+
+    Captain::ContextFields.custom_attribute_label_maps_for_definitions(definitions)
   end
 end

@@ -38,4 +38,8 @@ class Captain::AssistantPolicy < ApplicationPolicy
   def playground?
     true
   end
+
+  def prompt_preview?
+    true
+  end
 end

@@ -16,10 +16,12 @@ class Captain::Llm::SystemPromptsService
       render_prompt('attributes_generator')
     end
 
-    def copilot_response_generator(product_name, available_tools, config = {})
+    def copilot_response_generator(assistant_name, assistant_instruction, available_tools, config = {})
       render_prompt(
         'copilot_response_generator',
-        product_name: product_name,
+        assistant_name: assistant_name.presence || 'Captain',
+        assistant_instruction: assistant_instruction.presence || 'Support the configured business scope only.',
+        global_system_instruction: Llm::Config.global_assistant_system_prompt,
         available_tools: available_tools,
         feature_citation: ActiveModel::Type::Boolean.new.cast(config['feature_citation'])
       )
@@ -41,14 +43,14 @@ class Captain::Llm::SystemPromptsService
       )
     end
 
-    def assistant_response_generator(assistant_name, product_name, config = {}, contact: nil)
+    def assistant_response_generator(assistant_name, assistant_instruction, config = {}, contact: nil)
       render_prompt(
         'assistant_response_generator',
         assistant_name: assistant_name.presence || 'Captain',
-        product_name: product_name,
+        assistant_description: assistant_instruction.presence || 'Support the configured business scope only.',
+        global_system_instruction: Llm::Config.global_agent_system_prompt,
         feature_citation: ActiveModel::Type::Boolean.new.cast(config['feature_citation']),
-        contact_context: build_contact_context(contact),
-        config_instructions: config['instructions'].to_s
+        contact_context: build_contact_context(contact)
       )
     end
 

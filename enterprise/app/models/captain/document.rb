@@ -108,10 +108,6 @@ class Captain::Document < ApplicationRecord
     uploaded_file_attachment&.blob&.byte_size
   end
 
-  def openai_file_id
-    metadata&.dig('openai_file_id')
-  end
-
   def firecrawl_metadata
     metadata&.dig('firecrawl') || {}
   end
@@ -188,10 +184,6 @@ class Captain::Document < ApplicationRecord
     Time.zone.parse(raw_value)
   rescue ArgumentError, TypeError
     nil
-  end
-
-  def store_openai_file_id(file_id)
-    update!(metadata: (metadata || {}).merge('openai_file_id' => file_id))
   end
 
   def merge_metadata!(attributes)
@@ -319,9 +311,9 @@ class Captain::Document < ApplicationRecord
 
   def record_failed_urls!(urls)
     unique_urls = (failed_urls + Array(urls))
-      .map { |url| url.to_s.delete_suffix('/') }
-      .reject(&:blank?)
-      .uniq
+                  .map { |url| url.to_s.delete_suffix('/') }
+                  .reject(&:blank?)
+                  .uniq
 
     update!(
       metadata: merged_metadata(
@@ -491,9 +483,9 @@ class Captain::Document < ApplicationRecord
     return unless source_document?
 
     self.class
-      .where(account_id: account_id, assistant_id: assistant_id)
-      .where("metadata -> 'firecrawl' ->> 'root_document_id' = ?", id.to_s)
-      .find_each(&:destroy!)
+        .where(account_id: account_id, assistant_id: assistant_id)
+        .where("metadata -> 'firecrawl' ->> 'root_document_id' = ?", id.to_s)
+        .find_each(&:destroy!)
   end
 
   def remote_source_mode?

@@ -70,6 +70,16 @@ class Account < ApplicationRecord
             'help_center_search': { 'type': %w[boolean null] }
           },
           'additionalProperties': false
+        },
+        'captain_runtime': {
+          'type': %w[object null],
+          'properties': {
+            'assistant_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
+            'copilot_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
+            'assistant_moderation': { 'type': %w[boolean null] },
+            'copilot_moderation': { 'type': %w[boolean null] }
+          },
+          'additionalProperties': false
         }
       },
     'required': [],
@@ -91,7 +101,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
   store_accessor :settings, :audio_transcriptions, :auto_resolve_label
-  store_accessor :settings, :captain_models, :captain_features
+  store_accessor :settings, :captain_models, :captain_features, :captain_runtime
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode

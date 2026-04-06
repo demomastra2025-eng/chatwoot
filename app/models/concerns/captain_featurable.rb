@@ -2,6 +2,13 @@
 
 module CaptainFeaturable
   extend ActiveSupport::Concern
+  RUNTIME_DEFAULTS = {
+    'assistant_thinking_effort' => 'none',
+    'copilot_thinking_effort' => 'none',
+    'assistant_moderation' => false,
+    'copilot_moderation' => false
+  }.freeze
+  RUNTIME_FEATURE_KEYS = %w[assistant copilot].freeze
 
   included do
     validate :validate_captain_models
@@ -18,12 +25,23 @@ module CaptainFeaturable
         captain_models_with_defaults[feature_key]
       end
     end
+
+    RUNTIME_FEATURE_KEYS.each do |feature_key|
+      define_method("captain_#{feature_key}_thinking_effort") do
+        captain_runtime_with_defaults["#{feature_key}_thinking_effort"]
+      end
+
+      define_method("captain_#{feature_key}_moderation?") do
+        captain_runtime_with_defaults["#{feature_key}_moderation"] == true
+      end
+    end
   end
 
   def captain_preferences
     {
       models: captain_models_with_defaults,
-      features: captain_features_with_defaults
+      features: captain_features_with_defaults,
+      runtime: captain_runtime_with_defaults
     }.with_indifferent_access
   end
 
@@ -48,6 +66,11 @@ module CaptainFeaturable
     end
   end
 
+  def captain_runtime_with_defaults
+    stored_runtime = captain_runtime || {}
+    RUNTIME_DEFAULTS.merge(stored_runtime)
+  end
+
   def validate_captain_models
     return if captain_models.blank?
 
@@ -57,6 +80,14 @@ module CaptainFeaturable
 
       allowed_models = Llm::Models.models_for(feature_key)
       errors.add(:captain_models, "'#{model_name}' is not a valid model for #{feature_key}. Allowed: #{allowed_models.join(', ')}")
+    end
+
+    captain_models.each do |feature_key, model_name|
+      next if model_name.blank?
+      next unless Llm::Models.valid_model_for?(feature_key, model_name)
+      next if Llm::Models.registry_known?(model_name)
+
+      errors.add(:captain_models, "'#{model_name}' for #{feature_key} is not available in RubyLLM.models.")
     end
   end
 end

@@ -2,12 +2,12 @@
 
 class Llm::ApiClient
   class << self
-    def configure(&block)
-      RubyLLM.configure(&block)
+    def configure(&)
+      RubyLLM.configure(&)
     end
 
-    def context(&block)
-      RubyLLM.context(&block)
+    def context(&)
+      RubyLLM.context(&)
     end
 
     def embed(...)
@@ -16,6 +16,10 @@ class Llm::ApiClient
 
     def moderate(...)
       RubyLLM.moderate(...)
+    end
+
+    def transcribe(...)
+      RubyLLM.transcribe(...)
     end
   end
 end

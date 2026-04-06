@@ -66,6 +66,7 @@ Rails.application.routes.draw do
                 patch :avatar
                 delete :avatar
                 post :playground
+                get :prompt_preview
               end
               collection do
                 get :tools

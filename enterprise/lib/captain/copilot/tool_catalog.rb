@@ -5,17 +5,17 @@ class Captain::Copilot::ToolCatalog
     end
 
     def tools_for(assistant)
-      tools + assistant.account.captain_custom_tools.enabled.map(&:to_tool_metadata)
+      Captain::ToolCatalog.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
     end
 
     def build_tool(tool_definition, assistant:, user: nil, conversation: nil)
-      if tool_definition[:custom]
-        custom_tool = assistant.account.captain_custom_tools.enabled.find_by(slug: tool_definition[:id])
-        custom_tool&.copilot_tool(assistant, user: user, conversation: conversation)
-      else
-        tool_class = Captain::ToolRegistry.resolve_assistant_tool_class(tool_definition[:id])
-        tool_class&.new(assistant, user: user, conversation: conversation)
-      end
+      Captain::ToolCatalog.build_tool(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
+        user: user,
+        conversation: conversation
+      )
     end
   end
 end

@@ -177,6 +177,26 @@ class Captain::CustomTool < ApplicationRecord
     }
   end
 
+  def runtime_parameter_definitions(scope_name = Captain::ToolAccess::SCOPE_AGENT)
+    case scope_name.to_s
+    when Captain::ToolAccess::SCOPE_AGENT, Captain::ToolAccess::SCOPE_ASSISTANT
+      agent_parameter_definitions
+    else
+      []
+    end
+  end
+
+  def runtime_parameters(scope_name = Captain::ToolAccess::SCOPE_AGENT)
+    runtime_parameter_definitions(scope_name).each_with_object({}) do |param_definition, memo|
+      memo[param_definition['name'].to_sym] = RubyLLM::Parameter.new(
+        param_definition['name'].to_sym,
+        type: param_definition['type'],
+        desc: param_definition['description'],
+        required: param_definition.fetch('required', false)
+      )
+    end
+  end
+
   def parameter_definitions
     Array(param_schema).map { |param_definition| normalize_param_definition(param_definition) }
   end
@@ -198,13 +218,9 @@ class Captain::CustomTool < ApplicationRecord
     normalized_definition['source'] = normalize_param_source(raw_definition['source'])
     normalized_definition['context_path'] = normalize_context_path(raw_definition['context_path'])
 
-    if normalized_definition['source'] != PARAM_SOURCE_CONTEXT
-      normalized_definition.delete('context_path')
-    end
+    normalized_definition.delete('context_path') if normalized_definition['source'] != PARAM_SOURCE_CONTEXT
 
-    if normalized_definition['source'] != PARAM_SOURCE_FIXED
-      normalized_definition.delete('fixed_value')
-    end
+    normalized_definition.delete('fixed_value') if normalized_definition['source'] != PARAM_SOURCE_FIXED
 
     normalized_definition
   end
@@ -229,8 +245,8 @@ class Captain::CustomTool < ApplicationRecord
     slug_body = transliterated_title
                 .downcase
                 .gsub(/[^a-z0-9]+/, NAME_SEPARATOR)
-                .gsub(/#{Regexp.escape(NAME_SEPARATOR)}{2,}/, NAME_SEPARATOR)
-                .gsub(/\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/, '')
+                .gsub(/#{Regexp.escape(NAME_SEPARATOR)}{2,}/o, NAME_SEPARATOR)
+                .gsub(/\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/o, '')
 
     slug_body.presence || DEFAULT_SLUG_BODY
   end
@@ -283,13 +299,9 @@ class Captain::CustomTool < ApplicationRecord
       return
     end
 
-    unless name.match?(PARAM_NAME_FORMAT)
-      errors.add(:param_schema, "parameter #{name} must use only letters, numbers, and underscores")
-    end
+    errors.add(:param_schema, "parameter #{name} must use only letters, numbers, and underscores") unless name.match?(PARAM_NAME_FORMAT)
 
-    if RESERVED_TEMPLATE_PARAM_NAMES.include?(name)
-      errors.add(:param_schema, "parameter #{name} uses a reserved name")
-    end
+    errors.add(:param_schema, "parameter #{name} uses a reserved name") if RESERVED_TEMPLATE_PARAM_NAMES.include?(name)
 
     if parameter_names.include?(name)
       errors.add(:param_schema, "parameter #{name} is duplicated")

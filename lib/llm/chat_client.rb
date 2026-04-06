@@ -7,6 +7,7 @@ class Llm::ChatClient
       llm_chat = llm_chat.with_temperature(options[:temperature]) unless options[:temperature].nil?
       llm_chat = llm_chat.with_params(**options[:params]) if options[:params].present?
       llm_chat = llm_chat.with_headers(**options[:headers]) if options[:headers].present?
+      llm_chat = llm_chat.with_thinking(**options[:thinking]) if options[:thinking].present?
       llm_chat
     end
 
@@ -30,7 +31,7 @@ class Llm::ChatClient
     end
 
     def attachment_source(attachment)
-      attachment.respond_to?(:source) ? attachment.source.to_s : attachment.to_s
+      attachment.respond_to?(:source) ? attachment.source : attachment
     end
   end
 end

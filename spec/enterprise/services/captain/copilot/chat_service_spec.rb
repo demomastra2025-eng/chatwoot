@@ -24,7 +24,11 @@ RSpec.describe Captain::Copilot::ChatService do
   let(:mock_response) do
     instance_double(
       RubyLLM::Message,
-      content: '{ "content": "Hey", "reasoning": "Test reasoning", "reply_suggestion": false }',
+      content: {
+        'content' => 'Hey',
+        'reasoning' => 'Test reasoning',
+        'reply_suggestion' => false
+      },
       input_tokens: 20,
       output_tokens: 10
     )
@@ -38,8 +42,10 @@ RSpec.describe Captain::Copilot::ChatService do
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_thinking).and_return(mock_chat)
     allow(mock_chat).to receive(:with_tool).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:add_message).and_return(mock_chat)
     allow(mock_chat).to receive(:on_new_message).and_return(mock_chat)
     allow(mock_chat).to receive(:on_end_message).and_return(mock_chat)
@@ -130,6 +136,28 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(tools.first.name).to eq('faq_lookup')
       expect(tools.first.instance_variable_get(:@conversation)).to eq(conversation)
     end
+
+    it 'uses the account copilot model when configured' do
+      account.update!(captain_models: { 'copilot' => 'gpt-5.2' })
+
+      expect(RubyLLM).to receive(:chat).with(model: 'gpt-5.2').and_return(mock_chat)
+
+      described_class.new(assistant, config).generate_response('Hello')
+    end
+
+    it 'applies thinking policy when configured for the account' do
+      account.update!(captain_runtime: { 'copilot_thinking_effort' => 'high' })
+
+      expect(mock_chat).to receive(:with_thinking).with(effort: 'high').and_return(mock_chat)
+
+      described_class.new(assistant, config).generate_response('Hello')
+    end
+
+    it 'uses the copilot schema for structured responses' do
+      expect(mock_chat).to receive(:with_schema).with(Captain::Llm::Schemas::CopilotResponse).and_return(mock_chat)
+
+      described_class.new(assistant, config).generate_response('Hello')
+    end
   end
 
   describe '#generate_response' do
@@ -164,6 +192,20 @@ RSpec.describe Captain::Copilot::ChatService do
             'completion_tokens' => 10,
             'total_tokens' => 30
           }
+        }
+      )
+    end
+
+    it 'returns a blocked payload when moderation rejects the input' do
+      account.update!(captain_runtime: { 'copilot_moderation' => true })
+      moderation_result = instance_double(RubyLLM::Moderation, flagged?: true)
+      allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
+
+      expect(service.generate_response('Hello')).to eq(
+        {
+          'content' => "I can't help with that request.",
+          'reasoning' => 'Copilot input blocked by moderation policy',
+          'reply_suggestion' => false
         }
       )
     end

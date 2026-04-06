@@ -127,15 +127,6 @@ RSpec.describe Captain::Document, type: :model do
       end
     end
 
-    describe '#store_openai_file_id' do
-      it 'stores the file ID in metadata' do
-        pdf_document.save!
-        pdf_document.store_openai_file_id('file-abc123')
-
-        expect(pdf_document.reload.openai_file_id).to eq('file-abc123')
-      end
-    end
-
     describe 'automatic external_link generation' do
       it 'generates unique external_link for PDFs' do
         pdf_document.external_link = nil

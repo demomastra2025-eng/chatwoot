@@ -15,6 +15,14 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  allowedScopes: {
+    type: Array,
+    default: () => ['agent', 'assistant'],
+  },
+  defaultExpanded: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -29,12 +37,26 @@ const loadError = ref(false);
 const SCOPE_ORDER = Object.freeze(['agent', 'assistant']);
 const expandedScopes = ref(
   SCOPE_ORDER.reduce((result, scopeName) => {
-    result[scopeName] = false;
+    result[scopeName] = props.defaultExpanded;
     return result;
   }, {})
 );
 
 const cloneAccess = access => JSON.parse(JSON.stringify(access || {}));
+
+const defaultScopeSelection = scopeName => {
+  const scopeTools = availableTools.value.filter(
+    tool => tool.scope_name === scopeName
+  );
+  const defaultToolIds = scopeTools
+    .filter(tool => tool.selected !== false)
+    .map(tool => tool.id);
+
+  return {
+    enabled: defaultToolIds.length > 0,
+    tool_ids: defaultToolIds,
+  };
+};
 
 const scopeMetadata = computed(() => ({
   agent: {
@@ -50,6 +72,341 @@ const scopeMetadata = computed(() => ({
     ),
   },
 }));
+
+const localizedGroupName = groupName => {
+  const groups = {
+    Knowledge: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.KNOWLEDGE'),
+    Conversations: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONVERSATIONS'
+    ),
+    Contacts: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONTACTS'),
+    Companies: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.COMPANIES'),
+    'CRM Deals': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_DEALS'),
+    'CRM Tasks': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_TASKS'),
+    Scheduling: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.SCHEDULING'),
+    'Help center': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.HELP_CENTER'),
+    Integrations: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.INTEGRATIONS'),
+  };
+
+  return groups[groupName] || groupName;
+};
+
+const riskBadgeLabel = riskLevel => {
+  const level = (riskLevel || 'low').toLowerCase();
+  const labels = {
+    low: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.LOW'),
+    medium: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.MEDIUM'),
+    high: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.HIGH'),
+    custom: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.CUSTOM'),
+  };
+
+  return labels[level] || labels.low;
+};
+
+const localizedToolCatalog = computed(() => ({
+  search_documentation: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_documentation.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_documentation.DESCRIPTION'
+    ),
+  },
+  faq_lookup: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.faq_lookup.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.faq_lookup.DESCRIPTION'
+    ),
+  },
+  add_contact_note: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_contact_note.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_contact_note.DESCRIPTION'
+    ),
+  },
+  add_private_note: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_private_note.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_private_note.DESCRIPTION'
+    ),
+  },
+  add_label_to_conversation: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_label_to_conversation.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_label_to_conversation.DESCRIPTION'
+    ),
+  },
+  update_priority: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_priority.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_priority.DESCRIPTION'
+    ),
+  },
+  resolve_conversation: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.resolve_conversation.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.resolve_conversation.DESCRIPTION'
+    ),
+  },
+  handoff: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.handoff.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.handoff.DESCRIPTION'
+    ),
+  },
+  get_conversation: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_conversation.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_conversation.DESCRIPTION'
+    ),
+  },
+  search_conversations: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_conversations.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_conversations.DESCRIPTION'
+    ),
+  },
+  get_contact: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_contact.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_contact.DESCRIPTION'
+    ),
+  },
+  search_contacts: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_contacts.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_contacts.DESCRIPTION'
+    ),
+  },
+  update_contact: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_contact.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_contact.DESCRIPTION'
+    ),
+  },
+  get_company: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_company.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_company.DESCRIPTION'
+    ),
+  },
+  search_companies: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_companies.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_companies.DESCRIPTION'
+    ),
+  },
+  create_company: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_company.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_company.DESCRIPTION'
+    ),
+  },
+  update_company: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_company.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_company.DESCRIPTION'
+    ),
+  },
+  get_deal: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_deal.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_deal.DESCRIPTION'
+    ),
+  },
+  search_deals: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_deals.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_deals.DESCRIPTION'
+    ),
+  },
+  get_deal_timeline: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_deal_timeline.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_deal_timeline.DESCRIPTION'
+    ),
+  },
+  create_deal: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_deal.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_deal.DESCRIPTION'
+    ),
+  },
+  update_deal: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_deal.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_deal.DESCRIPTION'
+    ),
+  },
+  transition_deal_stage: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.transition_deal_stage.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.transition_deal_stage.DESCRIPTION'
+    ),
+  },
+  add_deal_comment: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_deal_comment.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_deal_comment.DESCRIPTION'
+    ),
+  },
+  get_task: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_task.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_task.DESCRIPTION'
+    ),
+  },
+  search_tasks: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_tasks.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_tasks.DESCRIPTION'
+    ),
+  },
+  get_task_timeline: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_task_timeline.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_task_timeline.DESCRIPTION'
+    ),
+  },
+  create_task: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_task.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_task.DESCRIPTION'
+    ),
+  },
+  update_task: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_task.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_task.DESCRIPTION'
+    ),
+  },
+  change_task_status: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.change_task_status.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.change_task_status.DESCRIPTION'
+    ),
+  },
+  add_task_comment: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_task_comment.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_task_comment.DESCRIPTION'
+    ),
+  },
+  get_appointment: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_appointment.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_appointment.DESCRIPTION'
+    ),
+  },
+  search_appointments: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_appointments.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_appointments.DESCRIPTION'
+    ),
+  },
+  search_scheduling_resources: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_scheduling_resources.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_scheduling_resources.DESCRIPTION'
+    ),
+  },
+  search_scheduling_services: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_scheduling_services.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_scheduling_services.DESCRIPTION'
+    ),
+  },
+  search_available_slots: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_available_slots.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_available_slots.DESCRIPTION'
+    ),
+  },
+  create_appointment: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_appointment.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_appointment.DESCRIPTION'
+    ),
+  },
+  update_appointment: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_appointment.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_appointment.DESCRIPTION'
+    ),
+  },
+  cancel_appointment: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.cancel_appointment.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.cancel_appointment.DESCRIPTION'
+    ),
+  },
+  get_article: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_article.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.get_article.DESCRIPTION'
+    ),
+  },
+  search_articles: {
+    title: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_articles.TITLE'),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_articles.DESCRIPTION'
+    ),
+  },
+  search_linear_issues: {
+    title: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_linear_issues.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_linear_issues.DESCRIPTION'
+    ),
+  },
+}));
+
+const localizedToolTitle = tool =>
+  localizedToolCatalog.value[tool.id]?.title || tool.title;
+
+const localizedToolDescription = tool =>
+  localizedToolCatalog.value[tool.id]?.description || tool.description;
 
 const loadTools = async () => {
   isLoading.value = true;
@@ -84,15 +441,9 @@ const riskBadgeClass = riskLevel => {
   return 'bg-n-alpha-2 text-n-slate-11';
 };
 
-const riskBadgeLabel = riskLevel =>
-  t(
-    `CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.${(
-      riskLevel || 'low'
-    ).toUpperCase()}`
-  );
-
 const toolBadges = tool => {
   const badges = [];
+  const riskLevel = (tool.risk_level || 'low').toLowerCase();
 
   if (tool.custom) {
     badges.push({
@@ -102,11 +453,13 @@ const toolBadges = tool => {
     });
   }
 
-  badges.push({
-    key: `risk-${tool.risk_level || 'low'}`,
-    label: riskBadgeLabel(tool.risk_level),
-    className: riskBadgeClass(tool.risk_level),
-  });
+  if (!(tool.custom && riskLevel === 'custom')) {
+    badges.push({
+      key: `risk-${riskLevel}`,
+      label: riskBadgeLabel(tool.risk_level),
+      className: riskBadgeClass(tool.risk_level),
+    });
+  }
 
   if (tool.requires_confirmation) {
     badges.push({
@@ -138,8 +491,9 @@ const toolsByScope = computed(() => {
         return leftTool.title.localeCompare(rightTool.title);
       })
       .forEach(tool => {
-        const groupName =
-          tool.group_name || scopeMetadata.value[scopeName].title;
+        const groupName = localizedGroupName(
+          tool.group_name || scopeMetadata.value[scopeName].title
+        );
         if (!groups.has(groupName)) {
           groups.set(groupName, []);
         }
@@ -202,20 +556,60 @@ const normalizedAccess = computed(() => {
 });
 
 const serializedAccess = computed(() => {
-  return SCOPE_ORDER.reduce((result, scopeName) => {
+  const preservedAccess = cloneAccess(internalAccess.value);
+
+  return props.allowedScopes.reduce((result, scopeName) => {
     result[scopeName] = {
       enabled: normalizedAccess.value[scopeName].enabled,
       tool_ids: normalizedAccess.value[scopeName].toolIds,
     };
 
     return result;
-  }, {});
+  }, preservedAccess);
 });
 
 const updateAccess = nextAccess => {
   const clonedAccess = cloneAccess(nextAccess);
   internalAccess.value = clonedAccess;
   emit('update:modelValue', clonedAccess);
+};
+
+const hydrateMissingDefaults = () => {
+  if (!availableTools.value.length) return;
+
+  const nextAccess = cloneAccess(internalAccess.value);
+  let changed = false;
+
+  props.allowedScopes.forEach(scopeName => {
+    const rawScope = nextAccess[scopeName];
+    const defaults = defaultScopeSelection(scopeName);
+
+    if (!rawScope || typeof rawScope !== 'object') {
+      nextAccess[scopeName] = defaults;
+      changed = true;
+      return;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(rawScope, 'enabled')) {
+      nextAccess[scopeName] = {
+        ...nextAccess[scopeName],
+        enabled: defaults.enabled,
+      };
+      changed = true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(rawScope, 'tool_ids')) {
+      nextAccess[scopeName] = {
+        ...nextAccess[scopeName],
+        tool_ids: defaults.tool_ids,
+      };
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    updateAccess(nextAccess);
+  }
 };
 
 const selectionCountLabel = (scopeName, selectedCount, totalCount) =>
@@ -271,6 +665,21 @@ watch(
   },
   { deep: true, immediate: true }
 );
+
+watch(
+  () => [availableTools.value, props.allowedScopes],
+  () => {
+    expandedScopes.value = props.allowedScopes.reduce(
+      (result, scopeName) => {
+        result[scopeName] = props.defaultExpanded;
+        return result;
+      },
+      { ...expandedScopes.value }
+    );
+    hydrateMissingDefaults();
+  },
+  { deep: true, immediate: true }
+);
 </script>
 
 <template>
@@ -304,7 +713,7 @@ watch(
     </div>
 
     <div
-      v-for="scopeName in SCOPE_ORDER"
+      v-for="scopeName in props.allowedScopes"
       :key="scopeName"
       class="flex min-w-0 flex-col gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
     >
@@ -385,21 +794,23 @@ watch(
               <label
                 v-for="tool in group.tools"
                 :key="tool.id"
-                class="flex min-w-0 items-start gap-2 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
+                class="flex min-w-0 items-start gap-3 rounded-md px-1 py-1 transition-colors hover:bg-n-alpha-3"
               >
-                <Checkbox
-                  :model-value="
-                    normalizedAccess[scopeName].toolIds.includes(tool.id)
-                  "
-                  @update:model-value="
-                    value => toggleToolSelection(scopeName, tool.id, value)
-                  "
-                />
+                <span class="mt-0.5 shrink-0">
+                  <Checkbox
+                    :model-value="
+                      normalizedAccess[scopeName].toolIds.includes(tool.id)
+                    "
+                    @update:model-value="
+                      value => toggleToolSelection(scopeName, tool.id, value)
+                    "
+                  />
+                </span>
                 <span class="min-w-0">
                   <span
                     class="block break-words text-sm font-medium text-n-slate-12"
                   >
-                    {{ tool.title }}
+                    {{ localizedToolTitle(tool) }}
                   </span>
                   <span class="mt-1 flex flex-wrap gap-1">
                     <span
@@ -412,7 +823,7 @@ watch(
                     </span>
                   </span>
                   <span class="block break-words text-xs text-n-slate-10">
-                    {{ tool.description }}
+                    {{ localizedToolDescription(tool) }}
                   </span>
                 </span>
               </label>

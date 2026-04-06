@@ -2,6 +2,7 @@
 # tool resolution, text parsing, and metadata retrieval.
 module Concerns::CaptainToolsHelpers
   extend ActiveSupport::Concern
+  TOOL_REFERENCE_RENDER_REGEX = %r{\[([^\]]+)\]\(tool://([^/)]+)\)}
 
   # Regular expression pattern for matching tool references in text.
   # Matches patterns like [Tool name](tool://tool_id) following markdown link syntax.
@@ -44,6 +45,18 @@ module Concerns::CaptainToolsHelpers
 
     tool_matches = text.scan(TOOL_REFERENCE_REGEX)
     tool_matches.flatten.map { |tool_id| normalize_tool_id(tool_id) }.uniq
+  end
+
+  def render_tool_references(text)
+    return text if text.blank?
+
+    text.gsub(TOOL_REFERENCE_RENDER_REGEX) do
+      label = Regexp.last_match(1).to_s.strip
+      tool_id = normalize_tool_id(Regexp.last_match(2))
+      reference_name = label.presence || tool_id
+
+      "`#{reference_name}` tool"
+    end
   end
 
   private

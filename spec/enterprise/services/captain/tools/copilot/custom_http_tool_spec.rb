@@ -51,6 +51,16 @@ RSpec.describe Captain::Tools::Copilot::CustomHttpTool do
       expect(params[:lead_name].description).to eq('Lead name')
       expect(params[:lead_name].required).to be(true)
     end
+
+    it 'delegates parameter contract building to the custom tool runtime contract' do
+      allow(custom_tool).to receive(:runtime_parameters)
+        .with(Captain::ToolAccess::SCOPE_ASSISTANT)
+        .and_call_original
+
+      tool.parameters
+
+      expect(custom_tool).to have_received(:runtime_parameters).with(Captain::ToolAccess::SCOPE_ASSISTANT)
+    end
   end
 
   describe '#execute' do

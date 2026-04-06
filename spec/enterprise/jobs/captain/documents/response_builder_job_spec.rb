@@ -69,7 +69,6 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
       let(:pdf_document) do
         doc = create(:captain_document, assistant: assistant)
         allow(doc).to receive(:pdf_document?).and_return(true)
-        allow(doc).to receive(:openai_file_id).and_return('file-123')
         allow(doc).to receive(:update!).and_return(true)
         allow(doc).to receive(:metadata).and_return({})
         doc

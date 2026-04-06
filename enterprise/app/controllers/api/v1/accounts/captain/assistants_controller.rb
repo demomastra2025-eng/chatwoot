@@ -1,8 +1,16 @@
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
+  ASSISTANT_CONFIG_FIELDS = [
+    :feature_faq, :feature_memory, :feature_citation,
+    :welcome_message, :handoff_message, :resolution_message,
+    :temperature,
+    :auto_reply_on_last_incoming,
+    :message_collapse_window_seconds, :history_message_limit
+  ].freeze
+
   before_action :current_account
   before_action -> { check_authorization(Captain::Assistant) }
 
-  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar]
+  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview]
 
   def index
     @assistants = account_assistants.ordered
@@ -32,16 +40,12 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground
-    response = if captain_v2_enabled?
-                 Captain::Assistant::AgentRunnerService.new(assistant: @assistant, source: 'playground').generate_response(
-                   message_history: playground_message_history
-                 )
-               else
-                 Captain::Llm::AssistantChatService.new(assistant: @assistant, source: 'playground').generate_response(
-                   additional_message: playground_params[:message_content],
-                   message_history: message_history
-                 )
-               end
+    response = Captain::Assistant::AgentRunnerService.new(
+      assistant: @assistant,
+      source: 'playground'
+    ).generate_response(
+      message_history: playground_message_history
+    )
 
     render json: response
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
@@ -53,8 +57,19 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def tools
-    assistant = Captain::Assistant.new(account: Current.account)
-    @tools = assistant.available_agent_tools
+    assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
+    scope_name = params[:scope].presence
+    tools = Captain::ToolAccess.definitions_for(assistant)
+    @tools =
+      if scope_name.present?
+        tools.select { |tool| tool[:scope_name].to_s == scope_name }
+      else
+        tools
+      end
+  end
+
+  def prompt_preview
+    render json: Captain::Assistant::PromptPreviewService.new(assistant: @assistant).preview
   end
 
   def tool_access
@@ -82,35 +97,34 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def assistant_params
-    permitted = params.require(:assistant).permit(:name, :description,
-                                                  config: [
-                                                    :product_name, :feature_faq, :feature_memory, :feature_citation,
-                                                    :feature_contact_attributes,
-                                                    :welcome_message, :handoff_message, :resolution_message,
-                                                    :instructions, :temperature,
-                                                    :auto_reply_on_last_incoming,
-                                                    :message_collapse_window_seconds, :history_message_limit
-                                                  ])
+    permitted = params.require(:assistant).permit(
+      :name,
+      :description,
+      :usage_mode,
+      config: ASSISTANT_CONFIG_FIELDS
+    )
 
-    # Handle array parameters separately to allow partial updates
-    permitted[:response_guidelines] = params[:assistant][:response_guidelines] if params[:assistant].key?(:response_guidelines)
-
-    permitted[:guardrails] = params[:assistant][:guardrails] if params[:assistant].key?(:guardrails)
-
-    assistant_config = params.dig(:assistant, :config)
-    if assistant_config.respond_to?(:key?) && assistant_config.key?(:context_access)
-      context_access = assistant_config[:context_access]
-      permitted[:config] ||= {}
-      permitted[:config][:context_access] = context_access.respond_to?(:permit!) ? context_access.permit!.to_h : context_access
-    end
-
-    if assistant_config.respond_to?(:key?) && assistant_config.key?(:tool_access)
-      tool_access = assistant_config[:tool_access]
-      permitted[:config] ||= {}
-      permitted[:config][:tool_access] = tool_access.respond_to?(:permit!) ? tool_access.permit!.to_h : tool_access
-    end
+    merge_optional_array_param!(permitted, :response_guidelines)
+    merge_optional_array_param!(permitted, :guardrails)
+    merge_optional_config_param!(permitted, :context_access)
+    merge_optional_config_param!(permitted, :tool_access)
 
     permitted
+  end
+
+  def merge_optional_array_param!(permitted, field_name)
+    return unless params[:assistant].key?(field_name)
+
+    permitted[field_name] = params[:assistant][field_name]
+  end
+
+  def merge_optional_config_param!(permitted, field_name)
+    assistant_config = params.dig(:assistant, :config)
+    return unless assistant_config.respond_to?(:key?) && assistant_config.key?(field_name)
+
+    raw_value = assistant_config[field_name]
+    permitted[:config] ||= {}
+    permitted[:config][field_name] = raw_value.respond_to?(:permit!) ? raw_value.permit!.to_h : raw_value
   end
 
   def avatar_params
@@ -140,9 +154,5 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     return history if history.last == current_user_message
 
     history + [current_user_message]
-  end
-
-  def captain_v2_enabled?
-    @assistant.account.feature_enabled?('captain_integration_v2')
   end
 end

@@ -57,9 +57,12 @@ const routeToLastActiveAssistant = () => {
     'captain_assistants_documents_index', // Document page
     'captain_assistants_scenarios_index', // Scenario page
     'captain_assistants_playground_index', // Playground page
-    'captain_assistants_inboxes_index', // Inboxes page
+    'captain_assistants_channels_index', // Channels page
     'captain_tools_index', // Tools page
     'captain_assistants_settings_index', // Settings page
+    'captain_assistants_prompts_index', // Prompts page
+    'captain_assistants_restrictions_index', // Restrictions page
+    'captain_assistants_access_index', // Access page
   ].includes(navigationPath);
 
   const navigateTo = isAValidRoute

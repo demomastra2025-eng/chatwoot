@@ -21,6 +21,9 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def generate_response(input)
+    input_moderation_response = moderate_input_response(input)
+    return input_moderation_response if input_moderation_response
+
     @messages << { role: 'user', content: input } if input.present?
     response = request_chat_completion
 
@@ -62,10 +65,11 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def build_tools
-    allowed_tool_ids = @assistant.allowed_assistant_tool_ids
-
-    @assistant.available_assistant_tools.filter_map do |tool_definition|
-      next unless allowed_tool_ids.include?(tool_definition[:id])
+    Captain::ToolCatalog.allowed_tools_for(
+      @assistant,
+      Captain::ToolAccess::SCOPE_ASSISTANT,
+      fallback_ids: @assistant.available_assistant_tool_ids
+    ).filter_map do |tool_definition|
       next unless Captain::ToolPolicy.runtime_allowed?(
         tool_definition,
         assistant: @assistant,
@@ -86,7 +90,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     {
       role: 'system',
       content: Captain::Llm::SystemPromptsService.copilot_response_generator(
-        @assistant.config['product_name'],
+        @assistant.name,
+        @assistant.system_instruction,
         tools_summary,
         @assistant.config
       )
@@ -94,7 +99,9 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def tools_summary
-    @tools.map { |tool| "- #{tool.name}: #{tool.description}" }.join("\n")
+    Captain::ToolCatalog.summary_for(
+      @tools.map { |tool| { id: tool.name, description: tool.description } }
+    )
   end
 
   def account_context_message
@@ -128,5 +135,49 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   def feature_name
     'copilot'
+  end
+
+  def response_schema
+    Captain::Llm::Schemas::CopilotResponse
+  end
+
+  def llm_feature_key
+    feature_name
+  end
+
+  def llm_model_account
+    @account
+  end
+
+  def moderate_input_response(input)
+    Llm::ModerationService.check!(
+      feature: :copilot,
+      stage: :input,
+      content: input,
+      account: @account
+    )
+    nil
+  rescue Llm::ModerationService::FlaggedContentError
+    blocked_response_payload('Copilot input blocked by moderation policy')
+  end
+
+  def moderate_response_payload(parsed_response)
+    Llm::ModerationService.check!(
+      feature: :copilot,
+      stage: :output,
+      content: parsed_response['content'],
+      account: @account
+    )
+    parsed_response
+  rescue Llm::ModerationService::FlaggedContentError
+    blocked_response_payload('Copilot output blocked by moderation policy')
+  end
+
+  def blocked_response_payload(reason)
+    {
+      'content' => "I can't help with that request.",
+      'reasoning' => reason,
+      'reply_suggestion' => false
+    }
   end
 end

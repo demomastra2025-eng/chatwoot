@@ -10,7 +10,7 @@ module Concerns::Toolable
     tool_class = Class.new(Captain::Tools::HttpTool) do
       description custom_tool_record.description
 
-      custom_tool_record.agent_parameter_definitions.each do |param_def|
+      custom_tool_record.runtime_parameter_definitions(Captain::ToolAccess::SCOPE_AGENT).each do |param_def|
         param param_def['name'].to_sym,
               type: param_def['type'],
               desc: param_def['description'],

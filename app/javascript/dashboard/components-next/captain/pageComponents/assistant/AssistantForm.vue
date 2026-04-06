@@ -7,12 +7,14 @@ import { useMapGetter } from 'dashboard/composables/store';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import ContextAccessSettings from './ContextAccessSettings.vue';
 import ToolAccessSettings from './ToolAccessSettings.vue';
+import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
+import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
 
 const props = defineProps({
   mode: {
@@ -33,31 +35,60 @@ const { t } = useI18n();
 const formState = {
   uiFlags: useMapGetter('captainAssistants/getUIFlags'),
 };
+const safeAssistant = computed(() => props.assistant || {});
 
-const initialState = {
+const buildInitialState = () => ({
   name: '',
   description: '',
-  productName: '',
+  usageMode: 'external_agent',
   featureFaq: false,
   featureMemory: false,
   featureCitation: false,
+  handoffMessageEnabled: false,
+  resolutionMessageEnabled: false,
+  handoffMessage: '',
+  resolutionMessage: '',
   autoReplyOnLastIncoming: false,
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
   contextAccess: {},
-  toolAccess: {},
+  toolAccess: {
+    agent: {
+      enabled: true,
+      tool_ids: ['faq_lookup', 'handoff'],
+    },
+    assistant: {
+      enabled: true,
+      tool_ids: ['search_documentation', 'faq_lookup'],
+    },
+  },
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
-};
+});
 
-const state = reactive({ ...initialState });
+const state = reactive(buildInitialState());
+const isInternalAssistant = computed(
+  () => state.usageMode === 'internal_assistant'
+);
+const isExternalAgent = computed(() => !isInternalAssistant.value);
+const activeToolScope = computed(() =>
+  isExternalAgent.value ? 'agent' : 'assistant'
+);
+const visibleToolScopes = computed(() =>
+  isExternalAgent.value ? ['agent'] : ['assistant']
+);
 
-const validationRules = {
+const validationRules = computed(() => ({
   name: { required, minLength: minLength(1) },
   description: { required, minLength: minLength(1) },
-  productName: { required, minLength: minLength(1) },
-};
+  handoffMessage: state.handoffMessageEnabled
+    ? { minLength: minLength(1) }
+    : {},
+  resolutionMessage: state.resolutionMessageEnabled
+    ? { minLength: minLength(1) }
+    : {},
+}));
 
 const v$ = useVuelidate(validationRules, state);
 
@@ -71,9 +102,22 @@ const getErrorMessage = (field, errorKey) => {
 
 const formErrors = computed(() => ({
   name: getErrorMessage('name', 'NAME'),
-  description: getErrorMessage('description', 'DESCRIPTION'),
-  productName: getErrorMessage('productName', 'PRODUCT_NAME'),
+  description: getErrorMessage('description', 'INSTRUCTION'),
+  handoffMessage: getErrorMessage('handoffMessage', 'INSTRUCTION'),
+  resolutionMessage: getErrorMessage('resolutionMessage', 'INSTRUCTION'),
 }));
+
+const handoffInfoPoints = computed(() => [
+  t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_POINTS.TRIGGER'),
+  t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_POINTS.FALLBACK'),
+  t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_POINTS.FIELDS'),
+]);
+
+const resolutionInfoPoints = computed(() => [
+  t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_POINTS.TRIGGER'),
+  t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_POINTS.DEFAULT'),
+  t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_POINTS.USE_CASE'),
+]);
 
 const handleCancel = () => emit('cancel');
 
@@ -86,7 +130,11 @@ const handleAvatarUpload = ({ file, url }) => {
 const handleAvatarDelete = () => {
   state.avatarFile = null;
   state.avatarUrl = '';
-  state.removeAvatar = Boolean(props.assistant?.avatar_url);
+  state.removeAvatar = Boolean(safeAssistant.value?.avatar_url);
+};
+
+const resolveInstructionText = assistant => {
+  return assistant?.description?.trim?.() || '';
 };
 
 const normalizeNonNegativeInteger = value => {
@@ -101,33 +149,67 @@ const normalizeNonNegativeInteger = value => {
 const assistantHasConfiguredToolAccess = assistant =>
   Object.prototype.hasOwnProperty.call(assistant?.config || {}, 'tool_access');
 
+const ensureDefaultToolAccessForUsageMode = usageMode => {
+  const activeScope =
+    usageMode === 'internal_assistant' ? 'assistant' : 'agent';
+
+  if (!state.toolAccess?.[activeScope]) {
+    state.toolAccess = {
+      ...state.toolAccess,
+      [activeScope]: {
+        enabled: true,
+      },
+    };
+  }
+};
+
+const pickAllowedToolAccess = access =>
+  visibleToolScopes.value.reduce((result, scope) => {
+    if (access?.[scope]) {
+      result[scope] = access[scope];
+    }
+    return result;
+  }, {});
+
 const prepareAssistantDetails = () => {
   const config = {
-    product_name: state.productName,
     feature_faq: state.featureFaq,
     feature_memory: state.featureMemory,
     feature_citation: state.featureCitation,
-    auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
-    message_collapse_window_seconds: normalizeNonNegativeInteger(
-      state.messageCollapseWindowSeconds
-    ),
-    history_message_limit: normalizeNonNegativeInteger(
-      state.historyMessageLimit
-    ),
+    handoff_message:
+      isExternalAgent.value && state.handoffMessageEnabled
+        ? state.handoffMessage
+        : '',
+    resolution_message:
+      isExternalAgent.value && state.resolutionMessageEnabled
+        ? state.resolutionMessage
+        : '',
+    auto_reply_on_last_incoming: isExternalAgent.value
+      ? state.autoReplyOnLastIncoming
+      : false,
+    message_collapse_window_seconds: isExternalAgent.value
+      ? normalizeNonNegativeInteger(state.messageCollapseWindowSeconds)
+      : 0,
+    history_message_limit: isExternalAgent.value
+      ? normalizeNonNegativeInteger(state.historyMessageLimit)
+      : 0,
     context_access: state.contextAccess,
   };
 
+  const visibleToolAccess = pickAllowedToolAccess(state.toolAccess);
+
   if (
-    assistantHasConfiguredToolAccess(props.assistant) ||
-    Object.keys(state.toolAccess || {}).length
+    assistantHasConfiguredToolAccess(safeAssistant.value) ||
+    Object.keys(visibleToolAccess).length
   ) {
-    config.tool_access = state.toolAccess;
+    config.tool_access = visibleToolAccess;
   }
 
   return {
     assistant: {
       name: state.name,
-      description: state.description,
+      description: state.description || safeAssistant.value.description || '',
+      usage_mode: state.usageMode,
       config,
     },
     avatar: state.avatarFile,
@@ -147,15 +229,19 @@ const handleSubmit = async () => {
 const updateStateFromAssistant = assistant => {
   if (!assistant) return;
 
-  const { name, description, config } = assistant;
+  const { name, config, usage_mode: usageMode } = assistant;
 
   Object.assign(state, {
     name,
-    description,
-    productName: config.product_name,
+    description: resolveInstructionText(assistant),
+    usageMode: usageMode || 'external_agent',
     featureFaq: config.feature_faq || false,
     featureMemory: config.feature_memory || false,
     featureCitation: config.feature_citation || false,
+    handoffMessageEnabled: Boolean(config.handoff_message),
+    resolutionMessageEnabled: Boolean(config.resolution_message),
+    handoffMessage: config.handoff_message || '',
+    resolutionMessage: config.resolution_message || '',
     autoReplyOnLastIncoming: config.auto_reply_on_last_incoming || false,
     messageCollapseWindowSeconds: Number(
       config.message_collapse_window_seconds || 0
@@ -174,6 +260,27 @@ watch(
   newAssistant => {
     if (props.mode === 'edit' && newAssistant) {
       updateStateFromAssistant(newAssistant);
+      ensureDefaultToolAccessForUsageMode(
+        newAssistant.usage_mode || 'external_agent'
+      );
+      return;
+    }
+
+    if (props.mode === 'create') {
+      Object.assign(state, buildInitialState());
+      ensureDefaultToolAccessForUsageMode('external_agent');
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => state.usageMode,
+  usageMode => {
+    ensureDefaultToolAccessForUsageMode(usageMode);
+    if (usageMode !== 'external_agent') {
+      state.handoffMessageEnabled = false;
+      state.resolutionMessageEnabled = false;
     }
   },
   { immediate: true }
@@ -205,23 +312,110 @@ watch(
       :message-type="formErrors.name ? 'error' : 'info'"
     />
 
+    <AssistantUsageModeSelector v-model="state.usageMode" />
+
     <Editor
       v-model="state.description"
-      :label="t('CAPTAIN.ASSISTANTS.FORM.DESCRIPTION.LABEL')"
-      :placeholder="t('CAPTAIN.ASSISTANTS.FORM.DESCRIPTION.PLACEHOLDER')"
+      :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
+      :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
       :message="formErrors.description"
       :message-type="formErrors.description ? 'error' : 'info'"
+      class="z-0"
+      enable-captain-tools
       enable-captain-fields
+      :captain-context-assistant-id="safeAssistant.id"
       :captain-context-access="state.contextAccess"
+      :captain-tool-access="state.toolAccess"
+      :captain-tool-scope="activeToolScope"
     />
 
-    <Input
-      v-model="state.productName"
-      :label="t('CAPTAIN.ASSISTANTS.FORM.PRODUCT_NAME.LABEL')"
-      :placeholder="t('CAPTAIN.ASSISTANTS.FORM.PRODUCT_NAME.PLACEHOLDER')"
-      :message="formErrors.productName"
-      :message-type="formErrors.productName ? 'error' : 'info'"
-    />
+    <template v-if="isExternalAgent">
+      <div
+        class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.LABEL') }}
+            </h4>
+            <SettingsInfoDialog
+              :title="t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_TITLE')"
+              :description="
+                t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_DESCRIPTION')
+              "
+              :points="handoffInfoPoints"
+              align="left"
+            />
+          </div>
+          <Switch
+            v-model="state.handoffMessageEnabled"
+            class="data-[state=checked]:!bg-n-violet-9"
+          />
+        </div>
+
+        <Editor
+          v-if="state.handoffMessageEnabled"
+          v-model="state.handoffMessage"
+          :placeholder="
+            t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
+          "
+          :message="formErrors.handoffMessage"
+          :message-type="formErrors.handoffMessage ? 'error' : 'info'"
+          :show-character-count="false"
+          class="z-0 compact-system-message-editor"
+          enable-captain-tools
+          enable-captain-fields
+          :captain-context-assistant-id="safeAssistant.id"
+          :captain-context-access="state.contextAccess"
+          :captain-tool-access="state.toolAccess"
+          :captain-tool-scope="activeToolScope"
+        />
+      </div>
+
+      <div
+        class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.LABEL') }}
+            </h4>
+            <SettingsInfoDialog
+              :title="
+                t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_TITLE')
+              "
+              :description="
+                t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_DESCRIPTION')
+              "
+              :points="resolutionInfoPoints"
+              align="left"
+            />
+          </div>
+          <Switch
+            v-model="state.resolutionMessageEnabled"
+            class="data-[state=checked]:!bg-n-violet-9"
+          />
+        </div>
+
+        <Editor
+          v-if="state.resolutionMessageEnabled"
+          v-model="state.resolutionMessage"
+          :placeholder="
+            t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
+          "
+          :message="formErrors.resolutionMessage"
+          :message-type="formErrors.resolutionMessage ? 'error' : 'info'"
+          :show-character-count="false"
+          class="z-0 compact-system-message-editor"
+          enable-captain-tools
+          enable-captain-fields
+          :captain-context-assistant-id="safeAssistant.id"
+          :captain-context-access="state.contextAccess"
+          :captain-tool-access="state.toolAccess"
+          :captain-tool-scope="activeToolScope"
+        />
+      </div>
+    </template>
 
     <fieldset class="flex flex-col gap-2.5">
       <legend class="mb-3 text-sm font-medium text-n-slate-12">
@@ -251,6 +445,7 @@ watch(
     </fieldset>
 
     <div
+      v-if="isExternalAgent"
       class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4"
     >
       <div class="flex-1 min-w-0">
@@ -271,7 +466,7 @@ watch(
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div v-if="isExternalAgent" class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Input
         v-model="state.messageCollapseWindowSeconds"
         type="number"
@@ -311,7 +506,9 @@ watch(
 
     <ToolAccessSettings
       v-model="state.toolAccess"
-      :assistant-id="assistant.id"
+      :assistant-id="safeAssistant.id"
+      :allowed-scopes="visibleToolScopes"
+      :default-expanded="mode !== 'create'"
     />
 
     <div class="flex items-center justify-between w-full gap-3">

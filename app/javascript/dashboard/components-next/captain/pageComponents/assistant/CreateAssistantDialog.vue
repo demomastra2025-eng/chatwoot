@@ -25,10 +25,11 @@ const store = useStore();
 
 const dialogRef = ref(null);
 const assistantForm = ref(null);
+const resolvedAssistant = computed(() => props.selectedAssistant || {});
 
 const updateAssistant = assistantDetails =>
   store.dispatch('captainAssistants/update', {
-    id: props.selectedAssistant.id,
+    id: resolvedAssistant.value.id,
     ...assistantDetails,
   });
 
@@ -133,6 +134,7 @@ defineExpose({ dialogRef });
   <Dialog
     ref="dialogRef"
     type="edit"
+    width="2xl"
     :title="t(`${i18nKey}.TITLE`)"
     :description="t('CAPTAIN.ASSISTANTS.FORM_DESCRIPTION')"
     :show-cancel-button="false"
@@ -143,7 +145,7 @@ defineExpose({ dialogRef });
     <AssistantForm
       ref="assistantForm"
       :mode="type"
-      :assistant="selectedAssistant"
+      :assistant="resolvedAssistant"
       @submit="handleSubmit"
       @cancel="handleCancel"
     />

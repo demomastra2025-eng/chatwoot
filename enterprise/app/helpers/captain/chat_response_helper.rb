@@ -6,42 +6,20 @@ module Captain::ChatResponseHelper
   def build_response(response)
     Rails.logger.debug { "#{self.class.name} Assistant: #{@assistant.id}, Received response #{response}" }
 
-    parsed = parse_json_response(response.content)
+    parsed = normalize_response_content(response.content)
+    parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] = usage_payload(response)
-    apply_credit_usage_metadata(parsed)
 
     persist_message(persistable_response(parsed), 'assistant')
     attach_tool_trace(parsed)
     parsed
   end
 
-  def parse_json_response(content)
-    content = content.gsub('```json', '').gsub('```', '')
-    content = content.strip
-    JSON.parse(content)
-  rescue JSON::ParserError => e
-    Rails.logger.error "#{self.class.name} Assistant: #{@assistant.id}, Error parsing JSON response: #{e.message}"
-    { 'content' => content }
-  end
+  def normalize_response_content(content)
+    return content.with_indifferent_access if content.respond_to?(:with_indifferent_access)
+    return content.to_h.with_indifferent_access if content.respond_to?(:to_h)
 
-  def apply_credit_usage_metadata(parsed_response)
-    return unless captain_v1_assistant?
-
-    OpenTelemetry::Trace.current_span.set_attribute(
-      format(ATTR_LANGFUSE_METADATA, 'credit_used'),
-      credit_used_for_response?(parsed_response).to_s
-    )
-  rescue StandardError => e
-    Rails.logger.warn "#{self.class.name} Assistant: #{@assistant.id}, Failed to set credit usage metadata: #{e.message}"
-  end
-
-  def credit_used_for_response?(parsed_response)
-    response = parsed_response['response']
-    response.present? && response != 'conversation_handoff'
-  end
-
-  def captain_v1_assistant?
-    feature_name == 'assistant' && !@assistant.account.feature_enabled?('captain_integration_v2')
+    { 'content' => content.to_s }
   end
 
   def usage_payload(response)

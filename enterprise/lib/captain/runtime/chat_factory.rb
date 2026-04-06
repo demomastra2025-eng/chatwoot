@@ -8,7 +8,8 @@ class Captain::Runtime::ChatFactory
         model: agent.model,
         temperature: agent.temperature,
         params: merged_params(agent, runtime_params),
-        headers: merged_headers(agent, runtime_headers)
+        headers: merged_headers(agent, runtime_headers),
+        thinking: thinking_options(agent, context_wrapper)
       )
 
       configure(chat, agent, context_wrapper)
@@ -45,6 +46,14 @@ class Captain::Runtime::ChatFactory
 
     def merged_params(agent, runtime_params)
       Captain::Runtime::HashNormalizer.merge(agent.params, runtime_params)
+    end
+
+    def thinking_options(agent, context_wrapper)
+      Llm::RuntimePolicy.thinking_options(
+        feature: :assistant,
+        model: agent.model,
+        preferences: context_wrapper.context.dig(:state, :captain_runtime)
+      )
     end
   end
 end

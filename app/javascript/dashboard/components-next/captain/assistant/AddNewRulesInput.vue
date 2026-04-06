@@ -16,9 +16,25 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  enableCaptainTools: {
+    type: Boolean,
+    default: false,
+  },
   captainContextAssistantId: {
     type: Number,
     default: null,
+  },
+  captainContextAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolAccess: {
+    type: Object,
+    default: null,
+  },
+  captainToolScope: {
+    type: String,
+    default: 'agent',
   },
 });
 
@@ -46,16 +62,20 @@ const onClickAdd = () => {
       v-model="modelValue"
       :placeholder="placeholder"
       :show-character-count="false"
+      :enable-captain-tools="enableCaptainTools"
       :enable-captain-fields="enableCaptainFields"
       :captain-context-assistant-id="captainContextAssistantId"
+      :captain-context-access="captainContextAccess"
+      :captain-tool-access="captainToolAccess"
+      :captain-tool-scope="captainToolScope"
       class="flex-1"
     />
     <Button
       :label="label"
-      ghost
-      xs
-      slate
-      class="!text-sm !text-n-slate-11 flex-shrink-0"
+      sm
+      color="slate"
+      variant="outline"
+      class="flex-shrink-0"
       @click="onClickAdd"
     />
   </div>

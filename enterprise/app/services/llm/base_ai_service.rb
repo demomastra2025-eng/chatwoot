@@ -6,16 +6,19 @@ class Llm::BaseAiService
   DEFAULT_MODEL = Llm::Config::DEFAULT_MODEL
   DEFAULT_TEMPERATURE = 1.0
 
-  attr_reader :model, :temperature
+  attr_reader :temperature
 
   def initialize
     Llm::Config.initialize!
-    setup_model
     setup_temperature
   end
 
-  def chat(model: @model, temperature: @temperature)
-    Llm::ChatClient.build(model: model, temperature: temperature)
+  def model
+    @model ||= resolved_model
+  end
+
+  def chat(model: self.model, temperature: @temperature, thinking: nil)
+    Llm::ChatClient.build(model: model, temperature: temperature, thinking: thinking)
   end
 
   def ask_chat(chat, content)
@@ -24,20 +27,33 @@ class Llm::BaseAiService
 
   private
 
-  # Strips markdown code fences (```json ... ``` or ``` ... ```) that some
-  # LLM providers/gateways wrap around JSON responses despite response_format hints.
-  def sanitize_json_response(response)
-    return response if response.nil?
-
-    response.strip.sub(/\A```(?:\w*)\s*\n?/, '').sub(/\n?\s*```\s*\z/, '').strip
-  end
-
-  def setup_model
-    config_value = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_MODEL')&.value
-    @model = (config_value.presence || DEFAULT_MODEL)
-  end
-
   def setup_temperature
     @temperature = DEFAULT_TEMPERATURE
+  end
+
+  def llm_feature_key
+    nil
+  end
+
+  def llm_model_account
+    nil
+  end
+
+  def resolved_model
+    Llm::Config.model_for(
+      feature: llm_feature_key,
+      account: llm_model_account,
+      fallback: DEFAULT_MODEL
+    )
+  end
+
+  def llm_thinking_options
+    return nil if llm_feature_key.blank?
+
+    Llm::RuntimePolicy.thinking_options(
+      feature: llm_feature_key,
+      account: llm_model_account,
+      model: model
+    )
   end
 end
