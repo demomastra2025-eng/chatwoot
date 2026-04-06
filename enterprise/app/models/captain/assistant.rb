@@ -387,11 +387,11 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def referenced_tool_ids_for_texts(texts)
-    Array(texts).flat_map { |text| extract_tool_ids_from_text(text) }.uniq
+    Array(texts).flatten.compact.flat_map { |text| extract_tool_ids_from_text(text) }.uniq
   end
 
   def referenced_field_ids_for_texts(texts)
-    Array(texts).flat_map { |text| Captain::ContextFields.extract_field_ids_from_text(text) }.uniq
+    Array(texts).flatten.compact.flat_map { |text| Captain::ContextFields.extract_field_ids_from_text(text) }.uniq
   end
 
   def glossary_context_definitions(field_ids)

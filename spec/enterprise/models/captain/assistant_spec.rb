@@ -107,6 +107,20 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).not_to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
     end
 
+    it 'handles array-based rules and restrictions when building the prompt glossary' do
+      assistant.update!(
+        description: 'Start with [Name](field://contact.name).',
+        response_guidelines: ['Use [FAQ Lookup](tool://faq_lookup) before replying.'],
+        guardrails: ['Never expose [Conversation ID](field://conversation.display_id) to the customer.']
+      )
+
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('Name (contact.name)')
+      expect(rendered).to include('Conversation ID (conversation.display_id)')
+      expect(rendered).to include('FAQ Lookup (faq_lookup): Search FAQ responses using semantic similarity')
+    end
+
     it 'renders tool references in instructions as readable tool mentions' do
       assistant.update!(
         description: 'Use [FAQ Lookup](tool://faq_lookup) before replying.'

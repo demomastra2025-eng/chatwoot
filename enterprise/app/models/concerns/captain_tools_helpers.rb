@@ -41,9 +41,19 @@ module Concerns::CaptainToolsHelpers
   # @param text [String] Text to parse for tool references
   # @return [Array<String>] Array of unique tool IDs found in the text
   def extract_tool_ids_from_text(text)
-    return [] if text.blank?
+    normalized_text =
+      case text
+      when String
+        text
+      when Array
+        text.flatten.compact.map(&:to_s).join("\n")
+      else
+        text.to_s
+      end
 
-    tool_matches = text.scan(TOOL_REFERENCE_REGEX)
+    return [] if normalized_text.blank?
+
+    tool_matches = normalized_text.scan(TOOL_REFERENCE_REGEX)
     tool_matches.flatten.map { |tool_id| normalize_tool_id(tool_id) }.uniq
   end
 

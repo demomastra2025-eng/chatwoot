@@ -8,6 +8,11 @@ import AnalyticsHelper from '../helper/AnalyticsHelper';
 
 const routes = [...dashboard.routes];
 
+routes.unshift({
+  path: '/',
+  redirect: frontendURL('login'),
+});
+
 export const router = createRouter({ history: createWebHistory(), routes });
 
 export const validateAuthenticateRoutePermission = (to, next) => {

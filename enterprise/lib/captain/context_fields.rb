@@ -337,9 +337,19 @@ class Captain::ContextFields
     end
 
     def extract_field_ids_from_text(text)
-      return [] if text.blank?
+      normalized_text =
+        case text
+        when String
+          text
+        when Array
+          text.flatten.compact.map(&:to_s).join("\n")
+        else
+          text.to_s
+        end
 
-      text.scan(FIELD_REFERENCE_REGEX).map { |_label, field_id| normalize_field_id(field_id) }.uniq
+      return [] if normalized_text.blank?
+
+      normalized_text.scan(FIELD_REFERENCE_REGEX).map { |_label, field_id| normalize_field_id(field_id) }.uniq
     end
 
     def render_references(text, prompt_state:, allowed_fields:)
