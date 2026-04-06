@@ -98,6 +98,7 @@ Rails.application.routes.draw do
           resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
             delete :avatar, on: :member
             post :reset_access_token, on: :member
+            post :reset_secret, on: :member
           end
           resources :contact_inboxes, only: [] do
             collection do
@@ -287,6 +288,7 @@ Rails.application.routes.draw do
             post :sync_templates, on: :member
             get :health, on: :member
             post :register_webhook, on: :member
+            post :reset_secret, on: :member
             post :refresh_whatsapp_web_qr, on: :member
             post :reconnect_whatsapp_web, on: :member
             post :disconnect_whatsapp_web, on: :member

@@ -66,6 +66,16 @@
       "RESET_SUCCESS": "Access token regenerated successfully",
       "RESET_ERROR": "Unable to regenerate access token. Please try again"
     },
+    "SECRET": {
+      "LABEL": "Вебхук құпиясы",
+      "COPY": "Құпияны алмасу буферіне көшіру",
+      "COPY_SUCCESS": "Құпия алмасу буферіне көшірілді",
+      "TOGGLE": "Құпияны көрсету немесе жасыру",
+      "CREATED_DESC": "Бұл құпияны вебхук қолтаңбаларын тексеру үшін қолданыңыз. Қазір көшіріп алыңыз; кейін ол бот баптауларында да қолжетімді болады.",
+      "DONE": "Дайын",
+      "RESET_SUCCESS": "Вебхук құпиясы сәтті қайта жасалды",
+      "RESET_ERROR": "Вебхук құпиясын қайта жасау мүмкін болмады. Қайталап көріңіз"
+    },
     "FORM": {
       "AVATAR": {
         "LABEL": "Rorobot avatar"

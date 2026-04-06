@@ -30,8 +30,10 @@ describe AgentBotListener do
     context 'when agent bot is configured' do
       it 'sends message to agent bot' do
         create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        expect(AgentBots::WebhookJob).to receive(:perform_later).with(agent_bot.outgoing_url,
-                                                                      message.webhook_data.merge(event: 'message_created')).once
+        expect(AgentBots::WebhookJob).to receive(:perform_later).with(
+          agent_bot.outgoing_url, message.webhook_data.merge(event: 'message_created'),
+          :agent_bot_webhook, secret: agent_bot.secret, delivery_id: instance_of(String)
+        ).once
         listener.message_created(event)
       end
 
@@ -53,8 +55,14 @@ describe AgentBotListener do
         it 'sends message to both bots exactly once' do
           payload = message.webhook_data.merge(event: 'message_created')
 
-          expect(AgentBots::WebhookJob).to receive(:perform_later).with(agent_bot.outgoing_url, payload).once
-          expect(AgentBots::WebhookJob).to receive(:perform_later).with(conversation_bot.outgoing_url, payload).once
+          expect(AgentBots::WebhookJob).to receive(:perform_later).with(
+            agent_bot.outgoing_url, payload, :agent_bot_webhook,
+            secret: agent_bot.secret, delivery_id: instance_of(String)
+          ).once
+          expect(AgentBots::WebhookJob).to receive(:perform_later).with(
+            conversation_bot.outgoing_url, payload, :agent_bot_webhook,
+            secret: conversation_bot.secret, delivery_id: instance_of(String)
+          ).once
 
           listener.message_created(event)
         end
@@ -117,9 +125,11 @@ describe AgentBotListener do
 
       it 'sends webhook to the inbox agent bot with changed_attributes' do
         create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        expect(AgentBots::WebhookJob).to receive(:perform_later).with(agent_bot.outgoing_url,
-                                                                      conversation.webhook_data.merge(event: 'conversation_updated',
-                                                                                                      changed_attributes: nil)).once
+        expect(AgentBots::WebhookJob).to receive(:perform_later).with(
+          agent_bot.outgoing_url,
+          conversation.webhook_data.merge(event: 'conversation_updated', changed_attributes: nil),
+          :agent_bot_webhook, secret: agent_bot.secret, delivery_id: instance_of(String)
+        ).once
         listener.conversation_updated(event)
       end
     end
@@ -136,11 +146,14 @@ describe AgentBotListener do
 
       it 'sends webhook with changed_attributes to the assigned agent bot' do
         expected_changed_attributes = [{ 'assignee_agent_bot_id' => { previous_value: nil, current_value: agent_bot.id } }]
-        expect(AgentBots::WebhookJob).to receive(:perform_later).with(agent_bot.outgoing_url,
-                                                                      conversation.webhook_data.merge(
-                                                                        event: 'conversation_updated',
-                                                                        changed_attributes: expected_changed_attributes
-                                                                      )).once
+        expect(AgentBots::WebhookJob).to receive(:perform_later).with(
+          agent_bot.outgoing_url,
+          conversation.webhook_data.merge(
+            event: 'conversation_updated',
+            changed_attributes: expected_changed_attributes
+          ),
+          :agent_bot_webhook, secret: agent_bot.secret, delivery_id: instance_of(String)
+        ).once
         listener.conversation_updated(event)
       end
     end
@@ -274,7 +287,8 @@ describe AgentBotListener do
         expect(AgentBots::WebhookJob).to receive(:perform_later)
           .with(
             agent_bot.outgoing_url,
-            conversation.contact_inbox.webhook_data.merge(event: 'webwidget_triggered', event_info: { country: 'US' })
+            conversation.contact_inbox.webhook_data.merge(event: 'webwidget_triggered', event_info: { country: 'US' }),
+            :agent_bot_webhook, secret: agent_bot.secret, delivery_id: instance_of(String)
           ).once
 
         listener.webwidget_triggered(event)
