@@ -66,6 +66,19 @@ RSpec.describe Captain::BaseTaskService do
     end
   end
 
+  describe '#system_api_key' do
+    it 'returns the configured installation key' do
+      expect(service.send(:system_api_key)).to eq('test-key')
+    end
+
+    it 'returns nil when the installation key is absent' do
+      InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.destroy
+      service.instance_variable_set(:@system_api_key, nil)
+
+      expect(service.send(:system_api_key)).to be_nil
+    end
+  end
+
   describe '#conversation_messages' do
     let(:message1) { create(:message, conversation: conversation, message_type: :incoming, content: 'Hello', created_at: 1.hour.ago) }
     let(:message2) { create(:message, conversation: conversation, message_type: :outgoing, content: 'Hi there', created_at: 30.minutes.ago) }

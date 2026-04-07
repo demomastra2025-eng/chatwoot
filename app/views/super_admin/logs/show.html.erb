@@ -3,7 +3,7 @@
 <% end %>
 
 <%
-  grafana_logs_dashboard_url = '/monitoring/grafana/d/crafty-production-logs/crafty-production-logs?orgId=1&from=now-6h&to=now&refresh=15s'
+  grafana_logs_dashboard_url = '/monitoring/grafana/d/crafty-production-logs/crafty-production-logs?orgId=1&from=now-24h&to=now&refresh=10s'
   grafana_embedded_logs_dashboard_url = "#{grafana_logs_dashboard_url}&kiosk=tv"
 %>
 
@@ -14,12 +14,14 @@
         <%= content_for(:title) %>
       </h1>
       <p class="text-sm text-slate-700 mt-2">
-        Ready-made Loki views for Rails, gateway, Sidekiq, workers, Evolution API, and the monitoring stack.
+        Last 24 hours of structured gateway traffic, Rails/API events, Sidekiq failures, Captain and LLM signals, Evolution API activity, and monitoring stack logs.
       </p>
     </div>
 
     <div class="flex items-center gap-3">
       <%= link_to 'Monitoring', super_admin_monitoring_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Alerts', '/monitoring/grafana/alerting/list', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Sidekiq', sidekiq_web_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
       <%= link_to 'Open Logs Dashboard', grafana_logs_dashboard_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
       <%= link_to 'Grafana Explore', '/monitoring/grafana/explore', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
     </div>
@@ -27,6 +29,9 @@
 </header>
 
 <section class="main-content__body">
+  <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+    This view is tuned for live diagnosis: important incidents first, then gateway, Rails, background jobs, Captain/LLM activity, and raw service streams.
+  </div>
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
     <iframe
       src="<%= grafana_embedded_logs_dashboard_url %>"

@@ -3,7 +3,7 @@
 <% end %>
 
 <%
-  grafana_dashboard_url = '/monitoring/grafana/d/crafty-production-overview/crafty-production-overview?orgId=1&from=now-6h&to=now&refresh=30s'
+  grafana_dashboard_url = '/monitoring/grafana/d/crafty-production-overview/crafty-production-overview?orgId=1&from=now-24h&to=now&refresh=30s'
   grafana_embedded_dashboard_url = "#{grafana_dashboard_url}&kiosk=tv"
 %>
 
@@ -14,12 +14,13 @@
         <%= content_for(:title) %>
       </h1>
       <p class="text-sm text-slate-700 mt-2">
-        Overview for the production stack with ready health checks, infrastructure metrics, important incidents, and quick links to logs and queue operations.
+        Last 24 hours of production health, infrastructure signals, and important incidents, with direct paths to detailed logs, alerts, and queue operations.
       </p>
     </div>
 
     <div class="flex items-center gap-3">
       <%= link_to 'Logs', super_admin_logs_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Grafana Explore', '/monitoring/grafana/explore', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
       <%= link_to 'Alerts', '/monitoring/grafana/alerting/list', target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
       <%= link_to 'Sidekiq', sidekiq_web_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
       <%= link_to 'Open Dashboard', grafana_dashboard_url, target: '_blank', rel: 'noopener noreferrer', class: 'inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800' %>
@@ -29,6 +30,9 @@
 </header>
 
 <section class="main-content__body">
+  <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+    Monitoring keeps the broad operational picture in one place. For request-by-request and job-by-job debugging, use the Logs page or Grafana Explore.
+  </div>
   <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
     <iframe
       src="<%= grafana_embedded_dashboard_url %>"

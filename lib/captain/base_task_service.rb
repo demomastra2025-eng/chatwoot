@@ -145,6 +145,10 @@ class Captain::BaseTaskService
     @openai_hook ||= account.hooks.find_by(app_id: 'openai', status: 'enabled')
   end
 
+  def system_api_key
+    @system_api_key ||= InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
+  end
+
   def task_model
     Llm::Config.model_for(
       feature: llm_feature_key,

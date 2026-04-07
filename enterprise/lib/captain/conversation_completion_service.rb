@@ -56,7 +56,7 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
   # This is an internal operational evaluation, not a customer-triggered feature,
   # so it should not consume the customer's OpenAI credits on hosted platforms.
   # Falls back to the account hook for self-hosted deployments without a system key.
-  def api_key
+  def api_key(_provider_name = model_provider)
     @api_key ||= system_api_key.presence || openai_hook&.settings&.dig('api_key')
   end
 
