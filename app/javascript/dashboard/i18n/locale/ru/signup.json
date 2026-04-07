@@ -52,6 +52,13 @@
     },
     "SUBMIT": "Создать новый workspace",
     "HAVE_AN_ACCOUNT": "Уже есть workspace?",
+    "VERIFY_EMAIL": {
+      "TITLE": "Проверьте почту",
+      "DESCRIPTION": "Мы отправили ссылку для подтверждения на {email}. Перейдите по ссылке, чтобы подтвердить email и начать работу.",
+      "RESEND": "Отправить письмо повторно",
+      "RESEND_SUCCESS": "Письмо для подтверждения отправлено. Проверьте почту.",
+      "RESEND_ERROR": "Не удалось отправить письмо для подтверждения. Попробуйте еще раз."
+    },
     "GET_STARTED": "Начните работу с OneLink",
     "TERMS_ACCEPT": "Создавая учетную запись, вы соглашаетесь с нашими <a href=\"https://www.chatwoot.com/terms\">Т и С</a> и <a href=\"https://www.chatwoot.com/privacy-policy\">политикой конфиденциальности</a>"
   }
