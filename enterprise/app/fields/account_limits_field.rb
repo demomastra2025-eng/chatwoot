@@ -3,20 +3,20 @@ require 'administrate/field/base'
 class AccountLimitsField < Administrate::Field::Base
   LIMIT_DEFINITIONS = {
     agents: {
-      label: 'Agents',
-      hint: 'Maximum agents in this account.'
+      label: 'Users',
+      hint: 'Maximum users in this account.'
     },
     inboxes: {
-      label: 'Inboxes',
-      hint: 'Maximum total inboxes in this account.'
+      label: 'Channels',
+      hint: 'Maximum total channels in this account.'
     },
     conversations: {
       label: 'Conversations',
       hint: 'Maximum new conversations allowed during the current monthly window.'
     },
     non_web_inboxes: {
-      label: 'Connected channels',
-      hint: 'Maximum inboxes excluding website live chat inboxes.'
+      label: 'Main channels',
+      hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, and API channels.'
     },
     storage_bytes: {
       label: 'Storage quota',
@@ -36,8 +36,8 @@ class AccountLimitsField < Administrate::Field::Base
       hint: 'Allowed Captain token usage in the current quota window.'
     },
     emails: {
-      label: 'Emails per day',
-      hint: 'Daily outbound email quota for transcripts and notifications.'
+      label: 'Outbound emails per day',
+      hint: 'Daily outbound email quota for account emails such as transcripts, notifications, and automation emails.'
     }
   }.freeze
 

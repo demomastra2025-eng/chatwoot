@@ -21,7 +21,7 @@ module Enterprise::Account
       agents: agent_usage_summary(consumed: users.count),
       inboxes: usage_limit_summary(:inboxes, consumed: inboxes.count),
       conversations: usage_limit_summary(:conversations, consumed: conversations_this_month_count),
-      non_web_inboxes: usage_limit_summary(:non_web_inboxes, consumed: non_web_inboxes_count),
+      non_web_inboxes: usage_limit_summary(:non_web_inboxes, consumed: main_channels_count),
       emails: email_usage_summary(consumed: emails_sent_today),
       storage: usage_limits[:storage],
       captain: usage_limits[:captain]

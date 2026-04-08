@@ -113,6 +113,21 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.ordered.last.id).to eq(created_pipeline.id)
   end
 
+  it 'returns deal counts in pipeline payloads' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    stage = pipeline.stages.first
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+
+    get path, headers: headers, as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    sales_pipeline = payload.find { |item| item['id'] == pipeline.id }
+
+    expect(response).to have_http_status(:ok)
+    expect(sales_pipeline['deal_count']).to eq(1)
+  end
+
   it 'deletes an archived pipeline without deals' do
     pipeline = create(:crm_pipeline, account: account, active: false, default: false)
     create(:crm_stage, account: account, pipeline: pipeline)

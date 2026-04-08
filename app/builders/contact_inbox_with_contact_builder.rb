@@ -108,6 +108,7 @@ class ContactInboxWithContactBuilder
   def find_contact_by_phone_number(phone_number)
     return if phone_number.blank?
 
-    account.contacts.find_by(phone_number: phone_number)
+    normalized_phone_number = ::Contacts::PhoneNumberNormalizer.normalize(phone_number)
+    account.contacts.find_by(phone_number: normalized_phone_number || phone_number)
   end
 end

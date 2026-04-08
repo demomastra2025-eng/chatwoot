@@ -270,6 +270,7 @@ defineExpose({
           <PhoneNumberInput
             v-else-if="item.key === 'PHONE_NUMBER'"
             v-model="getFormBinding(item.key).value"
+            default-country="KZ"
             :placeholder="item.placeholder"
             :show-border="isDetailsView"
           />

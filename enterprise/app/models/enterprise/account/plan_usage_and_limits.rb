@@ -5,6 +5,11 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   CAPTAIN_RESPONSES_USAGE = 'captain_responses_usage'.freeze
   CAPTAIN_DOCUMENTS_USAGE = 'captain_documents_usage'.freeze
   CAPTAIN_TOKENS_USAGE = 'captain_tokens_usage'.freeze
+  MAIN_CHANNEL_TYPES = %w[
+    Channel::Api
+    Channel::Whatsapp
+    Channel::WhatsappWeb
+  ].freeze
 
   def usage_limits
     {
@@ -93,8 +98,8 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     conversations.where('created_at > ?', 30.days.ago).count
   end
 
-  def non_web_inboxes_count
-    inboxes.where.not(channel_type: Channel::WebWidget.to_s).count
+  def main_channels_count
+    inboxes.where(channel_type: MAIN_CHANNEL_TYPES).count
   end
 
   def storage_usage_bytes

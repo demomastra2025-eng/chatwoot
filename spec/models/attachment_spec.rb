@@ -187,6 +187,42 @@ RSpec.describe Attachment do
     end
   end
 
+  describe 'audio transcription enqueue' do
+    before do
+      allow(message.account).to receive(:feature_enabled?).and_call_original
+      allow(message.account).to receive(:feature_enabled?).with('captain_integration').and_return(captain_enabled)
+    end
+
+    let(:captain_enabled) { true }
+
+    def build_audio_attachment
+      message.attachments.create!(
+        account_id: message.account_id,
+        file_type: :audio,
+        file: fixture_file_upload('public/audio/widget/ding.mp3')
+      )
+    end
+
+    it 'enqueues transcription when captain and audio transcriptions are enabled' do
+      message.account.update!(settings: message.account.settings.merge('audio_transcriptions' => true))
+
+      expect { build_audio_attachment }.to have_enqueued_job(Messages::AudioTranscriptionJob).on_queue('audio_transcription')
+    end
+
+    it 'does not enqueue transcription when audio transcriptions are disabled' do
+      message.account.update!(settings: message.account.settings.merge('audio_transcriptions' => false))
+
+      expect { build_audio_attachment }.not_to have_enqueued_job(Messages::AudioTranscriptionJob)
+    end
+
+    it 'does not enqueue transcription when captain is disabled' do
+      message.account.update!(settings: message.account.settings.merge('audio_transcriptions' => true))
+      allow(message.account).to receive(:feature_enabled?).with('captain_integration').and_return(false)
+
+      expect { build_audio_attachment }.not_to have_enqueued_job(Messages::AudioTranscriptionJob)
+    end
+  end
+
   describe 'file size validation' do
     let(:attachment) { message.attachments.new(account_id: message.account_id, file_type: :image) }
 

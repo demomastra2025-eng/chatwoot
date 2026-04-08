@@ -30,6 +30,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(contact.identifier).to eq('720914402646')
     expect(contact.phone_number).to eq('+77015235543')
     expect(contact.email).to eq('patient@example.com')
+    expect(contact.additional_attributes['country_code']).to eq('KZ')
+    expect(contact.additional_attributes['country']).to eq('Kazakhstan')
     expect(contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(contact.custom_attributes['secondary_phones']).to eq(['+77771112233'])
   end

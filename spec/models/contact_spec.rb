@@ -64,6 +64,43 @@ RSpec.describe Contact do
       expect(contact.update!(phone_number: '+12312312321')).to be true
       expect(contact.phone_number).to eq '+12312312321'
     end
+
+    it 'normalizes Kazakhstan phone numbers to compact E.164' do
+      contact = create(
+        :contact,
+        phone_number: '87011234567',
+        additional_attributes: { country_code: 'KZ' }
+      )
+
+      expect(contact.phone_number).to eq '+77011234567'
+    end
+
+    it 'normalizes Kazakhstan phone numbers starting with 8 even with formatting characters' do
+      contact = create(
+        :contact,
+        phone_number: '8 (701) 123-45-67',
+        additional_attributes: { country_code: 'KZ' }
+      )
+
+      expect(contact.phone_number).to eq '+77011234567'
+    end
+
+    it 'normalizes formatted phone numbers using the contact country code' do
+      contact = create(
+        :contact,
+        phone_number: '(415) 555-2671',
+        additional_attributes: { country_code: 'US' }
+      )
+
+      expect(contact.phone_number).to eq '+14155552671'
+    end
+
+    it 'does not guess a country when the phone number is local and no country is provided' do
+      contact = build(:contact, phone_number: '87011234567')
+
+      expect(contact).not_to be_valid
+      expect(contact.errors[:phone_number]).to be_present
+    end
   end
 
   context 'when email format' do

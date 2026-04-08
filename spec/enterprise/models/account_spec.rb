@@ -199,6 +199,23 @@ RSpec.describe Account, type: :model do
       )
     end
 
+    it 'counts only main channels in the main channels usage summary' do
+      create(:channel_api, account: account)
+      create(:channel_whatsapp, account: account)
+      create(:channel_whatsapp_web, account: account)
+      create(:channel_facebook_page, account: account)
+      create(:channel_tiktok, account: account)
+      create(:channel_email, account: account)
+      create(:channel_telegram, account: account)
+      create(:channel_instagram, account: account)
+      create(:channel_twilio_sms, account: account)
+      create(:channel_sms, account: account)
+
+      expect(account.main_channels_count).to eq(3)
+      expect(account.account_usage_overview[:inboxes][:consumed]).to eq(account.inboxes.count)
+      expect(account.account_usage_overview[:non_web_inboxes][:consumed]).to eq(3)
+    end
+
     it 'returns limits based on subscription' do
       account.update(limits: { agents: 10 }, custom_attributes: { subscribed_quantity: 5 })
       expect(account.usage_limits[:agents]).to eq(5)

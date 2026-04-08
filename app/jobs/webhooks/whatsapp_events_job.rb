@@ -1,5 +1,5 @@
 class Webhooks::WhatsappEventsJob < ApplicationJob
-  queue_as :low
+  queue_as :whatsapp_inbound
 
   def perform(params = {})
     channel = find_channel_from_whatsapp_business_payload(params)

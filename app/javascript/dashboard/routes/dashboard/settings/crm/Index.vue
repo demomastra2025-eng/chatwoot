@@ -347,6 +347,19 @@ const closeDeletePipelineDialog = () => {
   pipelinePendingDelete.value = null;
 };
 
+const canDeletePipeline = pipeline =>
+  Boolean(pipeline) && Number(pipeline.dealCount || 0) === 0;
+
+const deletePipelineTitle = pipeline => {
+  if (!pipeline) {
+    return t('CRM.SETTINGS.PIPELINES.DELETE');
+  }
+
+  return canDeletePipeline(pipeline)
+    ? t('CRM.SETTINGS.PIPELINES.DELETE')
+    : t('CRM.ERRORS.PIPELINE_HAS_DEALS');
+};
+
 const deletePipeline = async () => {
   if (!pipelinePendingDelete.value) return;
 
@@ -1033,7 +1046,8 @@ onMounted(async () => {
                         color="ruby"
                         variant="ghost"
                         icon="i-lucide-trash"
-                        :title="$t('CRM.SETTINGS.PIPELINES.DELETE')"
+                        :disabled="!canDeletePipeline(row)"
+                        :title="deletePipelineTitle(row)"
                         @click="openDeletePipelineDialog(row)"
                       />
                     </div>

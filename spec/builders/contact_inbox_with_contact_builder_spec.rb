@@ -96,6 +96,22 @@ describe ContactInboxWithContactBuilder do
       expect(contact_inbox.contact.id).to be(contact.id)
     end
 
+    it 'doesnot create contact if normalized phone number matches an existing contact' do
+      kz_contact = create(:contact, account: account, phone_number: '+77011234567')
+
+      contact_inbox = described_class.new(
+        source_id: '77011234567',
+        inbox: inbox,
+        contact_attributes: {
+          name: 'Contact',
+          phone_number: '+7 701 123 4567',
+          email: 'testemail@example.com'
+        }
+      ).perform
+
+      expect(contact_inbox.contact.id).to be(kz_contact.id)
+    end
+
     it 'reuses contact if it exists with the same source_id in a Facebook inbox when creating for Instagram inbox' do
       instagram_source_id = '123456789'
 

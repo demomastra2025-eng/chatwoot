@@ -14,12 +14,20 @@ module Enterprise::Concerns::Inbox
   private
 
   def ensure_within_non_web_inbox_limit
-    return if web_widget?
+    return unless account.main_channels_count >= allowed_channel_limit
 
+    errors.add(:base, 'Account main channel limit exceeded')
+  end
+
+  def allowed_channel_limit
     allowed = account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
-    return if allowed >= ChatwootApp.max_limit.to_i
-    return if account.non_web_inboxes_count < allowed
+    return ChatwootApp.max_limit.to_i if allowed >= ChatwootApp.max_limit.to_i
+    return ChatwootApp.max_limit.to_i unless main_channel?
 
-    errors.add(:base, 'Account non-web inbox limit exceeded')
+    allowed
+  end
+
+  def main_channel?
+    Enterprise::Account::PlanUsageAndLimits::MAIN_CHANNEL_TYPES.include?(channel_type)
   end
 end

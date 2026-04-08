@@ -409,17 +409,17 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
-      it 'does not create a non-web inbox when the account non-web inbox limit is reached' do
+      it 'does not create a main channel inbox when the account main channel limit is reached' do
         account.update!(limits: { non_web_inboxes: 1 })
         create(:channel_api, account: account)
 
         post "/api/v1/accounts/#{account.id}/inboxes",
              headers: admin.create_new_auth_token,
-             params: { name: 'Email Inbox', channel: { type: 'email', email: 'test@test.com' } },
+             params: { name: 'API Inbox 2', channel: { type: 'api', webhook_url: 'http://test2.com' } },
              as: :json
 
         expect(response).to have_http_status(:payment_required)
-        expect(response.parsed_body['error']).to include('Account non-web inbox limit exceeded')
+        expect(response.parsed_body['error']).to include('Account main channel limit exceeded')
       end
 
       it 'creates a whatsapp web inbox when administrator' do

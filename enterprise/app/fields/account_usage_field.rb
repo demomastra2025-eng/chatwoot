@@ -2,11 +2,11 @@ require 'administrate/field/base'
 
 class AccountUsageField < Administrate::Field::Base
   LABELS = {
-    agents: 'Agents',
-    inboxes: 'Inboxes',
+    agents: 'Users',
+    inboxes: 'Channels',
     conversations: 'Conversations',
-    non_web_inboxes: 'Connected channels',
-    emails: 'Emails today',
+    non_web_inboxes: 'Main channels',
+    emails: 'Outbound emails today',
     storage: 'Storage',
     captain_documents: 'Captain documents',
     captain_responses: 'Captain responses',

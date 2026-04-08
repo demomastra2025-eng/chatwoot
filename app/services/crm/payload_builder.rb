@@ -10,6 +10,7 @@ module Crm::PayloadBuilder
       position: pipeline.position,
       active: pipeline.active,
       default: pipeline.default,
+      deal_count: pipeline.deals.count,
       stages: include_stages ? pipeline.stages.map { |crm_stage| stage(crm_stage) } : nil,
       created_at: pipeline.created_at&.iso8601,
       updated_at: pipeline.updated_at&.iso8601

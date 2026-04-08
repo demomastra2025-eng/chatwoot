@@ -186,6 +186,18 @@ RSpec.describe Account do
     end
 
     context 'when using store_accessor' do
+      it 'defaults audio_transcriptions to false when settings are empty' do
+        expect(account.audio_transcriptions).to eq(false)
+        expect(account.settings['audio_transcriptions']).to eq(false)
+      end
+
+      it 'normalizes nil audio_transcriptions to false' do
+        account.update!(settings: account.settings.merge('audio_transcriptions' => nil))
+
+        expect(account.reload.audio_transcriptions).to eq(false)
+        expect(account.settings['audio_transcriptions']).to eq(false)
+      end
+
       it 'correctly gets and sets auto_resolve_after' do
         account.auto_resolve_after = 30
         expect(account.auto_resolve_after).to eq(30)

@@ -67,7 +67,7 @@ class Contact < ApplicationRecord
   has_many :messages, as: :sender, dependent: :destroy_async
   has_many :notes, dependent: :destroy_async
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
-  before_validation :prepare_contact_attributes
+  before_validation :prepare_contact_attributes, :normalize_phone_number
   after_create_commit :dispatch_create_event, :ip_lookup
   after_update_commit :dispatch_update_event
   after_destroy_commit :dispatch_destroy_event
@@ -224,6 +224,16 @@ class Contact < ApplicationRecord
     prepare_jsonb_attributes
   end
 
+  def normalize_phone_number
+    return self.phone_number = nil if phone_number.blank?
+
+    normalized_phone_number = ::Contacts::PhoneNumberNormalizer.normalize(
+      phone_number,
+      default_country: phone_number_default_country
+    )
+    self.phone_number = normalized_phone_number if normalized_phone_number.present?
+  end
+
   def prepare_email_attribute
     # So that the db unique constraint won't throw error when email is ''
     self.email = email.present? ? email.downcase : nil
@@ -232,6 +242,15 @@ class Contact < ApplicationRecord
   def prepare_jsonb_attributes
     self.additional_attributes = {} if additional_attributes.blank?
     self.custom_attributes = {} if custom_attributes.blank?
+  end
+
+  def phone_number_default_country
+    additional_attributes_country_code =
+      additional_attributes.with_indifferent_access[:country_code].presence
+    legacy_country_code = additional_attributes.with_indifferent_access[:country].to_s
+    legacy_country_code = nil unless legacy_country_code.match?(/\A[a-z]{2}\z/i)
+
+    country_code.presence || additional_attributes_country_code || legacy_country_code
   end
 
   def sync_contact_attributes

@@ -51,6 +51,11 @@ function placeholderToken(variable) {
   return `{{${variable}}}`;
 }
 
+const exampleVariables = Object.freeze({
+  firstVariable: placeholderToken(1),
+  secondVariable: placeholderToken(2),
+});
+
 const languageOptions = computed(() =>
   languages.map(({ id, name }) => ({
     value: id,
@@ -444,7 +449,12 @@ defineExpose({
             {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.BODY_SECTION') }}
           </p>
           <p class="text-sm text-n-slate-11">
-            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT') }}
+            {{
+              t(
+                'WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT',
+                exampleVariables
+              )
+            }}
           </p>
         </div>
 
@@ -454,7 +464,10 @@ defineExpose({
           auto-height
           max-height="18rem"
           :placeholder="
-            t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BODY_PLACEHOLDER')
+            t(
+              'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BODY_PLACEHOLDER',
+              exampleVariables
+            )
           "
         />
 
@@ -503,7 +516,10 @@ defineExpose({
           :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.HEADER_TEXT')"
           auto-height
           :placeholder="
-            t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.HEADER_PLACEHOLDER')
+            t(
+              'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.HEADER_PLACEHOLDER',
+              exampleVariables
+            )
           "
         />
 
@@ -644,7 +660,10 @@ defineExpose({
               type="url"
               :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_URL')"
               :placeholder="
-                t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_URL_PLACEHOLDER')
+                t(
+                  'WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.BUTTON_URL_PLACEHOLDER',
+                  exampleVariables
+                )
               "
             />
             <Input

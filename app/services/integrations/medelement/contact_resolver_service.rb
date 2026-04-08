@@ -131,6 +131,10 @@ class Integrations::Medelement::ContactResolverService
     contact.email = safe_unique_value(contact, :email, email) || contact.email
     contact.phone_number = safe_unique_value(contact, :phone_number, phone) || contact.phone_number
     contact.identifier = safe_unique_value(contact, :identifier, iin) || contact.identifier
+    contact.additional_attributes = (contact.additional_attributes || {}).deep_stringify_keys.reverse_merge(
+      'country' => 'Kazakhstan',
+      'country_code' => 'KZ'
+    )
     contact.custom_attributes = contact.custom_attributes.merge(
       'address' => patient['FULL_ADDRESS'].to_s.presence,
       'birth_date' => normalize_birth_date(patient['BIRTHDAY']),

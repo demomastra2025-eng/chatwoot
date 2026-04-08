@@ -16,7 +16,7 @@ module BillingHelper
   end
 
   def non_web_inboxes(account)
-    account.inboxes.where.not(channel_type: Channel::WebWidget.to_s).count
+    account.main_channels_count
   end
 
   def agents(account)

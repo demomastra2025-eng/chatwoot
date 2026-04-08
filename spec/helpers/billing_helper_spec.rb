@@ -29,12 +29,12 @@ RSpec.describe BillingHelper do
       expect(helper.send(:conversations_this_month, account)).to eq(5)
     end
 
-    it 'counts only non web widget channels' do
-      create(:inbox, account: account, channel_type: Channel::WebWidget)
+    it 'counts only main channels' do
+      create(:channel_email, account: account)
       expect(account.inboxes.count).to eq(1)
       expect(helper.send(:non_web_inboxes, account)).to eq(0)
 
-      create(:inbox, account: account, channel_type: Channel::Api)
+      create(:channel_api, account: account)
       expect(account.inboxes.count).to eq(2)
       expect(helper.send(:non_web_inboxes, account)).to eq(1)
     end

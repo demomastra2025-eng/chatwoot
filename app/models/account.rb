@@ -180,6 +180,7 @@ class Account < ApplicationRecord
   scope :with_auto_resolve, -> { where("(settings ->> 'auto_resolve_after')::int IS NOT NULL") }
 
   before_validation :validate_limit_keys
+  before_validation :normalize_default_settings
   after_create_commit :notify_creation
   after_destroy :remove_account_sequences
 
@@ -248,6 +249,11 @@ class Account < ApplicationRecord
 
   def validate_limit_keys
     # method overridden in enterprise module
+  end
+
+  def normalize_default_settings
+    self.settings = (settings || {}).dup
+    settings['audio_transcriptions'] = false if settings['audio_transcriptions'].nil?
   end
 
   def validate_reporting_timezone

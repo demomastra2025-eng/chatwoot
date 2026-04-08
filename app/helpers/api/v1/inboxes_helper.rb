@@ -102,13 +102,13 @@ module Api::V1::InboxesHelper
       return
     end
 
-    return unless creating_non_web_inbox?
-    return if Current.account.non_web_inboxes_count < Current.account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
+    return unless creating_main_channel_inbox?
+    return if Current.account.main_channels_count < Current.account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
 
-    render_payment_required('Account non-web inbox limit exceeded. Upgrade to a higher plan')
+    render_payment_required('Account main channel limit exceeded. Upgrade to a higher plan')
   end
 
-  def creating_non_web_inbox?
-    permitted_params[:channel][:type] != 'web_widget'
+  def creating_main_channel_inbox?
+    %w[api whatsapp whatsapp_web].include?(permitted_params[:channel][:type])
   end
 end

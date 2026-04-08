@@ -538,7 +538,7 @@
     "ACCOUNT_USAGE": {
       "TITLE": "Account usage",
       "DESCRIPTION": "Track how much of your account quota has already been consumed.",
-      "NON_WEB_INBOXES": "Connected channels",
+      "NON_WEB_INBOXES": "Main channels",
       "STORAGE": "Storage"
     },
     "CAPTAIN": {
