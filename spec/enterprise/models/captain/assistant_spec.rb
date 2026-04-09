@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
+  describe 'validations' do
+    it { is_expected.to validate_length_of(:description).is_at_most(2000) }
+  end
+
   describe 'tool access' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
