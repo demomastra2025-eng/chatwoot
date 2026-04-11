@@ -40,7 +40,7 @@ const props = defineProps({
   },
   descriptionMaxLength: {
     type: Number,
-    default: 2000,
+    default: 10000,
   },
   showFeatureFlags: {
     type: Boolean,

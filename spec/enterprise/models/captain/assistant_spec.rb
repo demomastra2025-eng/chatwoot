@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
   describe 'validations' do
-    it { is_expected.to validate_length_of(:description).is_at_most(2000) }
+    it { is_expected.to validate_length_of(:description).is_at_most(10_000) }
   end
 
   describe 'tool access' do

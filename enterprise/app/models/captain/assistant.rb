@@ -49,7 +49,7 @@ class Captain::Assistant < ApplicationRecord
 
   validates :name, presence: true
   validates :description, presence: true
-  validates :description, length: { maximum: 2000 }
+  validates :description, length: { maximum: 10_000 }
   validates :account_id, presence: true
   validates :usage_mode, presence: true, inclusion: { in: %w[external_agent internal_assistant] }
   validates :message_collapse_window_seconds,
