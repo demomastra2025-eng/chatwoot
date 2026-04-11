@@ -7,12 +7,8 @@ class WhatsappWeb::ContactSyncService
     return if ignored_remote_jid?
     return if source_id.blank?
 
-    contact_inbox = ContactInboxWithContactBuilder.new(
-      inbox: channel.inbox,
-      source_id: source_id,
-      contact_attributes: create_contact_attributes,
-      skip_runtime_events: true
-    ).perform
+    contact_inbox = find_or_create_contact_inbox
+    return if contact_inbox.blank?
 
     sync_existing_contact(contact_inbox.contact)
     sync_avatar(contact_inbox.contact)
@@ -23,6 +19,17 @@ class WhatsappWeb::ContactSyncService
 
   def raw_remote_jid
     @raw_remote_jid ||= contact_payload[:remoteJid].to_s.presence
+  end
+
+  def find_or_create_contact_inbox
+    ContactInboxWithContactBuilder.new(
+      inbox: channel.inbox,
+      source_id: source_id,
+      contact_attributes: create_contact_attributes,
+      skip_runtime_events: true
+    ).perform
+  rescue ActiveRecord::RecordInvalid => e
+    recover_existing_contact_inbox!(e)
   end
 
   def canonical_remote_jid
@@ -207,6 +214,38 @@ class WhatsappWeb::ContactSyncService
 
   def identifier_conflict?(error, updates)
     updates[:identifier].present? && error.record.errors.of_kind?(:identifier, :taken)
+  end
+
+  def recover_existing_contact_inbox!(error)
+    raise unless recoverable_builder_conflict?(error)
+
+    contact = conflicting_existing_contact
+    raise error if contact.blank?
+
+    contact.skip_runtime_events = true
+    sync_existing_contact(contact)
+
+    ContactInboxBuilder.new(
+      contact: contact,
+      inbox: channel.inbox,
+      source_id: source_id
+    ).perform
+  end
+
+  def recoverable_builder_conflict?(error)
+    return false unless error.record.is_a?(Contact)
+
+    error.record.errors.of_kind?(:phone_number, :taken) ||
+      error.record.errors.of_kind?(:identifier, :taken)
+  end
+
+  def conflicting_existing_contact
+    @conflicting_existing_contact ||= begin
+      account_contacts = channel.inbox.account.contacts
+
+      account_contacts.find_by(identifier: contact_identifier).presence ||
+        account_contacts.find_by(phone_number: phone_number).presence
+    end
   end
 
   def merge_identifier_contact!(target_contact:)

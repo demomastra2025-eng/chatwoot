@@ -301,7 +301,10 @@ describe('#actions', () => {
     it('updates the inbox when the qr refresh succeeds', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });
 
-      const response = await actions.refreshWhatsappWebQr({ commit }, 123);
+      const response = await actions.refreshWhatsappWebQr(
+        { commit, state: { records: [] } },
+        123
+      );
 
       expect(response).toEqual(inboxList[0]);
       expect(axios.post).toHaveBeenCalledWith(
@@ -315,17 +318,39 @@ describe('#actions', () => {
     });
 
     it('supports silent status sync without forcing a new qr code', async () => {
-      axios.post.mockResolvedValue({ data: inboxList[0] });
+      const existingInbox = {
+        id: 123,
+        additional_attributes: {
+          evolution: {
+            qrcode: { base64: 'existing-qr' },
+            status: 'waiting_for_qr',
+          },
+        },
+      };
+      const compactStatusPayload = {
+        id: 123,
+        additional_attributes: {
+          evolution: {
+            status: 'connected',
+            connection_state: 'open',
+          },
+        },
+      };
+      axios.post.mockResolvedValue({ data: compactStatusPayload });
 
-      await actions.refreshWhatsappWebQr(
-        { commit },
+      const response = await actions.refreshWhatsappWebQr(
+        { commit, state: { records: [existingInbox] } },
         { inboxId: 123, statusOnly: true }
       );
 
       expect(axios.post).toHaveBeenCalledWith(
         '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
-        { status_only: true }
+        { status_only: true, include_qr_code: false }
       );
+      expect(response.additional_attributes.evolution.qrcode).toEqual({
+        base64: 'existing-qr',
+      });
+      expect(commit).toHaveBeenCalledWith(types.default.EDIT_INBOXES, response);
     });
 
     it('throws a readable error when the qr refresh fails', async () => {
@@ -334,7 +359,7 @@ describe('#actions', () => {
       });
 
       await expect(
-        actions.refreshWhatsappWebQr({ commit }, 123)
+        actions.refreshWhatsappWebQr({ commit, state: { records: [] } }, 123)
       ).rejects.toThrow('Unable to refresh QR code');
     });
 
@@ -347,11 +372,11 @@ describe('#actions', () => {
       );
 
       const firstRequest = actions.refreshWhatsappWebQr(
-        { commit },
+        { commit, state: { records: [] } },
         { inboxId: 123, statusOnly: true }
       );
       const secondRequest = actions.refreshWhatsappWebQr(
-        { commit },
+        { commit, state: { records: [] } },
         { inboxId: 123, statusOnly: true }
       );
 

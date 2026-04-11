@@ -205,4 +205,30 @@ RSpec.describe WhatsappWeb::ContactSyncService do
 
     expect(existing_contact.reload.additional_attributes['profile_pic_url']).to eq('https://cdn.example.com/avatar-2.jpg')
   end
+
+  it 'recovers from contact creation races when the phone number is already taken' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    existing_contact = create(:contact, account: channel.account, name: 'Existing', phone_number: '+15551234567')
+    invalid_contact = channel.account.contacts.new(name: 'Alice', phone_number: '+15551234567')
+    invalid_contact.valid?
+    invalid_error = ActiveRecord::RecordInvalid.new(invalid_contact)
+
+    builder = instance_double(ContactInboxWithContactBuilder)
+    allow(ContactInboxWithContactBuilder).to receive(:new).and_return(builder)
+    allow(builder).to receive(:perform).and_raise(invalid_error)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15551234567@s.whatsapp.net',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    expect(contact_inbox).to be_present
+    expect(contact_inbox.contact_id).to eq(existing_contact.id)
+    expect(contact_inbox.source_id).to eq('15551234567')
+    expect(existing_contact.reload.name).to eq('Alice')
+  end
 end

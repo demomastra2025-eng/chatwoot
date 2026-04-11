@@ -260,6 +260,7 @@ const syncWhatsappWebStatuses = async () => {
       store.dispatch('inboxes/refreshWhatsappWebQr', {
         inboxId: inbox.id,
         statusOnly: true,
+        includeQrCode: false,
       })
     )
   );

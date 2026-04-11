@@ -399,7 +399,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     end
   end
 
-  def evolution_state_payload
+  def evolution_state_payload(include_qr_code: true)
     payload = {
       'status' => lifecycle_state,
       'connection_state' => connection_state,
@@ -428,7 +428,7 @@ class Channel::WhatsappWeb < ApplicationRecord
       'qr_generated_at' => sync_state_payload['qr_generated_at']
     }
 
-    payload['qrcode'] = qr_code if qr_code.present?
+    payload['qrcode'] = qr_code if include_qr_code && qr_code.present?
     payload['service_user'] = provider_config['service_user'] if provider_config['service_user'].present?
     payload.compact
   end

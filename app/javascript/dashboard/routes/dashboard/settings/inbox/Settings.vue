@@ -611,6 +611,7 @@ export default {
         await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
           inboxId: this.currentInboxId,
           statusOnly: true,
+          includeQrCode: true,
         });
       } catch (error) {
         // Diagnostics should stay non-blocking in settings.

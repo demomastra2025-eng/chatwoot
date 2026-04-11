@@ -18,6 +18,10 @@ module Captain
         array :notes, of: :string, description: 'Generated CRM notes'
       end
 
+      class SearchTermCollection < RubyLLM::Schema
+        array :search_terms, of: :string, description: 'Generated help center search terms'
+      end
+
       class ContactAttributeItem < RubyLLM::Schema
         string :attribute, description: 'Contact attribute key'
 

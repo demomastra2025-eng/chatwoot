@@ -32,6 +32,30 @@ export const state = {
 
 const whatsappWebRefreshRequests = new Map();
 
+const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox) => {
+  if (!existingInbox) {
+    return nextInbox;
+  }
+
+  const existingAdditionalAttributes = existingInbox.additional_attributes || {};
+  const nextAdditionalAttributes = nextInbox.additional_attributes || {};
+  const existingEvolution = existingAdditionalAttributes.evolution || {};
+  const nextEvolution = nextAdditionalAttributes.evolution || {};
+
+  return {
+    ...existingInbox,
+    ...nextInbox,
+    additional_attributes: {
+      ...existingAdditionalAttributes,
+      ...nextAdditionalAttributes,
+      evolution: {
+        ...existingEvolution,
+        ...nextEvolution,
+      },
+    },
+  };
+};
+
 export const getters = {
   getInboxes($state) {
     return $state.records;
@@ -376,14 +400,17 @@ export const actions = {
       throw new Error(error);
     }
   },
-  refreshWhatsappWebQr: async ({ commit }, payload) => {
+  refreshWhatsappWebQr: async ({ commit, state }, payload) => {
     const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
     const isStatusOnly =
       typeof payload === 'object' && payload?.statusOnly === true;
+    const includeQrCode =
+      typeof payload === 'object' && payload?.includeQrCode === true;
     const requestPayload =
       typeof payload === 'object' && payload !== null
         ? {
             status_only: isStatusOnly,
+            include_qr_code: includeQrCode,
           }
         : {};
     const requestKey = `${inboxId}:${isStatusOnly ? 'status' : 'refresh'}`;
@@ -394,8 +421,15 @@ export const actions = {
 
     const request = InboxesAPI.refreshWhatsappWebQr(inboxId, requestPayload)
       .then(response => {
-        commit(types.default.EDIT_INBOXES, response.data);
-        return response.data;
+        const existingInbox = state.records.find(
+          record => record.id === response.data.id
+        );
+        const inboxPayload = isStatusOnly
+          ? mergeWhatsappWebInboxPayload(existingInbox, response.data)
+          : response.data;
+
+        commit(types.default.EDIT_INBOXES, inboxPayload);
+        return inboxPayload;
       })
       .catch(error => {
         throw new Error(error?.response?.data?.error || error.message);

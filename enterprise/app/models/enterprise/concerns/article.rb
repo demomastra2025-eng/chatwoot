@@ -43,41 +43,27 @@ module Enterprise::Concerns::Article
   end
 
   def generate_and_save_article_seach_terms
-    terms = generate_article_search_terms
+    preserve_existing_embeddings = article_embeddings.exists?
+    terms = Captain::Llm::ArticleSearchTermsService.new(self).generate
+    return if terms.blank? && preserve_existing_embeddings
+
+    terms = fallback_article_search_terms if terms.blank?
+    return if terms.blank?
+
     article_embeddings.destroy_all
     terms.each { |term| article_embeddings.create!(term: term) }
   end
 
-  def article_to_search_terms_prompt
-    <<~SYSTEM_PROMPT_MESSAGE
-      For the provided article content, generate potential search query keywords and snippets that can be used to generate the embeddings.
-      Ensure the search terms are as diverse as possible but capture the essence of the article and are super related to the articles.
-      Don't return any terms if there aren't any terms of relevance.
-      Always return results in valid JSON of the following format
-      {
-        "search_terms": []
-      }
-    SYSTEM_PROMPT_MESSAGE
-  end
-
-  def generate_article_search_terms
-    messages = [
-      { role: 'system', content: article_to_search_terms_prompt },
-      { role: 'user', content: "title: #{title} \n description: #{description} \n content: #{content}" }
-    ]
-    headers = { 'Content-Type' => 'application/json', 'Authorization' => "Bearer #{ENV.fetch('OPENAI_API_KEY', nil)}" }
-    body = { model: 'gpt-4o', messages: messages, response_format: { type: 'json_object' } }.to_json
-    Rails.logger.info "Requesting Chat GPT with body: #{body}"
-    response = HTTParty.post(openai_api_url, headers: headers, body: body)
-    Rails.logger.info "Chat GPT response: #{response.body}"
-    JSON.parse(response.parsed_response['choices'][0]['message']['content'])['search_terms']
-  end
-
   private
 
-  def openai_api_url
-    endpoint = InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_ENDPOINT')&.value || 'https://api.openai.com/'
-    endpoint = endpoint.chomp('/')
-    "#{endpoint}/v1/chat/completions"
+  def fallback_article_search_terms
+    content_text = Loofah.fragment(content.to_s).text.squish
+    content_excerpt = content_text.split.take(40).join(' ').presence
+
+    [
+      title.to_s.squish.presence,
+      description.to_s.squish.presence,
+      content_excerpt
+    ].compact.uniq
   end
 end

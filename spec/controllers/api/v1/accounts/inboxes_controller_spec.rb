@@ -514,9 +514,14 @@ RSpec.describe 'Inboxes API', type: :request do
     let(:inbox) { channel.inbox }
 
     describe 'POST /api/v1/accounts/:account_id/inboxes/:id/refresh_whatsapp_web_qr' do
-      it 'syncs status when called with status_only' do
+      it 'syncs status when called with status_only without returning qr payload by default' do
         expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
-          instance.update!(lifecycle_state: 'connected', connection_state: 'open', last_synced_at: Time.current)
+          instance.update!(
+            lifecycle_state: 'connected',
+            connection_state: 'open',
+            qr_code: { 'base64' => 'large-qr-payload' },
+            last_synced_at: Time.current
+          )
         end
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
@@ -526,6 +531,26 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('connected')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode')).to be_nil
+      end
+
+      it 'returns qr payload during status sync when explicitly requested' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
+          instance.update!(
+            lifecycle_state: 'waiting_for_qr',
+            connection_state: 'connecting',
+            qr_code: { 'base64' => 'large-qr-payload' },
+            last_synced_at: Time.current
+          )
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true, include_qr_code: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('large-qr-payload')
       end
     end
 

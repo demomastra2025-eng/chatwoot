@@ -1,5 +1,17 @@
 class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
+  SUPPORTED_AUDIO_EXTENSIONS = %w[
+    flac
+    m4a
+    mp3
+    mp4
+    mpeg
+    mpga
+    oga
+    ogg
+    wav
+    webm
+  ].freeze
 
   attr_reader :attachment, :message, :account
 
@@ -13,9 +25,13 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   def perform
     return { error: 'Transcription limit exceeded' } unless can_transcribe?
     return { error: 'Message not found' } if message.blank?
+    return unsupported_audio_format_result unless supported_attachment_format?
 
     transcriptions = transcribe_audio
-    Rails.logger.info "Audio transcription successful: #{transcriptions}"
+    Rails.logger.info(
+      "Audio transcription completed " \
+      "attachment_id=#{attachment.id} message_id=#{message.id}"
+    )
     { success: true, transcriptions: transcriptions }
   rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
     Rails.logger.warn('Skipping audio transcription: OpenAI configuration is invalid or disabled (401 Unauthorized).')
@@ -131,5 +147,29 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
       'x-wav' => 'wav',
       'x-mp3' => 'mp3'
     }.fetch(subtype, subtype)
+  end
+
+  def supported_attachment_format?
+    supported_audio_extension.present?
+  end
+
+  def supported_audio_extension
+    @supported_audio_extension ||= begin
+      blob = attachment.file.blob
+      extension = blob.filename.extension_without_delimiter.presence || extension_from_content_type(blob.content_type)
+      normalized_extension = extension.to_s.downcase.presence
+
+      normalized_extension if normalized_extension.present? && normalized_extension.in?(SUPPORTED_AUDIO_EXTENSIONS)
+    end
+  end
+
+  def unsupported_audio_format_result
+    Rails.logger.warn(
+      "Skipping audio transcription: unsupported format " \
+      "attachment_id=#{attachment.id} message_id=#{message.id} " \
+      "filename=#{attachment.file.blob.filename} content_type=#{attachment.file.blob.content_type}"
+    )
+
+    { error: 'Unsupported audio format' }
   end
 end

@@ -1,6 +1,16 @@
 class Messages::AudioTranscriptionJob < ApplicationJob
   queue_as :audio_transcription
 
+  discard_on RubyLLM::BadRequestError do |job, error|
+    log_context = {
+      attachment_id: job.arguments.first,
+      job_id: job.job_id,
+      error_class: error.class.name
+    }
+
+    Rails.logger.warn("Discarding audio transcription job due to LLM bad request: #{log_context}")
+  end
+
   discard_on Faraday::BadRequestError do |job, error|
     log_context = {
       attachment_id: job.arguments.first,

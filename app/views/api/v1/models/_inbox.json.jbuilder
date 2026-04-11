@@ -1,3 +1,5 @@
+include_whatsapp_web_qr_code = true unless defined?(include_whatsapp_web_qr_code)
+
 json.id resource.id
 json.avatar_url resource.try(:avatar_url)
 json.channel_id resource.channel_id
@@ -136,7 +138,7 @@ if resource.whatsapp_web?
   json.import_messages resource.channel.try(:import_messages)
   json.sync_labels resource.channel.try(:sync_labels)
   json.additional_attributes do
-    json.evolution resource.channel.try(:evolution_state_payload)
+    json.evolution resource.channel.try(:evolution_state_payload, include_qr_code: include_whatsapp_web_qr_code)
   end
   json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
 end

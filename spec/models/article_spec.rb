@@ -189,4 +189,73 @@ RSpec.describe Article do
       expect(article.to_llm_text).to eq(expected_output)
     end
   end
+
+  describe '#generate_and_save_article_seach_terms' do
+    let(:article) do
+      create(:article, category_id: category_1.id, content: 'This is the content', description: 'this is the description',
+                       slug: 'this-is-title', title: 'this is title',
+                       portal_id: portal_1.id, author_id: user.id)
+    end
+
+    before do
+      allow(Captain::Llm::ArticleSearchTermsService).to receive(:new).with(article).and_return(search_term_service)
+      allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_later)
+    end
+
+    context 'when search term generation succeeds' do
+      let(:search_term_service) { instance_double(Captain::Llm::ArticleSearchTermsService, generate: ['billing', 'faq']) }
+
+      it 'replaces stored article terms' do
+        ArticleEmbedding.create!(article: article, term: 'old')
+
+        article.generate_and_save_article_seach_terms
+
+        expect(article.article_embeddings.reload.pluck(:term)).to match_array(%w[billing faq])
+      end
+    end
+
+    context 'when search term generation is unavailable' do
+      let(:search_term_service) { instance_double(Captain::Llm::ArticleSearchTermsService, generate: nil) }
+
+      it 'keeps the existing article terms' do
+        ArticleEmbedding.create!(article: article, term: 'old')
+
+        expect do
+          article.generate_and_save_article_seach_terms
+        end.not_to change { article.article_embeddings.reload.pluck(:term) }
+      end
+
+      it 'falls back to deterministic article fields when no terms exist yet' do
+        article.generate_and_save_article_seach_terms
+
+        expect(article.article_embeddings.reload.pluck(:term)).to include(
+          'this is title',
+          'this is the description',
+          'This is the content'
+        )
+      end
+    end
+
+    context 'when the llm returns an empty term list' do
+      let(:search_term_service) { instance_double(Captain::Llm::ArticleSearchTermsService, generate: []) }
+
+      it 'falls back to deterministic article fields when no terms exist yet' do
+        article.generate_and_save_article_seach_terms
+
+        expect(article.article_embeddings.reload.pluck(:term)).to include(
+          'this is title',
+          'this is the description',
+          'This is the content'
+        )
+      end
+
+      it 'keeps existing terms instead of replacing them with empty output' do
+        ArticleEmbedding.create!(article: article, term: 'old')
+
+        expect do
+          article.generate_and_save_article_seach_terms
+        end.not_to change { article.article_embeddings.reload.pluck(:term) }
+      end
+    end
+  end
 end

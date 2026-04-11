@@ -84,11 +84,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def refresh_whatsapp_web_qr
     if truthy_param?(:status_only)
       @inbox.channel.sync_connection_state!
+      render :show, locals: { include_whatsapp_web_qr_code: truthy_param?(:include_qr_code) }
     else
       @inbox.channel.refresh_qr!
+      render :show
     end
-
-    render :show
   rescue StandardError => e
     log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
     render json: { error: e.message }, status: :unprocessable_content

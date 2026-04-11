@@ -540,6 +540,7 @@ function syncWhatsappWebPolling() {
       .dispatch('inboxes/refreshWhatsappWebQr', {
         inboxId: currentInbox.value.id,
         statusOnly: true,
+        includeQrCode: true,
       })
       .catch(() => {});
   }, 5000);

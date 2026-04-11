@@ -17,8 +17,20 @@ if ActiveModel::Type::Boolean.new.cast(ENV.fetch('LOGRAGE_ENABLED', false)).pres
 
     config.lograge.custom_options = lambda do |event|
       param_exceptions = %w[controller action format id]
+      params = event.payload[:params]&.except(*param_exceptions)
+
+      if event.payload[:controller] == 'Webhooks::WhatsappWebController'
+        webhook_params = params.to_h.with_indifferent_access
+        nested_params = webhook_params[:whatsapp_web].to_h.with_indifferent_access
+
+        params = {
+          event: webhook_params[:event] || nested_params[:event],
+          webhook_identifier: webhook_params[:webhook_identifier]
+        }.compact
+      end
+
       {
-        params: event.payload[:params]&.except(*param_exceptions)
+        params: params
       }
     end
 

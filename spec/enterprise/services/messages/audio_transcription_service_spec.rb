@@ -64,6 +64,25 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         expect(result).to eq({ success: true, transcriptions: 'Existing transcription' })
       end
     end
+
+    context 'when the attachment format is not supported' do
+      before do
+        allow(service).to receive(:can_transcribe?).and_return(true)
+        attachment.file.attach(
+          io: File.open(Rails.public_path.join('audio/widget/ding.mp3')),
+          filename: 'speech.opus',
+          content_type: 'audio/opus'
+        )
+      end
+
+      it 'skips the transcription without calling the API' do
+        expect(service).not_to receive(:transcribe_audio)
+
+        result = service.perform
+
+        expect(result).to eq({ error: 'Unsupported audio format' })
+      end
+    end
   end
 
   describe '#fetch_audio_file' do
