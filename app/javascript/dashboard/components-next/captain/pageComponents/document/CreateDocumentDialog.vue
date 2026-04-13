@@ -58,8 +58,11 @@ defineExpose({ dialogRef });
     width="xl"
     @close="handleClose"
   >
-    <div class="max-h-[calc(100vh-11rem)] overflow-y-auto pr-1">
+    <div
+      class="flex max-h-[calc(100vh-11rem)] min-h-0 flex-col overflow-hidden"
+    >
       <DocumentForm
+        class="min-h-0 overflow-y-auto pr-1"
         :assistant-id="assistantId"
         @submit="handleSubmit"
         @cancel="handleCancel"

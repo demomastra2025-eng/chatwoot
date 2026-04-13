@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::ResolveConversationService < Captain::Tools::Copi
     conversation = conversation_operations.resolve_conversation
     "Resolved conversation ##{conversation.display_id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

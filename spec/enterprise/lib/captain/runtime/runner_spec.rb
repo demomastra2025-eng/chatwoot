@@ -89,8 +89,7 @@ RSpec.describe Captain::Runtime::Runner do
 
       expect(params[:role]).to eq(:tool)
       expect(params[:tool_call_id]).to eq('call_1')
-      expect(params[:content]).to be_a(RubyLLM::Content)
-      expect(params[:content].text).to eq('Lookup finished')
+      expect(params[:content]).to eq('Lookup finished')
     end
   end
 
@@ -146,16 +145,21 @@ RSpec.describe Captain::Runtime::Runner do
         params: { max_tokens: 22 }
       )
     end
-    let(:first_chat) { RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new('handoff')) }
+    let(:handoff_response) { instance_double(RubyLLM::Tool::Halt) }
+    let(:first_chat) { RuntimeRunnerSpecChat.new(ask_response: handoff_response) }
     let(:second_chat) { RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done')) }
 
     it 'builds a fresh chat for each handoff and reapplies the next agent configuration', :aggregate_failures do
+      allow(runner).to receive(:handoff_requested?).and_call_original
+      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
+
       expect(Llm::ChatClient).to receive(:build).with(
         context: llm_context,
         model: 'gpt-4.1-mini',
         temperature: 0.2,
         params: { max_tokens: 111 },
-        headers: { :'X-Agent' => 'primary' }
+        headers: { :'X-Agent' => 'primary' },
+        thinking: nil
       ).and_return(first_chat).ordered
 
       expect(Llm::ChatClient).to receive(:build).with(
@@ -163,7 +167,8 @@ RSpec.describe Captain::Runtime::Runner do
         model: 'gpt-4.1-nano',
         temperature: 0.9,
         params: { max_tokens: 22 },
-        headers: { :'X-Agent' => 'scenario' }
+        headers: { :'X-Agent' => 'scenario' },
+        thinking: nil
       ).and_return(second_chat).ordered
 
       result = runner.run(
@@ -185,6 +190,32 @@ RSpec.describe Captain::Runtime::Runner do
       expect(first_chat.schema).to eq(Captain::ResponseSchema)
       expect(second_chat.instructions).to eq('Scenario instructions')
       expect(second_chat.schema).to be_nil
+    end
+
+    it 'normalizes structured output when the runtime continues with complete' do
+      agent = Captain::Runtime::Agent.new(
+        name: 'assistant_agent',
+        instructions: 'Primary instructions',
+        model: 'gpt-4.1-mini',
+        temperature: 0.2,
+        response_schema: Captain::ConversationCompletionSchema
+      )
+      response = instance_double(
+        RubyLLM::Message,
+        content: { complete: true, reason: 'done' },
+        tool_call?: false,
+        input_tokens: nil,
+        output_tokens: nil
+      )
+      chat = RuntimeRunnerSpecChat.new(complete_response: response)
+
+      allow(Captain::Runtime::InputComparer).to receive(:last_message_matches?).and_return(true)
+      expect(Llm::ChatClient).to receive(:build).and_return(chat)
+      expect(Llm::StructuredOutputPolicy).to receive(:execute).with(chat:).and_call_original
+
+      result = runner.run(agent, 'Continue', registry: { agent.name => agent }, llm_context: llm_context)
+
+      expect(result.output).to eq(response.content)
     end
   end
 end

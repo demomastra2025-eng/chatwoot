@@ -15,7 +15,10 @@ RSpec.describe Captain::LabelSuggestionService do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     label1
     label2
-    allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
+    allow(Llm::Config).to receive(:initialize!)
+    allow(Llm::Config).to receive(:context).and_return(mock_context)
+    allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
     allow(mock_chat).to receive(:with_instructions)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
     # Stub captain enabled check to allow specs to test base functionality
@@ -25,6 +28,10 @@ RSpec.describe Captain::LabelSuggestionService do
   end
 
   describe '#label_suggestion_message' do
+    it 'does not enable moderation by default for internal label suggestions' do
+      expect(service.send(:task_moderation_stages)).to eq([])
+    end
+
     context 'with valid conversation' do
       before do
         # Create enough incoming messages to pass validation

@@ -24,6 +24,8 @@ RSpec.describe 'Notification Settings API', type: :request do
         json_response = response.parsed_body
         expect(json_response['user_id']).to eq(agent.id)
         expect(json_response['account_id']).to eq(account.id)
+        expect(json_response['selected_inbox_flags'])
+          .to match_array(NotificationSetting.default_inbox_flag_names.map(&:to_s))
       end
     end
   end
@@ -42,7 +44,12 @@ RSpec.describe 'Notification Settings API', type: :request do
 
       it 'updates the email related notification flags' do
         put "/api/v1/accounts/#{account.id}/notification_settings",
-            params: { notification_settings: { selected_email_flags: ['email_conversation_assignment'] } },
+            params: {
+              notification_settings: {
+                selected_email_flags: ['email_conversation_assignment'],
+                selected_inbox_flags: ['inbox_conversation_assignment']
+              }
+            },
             headers: agent.create_new_auth_token,
             as: :json
 
@@ -52,6 +59,7 @@ RSpec.describe 'Notification Settings API', type: :request do
         expect(json_response['user_id']).to eq(agent.id)
         expect(json_response['account_id']).to eq(account.id)
         expect(json_response['selected_email_flags']).to eq(['email_conversation_assignment'])
+        expect(json_response['selected_inbox_flags']).to eq(['inbox_conversation_assignment'])
       end
     end
   end

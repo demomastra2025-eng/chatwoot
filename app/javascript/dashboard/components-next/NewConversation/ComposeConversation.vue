@@ -70,6 +70,7 @@ const formState = reactive({
 
 const clearFormState = () => {
   Object.assign(formState, {
+    message: '',
     subject: '',
     ccEmails: '',
     bccEmails: '',
@@ -126,6 +127,28 @@ const resetContacts = () => {
   contacts.value = [];
 };
 
+const prepareContactWithInboxes = async contact => {
+  if (!contact?.id) return null;
+
+  let contactInboxes = contact.contactInboxes || [];
+
+  if (contactInboxes.length === 0) {
+    isFetchingInboxes.value = true;
+    try {
+      contactInboxes = await fetchContactableInboxes(contact.id);
+    } finally {
+      isFetchingInboxes.value = false;
+    }
+  } else {
+    contactInboxes = processContactableInboxes(contactInboxes);
+  }
+
+  return {
+    ...contact,
+    contactInboxes: mergeInboxDetails(contactInboxes, inboxesList.value),
+  };
+};
+
 const handleSelectedContact = async ({ value, action, ...rest }) => {
   let contact;
   if (action === 'create') {
@@ -143,18 +166,10 @@ const handleSelectedContact = async ({ value, action, ...rest }) => {
   selectedContact.value = contact;
   contacts.value = [];
   if (contact?.id) {
-    isFetchingInboxes.value = true;
     try {
-      const contactableInboxes = await fetchContactableInboxes(contact.id);
-      // Merge the processed contactableInboxes with the inboxesList
-      selectedContact.value.contactInboxes = mergeInboxDetails(
-        contactableInboxes,
-        inboxesList.value
-      );
-
-      isFetchingInboxes.value = false;
+      selectedContact.value = await prepareContactWithInboxes(contact);
     } catch (error) {
-      isFetchingInboxes.value = false;
+      // no-op
     }
   }
 };
@@ -185,7 +200,6 @@ const closeCompose = () => {
 
 const discardCompose = () => {
   clearFormState();
-  formState.message = '';
   closeCompose();
 };
 
@@ -215,6 +229,31 @@ const createConversation = async ({ payload, isFromWhatsApp }) => {
 
 const toggle = () => {
   showComposeNewConversation.value = !showComposeNewConversation.value;
+};
+
+const openWithChannel = async ({ contact, channelIdentity }) => {
+  const baseContact = contact || activeContact.value;
+  if (!baseContact?.id) return false;
+
+  clearFormState();
+  selectedContact.value = await prepareContactWithInboxes(baseContact);
+
+  const matchingInbox = selectedContact.value?.contactInboxes?.find(
+    inbox =>
+      Number(inbox.id) === Number(channelIdentity?.inboxId) &&
+      (!channelIdentity?.sourceId ||
+        inbox.sourceId === channelIdentity.sourceId)
+  );
+
+  if (!matchingInbox) {
+    useAlert(t('NEW_CONVERSATION.NO_INBOX'));
+    return false;
+  }
+
+  targetInbox.value = matchingInbox;
+  showComposeNewConversation.value = true;
+  emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
+  return true;
 };
 
 watch(
@@ -269,6 +308,11 @@ const keyboardEvents = {
 };
 
 useKeyboardEvents(keyboardEvents);
+
+defineExpose({
+  toggle,
+  openWithChannel,
+});
 </script>
 
 <template>

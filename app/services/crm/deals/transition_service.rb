@@ -6,7 +6,8 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
 
   def perform
     target_stage = account.crm_stages.find(params[:stage_id])
-    return deal if deal.stage_id == target_stage.id
+    requested_position = resolve_requested_position
+    return deal if deal.stage_id == target_stage.id && requested_position.blank?
 
     ApplicationRecord.transaction do
       deal.lock!
@@ -24,11 +25,24 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
   def transition_to_stage!(target_stage)
     from_stage_id = deal.stage_id
     from_pipeline_id = deal.pipeline_id
+    requested_position = resolve_requested_position
 
     deal.stage = target_stage
     deal.pipeline = target_stage.pipeline
+    deal.position = requested_position if requested_position.present?
     deal.closed_at = target_stage.outcome_open? ? nil : Time.zone.now
     deal.save!
+
+    ::Crm::BoardPositioner.place!(
+      scope: account.crm_deals.kept.where(stage_id: target_stage.id),
+      record: deal,
+      target_position: requested_position
+    )
+    if from_stage_id != target_stage.id
+      ::Crm::BoardPositioner.normalize!(
+        scope: account.crm_deals.kept.where(stage_id: from_stage_id)
+      )
+    end
 
     ::Crm::Events::Writer.record!(
       account: account,
@@ -64,5 +78,11 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
         missing_fields: inspector.missing_field_details
       }
     )
+  end
+
+  def resolve_requested_position
+    return unless params.key?(:position)
+
+    resolve_integer(:position, current: deal.position, allow_nil: true)
   end
 end

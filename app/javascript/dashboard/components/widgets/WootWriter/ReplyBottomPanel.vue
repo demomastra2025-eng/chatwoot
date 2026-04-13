@@ -62,6 +62,10 @@ export default {
       type: Function,
       default: () => {},
     },
+    clearAudioRecorder: {
+      type: Function,
+      default: () => {},
+    },
     toggleAudioRecorderPlayPause: {
       type: Function,
       default: () => {},
@@ -214,6 +218,10 @@ export default {
       if (this.isEditorDisabled) return false;
       return this.showAudioRecorder && this.isRecordingAudio;
     },
+    showAudioClearButton() {
+      if (this.isEditorDisabled) return false;
+      return this.showAudioRecorder && this.isRecordingAudio;
+    },
     isInstagramDM() {
       return this.conversationType === 'instagram_direct_message';
     },
@@ -252,11 +260,13 @@ export default {
     },
     showMessageSignatureButton() {
       if (this.isEditorDisabled) return false;
-      return !this.isOnPrivateNote;
+      return !this.isOnPrivateNote && this.isAnEmailChannel;
     },
     sendWithSignature() {
       // channelType is sourced from inboxMixin
-      return this.fetchSignatureFlagFromUISettings(this.channelType);
+      return this.isAnEmailChannel
+        ? this.fetchSignatureFlagFromUISettings(this.channelType)
+        : false;
     },
     signatureToggleTooltip() {
       return this.sendWithSignature
@@ -409,6 +419,15 @@ export default {
         @click="toggleAudioRecorderPlayPause"
       />
       <NextButton
+        v-if="showAudioClearButton"
+        v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.TIP_AUDIORECORDER_CLEAR')"
+        icon="i-lucide-x"
+        slate
+        faded
+        sm
+        @click="clearAudioRecorder"
+      />
+      <NextButton
         v-if="showMessageSignatureButton"
         v-tooltip.top-end="signatureToggleTooltip"
         icon="i-ph-signature"
@@ -510,7 +529,7 @@ export default {
 }
 
 .right-wrap {
-  @apply flex;
+  @apply flex gap-2;
 }
 
 ::v-deep .file-uploads {

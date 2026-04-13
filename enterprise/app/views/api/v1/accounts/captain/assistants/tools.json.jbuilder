@@ -6,4 +6,5 @@ json.array! @tools do |tool|
   json.icon tool[:icon]
   json.scope_name tool[:scope_name]
   json.selected tool[:selected] if tool.key?(:selected)
+  json.provider tool[:provider]
 end

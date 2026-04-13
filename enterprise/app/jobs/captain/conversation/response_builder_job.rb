@@ -1,5 +1,6 @@
 class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   MAX_MESSAGE_LENGTH = 10_000
+  PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
 
@@ -48,7 +49,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless conversation_pending?
 
     if handoff_requested?
-      process_action('handoff')
+      process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens'))
     else
       ActiveRecord::Base.transaction do
@@ -102,7 +103,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
-    @response['response'] == 'conversation_handoff'
+    ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
+  end
+
+  def handoff_action_name
+    provider_error_handoff_requested? ? 'provider_error_handoff' : 'handoff'
+  end
+
+  def provider_error_handoff_requested?
+    @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
   end
 
   def process_action(action)
@@ -113,6 +122,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         @conversation.bot_handoff!
         send_out_of_office_message_if_applicable
       end
+    when 'provider_error_handoff'
+      create_provider_error_private_note
+      @conversation.bot_handoff!
+      send_out_of_office_message_if_applicable
     end
   end
 
@@ -140,6 +153,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     )
   end
 
+  def create_provider_error_private_note
+    create_private_note(provider_error_note_content)
+  end
+
+  def provider_error_note_content(error = nil)
+    error_class = error&.class&.name || @response['error_class']
+    error_message = error&.message || @response['error_message'] || @response['reasoning']
+    normalized_message = error_message.to_s.squish.first(MAX_MESSAGE_LENGTH)
+    note = "AI runtime fallback: #{error_class.presence || 'UnknownError'}"
+    note += ": #{normalized_message}" if normalized_message.present?
+    note
+  end
+
   def validate_message_content!(content)
     raise ArgumentError, 'Message content cannot be blank' if content.blank?
   end
@@ -159,11 +185,34 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     )
   end
 
+  def create_private_note(message_content)
+    @conversation.messages.create!(
+      message_type: :outgoing,
+      private: true,
+      account_id: account.id,
+      inbox_id: inbox.id,
+      sender: @assistant,
+      content: message_content,
+      additional_attributes: private_note_additional_attributes
+    )
+  end
+
+  def private_note_additional_attributes
+    additional_attrs = {}
+    additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
+    additional_attrs
+  end
+
   def handle_error(error)
     log_error(error)
     return true unless current_buffer_state_valid?
 
-    process_action('handoff') if conversation_pending?
+    if conversation_pending?
+      @response ||= {}
+      @response['error_class'] = error.class.name
+      @response['error_message'] = error.message
+      process_action('provider_error_handoff')
+    end
     clear_buffer_state_if_current
     true
   end

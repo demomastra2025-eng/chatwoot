@@ -5,6 +5,7 @@ require 'rails_helper'
 RSpec.describe Llm::ChatClient do
   let(:chat) { instance_double(RubyLLM::Chat) }
   let(:context) { instance_double(RubyLLM::Context, chat: chat) }
+  let(:chat_model) { instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini') }
 
   describe '.build' do
     before do
@@ -61,6 +62,20 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'builds Anthropic chats with explicit provider fallback when the registry lacks the model id' do
+      allow(Llm::Models).to receive(:registry_known?).with('claude-sonnet-4-6').and_return(false)
+
+      expect(RubyLLM).to receive(:chat).with(
+        model: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        assume_model_exists: true
+      ).and_return(chat)
+
+      result = described_class.build(model: 'claude-sonnet-4-6')
+
+      expect(result).to eq(chat)
+    end
+
     it 'reuses an existing chat instance when provided' do
       expect(RubyLLM).not_to receive(:chat)
       expect(context).not_to receive(:chat)
@@ -68,6 +83,15 @@ RSpec.describe Llm::ChatClient do
       result = described_class.build(chat: chat, model: 'ignored')
 
       expect(result).to eq(chat)
+    end
+
+    it 'raises when thinking is requested for a model without reasoning support' do
+      expect do
+        described_class.build(
+          model: 'gpt-4.1-mini',
+          thinking: { effort: 'high' }
+        )
+      end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /thinking/)
     end
   end
 
@@ -79,6 +103,7 @@ RSpec.describe Llm::ChatClient do
     end
 
     it 'asks with multimodal content attachments when present' do
+      allow(chat).to receive(:model).and_return(chat_model)
       content = RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])
 
       expect(chat).to receive(:ask).with(
@@ -90,6 +115,7 @@ RSpec.describe Llm::ChatClient do
     end
 
     it 'preserves non-string attachment sources for RubyLLM multimodal uploads' do
+      allow(chat).to receive(:model).and_return(chat_model)
       io = StringIO.new('file-bytes')
       content = RubyLLM::Content.new('Process this file', [io])
 
@@ -104,6 +130,50 @@ RSpec.describe Llm::ChatClient do
       expect(chat).to receive(:ask).with('Just text')
 
       described_class.ask(chat, content)
+    end
+
+    it 'publishes a chat completion event when observability payload is provided' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+      response = double(
+        'message',
+        content: 'Hello back',
+        input_tokens: 5,
+        output_tokens: 7,
+        tool_call?: false
+      )
+      allow(chat).to receive(:model).and_return(chat_model)
+      allow(chat).to receive(:ask).with('Hello').and_return(response)
+
+      result = described_class.ask(
+        chat,
+        'Hello',
+        observability: { feature: 'copilot', account_id: 1 }
+      )
+
+      expect(result).to eq(response)
+      expect(events.last.payload).to include(
+        'feature' => 'copilot',
+        'account_id' => 1,
+        'model' => 'gpt-4.1-mini',
+        'status' => 'success',
+        'prompt_tokens' => 5,
+        'completion_tokens' => 7,
+        'total_tokens' => 12
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'raises when multimodal content is sent to a model without multimodal support' do
+      allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
+      content = RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])
+
+      expect do
+        described_class.ask(chat, content)
+      end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /multimodal inputs/)
     end
   end
 end

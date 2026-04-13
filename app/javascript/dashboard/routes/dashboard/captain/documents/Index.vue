@@ -59,6 +59,54 @@ const handleCreateDialogClose = () => {
   showCreateDialog.value = false;
 };
 
+function fetchDocuments(page = 1) {
+  const filterParams = { page };
+
+  if (selectedAssistantId.value) {
+    filterParams.assistantId = selectedAssistantId.value;
+  }
+  store.dispatch('captainDocuments/get', filterParams);
+}
+
+async function handleResync(id) {
+  try {
+    await store.dispatch('captainDocuments/resync', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.RESYNC.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) ||
+        t('CAPTAIN.DOCUMENTS.RESYNC.ERROR_MESSAGE')
+    );
+  }
+}
+
+async function handleRefreshChangedOnly(id) {
+  try {
+    await store.dispatch('captainDocuments/refreshChangedOnly', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.DELTA_SYNC.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) ||
+        t('CAPTAIN.DOCUMENTS.DELTA_SYNC.ERROR_MESSAGE')
+    );
+  }
+}
+
+async function handleRetryFailed(id) {
+  try {
+    await store.dispatch('captainDocuments/retryFailed', id);
+    useAlert(t('CAPTAIN.DOCUMENTS.RETRY_FAILED.SUCCESS_MESSAGE'));
+    fetchDocuments(documentsMeta.value.page || 1);
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) ||
+        t('CAPTAIN.DOCUMENTS.RETRY_FAILED.ERROR_MESSAGE')
+    );
+  }
+}
+
 const handleAction = ({ action, id }) => {
   selectedDocument.value = documents.value.find(
     captainDocument => id === captainDocument.id
@@ -77,51 +125,6 @@ const handleAction = ({ action, id }) => {
       handleRetryFailed(id);
     }
   });
-};
-
-const handleResync = async id => {
-  try {
-    await store.dispatch('captainDocuments/resync', id);
-    useAlert(t('CAPTAIN.DOCUMENTS.RESYNC.SUCCESS_MESSAGE'));
-    fetchDocuments(documentsMeta.value.page || 1);
-  } catch (error) {
-    useAlert(
-      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.RESYNC.ERROR_MESSAGE')
-    );
-  }
-};
-
-const handleRefreshChangedOnly = async id => {
-  try {
-    await store.dispatch('captainDocuments/refreshChangedOnly', id);
-    useAlert(t('CAPTAIN.DOCUMENTS.DELTA_SYNC.SUCCESS_MESSAGE'));
-    fetchDocuments(documentsMeta.value.page || 1);
-  } catch (error) {
-    useAlert(
-      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.DELTA_SYNC.ERROR_MESSAGE')
-    );
-  }
-};
-
-const handleRetryFailed = async id => {
-  try {
-    await store.dispatch('captainDocuments/retryFailed', id);
-    useAlert(t('CAPTAIN.DOCUMENTS.RETRY_FAILED.SUCCESS_MESSAGE'));
-    fetchDocuments(documentsMeta.value.page || 1);
-  } catch (error) {
-    useAlert(
-      parseAPIErrorResponse(error) || t('CAPTAIN.DOCUMENTS.RETRY_FAILED.ERROR_MESSAGE')
-    );
-  }
-};
-
-const fetchDocuments = (page = 1) => {
-  const filterParams = { page };
-
-  if (selectedAssistantId.value) {
-    filterParams.assistantId = selectedAssistantId.value;
-  }
-  store.dispatch('captainDocuments/get', filterParams);
 };
 
 const onPageChange = page => fetchDocuments(page);
@@ -160,7 +163,6 @@ onMounted(() => {
         :hide-actions="!isOnChatwootCloud"
         fallback-thumbnail="/assets/images/dashboard/captain/document-popover-light.svg"
         fallback-thumbnail-dark="/assets/images/dashboard/captain/document-popover-dark.svg"
-        learn-more-url="https://chwt.app/captain-document"
       />
     </template>
 

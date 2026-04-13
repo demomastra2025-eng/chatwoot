@@ -1,4 +1,6 @@
 class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
+  include Captain::ToolResultOutput
+
   def initialize(assistant)
     @assistant = assistant
     super()
@@ -14,7 +16,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
 
   def execute(tool_context, **params)
     unless active?
-      message = 'This tool is not available for the current assistant configuration.'
+      message = tool_failure('This tool is not available for the current assistant configuration.')
       audit_tool_execution(arguments: params, result: message, runtime_context: runtime_context(tool_context))
       return message
     end
@@ -36,6 +38,10 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   private
 
   attr_reader :assistant
+
+  def tool_scope_name
+    Captain::ToolAccess::SCOPE_AGENT
+  end
 
   def tool_definition
     definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}

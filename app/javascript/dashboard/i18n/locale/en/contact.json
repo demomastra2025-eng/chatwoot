@@ -17,6 +17,8 @@
     "IP_ADDRESS": "IP Address",
     "CREATED_AT_LABEL": "Created",
     "NEW_MESSAGE": "New message",
+    "CHANNEL_IDENTITIES": "Channel identities",
+    "NO_CHANNEL_CONVERSATION": "There is no conversation for this channel yet.",
     "CALL": "Call",
     "CALL_INITIATED": "Calling the contact…",
     "CALL_FAILED": "Unable to start the call. Please try again.",

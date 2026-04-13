@@ -87,7 +87,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   private
 
   def appointment_params
-    params.permit(*APPOINTMENT_PARAM_KEYS, custom_attributes: {})
+    params.permit(*APPOINTMENT_PARAM_KEYS, service_ids: [], custom_attributes: {})
   end
 
   def filter_by_range(scope)

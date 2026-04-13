@@ -124,7 +124,12 @@
       },
       "UPDATE_ERROR": "There was an error updating the integration, please try again",
       "UPDATE_SUCCESS": "The channel is connected successfully",
-      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again"
+      "FAILED_TO_FETCH_CHANNELS": "There was an error fetching the channels from Slack, please try again",
+      "NOT_CONFIGURED": {
+        "TITLE": "Slack credentials бапталмаған",
+        "DESCRIPTION": "Slack интеграциясының UI енді көрінеді, бірақ серверде SLACK_CLIENT_ID және SLACK_CLIENT_SECRET орнатылмайынша OAuth арқылы қосылу қолжетімсіз болады.",
+        "BUTTON": "Серверді баптау қажет"
+      }
     },
     "DYTE": {
       "CLICK_HERE_TO_JOIN": "Click here to join",
@@ -1002,6 +1007,439 @@
         }
       },
       "UNGROUPED": "Топсыз"
+    },
+    "MCP_SERVERS": {
+      "HEADER": "MCP серверлері",
+      "ADD_NEW": "MCP серверін қосу",
+      "FORM_DESCRIPTION": "MCP серверін қосып, оның табылған құралдарын Captain ішінде пайдаланыңыз.",
+      "SCOPES": {
+        "AGENT": "Агент",
+        "ASSISTANT": "Ассистент",
+        "BOTH": "Агент + Ассистент"
+      },
+      "OPTIONS": {
+        "MANAGE_SERVER": "Серверді басқару",
+        "EDIT_SERVER": "Серверді өңдеу",
+        "DELETE_SERVER": "Серверді жою"
+      },
+      "CREATE": {
+        "TITLE": "MCP серверін құру",
+        "SUCCESS_MESSAGE": "MCP сервері сәтті құрылды",
+        "ERROR_MESSAGE": "MCP серверін құру мүмкін болмады"
+      },
+      "EDIT": {
+        "TITLE": "MCP серверін өңдеу",
+        "SUCCESS_MESSAGE": "MCP сервері сәтті жаңартылды",
+        "ERROR_MESSAGE": "MCP серверін жаңарту мүмкін болмады"
+      },
+      "DELETE": {
+        "TITLE": "MCP серверін жою",
+        "DESCRIPTION": "Осы MCP серверін жойғыңыз келетініне сенімдісіз бе? Оның табылған құралдары ассистенттерге енді қолжетімді болмайды.",
+        "CONFIRM": "Иә, жою",
+        "SUCCESS_MESSAGE": "MCP сервері сәтті жойылды",
+        "ERROR_MESSAGE": "MCP серверін жою мүмкін болмады"
+      },
+      "FORM": {
+        "NAME": {
+          "LABEL": "Сервер атауы",
+          "PLACEHOLDER": "GitHub MCP",
+          "ERROR": "Сервер атауы міндетті"
+        },
+        "DESCRIPTION": {
+          "LABEL": "Сипаттама",
+          "PLACEHOLDER": "Репозиторий талдауы үшін read-only GitHub сервері"
+        },
+        "TRANSPORT_TYPE": {
+          "LABEL": "Транспорт",
+          "PLACEHOLDER": "Транспорт түрін таңдаңыз",
+          "ERROR": "Транспорт түрі міндетті",
+          "SSE": "HTTP (SSE)",
+          "STREAMABLE": "HTTP (Streamable)",
+          "STDIO": "stdio (команда іске қосу)"
+        },
+        "REQUEST_TIMEOUT": {
+          "LABEL": "Сұрау таймауты (секунд)",
+          "PLACEHOLDER": "30"
+        },
+        "ENABLED": {
+          "LABEL": "Қосулы",
+          "HELP_TEXT": "Өшірулі серверлер конфигурацияда қалады, бірақ олардың құралдары ассистенттерден жасырылады."
+        },
+        "ALLOWED_SCOPES": {
+          "LABEL": "Құралдарды көрсету"
+        },
+        "SERVER_CONFIG": {
+          "LABEL": "Сервер JSON конфигі",
+          "URL_LABEL": "Сервер URL",
+          "URL_ERROR": "Сервер URL міндетті",
+          "ADVANCED_JSON": "Кеңейтілген баптаулар (JSON)",
+          "PLACEHOLDER": "{\n  \"url\": \"https://example.com/mcp\"\n}",
+          "HELP_TEXT": "Мұнда ruby_llm-mcp client config объектісі беріледі. stdio үшін command/args/env пайдаланыңыз. streamable немесе sse үшін url және қажет болса headers не oauth config көрсетіңіз.",
+          "ERROR": "Сервер конфигі жарамды JSON болуы керек"
+        },
+        "VALIDATION_ERROR": "Құралдарды табар алдында форма қателерін түзетіңіз."
+      },
+      "TEST": {
+        "ACTION": "Құралдарды табу",
+        "ERROR_MESSAGE": "MCP құралдарын табу мүмкін болмады",
+        "RESULT_TITLE": "{count} құрал табылды"
+      },
+      "OAUTH": {
+        "AVAILABLE": "OAuth қолжетімді",
+        "CONNECTED": "OAuth қосылған",
+        "NOT_CONNECTED": "OAuth қосылмаған",
+        "CONNECT": "OAuth қосу",
+        "RECONNECT": "OAuth қайта қосу",
+        "DISCONNECT": "OAuth ажырату",
+        "STARTED": "OAuth авторизациясына өту.",
+        "ERROR": "OAuth авторизациясын бастау мүмкін болмады",
+        "DISCONNECTED_SUCCESS": "OAuth байланысы өшірілді",
+        "CONNECTED_SUCCESS": "OAuth сәтті қосылды",
+        "CALLBACK_ERROR": "OAuth авторизациясы сәтсіз аяқталды"
+      },
+      "SURFACE": {
+        "TITLE": "{name} surface",
+        "DESCRIPTION": "Осы сервер беретін MCP құралдарын, ресурстарын, prompts және tasks қарау.",
+        "SCOPE_HINT": "Бұл surface тек әкімшілерге қолжетімді. Runtime tool қолданысы ассистент баптауларымен басқарылады.",
+        "REFRESH": "Жаңарту",
+        "LOADING": "MCP surface жүктелуде...",
+        "ERROR_MESSAGE": "MCP surface жүктеу мүмкін болмады",
+        "ACTION_ERROR": "MCP операциясы орындалмады",
+        "ARGUMENTS_LABEL": "Arguments JSON",
+        "ARGUMENTS_HELP": "Resource templates және prompts үшін қолданылады.",
+        "ARGUMENTS_ERROR": "Arguments жарамды JSON болуы керек",
+        "READ_RESOURCE": "Ресурсты оқу",
+        "FETCH_TEMPLATE": "Ресурсты алу",
+        "FETCH_PROMPT": "Prompt алу",
+        "REFRESH_TASK": "Task жаңарту",
+        "TASK_RESULT": "Task нәтижесі",
+        "CANCEL_TASK": "Task тоқтату",
+        "RESULT_TITLE": "Нәтиже",
+        "RESULT_EMPTY": "Нәтижені көру үшін операцияны іске қосыңыз.",
+        "TABS": {
+          "TOOLS": "Tools",
+          "RESOURCES": "Resources",
+          "RESOURCE_TEMPLATES": "Templates",
+          "PROMPTS": "Prompts",
+          "TASKS": "Tasks"
+        }
+      }
+    },
+    "OBSERVABILITY": {
+      "TITLE": "Observability",
+      "TABS": {
+        "OVERVIEW": "Overview",
+        "EVENTS": "Events",
+        "TRACES": "Traces",
+        "EVALUATIONS": "Evaluations"
+      },
+      "ACTIONS": {
+        "REFRESH": "Refresh",
+        "RUN_RELEASE_CHECK": "Run release check",
+        "APPLY_FILTERS": "Apply filters",
+        "RESET_FILTERS": "Reset filters",
+        "COPY_LINK": "Copy current view link",
+        "EXPORT_JSON": "Export matching events JSON",
+        "EXPORT_CSV": "Export matching events CSV",
+        "LINK_COPIED": "Observability link copied",
+        "LINK_COPY_ERROR": "Failed to copy observability link",
+        "EXPORT_DONE": "Observability export generated",
+        "EXPORT_ERROR": "Failed to export observability data",
+        "OPEN_METRICS": "Open metrics endpoint",
+        "VIEW_DETAILS": "View details",
+        "FOCUS_TRACE": "Focus trace",
+        "VIEW_MATCHING_EVENTS": "View matching events"
+      },
+      "SAVED_VIEWS": {
+        "NAME_PLACEHOLDER": "Saved view name",
+        "SAVE_ACTION": "Save current view",
+        "DELETE_ACTION": "Delete",
+        "EMPTY": "No saved views yet for this account.",
+        "NAME_REQUIRED": "Provide a name for the saved view",
+        "SAVE_SUCCESS": "Saved view updated",
+        "DELETE_SUCCESS": "Saved view removed"
+      },
+      "PRESETS": {
+        "ALL": "Overview",
+        "ERRORS": "Errors",
+        "BLOCKED": "Blocked",
+        "TOOL_FAILURES": "Tool failures",
+        "SCHEMA_INVALID": "Schema invalid",
+        "ASSISTANT": "Assistant",
+        "COPILOT": "Copilot"
+      },
+      "FILTERS": {
+        "ALL_FEATURES": "All features",
+        "ALL_RUNTIME_MODES": "All runtime modes",
+        "ALL_STATUSES": "All statuses",
+        "ALL_FLAGS": "All flags",
+        "STATUS": "Event status",
+        "MODEL": "Model",
+        "EVENT_NAME": "Event name",
+        "TOOL_NAME": "Tool name",
+        "SCHEMA_NAME": "Schema name",
+        "TRACE_ID": "Trace ID",
+        "SESSION_ID": "Session ID",
+        "CONVERSATION_DISPLAY_ID": "Conversation ID",
+        "ASSISTANT_ID": "Assistant ID",
+        "SINCE": "Since",
+        "UNTIL": "Until",
+        "PER_PAGE": "Rows per page"
+      },
+      "RUNTIME_MODES": {
+        "TASK": "Task"
+      },
+      "METRICS": {
+        "REQUESTS": "Chat requests",
+        "EVENTS": "Persisted events",
+        "ERRORS": "Errors",
+        "BLOCKED": "Blocked",
+        "AVG_LATENCY": "Avg latency",
+        "ALL_TOKENS": "All tokens",
+        "ALL_COST": "All cost",
+        "MODERATION": "Moderation checks"
+      },
+      "TRENDS": {
+        "LATENCY_TITLE": "Latency over time",
+        "LATENCY_DESCRIPTION": "Average response time across the current filtered window.",
+        "ERROR_TITLE": "Errors over time",
+        "ERROR_DESCRIPTION": "Error count by time bucket for the current scope.",
+        "COST_TITLE": "Cost over time",
+        "COST_DESCRIPTION": "Estimated cost trend for the current filtered window.",
+        "NO_DATA": "Not enough data to draw a trend for this scope."
+      },
+      "RELEASE_GATE": {
+        "TITLE": "Operational release gate",
+        "DESCRIPTION": "Tracks recent AI runtime health against error, latency, cost, and safety thresholds.",
+        "CURRENT_PERIOD": "Current period",
+        "BASELINE_PERIOD": "Baseline period",
+        "PERIOD_VALUE": "{since} to {until}",
+        "ACTUAL": "Actual: {value}",
+        "EXPECTED": "Expected: {value}"
+      },
+      "ALERTS": {
+        "TITLE": "Operational alerts",
+        "DESCRIPTION": "Active alerts derived from release-gate failures for this account.",
+        "LAST_DELIVERY": "Last delivery",
+        "LAST_RESOLVED": "Last resolved",
+        "DELIVERY_CHANNELS": "Delivery channels",
+        "EMPTY": "No active alerts for the selected scope."
+      },
+      "DISTRIBUTION": {
+        "TITLE": "Traffic distribution",
+        "DESCRIPTION": "Top features, models, and providers in the current filtered window.",
+        "FEATURES": "Features",
+        "MODELS": "Models",
+        "PROVIDERS": "Providers",
+        "MODERATION_STAGES": "Moderation stages",
+        "BLOCK_REASONS": "Safety block reasons",
+        "FLAGGED_CATEGORIES": "Flagged categories",
+        "MODERATION_REASONS": "Moderation reasons"
+      },
+      "EVENTS": {
+        "TITLE": "Event stream",
+        "DESCRIPTION": "Inspect persisted AI events for this account across assistants, copilot, tools, and moderation flows.",
+        "RESULT_COUNT": "{count} matching events",
+        "TABLE": {
+          "TIME": "Time",
+          "EVENT": "Event",
+          "CONTEXT": "Context",
+          "MODEL": "Model",
+          "USAGE": "Usage",
+          "FLAGS": "Flags"
+        },
+        "CONTEXT": {
+          "CONVERSATION": "Conversation",
+          "TOOL": "Tool",
+          "SCHEMA": "Schema",
+          "TRACE": "Trace",
+          "STAGE": "Stage"
+        },
+        "USAGE": {
+          "TOKENS": "Tokens",
+          "LATENCY": "Latency",
+          "COST": "Cost"
+        }
+      },
+      "TRACES": {
+        "TITLE": "Trace groups",
+        "DESCRIPTION": "Groups matching persisted events into trace-like timelines using session, conversation, copilot, or assistant identifiers.",
+        "RESULT_COUNT": "{count} matching traces",
+        "FOCUSED_TRACE": "Focused trace",
+        "FOCUSED_RANGE": "{startedAt} to {endedAt}",
+        "LATEST_EVENT": "Latest event {time}",
+        "DURATION": "Duration: {duration}",
+        "METRICS": {
+          "EVENTS": "{count} events",
+          "ERRORS": "{count} errors",
+          "BLOCKED": "{count} blocked"
+        },
+        "GROUP_TYPES": {
+          "TRACE": "Trace",
+          "SESSION": "Session",
+          "CONVERSATION": "Conversation",
+          "COPILOT": "Copilot thread",
+          "ASSISTANT": "Assistant",
+          "EVENT": "Event"
+        }
+      },
+      "EVALS": {
+        "STATUS": "Report status",
+        "TOTAL_CHECKS": "Checks",
+        "DETERMINISTIC_SUITES": "Deterministic suites",
+        "LIVE_SUITES": "Live suites",
+        "REPORT_TITLE": "Release report",
+        "REPORT_DESCRIPTION": "Generated at {generatedAt}. Combines operational release-gate data with deterministic and live eval suites.",
+        "BLOCKING_FAILURES": "Blocking failures",
+        "DETERMINISTIC_TITLE": "Deterministic eval suites",
+        "LIVE_TITLE": "Live eval suites",
+        "SUITE_COUNTS": "{total} total · {passed} passed · {failed} failed · {errors} errors",
+        "NO_LIVE_SUITES": "No live eval suites were generated for the selected scope.",
+        "OPEN_RELATED_EVENTS": "Open related events"
+      },
+      "SETTINGS": {
+        "TITLE": "Observability settings",
+        "DESCRIPTION": "Account-scoped defaults for lookback, retention, and alert delivery.",
+        "DEFAULT_LOOKBACK_LABEL": "Default lookback days",
+        "RETENTION_LABEL": "Retention days",
+        "ALERT_CHANNELS_LABEL": "Alert delivery",
+        "MIN_SEVERITY_LABEL": "Minimum severity",
+        "EMAIL_RECIPIENTS_LABEL": "Email recipients",
+        "EMAIL_RECIPIENTS_PLACEHOLDER": "ops@example.com, ai@example.com",
+        "WEBHOOK_URL_LABEL": "Webhook URL",
+        "WEBHOOK_URL_PLACEHOLDER": "https://example.com/hooks/ai-alerts",
+        "NOTIFY_ON_LABEL": "Primary alert source",
+        "DISABLED_OPTION": "Disabled",
+        "ENABLED_OPTION": "Enabled",
+        "SAVE_ACTION": "Save observability settings",
+        "SAVE_SUCCESS": "Observability settings updated",
+        "NOTIFY_ON": {
+          "OPERATIONAL": "Operational release gate",
+          "DETERMINISTIC": "Deterministic evals",
+          "LIVE": "Live evals"
+        }
+      },
+      "COST_BREAKDOWN": {
+        "TITLE": "Cost breakdown",
+        "DESCRIPTION": "Estimated cost grouped by feature, model, and assistant for the current filtered window.",
+        "FEATURES": "By feature",
+        "MODELS": "By model",
+        "ASSISTANTS": "By assistant",
+        "ASSISTANT_LABEL": "Assistant"
+      },
+      "STATUS": {
+        "PASS": "Pass",
+        "PASS_WITH_WARNINGS": "Pass with warnings",
+        "FAIL": "Fail",
+        "INSUFFICIENT_DATA": "Insufficient data",
+        "DISABLED": "Disabled",
+        "NOT_APPLICABLE": "Not applicable",
+        "ALERTING": "Alerting",
+        "OK": "OK",
+        "SUCCESS": "Success",
+        "COMPLETED": "Completed",
+        "ALLOWED": "Allowed",
+        "FLAGGED": "Flagged",
+        "ERROR": "Error",
+        "FAILED": "Failed",
+        "BLOCKED": "Blocked",
+        "WARNING": "Warning",
+        "CRITICAL": "Critical"
+      },
+      "FLAGS": {
+        "BLOCKED": "Blocked",
+        "TOOL_FAILURE": "Tool failure",
+        "SCHEMA_INVALID": "Schema invalid",
+        "MODERATION_SKIPPED": "Moderation skipped",
+        "ERROR": "Error",
+        "NONE": "No flags"
+      },
+      "DETAILS": {
+        "TITLE": "Event details",
+        "DESCRIPTION": "Inspect persisted metadata, runtime identifiers, flags, and sanitized payload for this AI event.",
+        "EMPTY_PAYLOAD": "No sanitized payload details were stored for this event.",
+        "SECTIONS": {
+          "USAGE": "Usage",
+          "FLAGS": "Flags",
+          "IDENTIFIERS": "Identifiers",
+          "CONTEXT": "Context",
+          "PAYLOAD": "Sanitized payload",
+          "ANNOTATIONS": "Investigation notes"
+        },
+        "SUMMARY": {
+          "EVENT": "Event",
+          "FEATURE": "Feature",
+          "RUNTIME": "Runtime mode",
+          "PROVIDER": "Provider",
+          "MODEL": "Model",
+          "REASON": "Reason"
+        },
+        "USAGE": {
+          "DURATION": "Duration",
+          "TOKENS": "Total tokens",
+          "COST": "Estimated cost",
+          "PROMPT_TOKENS": "Prompt tokens",
+          "COMPLETION_TOKENS": "Completion tokens"
+        },
+        "IDENTIFIERS": {
+          "EVENT_ID": "Event ID",
+          "TRACE_ID": "Trace ID",
+          "ROOT_SPAN_ID": "Root span ID",
+          "SPAN_ID": "Span ID",
+          "PARENT_SPAN_ID": "Parent span ID",
+          "SESSION_ID": "Session ID",
+          "ASSISTANT_ID": "Assistant ID",
+          "CONVERSATION_DISPLAY_ID": "Conversation ID",
+          "CONVERSATION_ID": "Conversation DB ID",
+          "COPILOT_THREAD_ID": "Copilot thread ID"
+        },
+        "CONTEXT": {
+          "TRACE_NAME": "Trace name",
+          "SPAN_KIND": "Span kind",
+          "SPAN_NAME": "Span name",
+          "TOOL_NAME": "Tool name",
+          "SCHEMA_NAME": "Schema name",
+          "SOURCE": "Source",
+          "CHANNEL_TYPE": "Channel type",
+          "CURRENT_AGENT": "Current agent",
+          "MODERATION_STAGE": "Moderation stage",
+          "SAFETY_RULE": "Safety rule",
+          "FAILURE_MODE": "Failure mode",
+          "FLAGGED_CATEGORIES": "Flagged categories"
+        },
+        "ACTIONS": {
+          "COPY_JSON": "Copy JSON",
+          "FOCUS_TRACE": "Focus trace",
+          "OPEN_ASSISTANT": "Open assistant",
+          "OPEN_CONVERSATION": "Open conversation",
+          "OPEN_COPILOT": "Open copilot thread",
+          "COPIED": "Payload copied",
+          "COPY_ERROR": "Failed to copy payload"
+        },
+        "ANNOTATIONS": {
+          "DESCRIPTION": "Add investigation notes for this event and its trace.",
+          "PLACEHOLDER": "Add a note for debugging, review, or handoff",
+          "ADD_ACTION": "Add note",
+          "DELETE_ACTION": "Delete note",
+          "META": "{email} · {createdAt}",
+          "EMPTY": "No investigation notes yet.",
+          "LOADING": "Loading notes...",
+          "LOAD_ERROR": "Failed to load notes",
+          "CREATE_SUCCESS": "Investigation note added",
+          "CREATE_ERROR": "Failed to add investigation note",
+          "DELETE_SUCCESS": "Investigation note deleted",
+          "DELETE_ERROR": "Failed to delete investigation note"
+        }
+      },
+      "EMPTY": {
+        "TITLE": "No matching observability data",
+        "DESCRIPTION": "Adjust the active filters or wait for more AI traffic to be recorded for this account."
+      },
+      "API": {
+        "OVERVIEW_ERROR": "Failed to load observability data",
+        "RELEASE_CHECK_ERROR": "Failed to run release check",
+        "PREFERENCES_ERROR": "Failed to update observability preferences"
+      }
     },
     "RESPONSES": {
       "HEADER": "FAQs",

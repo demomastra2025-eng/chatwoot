@@ -261,7 +261,7 @@
     "SENT_BY": "Enviat per:",
     "BOT": "Bot",
     "NATIVE_APP": "Native app",
-    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from Chatwoot to maintain the message window.",
+    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from OneLink to maintain the message window.",
     "SEND_FAILED": "No s'ha pogut enviar el missatge! Torna-ho a provar",
     "TRY_AGAIN": "reintenta",
     "ASSIGNMENT": {

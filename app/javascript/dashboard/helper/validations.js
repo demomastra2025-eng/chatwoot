@@ -4,6 +4,7 @@ export const VALUE_REQUIRED = 'VALUE_REQUIRED';
 export const VALUE_MUST_BE_BETWEEN_1_AND_998 =
   'VALUE_MUST_BE_BETWEEN_1_AND_998';
 export const ACTION_PARAMETERS_REQUIRED = 'ACTION_PARAMETERS_REQUIRED';
+export const CREATE_TOUCH_DELAY_INVALID = 'CREATE_TOUCH_DELAY_INVALID';
 export const ATLEAST_ONE_CONDITION_REQUIRED = 'ATLEAST_ONE_CONDITION_REQUIRED';
 export const ATLEAST_ONE_ACTION_REQUIRED = 'ATLEAST_ONE_ACTION_REQUIRED';
 
@@ -134,6 +135,29 @@ const validateSingleAction = action => {
     'archive_task',
     'unarchive_task',
   ];
+
+  if (action.action_name === 'create_touch') {
+    const params = Array.isArray(action.action_params)
+      ? action.action_params[0]
+      : action.action_params;
+    const body = params?.body?.trim?.() || '';
+    const delayMinutes = params?.delay_minutes;
+
+    if (!body) {
+      return ACTION_PARAMETERS_REQUIRED;
+    }
+
+    if (
+      delayMinutes !== undefined &&
+      delayMinutes !== null &&
+      delayMinutes !== '' &&
+      (Number.isNaN(Number(delayMinutes)) || Number(delayMinutes) < 0)
+    ) {
+      return CREATE_TOUCH_DELAY_INVALID;
+    }
+
+    return null;
+  }
 
   if (
     !noParamActions.includes(action.action_name) &&

@@ -47,6 +47,14 @@ class AutomationRules::ActionService < ActionService
     Messages::MessageBuilder.new(nil, @conversation, params).perform
   end
 
+  def apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params)
+  end
+
+  def create_touch(action_params)
+    touch_action_service.create_touch(action_params)
+  end
+
   def add_private_note(message)
     return if conversation_a_tweet?
 
@@ -63,5 +71,14 @@ class AutomationRules::ActionService < ActionService
       TeamNotifications::AutomationNotificationMailer.conversation_creation(@conversation, team, params[0][:message])&.deliver_now
       @account.increment_email_sent_count
     end
+  end
+
+  def touch_action_service
+    @touch_action_service ||= AutomationRules::TouchActionService.new(
+      rule: @rule,
+      account: @account,
+      record: @conversation,
+      entity_kind: 'conversation'
+    )
   end
 end

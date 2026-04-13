@@ -41,6 +41,8 @@ class Captain::ToolExecutionAuditService
   attr_reader :assistant, :scope_name, :user, :error
 
   def payload
+    normalized_result = Captain::ToolResult.normalize(@result, error: error)
+
     {
       scope: scope_name,
       tool_id: tool_id,
@@ -50,6 +52,12 @@ class Captain::ToolExecutionAuditService
       requires_confirmation: ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation]),
       arguments: serializable_value(@arguments),
       result_preview: serialized_preview(@result),
+      result_success: normalized_result[:success],
+      result_message: normalized_result[:message],
+      result_error: normalized_result[:error],
+      result_retryable: normalized_result[:retryable],
+      result_data_preview: serialized_preview(normalized_result[:data]),
+      result_audit: serializable_value(normalized_result[:audit]),
       error_class: error&.class&.name,
       error_message: error&.message,
       conversation_id: @runtime_context[:conversation_id],

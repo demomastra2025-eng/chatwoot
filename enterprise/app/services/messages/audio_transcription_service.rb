@@ -74,13 +74,15 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     return transcribed_text if transcribed_text.present?
 
     temp_file_path = fetch_audio_file
-    response = instrument_audio_transcription(instrumentation_params(temp_file_path)) do
+    observability = instrumentation_params(temp_file_path)
+    response = instrument_audio_transcription(observability) do
       Llm::Config.with_api_key(api_key, api_base: api_base) do |context|
         Llm::ApiClient.transcribe(
           temp_file_path,
           context: context,
           model: model,
-          temperature: 0.4
+          temperature: 0.4,
+          observability: observability.merge(runtime_mode: 'audio_transcription')
         )
       end
     end

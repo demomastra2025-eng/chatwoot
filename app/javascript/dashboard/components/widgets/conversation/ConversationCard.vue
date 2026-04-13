@@ -25,6 +25,7 @@ const props = defineProps({
   foldersId: { type: [String, Number], default: 0 },
   showAssignee: { type: Boolean, default: false },
   conversationType: { type: String, default: '' },
+  activeStatus: { type: String, default: 'open' },
   selected: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
   enableContextMenu: { type: Boolean, default: false },
@@ -92,6 +93,14 @@ const unreadCount = computed(() => props.chat.unread_count);
 
 const hasUnread = computed(() => unreadCount.value > 0);
 
+const unreadBadgeLabel = computed(() => {
+  return unreadCount.value > 99 ? '99+' : `${unreadCount.value}`;
+});
+
+const unreadBadgeClass = computed(() => {
+  return unreadBadgeLabel.value.length > 2 ? 'h-5 min-w-5 px-1.5' : 'size-5';
+});
+
 const isInboxNameVisible = computed(() => !activeInbox.value);
 
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
@@ -147,6 +156,7 @@ const conversationPath = computed(() => {
       teamId: props.teamId,
       conversationType: props.conversationType,
       foldersId: props.foldersId,
+      status: props.activeStatus,
     })
   );
 });
@@ -366,10 +376,11 @@ const deleteConversation = () => {
           />
         </span>
         <span
-          class="shadow-lg rounded-full text-xxs font-semibold h-4 leading-4 ltr:ml-auto rtl:mr-auto mt-1 min-w-[1rem] px-1 py-0 text-center text-white bg-n-teal-9"
-          :class="hasUnread ? 'block' : 'hidden'"
+          v-if="hasUnread"
+          class="shadow-lg inline-flex items-center justify-center rounded-full text-[11px] font-semibold leading-none ltr:ml-auto rtl:mr-auto mt-1 text-center text-white bg-n-ruby-9"
+          :class="unreadBadgeClass"
         >
-          {{ unreadCount > 9 ? '9+' : unreadCount }}
+          {{ unreadBadgeLabel }}
         </span>
       </div>
       <CardLabels

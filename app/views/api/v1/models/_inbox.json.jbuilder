@@ -21,6 +21,8 @@ json.allow_messages_after_resolved resource.allow_messages_after_resolved
 json.lock_to_single_conversation resource.lock_to_single_conversation
 json.sender_name_type resource.sender_name_type
 json.business_name resource.business_name
+json.deleting resource.deleting?
+json.deleting_at resource.deleting_at&.iso8601
 
 if resource.respond_to?(:captain_assistant) && resource.captain_assistant.present?
   json.captain_assistant do
@@ -129,6 +131,10 @@ end
 
 if resource.whatsapp_web?
   json.phone_number resource.channel.try(:phone_number)
+  json.connection_state resource.channel.try(:connection_state)
+  json.lifecycle_state resource.channel.try(:lifecycle_state)
+  json.last_error resource.channel.try(:last_error)
+  json.last_synced_at resource.channel.try(:last_synced_at)
   json.conversation_pending resource.channel.try(:conversation_pending)
   json.history_lookback_days resource.channel.try(:history_lookback_days)
   json.ignore_jids resource.channel.try(:ignore_jids)
@@ -144,9 +150,24 @@ if resource.whatsapp_web?
 end
 
 json.provider resource.channel.try(:provider)
+json.campaign_capabilities Campaigns::ChannelCapabilities.for(inbox: resource)
 
 ## Telegram Attributes
 json.bot_name resource.channel.try(:bot_name) if resource.telegram?
+if resource.telegram_personal?
+  json.phone_number resource.channel.try(:phone_number)
+  json.connection_state resource.channel.try(:connection_state)
+  json.lifecycle_state resource.channel.try(:lifecycle_state)
+  json.last_error resource.channel.try(:last_error)
+  json.last_synced_at resource.channel.try(:last_synced_at)
+  json.runtime_state resource.channel.try(:runtime_state)
+end
+
+if resource.vk_community?
+  json.group_id resource.channel.try(:group_id)
+  json.api_version resource.channel.try(:api_version)
+  json.callback_id resource.channel.try(:callback_id)
+end
 
 ### WhatsApp Channel
 if resource.whatsapp?

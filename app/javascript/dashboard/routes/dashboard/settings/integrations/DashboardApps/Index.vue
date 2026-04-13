@@ -109,7 +109,6 @@ export default {
         v-model:search-query="searchQuery"
         :title="$t('INTEGRATION_SETTINGS.DASHBOARD_APPS.TITLE')"
         :description="$t('INTEGRATION_SETTINGS.DASHBOARD_APPS.DESCRIPTION')"
-        :link-text="$t('INTEGRATION_SETTINGS.DASHBOARD_APPS.LEARN_MORE')"
         :search-placeholder="
           $t('INTEGRATION_SETTINGS.DASHBOARD_APPS.SEARCH_PLACEHOLDER')
         "

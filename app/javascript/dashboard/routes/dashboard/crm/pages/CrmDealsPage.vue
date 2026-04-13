@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { format } from 'date-fns';
+import { useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -42,6 +43,7 @@ import SchedulingPageHeader from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
+import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
 import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
@@ -80,6 +82,9 @@ const router = useRouter();
 const { checkPermissions } = usePolicy();
 const { locale, t } = useI18n();
 
+const DEALS_PREFERENCES_STORAGE_KEY = 'crm-deals-page-preferences';
+const MANUAL_BOARD_SORT_KEY = 'position';
+
 const deals = ref([]);
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
@@ -101,7 +106,16 @@ const listSort = ref({
   direction: '',
   key: '',
 });
+const boardSort = reactive({
+  key: MANUAL_BOARD_SORT_KEY,
+});
+const boardSortDirections = reactive({});
 const showLinkedConversationPanel = ref(false);
+const hasRestoredPreferences = ref(false);
+const persistedPreferencesByAccount = useLocalStorage(
+  DEALS_PREFERENCES_STORAGE_KEY,
+  {}
+);
 
 const LIST_PAGE_SIZE = 25;
 
@@ -325,6 +339,59 @@ const viewOptions = computed(() => [
   { label: t('CRM.VIEWS.LIST'), value: 'list' },
 ]);
 
+const boardSortOptions = computed(() => [
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.NONE'),
+    value: MANUAL_BOARD_SORT_KEY,
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.EXPECTED_CLOSE_ON'),
+    value: 'expectedCloseOn',
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.UPDATED_AT'),
+    value: 'updatedAt',
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.CREATED_AT'),
+    value: 'createdAt',
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.AMOUNT'),
+    value: 'amountMinor',
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.OPTIONS.TITLE'),
+    value: 'title',
+  },
+]);
+
+const boardSortDirectionOptions = computed(() => [
+  {
+    label: t('CRM.DEALS.BOARD.SORT.DIRECTIONS.ASC'),
+    value: 'asc',
+  },
+  {
+    label: t('CRM.DEALS.BOARD.SORT.DIRECTIONS.DESC'),
+    value: 'desc',
+  },
+]);
+
+const selectedBoardSortLabel = computed(
+  () =>
+    boardSortOptions.value.find(option => option.value === boardSort.key)
+      ?.label || t('CRM.DEALS.BOARD.SORT.LABEL')
+);
+
+const boardSortDirectionLabels = computed(() => ({
+  asc:
+    boardSortDirectionOptions.value.find(option => option.value === 'asc')
+      ?.label || '',
+  desc:
+    boardSortDirectionOptions.value.find(option => option.value === 'desc')
+      ?.label || '',
+}));
+
 const tableColumns = computed(() => [
   {
     key: 'id',
@@ -490,9 +557,133 @@ const resolveDealSortValue = (deal, key) => {
   }
 };
 
+const resolveDealBoardSortValue = (deal, key) => {
+  switch (key) {
+    case 'amountMinor':
+      return Number(deal.amountMinor ?? 0);
+    case 'createdAt':
+      return deal.createdAt ? new Date(deal.createdAt).getTime() : null;
+    case 'expectedCloseOn':
+      return deal.expectedCloseOn
+        ? new Date(deal.expectedCloseOn).getTime()
+        : null;
+    case 'position':
+      return Number(deal.position ?? Number.MAX_SAFE_INTEGER);
+    case 'title':
+      return normalizeFilterText(deal.title);
+    case 'updatedAt':
+      return deal.updatedAt ? new Date(deal.updatedAt).getTime() : null;
+    default:
+      return null;
+  }
+};
+
 const sortedListDeals = computed(() =>
   sortListRecords(filteredListDeals.value, listSort.value, resolveDealSortValue)
 );
+
+const defaultDealsPreferences = () => ({
+  boardSort: {
+    key: MANUAL_BOARD_SORT_KEY,
+  },
+  boardSortDirections: {},
+  currentPresentation: 'board',
+  filters: {
+    archived: false,
+    companyId: '',
+    contactId: '',
+    ownerId: '',
+    pipelineId: '',
+    stageId: '',
+    teamId: '',
+  },
+  listQuickFilters: {
+    q: '',
+  },
+  listSort: {
+    direction: '',
+    key: '',
+  },
+});
+
+const accountPreferenceKey = computed(() =>
+  String(accountId.value || 'default')
+);
+
+const sanitizeDealsPreferences = preferences => {
+  const defaults = defaultDealsPreferences();
+  const next = {
+    ...defaults,
+    ...preferences,
+    boardSort: {
+      ...defaults.boardSort,
+      ...(preferences?.boardSort || {}),
+    },
+    filters: {
+      ...defaults.filters,
+      ...(preferences?.filters || {}),
+    },
+    listQuickFilters: {
+      ...defaults.listQuickFilters,
+      ...(preferences?.listQuickFilters || {}),
+    },
+    listSort: {
+      ...defaults.listSort,
+      ...(preferences?.listSort || {}),
+    },
+  };
+
+  if (!['board', 'list'].includes(next.currentPresentation)) {
+    next.currentPresentation = defaults.currentPresentation;
+  }
+
+  if (
+    !boardSortOptions.value.some(option => option.value === next.boardSort.key)
+  ) {
+    next.boardSort.key = defaults.boardSort.key;
+  }
+
+  next.boardSortDirections = Object.entries(
+    preferences?.boardSortDirections || {}
+  ).reduce((result, [key, value]) => {
+    result[key] = value === 'desc' ? 'desc' : 'asc';
+    return result;
+  }, {});
+
+  return next;
+};
+
+const restoreDealsPreferences = () => {
+  const stored =
+    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferences = sanitizeDealsPreferences(stored);
+
+  currentPresentation.value = preferences.currentPresentation;
+  listSort.value = { ...preferences.listSort };
+  boardSort.key = preferences.boardSort.key;
+  Object.keys(boardSortDirections).forEach(key => {
+    delete boardSortDirections[key];
+  });
+  Object.assign(boardSortDirections, preferences.boardSortDirections);
+  Object.assign(filters, preferences.filters);
+  listQuickFilters.q = preferences.listQuickFilters.q;
+};
+
+const persistDealsPreferences = () => {
+  if (!hasRestoredPreferences.value) return;
+
+  persistedPreferencesByAccount.value = {
+    ...(persistedPreferencesByAccount.value || {}),
+    [accountPreferenceKey.value]: sanitizeDealsPreferences({
+      boardSort: { ...boardSort },
+      boardSortDirections: { ...boardSortDirections },
+      currentPresentation: currentPresentation.value,
+      filters: { ...filters },
+      listQuickFilters: { ...listQuickFilters },
+      listSort: { ...listSort.value },
+    }),
+  };
+};
 
 const paginatedListDeals = computed(() => {
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
@@ -1313,31 +1504,44 @@ watch(filteredListDeals, rows => {
   }
 });
 
-const handleDealStageChange = async ({ deal, stageId }) => {
+const handleDealStageChange = async ({ deal, stageId, position }) => {
   const currentDeal =
     deals.value.find(item => Number(item.id) === Number(deal.id)) || deal;
   const nextStageId = Number(stageId);
+  const nextPosition = Number(position);
 
-  if (!nextStageId || Number(currentDeal.stageId) === nextStageId) {
+  if (
+    !nextStageId ||
+    (Number(currentDeal.stageId) === nextStageId &&
+      (!nextPosition || Number(currentDeal.position) === nextPosition))
+  ) {
     return;
   }
 
-  const optimisticDeal = { ...currentDeal, stageId: nextStageId };
-  upsertDeal(optimisticDeal);
-
   if (
     selectedDeal.value &&
-    Number(selectedDeal.value.id) === optimisticDeal.id
+    Number(selectedDeal.value.id) === Number(currentDeal.id)
   ) {
-    selectedDeal.value = optimisticDeal;
+    selectedDeal.value = {
+      ...selectedDeal.value,
+      position: nextPosition || selectedDeal.value.position,
+      stageId: nextStageId,
+    };
     form.stageId = nextStageId;
   }
 
   try {
-    const response = await CrmDealsAPI.transitionStage(currentDeal.id, {
-      lock_version: currentDeal.lockVersion,
-      stage_id: nextStageId,
-    });
+    const response =
+      Number(currentDeal.stageId) === nextStageId
+        ? await CrmDealsAPI.update(currentDeal.id, {
+            lock_version: currentDeal.lockVersion,
+            position: nextPosition || currentDeal.position,
+          })
+        : await CrmDealsAPI.transitionStage(currentDeal.id, {
+            lock_version: currentDeal.lockVersion,
+            position: nextPosition || undefined,
+            stage_id: nextStageId,
+          });
     const updatedDeal = normalizePayload(response.data);
     upsertDeal(updatedDeal);
 
@@ -1351,6 +1555,13 @@ const handleDealStageChange = async ({ deal, stageId }) => {
   } catch (error) {
     try {
       await loadDeals();
+
+      if (selectedDeal.value) {
+        selectedDeal.value =
+          deals.value.find(
+            item => Number(item.id) === Number(currentDeal.id)
+          ) || selectedDeal.value;
+      }
     } catch {
       // Keep the original API error as the surfaced failure.
     }
@@ -1551,6 +1762,27 @@ watch(linkedConversationId, conversationId => {
   }
 });
 
+watch(
+  [
+    currentPresentation,
+    listSort,
+    () => ({ ...boardSort }),
+    () => ({ ...boardSortDirections }),
+    () => ({ ...filters }),
+    () => listQuickFilters.q,
+  ],
+  () => {
+    persistDealsPreferences();
+  },
+  { deep: true }
+);
+
+const toggleBoardSortDirection = stageId => {
+  const key = String(stageId);
+  boardSortDirections[key] =
+    boardSortDirections[key] === 'desc' ? 'asc' : 'desc';
+};
+
 onBeforeRouteLeave(() => {
   showLinkedConversationPanel.value = false;
   filterDialogRef.value?.close?.();
@@ -1562,6 +1794,8 @@ onBeforeRouteLeave(() => {
 
 onMounted(async () => {
   if (!canViewDeals.value) return;
+
+  restoreDealsPreferences();
 
   if (!agents.value.length) {
     await store.dispatch('agents/get');
@@ -1577,6 +1811,8 @@ onMounted(async () => {
   ]);
   ensurePipelineFilterSelection();
   resetForm();
+  hasRestoredPreferences.value = true;
+  persistDealsPreferences();
   await loadDeals();
   await consumeDealPrefillQuery();
 });
@@ -1615,6 +1851,15 @@ onMounted(async () => {
           </label>
         </template>
         <template #actions>
+          <SelectMenu
+            v-if="currentPresentation === 'board'"
+            icon="i-lucide-arrow-down-up"
+            :model-value="boardSort.key"
+            :options="boardSortOptions"
+            :label="selectedBoardSortLabel"
+            sub-menu-position="bottom"
+            @update:model-value="boardSort.key = $event"
+          />
           <Input
             v-if="currentPresentation === 'list'"
             size="sm"
@@ -1697,11 +1942,17 @@ onMounted(async () => {
             :deals="deals"
             :field-definitions="dealFieldDefinitions"
             :owners="ownerOptions"
+            :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
             :stages="boardStages"
+            :sort-direction-labels="boardSortDirectionLabels"
+            :sort-directions="boardSortDirections"
+            :sort-key="boardSort.key"
+            :sort-value-resolver="resolveDealBoardSortValue"
             @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
             @create-deal="handleBoardCreateDeal"
             @select-deal="openEditDrawer"
+            @toggle-sort-direction="toggleBoardSortDirection"
           />
 
           <SchedulingEmptyState

@@ -9,6 +9,9 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     QRCODE_UPDATED
     CONNECTION_UPDATE
     STATUS_INSTANCE
+    LOGOUT_INSTANCE
+    REMOVE_INSTANCE
+    CALL
     MESSAGES_UPSERT
     MESSAGES_EDITED
     MESSAGES_UPDATE
@@ -59,7 +62,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def refresh_qr!
-    response = request(:get, "/instance/connect/#{channel.instance_name}")
+    response = request(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
     sync_from_runtime_response!(response)
     channel
   rescue RequestError => e
@@ -69,7 +72,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def reconnect!
-    if channel.connection_state == 'open'
+    if restart_runtime_session?
       response = request(:post, "/instance/restart/#{channel.instance_name}", body: {})
       sync_from_runtime_response!(response)
     else
@@ -103,7 +106,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def repair!
     apply_runtime_configuration!
     sync_connection_state!
-    refresh_qr! unless channel.connection_state == 'open'
+    refresh_qr! if qr_refresh_required_after_repair?
     channel
   rescue RequestError => e
     raise unless e.status == 404
@@ -123,8 +126,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       last_error: runtime_error_for_state(normalized_state, channel.last_error),
       last_synced_at: Time.current
     }
-    attributes[:qr_code] = {} if %w[open close refused].include?(normalized_state)
-    attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil) if %w[open close refused].include?(normalized_state)
+    attributes[:qr_code] = {} if %w[open reconnecting close refused].include?(normalized_state)
+    attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil) if %w[open reconnecting close refused].include?(normalized_state)
 
     channel.update!(attributes)
     request_history_sync_if_provider_ready if normalized_state == 'open'
@@ -259,6 +262,44 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     response.dig('key', 'id') || response.dig('data', 'key', 'id')
   end
 
+  def update_message(message:, content:)
+    source_id = message.source_id.to_s.presence
+    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    raise ArgumentError, 'Message source_id is required for WhatsApp Web edits' if source_id.blank?
+    raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web edits' if remote_jid.blank?
+
+    request(:post, "/chat/updateMessage/#{channel.instance_name}", body: {
+      number: remote_jid,
+      text: content.to_s,
+      key: {
+        id: source_id,
+        fromMe: true,
+        remoteJid: remote_jid
+      }
+    })
+  end
+
+  def mark_messages_read(messages:)
+    read_messages = Array.wrap(messages).filter_map do |message|
+      payload = message.respond_to?(:to_h) ? message.to_h.with_indifferent_access : {}
+      source_id = payload[:id].to_s.presence
+      remote_jid = normalized_remote_jid(payload[:remoteJid] || payload[:remote_jid])
+      next if source_id.blank? || remote_jid.blank?
+
+      {
+        remoteJid: remote_jid,
+        fromMe: ActiveModel::Type::Boolean.new.cast(payload[:fromMe] || payload[:from_me]),
+        id: source_id
+      }
+    end
+
+    return if read_messages.blank?
+
+    request(:post, "/chat/markMessageAsRead/#{channel.instance_name}", body: {
+      readMessages: read_messages
+    })
+  end
+
   def destroy_remote_instance!
     request(:delete, "/instance/delete/#{channel.instance_name}")
   rescue RequestError => e
@@ -308,7 +349,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       attributes[:sync_state] = channel.sync_state_payload.merge(
         'qr_generated_at' => Time.current.iso8601
       )
-    elsif %w[open close refused].include?(attributes[:connection_state])
+    elsif %w[open reconnecting close refused].include?(attributes[:connection_state])
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
     end
@@ -359,6 +400,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       'connected'
     when 'connecting'
       qr_present ? 'qr_ready' : 'waiting_for_qr'
+    when 'reconnecting'
+      'reconnecting'
     when 'close'
       qr_present ? 'qr_ready' : 'disconnected'
     when 'refused'
@@ -372,6 +415,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     value = state.to_s
     return 'open' if value == 'open'
     return 'connecting' if value == 'connecting'
+    return 'reconnecting' if value == 'reconnecting'
     return 'close' if value.in?(%w[close closed disconnected])
     return 'refused' if value == 'refused'
 
@@ -388,9 +432,47 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def runtime_error_for_state(normalized_state, runtime_error)
-    return nil if %w[open connecting].include?(normalized_state)
+    return nil if %w[open connecting reconnecting].include?(normalized_state)
 
     runtime_error.presence || channel.last_error.presence || default_terminal_state_message(normalized_state)
+  end
+
+  def message_remote_jid(message)
+    contact = message.conversation.contact
+    contact_inbox = message.conversation.contact_inbox
+    contact_attributes = (contact&.additional_attributes || {}).with_indifferent_access
+    whatsapp_profile = whatsapp_channel_profile(contact_attributes, contact_inbox, contact)
+
+    [
+      whatsapp_profile&.[](:canonical_jid),
+      whatsapp_profile&.[](:raw_jid),
+      contact_attributes[:canonical_jid],
+      contact_attributes[:raw_jid],
+      contact_inbox&.source_id
+    ].find(&:present?)
+  end
+
+  def whatsapp_channel_profile(contact_attributes, contact_inbox, contact)
+    profiles = contact_attributes[:channel_profiles].to_h.with_indifferent_access[:whatsapp_web].to_h.with_indifferent_access
+    source_id = contact_inbox&.source_id.to_s.strip
+    identifier = contact&.identifier.to_s.strip
+
+    profiles.values.find do |profile|
+      attributes = profile.to_h.with_indifferent_access
+      [
+        attributes[:source_id].to_s.strip,
+        attributes[:identifier].to_s.strip,
+        attributes[:canonical_jid].to_s.strip,
+        attributes[:raw_jid].to_s.strip,
+        attributes[:lid_jid].to_s.strip
+      ].any?(&:present?) && [
+        attributes[:source_id].to_s.strip,
+        attributes[:identifier].to_s.strip,
+        attributes[:canonical_jid].to_s.strip,
+        attributes[:raw_jid].to_s.strip,
+        attributes[:lid_jid].to_s.strip
+      ].include?(source_id.presence || identifier)
+    end || profiles.values.first&.with_indifferent_access
   end
 
   def default_terminal_state_message(normalized_state)
@@ -402,6 +484,17 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     else
       'Evolution connection unavailable'
     end
+  end
+
+  def restart_runtime_session?
+    return true if channel.connection_state.in?(%w[open reconnecting])
+
+    channel.connection_state == 'connecting' && channel.qr_code.blank?
+  end
+
+  def qr_refresh_required_after_repair?
+    channel.connection_state.in?(%w[close refused unknown]) ||
+      (channel.connection_state == 'connecting' && channel.qr_code.blank?)
   end
 
   def merged_runtime_message(*messages)
@@ -576,6 +669,17 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return unless attachment.file.attached?
 
     attachment.file.filename.to_s
+  end
+
+  def normalized_remote_jid(remote_jid)
+    value = remote_jid.to_s.strip
+    return if value.blank?
+    return WhatsappWeb::ProviderPayloadNormalizer.provider_lookup_remote_jid(value) if value.include?('@')
+
+    digits = value.gsub(/\D/, '')
+    return if digits.blank?
+
+    "#{digits}@s.whatsapp.net"
   end
 
   def request(method, path, body: nil)

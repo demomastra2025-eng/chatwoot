@@ -56,6 +56,55 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.get(`${this.url}/${inboxId}/whatsapp_web_diagnostics`);
   }
 
+  requestTelegramPersonalCode(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/telegram_personal_request_code`);
+  }
+
+  requestTelegramPersonalQr(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/telegram_personal_request_qr`);
+  }
+
+  verifyTelegramPersonalCode(inboxId, code) {
+    return axios.post(`${this.url}/${inboxId}/telegram_personal_verify_code`, {
+      code,
+    });
+  }
+
+  verifyTelegramPersonalPassword(inboxId, password) {
+    return axios.post(
+      `${this.url}/${inboxId}/telegram_personal_verify_password`,
+      {
+        password,
+      }
+    );
+  }
+
+  reconnectTelegramPersonal(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/telegram_personal_reconnect`);
+  }
+
+  historySyncTelegramPersonal(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/telegram_personal_history_sync`,
+      payload
+    );
+  }
+
+  contactsSyncTelegramPersonal(inboxId, payload = {}) {
+    return axios.post(
+      `${this.url}/${inboxId}/telegram_personal_contacts_sync`,
+      payload
+    );
+  }
+
+  disconnectTelegramPersonal(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/telegram_personal_disconnect`);
+  }
+
+  getTelegramPersonalDiagnostics(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/telegram_personal_diagnostics`);
+  }
+
   createCSATTemplate(inboxId, template) {
     return axios.post(`${this.url}/${inboxId}/csat_template`, {
       template,

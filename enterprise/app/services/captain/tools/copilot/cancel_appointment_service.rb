@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::CancelAppointmentService < Captain::Tools::Copilo
     appointment = appointment_operations.cancel_current_appointment
     formatted_record(appointment)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

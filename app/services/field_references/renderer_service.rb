@@ -13,8 +13,13 @@ class FieldReferences::RendererService
   ACCOUNT_STATE_ATTRIBUTES = %i[id name custom_attributes].freeze
   AGENT_STATE_ATTRIBUTES = %i[id name email available_name custom_attributes].freeze
 
-  def initialize(message:)
+  def initialize(message: nil, conversation: nil, contact: nil, inbox: nil, account: nil, sender: nil)
     @message = message
+    @conversation = conversation
+    @contact = contact
+    @inbox = inbox
+    @account = account
+    @sender = sender
   end
 
   def render(text)
@@ -30,9 +35,19 @@ class FieldReferences::RendererService
 
   private
 
-  attr_reader :message
+  attr_reader :message, :contact, :account
 
-  delegate :conversation, :inbox, :sender, to: :message
+  def conversation
+    @conversation || message&.conversation
+  end
+
+  def inbox
+    @inbox || message&.inbox || conversation&.inbox
+  end
+
+  def sender
+    @sender || message&.sender
+  end
 
   def resolve_field_reference(field_id)
     scope, path = normalize_field_id(field_id).split('.', 2)
@@ -56,7 +71,7 @@ class FieldReferences::RendererService
   end
 
   def contact_state
-    contact = conversation.contact
+    contact = @contact || conversation&.contact
     return if contact.blank?
 
     contact.attributes.symbolize_keys.slice(*CONTACT_STATE_ATTRIBUTES)
@@ -76,7 +91,7 @@ class FieldReferences::RendererService
   end
 
   def account_state
-    account = conversation.account
+    account = @account || conversation&.account || inbox&.account
     return if account.blank?
 
     account.attributes.symbolize_keys.slice(*ACCOUNT_STATE_ATTRIBUTES)
@@ -92,6 +107,7 @@ class FieldReferences::RendererService
 
   def deal_state
     return unless defined?(Captain::ContextFields)
+    return if conversation.blank?
     return unless Captain::ContextFields.scope_visible_for_user?(
       scope: :deal,
       account: conversation.account,
@@ -106,6 +122,7 @@ class FieldReferences::RendererService
 
   def task_state
     return unless defined?(Captain::ContextFields)
+    return if conversation.blank?
     return unless Captain::ContextFields.scope_visible_for_user?(
       scope: :task,
       account: conversation.account,
@@ -120,6 +137,7 @@ class FieldReferences::RendererService
 
   def appointment_state
     return unless defined?(Captain::ContextFields)
+    return if conversation.blank?
     return unless Captain::ContextFields.scope_visible_for_user?(
       scope: :appointment,
       account: conversation.account,

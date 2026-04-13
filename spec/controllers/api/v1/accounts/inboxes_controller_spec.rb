@@ -36,6 +36,26 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(JSON.parse(response.body, symbolize_names: true)[:payload].size).to eq(2)
       end
 
+      it 'includes campaign capabilities in the inbox payload' do
+        email_inbox = create(:channel_email, account: account).inbox
+
+        get "/api/v1/accounts/#{account.id}/inboxes",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        payload = JSON.parse(response.body, symbolize_names: true)[:payload]
+        email_payload = payload.find { |item| item[:id] == email_inbox.id }
+
+        expect(email_payload).to be_present
+        expect(email_payload[:campaign_capabilities]).to include(
+          supports_outbound_campaigns: true,
+          implemented_in_current_campaigns: true,
+          delivery_readiness: 'ready',
+          supports_subject: true,
+          supports_html: true
+        )
+      end
+
       it 'returns only assigned inboxes of current_account as agent' do
         get "/api/v1/accounts/#{account.id}/inboxes",
             headers: agent.create_new_auth_token,
@@ -317,16 +337,15 @@ RSpec.describe 'Inboxes API', type: :request do
       it 'deletes inbox' do
         expect(DeleteObjectJob).to receive(:perform_later).with(inbox, admin, anything).once
 
-        perform_enqueued_jobs(only: DeleteObjectJob) do
-          delete "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
-                 headers: admin.create_new_auth_token,
-                 as: :json
-        end
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
 
         json_response = response.parsed_body
 
-        expect(response).to have_http_status(:success)
+        expect(response).to have_http_status(:accepted)
         expect(json_response['message']).to eq('Your inbox deletion request will be processed in some time.')
+        expect(inbox.reload.deleting?).to be(true)
       end
 
       it 'is unable to delete inbox of another account' do
@@ -416,6 +435,27 @@ RSpec.describe 'Inboxes API', type: :request do
         post "/api/v1/accounts/#{account.id}/inboxes",
              headers: admin.create_new_auth_token,
              params: { name: 'API Inbox 2', channel: { type: 'api', webhook_url: 'http://test2.com' } },
+             as: :json
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to include('Account main channel limit exceeded')
+      end
+
+      it 'does not create a telegram personal inbox when the account main channel limit is reached' do
+        account.update!(limits: { non_web_inboxes: 1 })
+        create(:channel_api, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes",
+             headers: admin.create_new_auth_token,
+             params: {
+               name: 'Telegram Personal Inbox',
+               channel: {
+                 type: 'telegram_personal',
+                 api_id: 123_456,
+                 api_hash: SecureRandom.hex(16),
+                 phone_number: '+77066318623'
+               }
+             },
              as: :json
 
         expect(response).to have_http_status(:payment_required)
@@ -551,6 +591,36 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('large-qr-payload')
+      end
+
+      it 'returns the degraded inbox state when status polling fails' do
+        allow_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!)
+          .and_raise(StandardError, 'Evolution connection unavailable')
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('failed')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'last_error')).to eq('Evolution connection unavailable')
+        expect(channel.reload.last_error).to eq('Evolution connection unavailable')
+      end
+
+      it 'returns accepted without touching the provider when the inbox is deleting' do
+        inbox.mark_pending_deletion!
+
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:sync_connection_state!)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true },
+             as: :json
+
+        expect(response).to have_http_status(:accepted)
+        expect(response.parsed_body['deleting']).to eq(true)
+        expect(response.parsed_body['lifecycle_state']).to eq('deleting')
       end
     end
 

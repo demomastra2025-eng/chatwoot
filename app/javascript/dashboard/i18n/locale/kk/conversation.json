@@ -50,6 +50,14 @@
     "UNKNOWN_FILE_TYPE": "Unknown File",
     "SAVE_CONTACT": "Save Contact",
     "NO_CONTENT": "No content to display",
+    "TELEGRAM": {
+      "FORWARDED_FROM": "Forwarded from {source}",
+      "REACTIONS": "Reactions:",
+      "REACTION": "Reaction",
+      "CUSTOM_EMOJI": "Custom emoji",
+      "PAID_REACTION": "Paid reaction",
+      "UNKNOWN_SOURCE": "Unknown source"
+    },
     "SHARED_ATTACHMENT": {
       "CONTACT": "{sender} has shared a contact",
       "LOCATION": "{sender} has shared a location",
@@ -105,7 +113,7 @@
       }
     },
     "RESOLVE_DROPDOWN": {
-      "MARK_PENDING": "Mark as pending",
+      "MARK_PENDING": "Hand over to AI agent",
       "SNOOZE_UNTIL": "Snooze",
       "SNOOZE": {
         "TITLE": "Snooze until",
@@ -146,7 +154,7 @@
       "CONFIRM": "Delete"
     },
     "CARD_CONTEXT_MENU": {
-      "PENDING": "Mark as pending",
+      "PENDING": "Hand over to AI agent",
       "RESOLVED": "Mark as resolved",
       "MARK_AS_UNREAD": "Mark as unread",
       "MARK_AS_READ": "Mark as read",
@@ -201,6 +209,9 @@
       "REPLY": "Reply",
       "PRIVATE_NOTE": "Private Note",
       "SEND": "Send",
+      "SEND_LATER": "Send later",
+      "CREATE_DELAYED_MESSAGE": "Создать отложенное сообщение",
+      "DELAYED_MESSAGE_DESCRIPTION": "Schedule a message for this conversation. The system will reuse the current route and cancel delivery automatically if the contact replies first.",
       "CREATE": "Add Note",
       "INSERT_READ_MORE": "Read more",
       "DISMISS_REPLY": "Dismiss reply",
@@ -260,7 +271,7 @@
     "SENT_BY": "Sent by:",
     "BOT": "Robot",
     "NATIVE_APP": "Native app",
-    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from OneLink to maintain the message window.",
+    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from {installationName} to maintain the message window.",
     "SEND_FAILED": "Couldn't send message! Try again",
     "TRY_AGAIN": "retry",
     "ASSIGNMENT": {

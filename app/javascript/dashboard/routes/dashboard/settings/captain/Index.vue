@@ -14,6 +14,7 @@ import SectionLayout from '../account/components/SectionLayout.vue';
 import ModelSelector from './components/ModelSelector.vue';
 import FeatureToggle from './components/FeatureToggle.vue';
 import RuntimeSettingsCard from './components/RuntimeSettingsCard.vue';
+import RuntimeModerationPolicyCard from './components/RuntimeModerationPolicyCard.vue';
 import RuntimeStatusCard from './components/RuntimeStatusCard.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
@@ -207,6 +208,18 @@ onMounted(() => {
           with-border
         >
           <div class="grid gap-4">
+            <RuntimeModerationPolicyCard
+              :is-allowed="isFeatureAccessible({ enterprise: true })"
+              :title="
+                t('CAPTAIN_SETTINGS.RUNTIME.MODERATION_FAILURE_MODE.TITLE')
+              "
+              :description="
+                t(
+                  'CAPTAIN_SETTINGS.RUNTIME.MODERATION_FAILURE_MODE.DESCRIPTION'
+                )
+              "
+              @change="handleRuntimeChange"
+            />
             <RuntimeSettingsCard
               v-for="feature in runtimeFeatures"
               v-show="shouldShowFeature(feature)"

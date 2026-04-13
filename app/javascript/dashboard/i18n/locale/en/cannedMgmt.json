@@ -1,18 +1,18 @@
 {
   "CANNED_MGMT": {
-    "HEADER": "Canned Responses",
-    "LEARN_MORE": "Learn more about canned responses",
-    "DESCRIPTION": "Canned Responses are pre-written reply templates that help you quickly respond to a conversation. Agents can type the '/' character followed by the shortcode to insert a canned response during a conversation. ",
-    "COUNT": "{n} canned response | {n} canned responses",
-    "HEADER_BTN_TXT": "Add canned response",
-    "LOADING": "Fetching canned responses...",
-    "SEARCH_PLACEHOLDER": "Search canned responses...",
-    "NO_RESULTS": "No canned responses found matching your search",
+    "HEADER": "Templates",
+    "LEARN_MORE": "Learn more about templates",
+    "DESCRIPTION": "Templates are reusable replies you can insert anywhere with '/'. Use them to standardize fast responses before richer touch flows land.",
+    "COUNT": "{n} template | {n} templates",
+    "HEADER_BTN_TXT": "Add template",
+    "LOADING": "Fetching templates...",
+    "SEARCH_PLACEHOLDER": "Search templates...",
+    "NO_RESULTS": "No templates found matching your search",
     "SEARCH_404": "There are no items matching this query.",
     "LIST": {
-      "404": "There are no canned responses available in this account.",
-      "TITLE": "Manage canned responses",
-      "DESC": "Canned Responses are predefined reply templates which can be used to quickly send out replies to conversations.",
+      "404": "There are no templates available in this account.",
+      "TITLE": "Manage templates",
+      "DESC": "Templates are reusable reply snippets you can insert in conversations and future touches.",
       "TABLE_HEADER": {
         "SHORT_CODE": "Short code",
         "CONTENT": "Content",
@@ -20,8 +20,8 @@
       }
     },
     "ADD": {
-      "TITLE": "Add canned response",
-      "DESC": "Canned Responses are predefined reply templates which can be used to quickly send out replies to conversations.",
+      "TITLE": "Add template",
+      "DESC": "Create a reusable template that can be inserted with '/'.",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "FORM": {
         "SHORT_CODE": {
@@ -37,12 +37,12 @@
         "SUBMIT": "Submit"
       },
       "API": {
-        "SUCCESS_MESSAGE": "Canned response added successfully.",
+        "SUCCESS_MESSAGE": "Template added successfully.",
         "ERROR_MESSAGE": "Could not connect to Onelink server. Please try again."
       }
     },
     "EDIT": {
-      "TITLE": "Edit canned response",
+      "TITLE": "Edit template",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "FORM": {
         "SHORT_CODE": {
@@ -59,14 +59,14 @@
       },
       "BUTTON_TEXT": "Edit",
       "API": {
-        "SUCCESS_MESSAGE": "Canned response is updated successfully.",
+        "SUCCESS_MESSAGE": "Template is updated successfully.",
         "ERROR_MESSAGE": "Could not connect to Onelink server. Please try again."
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
       "API": {
-        "SUCCESS_MESSAGE": "Canned response deleted successfully.",
+        "SUCCESS_MESSAGE": "Template deleted successfully.",
         "ERROR_MESSAGE": "Could not connect to Onelink server. Please try again."
       },
       "CONFIRM": {

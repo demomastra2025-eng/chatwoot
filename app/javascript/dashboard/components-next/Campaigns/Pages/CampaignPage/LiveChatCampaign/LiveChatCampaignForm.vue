@@ -14,6 +14,10 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
+  lockedInboxId: {
+    type: [Number, String],
+    default: null,
+  },
   mode: {
     type: String,
     required: true,
@@ -44,7 +48,7 @@ const senderList = ref([]);
 const initialState = {
   title: '',
   message: '',
-  inboxId: null,
+  inboxId: props.lockedInboxId || null,
   senderId: 0,
   enabled: true,
   triggerOnlyDuringBusinessHours: false,
@@ -193,6 +197,16 @@ watch(
 );
 
 watch(
+  () => props.lockedInboxId,
+  newInboxId => {
+    if (props.mode === 'create' && newInboxId) {
+      state.inboxId = newInboxId;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   () => props.selectedCampaign,
   newCampaign => {
     if (props.mode === 'edit' && newCampaign) {
@@ -232,6 +246,7 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
         v-model="state.inboxId"
         :options="inboxOptions"
         :has-error="!!formErrors.inbox"
+        :disabled="!!lockedInboxId"
         :placeholder="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.INBOX.PLACEHOLDER')"
         :message="formErrors.inbox"
         class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"

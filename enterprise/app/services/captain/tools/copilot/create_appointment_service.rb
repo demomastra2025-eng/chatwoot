@@ -24,7 +24,7 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
     )
     formatted_record(appointment)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

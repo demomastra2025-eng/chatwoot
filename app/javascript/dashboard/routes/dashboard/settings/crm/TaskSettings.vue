@@ -5,11 +5,14 @@ import { useRoute, useRouter } from 'vue-router';
 import Draggable from 'vuedraggable';
 
 import { useAlert } from 'dashboard/composables';
+import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import { useTouchPlans } from 'dashboard/composables/useTouchPlans';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import TouchPlanSelectField from 'dashboard/components-next/Outbound/TouchPlanSelectField.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
@@ -32,6 +35,9 @@ const referencesStore = useCrmReferencesStore();
 const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
+const { currentAccount, updateAccount } = useAccount();
+const { isLoadingTouchPlans, loadTouchPlans, touchPlanOptionsForEntityKind } =
+  useTouchPlans();
 const { t } = useI18n();
 const normalizedDefaultTaskStatusColor = String(DEFAULT_TASK_STATUS_COLOR || '')
   .trim()
@@ -40,9 +46,13 @@ const normalizedDefaultTaskStatusColor = String(DEFAULT_TASK_STATUS_COLOR || '')
 const taskStatusDrawerOpen = ref(false);
 const taskStatusDeleteDialogRef = ref(null);
 const taskStatusPendingDelete = ref(null);
+const defaultTaskTouchPlanId = ref(null);
 const taskStatusRows = ref([]);
 const draggingTaskStatuses = ref(false);
 const taskStatusOrderSaving = ref(false);
+const taskTouchPlanOptions = computed(() =>
+  touchPlanOptionsForEntityKind('task')
+);
 
 const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
@@ -104,6 +114,14 @@ const taskStatusCategoryLabel = category => {
 };
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
+
+const syncFromAccount = () => {
+  const accountSettings = currentAccount.value?.settings || {};
+  defaultTaskTouchPlanId.value =
+    accountSettings.default_task_touch_plan_id || null;
+};
+
+watch(currentAccount, syncFromAccount, { deep: true, immediate: true });
 
 watch(
   () => referencesStore.taskStatuses,
@@ -340,7 +358,20 @@ const consumeRouteAction = async () => {
   }
 };
 
+const saveDefaultTaskTouchPlan = async () => {
+  try {
+    await updateAccount({
+      default_task_touch_plan_id: defaultTaskTouchPlanId.value,
+    });
+    useAlert(t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
+  } catch (error) {
+    syncFromAccount();
+    useAlert(formatErrorMessage(error) || t('GENERAL_SETTINGS.UPDATE.ERROR'));
+  }
+};
+
 onMounted(async () => {
+  await loadTouchPlans();
   await referencesStore.loadTaskStatuses();
   resetTaskStatusForm();
   await consumeRouteAction();
@@ -373,6 +404,34 @@ onMounted(async () => {
           :description="formatErrorMessage(referencesStore.ui.error)"
           @retry="$router.go(0)"
         />
+
+        <SchedulingFormFieldGroup
+          :framed="false"
+          :title="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.TASK_TITLE')"
+          :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.TASK_DESCRIPTION')"
+        >
+          <div
+            class="mt-3 grid gap-4 rounded-2xl bg-n-solid-2 p-5 outline outline-1 outline-n-container shadow-sm"
+          >
+            <TouchPlanSelectField
+              v-model="defaultTaskTouchPlanId"
+              :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL')"
+              :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.NOTE')"
+              :options="taskTouchPlanOptions"
+              :placeholder="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')"
+              :disabled="!canManage || isLoadingTouchPlans"
+            />
+
+            <div>
+              <Button
+                :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE')"
+                size="sm"
+                :disabled="!canManage || isLoadingTouchPlans"
+                @click="saveDefaultTaskTouchPlan"
+              />
+            </div>
+          </div>
+        </SchedulingFormFieldGroup>
 
         <SchedulingFormFieldGroup
           :framed="false"

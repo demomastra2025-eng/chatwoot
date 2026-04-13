@@ -20,7 +20,10 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
     executor = Captain::Tools::HttpRequestExecutor.new(
       assistant: preview_assistant,
       custom_tool: custom_tool,
-      state: preview_state
+      state: preview_state,
+      feature: :assistant,
+      preferences: Current.account.captain_preferences[:runtime],
+      enforce_safety: !preview_only?
     )
 
     result = if preview_only?

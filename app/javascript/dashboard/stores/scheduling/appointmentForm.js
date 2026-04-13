@@ -29,6 +29,28 @@ const resolveAmount = value => {
   return Number.isFinite(numericValue) ? numericValue : 0;
 };
 
+const normalizeIdArray = values => {
+  const normalizedValues = Array.isArray(values) ? values : [values];
+
+  return normalizedValues
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .filter((value, index, array) => array.indexOf(value) === index);
+};
+
+const haveEqualIds = (left = [], right = []) => {
+  const normalizedLeft = normalizeIdArray(left);
+  const normalizedRight = normalizeIdArray(right);
+
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every(
+    (value, index) => value === normalizedRight[index]
+  );
+};
+
 const normalizePrepaymentForm = form => ({
   ...form,
   prepaidPaymentMethod:
@@ -55,6 +77,7 @@ const createDefaultForm = () => ({
   resourceId: '',
   serviceAmount: '',
   serviceId: '',
+  serviceIds: [],
   source: 'manual',
   startsAt: '',
   status: 'scheduled',
@@ -69,6 +92,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
       form: createDefaultForm(),
       isOpen: false,
       mode: 'create',
+      requirements: {
+        companyEnabled: true,
+        contactRequired: true,
+      },
       recordId: null,
       selectedContact: null,
       selectedAppointment: null,
@@ -92,6 +119,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resolveAmount(state.form.prepaidAmount) >
           resolveAmount(state.form.serviceAmount)
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.PREPAID_EXCEEDS_SERVICE_AMOUNT'
+            : '',
+        clientName:
+          !state.form.clientName && !state.form.contactId
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
+            : '',
+        contactId:
+          state.requirements.contactRequired && !state.form.contactId
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
             : '',
         resourceId: !state.form.resourceId
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
@@ -132,7 +167,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.reset();
         this.mode = 'edit';
         this.recordId = appointment.id;
-        this.selectedAppointment = appointment;
+        this.selectedAppointment = {
+          ...appointment,
+          serviceIds:
+            normalizeIdArray(appointment.serviceIds).length > 0
+              ? normalizeIdArray(appointment.serviceIds)
+              : normalizeIdArray([appointment.serviceId]),
+        };
         this.isOpen = true;
         this.form = {
           appointmentType: appointment.appointmentType || 'primary',
@@ -152,6 +193,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resourceId: appointment.resourceId || '',
           serviceAmount: appointment.serviceAmount ?? '',
           serviceId: appointment.serviceId || '',
+          serviceIds:
+            normalizeIdArray(appointment.serviceIds).length > 0
+              ? normalizeIdArray(appointment.serviceIds)
+              : normalizeIdArray([appointment.serviceId]),
           source: appointment.source || 'manual',
           startsAt: toDateTimeInputValue(appointment.startsAt),
           status: appointment.status || 'scheduled',
@@ -164,10 +209,25 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.ui.error = null;
       },
 
+      setRequirements(requirements = {}) {
+        this.requirements = {
+          ...this.requirements,
+          ...requirements,
+        };
+      },
+
       updateField(field, value) {
+        const normalizedValue =
+          field === 'serviceIds' ? normalizeIdArray(value) : value;
+
         this.form = normalizePrepaymentForm({
           ...this.form,
-          [field]: value,
+          [field]: normalizedValue,
+          ...(field === 'serviceIds'
+            ? {
+                serviceId: normalizeIdArray(value)[0] || '',
+              }
+            : {}),
         });
       },
 
@@ -186,24 +246,29 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       syncServicePricing(services) {
-        const selectedService = services.find(
-          service => Number(service.id) === Number(this.form.serviceId)
-        );
-        if (!selectedService) return;
+        const selectedServices = normalizeIdArray(this.form.serviceIds)
+          .map(serviceId =>
+            services.find(service => Number(service.id) === Number(serviceId))
+          )
+          .filter(Boolean);
+        if (!selectedServices.length) return;
         if (
           this.mode === 'edit' &&
           this.selectedAppointment &&
           Number(this.form.resourceId) ===
             Number(this.selectedAppointment.resourceId) &&
-          Number(this.form.serviceId) ===
-            Number(this.selectedAppointment.serviceId)
+          haveEqualIds(
+            this.form.serviceIds,
+            this.selectedAppointment.serviceIds
+          )
         ) {
           return;
         }
 
-        const nextServiceAmount = getServicePriceForResource(
-          selectedService,
-          this.form.resourceId
+        const nextServiceAmount = selectedServices.reduce(
+          (sum, service) =>
+            sum + getServicePriceForResource(service, this.form.resourceId),
+          0
         );
         if (
           `${this.form.serviceAmount ?? ''}` === `${nextServiceAmount ?? ''}`
@@ -304,7 +369,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           client_name:
             normalizedForm.clientName || this.selectedContact?.fullName,
           client_phone: normalizedForm.clientPhone,
-          company_id: toNumeric(normalizedForm.companyId),
           contact_id: toNumeric(normalizedForm.contactId),
           conversation_id: toNumeric(normalizedForm.conversationId),
           custom_attributes: normalizedForm.customAttributes || {},
@@ -315,9 +379,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resource_id: toNumeric(normalizedForm.resourceId),
           service_amount: toNumeric(normalizedForm.serviceAmount) || 0,
           service_id: toNumeric(normalizedForm.serviceId),
+          service_ids: normalizeIdArray(normalizedForm.serviceIds),
           source: normalizedForm.source || 'manual',
           starts_at: fromDateTimeInputValue(normalizedForm.startsAt),
           status: normalizedForm.status,
+          ...(this.requirements.companyEnabled
+            ? {
+                company_id: toNumeric(normalizedForm.companyId),
+              }
+            : {}),
         });
       },
 

@@ -33,6 +33,10 @@ RSpec.describe Captain::FollowUpService do
   end
 
   describe '#perform' do
+    it 'moderates only generated output' do
+      expect(service.send(:task_moderation_stages)).to eq([:output])
+    end
+
     context 'when conversation_display_id is provided' do
       it 'resolves conversation for instrumentation' do
         expect(service.send(:conversation)).to eq(conversation)

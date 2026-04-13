@@ -17,6 +17,8 @@
     "IP_ADDRESS": "IP Address",
     "CREATED_AT_LABEL": "Created",
     "NEW_MESSAGE": "New message",
+    "CHANNEL_IDENTITIES": "Арна идентификаторлары",
+    "NO_CHANNEL_CONVERSATION": "Бұл арна үшін әлі диалог жоқ.",
     "CALL": "Қоңырау",
     "CALL_INITIATED": "Контактқа қоңырау шалынуда…",
     "CALL_FAILED": "Қоңырауды бастау мүмкін болмады. Қайтадан көріңіз.",

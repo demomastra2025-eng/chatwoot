@@ -9,7 +9,8 @@ module Integrations::LlmInstrumentationCompletionHelpers
     span.set_attribute(ATTR_GEN_AI_PROVIDER, determine_provider(params[:model]))
     span.set_attribute(ATTR_GEN_AI_REQUEST_MODEL, params[:model])
     span.set_attribute('embedding.input_length', params[:input]&.length || 0)
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, params[:input].to_s)
+    input = capture_trace_input(params[:input], params)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
     set_common_span_metadata(span, params)
   end
 
@@ -17,7 +18,8 @@ module Integrations::LlmInstrumentationCompletionHelpers
     span.set_attribute(ATTR_GEN_AI_PROVIDER, 'openai')
     span.set_attribute(ATTR_GEN_AI_REQUEST_MODEL, params[:model] || 'whisper-1')
     span.set_attribute('audio.duration_seconds', params[:duration]) if params[:duration]
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, params[:file_path].to_s) if params[:file_path]
+    input = capture_trace_input(params[:file_path], params)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
     set_common_span_metadata(span, params)
   end
 
@@ -25,13 +27,17 @@ module Integrations::LlmInstrumentationCompletionHelpers
     span.set_attribute(ATTR_GEN_AI_PROVIDER, 'openai')
     span.set_attribute(ATTR_GEN_AI_REQUEST_MODEL, params[:model] || 'text-moderation-latest')
     span.set_attribute('moderation.input_length', params[:input]&.length || 0)
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, params[:input].to_s)
+    input = capture_trace_input(params[:input], params)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
     set_common_span_metadata(span, params)
   end
 
   def set_common_span_metadata(span, params)
     span.set_attribute(ATTR_LANGFUSE_USER_ID, params[:account_id].to_s) if params[:account_id]
     span.set_attribute(ATTR_LANGFUSE_TAGS, [params[:feature_name]].to_json) if params[:feature_name]
+    trace_capture_attributes(params).each do |key, value|
+      span.set_attribute(key, value)
+    end
   end
 
   def set_embedding_result_attributes(span, result)
@@ -39,34 +45,37 @@ module Integrations::LlmInstrumentationCompletionHelpers
     span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, "[#{result&.length || 0} dimensions]")
   end
 
-  def set_transcription_result_attributes(span, result)
+  def set_transcription_result_attributes(span, result, params)
     transcribed_text = result.respond_to?(:text) ? result.text : result.to_s
     span.set_attribute('transcription.length', transcribed_text&.length || 0)
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, transcribed_text.to_s)
+    output = capture_trace_output(transcribed_text, params)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output) if output.present?
   end
 
-  def set_moderation_result_attributes(span, result)
+  def set_moderation_result_attributes(span, result, params)
     span.set_attribute('moderation.flagged', result.flagged?) if result.respond_to?(:flagged?)
     span.set_attribute('moderation.categories', result.flagged_categories.to_json) if result.respond_to?(:flagged_categories)
     output = {
       flagged: result.respond_to?(:flagged?) ? result.flagged? : nil,
       categories: result.respond_to?(:flagged_categories) ? result.flagged_categories : []
     }
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output.to_json)
+    captured_output = capture_trace_output(output, params)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, captured_output) if captured_output.present?
   end
 
-  def set_completion_attributes(span, result)
-    set_completion_message(span, result)
+  def set_completion_attributes(span, result, params)
+    set_completion_message(span, result, params)
     set_usage_metrics(span, result)
     set_error_attributes(span, result)
   end
 
-  def set_completion_message(span, result)
+  def set_completion_message(span, result, params)
     message = result[:message] || result.dig('choices', 0, 'message', 'content')
     return if message.blank?
 
     span.set_attribute(ATTR_GEN_AI_COMPLETION_ROLE, 'assistant')
-    span.set_attribute(ATTR_GEN_AI_COMPLETION_CONTENT, message.is_a?(String) ? message : message.to_json)
+    content = capture_trace_output(message, params)
+    span.set_attribute(ATTR_GEN_AI_COMPLETION_CONTENT, content) if content.present?
   end
 
   def set_usage_metrics(span, result)

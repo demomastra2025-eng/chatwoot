@@ -77,6 +77,11 @@
         "PLACEHOLDER": "Your account name",
         "ERROR": "Please enter a valid account name"
       },
+      "LOGO": {
+        "LABEL": "Workspace logo",
+        "DELETE_SUCCESS": "Workspace logo deleted successfully",
+        "DELETE_ERROR": "Could not delete the workspace logo. Please try again."
+      },
       "LANGUAGE": {
         "LABEL": "Site language",
         "PLACEHOLDER": "Your account name",
@@ -121,6 +126,27 @@
       "FEATURES": {
         "INBOUND_EMAIL_ENABLED": "Conversation continuity with emails is enabled for your account.",
         "CUSTOM_EMAIL_DOMAIN_ENABLED": "You can receive emails in your custom domain now."
+      },
+      "SCHEDULING": {
+        "PAGE": {
+          "TITLE": "Appointments",
+          "NOTE": "Configure required links and available fields for appointments.",
+          "SECTION_TITLE": "Appointment settings",
+          "SECTION_NOTE": "These settings affect the appointment form and its save rules."
+        },
+        "CONTACT_REQUIRED": {
+          "LABEL": "Contact is required for appointments",
+          "NOTE": "Require selecting a linked contact before an appointment can be saved."
+        },
+        "COMPANY_ENABLED": {
+          "LABEL": "Allow company attachment in appointments",
+          "NOTE": "Show the company field in appointment forms and allow linking visits to a company."
+        },
+        "TOUCH_PLAN": {
+          "LABEL": "Default touch plan",
+          "NOTE": "Automatically apply this touch plan when a new appointment is created.",
+          "PLACEHOLDER": "No default touch plan"
+        }
       }
     },
     "UPDATE_CHATWOOT": "An update {latestOneLinkVersion} for OneLink is available. Please update your instance.",

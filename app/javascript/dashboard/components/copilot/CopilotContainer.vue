@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import Copilot from 'dashboard/components-next/copilot/Copilot.vue';
@@ -8,6 +8,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
+import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import wootConstants from 'dashboard/constants/globals';
 
@@ -19,6 +20,7 @@ defineProps({
 });
 
 const store = useStore();
+const route = useRoute();
 const { uiSettings, updateUISettings } = useUISettings();
 const { isEnterprise } = useConfig();
 const { width: windowWidth } = useWindowSize();
@@ -34,6 +36,8 @@ const isSmallScreen = computed(
 );
 
 const selectedCopilotThreadId = ref(null);
+const hydratedRouteThreadId = ref(null);
+const hydratingRouteThread = ref(false);
 const messages = computed(() =>
   store.getters['copilotMessages/getMessagesByThreadId'](
     selectedCopilotThreadId.value
@@ -46,8 +50,26 @@ const isFeatureEnabledonAccount = useMapGetter(
 );
 
 const selectedAssistantId = ref(null);
+const routeCopilotThreadId = computed(() => {
+  const raw =
+    route.query.copilot_thread_id ?? route.query.copilotThreadId ?? null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+});
+const routeAssistantId = computed(() => {
+  const raw = route.query.assistant_id ?? route.query.assistantId ?? null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+});
 
 const activeAssistant = computed(() => {
+  if (selectedAssistantId.value) {
+    const selectedAssistant = assistants.value.find(
+      a => a.id === selectedAssistantId.value
+    );
+    if (selectedAssistant) return selectedAssistant;
+  }
+
   const preferredId = uiSettings.value.preferred_captain_assistant_id;
 
   // If the user has selected a specific assistant, it takes first preference for Copilot.
@@ -74,6 +96,7 @@ const closeCopilotPanel = () => {
       is_contact_sidebar_open: false,
       is_copilot_panel_open: false,
       is_crm_deal_panel_open: false,
+      is_touch_sidebar_open: false,
     });
   }
 };
@@ -99,6 +122,43 @@ const shouldShowCopilotPanel = computed(() => {
 
 const handleReset = () => {
   selectedCopilotThreadId.value = null;
+};
+
+const hydrateThreadFromRoute = async () => {
+  const threadId = routeCopilotThreadId.value;
+  if (!isEnterprise || !threadId) return;
+  if (hydratedRouteThreadId.value === threadId) return;
+  if (hydratingRouteThread.value) return;
+
+  hydratingRouteThread.value = true;
+
+  try {
+    updateUISettings({
+      is_contact_sidebar_open: false,
+      is_copilot_panel_open: true,
+      is_crm_deal_panel_open: false,
+      is_touch_sidebar_open: false,
+    });
+
+    let thread = store.getters['copilotThreads/getRecord'](threadId);
+    if (!thread?.id) {
+      thread = await store.dispatch('copilotThreads/show', threadId);
+    }
+
+    if (
+      !store.getters['copilotMessages/getMessagesByThreadId'](threadId).length
+    ) {
+      await store.dispatch('copilotMessages/get', threadId);
+    }
+
+    selectedCopilotThreadId.value = threadId;
+    selectedAssistantId.value = thread?.assistant_id || routeAssistantId.value;
+    hydratedRouteThreadId.value = threadId;
+  } catch (error) {
+    useAlert(error.message);
+  } finally {
+    hydratingRouteThread.value = false;
+  }
 };
 
 const sendMessage = async message => {
@@ -128,6 +188,14 @@ onMounted(() => {
     store.dispatch('captainAssistants/get');
   }
 });
+
+watch(
+  [routeCopilotThreadId, assistants],
+  async () => {
+    await hydrateThreadFromRoute();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

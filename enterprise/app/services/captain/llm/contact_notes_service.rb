@@ -21,14 +21,15 @@ class Captain::Llm::ContactNotesService < Llm::BaseAiService
 
   def generate_notes
     response = instrument_llm_call(instrumentation_params) do
-      llm_chat = chat
-                 .with_schema(Captain::Llm::Schemas::NoteCollection)
-                 .with_instructions(system_prompt)
+      llm_chat = apply_chat_features(
+        chat,
+        schema: Captain::Llm::Schemas::NoteCollection
+      ).with_instructions(system_prompt)
 
       ask_chat(llm_chat, @content)
     end
     parse_response(response.content)
-  rescue RubyLLM::Error => e
+  rescue RubyLLM::Error, Llm::StructuredOutputPolicy::StructuredOutputError => e
     ChatwootExceptionTracker.new(e, account: @conversation.account).capture_exception
     []
   end

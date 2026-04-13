@@ -34,6 +34,10 @@
             "PLACEHOLDER": "Please enter the message of campaign",
             "ERROR": "Message is required"
           },
+          "INSTRUCTIONS": {
+            "PLACEHOLDER": "Describe the message the AI agent should generate for this campaign",
+            "ERROR": "AI agent instructions are required"
+          },
           "INBOX": {
             "LABEL": "Select Inbox",
             "PLACEHOLDER": "Select Inbox",
@@ -89,7 +93,10 @@
       "CARD": {
         "STATUS": {
           "COMPLETED": "Completed",
-          "SCHEDULED": "Scheduled"
+          "SCHEDULED": "Scheduled",
+          "RUNNING": "Running",
+          "FAILED": "Failed",
+          "CANCELLED": "Cancelled"
         },
         "CAMPAIGN_DETAILS": {
           "SENT_FROM": "Sent from",
@@ -104,12 +111,14 @@
           "TITLE": {
             "LABEL": "Title",
             "PLACEHOLDER": "Please enter the title of campaign",
-            "ERROR": "Title is required"
+            "ERROR": "Title is required",
+            "EMAIL_INFO": "Used as the email subject for Email inboxes."
           },
           "MESSAGE": {
             "LABEL": "Message",
             "PLACEHOLDER": "Please enter the message of campaign",
-            "ERROR": "Message is required"
+            "ERROR": "Message is required",
+            "EMAIL_INFO": "Sent as the email body and rendered to HTML automatically."
           },
           "INBOX": {
             "LABEL": "Select Inbox",
@@ -147,7 +156,9 @@
       "CARD": {
         "STATUS": {
           "COMPLETED": "Completed",
-          "SCHEDULED": "Scheduled"
+          "SCHEDULED": "Scheduled",
+          "RUNNING": "Running",
+          "FAILED": "Failed"
         },
         "CAMPAIGN_DETAILS": {
           "SENT_FROM": "Sent from",
@@ -180,6 +191,11 @@
             "VARIABLES_LABEL": "Variables",
             "VARIABLE_PLACEHOLDER": "Enter value for {variable}"
           },
+          "TEMPLATE_LANGUAGE": {
+            "LABEL": "Template language",
+            "PLACEHOLDER": "Select a language",
+            "ERROR": "Template language is required"
+          },
           "AUDIENCE": {
             "LABEL": "Audience",
             "PLACEHOLDER": "Select the customer labels",
@@ -201,6 +217,129 @@
         }
       }
     },
+    "OUTBOUND": {
+      "HEADER_TITLE": "Campaigns",
+      "NEW_CAMPAIGN": "Bulk mailing",
+      "COUNT": "Campaigns: {n}",
+      "WORKSPACE_DESCRIPTION": "Manage bulk and personal outgoing messages across connected channels in one place.",
+      "ACTIONS": {
+        "MASS_CAMPAIGN": "Bulk mailing",
+        "PERSONAL_MESSAGE": "Personal"
+      },
+      "CREATE_OPTIONS": {
+        "OUTBOUND": "Broadcast campaign",
+        "OUTBOUND_DESCRIPTION": "Send a campaign to the selected audience in a supported channel and preview delivery readiness before launch.",
+        "LIVE_CHAT": "Website trigger",
+        "LIVE_CHAT_DESCRIPTION": "Show a proactive website chat message based on URL rules, time on page, and the selected sender."
+      },
+      "SECTIONS": {
+        "OUTBOUND_TITLE": "Campaigns",
+        "OUTBOUND_DESCRIPTION": "Broadcast campaigns for SMS, WhatsApp, email, Telegram, and other connected channels.",
+        "LIVE_CHAT_TITLE": "Live chat campaigns",
+        "LIVE_CHAT_DESCRIPTION": "Website and live chat campaigns now live on the same page instead of a separate mode."
+      },
+      "EMPTY_STATE": {
+        "TITLE": "No campaigns are available",
+        "SUBTITLE": "Launch a campaign from SMS, WhatsApp, Email, Telegram Personal, VK, LINE, Facebook, Instagram, or WhatsApp Web inboxes. Click 'Create campaign' to get started."
+      },
+      "CARD": {
+        "RESUME_CAMPAIGN": "Resume campaign",
+        "RESTART_CAMPAIGN": "Restart campaign",
+        "CANCEL_CAMPAIGN": "Cancel campaign",
+        "LATEST_RUN": {
+          "TITLE": "Last run",
+          "RETRY": "Retry failed deliveries",
+          "SUMMARY": "{processed}/{total} processed",
+          "BADGES": {
+            "RESUME": "Resumed",
+            "RESTART": "Restarted",
+            "RETRY_OF": "From run {id}"
+          },
+          "COUNTERS": {
+            "SUCCESSFUL": "Success",
+            "FAILED": "Failed"
+          },
+          "TIME": {
+            "STARTED": "Started",
+            "COMPLETED": "Completed"
+          },
+          "STATUS": {
+            "RUNNING": "Running",
+            "FAILED": "Failed",
+            "COMPLETED": "Completed",
+            "CANCELLED": "Cancelled"
+          }
+        }
+      },
+      "CREATE": {
+        "TITLE": "Create bulk mailing",
+        "DESCRIPTION": "Set up a bulk broadcast in the same drawer pattern as a personal delayed message: choose the channel, content, audience, and preview deliverability before launch.",
+        "FORM": {
+          "TITLE": {
+            "LABEL": "Title",
+            "PLACEHOLDER": "Please enter the title of campaign",
+            "ERROR": "Title is required"
+          },
+          "MESSAGE": {
+            "LABEL": "Message",
+            "PLACEHOLDER": "Please enter the message of campaign",
+            "ERROR": "Message is required"
+          },
+          "INBOX": {
+            "LABEL": "Select Inbox",
+            "PLACEHOLDER": "Select Inbox",
+            "ERROR": "Inbox is required"
+          },
+          "TEMPLATE": {
+            "LABEL": "WhatsApp Template",
+            "PLACEHOLDER": "Select a template",
+            "INFO": "Select a template to use for WhatsApp campaign delivery.",
+            "ERROR": "Template is required"
+          },
+          "TEMPLATE_LANGUAGE": {
+            "LABEL": "Template language",
+            "PLACEHOLDER": "Select a language",
+            "ERROR": "Template language is required"
+          },
+          "AUDIENCE": {
+            "LABEL": "Audience",
+            "PLACEHOLDER": "Select the customer labels",
+            "ERROR": "Audience is required"
+          },
+          "SCHEDULED_AT": {
+            "LABEL": "Scheduled time",
+            "PLACEHOLDER": "Please select the time",
+            "ERROR": "Scheduled time is required"
+          },
+          "BUTTONS": {
+            "CREATE": "Create",
+            "CANCEL": "Cancel"
+          },
+          "API": {
+            "SUCCESS_MESSAGE": "Bulk mailing created successfully",
+            "ERROR_MESSAGE": "There was an error. Please try again."
+          }
+        },
+        "SECTIONS": {
+          "DETAILS": {
+            "TITLE": "Campaign details",
+            "DESCRIPTION": "Set the campaign name and the channel it should use."
+          },
+          "MESSAGE": {
+            "TITLE": "Content",
+            "DESCRIPTION": "Choose a WhatsApp template when required, otherwise use free text."
+          },
+          "AUDIENCE": {
+            "TITLE": "Audience",
+            "DESCRIPTION": "Select the contact tags that should receive this campaign."
+          },
+          "SCHEDULE": {
+            "TITLE": "Launch",
+            "DESCRIPTION": "Pick when the campaign should start for the selected audience."
+          }
+        }
+      }
+    },
     "CONFIRM_DELETE": {
       "TITLE": "Are you sure to delete?",
       "DESCRIPTION": "The delete action is permanent and cannot be reversed.",
@@ -211,7 +350,34 @@
       }
     },
     "BADGE": {
-      "BROADCAST": "Broadcast"
+      "BROADCAST": "Broadcast",
+      "DELAYED": "Delayed"
+    },
+    "PREVIEW": {
+      "TITLE": "Audience preview",
+      "ACTION": "Run preview",
+      "AUDIENCE_SIZE": "Audience",
+      "DELIVERABLE": "Deliverable",
+      "BLOCKED": "Blocked",
+      "BLOCKERS_TITLE": "Blockers",
+      "STATUS_EMPTY": "Preview the selected inbox and audience before scheduling.",
+      "STATUS_READY": "Preview is current and ready to send.",
+      "STATUS_PARTIAL": "Some contacts are deliverable and some will be skipped.",
+      "STATUS_BLOCKED": "No contacts are currently eligible for delivery.",
+      "STATUS_STALE": "Inputs changed after the last preview. Run it again.",
+      "EMPTY_MESSAGE": "Run preview after selecting inbox, audience, and schedule.",
+      "STALE_MESSAGE": "Preview is outdated. Run it again before creating the campaign.",
+      "BLOCKED_MESSAGE": "This audience cannot be sent with the current inbox settings.",
+      "READY_MESSAGE": "Preview is up to date. You can create the campaign.",
+      "ERROR_MESSAGE": "Preview could not be generated. Please try again.",
+      "SUBMIT_REQUIRES_PREVIEW": "Run a fresh preview before creating the campaign.",
+      "TOTALS": {
+        "MISSING_TARGET": "Missing channel target",
+        "OUTSIDE_REPLY_WINDOW": "Outside reply window",
+        "PLANNED_NOT_IMPLEMENTED": "Channel rollout not implemented",
+        "REQUIRES_TEMPLATE": "Template is required",
+        "UNSUPPORTED_CHANNEL": "Unsupported channel"
+      }
     },
     "ANALYTICS": {
       "TITLE": "Campaign analytics",
@@ -226,8 +392,21 @@
       "ERRORS_SUBTITLE": "Most common delivery failures and skip reasons.",
       "ERRORS_COUNT": "{count} deliveries",
       "NO_ERRORS": "No delivery errors recorded.",
+      "RUNS_TITLE": "Runs",
+      "RUNS_SUBTITLE": "Execution snapshots for this outbound campaign.",
+      "LATEST_RUN": "Latest run",
+      "CANCEL_CAMPAIGN": "Cancel campaign",
+      "RESTART_CAMPAIGN": "Restart campaign",
+      "RESUME_CAMPAIGN": "Resume campaign",
+      "RECENT_RUNS": "Recent runs",
+      "NO_RUNS": "This campaign has not been executed yet.",
+      "RETRY_FAILED": "Retry failed",
+      "NOT_SENT_TITLE": "Not sent yet",
+      "NOT_SENT_SUBTITLE": "Audience contacts that do not have any delivery attempt yet.",
+      "NO_NOT_SENT": "All audience contacts already have a delivery record.",
       "UNAVAILABLE": "Analytics are not available yet for this campaign.",
       "STATS": {
+        "COVERAGE": "Coverage",
         "SUBMITTED": "Submitted",
         "DELIVERED": "Delivered",
         "READ": "Read",
@@ -241,8 +420,512 @@
       },
       "SUMMARY": {
         "AUDIENCE": "Audience size",
+        "PROCESSED": "Processed",
+        "ATTEMPTS": "Delivery attempts",
+        "NOT_SENT": "Not sent yet",
+        "COVERAGE": "Coverage",
         "FAILED": "Failed / skipped",
         "READ": "Read confirmations"
+      },
+      "RUNS": {
+        "STATUS": "Status",
+        "PROGRESS": "Progress",
+        "PROCESSED": "Processed",
+        "SUCCESSFUL": "Successful",
+        "FAILED": "Failed / skipped",
+        "STARTED": "Started",
+        "COMPLETED": "Completed",
+        "DURATION": "Duration",
+        "RETRY_OF": "Retry of run",
+        "RETRY_RUN": "Retry run",
+        "RECENT_SUMMARY": "{processed} / {total} processed, {success} successful, {failed} failed",
+        "DURATION_SECONDS": "{count}s",
+        "DURATION_MINUTES": "{count}m",
+        "DURATION_MINUTES_SECONDS": "{minutes}m {seconds}s"
+      }
+    }
+  },
+  "OUTBOUND_WORKSPACE": {
+    "AUDIENCES": {
+      "TITLE": "Audiences",
+      "DESCRIPTION": "Saved contact segments that can be reused in outbound broadcasts.",
+      "LOADING": "Loading audiences...",
+      "EMPTY": "There are no saved audiences yet.",
+      "MANAGE_CONTACTS": "Manage in Contacts",
+      "SUBTITLE": "Saved contact segment",
+      "OPEN": "Open",
+      "TABLE": {
+        "NAME": "Audience",
+        "FILTERS": "Filters",
+        "ACTIONS": "Actions"
+      }
+    },
+    "TOUCHES": {
+      "TITLE": "Personal campaigns",
+      "DESCRIPTION": "Create and manage personal campaigns for one contact and one channel in a single list.",
+      "COUNT": "{n} items",
+      "EMPTY_TITLE": "No personal campaigns yet.",
+      "EMPTY_SUBTITLE": "Create a personal campaign for a specific contact and channel.",
+      "ACTIONS": {
+        "CREATE": "Create personal",
+        "PLANS": "Campaign stages"
+      },
+      "EDITOR": {
+        "CREATE_TITLE": "Create personal campaign",
+        "EDIT_TITLE": "Edit personal campaign",
+        "SAVE": "Save personal campaign",
+        "SUCCESS_CREATED": "Personal campaign created.",
+        "SUCCESS_UPDATED": "Personal campaign updated."
+      },
+      "PLANS_MODAL": {
+        "TITLE": "Campaign stages",
+        "DESCRIPTION": "Keep reusable stages separate from personal campaigns and open them only when needed.",
+        "CREATE": "Create stage",
+        "CREATE_TITLE": "Create campaign stage",
+        "EDIT_TITLE": "Edit campaign stage",
+        "EDITOR_DESCRIPTION": "Build a reusable sequence of personal campaigns that can be applied later.",
+        "SAVE": "Save stage"
+      },
+      "REFRESH": "Refresh",
+      "NO_CONTENT": "No content",
+      "AGENT_PREVIEW": "AI agent",
+      "FILTERS": {
+        "ALL_STATUSES": "All statuses"
+      },
+      "SUMMARY": {
+        "OPEN": "Open touches",
+        "NEEDS_APPROVAL": "Drafts to approve",
+        "FAILED": "Need attention",
+        "COMPLETED": "Completed",
+        "ACTIVE_PLANS": "Active stages",
+        "TOTAL_STEPS": "Steps in stages",
+        "ENTITY_TYPES": "Entity types",
+        "ARCHIVED_PLANS": "Archived stages"
+      },
+      "ROUTE": {
+        "READY": "Route ready",
+        "PENDING": "Route will be resolved"
+      },
+      "TIMING": {
+        "AT_ANCHOR": "At anchor time",
+        "AFTER_MINUTES": "{count} min after",
+        "BEFORE_MINUTES": "{count} min before"
+      },
+      "HERO": {
+        "ALL_TITLE": "Manage scheduled touches in one place",
+        "ALL_DESCRIPTION": "Review pending and historical touches, update content, and keep execution clean without leaving the outbound workspace.",
+        "PLANS_TITLE": "Build reusable touch plans",
+        "PLANS_DESCRIPTION": "Create native touch sequences once, then apply them from a deal, task, appointment, or automation rule.",
+        "EXECUTION_TITLE": "Watch touch execution",
+        "EXECUTION_DESCRIPTION": "Focus on touches that are already processing, completed, cancelled, or failed and quickly inspect operational issues.",
+        "SCOPED_DESCRIPTION": "This workspace is filtered to {entity}. New touches and applied plans will stay scoped to this record.",
+        "SCOPED_BADGE": "Scoped to {entity}",
+        "FILTERED_BADGE": "Filtered: {status}",
+        "CREATE_TOUCH_CONTEXT_TITLE": "Create touches from here too",
+        "CREATE_TOUCH_CONTEXT_DESCRIPTION": "The global workspace now supports manual touch creation. If you start outside a record, choose the record type and ID in the drawer. Creating from the conversation, deal, task, or appointment is still the fastest path when route and owner should resolve immediately."
+      },
+      "TABS": {
+        "ALL": "All touches",
+        "PLANS": "Touch plans",
+        "EXECUTION": "Execution"
+      },
+      "STATUS": {
+        "DRAFT": "Draft",
+        "PENDING": "Pending",
+        "PROCESSING": "Processing",
+        "COMPLETED": "Completed",
+        "CANCELLED": "Cancelled",
+        "FAILED": "Failed"
+      },
+      "ACTION_TYPES": {
+        "SEND_MESSAGE": "Personal campaign",
+        "AI_AGENT_WAKEUP": "AI wakeup"
+      },
+      "REPEAT": {
+        "ONCE": "One-time",
+        "DAILY": "Repeats daily",
+        "WEEKLY": "Repeats every week",
+        "WEEKDAYS": "Repeats on weekdays",
+        "MONTHLY": "Repeats every month"
+      },
+      "ENTITY_KINDS": {
+        "CONVERSATION": "Conversation",
+        "DEAL": "Deal",
+        "TASK": "Task",
+        "APPOINTMENT": "Appointment"
+      },
+      "ERRORS": {
+        "LOAD_TOUCHES": "Failed to load touches.",
+        "LOAD_PLANS": "Failed to load campaign stages.",
+        "APPROVE_TOUCH": "Failed to approve the touch.",
+        "CANCEL_TOUCH": "Failed to cancel the touch.",
+        "DELETE_TOUCH": "Failed to delete the personal campaign.",
+        "ARCHIVE_PLAN": "Failed to archive the campaign stage.",
+        "APPLY_PLAN": "Failed to apply the campaign stage.",
+        "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a campaign stage.",
+        "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a touch in context."
+      },
+      "ALL": {
+        "LOADING": "Loading touches...",
+        "EMPTY": "There are no touches yet.",
+        "APPROVE": "Approve",
+        "CANCEL": "Cancel",
+        "APPROVE_SUCCESS": "Touch approved.",
+        "CANCEL_SUCCESS": "Touch cancelled.",
+        "TABLE": {
+          "MESSAGE": "Touch",
+          "ENTITY": "Entity",
+          "RECIPIENT": "Recipient",
+          "SCHEDULE": "Scheduled for",
+          "STATUS": "Status",
+          "ACTIONS": "Actions"
+        }
+      },
+      "CONFIRM_DELETE": {
+        "TITLE": "Delete personal campaign?",
+        "DESCRIPTION": "This personal campaign will be removed permanently.",
+        "CONFIRM": "Delete",
+        "API": {
+          "SUCCESS_MESSAGE": "Personal campaign deleted.",
+          "ERROR_MESSAGE": "Failed to delete the personal campaign."
+        }
+      },
+      "PLANS": {
+        "LOADING": "Loading campaign stages...",
+        "EMPTY": "There are no campaign stages yet.",
+        "NO_DESCRIPTION": "No description",
+        "ACTIVE": "Active",
+        "ARCHIVED": "Archived",
+        "APPLY": "Apply stage",
+        "EDIT": "Edit",
+        "ARCHIVE": "Archive",
+        "APPLY_SUCCESS": "Campaign stage applied.",
+        "ARCHIVE_SUCCESS": "Campaign stage archived.",
+        "ENTITY_SCOPE_NOTE": "Supported record types",
+        "TABLE": {
+          "NAME": "Campaign stage",
+          "ENTITIES": "Entities",
+          "STEPS": "Steps",
+          "STATUS": "Status",
+          "ACTIONS": "Actions"
+        }
+      },
+      "ANALYTICS": {
+        "TITLE": "Personal campaign analytics",
+        "DESCRIPTION": "Status, routing, and execution timeline.",
+        "UNAVAILABLE": "—",
+        "ERROR": "Last error",
+        "CLOSE": "Close",
+        "SECTIONS": {
+          "TIMELINE": "Timeline"
+        },
+        "STATS": {
+          "STATUS": "Status",
+          "ATTEMPTS": "Attempts",
+          "CHANNEL": "Channel",
+          "RECIPIENT": "Recipient",
+          "SCHEDULED_AT": "Scheduled at",
+          "ROUTE": "Route"
+        },
+        "TIMELINE": {
+          "CREATED": "Created",
+          "PLANNED": "Scheduled",
+          "PROCESSING": "Processing started",
+          "COMPLETED": "Sent",
+          "CANCELLED": "Cancelled"
+        }
+      },
+      "EXECUTION": {
+        "LOADING": "Loading touch execution...",
+        "EMPTY": "There is no touch execution history yet.",
+        "TABLE": {
+          "MESSAGE": "Touch",
+          "ENTITY": "Entity",
+          "STATUS": "Status",
+          "EVENT_AT": "Updated at",
+          "ACTIONS": "Actions"
+        }
+      },
+      "ENTITY_CARD": {
+        "TITLE": "Upcoming touches",
+        "DESCRIPTION": "Review scheduled touches for this record and open the full workspace when you need to manage plans.",
+        "LOADING": "Loading touches...",
+        "EMPTY": "No upcoming touches yet.",
+        "CREATE": "Add touch",
+        "VIEW_ALL": "All touches",
+        "OPEN_PLANS": "Apply stage",
+        "OPEN_EXECUTION": "Open execution",
+        "OPEN_NEXT_STEP": "Edit timing or content if this follow-up needs to change.",
+        "FAILED_TITLE": "{count} touches need attention",
+        "FAILED_NOTE": "Open execution to review failed or cancelled touches for this record.",
+        "SUMMARY": {
+          "OPEN": "Open",
+          "DRAFTS": "Drafts",
+          "DONE": "Completed"
+        }
+      },
+      "TOUCH_EDITOR": {
+        "CREATE_TITLE": "Create touch",
+        "EDIT_TITLE": "Edit touch",
+        "DESCRIPTION": "Create a scheduled touch for this record. Channel resolution and final status are handled by the touch engine.",
+        "CREATE": "Create touch",
+        "SAVE": "Save touch",
+        "EDIT": "Edit",
+        "TEXT_AUTHOR_HELP": {
+          "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
+          "AGENT": "The AI agent will generate the message at execution time from your instructions and the current context."
+        },
+        "REPEAT_MODE": {
+          "ONCE": "Do not repeat",
+          "DAILY": "Every day",
+          "WEEKLY": "Every week",
+          "WEEKDAYS": "Weekdays only",
+          "MONTHLY": "Every month"
+        },
+        "REPEAT_MODE_HELP": {
+          "ONCE": "The touch will run only once at the selected time.",
+          "DAILY": "After each successful execution, the next touch will be scheduled for the same time on the following day.",
+          "WEEKLY": "After each successful execution, the next touch will be scheduled for the same weekday and time in the following week.",
+          "WEEKDAYS": "After each successful execution, the next touch will be scheduled for the next business day at the same time.",
+          "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
+        },
+        "TIMING_MODE": {
+          "ABSOLUTE": "Specific date and time",
+          "RELATIVE": "Relative to record"
+        },
+        "TIMING_MODE_HELP": {
+          "ABSOLUTE": "Use an exact send time when the follow-up should fire on a fixed schedule.",
+          "RELATIVE": "Use the record timeline so the touch keeps following appointment, task, deal, or conversation changes."
+        },
+        "CONTEXT_TITLE": "Touch context: {entity}",
+        "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
+        "ANCHORS": {
+          "TOUCH_CREATED_AT": "Delayed message created",
+          "APPOINTMENT_STARTS_AT": "Appointment starts",
+          "APPOINTMENT_ENDS_AT": "Appointment ends",
+          "TASK_DUE_AT": "Task due at",
+          "DEAL_EXPECTED_CLOSE_ON": "Deal expected close",
+          "CONVERSATION_CREATED_AT": "Conversation created",
+          "CONVERSATION_LAST_ACTIVITY_AT": "Last activity in conversation",
+          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Last incoming message",
+          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Last outgoing message",
+          "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
+        },
+        "FIELDS": {
+          "ACTION_TYPE": "Touch type",
+          "ENTITY_TYPE": "Record type",
+          "ENTITY_ID": "Record ID",
+          "ENTITY_ID_PLACEHOLDER": "Enter the target record ID",
+          "ENTITY_NOTE": "Choose the record this touch belongs to. Conversation touches can be created directly here; other record types may remain draft until route resolution is complete.",
+          "TEXT_AUTHOR": "Who writes the text",
+          "AI_AGENT": "AI agent",
+          "BODY": "Message",
+          "BODY_PLACEHOLDER": "Write the message that should be sent later",
+          "FREE_TEXT_TAB": "Free text",
+          "WHATSAPP_TEMPLATE_TAB": "WhatsApp template",
+          "TEMPLATE": "Template",
+          "TEMPLATE_PLACEHOLDER": "Select a template",
+          "TEMPLATE_LANGUAGE": "Template language",
+          "TEMPLATE_LANGUAGE_PLACEHOLDER": "Select template language",
+          "TEMPLATE_EMPTY": "No WhatsApp templates are available for this inbox yet.",
+          "TEMPLATE_EMPTY_DESCRIPTION": "Sync templates for the current WhatsApp inbox or switch back to free text.",
+          "BODY_NOTE": "If the message contains {{...}}, {%...%}, or field:// references, template mode will be detected automatically.",
+          "INSTRUCTIONS": "AI agent instructions",
+          "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this touch runs",
+          "TIMING_MODE": "When to send",
+          "SCHEDULED_AT": "Scheduled at",
+          "RELATIVE_TOGGLE": "relative",
+          "REPEAT_MODE": "Repeat",
+          "REPEAT_UNTIL_AT": "Repeat until",
+          "RELATIVE_ANCHOR": "Anchor",
+          "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
+          "RELATIVE_OFFSET_NOTE": "Use a value greater than 0 minutes.",
+          "AUTO_CANCEL": "Cancel on incoming reply",
+          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically."
+        },
+        "SUCCESS": {
+          "CREATED": "Touch created.",
+          "UPDATED": "Touch updated."
+        },
+        "ERRORS": {
+          "SAVE": "Failed to save the touch."
+        }
+      },
+      "TOUCH_PLAN_EDITOR": {
+        "CREATE_TITLE": "Create campaign stage",
+        "EDIT_TITLE": "Edit campaign stage",
+        "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
+        "CREATE": "Create stage",
+        "SAVE": "Save stage",
+        "ADD_STEP": "Add step",
+        "REMOVE_STEP": "Remove step",
+        "STEP_TITLE": "Step {index}",
+        "STEP_DESCRIPTION": "Each step becomes a personal campaign when the stage is applied.",
+        "ENTITY_KIND_PLACEHOLDER": "Select at least one entity type",
+        "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
+        "FIELDS": {
+          "NAME": "Stage name",
+          "NAME_PLACEHOLDER": "e.g. Appointment reminders",
+          "DESCRIPTION": "Description",
+          "DESCRIPTION_PLACEHOLDER": "Explain when this stage should be used and what it is trying to achieve.",
+          "ENTITY_KINDS": "Supported entity types",
+          "ENTITY_KINDS_NOTE": "Choose where this stage can be applied.",
+          "ENTITY_KIND_HELP": "This stage can be attached to this record type.",
+          "STEPS": "Stage steps",
+          "STEPS_NOTE": "These steps will be created when the stage is applied to: {entityKinds}."
+        },
+        "SUCCESS": {
+          "CREATED": "Campaign stage created.",
+          "UPDATED": "Campaign stage updated."
+        },
+        "ERRORS": {
+          "SAVE": "Failed to save the campaign stage."
+        }
+      }
+    },
+    "TOUCH_PLANS": {
+      "TITLE": "Campaign stages",
+      "DESCRIPTION": "Build reusable stages for personal campaigns and apply them from the right entity context.",
+      "COUNT": "Stages: {n}",
+      "CONTEXT_BADGE": "Context: {entity}",
+      "EMPTY_TITLE": "No stages yet.",
+      "EMPTY_SUBTITLE": "Create a reusable sequence and apply it to conversations, deals, tasks, and appointments.",
+      "STEPS_COUNT": "Steps: {count}",
+      "ACTIONS": {
+        "CREATE": "Create stage",
+        "REFRESH": "Refresh"
+      }
+    },
+    "TOUCH_EDITOR": {
+      "CREATE_TITLE": "Create touch",
+      "EDIT_TITLE": "Edit touch",
+      "DESCRIPTION": "Create a scheduled touch for this record. Channel resolution and final status are handled by the touch engine.",
+      "CREATE": "Create touch",
+      "SAVE": "Save touch",
+      "EDIT": "Edit",
+      "TEXT_AUTHOR_HELP": {
+        "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
+        "AGENT": "The AI agent will generate the message at execution time from your instructions and the current context."
+      },
+      "REPEAT_MODE": {
+        "ONCE": "Do not repeat",
+        "DAILY": "Every day",
+        "WEEKLY": "Every week",
+        "WEEKDAYS": "Weekdays only",
+        "MONTHLY": "Every month"
+      },
+      "REPEAT_MODE_HELP": {
+        "ONCE": "The touch will run only once at the selected time.",
+        "DAILY": "After each successful execution, the next touch will be scheduled for the same time on the following day.",
+        "WEEKLY": "After each successful execution, the next touch will be scheduled for the same weekday and time in the following week.",
+        "WEEKDAYS": "After each successful execution, the next touch will be scheduled for the next business day at the same time.",
+        "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
+      },
+      "TIMING_MODE": {
+        "ABSOLUTE": "Specific date and time",
+        "RELATIVE": "Relative to record"
+      },
+      "TIMING_MODE_HELP": {
+        "ABSOLUTE": "Use an exact send time when the follow-up should fire on a fixed schedule.",
+        "RELATIVE": "Use the record timeline so the touch keeps following appointment, task, deal, or conversation changes."
+      },
+      "CONTEXT_TITLE": "Touch context: {entity}",
+      "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
+        "ANCHORS": {
+          "TOUCH_CREATED_AT": "Delayed message created",
+          "APPOINTMENT_STARTS_AT": "Appointment starts",
+          "APPOINTMENT_ENDS_AT": "Appointment ends",
+          "TASK_DUE_AT": "Task due at",
+          "DEAL_EXPECTED_CLOSE_ON": "Deal expected close",
+          "CONVERSATION_CREATED_AT": "Conversation created",
+          "CONVERSATION_LAST_ACTIVITY_AT": "Last activity in conversation",
+          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Last incoming message",
+          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Last outgoing message",
+          "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
+        },
+      "FIELDS": {
+        "ACTION_TYPE": "Touch type",
+        "ENTITY_TYPE": "Record type",
+        "ENTITY_ID": "Record ID",
+        "ENTITY_ID_PLACEHOLDER": "Enter the target record ID",
+        "ENTITY_NOTE": "Choose the record this touch belongs to. Conversation touches can be created directly here; other record types may remain draft until route resolution is complete.",
+        "TEXT_AUTHOR": "Who writes the text",
+        "AI_AGENT": "AI agent",
+        "FREE_TEXT_TAB": "Free text",
+        "WHATSAPP_TEMPLATE_TAB": "WhatsApp template",
+        "BODY": "Message",
+        "BODY_PLACEHOLDER": "Write the message that should be sent later",
+        "BODY_NOTE": "If the message contains {{...}}, {%...%}, or field:// references, template mode will be detected automatically.",
+        "TEMPLATE": "Template",
+        "TEMPLATE_PLACEHOLDER": "Select a WhatsApp template",
+        "TEMPLATE_LANGUAGE": "Template language",
+        "TEMPLATE_LANGUAGE_PLACEHOLDER": "Select a language",
+        "TEMPLATE_EMPTY": "No WhatsApp templates found",
+        "TEMPLATE_EMPTY_DESCRIPTION": "Sync templates for the current WhatsApp inbox or switch back to free text.",
+        "INSTRUCTIONS": "AI agent instructions",
+        "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this touch runs",
+        "TIMING_MODE": "When to send",
+        "SCHEDULED_AT": "Scheduled at",
+        "RELATIVE_TOGGLE": "relative",
+        "REPEAT_MODE": "Repeat",
+        "REPEAT_UNTIL_AT": "Repeat until",
+        "RELATIVE_ANCHOR": "Anchor",
+        "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
+        "RELATIVE_OFFSET_NOTE": "Use a value greater than 0 minutes.",
+        "AUTO_CANCEL": "Cancel on incoming reply",
+        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically."
+      },
+      "SUCCESS": {
+        "CREATED": "Touch created.",
+        "UPDATED": "Touch updated."
+      },
+      "ERRORS": {
+        "SAVE": "Failed to save the touch."
+      }
+    },
+    "TOUCH_PLAN_EDITOR": {
+      "CREATE_TITLE": "Create campaign stage",
+      "EDIT_TITLE": "Edit campaign stage",
+      "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
+      "CREATE": "Create stage",
+      "SAVE": "Save stage",
+      "ADD_STEP": "Add step",
+      "REMOVE_STEP": "Remove step",
+      "STEP_TITLE": "Step {index}",
+      "STEP_DESCRIPTION": "Each step becomes a personal campaign when the stage is applied.",
+      "ENTITY_KIND_PLACEHOLDER": "Select at least one entity type",
+      "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
+      "FIELDS": {
+        "NAME": "Stage name",
+        "NAME_PLACEHOLDER": "e.g. Appointment reminders",
+        "DESCRIPTION": "Description",
+        "DESCRIPTION_PLACEHOLDER": "Explain when this stage should be used and what it is trying to achieve.",
+        "ENTITY_KINDS": "Supported entity types",
+        "ENTITY_KINDS_NOTE": "Choose where this stage can be applied.",
+        "ENTITY_KIND_HELP": "This stage can be attached to this record type.",
+        "STEPS": "Stage steps",
+        "STEPS_NOTE": "These steps will be created when the stage is applied to: {entityKinds}."
+      },
+      "SUCCESS": {
+        "CREATED": "Campaign stage created.",
+        "UPDATED": "Campaign stage updated."
+      },
+      "ERRORS": {
+        "SAVE": "Failed to save the campaign stage."
+      }
+    },
+    "TEMPLATES": {
+      "TITLE": "Templates",
+      "DESCRIPTION": "Manage reusable text snippets and WhatsApp templates from one outbound surface.",
+      "TABS": {
+        "FREE_TEXT": "Free text",
+        "WHATSAPP": "WhatsApp"
+      },
+      "WHATSAPP": {
+        "EMPTY_TITLE": "No WhatsApp inboxes for templates",
+        "EMPTY_DESCRIPTION": "Connect or select a WhatsApp inbox to browse and manage message templates.",
+        "INBOX_LABEL": "WhatsApp inbox",
+        "INBOX_PLACEHOLDER": "Select an inbox"
       }
     }
   }

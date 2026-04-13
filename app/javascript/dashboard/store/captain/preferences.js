@@ -7,6 +7,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     models: {},
     features: {},
     runtime: {},
+    observability: {},
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
@@ -18,6 +19,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     getModels: state => state.models,
     getFeatures: state => state.features,
     getRuntime: state => state.runtime,
+    getObservability: state => state.observability,
     getRuntimeMetadata: state => state.runtimeMetadata,
     getUIFlags: state => state.uiFlags,
     getModelsForFeature: state => featureKey => {
@@ -59,6 +61,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
         this.models = response.data.models || {};
         this.features = response.data.features || {};
         this.runtime = response.data.runtime || {};
+        this.observability = response.data.observability || {};
         this.runtimeMetadata = response.data.runtime_metadata || {};
       } catch (error) {
         // Ignore error
@@ -73,6 +76,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       this.models = response.data.models || {};
       this.features = response.data.features || {};
       this.runtime = response.data.runtime || {};
+      this.observability = response.data.observability || {};
       this.runtimeMetadata = response.data.runtime_metadata || {};
     },
   },

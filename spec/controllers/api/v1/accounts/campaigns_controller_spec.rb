@@ -108,6 +108,172 @@ RSpec.describe 'Campaigns API', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/{account.id}/campaigns/:id/retry_failed' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:channel) { create(:channel_email, account: account) }
+    let(:campaign) { create(:campaign, account: account, inbox: channel.inbox) }
+
+    it 'returns unauthorized for agents' do
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/retry_failed",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'retries failed deliveries for administrators' do
+      retried_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :completed)
+      analytics_payload = {
+        campaign_id: campaign.display_id,
+        campaign_status: 'completed',
+        latest_run: { id: retried_run.id, status: 'completed' },
+        recent_runs: [{ id: retried_run.id, status: 'completed' }],
+        totals: {},
+        errors: [],
+        deliveries: [],
+        not_sent_contacts: [],
+        audience_size: 0,
+        deliveries_count: 0,
+        not_sent_count: 0,
+        coverage_rate: 0,
+        success_rate: 0
+      }
+
+      retry_service = instance_double(Campaigns::RetryFailedDeliveriesService, perform: retried_run)
+      analytics_service = instance_double(Campaigns::AnalyticsService, call: analytics_payload)
+
+      expect(Campaigns::RetryFailedDeliveriesService).to receive(:new).with(campaign: campaign).and_return(retry_service)
+      expect(Campaigns::AnalyticsService).to receive(:new).with(campaign: campaign).and_return(analytics_service)
+
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/retry_failed",
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)[:latest_run][:id]).to eq(retried_run.id)
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/campaigns/:id/cancel' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:channel) { create(:channel_email, account: account) }
+    let(:campaign) { create(:campaign, account: account, inbox: channel.inbox, campaign_status: :active) }
+
+    it 'returns unauthorized for agents' do
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/cancel",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'cancels one-off campaigns for administrators' do
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/cancel",
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)[:campaign_status]).to eq('cancelled')
+      expect(campaign.reload.cancelled?).to be(true)
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/campaigns/:id/restart' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:channel) { create(:channel_email, account: account) }
+    let(:campaign) { create(:campaign, account: account, inbox: channel.inbox, campaign_status: :failed) }
+
+    it 'returns unauthorized for agents' do
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/restart",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'restarts the campaign for administrators' do
+      restarted_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :running)
+      analytics_payload = {
+        campaign_id: campaign.display_id,
+        campaign_status: 'running',
+        latest_run: { id: restarted_run.id, status: 'running' },
+        recent_runs: [{ id: restarted_run.id, status: 'running' }],
+        totals: {},
+        errors: [],
+        deliveries: [],
+        not_sent_contacts: [],
+        audience_size: 0,
+        deliveries_count: 0,
+        not_sent_count: 0,
+        coverage_rate: 0,
+        success_rate: 0
+      }
+
+      restart_service = instance_double(Campaigns::RestartService, perform: restarted_run)
+      analytics_service = instance_double(Campaigns::AnalyticsService, call: analytics_payload)
+
+      expect(Campaigns::RestartService).to receive(:new).with(campaign: campaign).and_return(restart_service)
+      expect(Campaigns::AnalyticsService).to receive(:new).with(campaign: campaign).and_return(analytics_service)
+
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/restart",
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)[:latest_run][:id]).to eq(restarted_run.id)
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/campaigns/:id/resume' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:channel) { create(:channel_email, account: account) }
+    let(:campaign) { create(:campaign, account: account, inbox: channel.inbox, campaign_status: :cancelled) }
+
+    it 'returns unauthorized for agents' do
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/resume",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'resumes the campaign for administrators' do
+      resumed_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :running)
+      analytics_payload = {
+        campaign_id: campaign.display_id,
+        campaign_status: 'running',
+        latest_run: { id: resumed_run.id, status: 'running', resumable_contacts_count: 0 },
+        recent_runs: [{ id: resumed_run.id, status: 'running' }],
+        totals: {},
+        errors: [],
+        deliveries: [],
+        not_sent_contacts: [],
+        audience_size: 0,
+        deliveries_count: 0,
+        not_sent_count: 0,
+        coverage_rate: 0,
+        success_rate: 0
+      }
+
+      resume_service = instance_double(Campaigns::ResumeService, perform: resumed_run)
+      analytics_service = instance_double(Campaigns::AnalyticsService, call: analytics_payload)
+
+      expect(Campaigns::ResumeService).to receive(:new).with(campaign: campaign).and_return(resume_service)
+      expect(Campaigns::AnalyticsService).to receive(:new).with(campaign: campaign).and_return(analytics_service)
+
+      post "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}/resume",
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)[:latest_run][:id]).to eq(resumed_run.id)
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/campaigns' do
     let(:inbox) { create(:inbox, account: account) }
 
@@ -185,6 +351,48 @@ RSpec.describe 'Campaigns API', type: :request do
         expect(response_data[:scheduled_at].present?).to be true
         expect(response_data[:scheduled_at]).to eq(scheduled_at.to_i)
         expect(response_data[:audience].pluck(:id)).to include(label1.id, label2.id)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/campaigns/preview' do
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/campaigns/preview",
+             params: { inbox_id: create(:inbox, account: account).id, audience: [] },
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an authenticated administrator' do
+      it 'returns preview data for a supported inbox' do
+        inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+        label = create(:label, account: account, title: 'Priority')
+        contact = create(:contact, account: account, phone_number: '+15550001114')
+        contact.label_list.add(label.title)
+        contact.save!
+
+        post "/api/v1/accounts/#{account.id}/campaigns/preview",
+             params: {
+               inbox_id: inbox.id,
+               title: 'test',
+               message: 'test message',
+               audience: [{ type: 'Label', id: label.id }]
+             },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        body = JSON.parse(response.body, symbolize_names: true)
+
+        expect(body[:audience_size]).to eq(1)
+        expect(body[:deliverable_count]).to eq(1)
+        expect(body.dig(:capabilities, :delivery_readiness)).to eq('ready')
+        expect(body.dig(:totals, :deliverable)).to eq(1)
       end
     end
   end

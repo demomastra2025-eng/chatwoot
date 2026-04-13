@@ -43,6 +43,12 @@ describe('useChannelIcon', () => {
     expect(icon).toBe('i-woot-telegram');
   });
 
+  it('returns correct icon for Telegram Personal channel', () => {
+    const inbox = { channel_type: 'Channel::TelegramPersonal' };
+    const { value: icon } = useChannelIcon(inbox);
+    expect(icon).toBe('i-woot-telegram');
+  });
+
   it('returns correct icon for Twitter channel', () => {
     const inbox = { channel_type: 'Channel::TwitterProfile' };
     const { value: icon } = useChannelIcon(inbox);

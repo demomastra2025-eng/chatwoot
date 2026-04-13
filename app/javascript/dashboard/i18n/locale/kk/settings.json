@@ -366,7 +366,14 @@
     "LIVE_CHAT": "Live Chat",
     "SMS": "SMS",
     "WHATSAPP": "WhatsApp",
-    "CAMPAIGNS": "Campaigns",
+    "OUTBOUND": "Жіберілімдер",
+    "OUTBOUND_MASS": "Жаппай",
+    "OUTBOUND_PERSONAL": "Жеке",
+    "CAMPAIGNS": "Кампаниалар",
+    "AUDIENCES": "Audiences",
+    "TOUCHES": "Жеке",
+    "TOUCH_PLANS": "Жіберілім кезеңдері",
+    "TEMPLATES": "Templates",
     "ONGOING": "Ongoing",
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
@@ -450,6 +457,14 @@
       "MODERATION": {
         "TITLE": "Moderation",
         "DESCRIPTION": "Check text safety before and after model responses. Blocked AI Agent replies hand off to a human."
+      },
+      "MODERATION_FAILURE_MODE": {
+        "TITLE": "Модерация істен шығу режимі",
+        "DESCRIPTION": "Модерация провайдері қолжетімсіз болса, AI сұрауы жалғаса ма әлде тоқтай ма соны таңдаңыз.",
+        "OPTIONS": {
+          "FAIL_OPEN": "Модерациясыз жалғастыру",
+          "FAIL_CLOSED": "Сұрауды бұғаттау"
+        }
       },
       "THINKING": {
         "TITLE": "Thinking Effort",

@@ -217,7 +217,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     builder = instance_double(ContactInboxWithContactBuilder)
     allow(ContactInboxWithContactBuilder).to receive(:new).and_return(builder)
     allow(builder).to receive(:perform).and_raise(invalid_error)
-
+ 
     contact_inbox = described_class.new(
       channel: channel,
       contact_payload: {
@@ -229,6 +229,58 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox).to be_present
     expect(contact_inbox.contact_id).to eq(existing_contact.id)
     expect(contact_inbox.source_id).to eq('15551234567')
-    expect(existing_contact.reload.name).to eq('Alice')
+    expect(existing_contact.reload.name).to eq('Existing')
+    expect(existing_contact.reload.additional_attributes).to include(
+      'provider' => 'whatsapp_web',
+      'canonical_jid' => '15551234567@s.whatsapp.net',
+      'raw_jid' => '15551234567@s.whatsapp.net'
+    )
+  end
+
+  it 'reuses a shared cross-channel contact without overwriting another provider profile' do
+    telegram_channel = create(:channel_telegram_personal, account: channel.account)
+    shared_contact = create(
+      :contact,
+      account: channel.account,
+      name: 'Shared Contact',
+      phone_number: '+15551234567',
+      identifier: 'telegram_personal:23',
+      additional_attributes: {
+        'provider' => 'telegram_personal',
+        'profile_photo_url' => 'https://cdn.example.com/tg-avatar.jpg',
+        'social_telegram_user_id' => 23
+      }
+    )
+    create(:contact_inbox, inbox: telegram_channel.inbox, contact: shared_contact, source_id: '23')
+
+    expect(Avatar::AvatarFromUrlJob).not_to receive(:perform_later)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15551234567@s.whatsapp.net',
+        pushName: 'Alice',
+        profilePicUrl: 'https://cdn.example.com/wa-avatar.jpg'
+      }
+    ).perform
+
+    expect(contact_inbox.contact).to eq(shared_contact)
+    expect(shared_contact.reload.identifier).to eq('telegram_personal:23')
+    expect(shared_contact.additional_attributes).to include(
+      'provider' => 'telegram_personal',
+      'profile_photo_url' => 'https://cdn.example.com/tg-avatar.jpg',
+      'social_telegram_user_id' => 23
+    )
+    expect(shared_contact.additional_attributes).not_to include(
+      'canonical_jid' => '15551234567@s.whatsapp.net',
+      'raw_jid' => '15551234567@s.whatsapp.net'
+    )
+    expect(shared_contact.additional_attributes.dig('channel_profiles', 'whatsapp_web')).to be_present
+    expect(shared_contact.additional_attributes.dig('channel_profiles', 'whatsapp_web').values.first).to include(
+      'source_id' => '15551234567',
+      'canonical_jid' => '15551234567@s.whatsapp.net',
+      'profile_pic_url' => 'https://cdn.example.com/wa-avatar.jpg',
+      'provider' => 'whatsapp_web'
+    )
   end
 end

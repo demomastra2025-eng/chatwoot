@@ -8,15 +8,20 @@ import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
 export const state = {
   records: [],
+  preview: null,
   uiFlags: {
     isFetching: false,
     isCreating: false,
+    isPreviewing: false,
   },
 };
 
 export const getters = {
   getUIFlags(_state) {
     return _state.uiFlags;
+  },
+  getPreview(_state) {
+    return _state.preview;
   },
   getCampaigns:
     _state =>
@@ -43,6 +48,24 @@ export const getters = {
   getWhatsAppCampaigns: (_state, _getters) => {
     const whatsappChannelTypes = [INBOX_TYPES.WHATSAPP];
     return _getters.getCampaigns(CAMPAIGN_TYPES.ONE_OFF, whatsappChannelTypes);
+  },
+  getOutboundCampaigns: (_state, _getters) => {
+    const outboundChannelTypes = [
+      INBOX_TYPES.SMS,
+      INBOX_TYPES.TWILIO,
+      INBOX_TYPES.WHATSAPP,
+      INBOX_TYPES.EMAIL,
+      INBOX_TYPES.WHATSAPP_WEB,
+      INBOX_TYPES.TELEGRAM,
+      INBOX_TYPES.TELEGRAM_PERSONAL,
+      INBOX_TYPES.VK,
+      INBOX_TYPES.LINE,
+      INBOX_TYPES.FB,
+      INBOX_TYPES.INSTAGRAM,
+      INBOX_TYPES.TIKTOK,
+      INBOX_TYPES.TWITTER,
+    ];
+    return _getters.getCampaigns(CAMPAIGN_TYPES.ONE_OFF, outboundChannelTypes);
   },
   getLiveChatCampaigns: (_state, _getters) => {
     const liveChatChannelTypes = [INBOX_TYPES.WEB];
@@ -76,6 +99,22 @@ export const actions = {
       commit(types.SET_CAMPAIGN_UI_FLAG, { isCreating: false });
     }
   },
+  preview: async function previewCampaign({ commit }, campaignObj) {
+    commit(types.SET_CAMPAIGN_UI_FLAG, { isPreviewing: true });
+    try {
+      const response = await CampaignsAPI.preview(campaignObj);
+      commit(types.SET_CAMPAIGN_PREVIEW, response.data);
+      return response.data;
+    } catch (error) {
+      commit(types.SET_CAMPAIGN_PREVIEW, null);
+      throw new Error(error);
+    } finally {
+      commit(types.SET_CAMPAIGN_UI_FLAG, { isPreviewing: false });
+    }
+  },
+  clearPreview({ commit }) {
+    commit(types.SET_CAMPAIGN_PREVIEW, null);
+  },
   update: async ({ commit }, { id, ...updateObj }) => {
     commit(types.SET_CAMPAIGN_UI_FLAG, { isUpdating: true });
     try {
@@ -108,6 +147,9 @@ export const mutations = {
       ..._state.uiFlags,
       ...data,
     };
+  },
+  [types.SET_CAMPAIGN_PREVIEW](_state, data) {
+    _state.preview = data;
   },
 
   [types.ADD_CAMPAIGN]: MutationHelpers.create,

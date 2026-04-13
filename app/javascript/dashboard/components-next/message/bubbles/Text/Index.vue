@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import BaseBubble from 'next/message/bubbles/Base.vue';
 import FormattedContent from './FormattedContent.vue';
 import AttachmentChips from 'next/message/chips/AttachmentChips.vue';
@@ -16,6 +17,7 @@ const {
   messageType,
   additionalAttributes,
 } = useMessageContext();
+const { t } = useI18n();
 
 const { hasTranslations, translationContent } =
   useTranslations(contentAttributes);
@@ -42,6 +44,58 @@ const isEmpty = computed(() => {
   return !content.value && !attachments.value?.length;
 });
 
+const telegramForwardedFrom = computed(() => {
+  return contentAttributes.value?.telegramForwardedFrom || null;
+});
+
+const telegramForwardedSource = computed(() => {
+  const forwarded = telegramForwardedFrom.value;
+
+  if (!forwarded) {
+    return '';
+  }
+
+  if (forwarded.fromName) {
+    return forwarded.fromName;
+  }
+
+  if (forwarded.postAuthor) {
+    return forwarded.postAuthor;
+  }
+
+  if (forwarded.fromId?.type && forwarded.fromId?.id) {
+    return `${forwarded.fromId.type} ${forwarded.fromId.id}`;
+  }
+
+  if (forwarded.savedFromPeer?.type && forwarded.savedFromPeer?.id) {
+    return `${forwarded.savedFromPeer.type} ${forwarded.savedFromPeer.id}`;
+  }
+
+  return t('CONVERSATION.TELEGRAM.UNKNOWN_SOURCE');
+});
+
+const telegramReactionSummary = computed(() => {
+  const results = contentAttributes.value?.telegramReactions?.results || [];
+
+  return results.map(item => {
+    const reaction = item?.reaction || {};
+
+    if (reaction.emoji) {
+      return `${reaction.emoji} ${item.count}`;
+    }
+
+    if (reaction.type === 'custom_emoji') {
+      return `${t('CONVERSATION.TELEGRAM.CUSTOM_EMOJI')} ${item.count}`;
+    }
+
+    if (reaction.type === 'paid') {
+      return `${t('CONVERSATION.TELEGRAM.PAID_REACTION')} ${item.count}`;
+    }
+
+    return `${t('CONVERSATION.TELEGRAM.REACTION')} ${item.count}`;
+  });
+});
+
 const handleSeeOriginal = () => {
   renderOriginal.value = !renderOriginal.value;
 };
@@ -50,6 +104,16 @@ const handleSeeOriginal = () => {
 <template>
   <BaseBubble class="px-4 py-3" data-bubble-name="text">
     <div class="gap-3 flex flex-col">
+      <div
+        v-if="telegramForwardedFrom"
+        class="text-xs text-n-slate-11 border-l-2 border-n-alpha-4 pl-2"
+      >
+        {{
+          $t('CONVERSATION.TELEGRAM.FORWARDED_FROM', {
+            source: telegramForwardedSource,
+          })
+        }}
+      </div>
       <span v-if="isEmpty" class="text-n-slate-11">
         {{ $t('CONVERSATION.NO_CONTENT') }}
       </span>
@@ -69,6 +133,15 @@ const handleSeeOriginal = () => {
           {{ contentAttributes.submittedEmail }}
         </div>
       </template>
+      <div
+        v-if="telegramReactionSummary.length"
+        class="text-xs text-n-slate-11 flex flex-wrap items-center gap-1"
+      >
+        <span class="font-medium">
+          {{ $t('CONVERSATION.TELEGRAM.REACTIONS') }}
+        </span>
+        <span>{{ telegramReactionSummary.join(' · ') }}</span>
+      </div>
       <CaptainToolExecutionGroup
         :additional-attributes="additionalAttributes"
       />

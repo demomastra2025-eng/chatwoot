@@ -234,6 +234,59 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to have_http_status(:success)
         expect(interactive_message.reload.deleted).to be true
       end
+
+      it 'deletes telegram personal outgoing messages through provider flow' do
+        telegram_channel = create(:channel_telegram_personal, account: account)
+        telegram_inbox = telegram_channel.inbox
+        telegram_conversation = create(:conversation, account: account, inbox: telegram_inbox)
+        telegram_message = create(
+          :message,
+          account: account,
+          inbox: telegram_inbox,
+          conversation: telegram_conversation,
+          message_type: :outgoing,
+          source_id: '555',
+          content: 'native telegram message'
+        )
+        create(:inbox_member, inbox: telegram_inbox, user: agent)
+
+        allow_any_instance_of(Channel::TelegramPersonal).to receive(:delete_message).and_return(true)
+
+        delete "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
+               headers: agent.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(telegram_message.reload.deleted).to be true
+      end
+
+      it 'returns unprocessable when telegram personal provider delete fails' do
+        telegram_channel = create(:channel_telegram_personal, account: account)
+        telegram_inbox = telegram_channel.inbox
+        telegram_conversation = create(:conversation, account: account, inbox: telegram_inbox)
+        telegram_message = create(
+          :message,
+          account: account,
+          inbox: telegram_inbox,
+          conversation: telegram_conversation,
+          message_type: :outgoing,
+          source_id: '556',
+          content: 'provider error message'
+        )
+        create(:inbox_member, inbox: telegram_inbox, user: agent)
+
+        allow_any_instance_of(Channel::TelegramPersonal)
+          .to receive(:delete_message)
+          .and_raise(TelegramPersonal::GatewayClient::GatewayError.new('telegram delete failed'))
+
+        delete "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
+               headers: agent.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('telegram delete failed')
+        expect(telegram_message.reload.deleted).to be_nil
+      end
     end
 
     context 'when the message id is invalid' do
@@ -250,6 +303,101 @@ RSpec.describe 'Conversation Messages API', type: :request do
 
         expect(response).to have_http_status(:not_found)
       end
+    end
+  end
+
+  describe 'PATCH /api/v1/accounts/{account.id}/conversations/:conversation_id/messages/:id' do
+    let(:agent) { create(:user, account: account, role: :agent) }
+
+    it 'updates telegram personal outgoing message content' do
+      telegram_channel = create(:channel_telegram_personal, account: account)
+      telegram_inbox = telegram_channel.inbox
+      telegram_conversation = create(:conversation, account: account, inbox: telegram_inbox)
+      telegram_message = create(
+        :message,
+        account: account,
+        inbox: telegram_inbox,
+        conversation: telegram_conversation,
+        message_type: :outgoing,
+        source_id: '777',
+        content: 'old text'
+      )
+      create(:inbox_member, inbox: telegram_inbox, user: agent)
+
+      allow_any_instance_of(Channel::TelegramPersonal).to receive(:update_message).and_return(true)
+
+      patch "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
+            params: { content: 'updated telegram text' },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(telegram_message.reload.content).to eq('updated telegram text')
+      expect(telegram_message.content_attributes['edited']).to be true
+    end
+
+    it 'returns unprocessable when telegram personal conversation has no contact inbox source id' do
+      telegram_channel = create(:channel_telegram_personal, account: account)
+      telegram_inbox = telegram_channel.inbox
+      telegram_conversation = create(
+        :conversation,
+        account: account,
+        inbox: telegram_inbox,
+        contact_inbox: nil,
+        additional_attributes: {}
+      )
+      telegram_message = create(
+        :message,
+        account: account,
+        inbox: telegram_inbox,
+        conversation: telegram_conversation,
+        message_type: :outgoing,
+        source_id: '778',
+        content: 'old text'
+      )
+      create(:inbox_member, inbox: telegram_inbox, user: agent)
+
+      patch "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
+            params: { content: 'updated telegram text' },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to eq(
+        'Telegram Personal conversation is missing contact inbox source_id'
+      )
+      expect(telegram_message.reload.content).to eq('old text')
+      expect(telegram_message.content_attributes['edited']).to be_nil
+    end
+
+    it 'returns unprocessable when telegram personal provider edit fails' do
+      telegram_channel = create(:channel_telegram_personal, account: account)
+      telegram_inbox = telegram_channel.inbox
+      telegram_conversation = create(:conversation, account: account, inbox: telegram_inbox)
+      telegram_message = create(
+        :message,
+        account: account,
+        inbox: telegram_inbox,
+        conversation: telegram_conversation,
+        message_type: :outgoing,
+        source_id: '779',
+        content: 'old text'
+      )
+      create(:inbox_member, inbox: telegram_inbox, user: agent)
+
+      allow_any_instance_of(Channel::TelegramPersonal)
+        .to receive(:update_message)
+        .and_raise(TelegramPersonal::GatewayClient::GatewayError.new('telegram edit failed'))
+
+      patch "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
+            params: { content: 'updated telegram text' },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to eq('telegram edit failed')
+      expect(telegram_message.reload.content).to eq('old text')
+      expect(telegram_message.content_attributes['edited']).to be_nil
     end
   end
 
@@ -356,6 +504,54 @@ RSpec.describe 'Conversation Messages API', type: :request do
           expect(response).to have_http_status(:success)
           expect(message.reload.status).to eq('failed')
           expect(message.reload.external_error).to eq('err123')
+        end
+      end
+
+      context 'when agent edits a WhatsApp Web message' do
+        let(:channel) { create(:channel_whatsapp_web, account: account) }
+        let(:inbox) { create(:inbox, channel: channel, account: account) }
+        let!(:conversation) { create(:conversation, inbox: inbox, account: account) }
+        let!(:message) do
+          create(
+            :message,
+            conversation: conversation,
+            inbox: inbox,
+            account: account,
+            message_type: :outgoing,
+            content: 'Original text',
+            source_id: 'wa-msg-1'
+          )
+        end
+
+        before { create(:inbox_member, inbox: inbox, user: agent) }
+
+        it 'updates the local message content and marks it edited' do
+          provider_response = { 'status' => 'SUCCESS' }
+          allow_any_instance_of(WhatsappWeb::Providers::EvolutionService)
+            .to receive(:request)
+            .with(
+              :post,
+              "/chat/updateMessage/#{channel.instance_name}",
+              body: {
+                number: "#{conversation.contact_inbox.source_id}@s.whatsapp.net",
+                text: 'Edited from onelink',
+                key: {
+                  id: 'wa-msg-1',
+                  fromMe: true,
+                  remoteJid: "#{conversation.contact_inbox.source_id}@s.whatsapp.net"
+                }
+              }
+            ).and_return(provider_response)
+
+          patch api_v1_account_conversation_message_url(
+            account_id: account.id,
+            conversation_id: conversation.display_id,
+            id: message.id
+          ), params: { content: 'Edited from onelink' }, headers: agent.create_new_auth_token, as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(message.reload.content).to eq('Edited from onelink')
+          expect(message.content_attributes['edited']).to eq(true)
         end
       end
     end

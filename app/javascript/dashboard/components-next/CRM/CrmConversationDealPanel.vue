@@ -17,6 +17,7 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingSidePanel from 'dashboard/components-next/Scheduling/SchedulingSidePanel.vue';
+import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
@@ -890,6 +891,12 @@ onBeforeRouteLeave(() => {
         :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
         :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
         @update:model-value="form.customAttributes = $event"
+      />
+
+      <EntityTouchesCard
+        v-if="selectedDeal?.id"
+        remindable-type="Crm::Deal"
+        :remindable-id="selectedDeal.id"
       />
 
       <SchedulingFormFieldGroup :framed="false">

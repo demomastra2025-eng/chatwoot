@@ -10,7 +10,7 @@ import {
 } from 'dashboard/helper/pushHelper.js';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import ToggleSwitch from 'dashboard/components-next/switch/Switch.vue';
-import { NOTIFICATION_TYPES } from './constants';
+import { NOTIFICATION_CHANNELS, NOTIFICATION_TYPES } from './constants';
 
 export default {
   components: {
@@ -21,16 +21,19 @@ export default {
   data() {
     return {
       selectedEmailFlags: [],
+      selectedInboxFlags: [],
       selectedPushFlags: [],
       enableAudioAlerts: false,
       hasEnabledPushPermissions: false,
       notificationTypes: NOTIFICATION_TYPES,
+      notificationChannels: NOTIFICATION_CHANNELS,
     };
   },
   computed: {
     ...mapGetters({
       accountId: 'getCurrentAccountId',
       emailFlags: 'userNotificationSettings/getSelectedEmailFlags',
+      inboxFlags: 'userNotificationSettings/getSelectedInboxFlags',
       pushFlags: 'userNotificationSettings/getSelectedPushFlags',
       isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
     }),
@@ -54,10 +57,13 @@ export default {
   },
   watch: {
     emailFlags(value) {
-      this.selectedEmailFlags = value;
+      this.selectedEmailFlags = value || [];
+    },
+    inboxFlags(value) {
+      this.selectedInboxFlags = value || [];
     },
     pushFlags(value) {
-      this.selectedPushFlags = value;
+      this.selectedPushFlags = value || [];
     },
   },
   mounted() {
@@ -68,8 +74,12 @@ export default {
   },
   methods: {
     checkFlagStatus(type, flagType) {
-      const selectedFlags =
-        type === 'email' ? this.selectedEmailFlags : this.selectedPushFlags;
+      const selectedFlagsByType = {
+        email: this.selectedEmailFlags,
+        inbox: this.selectedInboxFlags,
+        push: this.selectedPushFlags,
+      };
+      const selectedFlags = selectedFlagsByType[type] || [];
       return selectedFlags.includes(`${type}_${flagType}`);
     },
     onRegistrationSuccess() {
@@ -121,8 +131,9 @@ export default {
     },
     async updateNotificationSettings() {
       try {
-        this.$store.dispatch('userNotificationSettings/update', {
+        await this.$store.dispatch('userNotificationSettings/update', {
           selectedEmailFlags: this.selectedEmailFlags,
+          selectedInboxFlags: this.selectedInboxFlags,
           selectedPushFlags: this.selectedPushFlags,
         });
         useAlert(this.$t('PROFILE_SETTINGS.FORM.API.UPDATE_SUCCESS'));
@@ -133,9 +144,15 @@ export default {
     handleInput(type, id) {
       if (type === 'email') {
         this.handleEmailInput(id);
+      } else if (type === 'inbox') {
+        this.handleInboxInput(id);
       } else {
         this.handlePushInput(id);
       }
+    },
+    handleInboxInput(id) {
+      this.selectedInboxFlags = this.toggleInput(this.selectedInboxFlags, id);
+      this.updateNotificationSettings();
     },
     handleEmailInput(id) {
       this.selectedEmailFlags = this.toggleInput(this.selectedEmailFlags, id);
@@ -164,30 +181,24 @@ export default {
         class="grid content-center h-12 grid-cols-12 gap-4 py-0 rounded-t-xl"
       >
         <TableHeaderCell
-          :span="7"
-          label="`${$t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPE_TITLE')}`"
+          :span="6"
+          :label="$t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPE_TITLE')"
         >
           <span class="text-heading-3 normal-case text-n-slate-12">
             {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TYPE_TITLE') }}
           </span>
         </TableHeaderCell>
         <TableHeaderCell
+          v-for="channel in notificationChannels"
+          :key="channel.key"
           :span="2"
-          label="`${$t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.EMAIL')}`"
+          :label="$t(channel.label)"
         >
-          <span class="text-heading-3 normal-case text-n-slate-12">
-            {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.EMAIL') }}
-          </span>
-        </TableHeaderCell>
-        <TableHeaderCell
-          :span="3"
-          label="`${$t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.PUSH')}`"
-        >
-          <div class="flex items-center justify-between gap-1">
+          <div class="flex items-center justify-center gap-1">
             <span
               class="text-heading-3 normal-case text-n-slate-12 whitespace-nowrap"
             >
-              {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.PUSH') }}
+              {{ $t(channel.label) }}
             </span>
           </div>
         </TableHeaderCell>
@@ -200,24 +211,21 @@ export default {
           class="grid items-center content-center h-12 grid-cols-12 gap-4 py-0 rounded-t-xl"
         >
           <div
-            class="flex flex-row items-start gap-2 col-span-7 px-0 py-2 text-sm tracking-[0.5] rtl:text-right"
+            class="flex flex-row items-start gap-2 col-span-6 px-0 py-2 text-sm tracking-[0.5] rtl:text-right"
           >
             <span class="text-body-main text-n-slate-12">
               {{ $t(notification.label) }}
             </span>
           </div>
           <div
-            v-for="(type, typeIndex) in ['email', 'push']"
-            :key="typeIndex"
-            class="flex items-start gap-2 px-0 text-sm tracking-[0.5] text-left rtl:text-right"
-            :class="`col-span-${type === 'push' ? 3 : 2}`"
+            v-for="channel in notificationChannels"
+            :key="channel.key"
+            class="col-span-2 flex justify-center items-start gap-2 px-0 text-sm tracking-[0.5] text-left rtl:text-right"
           >
             <CheckBox
-              :value="`${type}_${notification.value}`"
-              :is-checked="
-                checkFlagStatus(type, notification.value, selectedPushFlags)
-              "
-              @update="id => handleInput(type, id)"
+              :value="`${channel.key}_${notification.value}`"
+              :is-checked="checkFlagStatus(channel.key, notification.value)"
+              @update="id => handleInput(channel.key, id)"
             />
           </div>
         </div>
@@ -225,6 +233,27 @@ export default {
     </div>
     <!--  Layout for mobile devices -->
     <div class="flex flex-col gap-6 sm:hidden">
+      <span class="text-heading-3 text-n-slate-12">
+        {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.INBOX') }}
+      </span>
+      <div class="flex flex-col gap-4">
+        <div
+          v-for="(notification, index) in filteredNotificationTypes"
+          :key="`inbox-${index}`"
+          class="flex flex-row items-start gap-2"
+        >
+          <CheckBox
+            :id="`inbox_${notification.value}`"
+            :value="`inbox_${notification.value}`"
+            :is-checked="checkFlagStatus('inbox', notification.value)"
+            @update="handleInboxInput"
+          />
+          <span class="text-body-main text-n-slate-12">{{
+            $t(notification.label)
+          }}</span>
+        </div>
+      </div>
+
       <span class="text-heading-3 text-n-slate-12">
         {{ $t('PROFILE_SETTINGS.FORM.EMAIL_NOTIFICATIONS_SECTION.TITLE') }}
       </span>

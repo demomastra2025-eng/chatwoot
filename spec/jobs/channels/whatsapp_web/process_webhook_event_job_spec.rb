@@ -23,4 +23,13 @@ RSpec.describe Channels::WhatsappWeb::ProcessWebhookEventJob do
 
     described_class.perform_now(channel.id, { 'event' => 'connection.update', 'data' => { 'state' => 'open' } })
   end
+
+  it 'ignores webhook jobs for inboxes pending deletion' do
+    channel = create(:channel_whatsapp_web)
+    channel.inbox.mark_pending_deletion!
+
+    expect(WhatsappWeb::IncomingEventService).not_to receive(:new)
+
+    described_class.perform_now(channel.id, { 'event' => 'connection.update', 'data' => { 'state' => 'open' } })
+  end
 end

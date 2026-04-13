@@ -1,14 +1,18 @@
 <script>
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
+import { computed } from 'vue';
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { usePolicy } from 'dashboard/composables/usePolicy';
+import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
 import NextInput from 'next/input/Input.vue';
+import NextSelect from 'dashboard/components-next/select/Select.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import AccountId from './components/AccountId.vue';
@@ -16,6 +20,9 @@ import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
 import AudioTranscription from './components/AudioTranscription.vue';
 import SectionLayout from './components/SectionLayout.vue';
+import WorkspaceLogo from './components/WorkspaceLogo.vue';
+import SamlSettings from '../security/components/SamlSettings.vue';
+import SamlPaywall from '../security/components/SamlPaywall.vue';
 
 export default {
   components: {
@@ -26,16 +33,41 @@ export default {
     AccountDelete,
     AudioTranscription,
     SectionLayout,
+    WorkspaceLogo,
     WithLabel,
     NextInput,
+    NextSelect,
+    SamlSettings,
+    SamlPaywall,
   },
   setup() {
-    const { updateUISettings, uiSettings } = useUISettings();
+    const { uiSettings } = useUISettings();
     const { enabledLanguages } = useConfig();
     const { accountId } = useAccount();
+    const { shouldShow, shouldShowPaywall } = usePolicy();
     const v$ = useVuelidate();
+    const allowedLoginMethods = computed(
+      () => window.chatwootConfig.allowedLoginMethods || ['email']
+    );
+    const shouldShowSaml = computed(() => {
+      const hasPermission = shouldShow(
+        FEATURE_FLAGS.SAML,
+        ['administrator'],
+        [INSTALLATION_TYPES.CLOUD, INSTALLATION_TYPES.ENTERPRISE]
+      );
 
-    return { updateUISettings, uiSettings, v$, enabledLanguages, accountId };
+      return hasPermission && allowedLoginMethods.value.includes('saml');
+    });
+    const showSamlPaywall = computed(() => shouldShowPaywall('saml'));
+
+    return {
+      uiSettings,
+      v$,
+      enabledLanguages,
+      accountId,
+      shouldShowSaml,
+      showSamlPaywall,
+    };
   },
   data() {
     return {
@@ -45,6 +77,8 @@ export default {
       domain: '',
       supportEmail: '',
       features: {},
+      logoFile: null,
+      logoUrl: '',
     };
   },
   validations: {
@@ -90,9 +124,6 @@ export default {
         this.featureInboundEmailEnabled && !!this.features.custom_reply_email
       );
     },
-    currentAccount() {
-      return this.getAccount(this.accountId) || {};
-    },
   },
   mounted() {
     this.initializeAccount();
@@ -100,7 +131,7 @@ export default {
   methods: {
     async initializeAccount() {
       try {
-        const { name, locale, id, domain, support_email, features } =
+        const { name, locale, id, domain, support_email, features, logo_url } =
           this.getAccount(this.accountId);
 
         this.$root.$i18n.locale = this.uiSettings?.locale || locale;
@@ -110,6 +141,8 @@ export default {
         this.domain = domain;
         this.supportEmail = support_email;
         this.features = features;
+        this.logoFile = null;
+        this.logoUrl = logo_url || '';
       } catch (error) {
         // Ignore error
       }
@@ -123,11 +156,15 @@ export default {
       }
       try {
         await this.$store.dispatch('accounts/update', {
+          id: this.id,
           locale: this.locale,
           name: this.name,
           domain: this.domain,
           support_email: this.supportEmail,
+          logo: this.logoFile,
         });
+        this.logoFile = null;
+        this.logoUrl = this.getAccount(this.id)?.logo_url || this.logoUrl;
         // If user locale is set, update the locale with user locale
         if (this.uiSettings?.locale) {
           this.$root.$i18n.locale = this.uiSettings?.locale;
@@ -139,6 +176,26 @@ export default {
         useAlert(this.$t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
       } catch (error) {
         useAlert(this.$t('GENERAL_SETTINGS.UPDATE.ERROR'));
+      }
+    },
+    updateWorkspaceLogo({ file, url }) {
+      this.logoFile = file;
+      this.logoUrl = url;
+    },
+    async deleteWorkspaceLogo() {
+      if (this.logoFile) {
+        this.logoFile = null;
+        this.logoUrl = this.getAccount(this.id)?.logo_url || '';
+        return;
+      }
+
+      try {
+        await this.$store.dispatch('accounts/deleteLogo', { id: this.id });
+        this.logoFile = null;
+        this.logoUrl = this.getAccount(this.id)?.logo_url || '';
+        useAlert(this.$t('GENERAL_SETTINGS.FORM.LOGO.DELETE_SUCCESS'));
+      } catch (error) {
+        useAlert(this.$t('GENERAL_SETTINGS.FORM.LOGO.DELETE_ERROR'));
       }
     },
   },
@@ -159,6 +216,12 @@ export default {
           class="grid gap-4"
           @submit.prevent="updateAccount"
         >
+          <WorkspaceLogo
+            :name="name"
+            :src="logoUrl"
+            @change="updateWorkspaceLogo"
+            @delete="deleteWorkspaceLogo"
+          />
           <WithLabel
             name="account-name"
             :has-error="v$.name.$error"
@@ -179,7 +242,7 @@ export default {
             :label="$t('GENERAL_SETTINGS.FORM.LANGUAGE.LABEL')"
             :error-message="$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR')"
           >
-            <Select v-model="locale" class="!mb-0 text-sm">
+            <NextSelect v-model="locale" class="!mb-0 text-sm">
               <option
                 v-for="lang in languagesSortedByCode"
                 :key="lang.iso_639_1_code"
@@ -187,7 +250,7 @@ export default {
               >
                 {{ lang.name }}
               </option>
-            </Select>
+            </NextSelect>
           </WithLabel>
           <WithLabel
             v-if="featureCustomReplyDomainEnabled"
@@ -236,6 +299,17 @@ export default {
 
       <woot-loading-state v-if="uiFlags.isFetchingItem" />
     </div>
+    <SamlPaywall v-if="showSamlPaywall" />
+    <SamlSettings v-else-if="shouldShowSaml" />
+    <SectionLayout
+      v-else
+      :title="$t('SECURITY_SETTINGS.SAML.TITLE')"
+      :description="$t('SECURITY_SETTINGS.SAML.NOTE')"
+    >
+      <div class="text-sm text-slate-600">
+        {{ $t('SECURITY_SETTINGS.SAML_DISABLED_MESSAGE') }}
+      </div>
+    </SectionLayout>
     <AudioTranscription v-if="showAudioTranscriptionConfig" />
     <AccountId />
     <div v-if="!uiFlags.isFetchingItem && isOnChatwootCloud">

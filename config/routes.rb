@@ -37,6 +37,7 @@ Rails.application.routes.draw do
 
   get '/legal/:locale/terms', to: 'legal#terms', as: :legal_terms
   get '/legal/:locale/privacy', to: 'legal#privacy', as: :legal_privacy
+  get '/captain/mcp_oauth/callback', to: 'captain/mcp_oauth#callback', as: :captain_mcp_oauth_callback
 
   get '/health', to: 'health#show'
   get '/api', to: 'api#index'
@@ -49,6 +50,7 @@ Rails.application.routes.draw do
         member do
           post :update_active_at
           get :cache_keys
+          delete :logo
         end
 
         scope module: :accounts do
@@ -56,10 +58,17 @@ Rails.application.routes.draw do
             resource :contact_merge, only: [:create]
           end
           resource :bulk_actions, only: [:create]
+          resources :bulk_action_runs, only: [:show]
           resources :agents, only: [:index, :create, :update, :destroy] do
             post :bulk_create, on: :collection
           end
           namespace :captain do
+            resource :observability, only: [:show], controller: 'observability' do
+              get :metrics
+              get :release_check
+              get :export
+              resources :annotations, only: [:index, :create, :destroy], controller: 'observability_annotations'
+            end
             resource :preferences, only: [:show, :update]
             resources :assistants do
               member do
@@ -84,6 +93,22 @@ Rails.application.routes.draw do
             resources :custom_tools do
               collection do
                 post :test
+              end
+            end
+            resources :mcp_servers do
+              collection do
+                post :test
+              end
+              member do
+                get :surface
+                post :read_resource
+                post :fetch_resource_template
+                post :fetch_prompt
+                post :task_get
+                post :task_result
+                post :task_cancel
+                post :oauth_start
+                delete :oauth_disconnect
               end
             end
             resources :documents, only: [:index, :show, :create, :destroy] do
@@ -125,6 +150,14 @@ Rails.application.routes.draw do
             end
           end
           resources :canned_responses, only: [:index, :create, :update, :destroy]
+          resources :touches, only: [:index, :show, :create, :update, :destroy] do
+            post :approve, on: :member
+            post :cancel, on: :member
+          end
+          resources :touch_plans, only: [:index, :show, :create, :update] do
+            post :apply, on: :member
+            post :archive, on: :member
+          end
           resources :automation_rules, only: [:index, :create, :show, :update, :destroy] do
             post :clone
           end
@@ -140,7 +173,12 @@ Rails.application.routes.draw do
             end
           end
           resources :campaigns, only: [:index, :create, :show, :update, :destroy] do
+            post :preview, on: :collection
             get :analytics, on: :member
+            post :retry_failed, on: :member
+            post :cancel, on: :member
+            post :restart, on: :member
+            post :resume, on: :member
           end
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
           namespace :scheduling do
@@ -305,6 +343,15 @@ Rails.application.routes.draw do
             post :disconnect_whatsapp_web, on: :member
             post :repair_whatsapp_web, on: :member
             get :whatsapp_web_diagnostics, on: :member
+            post :telegram_personal_request_code, on: :member, to: 'telegram_personal_channels#request_code'
+            post :telegram_personal_request_qr, on: :member, to: 'telegram_personal_channels#request_qr'
+            post :telegram_personal_verify_code, on: :member, to: 'telegram_personal_channels#verify_code'
+            post :telegram_personal_verify_password, on: :member, to: 'telegram_personal_channels#verify_password'
+            post :telegram_personal_reconnect, on: :member, to: 'telegram_personal_channels#reconnect'
+            post :telegram_personal_history_sync, on: :member, to: 'telegram_personal_channels#history_sync'
+            post :telegram_personal_contacts_sync, on: :member, to: 'telegram_personal_channels#contacts_sync'
+            post :telegram_personal_disconnect, on: :member, to: 'telegram_personal_channels#disconnect'
+            get :telegram_personal_diagnostics, on: :member, to: 'telegram_personal_channels#diagnostics'
             if ChatwootApp.enterprise?
               resource :conference, only: %i[create destroy], controller: 'conference' do
                 get :token, on: :member
@@ -678,6 +725,8 @@ Rails.application.routes.draw do
   post 'webhooks/twitter', to: 'api/v1/webhooks#twitter_events'
   post 'webhooks/line/:line_channel_id', to: 'webhooks/line#process_payload'
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
+  post 'webhooks/telegram_personal/:webhook_identifier', to: 'webhooks/telegram_personal#process_payload'
+  post 'webhooks/vk/:callback_id', to: 'webhooks/vk#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
   post 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#process_payload'
@@ -762,6 +811,7 @@ Rails.application.routes.draw do
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]
       resource :monitoring, only: [:show]
+      resource :captain_observability, only: [:show], controller: 'captain_observability'
       get 'logs', to: 'logs#show', as: :logs
 
       resource :settings, only: [:show] do

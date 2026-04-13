@@ -5,6 +5,7 @@ Rails.application.config.filter_parameters += [
   :password, :secret, :_key, :auth, :crypt, :salt, :certificate, :otp, :access, :private, :protected, :ssn,
   :otp_secret, :otp_code, :backup_code, :mfa_token, :otp_backup_codes,
   :data, :base64, :qrcode, :media_data, :raw_payload,
+  :api_hash, :string_session, :pending_phone_code_hash, :qr_login_url,
   'pairingCode', 'pairing_code', 'disconnectionObject'
 ]
 

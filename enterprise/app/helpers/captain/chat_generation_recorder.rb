@@ -30,14 +30,29 @@ module Captain::ChatGenerationRecorder
   end
 
   def generation_attributes(chat, message)
+    account = @account || @assistant&.account
+    preferences = account&.captain_preferences&.dig(:runtime)
+
     {
       ATTR_GEN_AI_PROVIDER => determine_provider(model),
       ATTR_GEN_AI_REQUEST_MODEL => model,
       ATTR_GEN_AI_REQUEST_TEMPERATURE => temperature,
       ATTR_GEN_AI_USAGE_INPUT_TOKENS => message.input_tokens,
       ATTR_GEN_AI_USAGE_OUTPUT_TOKENS => message.respond_to?(:output_tokens) ? message.output_tokens : nil,
-      ATTR_LANGFUSE_OBSERVATION_INPUT => format_input_messages(chat),
-      ATTR_LANGFUSE_OBSERVATION_OUTPUT => message.respond_to?(:content) ? message.content.to_s : nil
+      'trace_input_capture' => Llm::TracePayloadPolicy.trace_input_capture?(account: account, preferences: preferences),
+      'trace_output_capture' => Llm::TracePayloadPolicy.trace_output_capture?(account: account, preferences: preferences),
+      ATTR_LANGFUSE_OBSERVATION_INPUT => Llm::TracePayloadPolicy.capture(
+        format_input_messages(chat),
+        direction: :input,
+        account: account,
+        preferences: preferences
+      ),
+      ATTR_LANGFUSE_OBSERVATION_OUTPUT => Llm::TracePayloadPolicy.capture(
+        message.respond_to?(:content) ? message.content.to_s : nil,
+        direction: :output,
+        account: account,
+        preferences: preferences
+      )
     }
   end
 

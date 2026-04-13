@@ -57,12 +57,14 @@ class AutomationRule < ApplicationRecord
   CONVERSATION_ACTION_ATTRIBUTES = %w[
     send_message add_label remove_label send_email_to_team assign_team assign_agent send_webhook_event mute_conversation
     send_attachment change_status resolve_conversation open_conversation pending_conversation snooze_conversation change_priority
-    send_email_transcript add_private_note
+    send_email_transcript add_private_note apply_touch_plan create_touch
   ].freeze
   APPOINTMENT_ACTION_ATTRIBUTES = %w[
     send_webhook_event
     change_appointment_status
     cancel_appointment_payment
+    apply_touch_plan
+    create_touch
   ].freeze
   DEAL_ACTION_ATTRIBUTES = %w[
     send_webhook_event
@@ -71,6 +73,8 @@ class AutomationRule < ApplicationRecord
     assign_deal_team
     archive_deal
     unarchive_deal
+    apply_touch_plan
+    create_touch
   ].freeze
   TASK_ACTION_ATTRIBUTES = %w[
     send_webhook_event
@@ -80,6 +84,8 @@ class AutomationRule < ApplicationRecord
     change_task_priority
     archive_task
     unarchive_task
+    apply_touch_plan
+    create_touch
   ].freeze
   CONVERSATION_CONDITION_ATTRIBUTES = %w[
     content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
@@ -100,6 +106,7 @@ class AutomationRule < ApplicationRecord
   validate :feature_enabled_for_event
   validate :appointment_condition_operators_supported
   validate :appointment_action_params_supported
+  validate :conversation_action_params_supported
   validate :crm_condition_operators_supported
   validate :crm_action_params_supported
   validate :query_operator_presence
@@ -274,6 +281,23 @@ class AutomationRule < ApplicationRecord
     errors.add(:actions, "Automation action parameters #{unsupported_actions.join(',')} not supported.")
   end
 
+  def conversation_action_params_supported
+    return unless conversation_event?
+    return if actions.blank?
+
+    unsupported_actions = actions.filter_map do |action|
+      action_name = action['action_name'].to_s
+      next unless actions_attributes.include?(action_name)
+      next if conversation_action_params_supported?(action_name, action['action_params'])
+
+      action_name
+    end
+
+    return if unsupported_actions.blank?
+
+    errors.add(:actions, "Automation action parameters #{unsupported_actions.join(',')} not supported.")
+  end
+
   def crm_action_params_supported
     return unless crm_event?
     return if actions.blank?
@@ -297,6 +321,10 @@ class AutomationRule < ApplicationRecord
       Scheduling::Constants::APPOINTMENT_STATUSES.include?(normalized_action_param(action_params))
     when 'cancel_appointment_payment'
       true
+    when 'apply_touch_plan'
+      touch_plan_action_params_supported?(action_params, 'appointment')
+    when 'create_touch'
+      create_touch_action_params_supported?(action_params)
     else
       true
     end
@@ -314,9 +342,37 @@ class AutomationRule < ApplicationRecord
       account.crm_task_statuses.active.exists?(id: normalized_action_param(action_params))
     when 'change_task_priority'
       normalized_action_param(action_params).in?(::Crm::Task::PRIORITIES)
+    when 'apply_touch_plan'
+      touch_plan_action_params_supported?(action_params, crm_entity_kind)
+    when 'create_touch'
+      create_touch_action_params_supported?(action_params)
     else
       true
     end
+  end
+
+  def conversation_action_params_supported?(action_name, action_params)
+    case action_name
+    when 'apply_touch_plan'
+      touch_plan_action_params_supported?(action_params, 'conversation')
+    when 'create_touch'
+      create_touch_action_params_supported?(action_params)
+    else
+      true
+    end
+  end
+
+  def touch_plan_action_params_supported?(action_params, entity_kind)
+    reminder_group = account.reminder_groups.kept.find_by(id: normalized_action_param(action_params))
+    reminder_group.present? && reminder_group.entity_kind_supported?(entity_kind)
+  end
+
+  def create_touch_action_params_supported?(action_params)
+    params = normalized_action_hash(action_params)
+    return false if params.blank?
+    return false if params[:body].to_s.strip.blank?
+
+    delay_minutes_supported?(params[:delay_minutes])
   end
 
   def optional_reference_supported?(scope, action_params)
@@ -330,11 +386,28 @@ class AutomationRule < ApplicationRecord
     Array(action_params).first.to_s.presence
   end
 
+  def normalized_action_hash(action_params)
+    value = Array(action_params).first
+    value = value.to_unsafe_h if value.is_a?(ActionController::Parameters)
+    value = value.to_h if value.respond_to?(:to_h) && !value.is_a?(Hash)
+    return unless value.is_a?(Hash)
+
+    value.with_indifferent_access
+  end
+
   def normalized_optional_action_param(action_params)
     value = Array(action_params).first.to_s.strip
     return nil if value.blank? || value == 'nil'
 
     value
+  end
+
+  def delay_minutes_supported?(value)
+    return true if value.blank?
+
+    Integer(value) >= 0
+  rescue ArgumentError, TypeError
+    false
   end
 
   def conversation_event?

@@ -16,7 +16,7 @@ class Captain::Tools::Copilot::ChangeTaskStatusService < Captain::Tools::Copilot
     )
     formatted_record(task)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

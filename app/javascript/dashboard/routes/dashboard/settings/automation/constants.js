@@ -47,6 +47,14 @@ const APPOINTMENT_AUTOMATION_ACTIONS = [
     key: 'send_webhook_event',
     name: 'SEND_WEBHOOK_EVENT',
   },
+  {
+    key: 'apply_touch_plan',
+    name: 'APPLY_TOUCH_PLAN',
+  },
+  {
+    key: 'create_touch',
+    name: 'CREATE_TOUCH',
+  },
 ];
 
 const DEAL_AUTOMATION_CONDITIONS = [
@@ -155,6 +163,14 @@ const DEAL_AUTOMATION_ACTIONS = [
     key: 'send_webhook_event',
     name: 'SEND_WEBHOOK_EVENT',
   },
+  {
+    key: 'apply_touch_plan',
+    name: 'APPLY_TOUCH_PLAN',
+  },
+  {
+    key: 'create_touch',
+    name: 'CREATE_TOUCH',
+  },
 ];
 
 const TASK_AUTOMATION_CONDITIONS = [
@@ -254,6 +270,14 @@ const TASK_AUTOMATION_ACTIONS = [
   {
     key: 'send_webhook_event',
     name: 'SEND_WEBHOOK_EVENT',
+  },
+  {
+    key: 'apply_touch_plan',
+    name: 'APPLY_TOUCH_PLAN',
+  },
+  {
+    key: 'create_touch',
+    name: 'CREATE_TOUCH',
   },
 ];
 
@@ -384,6 +408,14 @@ export const AUTOMATIONS = {
         key: 'send_attachment',
         name: 'SEND_ATTACHMENT',
       },
+      {
+        key: 'apply_touch_plan',
+        name: 'APPLY_TOUCH_PLAN',
+      },
+      {
+        key: 'create_touch',
+        name: 'CREATE_TOUCH',
+      },
     ],
   },
   conversation_created: {
@@ -503,6 +535,14 @@ export const AUTOMATIONS = {
       {
         key: 'send_attachment',
         name: 'SEND_ATTACHMENT',
+      },
+      {
+        key: 'apply_touch_plan',
+        name: 'APPLY_TOUCH_PLAN',
+      },
+      {
+        key: 'create_touch',
+        name: 'CREATE_TOUCH',
       },
     ],
   },
@@ -636,6 +676,14 @@ export const AUTOMATIONS = {
         key: 'send_attachment',
         name: 'SEND_ATTACHMENT',
       },
+      {
+        key: 'apply_touch_plan',
+        name: 'APPLY_TOUCH_PLAN',
+      },
+      {
+        key: 'create_touch',
+        name: 'CREATE_TOUCH',
+      },
     ],
   },
   conversation_opened: {
@@ -758,6 +806,14 @@ export const AUTOMATIONS = {
         key: 'send_attachment',
         name: 'SEND_ATTACHMENT',
       },
+      {
+        key: 'apply_touch_plan',
+        name: 'APPLY_TOUCH_PLAN',
+      },
+      {
+        key: 'create_touch',
+        name: 'CREATE_TOUCH',
+      },
     ],
   },
   conversation_resolved: {
@@ -857,6 +913,14 @@ export const AUTOMATIONS = {
       {
         key: 'send_attachment',
         name: 'SEND_ATTACHMENT',
+      },
+      {
+        key: 'apply_touch_plan',
+        name: 'APPLY_TOUCH_PLAN',
+      },
+      {
+        key: 'create_touch',
+        name: 'CREATE_TOUCH',
       },
     ],
   },
@@ -1122,6 +1186,16 @@ export const AUTOMATION_ACTION_TYPES = [
     key: 'send_webhook_event',
     label: 'SEND_WEBHOOK_EVENT',
     inputType: 'url',
+  },
+  {
+    key: 'apply_touch_plan',
+    label: 'APPLY_TOUCH_PLAN',
+    inputType: 'search_select',
+  },
+  {
+    key: 'create_touch',
+    label: 'CREATE_TOUCH',
+    inputType: 'touch',
   },
   {
     key: 'send_attachment',

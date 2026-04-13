@@ -19,7 +19,7 @@ class Captain::Tools::CreateTaskTool < Captain::Tools::BasePublicTool
 
     "Created task #{task.title} (ID: #{task.id})"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

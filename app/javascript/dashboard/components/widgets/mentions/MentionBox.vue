@@ -8,6 +8,15 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  placement: {
+    type: String,
+    default: 'top',
+    validator: value => ['top', 'bottom'].includes(value),
+  },
+  maxVisibleItems: {
+    type: Number,
+    default: 0,
+  },
   type: {
     type: String,
     default: 'canned',
@@ -20,6 +29,22 @@ const { getPlainText } = useMessageFormatter();
 
 const mentionsListContainerRef = ref(null);
 const selectedIndex = ref(0);
+
+const placementClass = computed(() => {
+  return props.placement === 'bottom'
+    ? 'top-full mt-2 bottom-auto'
+    : 'bottom-full mb-2 top-auto';
+});
+
+const maxHeightStyle = computed(() => {
+  if (!props.maxVisibleItems || props.maxVisibleItems <= 0) {
+    return {};
+  }
+
+  return {
+    maxHeight: `${props.maxVisibleItems * 3.25 + 0.5}rem`,
+  };
+});
 
 const adjustScroll = () => {
   nextTick(() => {
@@ -73,7 +98,9 @@ const variableKey = (item = {}) => {
 <template>
   <div
     ref="mentionsListContainerRef"
-    class="bg-n-solid-1 p-1 rounded-xl overflow-auto absolute w-full z-20 shadow-md left-0 bottom-full max-h-[9.75rem] border border-solid border-n-strong mention--box"
+    class="bg-n-solid-1 p-1 rounded-xl overflow-auto absolute w-full z-20 shadow-md left-0 max-h-[9.75rem] border border-solid border-n-strong mention--box"
+    :class="placementClass"
+    :style="maxHeightStyle"
   >
     <ul class="mb-0 vertical dropdown menu">
       <woot-dropdown-item

@@ -40,7 +40,11 @@ module Integrations::LlmInstrumentationSpans
     tool_name = tool_call.name.to_s
     span = tracer.start_span(format(TOOL_SPAN_NAME, tool_name))
     span.set_attribute(ATTR_LANGFUSE_OBSERVATION_TYPE, 'tool')
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, tool_call.arguments.to_json)
+    input = capture_trace_input(tool_call.arguments, {})
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
+    trace_capture_attributes({}).each do |key, value|
+      span.set_attribute(key, value)
+    end
 
     @pending_tool_spans ||= []
     @pending_tool_spans.push(span)
@@ -54,8 +58,9 @@ module Integrations::LlmInstrumentationSpans
     span = @pending_tool_spans&.pop
     return unless span
 
-    output = result.is_a?(String) ? result : result.to_json
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output)
+    output = capture_trace_output(result, {})
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output) if output.present?
+    set_tool_result_attributes(span, result, output) if respond_to?(:set_tool_result_attributes, true)
     span.finish
   rescue StandardError => e
     Rails.logger.warn "Failed to end tool span: #{e.message}"
@@ -73,16 +78,19 @@ module Integrations::LlmInstrumentationSpans
   def set_llm_turn_prompt_attributes(span, messages)
     messages.each_with_index do |msg, idx|
       span.set_attribute(format(ATTR_GEN_AI_PROMPT_ROLE, idx), msg[:role])
-      span.set_attribute(format(ATTR_GEN_AI_PROMPT_CONTENT, idx), msg[:content])
+      content = capture_trace_input(msg[:content], {})
+      span.set_attribute(format(ATTR_GEN_AI_PROMPT_CONTENT, idx), content) if content.present?
     end
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, messages.to_json)
+    input = capture_trace_input(messages, {})
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
   end
 
   def set_llm_turn_response_attributes(span, message)
     span.set_attribute(ATTR_GEN_AI_COMPLETION_ROLE, message.role.to_s) if message.respond_to?(:role)
-    span.set_attribute(ATTR_GEN_AI_COMPLETION_CONTENT, message.content.to_s) if message.respond_to?(:content)
+    output = capture_trace_output(message.content, {}) if message.respond_to?(:content)
+    span.set_attribute(ATTR_GEN_AI_COMPLETION_CONTENT, output) if output.present?
     set_llm_turn_usage_attributes(span, message)
-    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, message.content.to_s) if message.respond_to?(:content)
+    span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output) if output.present?
   end
 
   def set_llm_turn_usage_attributes(span, message)

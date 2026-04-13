@@ -13,7 +13,7 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
 
     "Moved deal #{deal.title} to stage #{deal.stage&.name}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

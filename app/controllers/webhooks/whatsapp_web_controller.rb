@@ -3,6 +3,8 @@ class Webhooks::WhatsappWebController < ActionController::API
   before_action :verify_signature!
 
   def process_payload
+    return head :accepted if @channel.inbox&.deleting?
+
     Channels::WhatsappWeb::ProcessWebhookEventJob.perform_later(@channel.id, request_payload.deep_stringify_keys)
 
     head :ok

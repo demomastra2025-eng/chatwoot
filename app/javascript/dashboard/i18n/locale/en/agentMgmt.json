@@ -1,19 +1,19 @@
 {
   "AGENT_MGMT": {
-    "HEADER": "Agents",
-    "HEADER_BTN_TXT": "Add Agent",
-    "LOADING": "Fetching Agent List",
-    "DESCRIPTION": "An agent is a member of your customer support team who can view and respond to user messages. The list below shows all the agents in your account.",
+    "HEADER": "Employees",
+    "HEADER_BTN_TXT": "Add Employee",
+    "LOADING": "Fetching Employee List",
+    "DESCRIPTION": "An employee is a member of your customer support team who can view and respond to user messages. The list below shows all the employees in your workspace.",
     "LEARN_MORE": "Learn about user roles",
     "AGENT_TYPES": {
       "ADMINISTRATOR": "Administrator",
-      "AGENT": "Agent"
+      "AGENT": "Employee"
     },
-    "COUNT": "{n} agent | {n} agents",
+    "COUNT": "{n} employee | {n} employees",
     "LIST": {
-      "404": "There are no agents associated to this account",
-      "TITLE": "Manage agents in your team",
-      "DESC": "You can add/remove agents to/in your team.",
+      "404": "There are no employees associated with this workspace",
+      "TITLE": "Manage employees in your team",
+      "DESC": "You can add or remove employees in your team.",
       "NAME": "Name",
       "EMAIL": "EMAIL",
       "STATUS": "Status",
@@ -23,13 +23,13 @@
       "AVAILABLE_CUSTOM_ROLE": "Available custom role permissions"
     },
     "ADD": {
-      "TITLE": "Add agent to your team",
+      "TITLE": "Add employee to your team",
       "DESC": "You can add people who will be able to handle support for your inboxes.",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "FORM": {
         "NAME": {
-          "LABEL": "Agent Name",
-          "PLACEHOLDER": "Please enter a name of the agent"
+          "LABEL": "Employee Name",
+          "PLACEHOLDER": "Please enter an employee name"
         },
         "AGENT_TYPE": {
           "LABEL": "Role",
@@ -40,18 +40,18 @@
           "LABEL": "Email Address",
           "PLACEHOLDER": "Please enter an email address of the agent"
         },
-        "SUBMIT": "Add Agent"
+        "SUBMIT": "Add Employee"
       },
       "API": {
-        "SUCCESS_MESSAGE": "Agent added successfully",
-        "EXIST_MESSAGE": "Agent email already in use, Please try another email address",
+        "SUCCESS_MESSAGE": "Employee added successfully",
+        "EXIST_MESSAGE": "Employee email already in use, Please try another email address",
         "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
       }
     },
     "DELETE": {
       "BUTTON_TEXT": "Delete",
       "API": {
-        "SUCCESS_MESSAGE": "Agent deleted successfully",
+        "SUCCESS_MESSAGE": "Employee deleted successfully",
         "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
       },
       "CONFIRM": {
@@ -62,11 +62,11 @@
       }
     },
     "EDIT": {
-      "TITLE": "Edit agent",
+      "TITLE": "Edit employee",
       "FORM": {
         "NAME": {
-          "LABEL": "Agent Name",
-          "PLACEHOLDER": "Please enter a name of the agent"
+          "LABEL": "Employee Name",
+          "PLACEHOLDER": "Please enter an employee name"
         },
         "AGENT_TYPE": {
           "LABEL": "Role",
@@ -82,30 +82,30 @@
           "PLACEHOLDER": "Please select an availability status",
           "ERROR": "Availability is required"
         },
-        "SUBMIT": "Edit Agent"
+        "SUBMIT": "Edit Employee"
       },
       "BUTTON_TEXT": "Edit",
       "CANCEL_BUTTON_TEXT": "Cancel",
       "API": {
-        "SUCCESS_MESSAGE": "Agent updated successfully",
+        "SUCCESS_MESSAGE": "Employee updated successfully",
         "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
       },
       "PASSWORD_RESET": {
         "ADMIN_RESET_BUTTON": "Reset Password",
-        "ADMIN_SUCCESS_MESSAGE": "An email with reset password instructions has been sent to the agent",
-        "SUCCESS_MESSAGE": "Agent password reset successfully",
+        "ADMIN_SUCCESS_MESSAGE": "An email with reset password instructions has been sent to the employee",
+        "SUCCESS_MESSAGE": "Employee password reset successfully",
         "ERROR_MESSAGE": "Could not connect to Onelink Server, Please try again later"
       }
     },
-    "SEARCH_PLACEHOLDER": "Search agents...",
-    "NO_RESULTS": "No agents found matching your search",
+    "SEARCH_PLACEHOLDER": "Search employees...",
+    "NO_RESULTS": "No employees found matching your search",
     "SEARCH": {
       "NO_RESULTS": "No results found."
     },
     "MULTI_SELECTOR": {
       "PLACEHOLDER": "None",
       "TITLE": {
-        "AGENT": "Select agent",
+        "AGENT": "Select employee",
         "TEAM": "Select team"
       },
       "LIST": {
@@ -113,13 +113,13 @@
       },
       "SEARCH": {
         "NO_RESULTS": {
-          "AGENT": "No agents found",
+          "AGENT": "No employees found",
           "TEAM": "No teams found"
         },
         "PLACEHOLDER": {
-          "AGENT": "Search agents",
+          "AGENT": "Search employees",
           "TEAM": "Search teams",
-          "INPUT": "Search for agents"
+          "INPUT": "Search for employees"
         }
       }
     }

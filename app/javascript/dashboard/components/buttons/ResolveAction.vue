@@ -231,7 +231,7 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
             slate
             sm
             start
-            icon="i-lucide-alarm-clock-minus"
+            icon="i-lucide-timer-reset"
             class="w-full"
             @click="() => openSnoozeModal()"
           />
@@ -243,7 +243,7 @@ useEmitter(CMD_RESOLVE_CONVERSATION, onCmdResolveConversation);
             slate
             sm
             start
-            icon="i-lucide-circle-dot-dashed"
+            icon="i-woot-captain"
             class="w-full"
             @click="() => toggleStatus(wootConstants.STATUS_TYPE.PENDING)"
           />

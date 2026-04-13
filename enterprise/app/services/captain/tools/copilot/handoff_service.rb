@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::HandoffService < Captain::Tools::Copilot::BaseAcc
     conversation = conversation_operations.handoff(reason: reason)
     "Handed off conversation ##{conversation.display_id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

@@ -9,9 +9,9 @@ internal_check_new_versions_job:
   cron: '0 0 * * *'
   class: 'Internal::TriggerDailyScheduledItemsJob'
   queue: scheduled_jobs
-# # executed At every 5th minute..
+# executed every minute for delayed items like touches/reminders
 trigger_scheduled_items_job:
-  cron: '*/5 * * * *'
+  cron: '*/1 * * * *'
   class: 'TriggerScheduledItemsJob'
   queue: scheduled_jobs
 
@@ -57,6 +57,20 @@ bulk_auto_assignment_job:
   class: 'Inboxes::BulkAutoAssignmentJob'
   queue: scheduled_jobs
 
+# executed every 15 minutes
+# evaluates account-scoped Captain observability alerts and dispatches notifications
+deliver_captain_observability_alerts_job:
+  cron: '*/15 * * * *'
+  class: 'Internal::DeliverCaptainObservabilityAlertsJob'
+  queue: scheduled_jobs
+
+# executed every 10 minutes
+# progressively backfills llm_event.trace_id from persisted payloads without a heavy deploy-time table rewrite
+backfill_llm_event_trace_id_job:
+  cron: '*/10 * * * *'
+  class: 'Internal::BackfillLlmEventTraceIdJob'
+  queue: scheduled_jobs
+
 # executed every 30 minutes for assignment_v2
 periodic_assignment_job:
   cron: '*/30 * * * *'
@@ -69,6 +83,13 @@ remove_old_notification_job:
   cron: '30 22 * * *'
   class: 'Notification::RemoveOldNotificationJob'
   queue: purgable
+
+# executed daily at 2245 UTC
+# enforces account-scoped llm_event retention windows and removes stale annotations
+enforce_llm_event_retention_job:
+  cron: '45 22 * * *'
+  class: 'Internal::EnforceLlmEventRetentionJob'
+  queue: scheduled_jobs
 
 # executed every 12 hours
 # to remove orphan conversations without contact

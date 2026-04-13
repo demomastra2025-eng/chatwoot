@@ -3,7 +3,7 @@
 class Captain::ToolCatalog
   class << self
     def available_tools_for(assistant, scope_name)
-      (built_in_tools_for(scope_name) + custom_tools_for(assistant, scope_name))
+      (built_in_tools_for(scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name))
         .map(&:dup)
         .uniq { |tool_definition| tool_definition[:id] }
     end
@@ -39,6 +39,8 @@ class Captain::ToolCatalog
 
       if ActiveModel::Type::Boolean.new.cast(tool_definition[:custom])
         build_custom_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+      elsif tool_definition[:provider].to_s == 'mcp'
+        build_mcp_tool(tool_definition, assistant:, scope_name:, user:, conversation:)
       else
         build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:)
       end
@@ -58,6 +60,10 @@ class Captain::ToolCatalog
       assistant.account.captain_custom_tools.enabled
                .map(&:to_tool_metadata)
                .select { |tool| Array(tool[:allowed_scopes]).map(&:to_s).include?(scope_name.to_s) }
+    end
+
+    def mcp_tools_for(assistant, scope_name)
+      Captain::Mcp::ToolCatalog.available_tools_for(assistant, scope_name)
     end
 
     def build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:)
@@ -87,6 +93,24 @@ class Captain::ToolCatalog
         custom_tool.tool(assistant)
       when Captain::ToolAccess::SCOPE_ASSISTANT
         custom_tool.copilot_tool(assistant, user: user, conversation: conversation)
+      end
+    end
+
+    def build_mcp_tool(tool_definition, assistant:, scope_name:, user:, conversation:)
+      mcp_server = assistant.account.captain_mcp_servers.enabled.find_by(id: tool_definition[:mcp_server_id])
+      return unless mcp_server
+
+      case scope_name.to_s
+      when Captain::ToolAccess::SCOPE_AGENT
+        Captain::Tools::McpTool.new(assistant, mcp_server, tool_definition)
+      when Captain::ToolAccess::SCOPE_ASSISTANT
+        Captain::Tools::Copilot::McpTool.new(
+          assistant,
+          mcp_server,
+          tool_definition,
+          user: user,
+          conversation: conversation
+        )
       end
     end
   end

@@ -13,6 +13,7 @@
 #  external_ref                :string
 #  idempotency_key             :string
 #  lock_version                :integer          default(0), not null
+#  position                    :integer          default(0), not null
 #  title                       :string           not null
 #  win_probability             :integer
 #  created_at                  :datetime         not null
@@ -33,6 +34,7 @@
 #  index_crm_deals_on_account_id                        (account_id)
 #  index_crm_deals_on_account_idempotency_key           (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
 #  index_crm_deals_on_account_originating_conversation  (account_id,originating_conversation_id)
+#  index_crm_deals_on_account_stage_position            (account_id,stage_id,position,id)
 #  index_crm_deals_on_account_team                      (account_id,team_id)
 #  index_crm_deals_on_active_list_dimensions            (account_id,pipeline_id,stage_id,owner_id,expected_close_on) WHERE (archived_at IS NULL)
 #  index_crm_deals_on_active_ordering                   (account_id,expected_close_on,updated_at DESC,id DESC) WHERE (archived_at IS NULL)
@@ -79,11 +81,13 @@ class Crm::Deal < ApplicationRecord
   has_many :tasks, class_name: '::Crm::Task', dependent: :nullify, inverse_of: :deal
   has_many :events, as: :eventable, class_name: '::Crm::Event', dependent: :destroy_async
   has_many :comments, as: :commentable, class_name: '::Crm::Comment', dependent: :destroy_async
+  has_many :reminders, as: :remindable, dependent: :nullify
 
   validates :title, presence: true
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
   validates :amount_minor, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :win_probability, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
   validates :custom_attributes, jsonb_attributes_length: true
   validate :stage_belongs_to_pipeline
@@ -98,6 +102,7 @@ class Crm::Deal < ApplicationRecord
   before_validation :normalize_description
   before_validation :normalize_currency
   before_validation :prepare_custom_attributes
+  before_validation :assign_position, on: :create
 
   def primary_contact_id
     deal_contacts.find(&:primary?)&.contact_id
@@ -174,6 +179,13 @@ class Crm::Deal < ApplicationRecord
 
   def prepare_custom_attributes
     self.custom_attributes = {} if custom_attributes.blank?
+  end
+
+  def assign_position
+    return if stage.blank?
+    return if position.present? && position.to_i.positive?
+
+    self.position = stage.deals.kept.maximum(:position).to_i + 1
   end
 
   def related_records_belong_to_account

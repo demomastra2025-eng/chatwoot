@@ -11,6 +11,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     priority
     start_at
     due_at
+    position
     external_ref
     idempotency_key
   ].freeze
@@ -25,6 +26,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     priority
     start_at
     due_at
+    position
     external_ref
     idempotency_key
     lock_version
@@ -96,7 +98,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     task = ::Crm::Tasks::StatusTransitionService.new(
       account: Current.account,
       task: @task,
-      params: params.permit(:status_id, :lock_version),
+      params: params.permit(:status_id, :position, :lock_version),
       actor: Current.user
     ).perform
 

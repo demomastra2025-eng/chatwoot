@@ -28,7 +28,7 @@ const { t } = useI18n();
 const actions = ref([
   { icon: 'i-lucide-check', key: 'resolved' },
   { icon: 'i-lucide-redo', key: 'open' },
-  { icon: 'i-lucide-alarm-clock', key: 'snoozed' },
+  { icon: 'i-lucide-timer-reset', key: 'snoozed' },
 ]);
 
 const updateConversations = key => {

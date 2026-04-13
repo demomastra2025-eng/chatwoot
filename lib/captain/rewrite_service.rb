@@ -50,4 +50,8 @@ class Captain::RewriteService < Captain::BaseTaskService
   def event_name
     operation
   end
+
+  def task_moderation_stages
+    [:output]
+  end
 end

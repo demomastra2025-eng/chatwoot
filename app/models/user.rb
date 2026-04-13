@@ -2,38 +2,40 @@
 #
 # Table name: users
 #
-#  id                     :integer          not null, primary key
-#  availability           :integer          default("online")
-#  confirmation_sent_at   :datetime
-#  confirmation_token     :string
-#  confirmed_at           :datetime
-#  consumed_timestep      :integer
-#  current_sign_in_at     :datetime
-#  current_sign_in_ip     :string
-#  custom_attributes      :jsonb
-#  display_name           :string
-#  email                  :string
-#  encrypted_password     :string           default(""), not null
-#  last_sign_in_at        :datetime
-#  last_sign_in_ip        :string
-#  message_signature      :text
-#  name                   :string           not null
-#  otp_backup_codes       :text
-#  otp_required_for_login :boolean          default(FALSE)
-#  otp_secret             :string
-#  provider               :string           default("email"), not null
-#  pubsub_token           :string
-#  remember_created_at    :datetime
-#  reset_password_sent_at :datetime
-#  reset_password_token   :string
-#  sign_in_count          :integer          default(0), not null
-#  tokens                 :json
-#  type                   :string
-#  ui_settings            :jsonb
-#  uid                    :string           default(""), not null
-#  unconfirmed_email      :string
-#  created_at             :datetime         not null
-#  updated_at             :datetime         not null
+#  id                        :integer          not null, primary key
+#  active_auth_client_set_at :datetime
+#  availability              :integer          default("online")
+#  confirmation_sent_at      :datetime
+#  confirmation_token        :string
+#  confirmed_at              :datetime
+#  consumed_timestep         :integer
+#  current_sign_in_at        :datetime
+#  current_sign_in_ip        :string
+#  custom_attributes         :jsonb
+#  display_name              :string
+#  email                     :string
+#  encrypted_password        :string           default(""), not null
+#  last_sign_in_at           :datetime
+#  last_sign_in_ip           :string
+#  message_signature         :text
+#  name                      :string           not null
+#  otp_backup_codes          :text
+#  otp_required_for_login    :boolean          default(FALSE)
+#  otp_secret                :string
+#  provider                  :string           default("email"), not null
+#  pubsub_token              :string
+#  remember_created_at       :datetime
+#  reset_password_sent_at    :datetime
+#  reset_password_token      :string
+#  sign_in_count             :integer          default(0), not null
+#  tokens                    :json
+#  type                      :string
+#  ui_settings               :jsonb
+#  uid                       :string           default(""), not null
+#  unconfirmed_email         :string
+#  created_at                :datetime         not null
+#  updated_at                :datetime         not null
+#  active_auth_client_id     :string
 #
 # Indexes
 #
@@ -102,7 +104,9 @@ class User < ApplicationRecord
 
   has_many :custom_filters, dependent: :destroy_async
   has_many :dashboard_apps, dependent: :nullify
+  has_many :bulk_action_runs, dependent: :destroy_async
   has_many :mentions, dependent: :destroy_async
+  has_many :llm_event_annotations, dependent: :destroy_async
   has_many :notes, dependent: :nullify
   has_many :notification_settings, dependent: :destroy_async
   has_many :notification_subscriptions, dependent: :destroy_async
@@ -211,6 +215,57 @@ class User < ApplicationRecord
   def postpone_email_change_until_confirmation_and_regenerate_confirmation_token
     unconfirmed_email_will_change!
     super
+  end
+
+  def active_auth_client?(client_id)
+    client_id.present? && active_auth_client_id == client_id.to_s
+  end
+
+  def activate_auth_client!(client_id)
+    return if client_id.blank?
+
+    previous_client_id = nil
+
+    with_lock do
+      normalized_client_id = client_id.to_s
+      previous_client_id = active_auth_client_id
+
+      self.active_auth_client_id = normalized_client_id
+      self.active_auth_client_set_at = Time.current
+      save!
+    end
+
+    previous_client_id if previous_client_id.present? && previous_client_id != client_id.to_s
+  end
+
+  def clear_active_auth_client!(client_id = nil)
+    return if active_auth_client_id.blank?
+    return if client_id.present? && active_auth_client_id != client_id.to_s
+
+    update!(
+      active_auth_client_id: nil,
+      active_auth_client_set_at: nil,
+      tokens: {}
+    )
+  end
+
+  def auth_session_stream_name(client_id)
+    "user_session:#{id}:#{client_id}"
+  end
+
+  def broadcast_session_replaced!(client_id)
+    return if client_id.blank?
+
+    ActionCable.server.broadcast(
+      auth_session_stream_name(client_id),
+      {
+        event: 'auth.session_replaced',
+        data: {
+          code: 'session_replaced',
+          message: I18n.t('auth.session_replaced')
+        }
+      }
+    )
   end
 
   private

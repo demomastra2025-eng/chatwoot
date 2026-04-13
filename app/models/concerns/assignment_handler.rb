@@ -28,6 +28,8 @@ module AssignmentHandler
   end
 
   def notify_assignment_change
+    return if runtime_events_suppressed_for_assignment?
+
     {
       ASSIGNEE_CHANGED => -> { saved_change_to_assignee_id? },
       TEAM_CHANGED => -> { saved_change_to_team_id? }
@@ -37,6 +39,8 @@ module AssignmentHandler
   end
 
   def process_assignment_changes
+    return if runtime_events_suppressed_for_assignment?
+
     process_assignment_activities
   end
 
@@ -51,5 +55,9 @@ module AssignmentHandler
 
   def self_assign?(assignee_id)
     assignee_id.present? && Current.user&.id == assignee_id
+  end
+
+  def runtime_events_suppressed_for_assignment?
+    Current.suppress_runtime_events || (respond_to?(:skip_runtime_events) && skip_runtime_events)
   end
 end

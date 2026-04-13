@@ -25,6 +25,44 @@ describe('#getters', () => {
     expect(getters.getSMSInboxes(state).length).toEqual(2);
   });
 
+  it('getOutboundCampaignInboxes uses ready implemented campaign capabilities when present', () => {
+    const state = {
+      records: [
+        {
+          id: 1,
+          channel_type: 'Channel::Email',
+          campaign_capabilities: {
+            supports_outbound_campaigns: true,
+            implemented_in_current_campaigns: true,
+            delivery_readiness: 'ready',
+          },
+        },
+        {
+          id: 2,
+          channel_type: 'Channel::Line',
+          campaign_capabilities: {
+            supports_outbound_campaigns: true,
+            implemented_in_current_campaigns: false,
+            delivery_readiness: 'planned',
+          },
+        },
+        {
+          id: 3,
+          channel_type: 'Channel::WebWidget',
+          campaign_capabilities: {
+            supports_outbound_campaigns: false,
+            implemented_in_current_campaigns: true,
+            delivery_readiness: 'separate_surface',
+          },
+        },
+      ],
+    };
+
+    expect(getters.getOutboundCampaignInboxes(state)).toEqual([
+      state.records[0],
+    ]);
+  });
+
   it('dialogFlowEnabledInboxes', () => {
     const state = { records: inboxList };
     expect(getters.dialogFlowEnabledInboxes(state).length).toEqual(8);

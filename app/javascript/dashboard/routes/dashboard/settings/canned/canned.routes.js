@@ -5,7 +5,6 @@ import {
   CONVERSATION_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 import SettingsWrapper from '../SettingsWrapper.vue';
-import CannedHome from './Index.vue';
 
 export default {
   routes: [
@@ -26,7 +25,12 @@ export default {
             featureFlag: FEATURE_FLAGS.CANNED_RESPONSES,
             permissions: [...ROLES, ...CONVERSATION_PERMISSIONS],
           },
-          component: CannedHome,
+          redirect: to => {
+            return {
+              name: 'outbound_templates_index',
+              params: to.params,
+            };
+          },
         },
       ],
     },

@@ -9,9 +9,22 @@ class BaseActionCableConnector {
   constructor(
     app,
     pubsubToken,
-    websocketHost = '',
+    authClientIdOrWebsocketHost = null,
+    websocketHostOrPresenceInterval = '',
     presenceInterval = PRESENCE_INTERVAL
   ) {
+    const usesLegacySignature =
+      typeof websocketHostOrPresenceInterval === 'number';
+
+    const authClientId = usesLegacySignature
+      ? null
+      : authClientIdOrWebsocketHost;
+    const websocketHost = usesLegacySignature
+      ? authClientIdOrWebsocketHost || ''
+      : websocketHostOrPresenceInterval || '';
+    const heartbeatInterval = usesLegacySignature
+      ? websocketHostOrPresenceInterval
+      : presenceInterval;
     const websocketURL = websocketHost ? `${websocketHost}/cable` : undefined;
 
     this.consumer = createConsumer(websocketURL);
@@ -19,6 +32,7 @@ class BaseActionCableConnector {
       {
         channel: 'RoomChannel',
         pubsub_token: pubsubToken,
+        auth_client_id: authClientId,
         account_id: app.$store.getters.getCurrentAccountId,
         user_id: app.$store.getters.getCurrentUserID,
       },
@@ -42,7 +56,7 @@ class BaseActionCableConnector {
       setTimeout(() => {
         this.subscription.updatePresence();
         this.triggerPresenceInterval();
-      }, presenceInterval);
+      }, heartbeatInterval);
     };
     this.triggerPresenceInterval();
   }
@@ -85,7 +99,7 @@ class BaseActionCableConnector {
   }
 
   onReceived = ({ event, data } = {}) => {
-    if (this.isAValidEvent(data)) {
+    if (this.isAValidEvent(data, event)) {
       if (this.events[event] && typeof this.events[event] === 'function') {
         this.events[event](data);
       }

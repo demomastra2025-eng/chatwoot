@@ -1,4 +1,6 @@
 class Captain::ToolPolicy
+  AGENT_HIGH_RISK_LEVELS = %w[high custom].freeze
+
   class << self
     def runtime_allowed?(tool_definition, assistant:, scope_name:, user: nil)
       new(tool_definition, assistant: assistant, scope_name: scope_name, user: user).runtime_allowed?
@@ -20,6 +22,7 @@ class Captain::ToolPolicy
     scope_allowed? &&
       feature_requirements_satisfied? &&
       permission_requirements_satisfied? &&
+      agent_risk_requirements_satisfied? &&
       confirmation_requirements_satisfied?
   end
 
@@ -28,7 +31,8 @@ class Captain::ToolPolicy
       required_features: required_features,
       required_permissions: required_permissions,
       risk_level: risk_level,
-      requires_confirmation: requires_confirmation?
+      requires_confirmation: requires_confirmation?,
+      agent_high_risk: agent_high_risk?
     }
   end
 
@@ -50,7 +54,7 @@ class Captain::ToolPolicy
 
   def permission_requirements_satisfied?
     return true if required_permissions.blank?
-    return true if scope_name == Captain::ToolAccess::SCOPE_AGENT
+    return agent_permission_requirements_satisfied? if scope_name == Captain::ToolAccess::SCOPE_AGENT
 
     account_user = resolved_account_user
     return false if account_user.blank?
@@ -60,6 +64,26 @@ class Captain::ToolPolicy
     else
       account_user.administrator? || account_user.agent?
     end
+  end
+
+  def agent_permission_requirements_satisfied?
+    return false if assistant.blank?
+
+    Llm::RuntimePolicy.agent_permissioned_tool_allowed?(
+      tool_id,
+      account: assistant.account
+    )
+  end
+
+  def agent_risk_requirements_satisfied?
+    return true unless scope_name == Captain::ToolAccess::SCOPE_AGENT
+    return true unless agent_high_risk?
+    return false if assistant.blank?
+
+    Llm::RuntimePolicy.agent_high_risk_tool_allowed?(
+      tool_id,
+      account: assistant.account
+    )
   end
 
   def confirmation_requirements_satisfied?
@@ -88,6 +112,14 @@ class Captain::ToolPolicy
 
   def risk_level
     @tool_definition[:risk_level].presence || 'medium'
+  end
+
+  def agent_high_risk?
+    AGENT_HIGH_RISK_LEVELS.include?(risk_level.to_s)
+  end
+
+  def tool_id
+    @tool_definition[:id].to_s
   end
 
   def requires_confirmation?

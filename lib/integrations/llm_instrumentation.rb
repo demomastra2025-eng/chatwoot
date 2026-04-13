@@ -16,7 +16,7 @@ module Integrations::LlmInstrumentation
       setup_span_attributes(span, params)
       result = yield
       executed = true
-      record_completion(span, result)
+      record_completion(span, result, params)
       result
     end
   rescue StandardError => e
@@ -33,10 +33,18 @@ module Integrations::LlmInstrumentation
       set_metadata_attributes(span, params)
 
       # By default, the input and output of a trace are set from the root observation
-      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, params[:messages].to_json)
+      input = capture_trace_input(params[:messages], params)
+      if input.present?
+        span.set_attribute(ATTR_LANGFUSE_TRACE_INPUT, input)
+        span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input)
+      end
       result = yield
       executed = true
-      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, result.to_json)
+      output = capture_trace_output(result, params)
+      if output.present?
+        span.set_attribute(ATTR_LANGFUSE_TRACE_OUTPUT, output)
+        span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output)
+      end
       set_error_attributes(span, result) if result.is_a?(Hash)
       result
     end
@@ -45,16 +53,23 @@ module Integrations::LlmInstrumentation
     executed ? result : yield
   end
 
-  def instrument_tool_call(tool_name, arguments)
+  def instrument_tool_call(tool_name, arguments, params = {})
     # There is no error handling because tools can fail and LLMs should be
     # aware of those failures and factor them into their response.
     return yield unless ChatwootApp.otel_enabled?
 
     tracer.in_span(format(TOOL_SPAN_NAME, tool_name)) do |span|
       span.set_attribute(ATTR_LANGFUSE_OBSERVATION_TYPE, 'tool')
-      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, arguments.to_json)
+      trace_capture_attributes(params).each do |key, value|
+        span.set_attribute(key, value)
+      end
+      set_metadata_attributes(span, params) if params.present?
+      input = capture_trace_input(arguments, params)
+      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_INPUT, input) if input.present?
       result = yield
-      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, result.to_json)
+      output = capture_trace_output(result, params)
+      span.set_attribute(ATTR_LANGFUSE_OBSERVATION_OUTPUT, output) if output.present?
+      set_tool_result_attributes(span, result, output)
       set_error_attributes(span, result) if result.is_a?(Hash)
       result
     end
@@ -79,7 +94,7 @@ module Integrations::LlmInstrumentation
       set_audio_transcription_span_attributes(span, params)
       result = yield
       track_result.call(result)
-      set_transcription_result_attributes(span, result)
+      set_transcription_result_attributes(span, result, params)
       result
     end
   end
@@ -91,7 +106,7 @@ module Integrations::LlmInstrumentation
       set_moderation_span_attributes(span, params)
       result = yield
       track_result.call(result)
-      set_moderation_result_attributes(span, result)
+      set_moderation_result_attributes(span, result, params)
       result
     end
   end
@@ -119,6 +134,18 @@ module Integrations::LlmInstrumentation
     return params[:account] if params[:account].is_a?(Account)
     return Account.find_by(id: params[:account_id]) if params[:account_id].present?
 
+    nil
+  end
+
+  def set_tool_result_attributes(span, result, serialized_output)
+    return unless defined?(Captain::ToolResult)
+
+    normalized = Captain::ToolResult.normalize(result).with_indifferent_access
+    span.set_attribute('tool.result.success', normalized[:success]) unless normalized[:success].nil?
+    span.set_attribute('tool.result.retryable', normalized[:retryable]) unless normalized[:retryable].nil?
+    span.set_attribute('tool.result.error', normalized[:error].to_s.truncate(500)) if normalized[:error].present?
+    span.set_attribute('tool.result.size_bytes', serialized_output.to_s.bytesize) if serialized_output.present?
+  rescue StandardError
     nil
   end
 end

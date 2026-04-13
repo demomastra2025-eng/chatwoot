@@ -205,6 +205,20 @@ describe('#actions', () => {
         [types.default.SET_INBOXES_UI_FLAG, { isDeleting: false }],
       ]);
     });
+    it('treats a missing inbox as already deleted', async () => {
+      commit.mockClear();
+      axios.delete.mockRejectedValue({ response: { status: 404 } });
+
+      await expect(
+        actions.delete({ commit }, inboxList[0].id)
+      ).resolves.toBeNull();
+
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_INBOXES_UI_FLAG, { isDeleting: true }],
+        [types.default.DELETE_INBOXES, inboxList[0].id],
+        [types.default.SET_INBOXES_UI_FLAG, { isDeleting: false }],
+      ]);
+    });
     it('sends correct actions if API is error', async () => {
       axios.delete.mockRejectedValue({ message: 'Incorrect header' });
       await expect(actions.delete({ commit }, inboxList[0].id)).rejects.toThrow(
@@ -363,6 +377,29 @@ describe('#actions', () => {
       ).rejects.toThrow('Unable to refresh QR code');
     });
 
+    it('short-circuits qr refresh when the inbox is already deleting', async () => {
+      const deletingInbox = {
+        ...inboxList[0],
+        id: 123,
+        channel_type: 'Channel::WhatsappWeb',
+        deleting: true,
+        additional_attributes: {
+          evolution: {
+            status: 'deleting',
+            connection_state: 'close',
+          },
+        },
+      };
+
+      const response = await actions.refreshWhatsappWebQr(
+        { commit, getters: { getInbox: () => deletingInbox } },
+        { inboxId: 123, statusOnly: true }
+      );
+
+      expect(response).toEqual(deletingInbox);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
     it('deduplicates in-flight status sync requests for the same inbox', async () => {
       let resolveRequest;
       axios.post.mockReturnValue(
@@ -399,6 +436,23 @@ describe('#actions', () => {
       expect(response).toEqual(inboxList[0]);
       expect(axios.post).toHaveBeenCalledWith(
         '/api/v1/inboxes/123/reconnect_whatsapp_web'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#requestTelegramPersonalQr', () => {
+    it('updates the inbox when qr login request succeeds', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.requestTelegramPersonalQr({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/telegram_personal_request_qr'
       );
       expect(commit).toHaveBeenCalledWith(
         types.default.EDIT_INBOXES,
@@ -452,6 +506,174 @@ describe('#actions', () => {
       expect(axios.get).toHaveBeenCalledWith(
         '/api/v1/inboxes/123/whatsapp_web_diagnostics'
       );
+    });
+  });
+
+  describe('#requestTelegramPersonalCode', () => {
+    it('updates the inbox when request code succeeds', async () => {
+      commit.mockClear();
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.requestTelegramPersonalCode(
+        { commit },
+        123
+      );
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/telegram_personal_request_code'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
+  describe('#getTelegramPersonalDiagnostics', () => {
+    it('merges diagnostics back into the inbox store when an inbox exists', async () => {
+      commit.mockClear();
+      const currentInbox = {
+        id: 123,
+        channel_type: 'Channel::TelegramPersonal',
+        connection_state: 'disconnected',
+        lifecycle_state: 'pending_auth',
+        runtime_state: {},
+      };
+      const diagnostics = {
+        channel: {
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: { auth_state: 'authorized' },
+          last_error: null,
+        },
+      };
+
+      const getters = {
+        getInbox: id => (id === 123 ? currentInbox : null),
+      };
+
+      axios.get.mockResolvedValue({ data: diagnostics });
+
+      const response = await actions.getTelegramPersonalDiagnostics(
+        { commit, getters },
+        123
+      );
+
+      expect(response).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/telegram_personal_diagnostics'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        expect.objectContaining({
+          id: 123,
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: { auth_state: 'authorized' },
+        })
+      );
+    });
+
+    it('coalesces concurrent requests for the same inbox', async () => {
+      commit.mockClear();
+      const currentInbox = {
+        id: 456,
+        channel_type: 'Channel::TelegramPersonal',
+        runtime_state: {},
+      };
+      const diagnostics = {
+        channel: {
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: { auth_state: 'authorized' },
+        },
+      };
+
+      const getters = {
+        getInbox: id => (id === 456 ? currentInbox : null),
+      };
+
+      let resolveRequest;
+      const pendingRequest = new Promise(resolve => {
+        resolveRequest = resolve;
+      });
+      axios.get.mockReturnValue(pendingRequest);
+
+      const firstRequest = actions.getTelegramPersonalDiagnostics(
+        { commit, getters },
+        456
+      );
+      const secondRequest = actions.getTelegramPersonalDiagnostics(
+        { commit, getters },
+        456
+      );
+
+      resolveRequest({ data: diagnostics });
+
+      const [firstResponse, secondResponse] = await Promise.all([
+        firstRequest,
+        secondRequest,
+      ]);
+
+      expect(firstResponse).toEqual(diagnostics);
+      expect(secondResponse).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/456/telegram_personal_diagnostics'
+      );
+    });
+
+    it('reuses a recent diagnostics response during the cooldown window', async () => {
+      commit.mockClear();
+      const currentInbox = {
+        id: 789,
+        channel_type: 'Channel::TelegramPersonal',
+        runtime_state: {},
+      };
+      const diagnostics = {
+        channel: {
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: { auth_state: 'authorized' },
+        },
+      };
+      const getters = {
+        getInbox: id => (id === 789 ? currentInbox : null),
+      };
+      const nowSpy = vi.spyOn(Date, 'now');
+
+      axios.get.mockResolvedValue({ data: diagnostics });
+      nowSpy.mockReturnValue(1_000);
+      const firstResponse = await actions.getTelegramPersonalDiagnostics(
+        { commit, getters },
+        789
+      );
+
+      nowSpy.mockReturnValue(2_000);
+      const secondResponse = await actions.getTelegramPersonalDiagnostics(
+        { commit, getters },
+        789
+      );
+
+      expect(firstResponse).toEqual(diagnostics);
+      expect(secondResponse).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+
+      nowSpy.mockRestore();
+    });
+
+    it('removes a missing inbox from the store on 404', async () => {
+      commit.mockClear();
+      axios.get.mockRejectedValue({ response: { status: 404 } });
+
+      const response = await actions.getTelegramPersonalDiagnostics(
+        { commit, getters: {} },
+        123
+      );
+
+      expect(response).toBeNull();
+      expect(commit).toHaveBeenCalledWith(types.default.DELETE_INBOXES, 123);
     });
   });
 });

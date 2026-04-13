@@ -21,7 +21,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
 
     "Created appointment ##{appointment.id} starting at #{appointment.starts_at}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

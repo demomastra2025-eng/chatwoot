@@ -21,7 +21,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
 
     "Updated deal #{deal.title} (ID: #{deal.id})"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

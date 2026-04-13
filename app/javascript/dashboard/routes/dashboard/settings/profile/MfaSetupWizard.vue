@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import QRCode from 'qrcode';
+import { useMapGetter } from 'dashboard/composables/store.js';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -39,6 +40,10 @@ const props = defineProps({
 const emit = defineEmits(['cancel', 'verify', 'complete']);
 
 const { t } = useI18n();
+const globalConfig = useMapGetter('globalConfig/get');
+const installationName = computed(
+  () => globalConfig.value?.installationName || 'OneLink'
+);
 
 // Local state
 const setupStep = ref('qr');
@@ -100,12 +105,12 @@ const copyBackupCodes = async () => {
 };
 
 const downloadBackupCodes = () => {
-  const codesText = `Chatwoot Two-Factor Authentication Backup Codes\n\n${props.backupCodes.join('\n')}\n\nKeep these codes in a safe place.`;
+  const codesText = `${installationName.value} Two-Factor Authentication Backup Codes\n\n${props.backupCodes.join('\n')}\n\nKeep these codes in a safe place.`;
   const blob = new Blob([codesText], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'chatwoot-backup-codes.txt';
+  a.download = 'backup-codes.txt';
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -299,7 +304,7 @@ defineExpose({
         </div>
       </div>
 
-        <!-- Confirmation -->
+      <!-- Confirmation -->
       <div class="space-y-4">
         <label class="flex items-start gap-3">
           <Checkbox v-model="backupCodesConfirmed" class="mt-1" />

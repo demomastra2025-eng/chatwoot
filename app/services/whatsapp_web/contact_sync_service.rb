@@ -11,6 +11,7 @@ class WhatsappWeb::ContactSyncService
     return if contact_inbox.blank?
 
     sync_existing_contact(contact_inbox.contact)
+    sync_channel_profile(contact_inbox)
     sync_avatar(contact_inbox.contact)
     contact_inbox
   end
@@ -90,11 +91,11 @@ class WhatsappWeb::ContactSyncService
   def sync_existing_contact(contact)
     updates = {}
     current_attributes = (contact.additional_attributes || {}).deep_stringify_keys
-    merged_attributes = current_attributes.merge(additional_attributes.deep_stringify_keys)
+    merged_attributes = merged_additional_attributes(contact, current_attributes)
 
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
     updates[:phone_number] = phone_number if contact.phone_number.blank? && phone_number.present?
-    updates[:identifier] = contact_identifier if contact.identifier.blank? && contact_identifier.present?
+    updates[:identifier] = contact_identifier if should_update_contact_identifier?(contact)
 
     if should_replace_contact_name?(contact)
       updates[:name] = display_name
@@ -114,8 +115,77 @@ class WhatsappWeb::ContactSyncService
 
   def sync_avatar(contact)
     return if profile_pic_url.blank?
+    return unless should_refresh_contact_avatar?(contact)
 
     Avatar::AvatarFromUrlJob.perform_later(contact, profile_pic_url)
+  end
+
+  def sync_channel_profile(contact_inbox)
+    Contacts::ChannelProfileUpsertService.new(
+      contact_inbox: contact_inbox,
+      provider: 'whatsapp_web',
+      profile_attributes: whatsapp_channel_profile.merge(
+        display_name: display_name,
+        avatar_url: profile_pic_url,
+        profile_data: whatsapp_channel_profile
+      )
+    ).perform
+  end
+
+  def merged_additional_attributes(contact, current_attributes)
+    merged_attributes = current_attributes.deep_dup
+    merged_attributes.merge!(additional_attributes.deep_stringify_keys) if whatsapp_primary_contact?(contact)
+    merged_attributes['channel_profiles'] = merged_channel_profiles(current_attributes)
+    merged_attributes
+  end
+
+  def merged_channel_profiles(current_attributes)
+    channel_profiles = (current_attributes['channel_profiles'] || {}).deep_stringify_keys
+    whatsapp_profiles = (channel_profiles['whatsapp_web'] || {}).deep_stringify_keys
+    whatsapp_profiles[whatsapp_profile_key] = whatsapp_channel_profile
+    channel_profiles.merge('whatsapp_web' => whatsapp_profiles)
+  end
+
+  def whatsapp_profile_key
+    @whatsapp_profile_key ||= contact_identifier.presence || canonical_remote_jid.presence || source_id.to_s
+  end
+
+  def whatsapp_channel_profile
+    {
+      identifier: contact_identifier,
+      source_id: source_id.to_s,
+      canonical_jid: canonical_remote_jid,
+      raw_jid: raw_remote_jid,
+      lid_jid: lid_jid,
+      phone_number: phone_number,
+      provider: 'whatsapp_web',
+      profile_pic_url: profile_pic_url,
+      provisional_whatsapp_identity: lid_only_identity?
+    }.compact.deep_stringify_keys
+  end
+
+  def should_update_contact_identifier?(contact)
+    contact.identifier.blank? && contact_identifier.present? && whatsapp_primary_contact?(contact)
+  end
+
+  def should_refresh_contact_avatar?(contact)
+    return false unless whatsapp_primary_contact?(contact)
+
+    current_attributes = (contact.additional_attributes || {}).deep_stringify_keys
+    current_attributes['profile_pic_url'] != profile_pic_url || !contact.avatar.attached?
+  end
+
+  def whatsapp_primary_contact?(contact)
+    claimed_by_other_identifier =
+      contact.identifier.present? && contact_identifier.present? && contact.identifier != contact_identifier
+    claimed_by_other_provider = current_provider(contact).present? && current_provider(contact) != 'whatsapp_web'
+    linked_to_other_provider = contact.contact_inboxes.joins(:inbox).where.not(inboxes: { channel_type: 'Channel::WhatsappWeb' }).exists?
+
+    !(claimed_by_other_identifier || claimed_by_other_provider || linked_to_other_provider)
+  end
+
+  def current_provider(contact)
+    (contact.additional_attributes || {}).with_indifferent_access[:provider].presence
   end
 
   def preferred_display_name
@@ -261,6 +331,7 @@ class WhatsappWeb::ContactSyncService
     now = Time.current
 
     source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
+    ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
 
@@ -276,8 +347,17 @@ class WhatsappWeb::ContactSyncService
       klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, updated_at: now)
     end
 
-    merged_additional_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
-      .merge((target_contact.additional_attributes || {}).deep_stringify_keys)
+    source_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
+    target_attributes = (target_contact.additional_attributes || {}).deep_stringify_keys
+    merged_additional_attributes = source_attributes.merge(target_attributes)
+
+    merged_channel_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
+      .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
+        old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
+        new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
+        old_hash.merge(new_hash)
+      end
+    merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
 
     source_contact.update_columns(identifier: nil, updated_at: now)
 

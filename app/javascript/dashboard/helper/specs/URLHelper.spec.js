@@ -40,6 +40,16 @@ describe('#URL Helpers', () => {
         '/app/accounts/1/custom_view/1'
       );
     });
+
+    it('should preserve status in conversation list urls', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          inboxId: 1,
+          status: 'pending',
+        })
+      ).toBe('/app/accounts/1/inbox/1?status=pending');
+    });
   });
   describe('conversationUrl', () => {
     it('should return direct conversation URL if activeInbox is nil', () => {
@@ -60,6 +70,12 @@ describe('#URL Helpers', () => {
     it('should return correct conversation URL if team Id is available', () => {
       expect(conversationUrl({ accountId: 1, teamId: 1, id: 1 })).toBe(
         'accounts/1/team/1/conversations/1'
+      );
+    });
+
+    it('should preserve status in conversation detail urls', () => {
+      expect(conversationUrl({ accountId: 1, id: 1, status: 'snoozed' })).toBe(
+        'accounts/1/conversations/1?status=snoozed'
       );
     });
   });

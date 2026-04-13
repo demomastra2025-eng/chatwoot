@@ -21,16 +21,16 @@
     },
     "CHAT_STATUS_FILTER_ITEMS": {
       "open": {
-        "TEXT": "Открыт"
+        "TEXT": "Открыто"
       },
       "resolved": {
-        "TEXT": "Закрыт"
+        "TEXT": "Закрыто"
       },
       "pending": {
-        "TEXT": "В ожидании"
+        "TEXT": "AI-агенты"
       },
       "snoozed": {
-        "TEXT": "Отложено"
+        "TEXT": "Отложенные"
       },
       "all": {
         "TEXT": "Все"

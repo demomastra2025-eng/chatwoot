@@ -10,8 +10,24 @@ export default {
   data() {
     return { isRequestingAuthorization: false };
   },
+  computed: {
+    isTwitterConfigured() {
+      return !!window.chatwootConfig?.twitterConfigured;
+    },
+    helpText() {
+      if (this.isTwitterConfigured) {
+        return this.$t('INBOX_MGMT.ADD.TWITTER.HELP');
+      }
+
+      return this.$t('INBOX_MGMT.ADD.TWITTER.NOT_CONFIGURED');
+    },
+  },
   methods: {
     async requestAuthorization() {
+      if (!this.isTwitterConfigured) {
+        return;
+      }
+
       try {
         this.isRequestingAuthorization = true;
         const response = await twitterClient.generateAuthorization();
@@ -37,10 +53,11 @@ export default {
           type="submit"
           icon="i-ri-twitter-x-fill"
           label="Sign in with Twitter"
+          :disabled="!isTwitterConfigured"
           :is-loading="isRequestingAuthorization"
         />
       </form>
-      <p>{{ $t('INBOX_MGMT.ADD.TWITTER.HELP') }}</p>
+      <p>{{ helpText }}</p>
     </div>
   </div>
 </template>

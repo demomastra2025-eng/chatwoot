@@ -43,7 +43,14 @@ export default {
       const { email: { subject } = {} } = contentAttributes || {};
       return this.getPlainText(subject || this.message.content);
     },
+    isVoiceNote() {
+      const { content_attributes: contentAttributes = {} } = this.message;
+      return !!(contentAttributes.voice_note || contentAttributes.voiceNote);
+    },
     lastMessageFileType() {
+      if (this.isVoiceNote) {
+        return 'audio';
+      }
       const [{ file_type: fileType } = {}] = this.message.attachments;
       return fileType;
     },
@@ -51,7 +58,19 @@ export default {
       return ATTACHMENT_ICONS[this.lastMessageFileType];
     },
     attachmentMessageContent() {
-      return `CHAT_LIST.ATTACHMENTS.${this.lastMessageFileType}.CONTENT`;
+      const contentMap = {
+        image: this.$t('CHAT_LIST.ATTACHMENTS.image.CONTENT'),
+        audio: this.$t('CHAT_LIST.ATTACHMENTS.audio.CONTENT'),
+        video: this.$t('CHAT_LIST.ATTACHMENTS.video.CONTENT'),
+        file: this.$t('CHAT_LIST.ATTACHMENTS.file.CONTENT'),
+        location: this.$t('CHAT_LIST.ATTACHMENTS.location.CONTENT'),
+        ig_reel: this.$t('CHAT_LIST.ATTACHMENTS.ig_reel.CONTENT'),
+        fallback: this.$t('CHAT_LIST.ATTACHMENTS.fallback.CONTENT'),
+        contact: this.$t('CHAT_LIST.ATTACHMENTS.contact.CONTENT'),
+        embed: this.$t('CHAT_LIST.ATTACHMENTS.embed.CONTENT'),
+      };
+
+      return contentMap[this.lastMessageFileType] || this.defaultEmptyMessage;
     },
     isMessageSticker() {
       return this.message && this.message.content_type === 'sticker';
@@ -100,7 +119,7 @@ export default {
         class="-mt-0.5 align-middle inline-block text-n-slate-11"
         :icon="attachmentIcon"
       />
-      {{ $t(`${attachmentMessageContent}`) }}
+      {{ attachmentMessageContent }}
     </span>
     <span v-else>
       {{ defaultEmptyMessage || $t('CHAT_LIST.NO_CONTENT') }}

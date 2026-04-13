@@ -21,7 +21,7 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
 
     "Updated appointment ##{appointment.id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

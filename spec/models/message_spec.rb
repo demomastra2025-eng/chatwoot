@@ -234,6 +234,110 @@ RSpec.describe Message do
       expect(conversation.first_reply_created_at).to be_nil
       expect(conversation.waiting_since).to eq conversation.created_at
     end
+
+    it 'reschedules pending relative touches anchored to the last outgoing message' do
+      first_outgoing = create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: false
+      )
+      reminder = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        timing_mode: :relative,
+        relative_anchor: 'conversation.last_outgoing_message_at',
+        relative_offset_seconds: 1800,
+        scheduled_at: nil
+      )
+
+      expect(reminder.reload.scheduled_at.to_i).to eq(
+        (first_outgoing.created_at + 30.minutes).to_i
+      )
+
+      second_outgoing = create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: false
+      )
+
+      expect(reminder.reload.scheduled_at.to_i).to eq(
+        (second_outgoing.created_at + 30.minutes).to_i
+      )
+    end
+
+    it 'does not reschedule the touch that created the outgoing message itself' do
+      first_outgoing = create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: false
+      )
+      reminder = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        timing_mode: :relative,
+        relative_anchor: 'conversation.last_outgoing_message_at',
+        relative_offset_seconds: 1800,
+        scheduled_at: nil
+      )
+      original_schedule = reminder.reload.scheduled_at
+
+      create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: false,
+        content_attributes: { touch_id: reminder.id }
+      )
+
+      expect(reminder.reload.scheduled_at.to_i).to eq(original_schedule.to_i)
+    end
+
+    it 'moves waiting-since touches back to draft when an outgoing reply clears waiting' do
+      reminder = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        timing_mode: :relative,
+        relative_anchor: 'conversation.waiting_since',
+        relative_offset_seconds: 900,
+        scheduled_at: nil
+      )
+
+      expect(reminder.reload).to be_pending
+      expect(reminder.scheduled_at).to be_present
+
+      create(
+        :message,
+        account: conversation.account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        private: false
+      )
+
+      reminder.reload
+      expect(reminder).to be_draft
+      expect(reminder.scheduled_at).to be_nil
+    end
   end
 
   describe '#reopen_conversation' do

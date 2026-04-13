@@ -27,6 +27,16 @@ describe Contacts::ContactableInboxesService do
   let!(:api_inbox) { create(:inbox, channel: api_channel, account: account) }
   let!(:whatsapp_web_channel) { create(:channel_whatsapp_web, account: account) }
   let!(:whatsapp_web_inbox) { whatsapp_web_channel.inbox }
+  let!(:telegram_personal_channel) { create(:channel_telegram_personal, account: account) }
+  let!(:telegram_personal_inbox) { telegram_personal_channel.inbox }
+  let!(:telegram_channel) { create(:channel_telegram, account: account) }
+  let!(:telegram_inbox) { telegram_channel.inbox }
+  let!(:vk_community_channel) { create(:channel_vk_community, account: account) }
+  let!(:vk_community_inbox) { vk_community_channel.inbox }
+  let!(:line_channel) { create(:channel_line, account: account, inbox: nil) }
+  let!(:line_inbox) { create(:inbox, channel: line_channel, account: account) }
+  let!(:tiktok_channel) { create(:channel_tiktok, account: account) }
+  let!(:tiktok_inbox) { tiktok_channel.inbox }
   let!(:website_inbox) { create(:inbox, channel: create(:channel_widget, account: account), account: account) }
   let!(:sms_inbox) { create(:inbox, channel: create(:channel_sms, account: account), account: account) }
 
@@ -41,7 +51,7 @@ describe Contacts::ContactableInboxesService do
       expect(contactable_inboxes).to include({ source_id: contact.phone_number, inbox: sms_inbox })
     end
 
-    it 'doest not return the non contactable inboxes for the contact' do
+    it 'does not return the non contactable inboxes for the contact' do
       facebook_channel = create(:channel_facebook_page, account: account)
       facebook_inbox = create(:inbox, channel: facebook_channel, account: account)
       twitter_channel = create(:channel_twitter_profile, account: account)
@@ -52,6 +62,7 @@ describe Contacts::ContactableInboxesService do
       expect(contactable_inboxes.pluck(:inbox)).not_to include(website_inbox)
       expect(contactable_inboxes.pluck(:inbox)).not_to include(facebook_inbox)
       expect(contactable_inboxes.pluck(:inbox)).not_to include(twitter_inbox)
+      expect(contactable_inboxes.pluck(:inbox)).not_to include(tiktok_inbox)
     end
 
     context 'when api inbox is available' do
@@ -86,6 +97,92 @@ describe Contacts::ContactableInboxesService do
 
         contactable_inboxes = described_class.new(contact: contact).get
         expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: whatsapp_web_inbox })
+      end
+    end
+
+    context 'when telegram personal inbox is available' do
+      it 'returns the telegram user id from contact attributes' do
+        contact.update!(additional_attributes: { 'social_telegram_user_id' => 4242 })
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: '4242', inbox: telegram_personal_inbox })
+      end
+    end
+
+    context 'when telegram bot inbox is available' do
+      it 'returns the telegram user id from contact attributes' do
+        contact.update!(additional_attributes: { 'social_telegram_user_id' => 7788 })
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: '7788', inbox: telegram_inbox })
+      end
+    end
+
+    context 'when vk community inbox is available' do
+      it 'returns existing source id if contact inbox exists' do
+        contact_inbox = create(:contact_inbox, inbox: vk_community_inbox, contact: contact, source_id: '2000000001')
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: vk_community_inbox })
+      end
+    end
+
+    context 'when line inbox is available' do
+      it 'returns existing source id if contact inbox exists' do
+        contact_inbox = create(:contact_inbox, inbox: line_inbox, contact: contact, source_id: 'line-user-1')
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: line_inbox })
+      end
+    end
+
+    context 'when facebook inbox is available' do
+      it 'returns existing source id if contact inbox exists' do
+        channel = create(:channel_facebook_page, account: account, inbox: nil)
+        inbox = create(:inbox, channel: channel, account: account)
+        contact_inbox = create(:contact_inbox, inbox: inbox, contact: contact, source_id: 'fb-user-1')
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: inbox })
+      end
+    end
+
+    context 'when instagram inbox is available' do
+      it 'returns existing source id if contact inbox exists' do
+        channel = create(:channel_instagram, account: account)
+        inbox = channel.inbox
+        contact_inbox = create(:contact_inbox, inbox: inbox, contact: contact, source_id: 'ig-user-1')
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: inbox })
+      end
+    end
+
+    context 'when tiktok inbox is available' do
+      it 'returns existing source id if contact inbox exists' do
+        contact_inbox = create(:contact_inbox, inbox: tiktok_inbox, contact: contact, source_id: 'tt-conv-1')
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: tiktok_inbox })
+      end
+    end
+
+    context 'when twitter inbox has an existing direct-message thread' do
+      it 'returns the twitter user target for outbound direct messages' do
+        channel = create(:channel_twitter_profile, account: account)
+        inbox = create(:inbox, channel: channel, account: account)
+        contact_inbox = create(:contact_inbox, inbox: inbox, contact: contact, source_id: 'tw-user-1')
+        create(
+          :conversation,
+          inbox: inbox,
+          account: account,
+          contact: contact,
+          contact_inbox: contact_inbox,
+          additional_attributes: { type: 'direct_message' }
+        )
+
+        contactable_inboxes = described_class.new(contact: contact).get
+        expect(contactable_inboxes).to include({ source_id: contact_inbox.source_id, inbox: inbox })
       end
     end
   end

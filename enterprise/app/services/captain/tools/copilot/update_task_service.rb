@@ -22,7 +22,7 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
     )
     formatted_record(task)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

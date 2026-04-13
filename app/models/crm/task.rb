@@ -11,6 +11,7 @@
 #  external_ref                :string
 #  idempotency_key             :string
 #  lock_version                :integer          default(0), not null
+#  position                    :integer          default(0), not null
 #  priority                    :string           default("medium"), not null
 #  start_at                    :datetime
 #  title                       :string           not null
@@ -31,6 +32,7 @@
 #  index_crm_tasks_on_account_id                        (account_id)
 #  index_crm_tasks_on_account_idempotency_key           (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
 #  index_crm_tasks_on_account_originating_conversation  (account_id,originating_conversation_id)
+#  index_crm_tasks_on_account_status_position           (account_id,status_id,position,id)
 #  index_crm_tasks_on_account_team                      (account_id,team_id)
 #  index_crm_tasks_on_active_list_dimensions            (account_id,status_id,assignee_id,due_at) WHERE (archived_at IS NULL)
 #  index_crm_tasks_on_active_ordering                   (account_id,due_at,updated_at DESC,id DESC) WHERE (archived_at IS NULL)
@@ -69,6 +71,7 @@ class Crm::Task < ApplicationRecord
 
   has_many :events, as: :eventable, class_name: '::Crm::Event', dependent: :destroy_async
   has_many :comments, as: :commentable, class_name: '::Crm::Comment', dependent: :destroy_async
+  has_many :reminders, as: :remindable, dependent: :nullify
 
   enum :priority, PRIORITIES.index_with(&:itself), prefix: true
 
@@ -76,6 +79,7 @@ class Crm::Task < ApplicationRecord
   validates :priority, inclusion: { in: PRIORITIES }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
+  validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :custom_attributes, jsonb_attributes_length: true
   validate :related_records_belong_to_account
 
@@ -86,6 +90,7 @@ class Crm::Task < ApplicationRecord
   before_validation :normalize_title
   before_validation :normalize_description
   before_validation :prepare_custom_attributes
+  before_validation :assign_position, on: :create
 
   def automation_webhook_data
     payload = {
@@ -136,6 +141,13 @@ class Crm::Task < ApplicationRecord
 
   def prepare_custom_attributes
     self.custom_attributes = {} if custom_attributes.blank?
+  end
+
+  def assign_position
+    return if status.blank?
+    return if position.present? && position.to_i.positive?
+
+    self.position = status.tasks.kept.maximum(:position).to_i + 1
   end
 
   def related_records_belong_to_account

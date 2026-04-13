@@ -17,7 +17,7 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
 
     "Updated contact #{contact.name} (ID: #{contact.id})"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

@@ -11,7 +11,10 @@ const props = defineProps({
   label: { type: String, required: true },
   icon: { type: [Object, String], required: true },
   children: { type: Array, default: undefined },
-  activeChild: { type: Object, default: undefined },
+  activeChildNames: { type: Array, default: () => [] },
+  to: { type: [Object, String], default: '' },
+  headerActive: { type: Boolean, default: false },
+  actionLabel: { type: String, default: '' },
 });
 
 const { isAllowed } = useSidebarContext();
@@ -46,6 +49,9 @@ useEventListener(scrollableContainer, 'scroll', () => {
     v-show="isExpanded"
     :label
     :icon
+    :to="to"
+    :active="headerActive"
+    :action-label="actionLabel"
     class="my-1"
   />
   <ul
@@ -63,10 +69,10 @@ useEventListener(scrollableContainer, 'scroll', () => {
     >
       <SidebarGroupLeaf
         v-for="child in children"
-        v-show="isExpanded || activeChild?.name === child.name"
+        v-show="isExpanded || activeChildNames.includes(child.name)"
         v-bind="child"
         :key="child.name"
-        :active="activeChild?.name === child.name"
+        :active="activeChildNames.includes(child.name)"
       />
     </div>
     <div

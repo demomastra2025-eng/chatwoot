@@ -137,6 +137,59 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(channel.inbox.messages.find_by(source_id: 'history-msg-unlimited')).to be_present
   end
 
+  it 'keeps imported incoming and device-sent outgoing history in the same conversation with provider timestamps' do
+    incoming_timestamp = 2.hours.ago.change(usec: 0)
+    outgoing_timestamp = 90.minutes.ago.change(usec: 0)
+
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-incoming-device-check',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false
+          },
+          pushName: 'Alice',
+          messageTimestamp: incoming_timestamp.to_i,
+          message: {
+            conversation: 'Incoming from history'
+          }
+        },
+        {
+          key: {
+            id: 'history-msg-outgoing-device-check',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          pushName: 'Alice',
+          messageTimestamp: outgoing_timestamp.to_i,
+          message: {
+            extendedTextMessage: {
+              text: 'Outgoing from device history'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    expect(channel.inbox.conversations.count).to eq(1)
+
+    conversation = channel.inbox.conversations.last
+    messages = conversation.messages.reorder(created_at: :asc)
+
+    expect(conversation.contact_inbox.source_id).to eq('15551234567')
+    expect(messages.map(&:message_type)).to eq(%w[incoming outgoing])
+    expect(messages.map(&:content)).to eq(
+      ['Incoming from history', 'Outgoing from device history']
+    )
+    expect(messages.first.created_at.to_i).to eq(incoming_timestamp.to_i)
+    expect(messages.last.created_at.to_i).to eq(outgoing_timestamp.to_i)
+    expect(messages.last.sender).to be_nil
+    expect(messages.last.content_attributes['external_echo']).to eq(true)
+    expect(messages.last.content_attributes['imported_history']).to eq(true)
+  end
+
   it 'skips records from ignored jids' do
     channel.update!(ignore_jids: ['15559876543@s.whatsapp.net'])
 

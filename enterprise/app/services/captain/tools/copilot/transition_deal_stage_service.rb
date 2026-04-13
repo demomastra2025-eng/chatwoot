@@ -16,7 +16,7 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
     )
     formatted_record(deal)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

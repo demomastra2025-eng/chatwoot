@@ -4,13 +4,14 @@ import DashboardAudioNotificationHelper from './AudioAlerts/DashboardAudioNotifi
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { useImpersonation } from 'dashboard/composables/useImpersonation';
+import { handleSessionReplaced } from '../store/utils/api';
 
 const { isImpersonating } = useImpersonation();
 
 class ActionCableConnector extends BaseActionCableConnector {
-  constructor(app, pubsubToken) {
+  constructor(app, pubsubToken, authClientId) {
     const { websocketURL = '' } = window.chatwootConfig || {};
-    super(app, pubsubToken, websocketURL);
+    super(app, pubsubToken, authClientId, websocketURL);
     this.CancelTyping = [];
     this.events = {
       'message.created': this.onMessageCreated,
@@ -34,6 +35,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'conversation.updated': this.onConversationUpdated,
       'account.cache_invalidated': this.onCacheInvalidate,
       'copilot.message.created': this.onCopilotMessageCreated,
+      'auth.session_replaced': this.onSessionReplaced,
     };
   }
 
@@ -47,8 +49,17 @@ class ActionCableConnector extends BaseActionCableConnector {
     emitter.emit(BUS_EVENTS.WEBSOCKET_DISCONNECT);
   };
 
-  isAValidEvent = data => {
+  isAValidEvent = (data, event) => {
+    if (event === 'auth.session_replaced') {
+      return true;
+    }
+
     return this.app.$store.getters.getCurrentAccountId === data.account_id;
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onSessionReplaced = data => {
+    handleSessionReplaced(data);
   };
 
   onMessageUpdated = data => {
@@ -203,7 +214,11 @@ class ActionCableConnector extends BaseActionCableConnector {
 }
 
 export default {
-  init(store, pubsubToken) {
-    return new ActionCableConnector({ $store: store }, pubsubToken);
+  init(store, pubsubToken, authClientId) {
+    return new ActionCableConnector(
+      { $store: store },
+      pubsubToken,
+      authClientId
+    );
   },
 };

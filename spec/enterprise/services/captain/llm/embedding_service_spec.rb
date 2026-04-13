@@ -16,7 +16,12 @@ RSpec.describe Captain::Llm::EmbeddingService do
       expect(Llm::ApiClient).to receive(:embed).with(
         'hello',
         model: LlmConstants::DEFAULT_EMBEDDING_MODEL,
-        dimensions: described_class::VECTOR_DIMENSIONS
+        dimensions: described_class::VECTOR_DIMENSIONS,
+        observability: hash_including(
+          runtime_mode: 'captain_embedding',
+          feature_name: 'embedding',
+          account_id: 123
+        )
       ).and_return(embedding_result)
 
       expect(service.get_embedding('hello')).to eq([0.1, 0.2, 0.3])
@@ -26,7 +31,12 @@ RSpec.describe Captain::Llm::EmbeddingService do
       expect(Llm::ApiClient).to receive(:embed).with(
         'hello',
         model: 'text-embedding-3-small',
-        dimensions: described_class::VECTOR_DIMENSIONS
+        dimensions: described_class::VECTOR_DIMENSIONS,
+        observability: hash_including(
+          runtime_mode: 'captain_embedding',
+          feature_name: 'embedding',
+          account_id: 123
+        )
       ).and_return(embedding_result)
 
       service.get_embedding('hello', model: 'text-embedding-3-small')

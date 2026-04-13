@@ -1,11 +1,17 @@
 import types from '../mutation-types';
 import BulkActionsAPI from '../../api/bulkActions';
 
+const waitFor = delay =>
+  new Promise(resolve => {
+    setTimeout(resolve, delay);
+  });
+
 export const state = {
   selectedConversationIds: [],
   uiFlags: {
     isUpdating: false,
   },
+  currentBulkActionRun: null,
 };
 
 export const getters = {
@@ -15,18 +21,51 @@ export const getters = {
   getSelectedConversationIds(_state) {
     return _state.selectedConversationIds;
   },
+  getCurrentBulkActionRun(_state) {
+    return _state.currentBulkActionRun;
+  },
 };
 
 export const actions = {
-  process: async function processAction({ commit }, payload) {
+  process: async function processAction({ commit, dispatch }, payload) {
     commit(types.SET_BULK_ACTIONS_FLAG, { isUpdating: true });
+    commit(types.SET_BULK_ACTION_RUN, null);
     try {
-      await BulkActionsAPI.create(payload);
+      const {
+        data: { payload: bulkActionRun },
+      } = await BulkActionsAPI.create(payload);
+      commit(types.SET_BULK_ACTION_RUN, bulkActionRun);
+      return await dispatch('pollRunStatus', bulkActionRun.id);
     } catch (error) {
       throw new Error(error);
     } finally {
       commit(types.SET_BULK_ACTIONS_FLAG, { isUpdating: false });
     }
+  },
+  pollRunStatus: async function pollRunStatus({ commit }, id) {
+    const poll = async attempt => {
+      const {
+        data: { payload: bulkActionRun },
+      } = await BulkActionsAPI.show(id);
+      commit(types.SET_BULK_ACTION_RUN, bulkActionRun);
+
+      if (bulkActionRun.status === 'completed') {
+        return bulkActionRun;
+      }
+
+      if (bulkActionRun.status === 'failed') {
+        throw new Error(bulkActionRun.error_message || 'Bulk action failed');
+      }
+
+      if (attempt >= 239) {
+        throw new Error('Bulk action status polling timed out');
+      }
+
+      await waitFor(750);
+      return poll(attempt + 1);
+    };
+
+    return poll(0);
   },
   setSelectedConversationIds({ commit }, id) {
     commit(types.SET_SELECTED_CONVERSATION_IDS, id);
@@ -36,6 +75,9 @@ export const actions = {
   },
   clearSelectedConversationIds({ commit }) {
     commit(types.CLEAR_SELECTED_CONVERSATION_IDS);
+  },
+  clearCurrentBulkActionRun({ commit }) {
+    commit(types.SET_BULK_ACTION_RUN, null);
   },
 };
 
@@ -62,6 +104,9 @@ export const mutations = {
   },
   [types.CLEAR_SELECTED_CONVERSATION_IDS](_state) {
     _state.selectedConversationIds = [];
+  },
+  [types.SET_BULK_ACTION_RUN](_state, bulkActionRun) {
+    _state.currentBulkActionRun = bulkActionRun;
   },
 };
 

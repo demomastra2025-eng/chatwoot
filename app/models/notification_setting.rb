@@ -4,6 +4,7 @@
 #
 #  id          :bigint           not null, primary key
 #  email_flags :integer          default(0), not null
+#  inbox_flags :integer          default(0), not null
 #  push_flags  :integer          default(0), not null
 #  created_at  :datetime         not null
 #  updated_at  :datetime         not null
@@ -28,8 +29,14 @@ class NotificationSetting < ApplicationRecord
   }.freeze
 
   EMAIL_NOTIFICATION_FLAGS = ::Notification::NOTIFICATION_TYPES.transform_keys { |key| "email_#{key}".to_sym }.invert.freeze
+  INBOX_NOTIFICATION_FLAGS = ::Notification::NOTIFICATION_TYPES.transform_keys { |key| "inbox_#{key}".to_sym }.invert.freeze
   PUSH_NOTIFICATION_FLAGS = ::Notification::NOTIFICATION_TYPES.transform_keys { |key| "push_#{key}".to_sym }.invert.freeze
 
   has_flags EMAIL_NOTIFICATION_FLAGS.merge(column: 'email_flags').merge(DEFAULT_QUERY_SETTING)
+  has_flags INBOX_NOTIFICATION_FLAGS.merge(column: 'inbox_flags').merge(DEFAULT_QUERY_SETTING)
   has_flags PUSH_NOTIFICATION_FLAGS.merge(column: 'push_flags').merge(DEFAULT_QUERY_SETTING)
+
+  def self.default_inbox_flag_names
+    INBOX_NOTIFICATION_FLAGS.values
+  end
 end

@@ -15,6 +15,7 @@ import {
 import ChannelName from './components/ChannelName.vue';
 import ChannelIcon from 'next/icon/ChannelIcon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 
 const getters = useStoreGetters();
 const store = useStore();
@@ -32,9 +33,12 @@ const inboxesList = computed(() => {
 });
 
 const filteredInboxesList = computed(() => {
+  const visibleInboxes = inboxesList.value.filter(
+    inbox => !isInboxPendingDeletion(inbox)
+  );
   const query = searchQuery.value.trim();
-  if (!query) return inboxesList.value;
-  return picoSearch(inboxesList.value, query, ['name', 'channel_type']);
+  if (!query) return visibleInboxes;
+  return picoSearch(visibleInboxes, query, ['name', 'channel_type']);
 });
 
 const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);

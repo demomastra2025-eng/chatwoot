@@ -21,10 +21,13 @@ class Captain::Runtime::ChatFactory
     private
 
     def configure(chat, agent, context_wrapper)
+      agent_tools = build_agent_tools(agent, context_wrapper)
+      Llm::CapabilityPolicy.ensure_chat_features_supported!(model: agent.model, schema: agent.response_schema, tools: agent_tools)
+
       system_prompt = agent.get_system_prompt(context_wrapper)
       chat.with_instructions(system_prompt) if system_prompt.present?
-      chat.with_tools(*build_agent_tools(agent, context_wrapper), replace: true)
-      chat.with_schema(agent.response_schema)
+      chat.with_tools(*agent_tools, replace: true)
+      Llm::StructuredOutputPolicy.bind!(chat:, schema: agent.response_schema) if agent.response_schema.present?
       chat
     end
 

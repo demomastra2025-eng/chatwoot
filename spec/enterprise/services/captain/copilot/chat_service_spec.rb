@@ -52,7 +52,9 @@ RSpec.describe Captain::Copilot::ChatService do
     allow(mock_chat).to receive(:on_tool_call).and_return(mock_chat)
     allow(mock_chat).to receive(:on_tool_result).and_return(mock_chat)
     allow(mock_chat).to receive(:messages).and_return([])
+    allow(mock_chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini'))
     allow(mock_chat).to receive(:ask).and_return(mock_response)
+    allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
   end
 
   describe '#initialize' do
@@ -205,6 +207,19 @@ RSpec.describe Captain::Copilot::ChatService do
         {
           'content' => "I can't help with that request.",
           'reasoning' => 'Copilot input blocked by moderation policy',
+          'reply_suggestion' => false
+        }
+      )
+    end
+
+    it 'returns a blocked payload when fail-closed moderation is unavailable' do
+      account.update!(captain_runtime: { 'copilot_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
+      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+
+      expect(service.generate_response('Hello')).to eq(
+        {
+          'content' => "I can't help with that request.",
+          'reasoning' => 'Copilot input blocked because moderation policy is unavailable',
           'reply_suggestion' => false
         }
       )

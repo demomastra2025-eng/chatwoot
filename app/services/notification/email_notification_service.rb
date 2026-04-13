@@ -8,6 +8,7 @@ class Notification::EmailNotificationService
     return if notification.user.confirmed_at.nil?
     return unless user_subscribed_to_notification?
     return unless notification.account.within_email_rate_limit?
+    return if imported_history_notification?
 
     send_notification_email
     notification.account.increment_email_sent_count
@@ -37,5 +38,19 @@ class Notification::EmailNotificationService
     %w[conversation_mention assigned_conversation_new_message participating_conversation_new_message].include?(
       notification.notification_type
     )
+  end
+
+  def imported_history_notification?
+    imported_history_message?(notification.secondary_actor) || imported_history_conversation?(notification.primary_actor)
+  end
+
+  def imported_history_conversation?(actor)
+    return false unless actor.is_a?(Conversation)
+
+    actor.messages.reorder(created_at: :desc, id: :desc).limit(1).pick(Arel.sql("content_attributes ->> 'imported_history'")) == 'true'
+  end
+
+  def imported_history_message?(actor)
+    actor.is_a?(Message) && actor.imported_history_message?
   end
 end

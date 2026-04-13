@@ -20,6 +20,15 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
   describe '#evaluate' do
     context 'when content is safe' do
       it 'returns safe evaluation with approval recommendation' do
+        expect(Llm::ApiClient).to receive(:moderate).with(
+          content,
+          observability: hash_including(
+            runtime_mode: 'content_evaluator',
+            feature_name: 'content_evaluator',
+            model: 'text-moderation-latest'
+          )
+        ).and_return(mock_moderation_result)
+
         result = service.evaluate(content)
 
         expect(result).to include(
@@ -191,7 +200,10 @@ RSpec.describe Internal::AccountAnalysis::ContentEvaluatorService do
       let(:long_content) { 'a' * 15_000 }
 
       it 'truncates content to 10000 characters before sending to moderation' do
-        expect(Llm::ApiClient).to receive(:moderate).with('a' * 10_000).and_return(mock_moderation_result)
+        expect(Llm::ApiClient).to receive(:moderate).with(
+          'a' * 10_000,
+          observability: hash_including(runtime_mode: 'content_evaluator')
+        ).and_return(mock_moderation_result)
         service.evaluate(long_content)
       end
     end

@@ -41,7 +41,12 @@ class Channel::TwitterProfile < ApplicationRecord
     ::ContactInboxWithContactBuilder.new({
                                            source_id: profile_id,
                                            inbox: inbox,
-                                           contact_attributes: { name: name, additional_attributes: additional_attributes }
+                                           contact_attributes: {
+                                             name: name,
+                                             username: additional_attributes[:screen_name],
+                                             avatar_url: additional_attributes[:profile_image_url],
+                                             additional_attributes: additional_attributes
+                                           }
                                          }).perform
   end
 

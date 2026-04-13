@@ -43,5 +43,24 @@ RSpec.describe Conversations::EventDataPresenter do
       # the exceptions are the values that would be added in enterprise edition.
       expect(presenter.push_data.except(:applied_sla, :sla_events)).to include(expected_data)
     end
+
+    it 'uses the current contact inbox channel profile for sender metadata' do
+      create(
+        :contact_channel_profile,
+        contact_inbox: conversation.contact_inbox,
+        display_name: 'Telegram Name',
+        avatar_url: 'https://chatwoot-assets.local/telegram.png'
+      )
+
+      sender = presenter.push_data[:meta][:sender]
+
+      expect(sender[:id]).to eq(conversation.contact.id)
+      expect(sender[:name]).to eq('Telegram Name')
+      expect(sender[:thumbnail]).to eq('https://chatwoot-assets.local/telegram.png')
+      expect(sender[:channel_profile]).to include(
+        name: 'Telegram Name',
+        avatar_url: 'https://chatwoot-assets.local/telegram.png'
+      )
+    end
   end
 end

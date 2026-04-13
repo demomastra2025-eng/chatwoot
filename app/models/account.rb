@@ -24,6 +24,8 @@
 #
 
 class Account < ApplicationRecord
+  include Rails.application.routes.url_helpers
+  include AccountStorageLimitable
   # used for single column multi flags
   include FlagShihTzu
   include Reportable
@@ -43,6 +45,11 @@ class Account < ApplicationRecord
         'auto_resolve_label': { 'type': %w[string null] },
         'keep_pending_on_bot_failure': { 'type': %w[boolean null] },
         'captain_auto_resolve_mode': { 'type': %w[string null], 'enum': ['evaluated', 'legacy', 'disabled', nil] },
+        'scheduling_contact_required': { 'type': %w[boolean null] },
+        'scheduling_company_enabled': { 'type': %w[boolean null] },
+        'default_appointment_touch_plan_id': { 'type': %w[integer string null] },
+        'default_deal_touch_plan_id': { 'type': %w[integer string null] },
+        'default_task_touch_plan_id': { 'type': %w[integer string null] },
         'conversation_required_attributes': {
           'type': %w[array null],
           'items': { 'type': 'string' }
@@ -77,7 +84,90 @@ class Account < ApplicationRecord
             'assistant_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
             'copilot_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
             'assistant_moderation': { 'type': %w[boolean null] },
-            'copilot_moderation': { 'type': %w[boolean null] }
+            'copilot_moderation': { 'type': %w[boolean null] },
+            'moderation_failure_mode': { 'type': %w[string null], 'enum': ['fail_open', 'fail_closed', nil] },
+            'trace_input_capture': { 'type': %w[boolean null] },
+            'trace_output_capture': { 'type': %w[boolean null] },
+            'safety_blocklist': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'assistant_safety_blocklist': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'copilot_safety_blocklist': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'agent_high_risk_tools': {
+              'type': %w[string boolean null],
+              'enum': ['disabled', 'enabled', true, false, nil]
+            },
+            'agent_high_risk_tool_ids': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'agent_permissioned_tool_ids': {
+              'type': %w[array null],
+              'items': { 'type': 'string' }
+            },
+            'release_gate': {
+              'type': %w[object null],
+              'properties': {
+                'enabled': { 'type': %w[boolean null] },
+                'min_request_count': { 'type': %w[integer null], 'minimum': 1, 'maximum': 100_000 },
+                'max_error_rate': { 'type': %w[number null], 'minimum': 0, 'maximum': 1 },
+                'max_schema_invalid_rate': { 'type': %w[number null], 'minimum': 0, 'maximum': 1 },
+                'max_tool_failure_rate': { 'type': %w[number null], 'minimum': 0, 'maximum': 1 },
+                'max_moderation_skipped_rate': { 'type': %w[number null], 'minimum': 0, 'maximum': 1 },
+                'max_avg_duration_ms': { 'type': %w[integer null], 'minimum': 1, 'maximum': 600_000 },
+                'max_p95_duration_ms': { 'type': %w[integer null], 'minimum': 1, 'maximum': 600_000 },
+                'max_cost_per_request': { 'type': %w[number null], 'minimum': 0, 'maximum': 1_000 },
+                'max_error_rate_regression': { 'type': %w[number null], 'minimum': 1, 'maximum': 100 },
+                'max_avg_duration_regression': { 'type': %w[number null], 'minimum': 1, 'maximum': 100 }
+              },
+              'additionalProperties': false
+            }
+          },
+          'additionalProperties': false
+        },
+        'captain_observability': {
+          'type': %w[object null],
+          'properties': {
+            'default_lookback_days': { 'type': %w[integer null], 'minimum': 1, 'maximum': 365 },
+            'retention_days': { 'type': %w[integer null], 'minimum': 7, 'maximum': 3650 },
+            'saved_views': {
+              'type': %w[array null],
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'id': { 'type': 'string' },
+                  'name': { 'type': 'string', 'minLength': 1, 'maxLength': 80 },
+                  'tab': { 'type': 'string', 'enum': %w[overview events traces evaluations] },
+                  'filters': { 'type': %w[object null] }
+                },
+                'required': %w[id name tab],
+                'additionalProperties': false
+              }
+            },
+            'alert_channels': {
+              'type': %w[object null],
+              'properties': {
+                'enabled': { 'type': %w[boolean null] },
+                'minimum_severity': { 'type': %w[string null], 'enum': ['warning', 'critical', nil] },
+                'email_recipients': {
+                  'type': %w[array null],
+                  'items': { 'type': 'string' }
+                },
+                'webhook_url': { 'type': %w[string null] },
+                'notify_on': {
+                  'type': %w[array null],
+                  'items': { 'type': 'string' }
+                }
+              },
+              'additionalProperties': false
+            }
           },
           'additionalProperties': false
         }
@@ -102,9 +192,16 @@ class Account < ApplicationRecord
 
   store_accessor :settings, :audio_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features, :captain_runtime
+  store_accessor :settings, :captain_observability
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
+  store_accessor :settings,
+                 :scheduling_contact_required,
+                 :scheduling_company_enabled,
+                 :default_appointment_touch_plan_id,
+                 :default_deal_touch_plan_id,
+                 :default_task_touch_plan_id
   include AccountCaptainAutoResolve
 
   has_many :account_users, dependent: :destroy_async
@@ -114,9 +211,12 @@ class Account < ApplicationRecord
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
   has_many :assignment_policies, dependent: :destroy_async
   has_many :automation_rules, dependent: :destroy_async
+  has_many :bulk_action_runs, dependent: :destroy_async
   has_many :macros, dependent: :destroy_async
   has_many :campaigns, dependent: :destroy_async
   has_many :campaign_deliveries, dependent: :delete_all
+  has_many :reminders, dependent: :destroy_async
+  has_many :reminder_groups, dependent: :destroy_async
   has_many :canned_responses, dependent: :destroy_async
   has_many :categories, dependent: :destroy_async, class_name: '::Category'
   has_many :contacts, dependent: :destroy_async
@@ -143,6 +243,8 @@ class Account < ApplicationRecord
   has_many :inboxes, dependent: :destroy_async
   has_many :labels, dependent: :destroy_async
   has_many :line_channels, dependent: :destroy_async, class_name: '::Channel::Line'
+  has_many :llm_events, dependent: :destroy_async
+  has_many :llm_event_annotations, dependent: :destroy_async
   has_many :mentions, dependent: :destroy_async
   has_many :messages, dependent: :destroy_async
   has_many :notes, dependent: :destroy_async
@@ -163,9 +265,11 @@ class Account < ApplicationRecord
   has_many :sms_channels, dependent: :destroy_async, class_name: '::Channel::Sms'
   has_many :teams, dependent: :destroy_async
   has_many :telegram_channels, dependent: :destroy_async, class_name: '::Channel::Telegram'
+  has_many :telegram_personal_channels, dependent: :destroy_async, class_name: '::Channel::TelegramPersonal'
   has_many :twilio_sms, dependent: :destroy_async, class_name: '::Channel::TwilioSms'
   has_many :twitter_profiles, dependent: :destroy_async, class_name: '::Channel::TwitterProfile'
   has_many :users, through: :account_users
+  has_many :vk_community_channels, dependent: :destroy_async, class_name: '::Channel::VkCommunity'
   has_many :web_widgets, dependent: :destroy_async, class_name: '::Channel::WebWidget'
   has_many :webhooks, dependent: :destroy_async
   has_many :whatsapp_channels, dependent: :destroy_async, class_name: '::Channel::Whatsapp'
@@ -173,6 +277,8 @@ class Account < ApplicationRecord
   has_many :working_hours, dependent: :destroy_async
 
   has_one_attached :contacts_export
+  has_one_attached :logo
+  account_storage_attachments :logo
 
   enum :locale, LANGUAGES_CONFIG.map { |key, val| [val[:iso_639_1_code], key] }.to_h, prefix: true
   enum :status, { active: 0, suspended: 1 }
@@ -186,6 +292,17 @@ class Account < ApplicationRecord
 
   def agents
     users.where(account_users: { role: :agent })
+  end
+
+  def default_touch_plan_id_for(entity_kind)
+    case entity_kind.to_s
+    when 'appointment'
+      default_appointment_touch_plan_id
+    when 'deal'
+      default_deal_touch_plan_id
+    when 'task'
+      default_task_touch_plan_id
+    end
   end
 
   def administrators
@@ -218,6 +335,26 @@ class Account < ApplicationRecord
     super.presence || ENV.fetch('MAILER_SENDER_EMAIL') { GlobalConfig.get('MAILER_SUPPORT_EMAIL')['MAILER_SUPPORT_EMAIL'] }
   end
 
+  def logo_url
+    return unless logo.attached?
+
+    url_for(logo)
+  end
+
+  def scheduling_contact_required?
+    return true unless settings.is_a?(Hash)
+
+    value = settings['scheduling_contact_required']
+    value.nil? || ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def scheduling_company_enabled?
+    return true unless settings.is_a?(Hash)
+
+    value = settings['scheduling_company_enabled']
+    value.nil? || ActiveModel::Type::Boolean.new.cast(value)
+  end
+
   def usage_limits
     {
       agents: ChatwootApp.max_limit.to_i,
@@ -234,6 +371,10 @@ class Account < ApplicationRecord
   end
 
   private
+
+  def storage_limit_account
+    self
+  end
 
   def notify_creation
     Rails.configuration.dispatcher.dispatch(ACCOUNT_CREATED, Time.zone.now, account: self)

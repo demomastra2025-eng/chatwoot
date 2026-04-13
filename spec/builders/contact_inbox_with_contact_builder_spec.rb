@@ -37,6 +37,25 @@ describe ContactInboxWithContactBuilder do
       expect(contact_inbox.contact.name).to eq('Contact')
       expect(contact_inbox.contact.custom_attributes).to eq({ 'test' => 'test' })
       expect(contact_inbox.inbox_id).to eq(inbox.id)
+      expect(contact_inbox.channel_profile.display_name).to eq('Contact')
+      expect(contact_inbox.channel_profile.phone_number).to eq('+1234567890')
+    end
+
+    it 'updates the channel profile when the contact inbox already exists' do
+      contact_inbox = described_class.new(
+        source_id: existing_contact_inbox.source_id,
+        inbox: inbox,
+        contact_attributes: {
+          name: 'Channel Name',
+          avatar_url: 'https://chatwoot-assets.local/channel-avatar.png',
+          additional_attributes: { username: 'channel_user' }
+        }
+      ).perform
+
+      expect(contact_inbox).to eq(existing_contact_inbox)
+      expect(contact_inbox.channel_profile.display_name).to eq('Channel Name')
+      expect(contact_inbox.channel_profile.avatar_url).to eq('https://chatwoot-assets.local/channel-avatar.png')
+      expect(contact_inbox.channel_profile.username).to eq('channel_user')
     end
 
     it 'doesnot create contact if it already exist with identifier' do

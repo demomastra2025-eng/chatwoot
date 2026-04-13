@@ -14,11 +14,16 @@ import {
   getTemplateBodyPreview,
   getTemplateFooterPreview,
   getTemplateHeaderPreview,
+  getTemplateParameterDefinitions,
   getTemplateStatusTone,
   matchesWhatsAppTemplateSearch,
 } from 'dashboard/helper/whatsappTemplateLibrary';
 
 const props = defineProps({
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
   inbox: {
     type: Object,
     required: true,
@@ -125,13 +130,29 @@ const getStatusClass = templateStatus => {
 
 const canDeleteTemplate = templateGroup =>
   templateGroup?.name && templateGroup.name !== csatTemplateName.value;
+
+const sectionComponent = computed(() =>
+  props.embedded ? 'div' : SettingsFieldSection
+);
+const containerClass = computed(() =>
+  props.embedded ? 'space-y-6' : 'mx-6 max-w-7xl space-y-6'
+);
+const getTemplateParameters = template =>
+  getTemplateParameterDefinitions(template).map(parameter => parameter.label);
 </script>
 
 <template>
-  <div class="mx-6 max-w-7xl space-y-6">
-    <SettingsFieldSection
-      :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_TITLE')"
-      :help-text="t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_DESCRIPTION')"
+  <div :class="containerClass">
+    <component
+      :is="sectionComponent"
+      v-bind="
+        embedded
+          ? {}
+          : {
+              label: t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_TITLE'),
+              helpText: t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_DESCRIPTION'),
+            }
+      "
     >
       <div class="space-y-5">
         <div
@@ -269,6 +290,30 @@ const canDeleteTemplate = templateGroup =>
                 >
                   {{ getTemplateFooterPreview(templateGroup.primaryVariant) }}
                 </p>
+
+                <div
+                  v-if="
+                    getTemplateParameters(templateGroup.primaryVariant).length
+                  "
+                  class="space-y-2"
+                >
+                  <p
+                    class="mb-0 text-xs font-medium uppercase tracking-wide text-n-slate-10"
+                  >
+                    {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.PARAMETERS_TITLE') }}
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="parameter in getTemplateParameters(
+                        templateGroup.primaryVariant
+                      )"
+                      :key="`${templateGroup.name}-${parameter}`"
+                      class="rounded-full bg-n-slate-3 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+                    >
+                      {{ parameter }}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <Button
@@ -304,7 +349,7 @@ const canDeleteTemplate = templateGroup =>
           </div>
         </div>
       </div>
-    </SettingsFieldSection>
+    </component>
 
     <CreateWhatsAppTemplateDialog ref="createDialogRef" :inbox-id="inbox.id" />
 

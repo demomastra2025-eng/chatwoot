@@ -1,6 +1,16 @@
 import Auth from '../api/auth';
+import { handleSessionReplaced } from '../store/utils/api';
 
-const parseErrorCode = error => Promise.reject(error);
+const parseErrorCode = error => {
+  if (
+    error?.response?.status === 401 &&
+    error?.response?.data?.code === 'session_replaced'
+  ) {
+    handleSessionReplaced(error.response.data);
+  }
+
+  return Promise.reject(error);
+};
 
 export default axios => {
   const { apiHost = '' } = window.chatwootConfig || {};

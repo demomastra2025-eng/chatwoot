@@ -7,9 +7,15 @@ RSpec.describe Llm::Config do
     described_class.reset!
   end
 
+  describe 'defaults' do
+    it 'uses gpt-5.4-mini as the global fallback model' do
+      expect(described_class::DEFAULT_MODEL).to eq('gpt-5.4-mini')
+    end
+  end
+
   describe '.provider_for_model' do
     it 'resolves provider through the product model registry' do
-      expect(described_class.provider_for_model('gemini-3-pro')).to eq('gemini')
+      expect(described_class.provider_for_model('gemini-2.5-pro')).to eq('gemini')
     end
   end
 
@@ -23,10 +29,10 @@ RSpec.describe Llm::Config do
 
   describe '.installation_default_model' do
     it 'prefers the provider-neutral default model setting' do
-      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'claude-sonnet-4.5')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'claude-sonnet-4-6')
       upsert_installation_config('CAPTAIN_OPEN_AI_MODEL', 'gpt-4.1-mini')
 
-      expect(described_class.installation_default_model).to eq('claude-sonnet-4.5')
+      expect(described_class.installation_default_model).to eq('claude-sonnet-4-6')
     end
 
     it 'falls back to the legacy OpenAI model setting when needed' do
@@ -53,6 +59,14 @@ RSpec.describe Llm::Config do
         api_key: 'gemini-key',
         api_base: 'https://example.com'
       )
+    end
+  end
+
+  describe '.model_for' do
+    it 'normalizes legacy Anthropic aliases from installation config' do
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'claude-sonnet-4.6')
+
+      expect(described_class.model_for(feature: 'assistant')).to eq('claude-sonnet-4-6')
     end
   end
 end

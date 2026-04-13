@@ -7,6 +7,7 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   CAPTAIN_TOKENS_USAGE = 'captain_tokens_usage'.freeze
   MAIN_CHANNEL_TYPES = %w[
     Channel::Api
+    Channel::TelegramPersonal
     Channel::Whatsapp
     Channel::WhatsappWeb
   ].freeze

@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::AddDealCommentService < Captain::Tools::Copilot::
     comment = deal_operations.add_current_deal_comment(body: body)
     "Added deal comment ##{comment.id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

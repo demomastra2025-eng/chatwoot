@@ -37,6 +37,10 @@ RSpec.describe BillingHelper do
       create(:channel_api, account: account)
       expect(account.inboxes.count).to eq(2)
       expect(helper.send(:non_web_inboxes, account)).to eq(1)
+
+      create(:channel_telegram_personal, account: account)
+      expect(account.inboxes.count).to eq(3)
+      expect(helper.send(:non_web_inboxes, account)).to eq(2)
     end
 
     it 'returns true for the default plan name' do

@@ -16,7 +16,7 @@ class AccountLimitsField < Administrate::Field::Base
     },
     non_web_inboxes: {
       label: 'Main channels',
-      hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, and API channels.'
+      hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, Telegram Personal, and API channels.'
     },
     storage_bytes: {
       label: 'Storage quota',

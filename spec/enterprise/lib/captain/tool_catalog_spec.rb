@@ -21,6 +21,26 @@ RSpec.describe Captain::ToolCatalog do
       expect(assistant_tool_ids).to include(custom_tool.slug)
     end
 
+    it 'includes discovered MCP tools for the requested scope' do
+      create(:captain_mcp_server, account: account)
+      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
+        .with(assistant, Captain::ToolAccess::SCOPE_AGENT)
+        .and_return([
+                      {
+                        id: 'mcp__github_mcp__list_issues',
+                        title: 'List issues',
+                        description: 'List repository issues',
+                        provider: 'mcp',
+                        mcp_server_id: 123,
+                        mcp_tool_name: 'list_issues'
+                      }
+                    ])
+
+      tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+
+      expect(tool_ids).to include('mcp__github_mcp__list_issues')
+    end
+
     it 'deduplicates tool definitions by id' do
       allow(Captain::ToolRegistry).to receive(:tools_for_scope)
         .with(Captain::ToolAccess::SCOPE_AGENT)
@@ -74,6 +94,26 @@ RSpec.describe Captain::ToolCatalog do
       )
 
       expect(tool).to be_a(Captain::Tools::HttpTool)
+    end
+
+    it 'builds an MCP assistant tool via the provider path' do
+      mcp_server = create(:captain_mcp_server, account: account)
+
+      tool = described_class.build_tool(
+        {
+          id: 'mcp__github_mcp__list_issues',
+          provider: 'mcp',
+          mcp_server_id: mcp_server.id,
+          mcp_tool_name: 'list_issues',
+          input_schema: { 'type' => 'object', 'properties' => {} }
+        },
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
+        user: nil,
+        conversation: nil
+      )
+
+      expect(tool).to be_a(Captain::Tools::Copilot::McpTool)
     end
   end
 

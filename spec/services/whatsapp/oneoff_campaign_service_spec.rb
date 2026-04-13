@@ -44,6 +44,12 @@ describe Whatsapp::OneoffCampaignService do
         expect { described_class.new(campaign: campaign).perform }.to raise_error 'Completed Campaign'
       end
 
+      it 'raises error if campaign has already failed' do
+        campaign.failed!
+
+        expect { described_class.new(campaign: campaign).perform }.to raise_error 'Failed Campaign'
+      end
+
       it 'raises error when campaign is not a WhatsApp campaign' do
         sms_channel = create(:channel_sms, account: account)
         sms_inbox = create(:inbox, channel: sms_channel, account: account)
@@ -74,6 +80,9 @@ describe Whatsapp::OneoffCampaignService do
 
     context 'when campaign is valid' do
       it 'marks campaign as completed' do
+        contact = create(:contact, :with_phone_number, account: account)
+        contact.update_labels([label1.title])
+
         described_class.new(campaign: campaign).perform
 
         expect(campaign.reload.completed?).to be true
@@ -90,10 +99,15 @@ describe Whatsapp::OneoffCampaignService do
 
         expect(campaign.campaign_deliveries.count).to eq(3)
         expect(campaign.campaign_deliveries.pluck(:status).uniq).to eq(['pending'])
-        expect(campaign.conversations.count).to eq(3)
-        expect(campaign.conversations.pluck(:status).uniq).to eq(['resolved'])
-        expect(campaign.conversations.all? { |conversation| conversation.messages.outgoing.count == 1 }).to be true
-        expect(campaign.conversations.all? { |conversation| conversation.messages.first.additional_attributes['campaign_id'] == campaign.id }).to be true
+        expect(campaign.conversations).to be_empty
+        created_conversations = whatsapp_inbox.conversations.where(
+          contact: [contact_with_label1, contact_with_label2, contact_with_both_labels]
+        )
+        expect(created_conversations.count).to eq(3)
+        expect(created_conversations.pluck(:status).uniq).to eq(['resolved'])
+        expect(created_conversations.pluck(:campaign_id).uniq).to eq([nil])
+        expect(created_conversations.all? { |conversation| conversation.messages.outgoing.count == 1 }).to be true
+        expect(created_conversations.all? { |conversation| conversation.messages.first.additional_attributes['campaign_id'] == campaign.id }).to be true
         expect(enqueued_jobs.count { |job| job[:job] == SendReplyJob }).to eq(3)
       end
 
@@ -119,6 +133,7 @@ describe Whatsapp::OneoffCampaignService do
 
         described_class.new(campaign: campaign).perform
 
+        expect(campaign.reload.failed?).to be true
         expect(campaign.campaign_deliveries.find_by(contact: contact).status).to eq('skipped')
       end
     end

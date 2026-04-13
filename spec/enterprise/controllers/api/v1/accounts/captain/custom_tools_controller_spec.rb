@@ -504,6 +504,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
           body: '{"error":"invalid manager"}'
         )
       end
+
+      it 'returns a blocked preview response when tool arguments violate safety policy' do
+        account.update!(captain_runtime: { 'assistant_safety_blocklist' => ['alice'] })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: false),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:preview][:url]).to eq('https://api.example.com/hooks/alice/sales?contact_id=42')
+        expect(json_response[:response]).to include(
+          successful: false,
+          blocked: true,
+          stage: 'tool_arguments',
+          reason: 'custom_blocklist',
+          body: nil,
+          formatted_body: 'ERROR: Tool arguments blocked by safety policy'
+        )
+        expect(WebMock).not_to have_requested(:post, /api\.example\.com/)
+      end
     end
   end
 

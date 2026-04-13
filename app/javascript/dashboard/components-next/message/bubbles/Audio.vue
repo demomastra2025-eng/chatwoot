@@ -12,10 +12,19 @@ const attachment = computed(() => {
 </script>
 
 <template>
-  <BaseBubble class="bg-transparent" data-bubble-name="audio">
+  <BaseBubble class="audio-bubble" data-bubble-name="audio">
     <AudioChip
       :attachment="attachment"
-      class="p-2 text-n-slate-12 skip-context-menu"
+      class="px-2 pt-2 pb-2 text-n-slate-12 skip-context-menu"
     />
   </BaseBubble>
 </template>
+
+<style scoped>
+.audio-bubble :deep(.message-meta-root) {
+  margin-top: 0 !important;
+  padding-inline-start: 1rem;
+  padding-inline-end: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+</style>

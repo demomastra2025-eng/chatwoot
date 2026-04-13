@@ -1,5 +1,6 @@
 <script>
 import { getUnixTime } from 'date-fns';
+import { mapGetters } from 'vuex';
 import { findSnoozeTime } from 'dashboard/helper/snoozeHelpers';
 import { emitter } from 'shared/helpers/mitt';
 import wootConstants from 'dashboard/constants/globals';
@@ -58,6 +59,7 @@ export default {
     'updateConversations',
     'assignLabels',
     'assignTeam',
+    'markRead',
     'resolveConversations',
   ],
   data() {
@@ -69,6 +71,52 @@ export default {
       popoverPositions: {},
       showCustomTimeSnoozeModal: false,
     };
+  },
+  computed: {
+    ...mapGetters({
+      uiFlags: 'bulkActions/getUIFlags',
+      bulkActionRun: 'bulkActions/getCurrentBulkActionRun',
+    }),
+    progressPercentage() {
+      return this.bulkActionRun?.progress_percentage || 0;
+    },
+    progressLabel() {
+      if (!this.bulkActionRun) {
+        return '';
+      }
+
+      const actionName = this.bulkActionRun.action_name;
+      let actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.update');
+
+      if (actionName === 'add_labels') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.add_labels');
+      } else if (actionName === 'remove_labels') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.remove_labels');
+      } else if (actionName === 'assign_agent') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.assign_agent');
+      } else if (actionName === 'assign_team') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.assign_team');
+      } else if (actionName === 'update_status') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.update_status');
+      } else if (actionName === 'mark_read') {
+        actionLabel = this.$t('BULK_ACTION.PROGRESS.ACTIONS.mark_read');
+      }
+
+      return this.$t('BULK_ACTION.PROGRESS.TITLE', {
+        action: actionLabel,
+        processedCount: this.bulkActionRun.processed_count || 0,
+        totalCount: this.bulkActionRun.total_count || 0,
+      });
+    },
+    progressMetaLabel() {
+      if (!this.bulkActionRun?.failed_count) {
+        return '';
+      }
+
+      return this.$t('BULK_ACTION.PROGRESS.FAILED', {
+        count: this.bulkActionRun.failed_count,
+      });
+    },
   },
   mounted() {
     emitter.on(
@@ -138,6 +186,9 @@ export default {
     assignTeam(team) {
       this.$emit('assignTeam', team);
     },
+    markRead() {
+      this.$emit('markRead');
+    },
     resolveConversations() {
       this.$emit('resolveConversations');
     },
@@ -165,6 +216,7 @@ export default {
           :model-value="allConversationsSelected"
           class="checkbox"
           :indeterminate="!allConversationsSelected"
+          :disabled="uiFlags.isUpdating"
           @change="selectAll($event)"
         />
         <span>
@@ -182,7 +234,17 @@ export default {
           slate
           xs
           faded
+          :disabled="uiFlags.isUpdating"
           @click="toggleLabelActions"
+        />
+        <NextButton
+          v-tooltip="$t('BULK_ACTION.MARK_READ.TOOLTIP')"
+          icon="i-lucide-mail-open"
+          slate
+          xs
+          faded
+          :disabled="uiFlags.isUpdating"
+          @click="markRead"
         />
         <NextButton
           v-tooltip="$t('BULK_ACTION.UPDATE.CHANGE_STATUS')"
@@ -190,6 +252,7 @@ export default {
           slate
           xs
           faded
+          :disabled="uiFlags.isUpdating"
           @click="toggleUpdateActions"
         />
         <NextButton
@@ -198,6 +261,7 @@ export default {
           slate
           xs
           faded
+          :disabled="uiFlags.isUpdating"
           @click="toggleAgentList"
         />
         <NextButton
@@ -206,6 +270,7 @@ export default {
           slate
           xs
           faded
+          :disabled="uiFlags.isUpdating"
           @click="toggleTeamsList"
         />
       </div>
@@ -252,6 +317,25 @@ export default {
     <div v-if="allConversationsSelected" class="bulk-action__alert">
       {{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}
     </div>
+    <div
+      v-if="uiFlags.isUpdating && bulkActionRun"
+      class="bulk-action__progress"
+    >
+      <div class="flex items-center justify-between gap-3">
+        <span class="bulk-action__progress-label">
+          {{ progressLabel }}
+        </span>
+        <span v-if="progressMetaLabel" class="bulk-action__progress-meta">
+          {{ progressMetaLabel }}
+        </span>
+      </div>
+      <div class="bulk-action__progress-track">
+        <div
+          class="bulk-action__progress-fill"
+          :style="{ width: `${progressPercentage}%` }"
+        />
+      </div>
+    </div>
     <woot-modal
       v-model:show="showCustomTimeSnoozeModal"
       @close="hideCustomSnoozeModal"
@@ -283,6 +367,26 @@ export default {
 
 .bulk-action__alert {
   @apply bg-n-amber-3 text-n-amber-12 rounded text-xs mt-2 py-1 px-2 border border-solid border-n-amber-5;
+}
+
+.bulk-action__progress {
+  @apply mt-2 rounded-lg border border-solid border-n-weak bg-n-alpha-2 px-2.5 py-2;
+}
+
+.bulk-action__progress-label {
+  @apply text-xs font-medium text-n-slate-12;
+}
+
+.bulk-action__progress-meta {
+  @apply text-[11px] text-n-slate-10 tabular-nums;
+}
+
+.bulk-action__progress-track {
+  @apply mt-2 h-1.5 overflow-hidden rounded-full bg-n-alpha-3;
+}
+
+.bulk-action__progress-fill {
+  @apply h-full rounded-full bg-n-blue-9 transition-all duration-300 ease-out;
 }
 
 .popover-animation-enter-active,

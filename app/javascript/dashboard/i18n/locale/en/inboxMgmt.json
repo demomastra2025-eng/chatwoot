@@ -66,9 +66,17 @@
       },
       "TWITTER": {
         "HELP": "To add your Twitter profile as a channel, you need to authenticate your Twitter Profile by clicking on 'Sign in with Twitter' ",
+        "NOT_CONFIGURED": "Twitter credentials are not configured on the server yet. Add TWITTER_APP_ID, TWITTER_CONSUMER_KEY, and TWITTER_CONSUMER_SECRET to enable this channel.",
         "ERROR_MESSAGE": "There was an error connecting to Twitter, please try again",
         "TWEETS": {
           "ENABLE": "Create conversations from mentioned Tweets"
+        }
+      },
+      "TELEGRAM": {
+        "SELECT_PROVIDER": {
+          "TITLE": "Select your Telegram channel type",
+          "DESCRIPTION": "Choose whether you want to connect a Telegram bot or a personal Telegram account.",
+          "CHANGE_ACTION": "Change Telegram type"
         }
       },
       "WEBSITE_CHANNEL": {
@@ -510,16 +518,67 @@
         }
       },
       "TELEGRAM_CHANNEL": {
-        "TITLE": "Telegram Channel",
-        "DESC": "Integrate with Telegram channel and start supporting your customers.",
+        "TITLE": "Telegram Bot Channel",
+        "DESC": "Integrate with Telegram Bot and start supporting your customers.",
         "BOT_TOKEN": {
           "LABEL": "Bot Token",
           "SUBTITLE": "Configure the bot token you have obtained from Telegram BotFather.",
           "PLACEHOLDER": "Bot Token"
         },
-        "SUBMIT_BUTTON": "Create Telegram Channel",
+        "SUBMIT_BUTTON": "Create Telegram Bot Channel",
         "API": {
           "ERROR_MESSAGE": "We were not able to save the telegram channel"
+        }
+      },
+      "TELEGRAM_PERSONAL_CHANNEL": {
+        "TITLE": "Telegram Personal Channel",
+        "DESC": "Connect a personal Telegram account through MTProto and route private chats into OneLink.",
+        "API_ID": {
+          "LABEL": "API ID",
+          "PLACEHOLDER": "Telegram API ID",
+          "SUBTITLE": "Optional. Leave blank to use workspace-wide Telegram Personal defaults from the server environment."
+        },
+        "API_HASH": {
+          "LABEL": "API Hash",
+          "PLACEHOLDER": "Telegram API Hash",
+          "SUBTITLE": "Optional. Leave blank to use workspace-wide Telegram Personal defaults from the server environment."
+        },
+        "PHONE_NUMBER": {
+          "LABEL": "Phone number",
+          "PLACEHOLDER": "+77001234567",
+          "SUBTITLE": "Use the personal Telegram account phone number in E.164 format."
+        },
+        "SUBMIT_BUTTON": "Create Telegram Personal Channel",
+        "API": {
+          "ERROR_MESSAGE": "We were not able to save the Telegram Personal channel"
+        }
+      },
+      "VK_COMMUNITY_CHANNEL": {
+        "TITLE": "VK Community Channel",
+        "DESC": "Connect VK community messages through Callback API and the VK messages API.",
+        "GROUP_ID": {
+          "LABEL": "Group ID",
+          "PLACEHOLDER": "VK group ID"
+        },
+        "ACCESS_TOKEN": {
+          "LABEL": "Access token",
+          "PLACEHOLDER": "VK access token"
+        },
+        "SECRET": {
+          "LABEL": "Secret key",
+          "PLACEHOLDER": "Callback secret"
+        },
+        "CONFIRMATION_TOKEN": {
+          "LABEL": "Confirmation token",
+          "PLACEHOLDER": "Callback confirmation token"
+        },
+        "API_VERSION": {
+          "LABEL": "API version",
+          "PLACEHOLDER": "5.199"
+        },
+        "SUBMIT_BUTTON": "Create VK Channel",
+        "API": {
+          "ERROR_MESSAGE": "We were not able to save the VK channel"
         }
       },
       "AUTH": {
@@ -535,6 +594,10 @@
           "FACEBOOK": {
             "TITLE": "Facebook",
             "DESCRIPTION": "Connect your Facebook page"
+          },
+          "TWITTER": {
+            "TITLE": "Twitter / X",
+            "DESCRIPTION": "Connect your Twitter direct messages and mentions"
           },
           "WHATSAPP": {
             "TITLE": "WhatsApp",
@@ -558,7 +621,19 @@
           },
           "TELEGRAM": {
             "TITLE": "Telegram",
-            "DESCRIPTION": "Configure Telegram channel using Bot token"
+            "DESCRIPTION": "Connect Telegram and choose whether to use a bot or a personal account"
+          },
+          "TELEGRAM_BOT": {
+            "TITLE": "Telegram Bot",
+            "DESCRIPTION": "Configure Telegram Bot using a BotFather token"
+          },
+          "TELEGRAM_PERSONAL": {
+            "TITLE": "Telegram Personal",
+            "DESCRIPTION": "Connect a personal Telegram account for private chats"
+          },
+          "VK": {
+            "TITLE": "VK",
+            "DESCRIPTION": "Connect VK community direct messages"
           },
           "LINE": {
             "TITLE": "Line",
@@ -652,6 +727,7 @@
         "CONNECTED_SYNCING_HINT": "The device is linked. Redirecting now while messages and contacts finish syncing in the background.",
         "CONNECTED_REDIRECT": "QR setup is complete. Redirecting to inbox settings...",
         "FAILED": "We couldn't get a WhatsApp Web QR code.",
+        "RECONNECTING": "The connection dropped. Waiting while WhatsApp Web reconnects automatically.",
         "RECOVERING": "The previous QR attempt failed or expired. Requesting a fresh WhatsApp Web QR code.",
         "QR_EXPIRED_REFRESHING": "The QR code expired. Requesting a fresh WhatsApp Web QR code.",
         "REQUEST_NEW_QR": "Request new QR code",
@@ -661,7 +737,58 @@
       "MESSENGER_QR_INSTRUCTION": "Scan the QR code above to quickly test your Facebook Messenger inbox",
       "MESSENGER_QR_ALT": "Messenger QR code",
       "TELEGRAM_QR_INSTRUCTION": "Scan the QR code above to quickly test your Telegram inbox",
-      "TELEGRAM_QR_ALT": "Telegram QR code"
+      "TELEGRAM_QR_ALT": "Telegram QR code",
+      "TELEGRAM_PERSONAL": {
+        "TITLE": "Telegram Personal connection",
+        "DESCRIPTION": "Authorize a personal Telegram account. OneLink uses MTProto and keeps this inbox bound to a single private Telegram session.",
+        "LOADING": "Preparing the Telegram Personal authorization flow.",
+        "REQUESTING_CODE": "Requesting a Telegram login code.",
+        "REQUESTING_QR": "Preparing a Telegram QR login.",
+        "REQUESTING_FULL_HISTORY": "Scheduling the Telegram full history import.",
+        "REQUEST_CODE_HINT": "Request a login code and enter it below to connect this inbox.",
+        "AUTH_METHOD_HINT": "Choose how to authorize this inbox: enter a login code or scan a Telegram QR.",
+        "FULL_HISTORY_SYNC_LABEL": "Import full history",
+        "FULL_HISTORY_SYNC_SUCCESS": "Telegram full history import started",
+        "FULL_HISTORY_SYNC_ERROR": "Unable to start the Telegram full history import",
+        "REQUEST_CODE": "Request login code",
+        "REQUEST_NEW_CODE": "Request new code",
+        "REQUEST_CODE_SUCCESS": "Telegram login code requested",
+        "REQUEST_CODE_ERROR": "Unable to request a Telegram login code",
+        "REQUEST_QR": "Generate QR",
+        "REFRESH_QR": "Refresh QR",
+        "REQUEST_QR_SUCCESS": "Telegram QR login is ready",
+        "REQUEST_QR_ERROR": "Unable to prepare a Telegram QR login",
+        "CODE_SENT": "Telegram sent a login code to the connected device or Telegram app.",
+        "QR_READY": "Scan the QR code from an already logged-in Telegram app to continue.",
+        "QR_EXPIRED": "The Telegram QR code expired. Generate a new one to continue.",
+        "CODE_LOGIN": "Sign in with code",
+        "CODE_LABEL": "Login code",
+        "CODE_PLACEHOLDER": "12345",
+        "CODE_HINT": "Enter the code sent by Telegram for this personal account.",
+        "CODE_REQUIRED": "Enter the Telegram login code",
+        "VERIFY_CODE": "Verify code",
+        "VERIFY_CODE_ERROR": "Unable to verify the Telegram login code",
+        "QR_LOGIN": "Sign in by scanning QR",
+        "QR_HINT": "Open Telegram on a device where this account is already logged in, then scan this QR code.",
+        "QR_EMPTY": "Generate a Telegram QR code to start QR login.",
+        "QR_IMAGE_ALT": "Telegram Personal QR code",
+        "QR_EXPIRES_AT": "QR expires at: {value}",
+        "PASSWORD_REQUIRED": "Telegram 2FA is enabled for this account. Enter the password below.",
+        "PASSWORD_LABEL": "2FA password",
+        "PASSWORD_PLACEHOLDER": "Telegram password",
+        "PASSWORD_HINT": "Use the Telegram cloud password configured for this account.",
+        "PASSWORD_REQUIRED_ERROR": "Enter the Telegram 2FA password",
+        "VERIFY_PASSWORD": "Verify password",
+        "VERIFY_PASSWORD_ERROR": "Unable to verify the Telegram password",
+        "CONNECTED": "Telegram Personal is connected.",
+        "CONNECTED_SUCCESS": "Telegram Personal connected successfully.",
+        "CONNECTED_REDIRECT": "Authorization is complete. Redirecting to inbox settings...",
+        "FAILED": "Telegram Personal authorization failed.",
+        "PHONE_NUMBER": "Phone number:",
+        "STATUS": "Status:",
+        "CONNECTION": "Connection:",
+        "LAST_ERROR": "Last error:"
+      }
     },
     "REAUTH": "Reauthorize",
     "VIEW": "View",
@@ -725,6 +852,112 @@
         "RAW_JID": "raw_jid:",
         "CANONICAL_JID": "canonical_jid:",
         "IDENTIFIER": "identifier:"
+      },
+      "TELEGRAM_PERSONAL": {
+        "TITLE": "Telegram Personal",
+        "SUBTITLE": "Manage connection, imports, and service diagnostics for the personal Telegram inbox.",
+        "OVERVIEW": "Overview",
+        "OVERVIEW_SUBTITLE": "The current channel, auth, and latest import status in one clean place.",
+        "CONNECTION_STATE": "Connection state",
+        "PHONE_NUMBER": "Phone number:",
+        "STATUS": "Status:",
+        "CONNECTION": "Connection:",
+        "LAST_SYNCED": "Last synced:",
+        "LAST_ERROR": "Last error:",
+        "OPERATOR_ACTIONS": "Operator actions",
+        "SERVICE_CONTROLS": "Service controls",
+        "SERVICE_CONTROLS_SUBTITLE": "Restart the runtime or disconnect the channel without cluttering the main workflow.",
+        "ACCESS_SECTION": "Account sign-in",
+        "ACCESS_SECTION_SUBTITLE": "Use code login, QR login, or the 2FA password depending on the current auth step.",
+        "IMPORT_SECTION": "Data imports",
+        "IMPORT_SECTION_SUBTITLE": "Run a recent history import, a full re-import, or a contact import as separate actions.",
+        "DIAGNOSTICS_SECTION": "Service diagnostics",
+        "DIAGNOSTICS_SECTION_SUBTITLE": "A compact set of technical signals for quick health checks.",
+        "RAW_DIAGNOSTICS": "Raw diagnostics JSON",
+        "RAW_DIAGNOSTICS_TOGGLE": "Show or hide raw diagnostics JSON",
+        "REFRESH_DIAGNOSTICS": "Refresh diagnostics",
+        "REQUEST_CODE": "Request code",
+        "REQUEST_CODE_SUCCESS": "Telegram login code requested",
+        "REQUEST_CODE_ERROR": "Unable to request Telegram login code",
+        "REQUEST_QR": "Generate QR",
+        "REFRESH_QR": "Refresh QR",
+        "REQUEST_QR_SUCCESS": "Telegram QR login is ready",
+        "REQUEST_QR_ERROR": "Unable to prepare Telegram QR login",
+        "RECONNECT": "Reconnect",
+        "RECONNECT_SUCCESS": "Telegram Personal reconnect started",
+        "RECONNECT_ERROR": "Unable to reconnect Telegram Personal",
+        "HISTORY_SYNC": "Import recent history",
+        "HISTORY_SYNC_SUCCESS": "Telegram Personal recent history import started",
+        "HISTORY_SYNC_ERROR": "Unable to start the Telegram Personal recent history import",
+        "FULL_HISTORY_SYNC": "Re-import full history",
+        "FULL_HISTORY_SYNC_SUCCESS": "Telegram Personal full history import started",
+        "FULL_HISTORY_SYNC_ERROR": "Unable to start the Telegram Personal full history import",
+        "CONTACTS_SYNC": "Import contacts",
+        "CONTACTS_SYNC_SUCCESS": "Telegram Personal contacts import started",
+        "CONTACTS_SYNC_ERROR": "Unable to start the Telegram Personal contacts import",
+        "DISCONNECT": "Disconnect",
+        "DISCONNECT_SUCCESS": "Telegram Personal disconnected",
+        "DISCONNECT_ERROR": "Unable to disconnect Telegram Personal",
+        "AUTO_SYNC_HINT": "Status and diagnostic signals refresh automatically whenever this settings screen opens.",
+        "CODE_LOGIN": "Sign in with code",
+        "CODE_LABEL": "Login code",
+        "CODE_PLACEHOLDER": "12345",
+        "CODE_HINT": "Enter the login code received from Telegram.",
+        "CODE_REQUIRED": "Enter the Telegram login code",
+        "VERIFY_CODE": "Verify code",
+        "VERIFY_CODE_ERROR": "Unable to verify the Telegram login code",
+        "QR_LOGIN": "Sign in by scanning QR",
+        "QR_HINT": "Open Telegram on a device where this account is already logged in, then scan this QR code.",
+        "QR_EMPTY": "Generate a Telegram QR code to start QR login.",
+        "QR_IMAGE_ALT": "Telegram Personal QR code",
+        "QR_EXPIRES_AT": "QR expires at: {value}",
+        "PASSWORD_LABEL": "2FA password",
+        "PASSWORD_PLACEHOLDER": "Telegram password",
+        "PASSWORD_HINT": "Enter the Telegram cloud password for this account.",
+        "PASSWORD_REQUIRED_ERROR": "Enter the Telegram 2FA password",
+        "VERIFY_PASSWORD": "Verify password",
+        "VERIFY_PASSWORD_ERROR": "Unable to verify the Telegram password",
+        "DIAGNOSTICS": "Diagnostics",
+        "REFRESHING": "Refreshing...",
+        "AUTH_STATE": "Auth state",
+        "HISTORY_SYNC_STATE": "History import state",
+        "LAST_HISTORY_SYNC_AT": "Last history import",
+        "HISTORY_SYNC_COUNT": "Messages imported",
+        "CONTACTS_SYNC_STATE": "Contact import state",
+        "LAST_CONTACTS_SYNC_AT": "Last contact import",
+        "CONTACTS_SYNC_COUNT": "Contacts imported",
+        "FLOOD_WAIT": "Flood wait, sec",
+        "LAST_INBOUND_AT": "Last inbound",
+        "NOT_AVAILABLE": "Not available",
+        "STATE_LABELS": {
+          "AUTHORIZED": "Authorized",
+          "CONNECTED": "Connected",
+          "DISCONNECTED": "Disconnected",
+          "PENDING_AUTH": "Pending auth",
+          "CODE_SENT": "Code sent",
+          "QR_READY": "QR ready",
+          "QR_EXPIRED": "QR expired",
+          "PASSWORD_REQUIRED": "Password required",
+          "SCHEDULED": "Scheduled",
+          "RUNNING": "Running",
+          "DELIVERING": "Delivering",
+          "CONNECTING": "Connecting",
+          "COMPLETED": "Completed",
+          "COMPLETED_WITH_ERRORS": "Completed with errors",
+          "FAILED": "Failed",
+          "FLOOD_WAIT": "Flood wait",
+          "CANCELLED": "Cancelled"
+        }
+      },
+      "VK_COMMUNITY": {
+        "TITLE": "VK Community callback",
+        "SUBTITLE": "Callback and runtime identifiers for the connected VK community inbox.",
+        "CALLBACK": "Callback settings",
+        "GROUP_ID": "Group ID:",
+        "API_VERSION": "API version:",
+        "CALLBACK_ID": "Callback ID:",
+        "WEBHOOK_URL": "Webhook URL",
+        "WEBHOOK_HINT": "Configure this URL in VK Callback API and use the same secret and confirmation token from channel setup."
       },
       "EMAIL_COLLECT_BOX": {
         "ENABLED": "Enabled",
@@ -1312,16 +1545,37 @@
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",
+      "TELEGRAM_BOT": "Telegram Bot",
+      "TELEGRAM_PERSONAL": "Telegram Personal",
+      "VK": "VK",
       "LINE": "Line",
       "API": "API Channel",
       "INSTAGRAM": "Instagram",
       "TIKTOK": "TikTok",
       "VOICE": "Voice"
     },
-    "COUNT": "{n} inbox | {n} inboxes",
-    "SEARCH_PLACEHOLDER": "Search inboxes...",
-    "NO_RESULTS": "No inboxes found matching your search",
+    "COUNT": "{n} channel | {n} channels",
+    "SEARCH_PLACEHOLDER": "Search channels...",
+    "NO_RESULTS": "No channels found matching your search",
     "CHANNEL_PREFERENCES": "Channel Preferences",
-    "WIDGET_FEATURES": "Widget features"
+    "WIDGET_FEATURES": "Widget features",
+    "WIDGET_TRIGGER_CAMPAIGNS": {
+      "TITLE": "Website triggers",
+      "DESCRIPTION": "Manage proactive widget messages for this site: where and when they should appear to the visitor.",
+      "CREATE": "Add trigger",
+      "CREATE_DIALOG_TITLE": "Add website trigger",
+      "CREATE_DIALOG_DESCRIPTION": "This trigger will only work for the current website inbox and will open the website chat based on the rules you set.",
+      "CREATE_SUCCESS": "Website trigger created.",
+      "EMPTY_TITLE": "No website triggers yet",
+      "EMPTY_DESCRIPTION": "Add a rule if you want to show a proactive widget message on a specific page or after a delay.",
+      "EDIT": "Edit",
+      "BOT": "Bot",
+      "SENDER": "Sender: {sender}",
+      "SUMMARY": "{url} · after {seconds}s",
+      "STATUS": {
+        "ENABLED": "Enabled",
+        "DISABLED": "Disabled"
+      }
+    }
   }
 }

@@ -18,6 +18,7 @@ ru:
       not_required: Повторная авторизация не требуется для этого ящика
       invalid_channel: Неверный тип канала для повторной авторизации
   auth:
+    session_replaced: 'В ваш аккаунт вошли с другого устройства. Войдите снова.'
     saml:
       invalid_email: Пожалуйста, введите действительный адрес электронной почты
       authentication_failed: Ошибка аутентификации. Пожалуйста, проверьте ваши учетные данные и повторите попытку.
@@ -262,6 +263,15 @@ ru:
         issue_created: Линейная задача %{issue_id} была создана %{user_name}
         issue_linked: Линейная задача %{issue_id} была связана с %{user_name}
         issue_unlinked: Линейная задача %{issue_id} была отвязана от %{user_name}
+      telegram_personal:
+        contact_joined: "%{contact_name} присоединился к Telegram"
+        history_cleared: История чата Telegram была очищена
+        missed_voice_call: Пропущен звонок в Telegram с %{contact_name}
+        missed_video_call: Пропущен видеозвонок в Telegram с %{contact_name}
+        busy_voice_call: Звонок в Telegram с %{contact_name} был занят
+        busy_video_call: Видеозвонок в Telegram с %{contact_name} был занят
+        completed_voice_call: Звонок в Telegram с %{contact_name} завершен
+        completed_video_call: Видеозвонок в Telegram с %{contact_name} завершен
       csat:
         not_sent_due_to_messaging_window: Опрос CSAT не отправлен из-за ограничений исходящих сообщений
       auto_resolve:

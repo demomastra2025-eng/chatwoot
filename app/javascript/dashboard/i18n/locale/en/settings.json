@@ -156,6 +156,7 @@
       "NOTIFICATIONS": {
         "TITLE": "Notification preferences",
         "TYPE_TITLE": "Notification type",
+        "INBOX": "My Inbox",
         "EMAIL": "Email",
         "PUSH": "Push notification",
         "TYPES": {
@@ -306,8 +307,13 @@
     "SWITCH": "Switch",
     "INBOX_VIEW": "Inbox View",
     "CONVERSATIONS": "Conversations",
+    "ALL": "All",
     "INBOX": "My Inbox",
     "ALL_CONVERSATIONS": "All Conversations",
+    "PENDING_CONVERSATIONS": "Pending",
+    "OPEN_CONVERSATIONS": "Open",
+    "SNOOZED_CONVERSATIONS": "Snoozed",
+    "RESOLVED_CONVERSATIONS": "Closed",
     "MENTIONED_CONVERSATIONS": "Mentions",
     "PARTICIPATING_CONVERSATIONS": "Participating",
     "UNATTENDED_CONVERSATIONS": "Unattended",
@@ -328,11 +334,12 @@
     "SCHEDULING_SERVICES": "Services",
     "SCHEDULING_EXCEPTIONS": "Breaks",
     "SCHEDULING_KASSA": "Kassa",
-    "CAPTAIN": "AI Agents",
-    "CAPTAIN_ASSISTANTS": "AI Agents",
+    "CAPTAIN": "AI Staff",
+    "CAPTAIN_ASSISTANTS": "AI Staff",
     "CAPTAIN_DOCUMENTS": "Documents",
     "CAPTAIN_RESPONSES": "FAQs",
     "CAPTAIN_TOOLS": "Tools",
+    "CAPTAIN_OBSERVABILITY": "Observability",
     "CAPTAIN_SCENARIOS": "Scenarios",
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Inboxes",
@@ -347,7 +354,7 @@
     "AUDIT_LOGS": "Audit Logs",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",
-    "CANNED_RESPONSES": "Canned Responses",
+    "CANNED_RESPONSES": "Templates",
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Account Settings",
@@ -370,7 +377,14 @@
     "LIVE_CHAT": "Live Chat",
     "SMS": "SMS",
     "WHATSAPP": "WhatsApp",
+    "OUTBOUND": "Mailings",
+    "OUTBOUND_MASS": "Bulk",
+    "OUTBOUND_PERSONAL": "Personal",
     "CAMPAIGNS": "Campaigns",
+    "AUDIENCES": "Audiences",
+    "TOUCHES": "Personal",
+    "TOUCH_PLANS": "Campaign stages",
+    "TEMPLATES": "Templates",
     "ONGOING": "Ongoing",
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
@@ -395,6 +409,7 @@
       "SETTINGS": "Settings"
     },
     "CHANNELS": "Channels",
+    "ALL_CHANNELS": "All",
     "SET_AUTO_OFFLINE": {
       "TEXT": "Mark offline automatically",
       "INFO_TEXT": "Let the system automatically mark you offline when you aren't using the app or dashboard.",
@@ -402,15 +417,15 @@
     },
     "DOCS": "Read docs",
     "SECURITY": "Security",
-    "CAPTAIN_AI": "AI Agents",
+    "CAPTAIN_AI": "AI Staff",
     "CONVERSATION_WORKFLOW": "Conversation Workflow"
   },
   "CAPTAIN_SETTINGS": {
-    "TITLE": "AI Agent Settings",
-    "DESCRIPTION": "Configure your AI models and features for AI Agents. AI Agents use credit-based billing, and credits are charged for each AI action based on the selected model.",
-    "LOADING": "Loading AI Agent configuration...",
+    "TITLE": "AI Staff Settings",
+    "DESCRIPTION": "Configure your AI models and features for AI Staff. AI Staff uses credit-based billing, and credits are charged for each AI action based on the selected model.",
+    "LOADING": "Loading AI Staff configuration...",
     "LINK_TEXT": "Learn more about AI credits",
-    "NOT_ENABLED": "AI Agents are not enabled for your account. Please upgrade your plan to access AI Agent features.",
+    "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",
     "MODEL_CONFIG": {
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
@@ -454,6 +469,14 @@
       "MODERATION": {
         "TITLE": "Moderation",
         "DESCRIPTION": "Check text safety before and after model responses. Blocked AI Agent replies hand off to a human."
+      },
+      "MODERATION_FAILURE_MODE": {
+        "TITLE": "Moderation Failure Mode",
+        "DESCRIPTION": "Choose whether AI requests should continue or stop when the moderation provider is unavailable.",
+        "OPTIONS": {
+          "FAIL_OPEN": "Fail open",
+          "FAIL_CLOSED": "Fail closed"
+        }
       },
       "THINKING": {
         "TITLE": "Thinking Effort",

@@ -18,7 +18,20 @@ RSpec.describe Captain::ToolPolicy do
       expect(allowed).to be(false)
     end
 
-    it 'allows feature-gated tools when the required account feature is enabled' do
+    it 'allows feature-gated medium-risk agent tools when the required account feature is enabled' do
+      account.enable_features!('crm_deals')
+      tool_definition = Captain::ToolRegistry.definition_for('update_deal').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(true)
+    end
+
+    it 'blocks high-risk agent tools unless they are explicitly approved for autonomous execution' do
       account.enable_features!('crm_deals')
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
 
@@ -28,7 +41,51 @@ RSpec.describe Captain::ToolPolicy do
         scope_name: Captain::ToolAccess::SCOPE_AGENT
       )
 
+      expect(allowed).to be(false)
+    end
+
+    it 'allows high-risk agent tools when the tool id is approved in runtime policy' do
+      account.enable_features!('crm_deals')
+      account.update!(captain_runtime: { 'agent_high_risk_tool_ids' => ['create_deal'] })
+      tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
       expect(allowed).to be(true)
+    end
+
+    it 'allows high-risk agent tools when autonomous high-risk tools are globally enabled' do
+      account.enable_features!('crm_deals')
+      account.update!(captain_runtime: { 'agent_high_risk_tools' => 'enabled' })
+      tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(true)
+    end
+
+    it 'treats custom agent tools as high-risk by default' do
+      tool_definition = {
+        id: 'custom_external_mutation',
+        allowed_scopes: [Captain::ToolAccess::SCOPE_AGENT],
+        risk_level: 'custom'
+      }
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(false)
     end
 
     it 'blocks assistant tools when the current user lacks the required permission' do

@@ -229,6 +229,10 @@ RSpec.describe Concerns::Agentable do
       expect(dummy_instance.send(:agent_model)).to eq('gpt-4-turbo')
     end
 
+    it 'uses gpt-5.4 as the agent fallback default' do
+      expect(LlmConstants::DEFAULT_MODEL).to eq('gpt-5.4')
+    end
+
     it 'passes the associated account when present' do
       account = create(:account, captain_models: { 'assistant' => 'gpt-5.2' })
       dummy_with_account = dummy_class.new(account: account)

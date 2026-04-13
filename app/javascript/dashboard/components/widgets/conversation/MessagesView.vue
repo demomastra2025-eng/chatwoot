@@ -229,7 +229,7 @@ export default {
     },
     unreadMessageLabel() {
       const count =
-        this.unreadMessageCount > 9 ? '9+' : this.unreadMessageCount;
+        this.unreadMessageCount > 99 ? '99+' : this.unreadMessageCount;
       const label =
         this.unreadMessageCount > 1
           ? 'CONVERSATION.UNREAD_MESSAGES'
@@ -483,7 +483,7 @@ export default {
           class="list-none flex justify-center items-center"
         >
           <span
-            class="shadow-lg rounded-full bg-n-brand-solid text-n-brand-contrast text-xs font-medium my-2.5 mx-auto px-2.5 py-1.5"
+            class="shadow-lg rounded-full bg-n-ruby-9 text-white text-xs font-medium my-2.5 mx-auto px-2.5 py-1.5"
           >
             {{ unreadMessageLabel }}
           </span>

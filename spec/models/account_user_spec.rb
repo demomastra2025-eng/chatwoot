@@ -14,6 +14,8 @@ RSpec.describe AccountUser do
 
       expect(account_user.user.notification_settings.first.email_conversation_creation?).to be(false)
       expect(account_user.user.notification_settings.first.email_conversation_assignment?).to be(false)
+      expect(account_user.user.notification_settings.first.selected_inbox_flags.map(&:to_s))
+        .to match_array(NotificationSetting.default_inbox_flag_names.map(&:to_s))
       expect(account_user.user.notification_settings.first.push_conversation_assignment?).to be(true)
     end
   end

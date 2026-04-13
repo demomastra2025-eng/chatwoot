@@ -7,6 +7,10 @@ import {
   MEDIA_FORMATS,
   findComponentByType,
 } from 'dashboard/helper/templateHelper';
+import {
+  groupWhatsAppTemplates,
+  matchesWhatsAppTemplateSearch,
+} from 'dashboard/helper/whatsappTemplateLibrary';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import { useI18n } from 'vue-i18n';
 
@@ -23,15 +27,20 @@ const { t } = useI18n();
 const store = useStore();
 const query = ref('');
 const isRefreshing = ref(false);
+const expandedTemplateName = ref('');
 
 const whatsAppTemplateMessages = useFunctionGetter(
   'inboxes/getFilteredWhatsAppTemplates',
   toRef(props, 'inboxId')
 );
 
-const filteredTemplateMessages = computed(() =>
-  whatsAppTemplateMessages.value.filter(template =>
-    template.name.toLowerCase().includes(query.value.toLowerCase())
+const groupedTemplateMessages = computed(() =>
+  groupWhatsAppTemplates(whatsAppTemplateMessages.value || [])
+);
+
+const filteredTemplateGroups = computed(() =>
+  groupedTemplateMessages.value.filter(templateGroup =>
+    matchesWhatsAppTemplateSearch(templateGroup, query.value)
   )
 );
 
@@ -54,6 +63,24 @@ const getTemplateButtons = template => {
 const hasMediaContent = template => {
   const header = getTemplateHeader(template);
   return header && MEDIA_FORMATS.includes(header.format);
+};
+
+const toggleExpandedTemplate = templateName => {
+  expandedTemplateName.value =
+    expandedTemplateName.value === templateName ? '' : templateName;
+};
+
+const selectTemplateGroup = templateGroup => {
+  if (templateGroup.variants.length === 1) {
+    emit('onSelect', templateGroup.variants[0]);
+    return;
+  }
+
+  toggleExpandedTemplate(templateGroup.name);
+};
+
+const selectVariant = variant => {
+  emit('onSelect', variant);
 };
 
 const refreshTemplates = async () => {
@@ -103,43 +130,75 @@ const refreshTemplates = async () => {
     <div
       class="bg-n-background outline-n-container outline outline-1 rounded-lg max-h-[18.75rem] overflow-y-auto p-2.5"
     >
-      <div v-for="(template, i) in filteredTemplateMessages" :key="template.id">
+      <div
+        v-for="(templateGroup, i) in filteredTemplateGroups"
+        :key="templateGroup.name"
+      >
         <button
           class="block p-2.5 w-full text-left rounded-lg cursor-pointer hover:bg-n-alpha-2 dark:hover:bg-n-solid-2"
-          @click="emit('onSelect', template)"
+          @click="selectTemplateGroup(templateGroup)"
         >
           <div>
             <div class="flex justify-between items-center mb-2.5">
               <p class="text-sm">
-                {{ template.name }}
+                {{ templateGroup.name }}
               </p>
-              <span
-                class="inline-block px-2 py-1 text-xs leading-none rounded-lg cursor-default bg-n-slate-3 text-n-slate-12"
-              >
-                {{ t('WHATSAPP_TEMPLATES.PICKER.LABELS.LANGUAGE') }}:
-                {{ template.language }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-block px-2 py-1 text-xs leading-none rounded-lg cursor-default bg-n-slate-3 text-n-slate-12"
+                >
+                  {{
+                    `${t('WHATSAPP_TEMPLATES.PICKER.LABELS.LANGUAGE')}: ${templateGroup.languages.join(', ')}`
+                  }}
+                </span>
+                <span
+                  v-if="templateGroup.variants.length > 1"
+                  class="inline-flex size-6 items-center justify-center rounded-full bg-n-alpha-2 text-n-slate-11"
+                >
+                  <span
+                    class="size-4"
+                    :class="
+                      expandedTemplateName === templateGroup.name
+                        ? 'i-lucide-chevron-up'
+                        : 'i-lucide-chevron-down'
+                    "
+                  />
+                </span>
+              </div>
             </div>
+            <p
+              v-if="templateGroup.variants.length > 1"
+              class="mb-3 text-xs text-n-slate-11"
+            >
+              {{ t('WHATSAPP_TEMPLATES.PICKER.SELECT_LANGUAGE') }}
+            </p>
             <!-- Header -->
-            <div v-if="getTemplateHeader(template)" class="mb-3">
+            <div
+              v-if="getTemplateHeader(templateGroup.primaryVariant)"
+              class="mb-3"
+            >
               <p class="text-xs font-medium text-n-slate-11">
                 {{ t('WHATSAPP_TEMPLATES.PICKER.HEADER') || 'HEADER' }}
               </p>
               <div
-                v-if="getTemplateHeader(template).format === 'TEXT'"
+                v-if="
+                  getTemplateHeader(templateGroup.primaryVariant).format ===
+                  'TEXT'
+                "
                 class="text-sm label-body"
               >
-                {{ getTemplateHeader(template).text }}
+                {{ getTemplateHeader(templateGroup.primaryVariant).text }}
               </div>
               <div
-                v-else-if="hasMediaContent(template)"
+                v-else-if="hasMediaContent(templateGroup.primaryVariant)"
                 class="text-sm italic text-n-slate-11"
               >
                 {{
                   t('WHATSAPP_TEMPLATES.PICKER.MEDIA_CONTENT', {
-                    format: getTemplateHeader(template).format,
+                    format: getTemplateHeader(templateGroup.primaryVariant)
+                      .format,
                   }) ||
-                  `${getTemplateHeader(template).format} ${t('WHATSAPP_TEMPLATES.PICKER.MEDIA_CONTENT_FALLBACK')}`
+                  `${getTemplateHeader(templateGroup.primaryVariant).format} ${t('WHATSAPP_TEMPLATES.PICKER.MEDIA_CONTENT_FALLBACK')}`
                 }}
               </div>
             </div>
@@ -149,27 +208,37 @@ const refreshTemplates = async () => {
               <p class="text-xs font-medium text-n-slate-11">
                 {{ t('WHATSAPP_TEMPLATES.PICKER.BODY') || 'BODY' }}
               </p>
-              <p class="text-sm label-body">{{ getTemplateBody(template) }}</p>
+              <p class="text-sm label-body">
+                {{ getTemplateBody(templateGroup.primaryVariant) }}
+              </p>
             </div>
 
             <!-- Footer -->
-            <div v-if="getTemplateFooter(template)" class="mt-3">
+            <div
+              v-if="getTemplateFooter(templateGroup.primaryVariant)"
+              class="mt-3"
+            >
               <p class="text-xs font-medium text-n-slate-11">
                 {{ t('WHATSAPP_TEMPLATES.PICKER.FOOTER') || 'FOOTER' }}
               </p>
               <p class="text-sm label-body">
-                {{ getTemplateFooter(template).text }}
+                {{ getTemplateFooter(templateGroup.primaryVariant).text }}
               </p>
             </div>
 
             <!-- Buttons -->
-            <div v-if="getTemplateButtons(template)" class="mt-3">
+            <div
+              v-if="getTemplateButtons(templateGroup.primaryVariant)"
+              class="mt-3"
+            >
               <p class="text-xs font-medium text-n-slate-11">
                 {{ t('WHATSAPP_TEMPLATES.PICKER.BUTTONS') || 'BUTTONS' }}
               </p>
               <div class="flex flex-wrap gap-1 mt-1">
                 <span
-                  v-for="button in getTemplateButtons(template).buttons"
+                  v-for="button in getTemplateButtons(
+                    templateGroup.primaryVariant
+                  ).buttons"
                   :key="button.text"
                   class="px-2 py-1 text-xs rounded bg-n-slate-3 text-n-slate-12"
                 >
@@ -182,24 +251,43 @@ const refreshTemplates = async () => {
               <p class="text-xs font-medium text-n-slate-11">
                 {{ t('WHATSAPP_TEMPLATES.PICKER.CATEGORY') || 'CATEGORY' }}
               </p>
-              <p class="text-sm">{{ template.category }}</p>
+              <p class="text-sm">{{ templateGroup.category }}</p>
             </div>
           </div>
         </button>
+        <div
+          v-if="
+            templateGroup.variants.length > 1 &&
+            expandedTemplateName === templateGroup.name
+          "
+          class="mt-2 flex flex-wrap gap-2 px-2.5 pb-2.5"
+        >
+          <button
+            v-for="variant in templateGroup.variants"
+            :key="`${templateGroup.name}-${variant.language}`"
+            type="button"
+            class="inline-flex items-center rounded-full border border-n-weak bg-n-alpha-black2 px-3 py-1.5 text-xs font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-2"
+            @click.stop="selectVariant(variant)"
+          >
+            {{
+              `${t('WHATSAPP_TEMPLATES.PICKER.LABELS.LANGUAGE')}: ${variant.language}`
+            }}
+          </button>
+        </div>
         <hr
-          v-if="i != filteredTemplateMessages.length - 1"
+          v-if="i != filteredTemplateGroups.length - 1"
           :key="`hr-${i}`"
           class="border-b border-solid border-n-weak my-2.5 mx-auto max-w-[95%]"
         />
       </div>
-      <div v-if="!filteredTemplateMessages.length" class="py-8 text-center">
-        <div v-if="query && whatsAppTemplateMessages.length">
+      <div v-if="!filteredTemplateGroups.length" class="py-8 text-center">
+        <div v-if="query && groupedTemplateMessages.length">
           <p>
             {{ t('WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_FOUND') }}
             <strong>{{ query }}</strong>
           </p>
         </div>
-        <div v-else-if="!whatsAppTemplateMessages.length" class="space-y-4">
+        <div v-else-if="!groupedTemplateMessages.length" class="space-y-4">
           <p class="text-n-slate-11">
             {{ t('WHATSAPP_TEMPLATES.PICKER.NO_TEMPLATES_AVAILABLE') }}
           </p>

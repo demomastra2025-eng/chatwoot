@@ -65,15 +65,15 @@ export function useEditableAutomation() {
    * @param {Array} automationActionTypes - List of available automation action types.
    * @returns {Array|Object} Generated actions array or object based on input type.
    */
-  const generateActionsArray = (action, automationActionTypes) => {
+  const generateActionsArray = (action, automation, automationActionTypes) => {
     const params = action.action_params;
     const inputType = automationActionTypes.find(
       item => item.key === action.action_name
     ).inputType;
     if (inputType === 'multi_select' || inputType === 'search_select') {
-      return [...getActionDropdownValues(action.action_name)].filter(item =>
-        [...params].includes(item.id)
-      );
+      return [
+        ...getActionDropdownValues(action.action_name, automation.event_name),
+      ].filter(item => [...params].includes(item.id));
     }
     if (inputType === 'team_message') {
       return {
@@ -82,6 +82,9 @@ export function useEditableAutomation() {
         ),
         message: params[0].message,
       };
+    }
+    if (inputType === 'touch') {
+      return params[0] || {};
     }
     return [...params];
   };
@@ -97,7 +100,7 @@ export function useEditableAutomation() {
     return automation.actions.map(action => ({
       ...action,
       action_params: action.action_params.length
-        ? generateActionsArray(action, automationActionTypes)
+        ? generateActionsArray(action, automation, automationActionTypes)
         : [],
     }));
   };

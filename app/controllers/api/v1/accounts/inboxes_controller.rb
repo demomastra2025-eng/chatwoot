@@ -5,6 +5,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :validate_limit, only: [:create]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
+  before_action :render_pending_deletion_response,
+                only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
+                       :disconnect_whatsapp_web, :repair_whatsapp_web]
+  before_action :render_pending_deletion_diagnostics,
+                only: [:whatsapp_web_diagnostics]
 
   include Api::V1::Accounts::Concerns::WhatsappHealthManagement
   before_action :validate_whatsapp_web_channel,
@@ -12,8 +17,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
                        :whatsapp_web_diagnostics]
 
   def index
-    scope = Current.account.inboxes.order_by_name
-    includes_associations = [:channel, { avatar_attachment: [:blob] }]
+    scope = Current.account.inboxes.active.order_by_name
+    includes_associations = [:channel, :portal, { avatar_attachment: [:blob] }]
     includes_associations << { captain_inbox: :captain_assistant } if Inbox.reflect_on_association(:captain_inbox)
 
     @inboxes = policy_scope(scope.includes(*includes_associations))
@@ -77,8 +82,17 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def destroy
-    ::DeleteObjectJob.perform_later(@inbox, Current.user, request.ip) if @inbox.present?
-    render status: :ok, json: { message: I18n.t('messages.inbox_deletetion_response') }
+    if @inbox.deleting?
+      render status: :accepted, json: { message: I18n.t('messages.inbox_deletetion_response') }
+      return
+    end
+
+    ActiveRecord::Base.transaction do
+      @inbox.mark_pending_deletion!
+      ::DeleteObjectJob.perform_later(@inbox, Current.user, request.ip)
+    end
+
+    render status: :accepted, json: { message: I18n.t('messages.inbox_deletetion_response') }
   end
 
   def refresh_whatsapp_web_qr
@@ -91,6 +105,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     end
   rescue StandardError => e
     log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
+    if truthy_param?(:status_only)
+      @inbox.channel.mark_failed!(e.message) if @inbox.channel.respond_to?(:mark_failed!)
+      render :show, status: :ok and return
+    end
+
     render json: { error: e.message }, status: :unprocessable_content
   end
 
@@ -143,7 +162,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def allowed_channel_types
-    %w[web_widget api email line telegram whatsapp whatsapp_web sms]
+    %w[web_widget api email line telegram telegram_personal whatsapp whatsapp_web sms vk_community]
   end
 
   def update_inbox_working_hours
@@ -246,9 +265,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'email' => Channel::Email,
       'line' => Channel::Line,
       'telegram' => Channel::Telegram,
+      'telegram_personal' => Channel::TelegramPersonal,
       'whatsapp' => Channel::Whatsapp,
       'whatsapp_web' => Channel::WhatsappWeb,
-      'sms' => Channel::Sms
+      'sms' => Channel::Sms,
+      'vk_community' => Channel::VkCommunity
     }[permitted_params[:channel][:type]]
   end
 
@@ -279,6 +300,18 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return if @inbox.whatsapp_web?
 
     render json: { error: 'This action is only available for WhatsApp Web channels' }, status: :bad_request
+  end
+
+  def render_pending_deletion_response
+    return unless @inbox.deleting?
+
+    render :show, status: :accepted
+  end
+
+  def render_pending_deletion_diagnostics
+    return unless @inbox.deleting?
+
+    render json: { deleting: true }, status: :accepted
   end
 
   def truthy_param?(key)

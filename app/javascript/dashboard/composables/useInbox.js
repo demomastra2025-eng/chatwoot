@@ -17,6 +17,8 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.TWITTER,
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
+    INBOX_TYPES.TELEGRAM_PERSONAL,
+    INBOX_TYPES.VK,
     INBOX_TYPES.TIKTOK,
     ...API_LIKE_INBOX_TYPES,
   ],
@@ -25,6 +27,8 @@ export const INBOX_FEATURE_MAP = {
     INBOX_TYPES.TWITTER,
     INBOX_TYPES.WHATSAPP,
     INBOX_TYPES.TELEGRAM,
+    INBOX_TYPES.TELEGRAM_PERSONAL,
+    INBOX_TYPES.VK,
     INBOX_TYPES.TIKTOK,
     ...API_LIKE_INBOX_TYPES,
   ],
@@ -77,6 +81,14 @@ export const useInbox = (inboxId = null) => {
 
   const isATelegramChannel = computed(() => {
     return channelType.value === INBOX_TYPES.TELEGRAM;
+  });
+
+  const isATelegramPersonalChannel = computed(() => {
+    return channelType.value === INBOX_TYPES.TELEGRAM_PERSONAL;
+  });
+
+  const isAVkCommunityChannel = computed(() => {
+    return channelType.value === INBOX_TYPES.VK;
   });
 
   const whatsAppAPIProvider = computed(() => {
@@ -149,8 +161,10 @@ export const useInbox = (inboxId = null) => {
     isAPIInbox,
     isASmsInbox,
     isATelegramChannel,
+    isATelegramPersonalChannel,
     isATwilioChannel,
     isAWebWidgetInbox,
+    isAVkCommunityChannel,
     isAWhatsAppChannel,
     isAMicrosoftInbox,
     isAGoogleInbox,

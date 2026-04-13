@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import CopilotEditorSection from 'dashboard/components/widgets/conversation/CopilotEditorSection.vue';
@@ -23,6 +24,7 @@ const modelValue = defineModel({
   default: '',
 });
 
+const isEmailInbox = computed(() => props.channelType === INBOX_TYPES.EMAIL);
 const isCopilotActive = computed(() => props.copilot?.isActive?.value ?? false);
 
 const executeCopilotAction = (action, data) => {
@@ -76,7 +78,7 @@ const executeCopilotAction = (action, data) => {
           enable-captain-tools
           :show-character-count="false"
           :signature="messageSignature"
-          allow-signature
+          :allow-signature="isEmailInbox"
           :send-with-signature="sendWithSignature"
           :channel-type="channelType"
           :medium="medium"

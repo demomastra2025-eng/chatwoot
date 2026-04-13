@@ -40,6 +40,13 @@ RSpec.describe 'Contacts API', type: :request do
       let!(:contact_inbox) { create(:contact_inbox, contact: contact) }
 
       it 'returns all resolved contacts along with contact inboxes' do
+        create(
+          :contact_channel_profile,
+          contact_inbox: contact_inbox,
+          display_name: 'Instagram Contact',
+          username: 'insta_user'
+        )
+
         get "/api/v1/accounts/#{account.id}/contacts",
             headers: admin.create_new_auth_token,
             as: :json
@@ -49,9 +56,17 @@ RSpec.describe 'Contacts API', type: :request do
         response_body = response.parsed_body
         contact_emails = response_body['payload'].pluck('email')
         contact_inboxes_source_ids = response_body['payload'].flat_map { |c| c['contact_inboxes'].pluck('source_id') }
+        serialized_contact = response_body['payload'].find { |payload| payload['id'] == contact.id }
 
         expect(contact_emails).to include(contact.email)
         expect(contact_inboxes_source_ids).to include(contact_inbox.source_id)
+        expect(serialized_contact['channel_profiles']).to include(
+          hash_including('display_name' => 'Instagram Contact', 'username' => 'insta_user')
+        )
+        expect(serialized_contact['contact_inboxes'].first['channel_profile']).to include(
+          'display_name' => 'Instagram Contact',
+          'username' => 'insta_user'
+        )
       end
 
       it 'returns all contacts without contact inboxes' do

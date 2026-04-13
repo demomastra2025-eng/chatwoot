@@ -14,6 +14,14 @@ RSpec.describe BulkActionsJob do
   let!(:conversation_1) { create(:conversation, account_id: account.id, status: :open) }
   let!(:conversation_2) { create(:conversation, account_id: account.id, status: :open) }
   let!(:conversation_3) { create(:conversation, account_id: account.id, status: :open) }
+  let!(:bulk_action_run) do
+    BulkActionRun.create!(
+      account: account,
+      user: agent,
+      resource_type: 'Conversation',
+      action_name: 'update_status'
+    )
+  end
 
   before do
     Conversation.all.find_each do |conversation|
@@ -80,6 +88,26 @@ RSpec.describe BulkActionsJob do
       expect(Conversation.first.snoozed_until).to be_present
       expect(Conversation.second.snoozed_until).to be_present
       expect(Conversation.third.snoozed_until).to be_present
+    end
+
+    it 'tracks progress and completion for the bulk action run' do
+      params = {
+        type: 'Conversation',
+        fields: { status: 'snoozed' },
+        ids: Conversation.first(3).pluck(:display_id)
+      }
+
+      described_class.perform_now(
+        account: account,
+        params: params,
+        user: agent,
+        bulk_action_run_id: bulk_action_run.id
+      )
+
+      expect(bulk_action_run.reload).to be_completed
+      expect(bulk_action_run.total_count).to eq(3)
+      expect(bulk_action_run.processed_count).to eq(3)
+      expect(bulk_action_run.failed_count).to eq(0)
     end
   end
 end

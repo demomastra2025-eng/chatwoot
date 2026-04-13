@@ -11,6 +11,7 @@
 #  channel_type                  :string
 #  csat_config                   :jsonb            not null
 #  csat_survey_enabled           :boolean          default(FALSE)
+#  deleting_at                   :datetime
 #  email_address                 :string
 #  enable_auto_assignment        :boolean          default(TRUE)
 #  enable_email_collect          :boolean          default(TRUE)
@@ -31,6 +32,7 @@
 # Indexes
 #
 #  index_inboxes_on_account_id                   (account_id)
+#  index_inboxes_on_account_id_and_deleting_at   (account_id,deleting_at)
 #  index_inboxes_on_channel_id_and_channel_type  (channel_id,channel_type)
 #  index_inboxes_on_portal_id                    (portal_id)
 #
@@ -47,6 +49,17 @@ class Inbox < ApplicationRecord
   include InboxAgentAvailability
 
   API_CHANNEL_TYPES = %w[Channel::Api].freeze
+  DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES = %w[
+    Channel::FacebookPage
+    Channel::Instagram
+    Channel::Line
+    Channel::Telegram
+    Channel::TelegramPersonal
+    Channel::Tiktok
+    Channel::VkCommunity
+    Channel::Whatsapp
+    Channel::WhatsappWeb
+  ].freeze
 
   # Not allowing characters:
   validates :name, presence: true
@@ -80,11 +93,13 @@ class Inbox < ApplicationRecord
 
   enum sender_name_type: { friendly: 0, professional: 1 }
 
+  before_validation :apply_single_conversation_default, on: :create
   after_destroy :delete_round_robin_agents
 
   after_create_commit :dispatch_create_event
   after_update_commit :dispatch_update_event
 
+  scope :active, -> { where(deleting_at: nil) }
   scope :order_by_name, -> { order('lower(name) ASC') }
 
   # Adds multiple members to the inbox
@@ -161,12 +176,25 @@ class Inbox < ApplicationRecord
     channel_type == 'Channel::Telegram'
   end
 
+  def telegram_personal?
+    channel_type == 'Channel::TelegramPersonal'
+  end
+
+  def vk_community?
+    channel_type == 'Channel::VkCommunity'
+  end
+
   def whatsapp?
     channel_type == 'Channel::Whatsapp'
   end
 
   def twilio_whatsapp?
     channel_type == 'Channel::TwilioSms' && channel.medium == 'whatsapp'
+  end
+
+  def lock_to_single_conversation=(value)
+    @lock_to_single_conversation_explicitly_set = true
+    super
   end
 
   def assignable_agents
@@ -176,6 +204,21 @@ class Inbox < ApplicationRecord
   def active_bot?
     agent_bot_inbox&.active? || hooks.where(app_id: %w[dialogflow],
                                             status: 'enabled').count.positive?
+  end
+
+  def deleting?
+    deleting_at.present?
+  end
+
+  def mark_pending_deletion!(timestamp: Time.current)
+    return self if deleting?
+
+    transaction do
+      update!(deleting_at: timestamp)
+      channel.mark_pending_deletion!(timestamp: timestamp) if (whatsapp_web? || telegram_personal?) && channel.respond_to?(:mark_pending_deletion!)
+    end
+
+    self
   end
 
   def inbox_type
@@ -203,8 +246,12 @@ class Inbox < ApplicationRecord
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/sms/#{channel.phone_number.delete_prefix('+')}"
     when 'Channel::Line'
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/line/#{channel.line_channel_id}"
+    when 'Channel::TelegramPersonal'
+      channel.callback_webhook_url
     when 'Channel::Whatsapp'
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/whatsapp/#{channel.phone_number}"
+    when 'Channel::VkCommunity'
+      channel.callback_webhook_url
     end
   end
 
@@ -244,6 +291,23 @@ class Inbox < ApplicationRecord
     return if ENV['ENABLE_INBOX_EVENTS'].blank?
 
     Rails.configuration.dispatcher.dispatch(INBOX_UPDATED, Time.zone.now, inbox: self, changed_attributes: previous_changes)
+  end
+
+  def apply_single_conversation_default
+    return if @lock_to_single_conversation_explicitly_set
+
+    self.lock_to_single_conversation = default_single_conversation_for_channel?
+  end
+
+  def default_single_conversation_for_channel?
+    return true if DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES.include?(resolved_channel_type)
+    return true if channel.is_a?(Channel::TwilioSms) && channel.whatsapp?
+
+    false
+  end
+
+  def resolved_channel_type
+    channel_type.presence || channel&.class&.name
   end
 
   def ensure_valid_max_assignment_limit

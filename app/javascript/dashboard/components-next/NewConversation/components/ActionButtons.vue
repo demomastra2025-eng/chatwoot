@@ -63,8 +63,13 @@ const {
   isEditorHotKeyEnabled,
 } = useUISettings();
 
+const isVoiceInbox = computed(() => props.channelType === INBOX_TYPES.VOICE);
+const isEmailInbox = computed(() => props.channelType === INBOX_TYPES.EMAIL);
+
 const sendWithSignature = computed(() => {
-  return fetchSignatureFlagFromUISettings(props.channelType);
+  return isEmailInbox.value
+    ? fetchSignatureFlagFromUISettings(props.channelType)
+    : false;
 });
 
 const showTwilioContentTemplates = computed(() => {
@@ -81,17 +86,15 @@ const isRegularMessageMode = computed(() => {
   return !props.isWhatsappInbox && !props.isTwilioWhatsAppInbox;
 });
 
-const isVoiceInbox = computed(() => props.channelType === INBOX_TYPES.VOICE);
-
 const shouldShowSignatureButton = computed(() => {
-  return (
-    props.hasSelectedInbox && isRegularMessageMode.value && !isVoiceInbox.value
-  );
+  return props.hasSelectedInbox && isEmailInbox.value && !isVoiceInbox.value;
 });
 
 const setSignature = () => {
   if (props.messageSignature) {
-    if (sendWithSignature.value) {
+    if (!isEmailInbox.value) {
+      emit('removeSignature', props.messageSignature);
+    } else if (sendWithSignature.value) {
       emit('addSignature', props.messageSignature);
     } else {
       emit('removeSignature', props.messageSignature);
@@ -107,10 +110,10 @@ const toggleMessageSignature = () => {
 // Only targetInbox has value and is Advance Editor(used by isEmailOrWebWidgetInbox)
 // Set the signature only if the inbox based flag is true
 watch(
-  () => props.hasSelectedInbox,
-  newValue => {
+  [() => props.hasSelectedInbox, isEmailInbox, sendWithSignature],
+  ([hasSelectedInbox]) => {
     nextTick(() => {
-      if (newValue && !isVoiceInbox.value) setSignature();
+      if (hasSelectedInbox && !isVoiceInbox.value) setSignature();
     });
   },
   { immediate: true }

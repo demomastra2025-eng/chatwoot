@@ -1,0 +1,63 @@
+suite: captain.tool_safety
+cases:
+  - id: arguments_blocked_by_blocklist
+    description: Tool arguments should be blocked by account safety blocklists before provider moderation.
+    tags: [tool_safety, arguments]
+    kind: arguments
+    feature: assistant
+    content:
+      lead_name: blocked lead
+    preferences:
+      assistant_safety_blocklist:
+        - blocked lead
+    expected:
+      status: blocked
+      reason: custom_blocklist
+      rule: blocked lead
+      blocked_message_includes:
+        - Tool arguments blocked
+
+  - id: results_blocked_by_blocklist
+    description: Tool result payloads should be blocked by safety blocklists.
+    tags: [tool_safety, results]
+    kind: results
+    feature: assistant
+    content: Customer payroll record
+    preferences:
+      assistant_safety_blocklist:
+        - payroll record
+    expected:
+      status: blocked
+      reason: custom_blocklist
+      rule: payroll record
+      blocked_message_includes:
+        - Tool result blocked
+
+  - id: provider_unavailable_fail_closed
+    description: Tool safety should surface unavailable moderation distinctly in fail_closed mode.
+    tags: [tool_safety, unavailable]
+    kind: results
+    feature: assistant
+    content: outbound tool payload
+    provider_mode: unavailable
+    preferences:
+      assistant_moderation: true
+      moderation_failure_mode: fail_closed
+    expected:
+      status: unavailable
+      reason: provider_not_configured
+      blocked_message_includes:
+        - safety policy is unavailable
+
+  - id: allowed_arguments
+    description: Allowed tool arguments should pass when moderation is available.
+    tags: [tool_safety, allowed]
+    kind: arguments
+    feature: assistant
+    content:
+      order_id: ORD-42
+    provider_mode: allowed
+    preferences:
+      assistant_moderation: true
+    expected:
+      status: allowed

@@ -14,6 +14,22 @@ RSpec.describe WhatsappWeb::IncomingEventService do
   describe '#perform' do
     let(:channel) { create(:channel_whatsapp_web) }
 
+    it 'ignores provider events while the inbox is deleting' do
+      channel.inbox.mark_pending_deletion!
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'qrcode.updated',
+          data: { qrcode: { base64: 'data:image/png;base64,abc', code: '123456' } }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.lifecycle_state).to eq('deleting')
+      expect(channel.qr_code).to eq({})
+    end
+
     it 'updates qrcode state on qrcode.updated' do
       freeze_time do
         described_class.new(
@@ -169,6 +185,61 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       ).perform
     end
 
+    it 'routes call events into the whatsapp web call service' do
+      service = instance_double(WhatsappWeb::CallEventService, perform: true)
+
+      expect(WhatsappWeb::CallEventService).to receive(:new).with(
+        channel: channel,
+        payload: hash_including(
+          id: 'call-1',
+          from: '15551234567@s.whatsapp.net',
+          status: 'offer'
+        )
+      ).and_return(service)
+      expect(service).to receive(:perform)
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'call',
+          data: {
+            id: 'call-1',
+            from: '15551234567@s.whatsapp.net',
+            status: 'offer'
+          }
+        }.with_indifferent_access
+      ).perform
+    end
+
+    it 'updates edited messages and marks them as edited' do
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content: 'Original text',
+        source_id: 'wa-edited-1'
+      )
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'messages.edited',
+          data: {
+            key: { id: 'wa-edited-1', remoteJid: '15551234567@s.whatsapp.net', fromMe: true },
+            editedMessage: {
+              conversation: 'Edited on device'
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(message.reload.content).to eq('Edited on device')
+      expect(message.content_attributes['edited']).to eq(true)
+    end
+
     it 'maps provider delivery updates onto existing messages' do
       message = create(
         :message,
@@ -248,6 +319,49 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       ).perform
 
       expect(message.reload.status).to eq('delivered')
+    end
+
+    it 'updates the conversation read state when an incoming message is read on the phone' do
+      initial_last_seen = 2.hours.ago.change(usec: 0)
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        agent_last_seen_at: initial_last_seen,
+        assignee_last_seen_at: initial_last_seen
+      )
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :incoming,
+        source_id: 'incoming-read-1',
+        created_at: 10.minutes.ago
+      )
+
+      expect(conversation).to receive(:dispatch_conversation_updated_event).with(
+        hash_including(
+          'agent_last_seen_at' => [initial_last_seen, message.created_at],
+          'assignee_last_seen_at' => [initial_last_seen, message.created_at]
+        )
+      ).and_call_original
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'messages.update',
+          data: {
+            keyId: 'incoming-read-1',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: false,
+            status: 'READ'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      expect(conversation.reload.agent_last_seen_at.to_i).to eq(message.created_at.to_i)
+      expect(conversation.assignee_last_seen_at.to_i).to eq(message.created_at.to_i)
     end
 
     it 'schedules a backfill when a self-sent status update arrives before the local message exists' do
@@ -355,6 +469,31 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('failed')
     end
 
+    it 'marks transient reconnects without downgrading the channel into a hard disconnect' do
+      channel.update!(
+        lifecycle_state: 'connected',
+        connection_state: 'open',
+        qr_code: { 'base64' => 'stale-qr-code' }
+      )
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          data: {
+            state: 'reconnecting',
+            statusReason: 408
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('reconnecting')
+      expect(channel.lifecycle_state).to eq('reconnecting')
+      expect(channel.qr_code).to eq({})
+      expect(channel.last_error).to eq('status reason: 408')
+    end
+
     it 'clears qr state when the runtime reports a terminal failure' do
       channel.update!(
         qr_code: { 'base64' => 'data:image/png;base64,abc' },
@@ -376,6 +515,57 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('failed')
       expect(channel.qr_code).to eq({})
       expect(channel.qr_generated_at).to be_nil
+    end
+
+    it 'treats logged out status.instance events as disconnected instead of failed' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          data: {
+            status: 'closed',
+            disconnectionReasonCode: 401
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+    end
+
+    it 'marks logout.instance events as disconnected and clears stale errors' do
+      channel.update!(last_error: 'Previous provider error')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'logout.instance',
+          data: nil
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.last_error).to be_nil
+    end
+
+    it 'marks remove.instance events as disconnected with an actionable repair hint' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'remove.instance',
+          data: nil
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.last_error).to eq(
+        'Evolution instance was removed. Run repair or reconnect to create a new session.'
+      )
     end
 
     it 'treats messages.set as a successful connection without starting an early history sync' do

@@ -1,6 +1,7 @@
 <script>
 import AutomationActionTeamMessageInput from './AutomationActionTeamMessageInput.vue';
 import AutomationActionFileInput from './AutomationFileInput.vue';
+import AutomationTouchInput from './AutomationTouchInput.vue';
 import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import SingleSelect from 'dashboard/components-next/filter/inputs/SingleSelect.vue';
@@ -11,6 +12,7 @@ export default {
   components: {
     AutomationActionTeamMessageInput,
     AutomationActionFileInput,
+    AutomationTouchInput,
     WootMessageEditor,
     NextButton,
     SingleSelect,
@@ -49,6 +51,10 @@ export default {
     dropdownMaxHeight: {
       type: String,
       default: 'max-h-80',
+    },
+    eventName: {
+      type: String,
+      default: '',
     },
   },
   emits: ['update:modelValue', 'input', 'removeAction', 'resetAction'],
@@ -93,7 +99,7 @@ export default {
       return this.actionTypes.map(a => ({ id: a.key, name: a.label }));
     },
     isVerticalLayout() {
-      return ['team_message', 'textarea'].includes(this.inputType);
+      return ['team_message', 'textarea', 'touch'].includes(this.inputType);
     },
     castMessageVmodel: {
       get() {
@@ -185,6 +191,11 @@ export default {
         v-model="action_params"
         :teams="dropdownValues"
         :dropdown-max-height="dropdownMaxHeight"
+      />
+      <AutomationTouchInput
+        v-if="inputType === 'touch'"
+        v-model="action_params"
+        :event-name="eventName"
       />
       <WootMessageEditor
         v-if="inputType === 'textarea'"

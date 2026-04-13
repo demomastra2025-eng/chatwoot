@@ -1,0 +1,49 @@
+suite: captain.conversation_completion
+prompt_id: conversation_completion
+cases:
+  - id: answered_question_then_thanks
+    description: Customer was answered and closed the interaction with thanks.
+    tags:
+      - complete
+      - customer_support
+    messages:
+      - role: user
+        content: What are your opening hours?
+      - role: assistant
+        content: We are open Monday to Friday from 9 AM to 5 PM.
+      - role: user
+        content: Perfect, thanks.
+    expected:
+      complete: true
+      reason_includes:
+        - answered
+
+  - id: awaiting_required_customer_input
+    description: Assistant is still waiting for information from the customer.
+    tags:
+      - incomplete
+      - crm
+    messages:
+      - role: user
+        content: Where is my order?
+      - role: assistant
+        content: I can help with that. Please share your order number.
+    expected:
+      complete: false
+      reason_includes:
+        - order number
+
+  - id: assistant_promised_follow_up
+    description: Assistant committed to another action, so the conversation should remain open.
+    tags:
+      - incomplete
+      - follow_up
+    messages:
+      - role: user
+        content: Can someone call me back tomorrow?
+      - role: assistant
+        content: Yes, I will ask our team to call you tomorrow morning.
+    expected:
+      complete: false
+      reason_includes:
+        - follow

@@ -18,6 +18,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showHeaderTopBorder: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const hasHeaderSlot = computed(() => !!props.headers.length);
@@ -29,7 +33,10 @@ const showHeaders = computed(
 <template>
   <div class="w-full">
     <table class="min-w-full table-auto divide-y divide-n-weak">
-      <thead v-if="showHeaders" class="border-t border-n-weak">
+      <thead
+        v-if="showHeaders"
+        :class="props.showHeaderTopBorder ? 'border-t border-n-weak' : ''"
+      >
         <tr>
           <th
             v-for="(header, index) in headers"

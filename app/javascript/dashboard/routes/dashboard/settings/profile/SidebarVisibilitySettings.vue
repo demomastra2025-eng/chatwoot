@@ -17,6 +17,7 @@ const { t } = useI18n();
 const { uiSettings, updateUISettings } = useUISettings();
 
 const visibilityDraft = ref({});
+const expandedSections = ref({});
 
 watch(
   uiSettings,
@@ -33,32 +34,27 @@ const draftHiddenItems = computed(() =>
   getSidebarHiddenItemsFromState(visibilityDraft.value)
 );
 
-const sidebarItemLabels = computed(() => ({
-  Inbox: t('SIDEBAR.INBOX'),
-  Conversation: t('SIDEBAR.CONVERSATIONS'),
-  Captain: t('SIDEBAR.CAPTAIN'),
-  Contacts: t('SIDEBAR.CONTACTS'),
-  Companies: t('SIDEBAR.COMPANIES'),
-  CRM: t('SIDEBAR.PIPELINES'),
-  'CRM Tasks': t('SIDEBAR.CRM_TASKS'),
-  Scheduling: t('SIDEBAR.SCHEDULING'),
-  Reports: t('SIDEBAR.REPORTS'),
-  Campaigns: t('SIDEBAR.CAMPAIGNS'),
-  Portals: t('SIDEBAR.HELP_CENTER.TITLE'),
-  Settings: t('SIDEBAR.SETTINGS'),
-}));
-
 const hasChanges = computed(
   () =>
     JSON.stringify(savedHiddenItems.value) !==
     JSON.stringify(draftHiddenItems.value)
 );
 
-const checkboxId = itemName =>
-  `sidebar-visibility-${itemName.toLowerCase().replace(/\s+/g, '-')}`;
+const checkboxId = itemKey =>
+  `sidebar-visibility-${itemKey.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-const sidebarItemLabel = itemName =>
-  sidebarItemLabels.value[itemName] || itemName;
+const sidebarItemLabel = item => (item.labelKey ? t(item.labelKey) : item.key);
+
+const isExpanded = item => expandedSections.value[item.key] === true;
+
+const toggleSection = item => {
+  if (!item.children?.length) return;
+
+  expandedSections.value = {
+    ...expandedSections.value,
+    [item.key]: !isExpanded(item),
+  };
+};
 
 const saveSidebarVisibility = () => {
   updateUISettings({
@@ -88,22 +84,63 @@ const saveSidebarVisibility = () => {
       </p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-      <label
+    <div class="grid grid-cols-1 gap-2 w-full">
+      <div
         v-for="item in SIDEBAR_VISIBILITY_ITEMS"
-        :key="item.name"
-        :for="checkboxId(item.name)"
-        class="flex gap-3 items-start p-3 rounded-xl border border-n-weak cursor-pointer transition-colors hover:bg-n-alpha-1"
+        :key="item.key"
+        class="rounded-xl border border-n-weak overflow-hidden"
       >
-        <Checkbox
-          :id="checkboxId(item.name)"
-          v-model="visibilityDraft[item.name]"
-          class="mt-0.5 shrink-0"
-        />
-        <span class="text-sm text-n-slate-12 leading-5">
-          {{ sidebarItemLabel(item.name) }}
-        </span>
-      </label>
+        <div
+          class="flex items-start gap-3 p-3 hover:bg-n-alpha-1 transition-colors"
+        >
+          <label
+            :for="checkboxId(item.key)"
+            class="flex flex-1 gap-3 items-start cursor-pointer"
+          >
+            <Checkbox
+              :id="checkboxId(item.key)"
+              v-model="visibilityDraft[item.key]"
+              class="mt-0.5 shrink-0"
+            />
+            <span class="text-sm text-n-slate-12 leading-5 font-medium">
+              {{ sidebarItemLabel(item) }}
+            </span>
+          </label>
+          <button
+            v-if="item.children?.length"
+            type="button"
+            class="flex items-center justify-center size-7 rounded-lg text-n-slate-11 hover:bg-n-alpha-2 transition-colors"
+            :aria-expanded="isExpanded(item)"
+            @click="toggleSection(item)"
+          >
+            <span
+              class="i-lucide-chevron-down size-4 transition-transform"
+              :class="{ 'rotate-180': isExpanded(item) }"
+            />
+          </button>
+        </div>
+        <div
+          v-show="item.children?.length"
+          class="border-t border-n-weak bg-n-alpha-1/40"
+          :class="{ hidden: !isExpanded(item) }"
+        >
+          <label
+            v-for="child in item.children"
+            :key="child.key"
+            :for="checkboxId(child.key)"
+            class="flex gap-3 items-start p-3 pl-8 cursor-pointer transition-colors hover:bg-n-alpha-1"
+          >
+            <Checkbox
+              :id="checkboxId(child.key)"
+              v-model="visibilityDraft[child.key]"
+              class="mt-0.5 shrink-0"
+            />
+            <span class="text-sm text-n-slate-11 leading-5">
+              {{ sidebarItemLabel(child) }}
+            </span>
+          </label>
+        </div>
+      </div>
     </div>
 
     <div class="flex justify-end w-full">

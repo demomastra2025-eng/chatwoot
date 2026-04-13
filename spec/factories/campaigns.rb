@@ -2,8 +2,10 @@
 
 FactoryBot.define do
   factory :campaign do
+    instructions { nil }
     sequence(:title) { |n| "Campaign #{n}" }
     sequence(:message) { |n| "Campaign message #{n}" }
+    text_mode { 'static' }
     after(:build) do |campaign|
       campaign.account ||= create(:account)
       campaign.inbox ||= create(

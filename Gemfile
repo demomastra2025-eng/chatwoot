@@ -194,6 +194,7 @@ gem 'iso-639'
 gem 'ruby-openai'
 gem 'ruby_llm', '~> 1.14.1'
 gem 'ruby_llm-schema'
+gem 'ruby_llm-mcp', git: 'https://github.com/patvice/ruby_llm-mcp', ref: '4d10851994029c7d7f3246ad517b2eef483ac810'
 
 gem 'cld3', '~> 3.7'
 

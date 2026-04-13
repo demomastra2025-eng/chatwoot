@@ -8,6 +8,8 @@ export const INBOX_TYPES = {
   API: 'Channel::Api',
   EMAIL: 'Channel::Email',
   TELEGRAM: 'Channel::Telegram',
+  TELEGRAM_PERSONAL: 'Channel::TelegramPersonal',
+  VK: 'Channel::VkCommunity',
   LINE: 'Channel::Line',
   SMS: 'Channel::Sms',
   INSTAGRAM: 'Channel::Instagram',
@@ -35,6 +37,8 @@ const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.API]: 'i-ri-cloudy-fill',
   [INBOX_TYPES.EMAIL]: 'i-ri-mail-fill',
   [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-fill',
+  [INBOX_TYPES.TELEGRAM_PERSONAL]: 'i-ri-telegram-fill',
+  [INBOX_TYPES.VK]: 'i-ri-vk-fill',
   [INBOX_TYPES.LINE]: 'i-ri-line-fill',
   [INBOX_TYPES.INSTAGRAM]: 'i-ri-instagram-fill',
   [INBOX_TYPES.TIKTOK]: 'i-ri-tiktok-fill',
@@ -52,6 +56,8 @@ const INBOX_ICON_MAP_LINE = {
   [INBOX_TYPES.API]: 'i-woot-api',
   [INBOX_TYPES.EMAIL]: 'i-woot-mail',
   [INBOX_TYPES.TELEGRAM]: 'i-woot-telegram',
+  [INBOX_TYPES.TELEGRAM_PERSONAL]: 'i-woot-telegram',
+  [INBOX_TYPES.VK]: 'i-ri-vk-line',
   [INBOX_TYPES.LINE]: 'i-woot-line',
   [INBOX_TYPES.INSTAGRAM]: 'i-woot-instagram',
   [INBOX_TYPES.VOICE]: 'i-woot-voice',
@@ -106,6 +112,12 @@ export const getReadableInboxByType = (type, phoneNumber) => {
     case INBOX_TYPES.TELEGRAM:
       return 'telegram';
 
+    case INBOX_TYPES.TELEGRAM_PERSONAL:
+      return 'telegram_personal';
+
+    case INBOX_TYPES.VK:
+      return 'vk_community';
+
     case INBOX_TYPES.LINE:
       return 'line';
 
@@ -144,7 +156,11 @@ export const getInboxClassByType = (type, phoneNumber) => {
       return 'mail';
 
     case INBOX_TYPES.TELEGRAM:
+    case INBOX_TYPES.TELEGRAM_PERSONAL:
       return 'brand-telegram';
+
+    case INBOX_TYPES.VK:
+      return 'brand-vk';
 
     case INBOX_TYPES.LINE:
       return 'brand-line';
@@ -170,7 +186,10 @@ export const getInboxIconByType = (type, medium, variant = 'fill') => {
     variant === 'fill' ? DEFAULT_ICON_FILL : DEFAULT_ICON_LINE;
 
   // Special case for Twilio (whatsapp and sms)
-  if (type === INBOX_TYPES.TWILIO && medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP) {
+  if (
+    type === INBOX_TYPES.TWILIO &&
+    medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP
+  ) {
     return withNeutralChannelColor(iconMap[INBOX_TYPES.WHATSAPP]);
   }
 

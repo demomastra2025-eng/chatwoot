@@ -16,6 +16,7 @@ import DocumentsIndex from './documents/Index.vue';
 import ResponsesIndex from './responses/Index.vue';
 import ResponsesPendingIndex from './responses/Pending.vue';
 import CustomToolsIndex from './tools/Index.vue';
+import ObservabilityIndex from './observability/Index.vue';
 
 const meta = {
   permissions: ['administrator', 'agent'],
@@ -141,6 +142,19 @@ const assistantRoutes = [
     name: 'captain_assistants_create_index',
     meta: {
       permissions: ['administrator', 'agent'],
+      installationTypes: [
+        INSTALLATION_TYPES.CLOUD,
+        INSTALLATION_TYPES.ENTERPRISE,
+      ],
+    },
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/observability'),
+    component: ObservabilityIndex,
+    name: 'captain_observability_index',
+    meta: {
+      permissions: ['administrator'],
+      featureFlag: FEATURE_FLAGS.CAPTAIN_V2,
       installationTypes: [
         INSTALLATION_TYPES.CLOUD,
         INSTALLATION_TYPES.ENTERPRISE,

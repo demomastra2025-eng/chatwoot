@@ -8,8 +8,12 @@ class Internal::AccountAnalysis::ContentEvaluatorService
   def evaluate(content)
     return default_evaluation if content.blank?
 
-    moderation_result = instrument_moderation_call(instrumentation_params(content)) do
-      Llm::ApiClient.moderate(content.to_s[0...10_000])
+    observability = instrumentation_params(content)
+    moderation_result = instrument_moderation_call(observability) do
+      Llm::ApiClient.moderate(
+        content.to_s[0...10_000],
+        observability: observability.merge(runtime_mode: 'content_evaluator')
+      )
     end
 
     build_evaluation(moderation_result)

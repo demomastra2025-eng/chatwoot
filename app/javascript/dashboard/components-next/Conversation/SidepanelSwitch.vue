@@ -3,58 +3,36 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { computed } from 'vue';
-import { CRM_DEAL_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import {
-  getUserPermissions,
-  hasPermissions,
-} from 'dashboard/helper/permissionsHelper';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 
 const { updateUISettings } = useUISettings();
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
-const currentUser = useMapGetter('getCurrentUser');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
-const userPermissions = computed(() =>
-  getUserPermissions(
-    { accounts: currentUser.value?.accounts || [] },
-    currentAccountId.value
-  )
-);
-
-const showCrmDealTab = computed(() => {
-  const crmDealsEnabled = isFeatureEnabledonAccount.value(
-    currentAccountId.value,
-    FEATURE_FLAGS.CRM_DEALS
-  );
-
-  return (
-    crmDealsEnabled &&
-    hasPermissions(
-      ['administrator', CRM_DEAL_MANAGE_PERMISSION],
-      userPermissions.value
-    )
-  );
-});
-
 const showCopilotTab = computed(() =>
   isFeatureEnabledonAccount.value(currentAccountId.value, FEATURE_FLAGS.CAPTAIN)
+);
+const showTouchAction = computed(() =>
+  isFeatureEnabledonAccount.value(
+    currentAccountId.value,
+    FEATURE_FLAGS.CAMPAIGNS
+  )
 );
 
 const { uiSettings } = useUISettings();
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open
 );
-const isCrmDealPanelOpen = computed(
-  () => uiSettings.value.is_crm_deal_panel_open
-);
 const isCopilotPanelOpen = computed(
   () => uiSettings.value.is_copilot_panel_open
+);
+const isTouchSidebarOpen = computed(
+  () => uiSettings.value.is_touch_sidebar_open
 );
 
 const toggleConversationSidebarToggle = () => {
@@ -62,6 +40,7 @@ const toggleConversationSidebarToggle = () => {
     is_contact_sidebar_open: !isContactSidebarOpen.value,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
+    is_touch_sidebar_open: false,
   });
 };
 
@@ -70,14 +49,7 @@ const handleConversationSidebarToggle = () => {
     is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: false,
-  });
-};
-
-const handleCrmDealSidebarToggle = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: true,
-    is_copilot_panel_open: false,
+    is_touch_sidebar_open: false,
   });
 };
 
@@ -86,6 +58,16 @@ const handleCopilotSidebarToggle = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_copilot_panel_open: true,
+    is_touch_sidebar_open: false,
+  });
+};
+
+const openTouchEditor = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_crm_deal_panel_open: false,
+    is_copilot_panel_open: false,
+    is_touch_sidebar_open: true,
   });
 };
 
@@ -114,18 +96,17 @@ useKeyboardEvents(keyboardEvents);
       @click="handleConversationSidebarToggle"
     />
     <Button
-      v-if="showCrmDealTab"
-      v-tooltip.bottom="$t('CONVERSATION.SIDEBAR.DEAL')"
+      v-if="showTouchAction"
+      v-tooltip.bottom="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
       ghost
       slate
       sm
       class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
       :class="{
-        'bg-n-alpha-2 active:!brightness-105 active:shadow-sm':
-          isCrmDealPanelOpen,
+        'bg-n-alpha-2 active:shadow-sm': isTouchSidebarOpen,
       }"
-      icon="i-lucide-briefcase-business"
-      @click="handleCrmDealSidebarToggle"
+      icon="i-lucide-timer-reset"
+      @click="openTouchEditor"
     />
     <Button
       v-if="showCopilotTab"

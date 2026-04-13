@@ -1,8 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 
 const props = defineProps({
+  icon: {
+    type: String,
+    default: '',
+  },
   options: {
     type: Array,
     required: true,
@@ -46,16 +51,28 @@ const handleSelect = value => {
     class="relative flex flex-col gap-1 w-fit"
   >
     <Button
-      icon="i-lucide-chevron-down"
       size="sm"
-      trailing-icon
       color="slate"
       variant="faded"
       class="!w-fit max-w-40"
       :class="{ 'dark:!bg-n-alpha-2 !bg-n-slate-9/20': isOpen }"
-      :label="labelValue"
       @click="toggleMenu"
-    />
+    >
+      <template #default>
+        <span class="flex min-w-0 items-center gap-2">
+          <Icon
+            v-if="icon"
+            :icon="icon"
+            class="size-4 shrink-0 text-n-slate-11"
+          />
+          <span class="min-w-0 truncate">{{ labelValue }}</span>
+          <Icon
+            icon="i-lucide-chevron-down"
+            class="size-4 shrink-0 text-n-slate-11"
+          />
+        </span>
+      </template>
+    </Button>
     <div
       v-if="isOpen"
       class="absolute select-none max-w-64 flex flex-col gap-1 bg-n-alpha-3 backdrop-blur-[100px] p-1 top-0 shadow-lg z-40 rounded-lg border border-n-weak dark:border-n-strong/50"

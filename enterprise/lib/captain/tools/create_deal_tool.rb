@@ -21,7 +21,7 @@ class Captain::Tools::CreateDealTool < Captain::Tools::BasePublicTool
 
     "Created deal #{deal.title} (ID: #{deal.id})"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

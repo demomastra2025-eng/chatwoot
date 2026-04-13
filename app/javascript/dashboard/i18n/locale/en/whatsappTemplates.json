@@ -8,6 +8,7 @@
     "PICKER": {
       "SEARCH_PLACEHOLDER": "Search Templates",
       "NO_TEMPLATES_FOUND": "No templates found for",
+      "SELECT_LANGUAGE": "Choose a language version before continuing.",
       "HEADER": "Header",
       "BODY": "Body",
       "FOOTER": "Footer",
@@ -26,6 +27,7 @@
       }
     },
     "PARSER": {
+      "HEADER_VARIABLES_LABEL": "Header Variables",
       "VARIABLES_LABEL": "Variables",
       "LANGUAGE": "Language",
       "CATEGORY": "Category",
@@ -55,6 +57,7 @@
       "PAGE_DESCRIPTION": "Create and manage WhatsApp Cloud templates for this channel. New templates are submitted to Meta for review and appear here as soon as the local cache updates.",
       "SUPPORTED_TITLE": "Supported template builder",
       "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, URL buttons, copy code buttons, and phone number buttons.",
+      "PARAMETERS_TITLE": "Parameters",
       "LAST_SYNC": "Last sync: {timestamp}",
       "NOT_SYNCED_YET": "Not synced yet",
       "SEARCH_PLACEHOLDER": "Search templates by name, status, language, or text",

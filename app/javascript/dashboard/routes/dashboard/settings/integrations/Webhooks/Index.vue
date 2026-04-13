@@ -116,7 +116,6 @@ export default {
         v-model:search-query="searchQuery"
         :title="integration.name"
         :description="replaceInstallationName(integration.description)"
-        :link-text="$t('INTEGRATION_SETTINGS.WEBHOOK.LEARN_MORE')"
         :search-placeholder="
           $t('INTEGRATION_SETTINGS.WEBHOOK.SEARCH_PLACEHOLDER')
         "

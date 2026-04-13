@@ -1,4 +1,8 @@
 class DeviseOverrides::TokenValidationsController < DeviseTokenAuth::TokenValidationsController
+  include ActiveAuthSessionEnforcer
+
+  before_action :ensure_active_auth_session!, only: [:validate_token]
+
   def validate_token
     # @resource will have been set by set_user_by_token concern
     if @resource
@@ -12,7 +16,7 @@ class DeviseOverrides::TokenValidationsController < DeviseTokenAuth::TokenValida
   private
 
   def preload_account_user_details(user)
-    includes = [:account]
+    includes = [{ account: { logo_attachment: :blob } }]
     includes << :custom_role if ChatwootApp.enterprise?
 
     user.class.includes(account_users: includes).find(user.id)

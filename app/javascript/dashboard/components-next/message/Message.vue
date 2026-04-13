@@ -11,6 +11,7 @@ import { LocalStorage } from 'shared/helpers/localStorage';
 import { ACCOUNT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
+import { useInbox } from 'dashboard/composables/useInbox';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import {
   MESSAGE_TYPES,
@@ -145,6 +146,11 @@ const { t } = useI18n();
 const route = useRoute();
 const inboxGetter = useMapGetter('inboxes/getInbox');
 const inbox = computed(() => inboxGetter.value(props.inboxId) || {});
+const {
+  isAWhatsAppWebChannel,
+  isATelegramChannel,
+  isATelegramPersonalChannel,
+} = useInbox(props.inboxId);
 const { replaceInstallationName } = useBranding();
 
 /**
@@ -285,6 +291,12 @@ const shouldShowAvatar = computed(() => {
   return true;
 });
 
+const isVoiceNote = computed(() => {
+  return !!(
+    props.contentAttributes?.voiceNote || props.contentAttributes?.voice_note
+  );
+});
+
 const componentToRender = computed(() => {
   if (props.isEmailInbox && !props.private) {
     const emailInboxTypes = [MESSAGE_TYPES.INCOMING, MESSAGE_TYPES.OUTGOING];
@@ -330,6 +342,13 @@ const componentToRender = computed(() => {
   if (Array.isArray(props.attachments) && props.attachments.length === 1) {
     const fileType = props.attachments[0].fileType;
 
+    if (
+      isVoiceNote.value &&
+      [ATTACHMENT_TYPES.AUDIO, ATTACHMENT_TYPES.FILE].includes(fileType)
+    ) {
+      return AudioBubble;
+    }
+
     if (!props.content) {
       if (fileType === ATTACHMENT_TYPES.IMAGE) return ImageBubble;
       if (fileType === ATTACHMENT_TYPES.FILE) return FileBubble;
@@ -370,18 +389,49 @@ const payloadForContextMenu = computed(() => {
 const contextMenuEnabledOptions = computed(() => {
   const hasText = !!props.content;
   const hasAttachments = !!(props.attachments && props.attachments.length > 0);
+  const firstAttachmentType = props.attachments?.[0]?.fileType;
+  const createdAt =
+    Number(props.createdAt) > 1000000000000
+      ? Math.floor(Number(props.createdAt) / 1000)
+      : Number(props.createdAt);
 
   const isOutgoing = props.messageType === MESSAGE_TYPES.OUTGOING;
   const isFailedOrProcessing =
     props.status === MESSAGE_STATUS.FAILED ||
     props.status === MESSAGE_STATUS.PROGRESS;
+  const isWithinEditWindow =
+    Math.floor(Date.now() / 1000) - createdAt <= 15 * 60;
+  const canEditOnTelegram =
+    isATelegramChannel.value || isATelegramPersonalChannel.value;
+  const isEditableAttachment =
+    !hasAttachments ||
+    (props.attachments.length === 1 &&
+      ['image', 'video'].includes(firstAttachmentType));
+  const canDeleteOnTelegramPersonal =
+    isATelegramPersonalChannel.value &&
+    isOutgoing &&
+    !!props.sourceId &&
+    !props.private;
 
   return {
-    copy: hasText,
-    delete:
-      (hasText || hasAttachments) &&
+    edit:
+      (isAWhatsAppWebChannel.value || canEditOnTelegram) &&
+      isOutgoing &&
+      hasText &&
+      !!props.sourceId &&
+      !props.private &&
       !isFailedOrProcessing &&
-      !isMessageDeleted.value,
+      !isMessageDeleted.value &&
+      (isAWhatsAppWebChannel.value ? isWithinEditWindow : true) &&
+      isEditableAttachment,
+    copy: hasText,
+    delete: isATelegramPersonalChannel.value
+      ? canDeleteOnTelegramPersonal &&
+        !isFailedOrProcessing &&
+        !isMessageDeleted.value
+      : (hasText || hasAttachments) &&
+        !isFailedOrProcessing &&
+        !isMessageDeleted.value,
     cannedResponse: isOutgoing && hasText && !isMessageDeleted.value,
     copyLink: !isFailedOrProcessing,
     translate: !isFailedOrProcessing && !isMessageDeleted.value && hasText,
@@ -442,6 +492,10 @@ function handleReplyTo() {
 
   LocalStorage.updateJsonStore(replyStorageKey, conversationId, replyTo);
   emitter.emit(BUS_EVENTS.TOGGLE_REPLY_TO_MESSAGE, props);
+}
+
+function handleEdit() {
+  emitter.emit(BUS_EVENTS.TOGGLE_EDIT_MESSAGE, props);
 }
 
 const avatarInfo = computed(() => {
@@ -587,6 +641,7 @@ provideMessageContext({
         hide-button
         @open="openContextMenu"
         @close="closeContextMenu"
+        @edit="handleEdit"
         @reply-to="handleReplyTo"
       />
     </div>

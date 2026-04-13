@@ -12,6 +12,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     amount_minor
     currency
     expected_close_on
+    position
     win_probability
     external_ref
     idempotency_key
@@ -28,6 +29,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     amount_minor
     currency
     expected_close_on
+    position
     win_probability
     external_ref
     idempotency_key
@@ -101,7 +103,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     deal = ::Crm::Deals::TransitionService.new(
       account: Current.account,
       deal: @deal,
-      params: params.permit(:stage_id, :lock_version),
+      params: params.permit(:stage_id, :position, :lock_version),
       actor: Current.user
     ).perform
 

@@ -6,7 +6,8 @@ class Crm::Tasks::StatusTransitionService < Crm::BaseWriteService
 
   def perform
     target_status = account.crm_task_statuses.find(params[:status_id])
-    return task if task.status_id == target_status.id
+    requested_position = resolve_requested_position
+    return task if task.status_id == target_status.id && requested_position.blank?
 
     ApplicationRecord.transaction do
       task.lock!
@@ -23,10 +24,23 @@ class Crm::Tasks::StatusTransitionService < Crm::BaseWriteService
 
   def transition_to_status!(target_status)
     from_status_id = task.status_id
+    requested_position = resolve_requested_position
 
     task.status = target_status
+    task.position = requested_position if requested_position.present?
     task.completed_at = target_status.category_done? ? Time.zone.now : nil
     task.save!
+
+    ::Crm::BoardPositioner.place!(
+      scope: account.crm_tasks.kept.where(status_id: target_status.id),
+      record: task,
+      target_position: requested_position
+    )
+    if from_status_id != target_status.id
+      ::Crm::BoardPositioner.normalize!(
+        scope: account.crm_tasks.kept.where(status_id: from_status_id)
+      )
+    end
 
     ::Crm::Events::Writer.record!(
       account: account,
@@ -61,5 +75,11 @@ class Crm::Tasks::StatusTransitionService < Crm::BaseWriteService
         missing_fields: inspector.missing_field_details
       }
     )
+  end
+
+  def resolve_requested_position
+    return unless params.key?(:position)
+
+    resolve_integer(:position, current: task.position, allow_nil: true)
   end
 end

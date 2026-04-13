@@ -13,7 +13,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
   let(:mock_agent) { instance_double(Captain::Runtime::Agent) }
   let(:mock_scenario_agent) { instance_double(Captain::Runtime::Agent) }
-  let(:mock_result) { instance_double(Captain::Runtime::Result, output: { 'response' => 'Test response' }, context: nil) }
+  let(:mock_result) do
+    instance_double(
+      Captain::Runtime::Result,
+      output: { 'response' => 'Test response' },
+      context: nil,
+      error: nil
+    )
+  end
 
   let(:message_history) do
     [
@@ -25,6 +32,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
   before do
     allow(Llm::Config).to receive(:initialize!)
+    allow(Llm::Config).to receive(:api_key).and_call_original
+    allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
+    allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
     allow(assistant).to receive(:agent).and_return(mock_agent)
     scenarios_relation = instance_double(Captain::Scenario)
     allow(scenarios_relation).to receive(:enabled).and_return([scenario])
@@ -32,6 +42,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
     allow(Captain::Runtime::Runner).to receive(:with_agents).and_return(mock_runner)
     allow(mock_runner).to receive(:run).and_return(mock_result)
+    Captain::Runtime::CallbackManager::EVENT_TYPES.each do |event_type|
+      allow(mock_runner).to receive(:"on_#{event_type}").and_return(mock_runner)
+    end
     allow(mock_agent).to receive(:register_handoffs)
     allow(mock_scenario_agent).to receive(:register_handoffs)
   end
@@ -94,7 +107,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             assistant_id: assistant.id,
             captain_runtime: hash_including(
               'assistant_thinking_effort' => 'none',
-              'assistant_moderation' => false
+              'assistant_moderation' => true
             ),
             conversation: hash_including(id: conversation.id),
             contact: hash_including(id: contact.id)
@@ -216,6 +229,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'returns a handoff response when fail-closed moderation is unavailable' do
+      account.update!(captain_runtime: { 'assistant_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
+      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to eq(
+        {
+          'response' => 'conversation_handoff',
+          'reasoning' => 'Agent input blocked because moderation policy is unavailable'
+        }
+      )
+    end
+
     it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do
       hook = create(:integrations_hook, account: account, app_id: 'openai', status: 'enabled', settings: { api_key: 'account-key' })
       allow(account.hooks).to receive(:find_by).with(app_id: 'openai', status: 'enabled').and_return(hook)
@@ -233,7 +260,14 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     context 'when agent result is a string' do
-      let(:mock_result) { instance_double(Captain::Runtime::Result, output: 'Simple string response', context: nil) }
+      let(:mock_result) do
+        instance_double(
+          Captain::Runtime::Result,
+          output: 'Simple string response',
+          context: nil,
+          error: nil
+        )
+      end
 
       it 'formats string response correctly' do
         result = service.generate_response(message_history: message_history)
@@ -262,8 +296,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         result = service.generate_response(message_history: message_history)
 
         expect(result).to eq({
-                               'response' => 'conversation_handoff',
-                               'reasoning' => 'Error occurred: Test error'
+                               'response' => described_class::PROVIDER_ERROR_RESPONSE,
+                               'reasoning' => 'Error occurred: Test error',
+                               'error_class' => 'StandardError',
+                               'error_message' => 'Test error'
                              })
       end
 
@@ -283,10 +319,37 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           result = service.generate_response(message_history: message_history)
 
           expect(result).to eq({
-                                 'response' => 'conversation_handoff',
-                                 'reasoning' => 'Error occurred: Test error'
+                                 'response' => described_class::PROVIDER_ERROR_RESPONSE,
+                                 'reasoning' => 'Error occurred: Test error',
+                                 'error_class' => 'StandardError',
+                                 'error_message' => 'Test error'
                                })
         end
+      end
+    end
+
+    context 'when the runner result contains a provider error' do
+      let(:provider_error) { RubyLLM::RateLimitError.new('Quota exceeded') }
+      let(:mock_result) do
+        instance_double(
+          Captain::Runtime::Result,
+          output: nil,
+          context: nil,
+          error: provider_error
+        )
+      end
+
+      it 'returns a provider error handoff response instead of a blank message' do
+        result = service.generate_response(message_history: message_history)
+
+        expect(result).to eq(
+          {
+            'response' => described_class::PROVIDER_ERROR_RESPONSE,
+            'reasoning' => 'Provider error occurred: Quota exceeded',
+            'error_class' => 'RubyLLM::RateLimitError',
+            'error_message' => 'Quota exceeded'
+          }
+        )
       end
     end
   end

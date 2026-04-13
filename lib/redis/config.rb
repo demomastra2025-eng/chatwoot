@@ -14,8 +14,8 @@ module Redis::Config
         url: ENV.fetch('REDIS_URL', 'redis://127.0.0.1:6379'),
         password: ENV.fetch('REDIS_PASSWORD', nil).presence,
         ssl_params: { verify_mode: Chatwoot.redis_ssl_verify_mode },
-        reconnect_attempts: 2,
-        timeout: 1
+        reconnect_attempts: ENV.fetch('REDIS_RECONNECT_ATTEMPTS', 2).to_i,
+        timeout: ENV.fetch('REDIS_TIMEOUT', 1).to_f
       }
     end
 

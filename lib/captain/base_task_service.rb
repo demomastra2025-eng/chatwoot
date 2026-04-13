@@ -1,3 +1,5 @@
+require 'securerandom'
+
 class Captain::BaseTaskService
   include Integrations::LlmInstrumentation
   include Captain::ToolInstrumentation
@@ -38,16 +40,26 @@ class Captain::BaseTaskService
     return { error: I18n.t('captain.disabled'), error_code: 403 } unless captain_tasks_enabled?
     return { error: I18n.t('captain.api_key_missing'), error_code: 401 } unless api_key_configured?
 
-    instrumentation_params = build_instrumentation_params(model, messages)
-    instrumentation_method = tools.any? ? :instrument_tool_session : :instrument_llm_call
+    Llm::EventBus.with_context(request_event_context(model)) do
+      blocked_response = moderate_task_input(messages)
+      return blocked_response if blocked_response
 
-    response = send(instrumentation_method, instrumentation_params) do
-      execute_ruby_llm_request(model: model, messages: messages, schema: schema, tools: tools)
+      instrumentation_params = build_instrumentation_params(model, messages)
+      instrumentation_method = tools.any? ? :instrument_tool_session : :instrument_llm_call
+
+      response = send(instrumentation_method, instrumentation_params) do
+        execute_ruby_llm_request(model: model, messages: messages, schema: schema, tools: tools)
+      end
+
+      return response if response[:error]
+
+      blocked_response = moderate_task_output(response[:message], messages)
+      return blocked_response if blocked_response
+
+      return response unless build_follow_up_context? && response[:message].present?
+
+      response.merge(follow_up_context: build_follow_up_context(messages, response))
     end
-
-    return response unless build_follow_up_context? && response[:message].present?
-
-    response.merge(follow_up_context: build_follow_up_context(messages, response))
   end
 
   def execute_ruby_llm_request(model:, messages:, schema: nil, tools: [])
@@ -57,7 +69,8 @@ class Captain::BaseTaskService
       messages: messages,
       schema: schema,
       tools: tools,
-      on_end_message: build_generation_callback(model, tools)
+      on_end_message: build_generation_callback(model, tools),
+      observability: chat_observability_payload(model)
     ).call
 
     return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
@@ -74,6 +87,29 @@ class Captain::BaseTaskService
     lambda do |chat, message|
       record_generation(chat, message, model)
     end
+  end
+
+  def chat_observability_payload(model)
+    {
+      feature: event_name,
+      runtime_mode: 'captain_task',
+      account_id: account.id,
+      conversation_record_id: conversation&.id,
+      conversation_display_id: conversation&.display_id,
+      session_id: task_session_id,
+      channel_type: conversation&.inbox&.channel_type,
+      model: model
+    }.compact
+  end
+
+  def request_event_context(model)
+    chat_observability_payload(model).merge(request_id: SecureRandom.uuid)
+  end
+
+  def task_session_id
+    return unless conversation_display_id.present?
+
+    "#{account.id}_#{conversation_display_id}"
   end
 
   def build_ruby_llm_response(response, messages)
@@ -99,6 +135,72 @@ class Captain::BaseTaskService
       temperature: nil,
       metadata: instrumentation_metadata
     }
+  end
+
+  def moderate_task_input(messages)
+    return unless task_moderation_stages.include?(:input)
+
+    input_content = task_input_content(messages)
+    return if input_content.blank?
+
+    Llm::SafetyPolicy.check!(
+      feature: safety_feature,
+      stage: :input,
+      content: input_content,
+      account: account,
+      preferences: task_moderation_preferences
+    )
+    nil
+  rescue Llm::SafetyPolicy::UnsafeContentError
+    blocked_task_response('Task input blocked by moderation policy', messages)
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_task_response('Task input blocked because moderation policy is unavailable', messages)
+  end
+
+  def moderate_task_output(content, messages)
+    return unless task_moderation_stages.include?(:output)
+    return if content.blank?
+
+    Llm::SafetyPolicy.check!(
+      feature: safety_feature,
+      stage: :output,
+      content: content,
+      account: account,
+      preferences: task_moderation_preferences
+    )
+    nil
+  rescue Llm::SafetyPolicy::UnsafeContentError
+    blocked_task_response('Task output blocked by moderation policy', messages)
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_task_response('Task output blocked because moderation policy is unavailable', messages)
+  end
+
+  def blocked_task_response(message, messages)
+    {
+      error: message,
+      error_code: 422,
+      request_messages: messages
+    }
+  end
+
+  def task_input_content(messages)
+    Array(messages).filter_map do |message|
+      payload = message.respond_to?(:with_indifferent_access) ? message.with_indifferent_access : message
+      payload[:content].presence if payload[:role].to_s == 'user'
+    end.join("\n\n").presence
+  end
+
+  def safety_feature
+    llm_feature_key.to_sym
+  end
+
+  def task_moderation_stages
+    []
+  end
+
+  def task_moderation_preferences
+    runtime_preferences = account.respond_to?(:captain_preferences) ? account.captain_preferences[:runtime].to_h.stringify_keys : {}
+    runtime_preferences.merge("#{safety_feature}_moderation" => true)
   end
 
   def instrumentation_metadata

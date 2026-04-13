@@ -16,7 +16,7 @@ class Captain::Tools::Copilot::CreateCompanyService < Captain::Tools::Copilot::B
     )
     formatted_record(company)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

@@ -1,5 +1,6 @@
 <script setup>
 import { h, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { provideSidebarContext, useSidebarResize } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
@@ -27,9 +28,14 @@ import Logo from 'next/icon/Logo.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import { filterSidebarMenuItems } from './sidebarVisibility';
 import {
+  isInboxPendingDeletion,
   isWhatsappWebInbox,
   WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL,
 } from 'dashboard/helper/whatsappWeb';
+import {
+  isTelegramPersonalInbox,
+  TELEGRAM_PERSONAL_SIDEBAR_STATUS_POLL_INTERVAL,
+} from 'dashboard/helper/telegramPersonal';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -46,6 +52,7 @@ const emit = defineEmits([
 ]);
 
 const { accountScopedRoute, isOnChatwootCloud } = useAccount();
+const route = useRoute();
 const { checkPermissions } = usePolicy();
 const store = useStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
@@ -90,6 +97,13 @@ const hasCrmTaskSettings = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
     FEATURE_FLAGS.CRM_TASKS
+  );
+});
+
+const hasSchedulingSettings = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.SCHEDULING
   );
 });
 
@@ -228,11 +242,61 @@ const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
 );
 
+const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
+const conversationStatusActiveOn = [
+  'home',
+  'inbox_dashboard',
+  'inbox_conversation',
+  'conversation_through_inbox',
+  'label_conversations',
+  'conversations_through_label',
+  'team_conversations',
+  'conversations_through_team',
+  'folder_conversations',
+  'conversations_through_folders',
+];
+const allChannelsActiveOn = [
+  'home',
+  'inbox_conversation',
+  'label_conversations',
+  'conversations_through_label',
+  'team_conversations',
+  'conversations_through_team',
+  'folder_conversations',
+  'conversations_through_folders',
+];
+const allLabelsActiveOn = [
+  'home',
+  'inbox_dashboard',
+  'inbox_conversation',
+  'conversation_through_inbox',
+  'team_conversations',
+  'conversations_through_team',
+  'folder_conversations',
+  'conversations_through_folders',
+];
+
+const currentConversationStatus = computed(() => {
+  const routeStatus = route.query.status;
+
+  return conversationStatuses.includes(routeStatus) ? routeStatus : 'open';
+});
+
+const withConversationStatus = (name, params = {}) =>
+  accountScopedRoute(name, params, { status: currentConversationStatus.value });
+
 const whatsappWebInboxes = computed(() => {
-  return sortedInboxes.value.filter(isWhatsappWebInbox);
+  return sortedInboxes.value.filter(
+    inbox => isWhatsappWebInbox(inbox) && !isInboxPendingDeletion(inbox)
+  );
+});
+
+const telegramPersonalInboxes = computed(() => {
+  return sortedInboxes.value.filter(inbox => isTelegramPersonalInbox(inbox));
 });
 
 let whatsappWebStatusPollingTimer = null;
+let telegramPersonalStatusPollingTimer = null;
 
 const stopWhatsappWebStatusPolling = () => {
   if (!whatsappWebStatusPollingTimer) {
@@ -241,6 +305,15 @@ const stopWhatsappWebStatusPolling = () => {
 
   window.clearInterval(whatsappWebStatusPollingTimer);
   whatsappWebStatusPollingTimer = null;
+};
+
+const stopTelegramPersonalStatusPolling = () => {
+  if (!telegramPersonalStatusPollingTimer) {
+    return;
+  }
+
+  window.clearInterval(telegramPersonalStatusPollingTimer);
+  telegramPersonalStatusPollingTimer = null;
 };
 
 const syncWhatsappWebStatuses = async () => {
@@ -266,6 +339,25 @@ const syncWhatsappWebStatuses = async () => {
   );
 };
 
+const syncTelegramPersonalStatuses = async () => {
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
+    return;
+  }
+
+  if (!telegramPersonalInboxes.value.length) {
+    return;
+  }
+
+  await Promise.allSettled(
+    telegramPersonalInboxes.value.map(inbox =>
+      store.dispatch('inboxes/getTelegramPersonalDiagnostics', inbox.id)
+    )
+  );
+};
+
 const startWhatsappWebStatusPolling = () => {
   if (
     whatsappWebStatusPollingTimer ||
@@ -280,14 +372,31 @@ const startWhatsappWebStatusPolling = () => {
   }, WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL);
 };
 
+const startTelegramPersonalStatusPolling = () => {
+  if (
+    telegramPersonalStatusPollingTimer ||
+    !telegramPersonalInboxes.value.length ||
+    (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+  ) {
+    return;
+  }
+
+  telegramPersonalStatusPollingTimer = window.setInterval(() => {
+    syncTelegramPersonalStatuses();
+  }, TELEGRAM_PERSONAL_SIDEBAR_STATUS_POLL_INTERVAL);
+};
+
 const handleDocumentVisibilityChange = () => {
   if (document.visibilityState === 'visible') {
     syncWhatsappWebStatuses();
     startWhatsappWebStatusPolling();
+    syncTelegramPersonalStatuses();
+    startTelegramPersonalStatusPolling();
     return;
   }
 
   stopWhatsappWebStatusPolling();
+  stopTelegramPersonalStatusPolling();
 };
 
 useEventListener(document, 'visibilitychange', handleDocumentVisibilityChange);
@@ -305,6 +414,19 @@ watch(
   }
 );
 
+watch(
+  () => telegramPersonalInboxes.value.map(inbox => inbox.id).join(':'),
+  inboxIds => {
+    if (!inboxIds) {
+      stopTelegramPersonalStatusPolling();
+      return;
+    }
+
+    syncTelegramPersonalStatuses();
+    startTelegramPersonalStatusPolling();
+  }
+);
+
 onMounted(async () => {
   await Promise.allSettled([
     store.dispatch('labels/get'),
@@ -318,10 +440,13 @@ onMounted(async () => {
 
   await syncWhatsappWebStatuses();
   startWhatsappWebStatusPolling();
+  await syncTelegramPersonalStatuses();
+  startTelegramPersonalStatusPolling();
 });
 
 onBeforeUnmount(() => {
   stopWhatsappWebStatusPolling();
+  stopTelegramPersonalStatusPolling();
 });
 
 const closeMobileSidebar = () => {
@@ -372,7 +497,7 @@ const menuItems = computed(() => {
       {
         name: 'Inbox',
         label: t('SIDEBAR.INBOX'),
-        icon: 'i-lucide-inbox',
+        icon: 'i-lucide-bell',
         to: accountScopedRoute('inbox_view'),
         activeOn: ['inbox_view', 'inbox_view_conversation'],
         getterKeys: {
@@ -383,59 +508,69 @@ const menuItems = computed(() => {
         name: 'Conversation',
         label: t('SIDEBAR.CONVERSATIONS'),
         icon: 'i-lucide-message-circle',
+        to: accountScopedRoute('home', {}, { status: 'open' }),
         children: [
           {
-            name: 'All',
-            label: t('SIDEBAR.ALL_CONVERSATIONS'),
-            activeOn: ['inbox_conversation'],
-            to: accountScopedRoute('home'),
+            name: 'Pending',
+            visibilityKey: 'Conversation:Pending',
+            label: t('SIDEBAR.PENDING_CONVERSATIONS'),
+            icon: 'i-woot-captain',
+            activeOn: conversationStatusActiveOn,
+            to: accountScopedRoute('home', {}, { status: 'pending' }),
           },
           {
-            name: 'Mentions',
-            label: t('SIDEBAR.MENTIONED_CONVERSATIONS'),
-            activeOn: ['conversation_through_mentions'],
-            to: accountScopedRoute('conversation_mentions'),
+            name: 'Open',
+            visibilityKey: 'Conversation:Open',
+            label: t('SIDEBAR.OPEN_CONVERSATIONS'),
+            icon: 'i-lucide-inbox',
+            activeOn: conversationStatusActiveOn,
+            to: accountScopedRoute('home', {}, { status: 'open' }),
           },
           {
-            name: 'Unattended',
-            activeOn: ['conversation_through_unattended'],
-            label: t('SIDEBAR.UNATTENDED_CONVERSATIONS'),
-            to: accountScopedRoute('conversation_unattended'),
+            name: 'Snoozed',
+            visibilityKey: 'Conversation:Snoozed',
+            icon: 'i-lucide-timer-reset',
+            activeOn: conversationStatusActiveOn,
+            label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
+            to: accountScopedRoute('home', {}, { status: 'snoozed' }),
+          },
+          {
+            name: 'Resolved',
+            visibilityKey: 'Conversation:Resolved',
+            icon: 'i-lucide-check-check',
+            activeOn: conversationStatusActiveOn,
+            label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
+            to: accountScopedRoute('home', {}, { status: 'resolved' }),
           },
           {
             name: 'Folders',
+            visibilityKey: 'Conversation:Folders',
             label: t('SIDEBAR.CUSTOM_VIEWS_FOLDER'),
             icon: 'i-lucide-folder',
             activeOn: ['conversations_through_folders'],
             children: conversationCustomViews.value.map(view => ({
               name: `${view.name}-${view.id}`,
               label: view.name,
-              to: accountScopedRoute('folder_conversations', { id: view.id }),
-            })),
-          },
-          {
-            name: 'Teams',
-            label: t('SIDEBAR.TEAMS'),
-            icon: 'i-lucide-users',
-            activeOn: ['conversations_through_team'],
-            children: teams.value.map(team => ({
-              name: `${team.name}-${team.id}`,
-              label: team.name,
-              to: accountScopedRoute('team_conversations', {
-                teamId: team.id,
+              to: withConversationStatus('folder_conversations', {
+                id: view.id,
               }),
             })),
           },
           {
             name: 'Channels',
+            visibilityKey: 'Conversation:Channels',
             label: t('SIDEBAR.CHANNELS'),
             icon: 'i-lucide-mailbox',
-            activeOn: ['conversation_through_inbox'],
+            to: withConversationStatus('home'),
+            activeOn: allChannelsActiveOn,
+            actionLabel: t('SIDEBAR.ALL'),
             children: sortedInboxes.value.map(inbox => ({
               name: `${inbox.name}-${inbox.id}`,
               label: inbox.name,
               icon: h(ChannelStatusIcon, { inbox, class: 'size-[16px]' }),
-              to: accountScopedRoute('inbox_dashboard', { inbox_id: inbox.id }),
+              to: withConversationStatus('inbox_dashboard', {
+                inbox_id: inbox.id,
+              }),
               component: leafProps =>
                 h(ChannelLeaf, {
                   label: leafProps.label,
@@ -445,10 +580,27 @@ const menuItems = computed(() => {
             })),
           },
           {
+            name: 'Teams',
+            visibilityKey: 'Conversation:Teams',
+            label: t('SIDEBAR.TEAMS'),
+            icon: 'i-lucide-users',
+            activeOn: ['conversations_through_team'],
+            children: teams.value.map(team => ({
+              name: `${team.name}-${team.id}`,
+              label: team.name,
+              to: withConversationStatus('team_conversations', {
+                teamId: team.id,
+              }),
+            })),
+          },
+          {
             name: 'Labels',
+            visibilityKey: 'Conversation:Labels',
             label: t('SIDEBAR.LABELS'),
             icon: 'i-lucide-tag',
-            activeOn: ['conversations_through_label'],
+            to: withConversationStatus('home'),
+            activeOn: allLabelsActiveOn,
+            actionLabel: t('SIDEBAR.ALL'),
             children: labels.value.map(label => ({
               name: `${label.title}-${label.id}`,
               label: label.title,
@@ -456,10 +608,35 @@ const menuItems = computed(() => {
                 class: `size-[8px] rounded-sm`,
                 style: { backgroundColor: label.color },
               }),
-              to: accountScopedRoute('label_conversations', {
+              to: withConversationStatus('label_conversations', {
                 label: label.title,
               }),
             })),
+          },
+        ],
+      },
+      {
+        name: 'Campaigns',
+        label: t('SIDEBAR.CAMPAIGNS'),
+        icon: 'i-lucide-megaphone',
+        children: [
+          {
+            name: 'Broadcasts',
+            visibilityKey: 'Campaigns:Broadcasts',
+            label: t('SIDEBAR.OUTBOUND'),
+            to: accountScopedRoute('outbound_broadcasts_index'),
+          },
+          {
+            name: 'Touch plans',
+            visibilityKey: 'Campaigns:TouchPlans',
+            label: t('SIDEBAR.TOUCH_PLANS'),
+            to: accountScopedRoute('outbound_touch_plans_index'),
+          },
+          {
+            name: 'Templates',
+            visibilityKey: 'Campaigns:Templates',
+            label: t('SIDEBAR.TEMPLATES'),
+            to: accountScopedRoute('outbound_templates_index'),
           },
         ],
       },
@@ -471,6 +648,7 @@ const menuItems = computed(() => {
         children: [
           {
             name: 'Settings',
+            visibilityKey: 'Captain:Settings',
             label: t('SIDEBAR.CAPTAIN_SETTINGS'),
             activeOn: ['captain_assistants_settings_index'],
             to: accountScopedRoute('captain_assistants_index', {
@@ -479,6 +657,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Prompts',
+            visibilityKey: 'Captain:Prompts',
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
             activeOn: [
               'captain_assistants_prompts_index',
@@ -490,6 +669,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Channels',
+            visibilityKey: 'Captain:Channels',
             label: t('SIDEBAR.CAPTAIN_CHANNELS'),
             activeOn: [
               'captain_assistants_channels_index',
@@ -501,6 +681,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Access',
+            visibilityKey: 'Captain:Access',
             label: t('SIDEBAR.CAPTAIN_ACCESS'),
             activeOn: ['captain_assistants_access_index'],
             to: accountScopedRoute('captain_assistants_index', {
@@ -509,6 +690,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Tools',
+            visibilityKey: 'Captain:Tools',
             label: t('SIDEBAR.CAPTAIN_TOOLS'),
             activeOn: ['captain_tools_index'],
             to: accountScopedRoute('captain_assistants_index', {
@@ -516,7 +698,15 @@ const menuItems = computed(() => {
             }),
           },
           {
+            name: 'Observability',
+            visibilityKey: 'Captain:Observability',
+            label: t('SIDEBAR.CAPTAIN_OBSERVABILITY'),
+            activeOn: ['captain_observability_index'],
+            to: accountScopedRoute('captain_observability_index'),
+          },
+          {
             name: 'FAQs',
+            visibilityKey: 'Captain:FAQs',
             label: t('SIDEBAR.CAPTAIN_RESPONSES'),
             activeOn: [
               'captain_assistants_responses_index',
@@ -528,6 +718,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Restrictions',
+            visibilityKey: 'Captain:Restrictions',
             label: t('SIDEBAR.CAPTAIN_RESTRICTIONS'),
             activeOn: [
               'captain_assistants_restrictions_index',
@@ -539,6 +730,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Documents',
+            visibilityKey: 'Captain:Documents',
             label: t('SIDEBAR.CAPTAIN_DOCUMENTS'),
             activeOn: ['captain_assistants_documents_index'],
             to: accountScopedRoute('captain_assistants_index', {
@@ -547,6 +739,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Playground',
+            visibilityKey: 'Captain:Playground',
             label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
             activeOn: ['captain_assistants_playground_index'],
             to: accountScopedRoute('captain_assistants_index', {
@@ -562,6 +755,7 @@ const menuItems = computed(() => {
         children: [
           {
             name: 'All Contacts',
+            visibilityKey: 'Contacts:All',
             label: t('SIDEBAR.ALL_CONTACTS'),
             to: accountScopedRoute(
               'contacts_dashboard_index',
@@ -572,12 +766,14 @@ const menuItems = computed(() => {
           },
           {
             name: 'Active',
+            visibilityKey: 'Contacts:Active',
             label: t('SIDEBAR.ACTIVE'),
             to: accountScopedRoute('contacts_dashboard_active'),
             activeOn: ['contacts_dashboard_active'],
           },
           {
             name: 'Segments',
+            visibilityKey: 'Contacts:Segments',
             icon: 'i-lucide-group',
             label: t('SIDEBAR.CUSTOM_VIEWS_SEGMENTS'),
             children: contactCustomViews.value.map(view => ({
@@ -596,6 +792,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Tagged With',
+            visibilityKey: 'Contacts:Tagged',
             icon: 'i-lucide-tag',
             label: t('SIDEBAR.TAGGED_WITH'),
             children: labels.value.map(label => ({
@@ -636,7 +833,7 @@ const menuItems = computed(() => {
       {
         name: 'CRM',
         label: t('SIDEBAR.PIPELINES'),
-        icon: 'i-lucide-briefcase-business',
+        icon: 'i-lucide-filter',
         to: accountScopedRoute('crm_deals_index'),
       },
       {
@@ -648,30 +845,35 @@ const menuItems = computed(() => {
       {
         name: 'Scheduling',
         label: t('SIDEBAR.SCHEDULING'),
-        icon: 'i-lucide-calendar-range',
+        icon: 'i-lucide-calendar-clock',
         children: [
           {
             name: 'Scheduling Calendar',
+            visibilityKey: 'Scheduling:Calendar',
             label: t('SIDEBAR.SCHEDULING_CALENDAR'),
             to: accountScopedRoute('scheduling_calendar'),
           },
           {
             name: 'Scheduling Resources',
+            visibilityKey: 'Scheduling:Resources',
             label: t('SIDEBAR.SCHEDULING_RESOURCES'),
             to: accountScopedRoute('scheduling_resources'),
           },
           {
             name: 'Scheduling Services',
+            visibilityKey: 'Scheduling:Services',
             label: t('SIDEBAR.SCHEDULING_SERVICES'),
             to: accountScopedRoute('scheduling_services'),
           },
           {
             name: 'Scheduling Exceptions',
+            visibilityKey: 'Scheduling:Exceptions',
             label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
             to: accountScopedRoute('scheduling_exceptions'),
           },
           {
             name: 'Scheduling Kassa',
+            visibilityKey: 'Scheduling:Kassa',
             label: t('SIDEBAR.SCHEDULING_KASSA'),
             to: accountScopedRoute('scheduling_kassa'),
           },
@@ -684,51 +886,42 @@ const menuItems = computed(() => {
         children: [
           {
             name: 'Report Overview',
+            visibilityKey: 'Reports:Overview',
             label: t('SIDEBAR.REPORTS_OVERVIEW'),
             to: accountScopedRoute('account_overview_reports'),
           },
           {
             name: 'Report Conversation',
+            visibilityKey: 'Reports:Conversation',
             label: t('SIDEBAR.REPORTS_CONVERSATION'),
             to: accountScopedRoute('conversation_reports'),
           },
-          ...reportRoutes.value,
+          ...reportRoutes.value.map(reportRoute => ({
+            ...reportRoute,
+            visibilityKey: {
+              'Reports Agent': 'Reports:Agent',
+              'Reports Label': 'Reports:Label',
+              'Reports Inbox': 'Reports:Inbox',
+              'Reports Team': 'Reports:Team',
+            }[reportRoute.name],
+          })),
           {
             name: 'Reports CSAT',
+            visibilityKey: 'Reports:CSAT',
             label: t('SIDEBAR.CSAT'),
             to: accountScopedRoute('csat_reports'),
           },
           {
             name: 'Reports SLA',
+            visibilityKey: 'Reports:SLA',
             label: t('SIDEBAR.REPORTS_SLA'),
             to: accountScopedRoute('sla_reports'),
           },
           {
             name: 'Reports Bot',
+            visibilityKey: 'Reports:Bot',
             label: t('SIDEBAR.REPORTS_BOT'),
             to: accountScopedRoute('bot_reports'),
-          },
-        ],
-      },
-      {
-        name: 'Campaigns',
-        label: t('SIDEBAR.CAMPAIGNS'),
-        icon: 'i-lucide-megaphone',
-        children: [
-          {
-            name: 'Live chat',
-            label: t('SIDEBAR.LIVE_CHAT'),
-            to: accountScopedRoute('campaigns_livechat_index'),
-          },
-          {
-            name: 'SMS',
-            label: t('SIDEBAR.SMS'),
-            to: accountScopedRoute('campaigns_sms_index'),
-          },
-          {
-            name: 'WhatsApp',
-            label: t('SIDEBAR.WHATSAPP'),
-            to: accountScopedRoute('campaigns_whatsapp_index'),
           },
         ],
       },
@@ -739,6 +932,7 @@ const menuItems = computed(() => {
         children: [
           {
             name: 'Articles',
+            visibilityKey: 'Portals:Articles',
             label: t('SIDEBAR.HELP_CENTER.ARTICLES'),
             activeOn: [
               'portals_articles_index',
@@ -751,6 +945,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Categories',
+            visibilityKey: 'Portals:Categories',
             label: t('SIDEBAR.HELP_CENTER.CATEGORIES'),
             activeOn: [
               'portals_categories_index',
@@ -763,6 +958,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Locales',
+            visibilityKey: 'Portals:Locales',
             label: t('SIDEBAR.HELP_CENTER.LOCALES'),
             activeOn: ['portals_locales_index'],
             to: accountScopedRoute('portals_index', {
@@ -771,6 +967,7 @@ const menuItems = computed(() => {
           },
           {
             name: 'Settings',
+            visibilityKey: 'Portals:Settings',
             label: t('SIDEBAR.HELP_CENTER.SETTINGS'),
             activeOn: ['portals_settings_index'],
             to: accountScopedRoute('portals_index', {
@@ -786,24 +983,55 @@ const menuItems = computed(() => {
         children: [
           {
             name: 'Settings Account Settings',
+            visibilityKey: 'Settings:Workspace',
             label: t('SIDEBAR.ACCOUNT_SETTINGS'),
             icon: 'i-lucide-briefcase',
             to: accountScopedRoute('general_settings_index'),
           },
+          ...(hasSchedulingSettings.value
+            ? [
+                {
+                  name: 'Settings Scheduling',
+                  visibilityKey: 'Settings:Scheduling',
+                  label: t('SIDEBAR.SCHEDULING'),
+                  icon: 'i-lucide-calendar-clock',
+                  activeOn: ['scheduling_settings_index'],
+                  to: accountScopedRoute('scheduling_settings_index'),
+                },
+              ]
+            : []),
           {
             name: 'Settings Captain',
+            visibilityKey: 'Settings:Captain',
             label: t('SIDEBAR.CAPTAIN_AI'),
             icon: 'i-woot-captain',
             to: accountScopedRoute('captain_settings_index'),
           },
           {
             name: 'Settings Agents',
+            visibilityKey: 'Settings:Agents',
             label: t('SIDEBAR.AGENTS'),
             icon: 'i-lucide-square-user',
             to: accountScopedRoute('agent_list'),
           },
           {
+            name: 'Settings Inboxes',
+            visibilityKey: 'Settings:Inboxes',
+            label: t('SIDEBAR.INBOXES'),
+            icon: 'i-lucide-inbox',
+            activeOn: [
+              'settings_inbox_list',
+              'settings_inbox_show',
+              'settings_inbox_new',
+              'settings_inbox_finish',
+              'settings_inboxes_page_channel',
+              'settings_inboxes_add_agents',
+            ],
+            to: accountScopedRoute('settings_inbox_list'),
+          },
+          {
             name: 'Settings Teams',
+            visibilityKey: 'Settings:Teams',
             label: t('SIDEBAR.TEAMS'),
             icon: 'i-lucide-users',
             activeOn: [
@@ -822,6 +1050,7 @@ const menuItems = computed(() => {
             ? [
                 {
                   name: 'Settings Agent Assignment',
+                  visibilityKey: 'Settings:AgentAssignment',
                   label: t('SIDEBAR.AGENT_ASSIGNMENT'),
                   icon: 'i-lucide-user-cog',
                   activeOn: [
@@ -837,26 +1066,13 @@ const menuItems = computed(() => {
                 },
               ]
             : []),
-          {
-            name: 'Settings Inboxes',
-            label: t('SIDEBAR.INBOXES'),
-            icon: 'i-lucide-inbox',
-            activeOn: [
-              'settings_inbox_list',
-              'settings_inbox_show',
-              'settings_inbox_new',
-              'settings_inbox_finish',
-              'settings_inboxes_page_channel',
-              'settings_inboxes_add_agents',
-            ],
-            to: accountScopedRoute('settings_inbox_list'),
-          },
           ...(hasCrmDealSettings.value
             ? [
                 {
                   name: 'Settings CRM',
+                  visibilityKey: 'Settings:CRM',
                   label: t('SIDEBAR.CRM'),
-                  icon: 'i-lucide-briefcase-business',
+                  icon: 'i-lucide-filter',
                   activeOn: ['crm_settings_index'],
                   to: accountScopedRoute('crm_settings_index'),
                 },
@@ -866,6 +1082,7 @@ const menuItems = computed(() => {
             ? [
                 {
                   name: 'Settings CRM Tasks',
+                  visibilityKey: 'Settings:CRMTasks',
                   label: t('SIDEBAR.CRM_TASK_SETTINGS'),
                   icon: 'i-lucide-list-todo',
                   activeOn: ['crm_task_settings_index'],
@@ -875,6 +1092,7 @@ const menuItems = computed(() => {
             : []),
           {
             name: 'Settings Labels',
+            visibilityKey: 'Settings:Labels',
             label: t('SIDEBAR.LABELS'),
             icon: 'i-lucide-tags',
             to: accountScopedRoute('labels_list'),
@@ -883,6 +1101,7 @@ const menuItems = computed(() => {
             ? [
                 {
                   name: 'Settings Custom Attributes',
+                  visibilityKey: 'Settings:CustomAttributes',
                   label: t('SIDEBAR.CUSTOM_ATTRIBUTES'),
                   icon: 'i-lucide-code',
                   to: accountScopedRoute('attributes_list'),
@@ -891,66 +1110,63 @@ const menuItems = computed(() => {
             : []),
           {
             name: 'Settings Automation',
+            visibilityKey: 'Settings:Automation',
             label: t('SIDEBAR.AUTOMATION'),
             icon: 'i-lucide-repeat',
             to: accountScopedRoute('automation_list'),
           },
           {
             name: 'Settings Agent Bots',
+            visibilityKey: 'Settings:AgentBots',
             label: t('SIDEBAR.AGENT_BOTS'),
             icon: 'i-lucide-bot',
             to: accountScopedRoute('agent_bots'),
           },
           {
             name: 'Settings Macros',
+            visibilityKey: 'Settings:Macros',
             label: t('SIDEBAR.MACROS'),
             icon: 'i-lucide-toy-brick',
             to: accountScopedRoute('macros_wrapper'),
           },
           {
-            name: 'Settings Canned Responses',
-            label: t('SIDEBAR.CANNED_RESPONSES'),
-            icon: 'i-lucide-message-square-quote',
-            to: accountScopedRoute('canned_list'),
-          },
-          {
             name: 'Settings Integrations',
+            visibilityKey: 'Settings:Integrations',
             label: t('SIDEBAR.INTEGRATIONS'),
             icon: 'i-lucide-blocks',
             to: accountScopedRoute('settings_applications'),
           },
           {
             name: 'Settings Audit Logs',
+            visibilityKey: 'Settings:AuditLogs',
             label: t('SIDEBAR.AUDIT_LOGS'),
             icon: 'i-lucide-briefcase',
             to: accountScopedRoute('auditlogs_list'),
           },
           {
             name: 'Settings Custom Roles',
+            visibilityKey: 'Settings:CustomRoles',
             label: t('SIDEBAR.CUSTOM_ROLES'),
             icon: 'i-lucide-shield-plus',
             to: accountScopedRoute('custom_roles_list'),
           },
           {
             name: 'Settings Sla',
+            visibilityKey: 'Settings:Sla',
             label: t('SIDEBAR.SLA'),
             icon: 'i-lucide-clock-alert',
             to: accountScopedRoute('sla_list'),
           },
           {
             name: 'Conversation Workflow',
+            visibilityKey: 'Settings:ConversationWorkflow',
             label: t('SIDEBAR.CONVERSATION_WORKFLOW'),
             icon: 'i-lucide-workflow',
             to: accountScopedRoute('conversation_workflow_index'),
           },
           {
-            name: 'Settings Security',
-            label: t('SIDEBAR.SECURITY'),
-            icon: 'i-lucide-shield',
-            to: accountScopedRoute('security_settings_index'),
-          },
-          {
             name: 'Settings Billing',
+            visibilityKey: 'Settings:Billing',
             label: t('SIDEBAR.BILLING'),
             icon: 'i-lucide-credit-card',
             to: accountScopedRoute('billing_settings_index'),

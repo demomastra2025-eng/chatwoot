@@ -169,6 +169,35 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
+    context 'when provider error handoff is requested' do
+      before do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+            'reasoning' => 'Provider error occurred: Quota exceeded',
+            'error_class' => 'RubyLLM::RateLimitError',
+            'error_message' => 'Quota exceeded'
+          }
+        )
+      end
+
+      it 'opens the conversation without sending a public handoff message' do
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+
+        expect(conversation.reload.status).to eq('open')
+      end
+
+      it 'creates a private note for agents with the provider error reason' do
+        described_class.perform_now(conversation, assistant)
+
+        private_note = conversation.reload.messages.where(private: true).last
+        expect(private_note.content).to eq('AI runtime fallback: RubyLLM::RateLimitError: Quota exceeded')
+        expect(private_note.sender).to eq(assistant)
+      end
+    end
+
     context 'when message contains an image' do
       let!(:message_with_image) do
         create(
@@ -296,6 +325,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
 
         expect(conversation.reload.status).to eq('open')
+      end
+
+      it 'creates a private note instead of a public handoff message' do
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+
+        private_note = conversation.reload.messages.where(private: true).last
+        expect(private_note.content).to eq('AI runtime fallback: StandardError: Generic error')
       end
 
       it 'ensures Current.executed_by is reset' do

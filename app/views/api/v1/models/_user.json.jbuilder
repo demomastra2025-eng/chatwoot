@@ -20,6 +20,7 @@ json.type resource.type
 json.accounts do
   json.array! resource.account_users do |account_user|
     json.id account_user.account_id
+    json.logo_url account_user.account.logo_url
     json.name account_user.account.name
     json.status account_user.account.status
     json.active_at account_user.active_at

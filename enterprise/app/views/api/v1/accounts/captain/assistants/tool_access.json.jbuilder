@@ -7,8 +7,10 @@ json.array! @tools do |tool|
   json.icon tool[:icon]
   json.selected tool[:selected]
   json.custom tool[:custom]
+  json.provider tool[:provider]
   json.risk_level tool[:risk_level]
   json.requires_confirmation tool[:requires_confirmation]
+  json.agent_high_risk tool[:agent_high_risk]
   json.required_features tool[:required_features]
   json.required_permissions tool[:required_permissions]
 end

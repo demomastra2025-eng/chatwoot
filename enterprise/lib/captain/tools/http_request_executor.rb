@@ -1,6 +1,14 @@
 class Captain::Tools::HttpRequestExecutor
   class MissingRequiredParametersError < StandardError; end
   class ToolConfigurationError < StandardError; end
+  class HttpRequestFailedError < StandardError
+    attr_reader :status
+
+    def initialize(status)
+      @status = status.to_i
+      super("HTTP request failed with status #{@status}")
+    end
+  end
 
   PRIVATE_IP_RANGES = [
     IPAddr.new('127.0.0.0/8'),
@@ -13,11 +21,15 @@ class Captain::Tools::HttpRequestExecutor
     IPAddr.new('fe80::/10')
   ].freeze
   MAX_RESPONSE_SIZE = 1.megabyte
+  RETRYABLE_HTTP_STATUSES = [408, 425, 429, 500, 502, 503, 504].freeze
 
-  def initialize(assistant:, custom_tool:, state: {})
+  def initialize(assistant:, custom_tool:, state: {}, feature: nil, preferences: nil, enforce_safety: false)
     @assistant = assistant
     @custom_tool = custom_tool
     @state = state || {}
+    @feature = feature
+    @preferences = preferences
+    @enforce_safety = enforce_safety
   end
 
   def call(params = {})
@@ -26,13 +38,27 @@ class Captain::Tools::HttpRequestExecutor
     @custom_tool.format_response(response.body)
   rescue MissingRequiredParametersError => e
     Rails.logger.warn("HttpTool missing parameters for #{@custom_tool.slug}: #{e.message}")
-    e.message
+    Captain::ToolResult.failure_output(error: e.message, audit: failure_audit(request_preview, failure_stage: 'validation'))
   rescue ToolConfigurationError => e
     Rails.logger.error("HttpTool configuration error for #{@custom_tool.slug}: #{e.message}")
-    'The tool could not run because it is misconfigured'
+    Captain::ToolResult.failure_output(
+      error: 'The tool could not run because it is misconfigured',
+      audit: failure_audit(request_preview, failure_stage: 'configuration', exception_class: e.class.name)
+    )
+  rescue HttpRequestFailedError => e
+    Rails.logger.error("HttpTool HTTP error for #{@custom_tool.slug}: #{e.message}")
+    Captain::ToolResult.failure_output(
+      error: e.message,
+      retryable: retryable_http_status?(e.status),
+      audit: failure_audit(request_preview, failure_stage: 'http', http_status: e.status)
+    )
   rescue StandardError => e
     Rails.logger.error("HttpTool execution error for #{@custom_tool.slug}: #{e.class} - #{e.message}")
-    'An error occurred while executing the request'
+    Captain::ToolResult.failure_output(
+      error: 'An error occurred while executing the request',
+      retryable: retryable_exception?(e),
+      audit: failure_audit(request_preview, failure_stage: 'runtime', exception_class: e.class.name)
+    )
   end
 
   def preview(params = {})
@@ -41,19 +67,31 @@ class Captain::Tools::HttpRequestExecutor
 
   def execute_with_details(params = {}, raise_on_http_error: false)
     request_preview = build_request_preview(params)
+    argument_error = preview_safety_error_for(:tool_arguments, request_preview[:resolved_params])
+    return blocked_details_response(request_preview, argument_error) if argument_error
+
     response = execute_http_request(
       request_preview[:url],
       request_preview[:body],
       raise_on_http_error: raise_on_http_error
     )
+    formatted_body = @custom_tool.format_response(response.body)
+    result_error = preview_safety_error_for(:tool_results, formatted_body)
+    return blocked_details_response(request_preview, result_error, response: response) if result_error
+
+    tool_result = Captain::ToolResult.normalize(
+      formatted_body,
+      audit: success_audit(request_preview, response)
+    )
 
     {
       preview: request_preview,
+      tool_result: tool_result,
       response: {
         successful: response.is_a?(Net::HTTPSuccess),
         status: response.code.to_i,
         body: response.body,
-        formatted_body: @custom_tool.format_response(response.body),
+        formatted_body: formatted_body,
         headers: normalize_response_headers(response.to_hash)
       }
     }
@@ -208,7 +246,7 @@ class Captain::Tools::HttpRequestExecutor
 
     response = http.request(request)
     validate_response!(response)
-    raise "HTTP request failed with status #{response.code}" if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
+    raise HttpRequestFailedError, response.code if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
 
     response
   end
@@ -276,5 +314,109 @@ class Captain::Tools::HttpRequestExecutor
     headers.to_h.transform_values do |value|
       value.is_a?(Array) && value.one? ? value.first : value
     end
+  end
+
+  def preview_safety_error_for(stage, content)
+    return unless @enforce_safety
+    return if @feature.blank?
+
+    case stage
+    when :tool_arguments
+      Captain::ToolSafety.check_arguments!(
+        feature: @feature,
+        arguments: content,
+        account: @assistant.account,
+        preferences: @preferences
+      )
+    when :tool_results
+      Captain::ToolSafety.check_result!(
+        feature: @feature,
+        result: content,
+        account: @assistant.account,
+        preferences: @preferences
+      )
+    end
+
+    nil
+  rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError => e
+    e
+  end
+
+  def blocked_details_response(request_preview, error, response: nil)
+    blocked_message = Captain::ToolSafety.blocked_message(stage: error.stage, error: error)
+
+    {
+      preview: request_preview,
+      tool_result: Captain::ToolResult.failure(
+        error: blocked_message,
+        retryable: false,
+        audit: failure_audit(
+          request_preview,
+          failure_stage: error.stage,
+          failure_reason: error.reason,
+          http_status: response&.code&.to_i
+        )
+      ),
+      response: {
+        successful: false,
+        blocked: true,
+        stage: error.stage,
+        reason: error.reason,
+        status: response&.code&.to_i,
+        body: nil,
+        formatted_body: blocked_message,
+        headers: response ? normalize_response_headers(response.to_hash) : {}
+      }.compact
+    }
+  end
+
+  def success_audit(request_preview, response)
+    {
+      custom_tool_slug: @custom_tool.slug,
+      http_method: @custom_tool.http_method,
+      endpoint_host: URI.parse(request_preview[:url]).host,
+      http_status: response.code.to_i
+    }
+  rescue StandardError
+    {
+      custom_tool_slug: @custom_tool.slug,
+      http_method: @custom_tool.http_method,
+      http_status: response&.code&.to_i
+    }.compact
+  end
+
+  def failure_audit(request_preview, failure_stage:, exception_class: nil, failure_reason: nil, http_status: nil)
+    {
+      custom_tool_slug: @custom_tool.slug,
+      http_method: @custom_tool.http_method,
+      endpoint_host: request_preview.present? ? URI.parse(request_preview[:url]).host : nil,
+      failure_stage: failure_stage,
+      failure_reason: failure_reason,
+      exception_class: exception_class,
+      http_status: http_status
+    }.compact
+  rescue StandardError
+    {
+      custom_tool_slug: @custom_tool.slug,
+      http_method: @custom_tool.http_method,
+      failure_stage: failure_stage,
+      failure_reason: failure_reason,
+      exception_class: exception_class,
+      http_status: http_status
+    }.compact
+  end
+
+  def retryable_http_status?(status)
+    RETRYABLE_HTTP_STATUSES.include?(status.to_i)
+  end
+
+  def retryable_exception?(error)
+    [
+      Net::OpenTimeout,
+      Net::ReadTimeout,
+      Timeout::Error,
+      Errno::ECONNRESET,
+      EOFError
+    ].any? { |klass| error.is_a?(klass) }
   end
 end

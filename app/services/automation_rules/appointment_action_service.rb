@@ -33,16 +33,26 @@ class AutomationRules::AppointmentActionService
   end
 
   def cancel_appointment_payment(_action_params)
-    raise Scheduling::Error.new(
-      code: 'FEATURE_DISABLED',
-      message: 'Scheduling finance is not enabled for this account',
-      status: :forbidden
-    ) unless @account.feature_enabled?('scheduling_finance')
+    unless @account.feature_enabled?('scheduling_finance')
+      raise Scheduling::Error.new(
+        code: 'FEATURE_DISABLED',
+        message: 'Scheduling finance is not enabled for this account',
+        status: :forbidden
+      )
+    end
 
     @appointment = Scheduling::Appointments::FinanceSyncService.new(
       appointment: @appointment,
       actor: nil
     ).cancel_all!
+  end
+
+  def apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params)
+  end
+
+  def create_touch(action_params)
+    touch_action_service.create_touch(action_params)
   end
 
   def formatted_changed_attributes
@@ -67,5 +77,14 @@ class AutomationRules::AppointmentActionService
     raise ArgumentError, "#{action_name} requires a value" if value.blank?
 
     value
+  end
+
+  def touch_action_service
+    @touch_action_service ||= AutomationRules::TouchActionService.new(
+      rule: @rule,
+      account: @account,
+      record: @appointment,
+      entity_kind: 'appointment'
+    )
   end
 end

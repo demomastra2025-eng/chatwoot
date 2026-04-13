@@ -26,10 +26,18 @@ class WhatsappWeb::ConversationSyncService
   end
 
   def sync_existing_conversation(conversation)
-    return conversation if activity_at.blank?
-    return conversation if conversation.last_activity_at.present? && conversation.last_activity_at >= activity_at
+    return conversation if activity_at.blank? &&
+                           conversation.agent_last_seen_at.present? &&
+                           conversation.assignee_last_seen_at.present?
 
-    conversation.update_columns(last_activity_at: activity_at, updated_at: Time.current)
+    updates = {}
+    updates[:last_activity_at] = activity_at if activity_at.present? &&
+                                           (conversation.last_activity_at.blank? || conversation.last_activity_at < activity_at)
+    updates[:agent_last_seen_at] = activity_at if activity_at.present? && conversation.agent_last_seen_at.blank?
+    updates[:assignee_last_seen_at] = activity_at if activity_at.present? && conversation.assignee_last_seen_at.blank?
+    return conversation if updates.blank?
+
+    conversation.update_columns(updates.merge(updated_at: Time.current))
     conversation
   end
 
@@ -43,7 +51,9 @@ class WhatsappWeb::ConversationSyncService
       contact_inbox_id: contact_inbox.id,
       created_at: timestamp,
       updated_at: timestamp,
-      last_activity_at: timestamp
+      last_activity_at: timestamp,
+      agent_last_seen_at: timestamp,
+      assignee_last_seen_at: timestamp
     ).tap do |conversation|
       conversation.skip_runtime_events = true
       conversation.save!

@@ -4,7 +4,7 @@ import AddCanned from './AddCanned.vue';
 import EditCanned from './EditCanned.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
-import { computed, onMounted, ref, defineOptions } from 'vue';
+import { computed, onMounted, ref, defineExpose, defineOptions } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStoreGetters, useStore } from 'dashboard/composables/store';
 import { picoSearch } from '@scmmishra/pico-search';
@@ -17,6 +17,17 @@ import {
   BaseTableRow,
   BaseTableCell,
 } from 'dashboard/components-next/table';
+
+const props = defineProps({
+  hideHeader: {
+    type: Boolean,
+    default: false,
+  },
+  embedded: {
+    type: Boolean,
+    default: false,
+  },
+});
 
 defineOptions({
   name: 'CannedResponseSettings',
@@ -136,16 +147,21 @@ const tableHeaders = computed(() => {
     t('CANNED_MGMT.LIST.TABLE_HEADER.ACTIONS'),
   ];
 });
+
+defineExpose({
+  openAddPopup,
+});
 </script>
 
 <template>
   <SettingsLayout
+    v-if="!props.embedded"
     :is-loading="uiFlags.fetchingList"
     :loading-message="$t('CANNED_MGMT.LOADING')"
     :no-records-found="!records.length"
     :no-records-message="$t('CANNED_MGMT.LIST.404')"
   >
-    <template #header>
+    <template v-if="!props.hideHeader" #header>
       <BaseSettingsHeader
         v-model:search-query="searchQuery"
         :title="$t('CANNED_MGMT.HEADER')"
@@ -170,7 +186,28 @@ const tableHeaders = computed(() => {
     </template>
 
     <template #body>
+      <div
+        v-if="props.hideHeader"
+        class="flex items-center justify-between gap-3 mb-4"
+      >
+        <div class="min-w-0">
+          <p class="text-heading-3 text-n-slate-12">
+            {{ $t('CANNED_MGMT.HEADER') }}
+          </p>
+          <p class="mt-1 text-body-main text-n-slate-11">
+            {{ $t('CANNED_MGMT.DESCRIPTION') }}
+          </p>
+        </div>
+        <Button
+          :label="$t('CANNED_MGMT.HEADER_BTN_TXT')"
+          size="sm"
+          class="flex-shrink-0"
+          @click="openAddPopup"
+        />
+      </div>
+
       <BaseTable
+        :show-header-top-border="!props.embedded"
         :headers="tableHeaders"
         :items="filteredRecords"
         :no-data-message="
@@ -271,4 +308,134 @@ const tableHeaders = computed(() => {
       :reject-text="deleteRejectText"
     />
   </SettingsLayout>
+
+  <section v-else class="flex flex-col gap-4">
+    <div
+      v-if="props.hideHeader"
+      class="flex items-center justify-between gap-3"
+    >
+      <div class="min-w-0">
+        <p class="text-heading-3 text-n-slate-12">
+          {{ $t('CANNED_MGMT.HEADER') }}
+        </p>
+        <p class="mt-1 text-body-main text-n-slate-11">
+          {{ $t('CANNED_MGMT.DESCRIPTION') }}
+        </p>
+      </div>
+      <Button
+        :label="$t('CANNED_MGMT.HEADER_BTN_TXT')"
+        size="sm"
+        class="flex-shrink-0"
+        @click="openAddPopup"
+      />
+    </div>
+
+    <woot-loading-state
+      v-if="uiFlags.fetchingList"
+      :message="$t('CANNED_MGMT.LOADING')"
+    />
+
+    <BaseTable
+      v-else
+      :show-header-top-border="!props.embedded"
+      :headers="tableHeaders"
+      :items="filteredRecords"
+      :no-data-message="
+        !records.length
+          ? $t('CANNED_MGMT.LIST.404')
+          : searchQuery
+            ? $t('CANNED_MGMT.NO_RESULTS')
+            : ''
+      "
+    >
+      <template #header-0>
+        <button
+          class="flex items-center gap-2 p-0 cursor-pointer"
+          @click="toggleSort"
+        >
+          <span class="mb-0">
+            {{ tableHeaders[0] }}
+          </span>
+          <Icon
+            class="size-5 text-n-slate-11 flex-shrink-0"
+            :icon="
+              sortOrder === 'desc'
+                ? 'i-woot-sort-descending'
+                : 'i-woot-sort-ascending'
+            "
+          />
+        </button>
+      </template>
+      <template #header-1>
+        {{ tableHeaders[1] }}
+      </template>
+
+      <template #row="{ items }">
+        <BaseTableRow
+          v-for="cannedItem in items"
+          :key="cannedItem.short_code"
+          :item="cannedItem"
+        >
+          <template #default>
+            <BaseTableCell class="max-w-0">
+              <div class="flex flex-col gap-2 min-w-0">
+                <span class="text-heading-3 text-n-slate-12 truncate block">
+                  {{ cannedItem.short_code }}
+                </span>
+                <p class="text-body-main text-n-slate-11 line-clamp-5">
+                  {{ getPlainText(cannedItem.content) }}
+                </p>
+              </div>
+            </BaseTableCell>
+
+            <BaseTableCell align="end" class="w-24">
+              <div class="flex gap-3 justify-end flex-shrink-0">
+                <Button
+                  v-tooltip.top="$t('CANNED_MGMT.EDIT.BUTTON_TEXT')"
+                  icon="i-woot-edit-pen"
+                  slate
+                  sm
+                  @click="openEditPopup(cannedItem)"
+                />
+                <Button
+                  v-tooltip.top="$t('CANNED_MGMT.DELETE.BUTTON_TEXT')"
+                  icon="i-woot-bin"
+                  slate
+                  sm
+                  class="hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-2"
+                  :is-loading="loading[cannedItem.id]"
+                  @click="openDeletePopup(cannedItem)"
+                />
+              </div>
+            </BaseTableCell>
+          </template>
+        </BaseTableRow>
+      </template>
+    </BaseTable>
+
+    <woot-modal v-model:show="showAddPopup" @close="hideAddPopup">
+      <AddCanned :on-close="hideAddPopup" />
+    </woot-modal>
+
+    <woot-modal v-model:show="showEditPopup" @close="hideEditPopup">
+      <EditCanned
+        v-if="showEditPopup"
+        :id="activeResponse.id"
+        :edshort-code="activeResponse.short_code"
+        :edcontent="activeResponse.content"
+        :on-close="hideEditPopup"
+      />
+    </woot-modal>
+
+    <woot-delete-modal
+      v-model:show="showDeleteConfirmationPopup"
+      :on-close="closeDeletePopup"
+      :on-confirm="confirmDeletion"
+      :title="$t('CANNED_MGMT.DELETE.CONFIRM.TITLE')"
+      :message="$t('CANNED_MGMT.DELETE.CONFIRM.MESSAGE')"
+      :message-value="deleteMessage"
+      :confirm-text="deleteConfirmText"
+      :reject-text="deleteRejectText"
+    />
+  </section>
 </template>

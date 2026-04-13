@@ -44,11 +44,17 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def update
-    @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email))
+    @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
     @account.custom_attributes.merge!(custom_attributes_params)
     @account.settings.merge!(settings_params)
     @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
     @account.save!
+  end
+
+  def logo
+    @account.logo.purge if @account.logo.attached?
+    @account.reload
+    render 'api/v1/accounts/show', format: :json
   end
 
   def update_active_at
@@ -84,7 +90,7 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def account_params
-    params.permit(:account_name, :email, :name, :password, :locale, :domain, :support_email, :user_full_name)
+    params.permit(:account_name, :email, :name, :password, :locale, :domain, :support_email, :user_full_name, :logo)
   end
 
   def custom_attributes_params
@@ -96,7 +102,18 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def permitted_settings_attributes
-    [:auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting, :audio_transcriptions, :auto_resolve_label]
+    [
+      :auto_resolve_after,
+      :auto_resolve_message,
+      :auto_resolve_ignore_waiting,
+      :audio_transcriptions,
+      :auto_resolve_label,
+      :scheduling_contact_required,
+      :scheduling_company_enabled,
+      :default_appointment_touch_plan_id,
+      :default_deal_touch_plan_id,
+      :default_task_touch_plan_id
+    ]
   end
 
   def check_signup_enabled

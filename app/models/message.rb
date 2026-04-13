@@ -169,7 +169,8 @@ class Message < ApplicationRecord
   end
 
   def merge_sender_attributes(data)
-    data[:sender] = sender.push_event_data if sender && !sender.is_a?(AgentBot)
+    data[:sender] = sender.push_event_data(contact_inbox: conversation.contact_inbox) if sender.is_a?(Contact)
+    data[:sender] = sender.push_event_data if sender && !sender.is_a?(AgentBot) && !sender.is_a?(Contact)
     data[:sender] = sender.push_event_data(inbox) if sender.is_a?(AgentBot)
     data
   end
@@ -340,6 +341,7 @@ class Message < ApplicationRecord
     mark_pending_conversation_as_open_for_human_response
     set_conversation_activity
     dispatch_create_events
+    sync_related_touches
     send_reply
     execute_message_template_hooks
     update_contact_activity(runtime_events: true)
@@ -465,6 +467,15 @@ class Message < ApplicationRecord
 
   def execute_message_template_hooks
     ::MessageTemplates::HookExecutionService.new(message: self).perform
+  end
+
+  def sync_related_touches
+    return if private? || activity?
+
+    Reminders::SyncConversationTimingService.new(
+      conversation: conversation,
+      exclude_touch_id: content_attributes.to_h['touch_id']
+    ).perform
   end
 
   def validate_attachments_limit(_attachment)

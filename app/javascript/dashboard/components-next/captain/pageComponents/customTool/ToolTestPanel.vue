@@ -424,8 +424,8 @@ const handleTest = async () => {
       <Button
         type="button"
         sm
-        solid
-        blue
+        variant="faded"
+        color="blue"
         icon="i-lucide-play"
         :label="t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.ACTION')"
         :is-loading="isTesting"

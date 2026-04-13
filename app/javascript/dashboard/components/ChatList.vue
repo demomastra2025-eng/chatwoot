@@ -78,7 +78,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['conversationLoad']);
-const { uiSettings } = useUISettings();
+const { uiSettings, updateUISettings } = useUISettings();
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
@@ -93,6 +93,12 @@ provide('contextMenuElementTarget', virtualListRef);
 const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ME);
 const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
+const sidebarStatuses = [
+  wootConstants.STATUS_TYPE.PENDING,
+  wootConstants.STATUS_TYPE.OPEN,
+  wootConstants.STATUS_TYPE.SNOOZED,
+  wootConstants.STATUS_TYPE.RESOLVED,
+];
 const showAdvancedFilters = ref(false);
 // chatsOnView is to store the chats that are currently visible on the screen,
 // which mirrors the conversationList.
@@ -145,6 +151,7 @@ const {
   onRemoveLabels,
   onAssignTeamsForBulk,
   onUpdateConversations,
+  onMarkConversationsRead,
 } = useBulkActions();
 
 const {
@@ -188,6 +195,13 @@ const hasActiveFolders = computed(() => {
 
 const hasAppliedFiltersOrActiveFolders = computed(() => {
   return hasAppliedFilters.value || hasActiveFolders.value;
+});
+
+const routeConversationStatus = computed(() => {
+  const { status } = route.query;
+  return sidebarStatuses.includes(status)
+    ? status
+    : wootConstants.STATUS_TYPE.OPEN;
 });
 
 const currentUserDetails = computed(() => {
@@ -390,13 +404,32 @@ const uniqueInboxes = computed(() => {
 // ---------------------- Methods -----------------------
 function setFiltersFromUISettings() {
   const { conversations_filter_by: filterBy = {} } = uiSettings.value;
-  const { status, order_by: orderBy } = filterBy;
-  activeStatus.value = status || wootConstants.STATUS_TYPE.OPEN;
+  const { order_by: orderBy } = filterBy;
+  activeStatus.value = routeConversationStatus.value;
   activeSortBy.value = Object.values(wootConstants.SORT_BY_TYPE).includes(
     orderBy
   )
     ? orderBy
     : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC;
+}
+
+function updateConversationStatusQuery(status) {
+  const nextStatus = sidebarStatuses.includes(status)
+    ? status
+    : wootConstants.STATUS_TYPE.OPEN;
+
+  if (route.query.status === nextStatus) {
+    return;
+  }
+
+  router.push({
+    name: route.name,
+    params: route.params,
+    query: {
+      ...route.query,
+      status: nextStatus,
+    },
+  });
 }
 
 function emitConversationLoaded() {
@@ -638,10 +671,11 @@ function updateAssigneeTab(selectedTab) {
 
 function onBasicFilterChange(value, type) {
   if (type === 'status') {
-    activeStatus.value = value;
-  } else {
-    activeSortBy.value = value;
+    updateConversationStatusQuery(value);
+    return;
   }
+
+  activeSortBy.value = value;
   resetAndFetchData();
 }
 
@@ -683,6 +717,7 @@ function redirectToConversationList() {
       inboxId,
       label,
       teamId,
+      status: activeStatus.value,
     })
   );
 }
@@ -879,6 +914,24 @@ watch(activeTeam, () => {
   resetAndFetchData();
 });
 
+watch(routeConversationStatus, (newStatus, oldStatus) => {
+  if (newStatus === oldStatus) {
+    return;
+  }
+
+  activeStatus.value = newStatus;
+  store.dispatch('setChatStatusFilter', newStatus);
+  updateUISettings({
+    conversations_filter_by: {
+      ...(uiSettings.value?.conversations_filter_by || {}),
+      status: newStatus,
+      order_by: activeSortBy.value,
+    },
+  });
+  clearLocalSearch();
+  resetAndFetchData();
+});
+
 watch(
   computed(() => props.conversationInbox),
   () => {
@@ -993,6 +1046,7 @@ watch(conversationFilters, (newVal, oldVal) => {
       @update-conversations="onUpdateConversations"
       @assign-labels="onAssignLabels"
       @assign-team="onAssignTeamsForBulk"
+      @mark-read="onMarkConversationsRead"
     />
     <div
       ref="conversationListRef"
@@ -1011,6 +1065,7 @@ watch(conversationFilters, (newVal, oldVal) => {
           :team-id="teamId"
           :folders-id="foldersId"
           :conversation-type="conversationType"
+          :active-status="activeStatus"
           :show-assignee="showAssigneeInConversationCard"
           :data-index="index"
           @select-conversation="selectConversation"

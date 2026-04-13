@@ -38,6 +38,83 @@ RSpec.describe Inbox do
     it { is_expected.to have_many(:hooks) }
   end
 
+  describe 'lock_to_single_conversation defaults' do
+    let(:account) { create(:account) }
+
+    def build_inbox(channel:, lock_to_single_conversation: nil)
+      attributes = {
+        account: account,
+        name: 'Inbox',
+        channel: channel
+      }
+      attributes[:lock_to_single_conversation] = lock_to_single_conversation unless lock_to_single_conversation.nil?
+
+      described_class.new(attributes)
+    end
+
+    def build_twilio_channel(medium:)
+      Channel::TwilioSms.new(
+        account: account,
+        account_sid: 'AC123456789',
+        auth_token: 'test-token',
+        medium: medium,
+        messaging_service_sid: 'MG123456789'
+      )
+    end
+
+    it 'defaults to true for messenger channels' do
+      messenger_channels = [
+        Channel::FacebookPage.new(account: account),
+        Channel::Instagram.new(account: account),
+        Channel::Line.new(account: account),
+        Channel::Telegram.new(account: account),
+        Channel::TelegramPersonal.new(account: account),
+        Channel::Tiktok.new(account: account),
+        Channel::VkCommunity.new(account: account),
+        Channel::Whatsapp.new(account: account),
+        Channel::WhatsappWeb.new(account: account),
+        build_twilio_channel(medium: :whatsapp)
+      ]
+
+      messenger_channels.each do |channel|
+        inbox = build_inbox(channel: channel)
+
+        inbox.valid?
+
+        expect(inbox.lock_to_single_conversation).to be(true), channel.class.name
+      end
+    end
+
+    it 'keeps false by default for non-messenger channels' do
+      non_messenger_channels = [
+        Channel::Api.new(account: account),
+        Channel::Email.new(account: account),
+        Channel::Sms.new(account: account),
+        Channel::WebWidget.new(account: account),
+        build_twilio_channel(medium: :sms)
+      ]
+
+      non_messenger_channels.each do |channel|
+        inbox = build_inbox(channel: channel)
+
+        inbox.valid?
+
+        expect(inbox.lock_to_single_conversation).to be(false), channel.class.name
+      end
+    end
+
+    it 'respects an explicit false value for messenger channels' do
+      inbox = build_inbox(
+        channel: Channel::TelegramPersonal.new(account: account),
+        lock_to_single_conversation: false
+      )
+
+      inbox.valid?
+
+      expect(inbox.lock_to_single_conversation).to be(false)
+    end
+  end
+
   describe 'concerns' do
     it_behaves_like 'out_of_offisable'
     it_behaves_like 'avatarable'

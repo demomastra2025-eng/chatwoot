@@ -10,12 +10,30 @@
     "SEARCH_INPUT_PLACEHOLDER": "Поиск",
     "ASSIGN_AGENT_TOOLTIP": "Назначить сотрудника",
     "ASSIGN_TEAM_TOOLTIP": "Назначить команду",
+    "MARK_READ": {
+      "TOOLTIP": "Отметить как прочитано",
+      "SUCCESS": "Диалоги отмечены как прочитанные.",
+      "FAILED": "Не удалось отметить диалоги как прочитанные, попробуйте еще раз."
+    },
     "ASSIGN_SUCCESFUL": "Беседы успешно назначены.",
     "ASSIGN_FAILED": "Не удалось назначить диалоги, попробуйте еще раз.",
     "RESOLVE_SUCCESFUL": "Беседы успешно завершены.",
     "RESOLVE_FAILED": "Не удалось завершить диалоги, попробуйте еще раз.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Беседы, видимые на этой странице, выбраны.",
     "AGENT_LIST_LOADING": "Загрузка сотрудников",
+    "PROGRESS": {
+      "TITLE": "{action}: {processedCount}/{totalCount}",
+      "FAILED": "С ошибками: {count}",
+      "ACTIONS": {
+        "add_labels": "Назначаем метки",
+        "remove_labels": "Убираем метки",
+        "assign_agent": "Назначаем сотрудника",
+        "assign_team": "Назначаем команду",
+        "update_status": "Обновляем статус",
+        "update": "Обновляем диалоги",
+        "mark_read": "Отмечаем как прочитанные"
+      }
+    },
     "UPDATE": {
       "CHANGE_STATUS": "Изменить статус",
       "SNOOZE_UNTIL": "Отложено",

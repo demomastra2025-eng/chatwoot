@@ -1,8 +1,7 @@
 import { computed } from 'vue';
 import { CHANNEL_ICON_NEUTRAL_CLASS } from 'dashboard/helper/inbox';
 
-const withNeutralChannelColor = icon =>
-  `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
+const withNeutralChannelColor = icon => `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
 
 export function useChannelIcon(inbox) {
   const channelTypeIconMap = {
@@ -12,8 +11,10 @@ export function useChannelIcon(inbox) {
     'Channel::Line': 'i-woot-line',
     'Channel::Sms': 'i-woot-sms',
     'Channel::Telegram': 'i-woot-telegram',
+    'Channel::TelegramPersonal': 'i-woot-telegram',
     'Channel::TwilioSms': withNeutralChannelColor('i-woot-sms'),
     'Channel::TwitterProfile': 'i-woot-x',
+    'Channel::VkCommunity': 'i-ri-vk-line',
     'Channel::WebWidget': 'i-woot-website',
     'Channel::Whatsapp': 'i-woot-whatsapp',
     'Channel::WhatsappWeb': 'i-woot-whatsapp',

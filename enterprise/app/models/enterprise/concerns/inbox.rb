@@ -14,6 +14,7 @@ module Enterprise::Concerns::Inbox
   private
 
   def ensure_within_non_web_inbox_limit
+    return if account.blank?
     return unless account.main_channels_count >= allowed_channel_limit
 
     errors.add(:base, 'Account main channel limit exceeded')

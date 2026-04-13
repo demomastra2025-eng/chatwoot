@@ -128,6 +128,29 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.events.where(event_type: 'deal_stage_changed')).to exist
   end
 
+  it 'reorders deals inside a stage using board position' do
+    Crm::Bootstrap::AccountService.new(account: account).perform
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    stage = pipeline.stages.find_by!(code: 'new')
+    first_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    second_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    third_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+
+    patch "#{path}/#{third_deal.id}",
+          params: {
+            lock_version: third_deal.lock_version,
+            position: 1
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'position')).to eq(1)
+    expect(stage.deals.kept.order(:position, :id).pluck(:id)).to eq(
+      [third_deal.id, first_deal.id, second_deal.id]
+    )
+  end
+
   it 'blocks moving a deal to a closed stage when required custom fields are missing' do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')

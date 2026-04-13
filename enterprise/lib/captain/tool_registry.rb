@@ -431,6 +431,19 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'create_touch',
+          title: 'Create Touch',
+          description: 'Create a scheduled outbound touch for the current conversation or linked CRM context',
+          group_name: 'Outbound',
+          icon: 'clock-plus',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::CreateTouchTool,
+          assistant_tool_class: Captain::Tools::Copilot::CreateTouchService,
+          required_permissions: %w[outbound_manage],
+          risk_level: 'high',
+          idempotent: true
+        ),
+        definition(
           id: 'update_task',
           title: 'Update Task',
           description: 'Update the current conversation task',

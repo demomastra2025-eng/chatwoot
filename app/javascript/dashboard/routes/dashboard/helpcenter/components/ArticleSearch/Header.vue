@@ -1,19 +1,24 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
+import { useMapGetter } from 'dashboard/composables/store.js';
 import Button from 'dashboard/components-next/button/Button.vue';
 
-defineProps({
+const props = defineProps({
   title: {
     type: String,
-    default: 'Chatwoot',
+    default: '',
   },
 });
 
 const emit = defineEmits(['search', 'close']);
+const globalConfig = useMapGetter('globalConfig/get');
 
 const searchInputRef = ref(null);
 const searchQuery = ref('');
+const resolvedTitle = computed(
+  () => props.title || globalConfig.value?.installationName || 'OneLink'
+);
 
 onMounted(() => {
   searchInputRef.value.focus();
@@ -48,7 +53,7 @@ useKeyboardEvents(keyboardEvents);
   <div class="flex flex-col py-1">
     <div class="flex items-center justify-between py-2 mb-1">
       <h3 class="text-base text-n-slate-12">
-        {{ title }}
+        {{ resolvedTitle }}
       </h3>
       <Button ghost xs slate icon="i-lucide-x" @click="onClose" />
     </div>

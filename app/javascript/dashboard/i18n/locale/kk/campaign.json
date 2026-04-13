@@ -89,7 +89,10 @@
       "CARD": {
         "STATUS": {
           "COMPLETED": "Completed",
-          "SCHEDULED": "Scheduled"
+          "SCHEDULED": "Scheduled",
+          "RUNNING": "Running",
+          "FAILED": "Failed",
+          "CANCELLED": "Cancelled"
         },
         "CAMPAIGN_DETAILS": {
           "SENT_FROM": "Sent from",
@@ -104,12 +107,14 @@
           "TITLE": {
             "LABEL": "Title",
             "PLACEHOLDER": "Please enter the title of campaign",
-            "ERROR": "Title is required"
+            "ERROR": "Title is required",
+            "EMAIL_INFO": "Used as the email subject for Email inboxes."
           },
           "MESSAGE": {
             "LABEL": "Message",
             "PLACEHOLDER": "Please enter the message of campaign",
-            "ERROR": "Message is required"
+            "ERROR": "Message is required",
+            "EMAIL_INFO": "Sent as the email body and rendered to HTML automatically."
           },
           "INBOX": {
             "LABEL": "Select Inbox",
@@ -147,7 +152,9 @@
       "CARD": {
         "STATUS": {
           "COMPLETED": "Completed",
-          "SCHEDULED": "Scheduled"
+          "SCHEDULED": "Scheduled",
+          "RUNNING": "Running",
+          "FAILED": "Failed"
         },
         "CAMPAIGN_DETAILS": {
           "SENT_FROM": "Sent from",
@@ -180,6 +187,11 @@
             "VARIABLES_LABEL": "Variables",
             "VARIABLE_PLACEHOLDER": "Enter value for {variable}"
           },
+          "TEMPLATE_LANGUAGE": {
+            "LABEL": "Template language",
+            "PLACEHOLDER": "Select a language",
+            "ERROR": "Template language is required"
+          },
           "AUDIENCE": {
             "LABEL": "Audience",
             "PLACEHOLDER": "Select the customer labels",
@@ -201,6 +213,135 @@
         }
       }
     },
+    "OUTBOUND": {
+      "HEADER_TITLE": "Кампании",
+      "NEW_CAMPAIGN": "Жаппай жіберілім",
+      "COUNT": "Кампаний: {n}",
+      "WORKSPACE_DESCRIPTION": "Қосылған арналар бойынша жаппай және жеке шығыс хабарламаларды бір жерден басқарыңыз.",
+      "ACTIONS": {
+        "MASS_CAMPAIGN": "Жаппай жіберілім",
+        "PERSONAL_MESSAGE": "Жеке"
+      },
+      "CREATE_OPTIONS": {
+        "OUTBOUND": "Массовая рассылка",
+        "OUTBOUND_DESCRIPTION": "Отправит кампанию по выбранной аудитории в поддерживаемом канале и поможет заранее проверить доставляемость.",
+        "LIVE_CHAT": "Триггер сайта",
+        "LIVE_CHAT_DESCRIPTION": "Покажет проактивное сообщение в виджете сайта по URL, времени на странице и выбранному отправителю."
+      },
+      "SECTIONS": {
+        "OUTBOUND_TITLE": "Кампании",
+        "OUTBOUND_DESCRIPTION": "Массовые рассылки по SMS, WhatsApp, Email, Telegram и другим подключенным каналам.",
+        "LIVE_CHAT_TITLE": "Онлайн-чат кампании",
+        "LIVE_CHAT_DESCRIPTION": "Проактивные кампании для сайта и live chat теперь находятся на той же странице, без отдельного режима."
+      },
+      "EMPTY_STATE": {
+        "TITLE": "Нет доступных кампаний",
+        "SUBTITLE": "Запустите кампанию из inbox'ов SMS, WhatsApp, Email, Telegram Personal, VK, LINE, Facebook, Instagram или WhatsApp Web. Нажмите 'Создать кампанию', чтобы начать."
+      },
+      "CARD": {
+        "RESUME_CAMPAIGN": "Продолжить кампанию",
+        "RESTART_CAMPAIGN": "Перезапустить кампанию",
+        "CANCEL_CAMPAIGN": "Отменить кампанию",
+        "LATEST_RUN": {
+          "TITLE": "Последний запуск",
+          "RETRY": "Повторить неуспешные доставки",
+          "SUMMARY": "{processed}/{total} обработано",
+          "BADGES": {
+            "RESUME": "Продолжение",
+            "RESTART": "Перезапуск",
+            "RETRY_OF": "Из запуска {id}"
+          },
+          "COUNTERS": {
+            "SUCCESSFUL": "Успешно",
+            "FAILED": "Ошибки"
+          },
+          "TIME": {
+            "STARTED": "Начато",
+            "COMPLETED": "Завершено"
+          },
+          "STATUS": {
+            "RUNNING": "Выполняется",
+            "FAILED": "Ошибка",
+            "COMPLETED": "Завершён",
+            "CANCELLED": "Отменён"
+          }
+        }
+      },
+      "CREATE": {
+        "TITLE": "Создать массовую рассылку",
+        "DESCRIPTION": "Жаппай таратуды жеке кейінге қалдырылған хабарламадағыдай drawer-паттернмен баптаңыз: арнаны, контентті, аудиторияны таңдап, жеткізілімді алдын ала тексеріңіз.",
+        "FORM": {
+          "TITLE": {
+            "LABEL": "Название",
+            "PLACEHOLDER": "Введите название кампании",
+            "ERROR": "Название обязательно",
+            "EMAIL_INFO": "Используется как тема письма для Email inbox."
+          },
+          "MESSAGE": {
+            "LABEL": "Сообщение",
+            "PLACEHOLDER": "Введите сообщение кампании",
+            "ERROR": "Сообщение обязательно",
+            "EMAIL_INFO": "Отправляется как тело письма и автоматически рендерится в HTML."
+          },
+          "INSTRUCTIONS": {
+            "PLACEHOLDER": "ИИ агент осы кампания үшін қандай хабарлама жазуы керегін сипаттаңыз",
+            "ERROR": "ИИ агент нұсқаулығы міндетті"
+          },
+          "INBOX": {
+            "LABEL": "Выберите Inbox",
+            "PLACEHOLDER": "Выберите Inbox",
+            "ERROR": "Inbox обязателен"
+          },
+          "TEMPLATE": {
+            "LABEL": "Шаблон WhatsApp",
+            "PLACEHOLDER": "Выберите шаблон",
+            "INFO": "Выберите шаблон для доставки WhatsApp-кампании.",
+            "ERROR": "Шаблон обязателен"
+          },
+          "TEMPLATE_LANGUAGE": {
+            "LABEL": "Язык шаблона",
+            "PLACEHOLDER": "Выберите язык",
+            "ERROR": "Язык шаблона обязателен"
+          },
+          "AUDIENCE": {
+            "LABEL": "Аудитория",
+            "PLACEHOLDER": "Выберите теги клиентов",
+            "ERROR": "Аудитория обязательна"
+          },
+          "SCHEDULED_AT": {
+            "LABEL": "Время отправки",
+            "PLACEHOLDER": "Выберите время",
+            "ERROR": "Время отправки обязательно"
+          },
+          "BUTTONS": {
+            "CREATE": "Создать",
+            "CANCEL": "Отмена"
+          },
+          "API": {
+            "SUCCESS_MESSAGE": "Массовая рассылка успешно создана",
+            "ERROR_MESSAGE": "Произошла ошибка. Попробуйте снова."
+          }
+        },
+        "SECTIONS": {
+          "DETAILS": {
+            "TITLE": "Кампания деректері",
+            "DESCRIPTION": "Кампания атауын және қолданылатын арнаны таңдаңыз."
+          },
+          "MESSAGE": {
+            "TITLE": "Контент",
+            "DESCRIPTION": "Қажет болса WhatsApp шаблонын, ал басқа арналар үшін еркін мәтінді пайдаланыңыз."
+          },
+          "AUDIENCE": {
+            "TITLE": "Аудитория",
+            "DESCRIPTION": "Осы кампанияны алатын контакт тегтерін таңдаңыз."
+          },
+          "SCHEDULE": {
+            "TITLE": "Іске қосу",
+            "DESCRIPTION": "Таңдалған аудитория үшін кампанияның қашан басталатынын көрсетіңіз."
+          }
+        }
+      }
+    },
     "CONFIRM_DELETE": {
       "TITLE": "Are you sure to delete?",
       "DESCRIPTION": "The delete action is permanent and cannot be reversed.",
@@ -212,6 +353,571 @@
     },
     "BADGE": {
       "BROADCAST": "Broadcast"
+    },
+    "PREVIEW": {
+      "TITLE": "Audience preview",
+      "ACTION": "Run preview",
+      "AUDIENCE_SIZE": "Audience",
+      "DELIVERABLE": "Deliverable",
+      "BLOCKED": "Blocked",
+      "BLOCKERS_TITLE": "Blockers",
+      "STATUS_EMPTY": "Preview the selected inbox and audience before scheduling.",
+      "STATUS_READY": "Preview is current and ready to send.",
+      "STATUS_PARTIAL": "Some contacts are deliverable and some will be skipped.",
+      "STATUS_BLOCKED": "No contacts are currently eligible for delivery.",
+      "STATUS_STALE": "Inputs changed after the last preview. Run it again.",
+      "EMPTY_MESSAGE": "Run preview after selecting inbox, audience, and schedule.",
+      "STALE_MESSAGE": "Preview is outdated. Run it again before creating the campaign.",
+      "BLOCKED_MESSAGE": "This audience cannot be sent with the current inbox settings.",
+      "READY_MESSAGE": "Preview is up to date. You can create the campaign.",
+      "ERROR_MESSAGE": "Preview could not be generated. Please try again.",
+      "SUBMIT_REQUIRES_PREVIEW": "Run a fresh preview before creating the campaign.",
+      "TOTALS": {
+        "MISSING_TARGET": "Missing channel target",
+        "OUTSIDE_REPLY_WINDOW": "Outside reply window",
+        "PLANNED_NOT_IMPLEMENTED": "Channel rollout not implemented",
+        "REQUIRES_TEMPLATE": "Template is required",
+        "UNSUPPORTED_CHANNEL": "Unsupported channel"
+      }
+    },
+    "ANALYTICS": {
+      "TITLE": "Campaign analytics",
+      "DESCRIPTION": "Review native delivery outcomes for this campaign.",
+      "CLOSE": "Close",
+      "SUCCESS_RATE": "Success rate",
+      "DELIVERIES_TITLE": "Recent deliveries",
+      "DELIVERIES_SUBTITLE": "The latest delivery attempts tracked for this campaign.",
+      "SUMMARY_TITLE": "Summary",
+      "SUMMARY_SUBTITLE": "A compact view of the campaign funnel.",
+      "ERRORS_TITLE": "Top errors",
+      "ERRORS_SUBTITLE": "Most common delivery failures and skip reasons.",
+      "ERRORS_COUNT": "{count} deliveries",
+      "NO_ERRORS": "No delivery errors recorded.",
+      "RUNS_TITLE": "Runs",
+      "RUNS_SUBTITLE": "Execution snapshots for this outbound campaign.",
+      "LATEST_RUN": "Latest run",
+      "CANCEL_CAMPAIGN": "Cancel campaign",
+      "RESTART_CAMPAIGN": "Restart campaign",
+      "RESUME_CAMPAIGN": "Resume campaign",
+      "RECENT_RUNS": "Recent runs",
+      "NO_RUNS": "This campaign has not been executed yet.",
+      "RETRY_FAILED": "Retry failed",
+      "NOT_SENT_TITLE": "Not sent yet",
+      "NOT_SENT_SUBTITLE": "Audience contacts that do not have any delivery attempt yet.",
+      "NO_NOT_SENT": "All audience contacts already have a delivery record.",
+      "UNAVAILABLE": "Analytics are not available yet for this campaign.",
+      "STATS": {
+        "COVERAGE": "Coverage",
+        "SUBMITTED": "Submitted",
+        "DELIVERED": "Delivered",
+        "READ": "Read",
+        "FAILED": "Failed or skipped"
+      },
+      "TABLE": {
+        "CONTACT": "Contact",
+        "STATUS": "Status",
+        "PROVIDER": "Provider",
+        "UPDATED": "Updated"
+      },
+      "SUMMARY": {
+        "AUDIENCE": "Audience size",
+        "PROCESSED": "Processed",
+        "ATTEMPTS": "Delivery attempts",
+        "NOT_SENT": "Not sent yet",
+        "COVERAGE": "Coverage",
+        "FAILED": "Failed / skipped",
+        "READ": "Read confirmations"
+      },
+      "RUNS": {
+        "STATUS": "Status",
+        "PROGRESS": "Progress",
+        "PROCESSED": "Processed",
+        "SUCCESSFUL": "Successful",
+        "FAILED": "Failed / skipped",
+        "STARTED": "Started",
+        "COMPLETED": "Completed",
+        "DURATION": "Duration",
+        "RETRY_OF": "Retry of run",
+        "RETRY_RUN": "Retry run",
+        "RECENT_SUMMARY": "{processed} / {total} processed, {success} successful, {failed} failed",
+        "DURATION_SECONDS": "{count}s",
+        "DURATION_MINUTES": "{count}m",
+        "DURATION_MINUTES_SECONDS": "{minutes}m {seconds}s"
+      }
+    }
+  },
+  "OUTBOUND_WORKSPACE": {
+    "AUDIENCES": {
+      "TITLE": "Аудитории",
+      "DESCRIPTION": "Сохранённые сегменты контактов, которые можно переиспользовать в рассылках.",
+      "LOADING": "Загружаем аудитории...",
+      "EMPTY": "Сохранённых аудиторий пока нет.",
+      "MANAGE_CONTACTS": "Управлять в Контактах",
+      "SUBTITLE": "Сохранённый сегмент контактов",
+      "OPEN": "Открыть",
+      "TABLE": {
+        "NAME": "Аудитория",
+        "FILTERS": "Фильтры",
+        "ACTIONS": "Действия"
+      }
+    },
+    "TOUCHES": {
+      "TITLE": "Жеке жіберілімдер",
+      "DESCRIPTION": "Бір контакт пен бір арнаға арналған жеке жіберілімдерді бір тізімде жасап, басқарыңыз.",
+      "COUNT": "{n} элементов",
+      "EMPTY_TITLE": "Жеке жіберілімдер әлі жоқ.",
+      "EMPTY_SUBTITLE": "Белгілі бір контакт пен арна үшін жеке жіберілім жасаңыз.",
+      "ACTIONS": {
+        "CREATE": "Создать персонально",
+        "PLANS": "Жіберілім кезеңдері"
+      },
+      "EDITOR": {
+        "CREATE_TITLE": "Создать персональную рассылку",
+        "EDIT_TITLE": "Редактировать персональную рассылку",
+        "SAVE": "Сохранить персональную рассылку",
+        "SUCCESS_CREATED": "Персональная рассылка создана.",
+        "SUCCESS_UPDATED": "Персональная рассылка обновлена."
+      },
+      "PLANS_MODAL": {
+        "TITLE": "Жіберілім кезеңдері",
+        "DESCRIPTION": "Қайта қолданылатын кезеңдерді жеке жіберілімдерден бөлек сақтап, керек кезде ғана ашыңыз.",
+        "CREATE": "Кезең құру",
+        "CREATE_TITLE": "Жіберілім кезеңін құру",
+        "EDIT_TITLE": "Жіберілім кезеңін өзгерту",
+        "EDITOR_DESCRIPTION": "Кейін қайта қолдануға болатын жеке жіберілімдер тізбегін жинаңыз.",
+        "SAVE": "Кезеңді сақтау"
+      },
+      "REFRESH": "Обновить",
+      "NO_CONTENT": "Нет контента",
+      "AGENT_PREVIEW": "ИИ агент",
+      "FILTERS": {
+        "ALL_STATUSES": "Все статусы"
+      },
+      "SUMMARY": {
+        "OPEN": "Открытые касания",
+        "NEEDS_APPROVAL": "Черновики на подтверждение",
+        "FAILED": "Требуют внимания",
+        "COMPLETED": "Завершены",
+        "ACTIVE_PLANS": "Белсенді кезеңдер",
+        "TOTAL_STEPS": "Кезеңдердегі қадамдар",
+        "ENTITY_TYPES": "Типы сущностей",
+        "ARCHIVED_PLANS": "Мұрағаттағы кезеңдер"
+      },
+      "ROUTE": {
+        "READY": "Маршрут готов",
+        "PENDING": "Маршрут определится позже"
+      },
+      "TIMING": {
+        "AT_ANCHOR": "В момент якоря",
+        "AFTER_MINUTES": "через {count} мин",
+        "BEFORE_MINUTES": "за {count} мин"
+      },
+      "HERO": {
+        "ALL_TITLE": "Управляйте касаниями в одном месте",
+        "ALL_DESCRIPTION": "Проверяйте запланированные и уже исполненные касания, меняйте контент и держите под контролем исполнение, не выходя из outbound workspace.",
+        "PLANS_TITLE": "Собирайте переиспользуемые планы касаний",
+        "PLANS_DESCRIPTION": "Настройте нативные последовательности касаний один раз и применяйте их из сделки, задачи, записи или правила автоматизации.",
+        "EXECUTION_TITLE": "Контролируйте исполнение касаний",
+        "EXECUTION_DESCRIPTION": "Здесь удобно следить за касаниями, которые уже исполняются, завершились, были отменены или упали с ошибкой.",
+        "SCOPED_DESCRIPTION": "Workspace сейчас отфильтрован по сущности {entity}. Новые касания и применённые планы останутся в контексте этой записи.",
+        "SCOPED_BADGE": "Контекст: {entity}",
+        "FILTERED_BADGE": "Фильтр: {status}",
+        "CREATE_TOUCH_CONTEXT_TITLE": "Создавать касания можно и отсюда",
+        "CREATE_TOUCH_CONTEXT_DESCRIPTION": "В общем workspace теперь можно вручную создать касание. Если вы стартуете вне сущности, выберите тип записи и её ID в drawer. Из диалога, сделки, задачи или записи это всё равно быстрее, когда маршрут и ответственный должны определиться сразу."
+      },
+      "TABS": {
+        "ALL": "Все касания",
+        "PLANS": "Планы касаний",
+        "EXECUTION": "Исполнение"
+      },
+      "STATUS": {
+        "DRAFT": "Черновик",
+        "PENDING": "Ожидает",
+        "PROCESSING": "Исполняется",
+        "COMPLETED": "Завершено",
+        "CANCELLED": "Отменено",
+        "FAILED": "Ошибка"
+      },
+      "ACTION_TYPES": {
+        "SEND_MESSAGE": "Персональная рассылка",
+        "AI_AGENT_WAKEUP": "Пробуждение AI"
+      },
+      "REPEAT": {
+        "ONCE": "Разово",
+        "DAILY": "Повторяется ежедневно",
+        "WEEKLY": "Повторяется каждую неделю",
+        "WEEKDAYS": "Повторяется по будням",
+        "MONTHLY": "Повторяется каждый месяц"
+      },
+      "ENTITY_KINDS": {
+        "CONVERSATION": "Диалог",
+        "DEAL": "Сделка",
+        "TASK": "Задача",
+        "APPOINTMENT": "Запись"
+      },
+      "ERRORS": {
+        "LOAD_TOUCHES": "Не удалось загрузить касания.",
+        "LOAD_PLANS": "Не удалось загрузить этапы рассылок.",
+        "APPROVE_TOUCH": "Не удалось подтвердить касание.",
+        "CANCEL_TOUCH": "Не удалось отменить касание.",
+        "DELETE_TOUCH": "Не удалось удалить персональную рассылку.",
+        "ARCHIVE_PLAN": "Не удалось архивировать этап рассылки.",
+        "APPLY_PLAN": "Не удалось применить этап рассылки.",
+        "APPLY_PLAN_REQUIRES_CONTEXT": "Сначала откройте диалог, сделку, задачу или запись, чтобы применить этап рассылки к конкретной сущности.",
+        "CREATE_TOUCH_REQUIRES_CONTEXT": "Сначала откройте диалог, сделку, задачу или запись, чтобы создать касание в нужном контексте."
+      },
+      "ALL": {
+        "LOADING": "Загружаем касания...",
+        "EMPTY": "Касаний пока нет.",
+        "APPROVE": "Подтвердить",
+        "CANCEL": "Отменить",
+        "APPROVE_SUCCESS": "Касание подтверждено.",
+        "CANCEL_SUCCESS": "Касание отменено.",
+        "TABLE": {
+          "MESSAGE": "Касание",
+          "ENTITY": "Сущность",
+          "RECIPIENT": "Получатель",
+          "SCHEDULE": "Время",
+          "STATUS": "Статус",
+          "ACTIONS": "Действия"
+        }
+      },
+      "CONFIRM_DELETE": {
+        "TITLE": "Персональную рассылку удалить?",
+        "DESCRIPTION": "Персональная рассылка будет удалена без возможности восстановления.",
+        "CONFIRM": "Жою",
+        "API": {
+          "SUCCESS_MESSAGE": "Персональная рассылка удалена.",
+          "ERROR_MESSAGE": "Не удалось удалить персональную рассылку."
+        }
+      },
+      "PLANS": {
+        "LOADING": "Загружаем этапы рассылок...",
+        "EMPTY": "Этапов рассылок пока нет.",
+        "NO_DESCRIPTION": "Без описания",
+        "ACTIVE": "Активна",
+        "ARCHIVED": "В архиве",
+        "APPLY": "Применить этап",
+        "EDIT": "Изменить",
+        "ARCHIVE": "Архивировать",
+        "APPLY_SUCCESS": "Этап рассылки применён.",
+        "ARCHIVE_SUCCESS": "Этап рассылки архивирован.",
+        "ENTITY_SCOPE_NOTE": "Поддерживаемые типы сущностей",
+        "TABLE": {
+          "NAME": "Этап рассылки",
+          "ENTITIES": "Сущности",
+          "STEPS": "Шаги",
+          "STATUS": "Статус",
+          "ACTIONS": "Действия"
+        }
+      },
+      "ANALYTICS": {
+        "TITLE": "Аналитика персональной рассылки",
+        "DESCRIPTION": "Статус, маршрут және орындалу хронологиясы.",
+        "UNAVAILABLE": "—",
+        "ERROR": "Соңғы қате",
+        "CLOSE": "Закрыть",
+        "SECTIONS": {
+          "TIMELINE": "Хронология"
+        },
+        "STATS": {
+          "STATUS": "Статус",
+          "ATTEMPTS": "Попытки",
+          "CHANNEL": "Канал",
+          "RECIPIENT": "Получатель",
+          "SCHEDULED_AT": "Время отправки",
+          "ROUTE": "Маршрут"
+        },
+        "TIMELINE": {
+          "CREATED": "Создано",
+          "PLANNED": "Запланировано",
+          "PROCESSING": "Исполнение началось",
+          "COMPLETED": "Отправлено",
+          "CANCELLED": "Отменено"
+        }
+      },
+      "EXECUTION": {
+        "LOADING": "Загружаем исполнение касаний...",
+        "EMPTY": "Истории исполнения касаний пока нет.",
+        "TABLE": {
+          "MESSAGE": "Касание",
+          "ENTITY": "Сущность",
+          "STATUS": "Статус",
+          "EVENT_AT": "Обновлено",
+          "ACTIONS": "Действия"
+        }
+      },
+      "ENTITY_CARD": {
+        "TITLE": "Предстоящие касания",
+        "DESCRIPTION": "Смотрите запланированные касания по этой сущности и переходите в общий workspace для управления планами.",
+        "LOADING": "Загружаем касания...",
+        "EMPTY": "Предстоящих касаний пока нет.",
+        "CREATE": "Добавить касание",
+        "VIEW_ALL": "Все касания",
+        "OPEN_PLANS": "Применить этап",
+        "OPEN_EXECUTION": "Открыть исполнение",
+        "OPEN_NEXT_STEP": "Если текст или время меняются, откройте касание и поправьте его до отправки.",
+        "FAILED_TITLE": "Требуют внимания: {count}",
+        "FAILED_NOTE": "Откройте исполнение, чтобы проверить ошибки и отменённые касания по этой сущности.",
+        "SUMMARY": {
+          "OPEN": "Открыты",
+          "DRAFTS": "Черновики",
+          "DONE": "Завершены"
+        }
+      },
+      "TOUCH_EDITOR": {
+        "CREATE_TITLE": "Создать касание",
+        "EDIT_TITLE": "Редактировать касание",
+        "DESCRIPTION": "Создайте запланированное касание для этой сущности. Маршрутизация канала и итоговый статус определяются движком касаний.",
+        "CREATE": "Создать касание",
+        "SAVE": "Сохранить касание",
+        "EDIT": "Изменить",
+        "TEXT_MODE": {
+          "STATIC": "Статичный текст",
+          "DYNAMIC": "Динамичный текст",
+          "AGENT": "AI-генерация"
+        },
+        "TEXT_MODE_HELP": {
+          "STATIC": "Используйте этот режим, когда сообщение должно отправиться ровно в том виде, в котором вы его сохранили.",
+          "DYNAMIC": "Используйте ссылки на поля, если финальный текст должен подставляться из текущей сущности в момент отправки.",
+          "AGENT": "Используйте инструкции для Captain, если финальный текст должен генерироваться в момент исполнения из текущего контекста диалога и сущности."
+        },
+        "REPEAT_MODE": {
+          "ONCE": "Без повторения",
+          "DAILY": "Каждый день",
+          "WEEKLY": "Каждую неделю",
+          "WEEKDAYS": "Только по будням",
+          "MONTHLY": "Каждый месяц"
+        },
+        "REPEAT_MODE_HELP": {
+          "ONCE": "Касание выполнится только один раз в выбранное время.",
+          "DAILY": "После каждого успешного исполнения следующее касание будет создано на то же время следующего дня.",
+          "WEEKLY": "После каждого успешного исполнения следующее касание будет создано на тот же день недели и время следующей недели.",
+          "WEEKDAYS": "После каждого успешного исполнения следующее касание будет создано на следующий рабочий день в то же время.",
+          "MONTHLY": "После каждого успешного исполнения следующее касание будет создано на тот же день и время следующего месяца."
+        },
+        "TIMING_MODE": {
+          "ABSOLUTE": "Конкретные дата и время",
+          "RELATIVE": "Относительно сущности"
+        },
+        "TIMING_MODE_HELP": {
+          "ABSOLUTE": "Подходит для фиксированного времени отправки, которое не должно зависеть от изменений в сущности.",
+          "RELATIVE": "Подходит для follow-up, который должен сдвигаться вместе с записью, задачей, сделкой или диалогом."
+        },
+        "CONTEXT_TITLE": "Контекст касания: {entity}",
+        "ROUTING_NOTE": "Система постарается использовать текущий диалог и иначе определит маршрут в момент исполнения. Если маршрут нельзя надёжно определить, касание останется в черновиках и не отправится вслепую.",
+        "ANCHORS": {
+          "TOUCH_CREATED_AT": "Кейінге қалдырылған хабарлама жасалды",
+          "APPOINTMENT_STARTS_AT": "Начало записи",
+          "APPOINTMENT_ENDS_AT": "Окончание записи",
+          "TASK_DUE_AT": "Дедлайн задачи",
+          "DEAL_EXPECTED_CLOSE_ON": "Ожидаемое закрытие сделки",
+          "CONVERSATION_CREATED_AT": "Создание диалога",
+          "CONVERSATION_LAST_ACTIVITY_AT": "Последняя активность в диалоге",
+          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Последнее входящее сообщение",
+          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Последнее исходящее сообщение",
+          "CONVERSATION_WAITING_SINCE": "Диалог ждёт ответа"
+        },
+        "FIELDS": {
+          "ACTION_TYPE": "Тип касания",
+          "ENTITY_TYPE": "Тип сущности",
+          "ENTITY_ID": "ID сущности",
+          "ENTITY_ID_PLACEHOLDER": "Укажите ID нужной сущности",
+          "ENTITY_NOTE": "Выберите сущность, к которой должно относиться касание. Касания по диалогу можно создавать сразу отсюда; для других сущностей касание может остаться в черновике, пока не определится маршрут.",
+          "TEXT_MODE": "Режим текста",
+          "BODY": "Сообщение",
+          "BODY_PLACEHOLDER": "Напишите сообщение, которое нужно отправить позже",
+          "INSTRUCTIONS": "Инструкции для Captain",
+          "INSTRUCTIONS_PLACEHOLDER": "Опишите, какое сообщение Captain должен сгенерировать при отложенном сообщении",
+          "TIMING_MODE": "Когда отправить",
+          "SCHEDULED_AT": "Время отправки",
+          "REPEAT_MODE": "Повторять",
+          "REPEAT_UNTIL_AT": "Повторять до",
+          "RELATIVE_ANCHOR": "Точка отсчёта",
+          "RELATIVE_OFFSET_MINUTES": "Смещение в минутах",
+          "RELATIVE_OFFSET_NOTE": "0 минуттан үлкен мәнді көрсетіңіз.",
+          "AUTO_CANCEL": "Отменять при входящем ответе",
+          "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически."
+        },
+        "SUCCESS": {
+          "CREATED": "Касание создано.",
+          "UPDATED": "Касание обновлено."
+        },
+        "ERRORS": {
+          "SAVE": "Не удалось сохранить касание."
+        }
+      },
+      "TOUCH_PLAN_EDITOR": {
+        "CREATE_TITLE": "Создать этап рассылки",
+        "EDIT_TITLE": "Редактировать этап рассылки",
+        "DESCRIPTION": "Соберите переиспользуемую последовательность персональных рассылок и применяйте её из любой поддерживаемой сущности.",
+        "CREATE": "Создать этап",
+        "SAVE": "Сохранить этап",
+        "ADD_STEP": "Добавить шаг",
+        "REMOVE_STEP": "Удалить шаг",
+        "STEP_TITLE": "Шаг {index}",
+        "STEP_DESCRIPTION": "Каждый шаг станет обычной персональной рассылкой после применения этапа.",
+        "ENTITY_KIND_PLACEHOLDER": "Выберите хотя бы один тип сущности",
+        "COMPATIBILITY_WARNING": "Этот относительный якорь доступен не для всех выбранных типов сущностей. При применении к другой сущности шаг может остаться в черновике, пока время и маршрут не будут уточнены.",
+        "FIELDS": {
+          "NAME": "Название этапа",
+          "NAME_PLACEHOLDER": "Например, Напоминания о записи",
+          "DESCRIPTION": "Описание",
+          "DESCRIPTION_PLACEHOLDER": "Опишите, когда этот этап применять и какой сценарий он закрывает.",
+          "ENTITY_KINDS": "Поддерживаемые типы сущностей",
+          "ENTITY_KINDS_NOTE": "Выберите, где этот этап можно применять.",
+          "ENTITY_KIND_HELP": "Этот этап можно прикреплять к такому типу сущности.",
+          "STEPS": "Шаги этапа",
+          "STEPS_NOTE": "Эти шаги будут созданы, когда этап применят к: {entityKinds}."
+        },
+        "SUCCESS": {
+          "CREATED": "Этап рассылки создан.",
+          "UPDATED": "Этап рассылки обновлён."
+        },
+        "ERRORS": {
+          "SAVE": "Не удалось сохранить этап рассылки."
+        }
+      }
+    },
+    "TOUCH_PLANS": {
+      "TITLE": "Жіберілім кезеңдері",
+      "DESCRIPTION": "Қайта қолданылатын жеке жіберілім кезеңдерін жинап, оларды қажетті контексттен қолданыңыз.",
+      "COUNT": "Кезеңдер: {n}",
+      "CONTEXT_BADGE": "Контекст: {entity}",
+      "EMPTY_TITLE": "Кезеңдер әлі жоқ.",
+      "EMPTY_SUBTITLE": "Қайта қолданылатын тізбекті жасап, оны диалогтарға, мәмілелерге, тапсырмаларға және жазбаларға қолданыңыз.",
+      "STEPS_COUNT": "Қадамдар: {count}",
+      "ACTIONS": {
+        "CREATE": "Кезең құру",
+        "REFRESH": "Жаңарту"
+      }
+    },
+    "TOUCH_EDITOR": {
+      "CREATE_TITLE": "Создать касание",
+      "EDIT_TITLE": "Редактировать касание",
+      "DESCRIPTION": "Создайте запланированное касание для этой сущности. Маршрутизация канала и итоговый статус определяются движком касаний.",
+      "CREATE": "Создать касание",
+      "SAVE": "Сохранить касание",
+      "EDIT": "Изменить",
+      "TEXT_MODE": {
+        "STATIC": "Статичный текст",
+        "DYNAMIC": "Динамичный текст",
+        "AGENT": "AI-генерация"
+      },
+      "TEXT_MODE_HELP": {
+        "STATIC": "Используйте этот режим, когда сообщение должно отправиться ровно в том виде, в котором вы его сохранили.",
+        "DYNAMIC": "Используйте ссылки на поля, если финальный текст должен подставляться из текущей сущности в момент отправки.",
+        "AGENT": "Используйте инструкции для Captain, если финальный текст должен генерироваться в момент исполнения из текущего контекста диалога и сущности."
+      },
+      "REPEAT_MODE": {
+        "ONCE": "Без повторения",
+        "DAILY": "Каждый день",
+        "WEEKLY": "Каждую неделю",
+        "WEEKDAYS": "Только по будням",
+        "MONTHLY": "Каждый месяц"
+      },
+      "REPEAT_MODE_HELP": {
+        "ONCE": "Касание выполнится только один раз в выбранное время.",
+        "DAILY": "После каждого успешного исполнения следующее касание будет создано на то же время следующего дня.",
+        "WEEKLY": "После каждого успешного исполнения следующее касание будет создано на тот же день недели и время следующей недели.",
+        "WEEKDAYS": "После каждого успешного исполнения следующее касание будет создано на следующий рабочий день в то же время.",
+        "MONTHLY": "После каждого успешного исполнения следующее касание будет создано на тот же день и время следующего месяца."
+      },
+      "TIMING_MODE": {
+        "ABSOLUTE": "Конкретные дата и время",
+        "RELATIVE": "Относительно сущности"
+      },
+      "TIMING_MODE_HELP": {
+        "ABSOLUTE": "Подходит для фиксированного времени отправки, которое не должно зависеть от изменений в сущности.",
+        "RELATIVE": "Подходит для follow-up, который должен сдвигаться вместе с записью, задачей, сделкой или диалогом."
+      },
+      "CONTEXT_TITLE": "Контекст касания: {entity}",
+      "ROUTING_NOTE": "Система постарается использовать текущий диалог и иначе определит маршрут в момент исполнения. Если маршрут нельзя надёжно определить, касание останется в черновиках и не отправится вслепую.",
+        "ANCHORS": {
+          "TOUCH_CREATED_AT": "Кейінге қалдырылған хабарлама жасалды",
+          "APPOINTMENT_STARTS_AT": "Начало записи",
+          "APPOINTMENT_ENDS_AT": "Окончание записи",
+          "TASK_DUE_AT": "Дедлайн задачи",
+          "DEAL_EXPECTED_CLOSE_ON": "Ожидаемое закрытие сделки",
+          "CONVERSATION_CREATED_AT": "Создание диалога",
+          "CONVERSATION_LAST_ACTIVITY_AT": "Последняя активность в диалоге",
+          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Последнее входящее сообщение",
+          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Последнее исходящее сообщение",
+          "CONVERSATION_WAITING_SINCE": "Диалог ждёт ответа"
+        },
+      "FIELDS": {
+        "ACTION_TYPE": "Тип касания",
+        "ENTITY_TYPE": "Тип сущности",
+        "ENTITY_ID": "ID сущности",
+        "ENTITY_ID_PLACEHOLDER": "Укажите ID нужной сущности",
+        "ENTITY_NOTE": "Выберите сущность, к которой должно относиться касание. Касания по диалогу можно создавать сразу отсюда; для других сущностей касание может остаться в черновике, пока не определится маршрут.",
+        "TEXT_MODE": "Режим текста",
+        "AI_AGENT": "ИИ агент",
+        "FREE_TEXT_TAB": "Еркін мәтін",
+        "WHATSAPP_TEMPLATE_TAB": "WhatsApp үлгісі",
+        "BODY": "Сообщение",
+        "BODY_PLACEHOLDER": "Напишите сообщение, которое нужно отправить позже",
+        "TEMPLATE": "Үлгі",
+        "TEMPLATE_PLACEHOLDER": "WhatsApp үлгісін таңдаңыз",
+        "TEMPLATE_LANGUAGE": "Үлгі тілі",
+        "TEMPLATE_LANGUAGE_PLACEHOLDER": "Тілді таңдаңыз",
+        "TEMPLATE_EMPTY": "WhatsApp үлгілері табылмады",
+        "TEMPLATE_EMPTY_DESCRIPTION": "Ағымдағы WhatsApp inbox үшін үлгілерді синхрондаңыз немесе еркін мәтінге ауысыңыз.",
+        "INSTRUCTIONS": "Инструкции для Captain",
+        "INSTRUCTIONS_PLACEHOLDER": "Опишите, какое сообщение Captain должен сгенерировать при отложенном сообщении",
+        "TIMING_MODE": "Когда отправить",
+        "SCHEDULED_AT": "Время отправки",
+        "RELATIVE_TOGGLE": "арқылы",
+        "REPEAT_MODE": "Повторять",
+        "REPEAT_UNTIL_AT": "Повторять до",
+        "RELATIVE_ANCHOR": "Точка отсчёта",
+        "RELATIVE_OFFSET_MINUTES": "Смещение в минутах",
+        "RELATIVE_OFFSET_NOTE": "0 минуттан үлкен мәнді көрсетіңіз.",
+        "AUTO_CANCEL": "Отменять при входящем ответе",
+        "AUTO_CANCEL_DESCRIPTION": "Если контакт ответит в том же канале до исполнения, касание будет отменено автоматически."
+      },
+      "SUCCESS": {
+        "CREATED": "Касание создано.",
+        "UPDATED": "Касание обновлено."
+      },
+      "ERRORS": {
+        "SAVE": "Не удалось сохранить касание."
+      }
+    },
+    "TOUCH_PLAN_EDITOR": {
+      "CREATE_TITLE": "Создать этап рассылки",
+      "EDIT_TITLE": "Редактировать этап рассылки",
+      "DESCRIPTION": "Соберите переиспользуемую последовательность персональных рассылок и применяйте её из любой поддерживаемой сущности.",
+      "CREATE": "Создать этап",
+      "SAVE": "Сохранить этап",
+      "ADD_STEP": "Добавить шаг",
+      "REMOVE_STEP": "Удалить шаг",
+      "STEP_TITLE": "Шаг {index}",
+      "STEP_DESCRIPTION": "Каждый шаг станет обычной персональной рассылкой после применения этапа.",
+      "ENTITY_KIND_PLACEHOLDER": "Выберите хотя бы один тип сущности",
+      "COMPATIBILITY_WARNING": "Этот относительный якорь доступен не для всех выбранных типов сущностей. При применении к другой сущности шаг может остаться в черновике, пока время и маршрут не будут уточнены.",
+      "FIELDS": {
+          "NAME": "Название этапа",
+        "NAME_PLACEHOLDER": "Например, Напоминания о записи",
+        "DESCRIPTION": "Описание",
+          "DESCRIPTION_PLACEHOLDER": "Опишите, когда этот этап применять и какой сценарий он закрывает.",
+        "ENTITY_KINDS": "Поддерживаемые типы сущностей",
+          "ENTITY_KINDS_NOTE": "Выберите, где этот этап можно применять.",
+          "ENTITY_KIND_HELP": "Этот этап можно прикреплять к такому типу сущности.",
+          "STEPS": "Шаги этапа",
+          "STEPS_NOTE": "Эти шаги будут созданы, когда этап применят к: {entityKinds}."
+      },
+      "SUCCESS": {
+          "CREATED": "Этап рассылки создан.",
+          "UPDATED": "Этап рассылки обновлён."
+      },
+      "ERRORS": {
+          "SAVE": "Не удалось сохранить этап рассылки."
+      }
+    },
+    "TEMPLATES": {
+      "TITLE": "Шаблоны",
+      "DESCRIPTION": "Управляйте переиспользуемыми текстовыми заготовками и slash-шаблонами в отдельной outbound-странице."
     }
   }
 }

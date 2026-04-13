@@ -13,7 +13,7 @@ class Captain::Tools::ChangeTaskStatusTool < Captain::Tools::BasePublicTool
 
     "Moved task #{task.title} to status #{task.status&.name}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

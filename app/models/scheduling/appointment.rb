@@ -81,6 +81,7 @@ class Scheduling::Appointment < ApplicationRecord
 
   has_one :expense, class_name: 'Scheduling::Expense', dependent: :destroy_async, inverse_of: :appointment
   has_many :payments, -> { order(:created_at, :id) }, class_name: 'Scheduling::Payment', dependent: :destroy_async, inverse_of: :appointment
+  has_many :reminders, as: :remindable, dependent: :nullify
 
   before_validation :sync_account_id
   before_validation :assign_duration_min

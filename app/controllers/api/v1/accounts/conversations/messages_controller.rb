@@ -1,6 +1,4 @@
 class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::Conversations::BaseController
-  before_action :ensure_api_inbox, only: :update
-
   def index
     @messages = message_finder.perform
   end
@@ -14,15 +12,23 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def update
-    Messages::StatusUpdateService.new(message, permitted_params[:status], permitted_params[:external_error]).perform
-    @message = message
+    if content_update_requested?
+      update_message_content
+    elsif status_update_requested?
+      ensure_api_inbox!
+      return if performed?
+
+      Messages::StatusUpdateService.new(message, permitted_params[:status], permitted_params[:external_error]).perform
+      @message = message
+    else
+      render json: { error: 'No supported message update params were provided' }, status: :unprocessable_content
+    end
   end
 
   def destroy
-    ActiveRecord::Base.transaction do
-      message.update!(content: I18n.t('conversations.messages.deleted'), content_type: :text, content_attributes: { deleted: true })
-      message.attachments.destroy_all
-    end
+    @message = Messages::DeleteService.new(message: message).perform
+  rescue Messages::DeleteService::Error => e
+    render_could_not_create_error(e.message)
   end
 
   def retry
@@ -65,16 +71,33 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def permitted_params
-    params.permit(:id, :target_language, :status, :external_error)
+    params.permit(:id, :target_language, :status, :external_error, :content)
   end
 
   def already_translated_content_available?
     message.translations.present? && message.translations[permitted_params[:target_language]].present?
   end
 
-  # API inbox check
-  def ensure_api_inbox
-    # Only API inboxes can update messages
-    render json: { error: 'Message status update is only allowed for API inboxes' }, status: :forbidden unless @conversation.inbox.api?
+  def content_update_requested?
+    params.key?(:content)
+  end
+
+  def status_update_requested?
+    permitted_params[:status].present? || permitted_params[:external_error].present?
+  end
+
+  def update_message_content
+    @message = Messages::UpdateContentService.new(
+      message: message,
+      content: permitted_params[:content]
+    ).perform
+  rescue Messages::UpdateContentService::Error => e
+    render_could_not_create_error(e.message)
+  end
+
+  def ensure_api_inbox!
+    return if @conversation.inbox.api?
+
+    render json: { error: 'Message status update is only allowed for API inboxes' }, status: :forbidden
   end
 end

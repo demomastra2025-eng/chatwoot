@@ -66,9 +66,17 @@
       },
       "TWITTER": {
         "HELP": "Чтобы добавить свой профиль Twitter как канал, вам нужно авторизоваться через Twitter",
+        "NOT_CONFIGURED": "Twitter credentials пока не настроены на сервере. Добавьте TWITTER_APP_ID, TWITTER_CONSUMER_KEY и TWITTER_CONSUMER_SECRET, чтобы включить этот канал.",
         "ERROR_MESSAGE": "Произошла ошибка при подключении к Twitter, попробуйте еще раз",
         "TWEETS": {
           "ENABLE": "Создать беседы из твитов с упоминанем"
+        }
+      },
+      "TELEGRAM": {
+        "SELECT_PROVIDER": {
+          "TITLE": "Выберите тип Telegram-канала",
+          "DESCRIPTION": "Выберите, хотите ли вы подключить Telegram-бота или личный Telegram-аккаунт.",
+          "CHANGE_ACTION": "Сменить тип Telegram"
         }
       },
       "WEBSITE_CHANNEL": {
@@ -510,16 +518,67 @@
         }
       },
       "TELEGRAM_CHANNEL": {
-        "TITLE": "Telegram канал",
-        "DESC": "Интегрируйте Telegram канал и начните общаться с вашими клиентами.",
+        "TITLE": "Telegram Bot канал",
+        "DESC": "Интегрируйте Telegram Bot и начните общаться с вашими клиентами.",
         "BOT_TOKEN": {
-          "LABEL": "Токен авторизации",
+          "LABEL": "Bot Token",
           "SUBTITLE": "Настройте токен бота, который вы получили в Telegram BotFather.",
-          "PLACEHOLDER": "Токен авторизации"
+          "PLACEHOLDER": "Bot Token"
         },
-        "SUBMIT_BUTTON": "Создать канал Telegram",
+        "SUBMIT_BUTTON": "Создать канал Telegram Bot",
         "API": {
           "ERROR_MESSAGE": "Не удалось добавить канал Телеграм"
+        }
+      },
+      "TELEGRAM_PERSONAL_CHANNEL": {
+        "TITLE": "Telegram Personal канал",
+        "DESC": "Подключите личный аккаунт Telegram в OneLink.",
+        "API_ID": {
+          "LABEL": "API ID",
+          "PLACEHOLDER": "Telegram API ID",
+          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие Telegram Personal credentials из server env."
+        },
+        "API_HASH": {
+          "LABEL": "API Hash",
+          "PLACEHOLDER": "Telegram API Hash",
+          "SUBTITLE": "Необязательно. Оставьте пустым, чтобы использовать общие Telegram Personal credentials из server env."
+        },
+        "PHONE_NUMBER": {
+          "LABEL": "Номер телефона",
+          "PLACEHOLDER": "+77001234567",
+          "SUBTITLE": "Используйте номер личного Telegram-аккаунта в формате E.164."
+        },
+        "SUBMIT_BUTTON": "Создать канал Telegram Personal",
+        "API": {
+          "ERROR_MESSAGE": "Не удалось сохранить канал Telegram Personal"
+        }
+      },
+      "VK_COMMUNITY_CHANNEL": {
+        "TITLE": "VK Community канал",
+        "DESC": "Подключите сообщения сообщества VK через Callback API и VK messages API.",
+        "GROUP_ID": {
+          "LABEL": "Group ID",
+          "PLACEHOLDER": "ID сообщества VK"
+        },
+        "ACCESS_TOKEN": {
+          "LABEL": "Access token",
+          "PLACEHOLDER": "Токен доступа VK"
+        },
+        "SECRET": {
+          "LABEL": "Secret key",
+          "PLACEHOLDER": "Секрет callback"
+        },
+        "CONFIRMATION_TOKEN": {
+          "LABEL": "Confirmation token",
+          "PLACEHOLDER": "Токен подтверждения callback"
+        },
+        "API_VERSION": {
+          "LABEL": "API version",
+          "PLACEHOLDER": "5.199"
+        },
+        "SUBMIT_BUTTON": "Создать канал VK",
+        "API": {
+          "ERROR_MESSAGE": "Не удалось сохранить канал VK"
         }
       },
       "AUTH": {
@@ -535,6 +594,10 @@
           "FACEBOOK": {
             "TITLE": "Facebook",
             "DESCRIPTION": "Подключить страницу Facebook"
+          },
+          "TWITTER": {
+            "TITLE": "Twitter / X",
+            "DESCRIPTION": "Подключить direct messages и mentions из Twitter"
           },
           "WHATSAPP": {
             "TITLE": "WhatsApp",
@@ -558,7 +621,19 @@
           },
           "TELEGRAM": {
             "TITLE": "Telegram",
-            "DESCRIPTION": "Настроить канал Telegram с помощью Bot token"
+            "DESCRIPTION": "Подключить Telegram и выбрать, использовать бота или личный аккаунт"
+          },
+          "TELEGRAM_BOT": {
+            "TITLE": "Telegram Bot",
+            "DESCRIPTION": "Настроить Telegram Bot через токен BotFather"
+          },
+          "TELEGRAM_PERSONAL": {
+            "TITLE": "Telegram Personal",
+            "DESCRIPTION": "Подключить личный Telegram-аккаунт для приватных чатов"
+          },
+          "VK": {
+            "TITLE": "VK",
+            "DESCRIPTION": "Подключить личные сообщения сообщества VK"
           },
           "LINE": {
             "TITLE": "Line",
@@ -652,6 +727,7 @@
         "CONNECTED_SYNCING_HINT": "Устройство уже связано. Сейчас перенаправим вас дальше, а сообщения и контакты догрузятся в фоне.",
         "CONNECTED_REDIRECT": "Настройка по QR завершена. Перенаправляем в настройки канала...",
         "FAILED": "Не удалось получить QR-код для WhatsApp Web.",
+        "RECONNECTING": "Связь временно потеряна. Ждем, пока WhatsApp Web переподключится автоматически.",
         "RECOVERING": "Предыдущая попытка QR-кода завершилась ошибкой или код устарел. Запрашиваем новый QR-код WhatsApp Web.",
         "QR_EXPIRED_REFRESHING": "QR-код устарел. Запрашиваем новый QR-код WhatsApp Web.",
         "REQUEST_NEW_QR": "Запросить новый QR-код",
@@ -661,7 +737,58 @@
       "MESSENGER_QR_INSTRUCTION": "Отсканируйте QR-код выше, чтобы быстро протестировать ваш почтовый ящик Facebook Messenger",
       "MESSENGER_QR_ALT": "QR-код Messenger",
       "TELEGRAM_QR_INSTRUCTION": "Отсканируйте QR-код выше, чтобы быстро протестировать ваш почтовый ящик Telegram",
-      "TELEGRAM_QR_ALT": "QR-код Telegram"
+      "TELEGRAM_QR_ALT": "QR-код Telegram",
+      "TELEGRAM_PERSONAL": {
+        "TITLE": "Подключение Telegram Personal",
+        "DESCRIPTION": "Авторизуйте личный аккаунт Telegram. OneLink привязывает этот inbox к одной приватной Telegram-сессии.",
+        "LOADING": "Подготавливаем авторизацию Telegram Personal.",
+        "REQUESTING_CODE": "Запрашиваем код входа в Telegram.",
+        "REQUESTING_QR": "Подготавливаем QR-вход Telegram.",
+        "REQUESTING_FULL_HISTORY": "Планируем полный импорт истории Telegram.",
+        "REQUEST_CODE_HINT": "Запросите код входа и введите его ниже, чтобы подключить этот inbox.",
+        "AUTH_METHOD_HINT": "Выберите способ авторизации: введите код входа или отсканируйте QR-код Telegram.",
+        "FULL_HISTORY_SYNC_LABEL": "Импортировать всю историю",
+        "FULL_HISTORY_SYNC_SUCCESS": "Полный импорт истории Telegram запущен",
+        "FULL_HISTORY_SYNC_ERROR": "Не удалось запустить полный импорт истории Telegram",
+        "REQUEST_CODE": "Запросить код входа",
+        "REQUEST_NEW_CODE": "Запросить новый код",
+        "REQUEST_CODE_SUCCESS": "Код входа Telegram запрошен",
+        "REQUEST_CODE_ERROR": "Не удалось запросить код входа Telegram",
+        "REQUEST_QR": "Сгенерировать QR",
+        "REFRESH_QR": "Обновить QR",
+        "REQUEST_QR_SUCCESS": "QR-вход Telegram готов",
+        "REQUEST_QR_ERROR": "Не удалось подготовить QR-вход Telegram",
+        "CODE_SENT": "Telegram отправил код на подключенное устройство или в приложение Telegram.",
+        "QR_READY": "Отсканируйте QR-код с устройства, где этот аккаунт уже авторизован в Telegram.",
+        "QR_EXPIRED": "QR-код Telegram устарел. Сгенерируйте новый, чтобы продолжить.",
+        "CODE_LOGIN": "Войти по коду",
+        "CODE_LABEL": "Код входа",
+        "CODE_PLACEHOLDER": "12345",
+        "CODE_HINT": "Введите код, который Telegram отправил для этого личного аккаунта.",
+        "CODE_REQUIRED": "Введите код входа Telegram",
+        "VERIFY_CODE": "Подтвердить код",
+        "VERIFY_CODE_ERROR": "Не удалось подтвердить код входа Telegram",
+        "QR_LOGIN": "Войти по QR-коду",
+        "QR_HINT": "Откройте Telegram на устройстве, где этот аккаунт уже вошёл, и отсканируйте этот QR-код.",
+        "QR_EMPTY": "Сгенерируйте QR-код Telegram, чтобы начать QR-вход.",
+        "QR_IMAGE_ALT": "QR-код Telegram Personal",
+        "QR_EXPIRES_AT": "QR истекает: {value}",
+        "PASSWORD_REQUIRED": "Для этого аккаунта включена 2FA. Введите пароль ниже.",
+        "PASSWORD_LABEL": "Пароль 2FA",
+        "PASSWORD_PLACEHOLDER": "Пароль Telegram",
+        "PASSWORD_HINT": "Используйте облачный пароль Telegram, настроенный для этого аккаунта.",
+        "PASSWORD_REQUIRED_ERROR": "Введите пароль 2FA Telegram",
+        "VERIFY_PASSWORD": "Подтвердить пароль",
+        "VERIFY_PASSWORD_ERROR": "Не удалось подтвердить пароль Telegram",
+        "CONNECTED": "Telegram Personal подключен.",
+        "CONNECTED_SUCCESS": "Telegram Personal успешно подключен.",
+        "CONNECTED_REDIRECT": "Авторизация завершена. Переходим в настройки inbox...",
+        "FAILED": "Авторизация Telegram Personal завершилась ошибкой.",
+        "PHONE_NUMBER": "Номер телефона:",
+        "STATUS": "Статус:",
+        "CONNECTION": "Соединение:",
+        "LAST_ERROR": "Последняя ошибка:"
+      }
     },
     "REAUTH": "Войти заново",
     "VIEW": "Просмотр",
@@ -723,6 +850,112 @@
         "RAW_JID": "raw_jid:",
         "CANONICAL_JID": "canonical_jid:",
         "IDENTIFIER": "identifier:"
+      },
+      "TELEGRAM_PERSONAL": {
+        "TITLE": "Telegram Personal",
+        "SUBTITLE": "Управление подключением, импортом и служебной диагностикой личного Telegram inbox.",
+        "OVERVIEW": "Обзор",
+        "OVERVIEW_SUBTITLE": "Ключевой статус канала, авторизации и последних импортов в одном месте.",
+        "CONNECTION_STATE": "Состояние подключения",
+        "PHONE_NUMBER": "Номер телефона:",
+        "STATUS": "Статус:",
+        "CONNECTION": "Соединение:",
+        "LAST_SYNCED": "Последняя синхронизация:",
+        "LAST_ERROR": "Последняя ошибка:",
+        "OPERATOR_ACTIONS": "Действия оператора",
+        "SERVICE_CONTROLS": "Сервисные действия",
+        "SERVICE_CONTROLS_SUBTITLE": "Перезапуск runtime и безопасное отключение канала без лишнего шума в интерфейсе.",
+        "ACCESS_SECTION": "Вход в аккаунт",
+        "ACCESS_SECTION_SUBTITLE": "Используйте код, QR или 2FA-пароль в зависимости от текущего шага авторизации.",
+        "IMPORT_SECTION": "Импорт данных",
+        "IMPORT_SECTION_SUBTITLE": "Запускайте импорт недавней истории, полный повторный импорт или импорт контактов отдельно.",
+        "DIAGNOSTICS_SECTION": "Служебная диагностика",
+        "DIAGNOSTICS_SECTION_SUBTITLE": "Минимальный набор технических сигналов для быстрой проверки состояния канала.",
+        "RAW_DIAGNOSTICS": "Сырой JSON диагностики",
+        "RAW_DIAGNOSTICS_TOGGLE": "Показать или скрыть сырой JSON диагностики",
+        "REFRESH_DIAGNOSTICS": "Обновить диагностику",
+        "REQUEST_CODE": "Запросить код",
+        "REQUEST_CODE_SUCCESS": "Код входа Telegram запрошен",
+        "REQUEST_CODE_ERROR": "Не удалось запросить код входа Telegram",
+        "REQUEST_QR": "Сгенерировать QR",
+        "REFRESH_QR": "Обновить QR",
+        "REQUEST_QR_SUCCESS": "QR-вход Telegram готов",
+        "REQUEST_QR_ERROR": "Не удалось подготовить QR-вход Telegram",
+        "RECONNECT": "Переподключить",
+        "RECONNECT_SUCCESS": "Переподключение Telegram Personal запущено",
+        "RECONNECT_ERROR": "Не удалось переподключить Telegram Personal",
+        "HISTORY_SYNC": "Импортировать недавнюю историю",
+        "HISTORY_SYNC_SUCCESS": "Импорт недавней истории Telegram Personal запущен",
+        "HISTORY_SYNC_ERROR": "Не удалось запустить импорт недавней истории Telegram Personal",
+        "FULL_HISTORY_SYNC": "Импортировать всю историю заново",
+        "FULL_HISTORY_SYNC_SUCCESS": "Полный импорт истории Telegram Personal запущен",
+        "FULL_HISTORY_SYNC_ERROR": "Не удалось запустить полный импорт истории Telegram Personal",
+        "CONTACTS_SYNC": "Импортировать контакты",
+        "CONTACTS_SYNC_SUCCESS": "Импорт контактов Telegram Personal запущен",
+        "CONTACTS_SYNC_ERROR": "Не удалось запустить импорт контактов Telegram Personal",
+        "DISCONNECT": "Отключить",
+        "DISCONNECT_SUCCESS": "Telegram Personal отключен",
+        "DISCONNECT_ERROR": "Не удалось отключить Telegram Personal",
+        "AUTO_SYNC_HINT": "Статус и диагностические показатели обновляются автоматически при открытии этой страницы.",
+        "CODE_LOGIN": "Войти по коду",
+        "CODE_LABEL": "Код входа",
+        "CODE_PLACEHOLDER": "12345",
+        "CODE_HINT": "Введите код входа, полученный от Telegram.",
+        "CODE_REQUIRED": "Введите код входа Telegram",
+        "VERIFY_CODE": "Подтвердить код",
+        "VERIFY_CODE_ERROR": "Не удалось подтвердить код входа Telegram",
+        "QR_LOGIN": "Войти по QR-коду",
+        "QR_HINT": "Откройте Telegram на устройстве, где этот аккаунт уже вошёл, и отсканируйте этот QR-код.",
+        "QR_EMPTY": "Сгенерируйте QR-код Telegram, чтобы начать QR-вход.",
+        "QR_IMAGE_ALT": "QR-код Telegram Personal",
+        "QR_EXPIRES_AT": "QR истекает: {value}",
+        "PASSWORD_LABEL": "Пароль 2FA",
+        "PASSWORD_PLACEHOLDER": "Пароль Telegram",
+        "PASSWORD_HINT": "Введите облачный пароль Telegram для этого аккаунта.",
+        "PASSWORD_REQUIRED_ERROR": "Введите пароль 2FA Telegram",
+        "VERIFY_PASSWORD": "Подтвердить пароль",
+        "VERIFY_PASSWORD_ERROR": "Не удалось подтвердить пароль Telegram",
+        "DIAGNOSTICS": "Диагностика",
+        "REFRESHING": "Обновляем...",
+        "AUTH_STATE": "Состояние авторизации",
+        "HISTORY_SYNC_STATE": "Состояние импорта истории",
+        "LAST_HISTORY_SYNC_AT": "Последний импорт истории",
+        "HISTORY_SYNC_COUNT": "Импортировано сообщений",
+        "CONTACTS_SYNC_STATE": "Состояние импорта контактов",
+        "LAST_CONTACTS_SYNC_AT": "Последний импорт контактов",
+        "CONTACTS_SYNC_COUNT": "Импортировано контактов",
+        "FLOOD_WAIT": "Задержка Telegram, сек",
+        "LAST_INBOUND_AT": "Последнее входящее",
+        "NOT_AVAILABLE": "Недоступно",
+        "STATE_LABELS": {
+          "AUTHORIZED": "Авторизован",
+          "CONNECTED": "Подключен",
+          "DISCONNECTED": "Отключен",
+          "PENDING_AUTH": "Ожидает входа",
+          "CODE_SENT": "Код отправлен",
+          "QR_READY": "QR готов",
+          "QR_EXPIRED": "QR истек",
+          "PASSWORD_REQUIRED": "Нужен пароль",
+          "SCHEDULED": "Запланирован",
+          "RUNNING": "Выполняется",
+          "DELIVERING": "Доставляется",
+          "CONNECTING": "Подключается",
+          "COMPLETED": "Завершен",
+          "COMPLETED_WITH_ERRORS": "Завершен с ошибками",
+          "FAILED": "Ошибка",
+          "FLOOD_WAIT": "Ожидание Telegram",
+          "CANCELLED": "Отменен"
+        }
+      },
+      "VK_COMMUNITY": {
+        "TITLE": "Callback VK Community",
+        "SUBTITLE": "Callback и runtime-идентификаторы для подключенного inbox сообщества VK.",
+        "CALLBACK": "Настройки callback",
+        "GROUP_ID": "Group ID:",
+        "API_VERSION": "Версия API:",
+        "CALLBACK_ID": "Callback ID:",
+        "WEBHOOK_URL": "Webhook URL",
+        "WEBHOOK_HINT": "Настройте этот URL в VK Callback API и используйте тот же secret и confirmation token, что были указаны при создании канала."
       },
       "EMAIL_COLLECT_BOX": {
         "ENABLED": "Включено",
@@ -1263,6 +1496,9 @@
       "SMS": "SMS",
       "EMAIL": "Email",
       "TELEGRAM": "Telegram",
+      "TELEGRAM_BOT": "Telegram Bot",
+      "TELEGRAM_PERSONAL": "Telegram Personal",
+      "VK": "VK",
       "LINE": "Line",
       "API": "Источник API",
       "INSTAGRAM": "Instagram",
@@ -1316,10 +1552,28 @@
       "DELETE_SUCCESS": "Политика назначения успешно удалена",
       "DELETE_ERROR": "Не удалось удалить политику назначения"
     },
-    "COUNT": "Найдено источников: {n}",
-    "SEARCH_PLACEHOLDER": "Поиск источников...",
-    "NO_RESULTS": "Не найдено источников, соответствующих вашему запросу",
+    "COUNT": "Найдено каналов: {n}",
+    "SEARCH_PLACEHOLDER": "Поиск каналов...",
+    "NO_RESULTS": "Не найдено каналов, соответствующих вашему запросу",
     "CHANNEL_PREFERENCES": "Настройки канала",
-    "WIDGET_FEATURES": "Функции виджета"
+    "WIDGET_FEATURES": "Функции виджета",
+    "WIDGET_TRIGGER_CAMPAIGNS": {
+      "TITLE": "Триггеры сайта",
+      "DESCRIPTION": "Управляйте проактивными сообщениями виджета для этого сайта: где и когда они должны появляться посетителю.",
+      "CREATE": "Добавить триггер",
+      "CREATE_DIALOG_TITLE": "Добавить триггер сайта",
+      "CREATE_DIALOG_DESCRIPTION": "Этот триггер будет работать только для текущего website inbox и откроет чат на сайте по заданным правилам.",
+      "CREATE_SUCCESS": "Триггер сайта создан.",
+      "EMPTY_TITLE": "Триггеров сайта пока нет",
+      "EMPTY_DESCRIPTION": "Добавьте правило, если нужно показывать проактивное сообщение в виджете на определённой странице или после задержки.",
+      "EDIT": "Изменить",
+      "BOT": "Бот",
+      "SENDER": "Отправитель: {sender}",
+      "SUMMARY": "{url} · через {seconds} сек",
+      "STATUS": {
+        "ENABLED": "Включён",
+        "DISABLED": "Выключен"
+      }
+    }
   }
 }

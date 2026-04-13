@@ -137,6 +137,11 @@
       "UPDATE_ERROR": "Произошла ошибка при обновлении интеграции, пожалуйста, попробуйте еще раз",
       "UPDATE_SUCCESS": "Канал успешно подключен",
       "FAILED_TO_FETCH_CHANNELS": "Произошла ошибка при получении каналов из Slack, попробуйте еще раз",
+      "NOT_CONFIGURED": {
+        "TITLE": "Slack credentials не настроены",
+        "DESCRIPTION": "UI интеграции Slack теперь доступен, но OAuth-подключение останется недоступным, пока на сервере не будут заданы SLACK_CLIENT_ID и SLACK_CLIENT_SECRET.",
+        "BUTTON": "Нужна настройка сервера"
+      },
       "HEADER": "Slack"
     },
     "DYTE": {
@@ -1451,7 +1456,7 @@
             "JSON_PLACEHOLDER": "Введите тестовый JSON"
           },
           "PREVIEW": {
-            "ACTION": "Показать превью",
+            "ACTION": "Превью",
             "ERROR_MESSAGE": "Не удалось построить превью запроса",
             "RESULT_TITLE": "Собранный запрос",
             "URL_LABEL": "Финальный URL",
@@ -1482,6 +1487,439 @@
         }
       },
       "UNGROUPED": "Без группы"
+    },
+    "MCP_SERVERS": {
+      "HEADER": "MCP-серверы",
+      "ADD_NEW": "Добавить MCP-сервер",
+      "FORM_DESCRIPTION": "Подключите MCP-сервер и откройте его найденные инструменты внутри AI команды.",
+      "SCOPES": {
+        "AGENT": "Агент",
+        "ASSISTANT": "Ассистент",
+        "BOTH": "Агент + Ассистент"
+      },
+      "OPTIONS": {
+        "MANAGE_SERVER": "Управлять сервером",
+        "EDIT_SERVER": "Редактировать сервер",
+        "DELETE_SERVER": "Удалить сервер"
+      },
+      "CREATE": {
+        "TITLE": "Создать MCP-сервер",
+        "SUCCESS_MESSAGE": "MCP-сервер успешно создан",
+        "ERROR_MESSAGE": "Не удалось создать MCP-сервер"
+      },
+      "EDIT": {
+        "TITLE": "Редактировать MCP-сервер",
+        "SUCCESS_MESSAGE": "MCP-сервер успешно обновлён",
+        "ERROR_MESSAGE": "Не удалось обновить MCP-сервер"
+      },
+      "DELETE": {
+        "TITLE": "Удалить MCP-сервер",
+        "DESCRIPTION": "Вы уверены, что хотите удалить этот MCP-сервер? Его найденные инструменты больше не будут доступны ассистентам.",
+        "CONFIRM": "Да, удалить",
+        "SUCCESS_MESSAGE": "MCP-сервер успешно удалён",
+        "ERROR_MESSAGE": "Не удалось удалить MCP-сервер"
+      },
+      "FORM": {
+        "NAME": {
+          "LABEL": "Название сервера",
+          "PLACEHOLDER": "GitHub MCP",
+          "ERROR": "Название сервера обязательно"
+        },
+        "DESCRIPTION": {
+          "LABEL": "Описание",
+          "PLACEHOLDER": "Read-only GitHub сервер для анализа репозиториев"
+        },
+        "TRANSPORT_TYPE": {
+          "LABEL": "Транспорт",
+          "PLACEHOLDER": "Выберите тип транспорта",
+          "ERROR": "Тип транспорта обязателен",
+          "SSE": "HTTP (SSE)",
+          "STREAMABLE": "HTTP (Streamable)",
+          "STDIO": "stdio (spawn command)"
+        },
+        "REQUEST_TIMEOUT": {
+          "LABEL": "Таймаут запроса (секунды)",
+          "PLACEHOLDER": "30"
+        },
+        "ENABLED": {
+          "LABEL": "Включён",
+          "HELP_TEXT": "Выключенные серверы остаются в конфигурации, но их инструменты скрываются от ассистентов."
+        },
+        "ALLOWED_SCOPES": {
+          "LABEL": "Показывать инструменты для"
+        },
+        "SERVER_CONFIG": {
+          "LABEL": "Конфигурация сервера",
+          "URL_LABEL": "URL сервера",
+          "URL_ERROR": "URL сервера обязателен",
+          "ADVANCED_JSON": "Формат (JSON)",
+          "PLACEHOLDER": "{\n  \"url\": \"https://example.com/mcp\"\n}",
+          "HELP_TEXT": "Укажите параметры подключения к вашему MCP-серверу.",
+          "ERROR": "Конфигурация сервера должна быть валидным JSON"
+        },
+        "VALIDATION_ERROR": "Исправьте ошибки формы перед поиском инструментов."
+      },
+      "TEST": {
+        "ACTION": "Тест",
+        "ERROR_MESSAGE": "Не удалось получить MCP-инструменты",
+        "RESULT_TITLE": "Найдено инструментов: {count}"
+      },
+      "OAUTH": {
+        "AVAILABLE": "OAuth доступен",
+        "CONNECTED": "OAuth подключён",
+        "NOT_CONNECTED": "OAuth не подключён",
+        "CONNECT": "Подключить OAuth",
+        "RECONNECT": "Переподключить OAuth",
+        "DISCONNECT": "Отключить OAuth",
+        "STARTED": "Переходим к OAuth-авторизации.",
+        "ERROR": "Не удалось начать OAuth-авторизацию",
+        "DISCONNECTED_SUCCESS": "OAuth-подключение удалено",
+        "CONNECTED_SUCCESS": "OAuth успешно подключён",
+        "CALLBACK_ERROR": "OAuth-авторизация завершилась ошибкой"
+      },
+      "SURFACE": {
+        "TITLE": "Surface {name}",
+        "DESCRIPTION": "Просмотр MCP-инструментов, ресурсов, промптов и задач, которые отдаёт сервер.",
+        "SCOPE_HINT": "Эта поверхность доступна только администраторам. Runtime-доступ к tools всё равно управляется настройками ассистента.",
+        "REFRESH": "Обновить",
+        "LOADING": "Загрузка MCP surface...",
+        "ERROR_MESSAGE": "Не удалось загрузить MCP surface",
+        "ACTION_ERROR": "MCP-операция завершилась ошибкой",
+        "ARGUMENTS_LABEL": "JSON аргументов",
+        "ARGUMENTS_HELP": "Используется для resource templates и prompts.",
+        "ARGUMENTS_ERROR": "Аргументы должны быть валидным JSON",
+        "READ_RESOURCE": "Прочитать ресурс",
+        "FETCH_TEMPLATE": "Получить ресурс",
+        "FETCH_PROMPT": "Получить prompt",
+        "REFRESH_TASK": "Обновить задачу",
+        "TASK_RESULT": "Результат задачи",
+        "CANCEL_TASK": "Отменить задачу",
+        "RESULT_TITLE": "Результат",
+        "RESULT_EMPTY": "Запустите операцию, чтобы увидеть результат здесь.",
+        "TABS": {
+          "TOOLS": "Tools",
+          "RESOURCES": "Resources",
+          "RESOURCE_TEMPLATES": "Templates",
+          "PROMPTS": "Prompts",
+          "TASKS": "Tasks"
+        }
+      }
+    },
+    "OBSERVABILITY": {
+      "TITLE": "Наблюдаемость",
+      "TABS": {
+        "OVERVIEW": "Обзор",
+        "EVENTS": "События",
+        "TRACES": "Трейсы",
+        "EVALUATIONS": "Оценки"
+      },
+      "ACTIONS": {
+        "REFRESH": "Обновить",
+        "RUN_RELEASE_CHECK": "Запустить release check",
+        "APPLY_FILTERS": "Применить фильтры",
+        "RESET_FILTERS": "Сбросить фильтры",
+        "COPY_LINK": "Скопировать ссылку на текущее представление",
+        "EXPORT_JSON": "Экспортировать подходящие события в JSON",
+        "EXPORT_CSV": "Экспортировать подходящие события в CSV",
+        "LINK_COPIED": "Ссылка observability скопирована",
+        "LINK_COPY_ERROR": "Не удалось скопировать ссылку observability",
+        "EXPORT_DONE": "Экспорт observability подготовлен",
+        "EXPORT_ERROR": "Не удалось экспортировать observability-данные",
+        "OPEN_METRICS": "Открыть metrics endpoint",
+        "VIEW_DETAILS": "Открыть детали",
+        "FOCUS_TRACE": "Сфокусировать trace",
+        "VIEW_MATCHING_EVENTS": "Открыть подходящие события"
+      },
+      "SAVED_VIEWS": {
+        "NAME_PLACEHOLDER": "Название сохраненного представления",
+        "SAVE_ACTION": "Сохранить текущее представление",
+        "DELETE_ACTION": "Удалить",
+        "EMPTY": "Для этого аккаунта пока нет сохраненных представлений.",
+        "NAME_REQUIRED": "Укажите название сохраненного представления",
+        "SAVE_SUCCESS": "Сохраненное представление обновлено",
+        "DELETE_SUCCESS": "Сохраненное представление удалено"
+      },
+      "PRESETS": {
+        "ALL": "Обзор",
+        "ERRORS": "Ошибки",
+        "BLOCKED": "Блокировки",
+        "TOOL_FAILURES": "Сбои инструментов",
+        "SCHEMA_INVALID": "Ошибки схемы",
+        "ASSISTANT": "Assistant",
+        "COPILOT": "Copilot"
+      },
+      "FILTERS": {
+        "ALL_FEATURES": "Все функции",
+        "ALL_RUNTIME_MODES": "Все режимы runtime",
+        "ALL_STATUSES": "Все статусы",
+        "ALL_FLAGS": "Все флаги",
+        "STATUS": "Статус события",
+        "MODEL": "Модель",
+        "EVENT_NAME": "Имя события",
+        "TOOL_NAME": "Имя инструмента",
+        "SCHEMA_NAME": "Имя схемы",
+        "TRACE_ID": "Trace ID",
+        "SESSION_ID": "Session ID",
+        "CONVERSATION_DISPLAY_ID": "ID диалога",
+        "ASSISTANT_ID": "ID ассистента",
+        "SINCE": "С",
+        "UNTIL": "По",
+        "PER_PAGE": "Строк на странице"
+      },
+      "RUNTIME_MODES": {
+        "TASK": "Задача"
+      },
+      "METRICS": {
+        "REQUESTS": "Chat-запросы",
+        "EVENTS": "Сохранённые события",
+        "ERRORS": "Ошибки",
+        "BLOCKED": "Заблокировано",
+        "AVG_LATENCY": "Средняя задержка",
+        "ALL_TOKENS": "Все токены",
+        "ALL_COST": "Полная стоимость",
+        "MODERATION": "Проверки модерации"
+      },
+      "TRENDS": {
+        "LATENCY_TITLE": "Задержка во времени",
+        "LATENCY_DESCRIPTION": "Среднее время ответа в текущем отфильтрованном окне.",
+        "ERROR_TITLE": "Ошибки во времени",
+        "ERROR_DESCRIPTION": "Количество ошибок по временным бакетам для текущей области.",
+        "COST_TITLE": "Стоимость во времени",
+        "COST_DESCRIPTION": "Тренд оценочной стоимости в текущем отфильтрованном окне.",
+        "NO_DATA": "Для этой области пока недостаточно данных для построения тренда."
+      },
+      "RELEASE_GATE": {
+        "TITLE": "Операционный release gate",
+        "DESCRIPTION": "Показывает здоровье AI runtime по ошибкам, задержкам, стоимости и safety-порогам.",
+        "CURRENT_PERIOD": "Текущий период",
+        "BASELINE_PERIOD": "Базовый период",
+        "PERIOD_VALUE": "{since} - {until}",
+        "ACTUAL": "Факт: {value}",
+        "EXPECTED": "Порог: {value}"
+      },
+      "ALERTS": {
+        "TITLE": "Операционные алерты",
+        "DESCRIPTION": "Активные алерты, рассчитанные из ошибок release gate для этого аккаунта.",
+        "LAST_DELIVERY": "Последняя доставка",
+        "LAST_RESOLVED": "Последнее восстановление",
+        "DELIVERY_CHANNELS": "Каналы доставки",
+        "EMPTY": "Для выбранной области активных алертов нет."
+      },
+      "DISTRIBUTION": {
+        "TITLE": "Распределение трафика",
+        "DESCRIPTION": "Топ функций, моделей и провайдеров в текущем отфильтрованном окне.",
+        "FEATURES": "Функции",
+        "MODELS": "Модели",
+        "PROVIDERS": "Провайдеры",
+        "MODERATION_STAGES": "Этапы модерации",
+        "BLOCK_REASONS": "Причины safety-блокировки",
+        "FLAGGED_CATEGORIES": "Помеченные категории",
+        "MODERATION_REASONS": "Причины модерации"
+      },
+      "EVENTS": {
+        "TITLE": "Поток событий",
+        "DESCRIPTION": "Смотрите сохранённые AI-события по этому аккаунту для ассистентов, copilot, tools и moderation.",
+        "RESULT_COUNT": "Найдено событий: {count}",
+        "TABLE": {
+          "TIME": "Время",
+          "EVENT": "Событие",
+          "CONTEXT": "Контекст",
+          "MODEL": "Модель",
+          "USAGE": "Использование",
+          "FLAGS": "Флаги"
+        },
+        "CONTEXT": {
+          "CONVERSATION": "Диалог",
+          "TOOL": "Инструмент",
+          "SCHEMA": "Схема",
+          "TRACE": "Trace",
+          "STAGE": "Этап"
+        },
+        "USAGE": {
+          "TOKENS": "Токены",
+          "LATENCY": "Задержка",
+          "COST": "Стоимость"
+        }
+      },
+      "TRACES": {
+        "TITLE": "Группы трейсов",
+        "DESCRIPTION": "Группирует подходящие сохранённые события в trace-подобные таймлайны по session, conversation, copilot или assistant идентификаторам.",
+        "RESULT_COUNT": "Найдено trace-групп: {count}",
+        "FOCUSED_TRACE": "Текущий trace",
+        "FOCUSED_RANGE": "{startedAt} - {endedAt}",
+        "LATEST_EVENT": "Последнее событие {time}",
+        "DURATION": "Длительность: {duration}",
+        "METRICS": {
+          "EVENTS": "Событий: {count}",
+          "ERRORS": "Ошибок: {count}",
+          "BLOCKED": "Блокировок: {count}"
+        },
+        "GROUP_TYPES": {
+          "TRACE": "Trace",
+          "SESSION": "Session",
+          "CONVERSATION": "Диалог",
+          "COPILOT": "Copilot thread",
+          "ASSISTANT": "Ассистент",
+          "EVENT": "Событие"
+        }
+      },
+      "EVALS": {
+        "STATUS": "Статус отчёта",
+        "TOTAL_CHECKS": "Проверки",
+        "DETERMINISTIC_SUITES": "Детерминированные suites",
+        "LIVE_SUITES": "Live suites",
+        "REPORT_TITLE": "Release report",
+        "REPORT_DESCRIPTION": "Сформирован {generatedAt}. Объединяет операционный release gate с deterministic и live eval suites.",
+        "BLOCKING_FAILURES": "Блокирующие сбои",
+        "DETERMINISTIC_TITLE": "Детерминированные eval suites",
+        "LIVE_TITLE": "Live eval suites",
+        "SUITE_COUNTS": "Всего {total} · прошло {passed} · провалено {failed} · ошибок {errors}",
+        "NO_LIVE_SUITES": "Для выбранной области live eval suites не были сгенерированы.",
+        "OPEN_RELATED_EVENTS": "Открыть связанные события"
+      },
+      "SETTINGS": {
+        "TITLE": "Настройки observability",
+        "DESCRIPTION": "Параметры аккаунта для окна просмотра по умолчанию, retention и доставки алертов.",
+        "DEFAULT_LOOKBACK_LABEL": "Окно просмотра по умолчанию, дней",
+        "RETENTION_LABEL": "Retention, дней",
+        "ALERT_CHANNELS_LABEL": "Доставка алертов",
+        "MIN_SEVERITY_LABEL": "Минимальная критичность",
+        "EMAIL_RECIPIENTS_LABEL": "Email получателей",
+        "EMAIL_RECIPIENTS_PLACEHOLDER": "ops@example.com, ai@example.com",
+        "WEBHOOK_URL_LABEL": "Webhook URL",
+        "WEBHOOK_URL_PLACEHOLDER": "https://example.com/hooks/ai-alerts",
+        "NOTIFY_ON_LABEL": "Основной источник алертов",
+        "DISABLED_OPTION": "Отключено",
+        "ENABLED_OPTION": "Включено",
+        "SAVE_ACTION": "Сохранить настройки observability",
+        "SAVE_SUCCESS": "Настройки observability обновлены",
+        "NOTIFY_ON": {
+          "OPERATIONAL": "Операционный release gate",
+          "DETERMINISTIC": "Детерминированные evals",
+          "LIVE": "Live evals"
+        }
+      },
+      "COST_BREAKDOWN": {
+        "TITLE": "Разрез стоимости",
+        "DESCRIPTION": "Оценочная стоимость по функциям, моделям и ассистентам в текущем отфильтрованном окне.",
+        "FEATURES": "По функциям",
+        "MODELS": "По моделям",
+        "ASSISTANTS": "По ассистентам",
+        "ASSISTANT_LABEL": "Ассистент"
+      },
+      "FLAGS": {
+        "BLOCKED": "Заблокировано",
+        "TOOL_FAILURE": "Сбой инструмента",
+        "SCHEMA_INVALID": "Невалидная схема",
+        "MODERATION_SKIPPED": "Модерация пропущена",
+        "ERROR": "Ошибка",
+        "NONE": "Флагов нет"
+      },
+      "STATUS": {
+        "PASS": "Пройдено",
+        "PASS_WITH_WARNINGS": "Пройдено с предупреждениями",
+        "FAIL": "Провалено",
+        "INSUFFICIENT_DATA": "Недостаточно данных",
+        "DISABLED": "Отключено",
+        "NOT_APPLICABLE": "Не применимо",
+        "ALERTING": "Тревога",
+        "OK": "OK",
+        "SUCCESS": "Успех",
+        "COMPLETED": "Завершено",
+        "ALLOWED": "Разрешено",
+        "FLAGGED": "Помечено",
+        "ERROR": "Ошибка",
+        "FAILED": "Сбой",
+        "BLOCKED": "Заблокировано",
+        "WARNING": "Предупреждение",
+        "CRITICAL": "Критично"
+      },
+      "DETAILS": {
+        "TITLE": "Детали события",
+        "DESCRIPTION": "Показывает сохранённые метаданные, runtime-идентификаторы, флаги и санитизированный payload этого AI-события.",
+        "EMPTY_PAYLOAD": "Для этого события не был сохранён санитизированный payload.",
+        "SECTIONS": {
+          "USAGE": "Использование",
+          "FLAGS": "Флаги",
+          "IDENTIFIERS": "Идентификаторы",
+          "CONTEXT": "Контекст",
+          "PAYLOAD": "Санитизированный payload",
+          "ANNOTATIONS": "Заметки расследования"
+        },
+        "SUMMARY": {
+          "EVENT": "Событие",
+          "FEATURE": "Функция",
+          "RUNTIME": "Режим runtime",
+          "PROVIDER": "Провайдер",
+          "MODEL": "Модель",
+          "REASON": "Причина"
+        },
+        "USAGE": {
+          "DURATION": "Длительность",
+          "TOKENS": "Всего токенов",
+          "COST": "Оценочная стоимость",
+          "PROMPT_TOKENS": "Prompt токены",
+          "COMPLETION_TOKENS": "Completion токены"
+        },
+        "IDENTIFIERS": {
+          "EVENT_ID": "ID события",
+          "TRACE_ID": "Trace ID",
+          "ROOT_SPAN_ID": "Root span ID",
+          "SPAN_ID": "Span ID",
+          "PARENT_SPAN_ID": "Parent span ID",
+          "SESSION_ID": "Session ID",
+          "ASSISTANT_ID": "ID ассистента",
+          "CONVERSATION_DISPLAY_ID": "ID диалога",
+          "CONVERSATION_ID": "DB ID диалога",
+          "COPILOT_THREAD_ID": "ID copilot thread"
+        },
+        "CONTEXT": {
+          "TRACE_NAME": "Имя trace",
+          "SPAN_KIND": "Тип span",
+          "SPAN_NAME": "Имя span",
+          "TOOL_NAME": "Имя инструмента",
+          "SCHEMA_NAME": "Имя схемы",
+          "SOURCE": "Источник",
+          "CHANNEL_TYPE": "Тип канала",
+          "CURRENT_AGENT": "Текущий агент",
+          "MODERATION_STAGE": "Этап модерации",
+          "SAFETY_RULE": "Правило безопасности",
+          "FAILURE_MODE": "Режим отказа",
+          "FLAGGED_CATEGORIES": "Помеченные категории"
+        },
+        "ACTIONS": {
+          "COPY_JSON": "Скопировать JSON",
+          "FOCUS_TRACE": "Сфокусировать trace",
+          "OPEN_ASSISTANT": "Открыть ассистента",
+          "OPEN_CONVERSATION": "Открыть диалог",
+          "OPEN_COPILOT": "Открыть copilot thread",
+          "COPIED": "Payload скопирован",
+          "COPY_ERROR": "Не удалось скопировать payload"
+        },
+        "ANNOTATIONS": {
+          "DESCRIPTION": "Добавляйте заметки расследования для этого события и его trace.",
+          "PLACEHOLDER": "Добавьте заметку для разбора, ревью или передачи",
+          "ADD_ACTION": "Добавить заметку",
+          "DELETE_ACTION": "Удалить заметку",
+          "META": "{email} · {createdAt}",
+          "EMPTY": "Заметок расследования пока нет.",
+          "LOADING": "Загружаем заметки...",
+          "LOAD_ERROR": "Не удалось загрузить заметки",
+          "CREATE_SUCCESS": "Заметка расследования добавлена",
+          "CREATE_ERROR": "Не удалось добавить заметку расследования",
+          "DELETE_SUCCESS": "Заметка расследования удалена",
+          "DELETE_ERROR": "Не удалось удалить заметку расследования"
+        }
+      },
+      "EMPTY": {
+        "TITLE": "Подходящих observability-данных нет",
+        "DESCRIPTION": "Измените фильтры или дождитесь, пока для этого аккаунта накопится больше AI-трафика."
+      },
+      "API": {
+        "OVERVIEW_ERROR": "Не удалось загрузить observability-данные",
+        "RELEASE_CHECK_ERROR": "Не удалось запустить release check",
+        "PREFERENCES_ERROR": "Не удалось обновить observability-настройки"
+      }
     },
     "RESPONSES": {
       "HEADER": "FAQ",

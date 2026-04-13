@@ -261,7 +261,7 @@
     "SENT_BY": "送信者：",
     "BOT": "ボット",
     "NATIVE_APP": "Native app",
-    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from Chatwoot to maintain the message window.",
+    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from OneLink to maintain the message window.",
     "SEND_FAILED": "メッセージを送信できませんでした！再試行してください",
     "TRY_AGAIN": "再試行",
     "ASSIGNMENT": {

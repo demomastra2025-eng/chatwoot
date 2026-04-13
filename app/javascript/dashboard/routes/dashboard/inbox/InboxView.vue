@@ -66,10 +66,13 @@ const activeNotificationIndex = computed(() => {
   );
 });
 
-const isContactPanelOpen = computed(() => {
+const isConversationSidebarOpen = computed(() => {
   if (currentChat.value.id) {
-    const { is_contact_sidebar_open: isContactSidebarOpen } = uiSettings.value;
-    return isContactSidebarOpen;
+    const {
+      is_contact_sidebar_open: isContactSidebarOpen,
+      is_touch_sidebar_open: isTouchSidebarOpen,
+    } = uiSettings.value;
+    return isContactSidebarOpen || isTouchSidebarOpen;
   }
   return false;
 });
@@ -215,7 +218,7 @@ onMounted(async () => {
           <SidepanelSwitch v-if="currentChat.id" />
         </ConversationBox>
         <ConversationSidebar
-          v-if="isContactPanelOpen"
+          v-if="isConversationSidebarOpen"
           :current-chat="currentChat"
         />
       </div>

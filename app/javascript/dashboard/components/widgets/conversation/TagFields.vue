@@ -19,7 +19,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['selectField']);
+const emit = defineEmits(['close', 'selectField']);
 
 const selectedIndex = ref(0);
 const fields = ref([]);
@@ -111,6 +111,7 @@ const filteredFields = computed(() => {
 const onSelect = idx => {
   if (idx !== undefined) selectedIndex.value = idx;
   emit('selectField', filteredFields.value[selectedIndex.value]);
+  emit('close');
 };
 
 useKeyboardNavigableList({
@@ -139,8 +140,9 @@ watch(filteredFields, newFields => {
   <ToolsDropdown
     v-if="filteredFields.length"
     :items="filteredFields"
+    overlay
     :selected-index="selectedIndex"
-    class="bottom-20"
+    @close="emit('close')"
     @select="onSelect"
   />
   <template v-else />

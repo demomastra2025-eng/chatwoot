@@ -1,0 +1,130 @@
+# frozen_string_literal: true
+
+require 'rails_helper'
+
+RSpec.describe Captain::Runtime::EventBusCallbacks do
+  class EventBusCallbacksSpecChat < Struct.new(:model)
+    def with_schema(_schema)
+      self
+    end
+  end
+
+  let(:events) { [] }
+  let(:subscriber) do
+    ActiveSupport::Notifications.subscribe(/llm\.(run|chat|tool|agent)\./) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+  end
+  let(:context_wrapper) do
+    Captain::Runtime::RunContext.new(
+      {
+        session_id: '1_42',
+        current_agent: 'assistant_agent',
+        state: {
+          account_id: 1,
+          assistant_id: 2,
+          conversation: { id: 3, display_id: 42 },
+          channel_type: 'web',
+          source: 'spec'
+        }
+      }
+    )
+  end
+  let(:callbacks) { described_class.new }
+
+  before do
+    subscriber
+  end
+
+  after do
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+  end
+
+  it 'publishes normalized runtime events with shared metadata' do
+    chat = EventBusCallbacksSpecChat.new('gpt-4.1-mini')
+    Llm::StructuredOutputPolicy.bind!(chat:, schema: Captain::ConversationCompletionSchema)
+    response = Struct.new(:content, :input_tokens, :output_tokens, :tool_call?) do
+      def initialize(...)
+        super
+      end
+    end.new({ complete: true }, 11, 7, false)
+    result = Captain::Runtime::Result.new(
+      output: { response: 'Done' },
+      usage: Struct.new(:input_tokens, :output_tokens, :total_tokens).new(11, 7, 18)
+    )
+
+    callbacks.on_run_start('assistant_agent', 'Hello', context_wrapper)
+    callbacks.on_chat_created(chat, 'assistant_agent', 'gpt-4.1-mini', context_wrapper)
+    callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, context_wrapper)
+    callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
+    callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
+    callbacks.on_agent_handoff('assistant_agent', 'scenario_agent', 'handoff', context_wrapper)
+    callbacks.on_run_complete('scenario_agent', result, context_wrapper)
+
+    expect(events.map(&:name)).to include(
+      'llm.run.start',
+      'llm.chat.complete',
+      'llm.tool.execute',
+      'llm.tool.complete',
+      'llm.agent.handoff',
+      'llm.run.complete'
+    )
+
+    chat_event = events.find { |event| event.name == 'llm.chat.complete' }
+    expect(chat_event.payload).to include(
+      'feature' => 'assistant',
+      'runtime_mode' => 'captain_runtime',
+      'account_id' => 1,
+      'assistant_id' => 2,
+      'conversation_id' => 3,
+      'conversation_display_id' => 42,
+      'schema_name' => 'Captain::ConversationCompletionSchema',
+      'model' => 'gpt-4.1-mini'
+    )
+  end
+
+  it 'publishes normalized tool result telemetry for failures' do
+    callbacks.on_tool_complete(
+      'lookup_contact',
+      Captain::ToolResult.failure(error: 'Provider timeout', retryable: true),
+      context_wrapper
+    )
+
+    tool_event = events.find { |event| event.name == 'llm.tool.complete' }
+
+    expect(tool_event.payload).to include(
+      'tool_name' => 'lookup_contact',
+      'result_type' => 'hash',
+      'error' => true,
+      'result_success' => false,
+      'result_retryable' => true,
+      'result_error_preview' => 'Provider timeout'
+    )
+  end
+
+  it 'includes trace identifiers when tracing metadata is available' do
+    context_wrapper.context[:__captain_trace_event] = {
+      trace_id: 'trace-123',
+      trace_name: 'llm.captain_v2',
+      root_span_id: 'root-span-1',
+      span_id: 'span-2',
+      parent_span_id: 'root-span-1',
+      span_kind: 'tool',
+      span_name: 'llm.captain_v2.tool.lookup_contact'
+    }
+
+    callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
+
+    tool_event = events.find { |event| event.name == 'llm.tool.complete' }
+
+    expect(tool_event.payload).to include(
+      'trace_id' => 'trace-123',
+      'trace_name' => 'llm.captain_v2',
+      'root_span_id' => 'root-span-1',
+      'span_id' => 'span-2',
+      'parent_span_id' => 'root-span-1',
+      'span_kind' => 'tool',
+      'span_name' => 'llm.captain_v2.tool.lookup_contact'
+    )
+  end
+end

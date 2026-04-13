@@ -209,7 +209,6 @@ async function copyMacrocrmWebhookUrl() {
     <BaseSettingsHeader
       :title="integration.name"
       :description="headerDescription"
-      :link-text="$t('INTEGRATION_SETTINGS.LEARN_MORE')"
       :feature-name="headerFeatureName"
       :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
     >

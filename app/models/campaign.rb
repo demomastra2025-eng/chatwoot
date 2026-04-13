@@ -8,9 +8,11 @@
 #  campaign_type                      :integer          default("ongoing"), not null
 #  description                        :text
 #  enabled                            :boolean          default(TRUE)
+#  instructions                       :text
 #  message                            :text             not null
 #  scheduled_at                       :datetime
 #  template_params                    :jsonb
+#  text_mode                          :integer          default("static"), not null
 #  title                              :string           not null
 #  trigger_only_during_business_hours :boolean          default(FALSE)
 #  trigger_rules                      :jsonb
@@ -31,15 +33,21 @@
 #
 class Campaign < ApplicationRecord
   include UrlHelper
+  ONE_OFF_INBOX_TYPES = ['Twilio SMS', 'Sms', 'Whatsapp', 'Email', 'WhatsApp Web', 'Telegram', 'Telegram Personal', 'VK', 'LINE', 'Facebook',
+                         'Instagram', 'Tiktok', 'Twitter'].freeze
+  SUPPORTED_INBOX_TYPES = ['Website', *ONE_OFF_INBOX_TYPES].freeze
+
   validates :account_id, presence: true
   validates :inbox_id, presence: true
   validates :title, presence: true
-  validates :message, presence: true
+  validates :message, presence: true, unless: :agent?
+  validates :instructions, presence: true, if: :agent?
   validate :validate_campaign_inbox
   validate :validate_url
-  validate :prevent_completed_campaign_from_update, on: :update
+  validate :prevent_terminal_campaign_from_update, on: :update
   validate :sender_must_belong_to_account
   validate :inbox_must_belong_to_account
+  validate :validate_ai_authoring_availability
 
   belongs_to :account
   belongs_to :inbox
@@ -47,32 +55,99 @@ class Campaign < ApplicationRecord
 
   enum campaign_type: { ongoing: 0, one_off: 1 }
   # TODO : enabled attribute is unneccessary . lets move that to the campaign status with additional statuses like draft, disabled etc.
-  enum campaign_status: { active: 0, completed: 1 }
+  enum campaign_status: { active: 0, completed: 1, running: 2, failed: 3, cancelled: 4 }
+  enum text_mode: { static: 0, dynamic: 1, agent: 2 }
 
   has_many :conversations, dependent: :nullify, autosave: true
   has_many :campaign_deliveries, dependent: :delete_all
+  has_many :campaign_runs, dependent: :delete_all
 
+  def latest_campaign_run
+    return @latest_campaign_run if defined?(@latest_campaign_run)
+
+    @latest_campaign_run = if association(:campaign_runs).loaded?
+                             campaign_runs.max_by(&:created_at)
+                           else
+                             campaign_runs.order(created_at: :desc).first
+                           end
+  end
+
+  before_validation :normalize_text_mode
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?
 
   def trigger!
     return unless one_off?
-    return if completed?
+    return unless mark_running_if_active!
 
     execute_campaign
+  rescue StandardError
+    with_lock do
+      reload
+      failed! if active? || running?
+    end
+    raise
+  end
+
+  def cancel_one_off!
+    with_lock do
+      reload
+
+      unless one_off? && (active? || running?)
+        errors.add(:campaign_status, 'cannot be cancelled in its current state')
+        raise ActiveRecord::RecordInvalid, self
+      end
+
+      latest_campaign_run&.cancel! if running? && latest_campaign_run&.running?
+      cancelled!
+    end
+  end
+
+  def sync_status_from_run!(run)
+    return unless one_off? && run.present?
+
+    with_lock do
+      reload
+
+      latest_run_id = campaign_runs.order(created_at: :desc).limit(1).pick(:id)
+      return unless latest_run_id == run.id
+
+      next_status = case run.status
+                    when 'running' then :running
+                    when 'cancelled' then :cancelled
+                    when 'failed' then :failed
+                    when 'completed' then :completed
+                    end
+
+      return if next_status.blank? || campaign_status == next_status.to_s
+
+      update_column(:campaign_status, self.class.campaign_statuses.fetch(next_status.to_s))
+    end
   end
 
   private
 
-  def execute_campaign
-    case inbox.inbox_type
-    when 'Twilio SMS'
-      Twilio::OneoffSmsCampaignService.new(campaign: self).perform
-    when 'Sms'
-      Sms::OneoffSmsCampaignService.new(campaign: self).perform
-    when 'Whatsapp'
-      Whatsapp::OneoffCampaignService.new(campaign: self).perform if account.feature_enabled?(:whatsapp_campaign)
+  def normalize_text_mode
+    self.text_mode = Reminders::TextModeResolver.call(
+      action_type: 'send_message',
+      body: message,
+      instructions: instructions,
+      text_mode: text_mode
+    )
+  end
+
+  def mark_running_if_active!
+    with_lock do
+      reload
+      next false unless active?
+
+      running!
+      true
     end
+  end
+
+  def execute_campaign
+    Campaigns::OneoffRunner.new(campaign: self).perform
   end
 
   def set_display_id
@@ -82,14 +157,14 @@ class Campaign < ApplicationRecord
   def validate_campaign_inbox
     return unless inbox
 
-    errors.add :inbox, 'Unsupported Inbox type' unless ['Website', 'Twilio SMS', 'Sms', 'Whatsapp'].include? inbox.inbox_type
+    errors.add :inbox, 'Unsupported Inbox type' unless SUPPORTED_INBOX_TYPES.include?(inbox.inbox_type)
   end
 
   # TO-DO we clean up with better validations when campaigns evolve into more inboxes
   def ensure_correct_campaign_attributes
     return if inbox.blank?
 
-    if ['Twilio SMS', 'Sms', 'Whatsapp'].include?(inbox.inbox_type)
+    if ONE_OFF_INBOX_TYPES.include?(inbox.inbox_type)
       self.campaign_type = 'one_off'
       self.scheduled_at ||= Time.now.utc
     else
@@ -121,8 +196,25 @@ class Campaign < ApplicationRecord
     errors.add(:sender_id, 'must belong to the same account as the campaign')
   end
 
-  def prevent_completed_campaign_from_update
-    errors.add :status, 'The campaign is already completed' if !campaign_status_changed? && completed?
+  def validate_ai_authoring_availability
+    return unless agent?
+
+    unless defined?(Campaigns::CaptainGeneratedMessageService)
+      errors.add(:text_mode, 'AI-authored campaigns are not available')
+      return
+    end
+
+    return unless inbox.respond_to?(:captain_assistant)
+    return if inbox.captain_assistant.present?
+
+    errors.add(:inbox_id, 'must have a configured AI assistant')
+  end
+
+  def prevent_terminal_campaign_from_update
+    return if campaign_status_changed?
+    return unless completed? || running? || failed? || cancelled?
+
+    errors.add :status, 'The campaign can no longer be updated'
   end
 
   # creating db triggers

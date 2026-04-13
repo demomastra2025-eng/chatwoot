@@ -14,11 +14,19 @@ module Captain::ChatHelper
         on_end_message: ->(runner_chat, message) { record_llm_generation(runner_chat, message) },
         on_tool_call: ->(tool_call) { handle_tool_call(tool_call) },
         on_tool_result: ->(result) { handle_tool_result(result) },
-        content_builder: ->(content) { build_ruby_llm_content(content) }
+        content_builder: ->(content) { build_ruby_llm_content(content) },
+        observability: chat_observability_payload
       ).call
     end
 
     build_response(response)
+  rescue Llm::StructuredOutputPolicy::StructuredOutputError => e
+    Rails.logger.error "#{self.class.name} Assistant: #{@assistant.id}, Structured output failure: #{e}"
+
+    fallback_payload = structured_output_fallback_payload(e)
+    raise e if fallback_payload.blank?
+
+    build_fallback_response(fallback_payload)
   rescue StandardError => e
     Rails.logger.error "#{self.class.name} Assistant: #{@assistant.id}, Error in chat completion: #{e}"
     raise e
@@ -38,21 +46,37 @@ module Captain::ChatHelper
   end
 
   def build_ruby_llm_content(content)
-    return content if content.is_a?(RubyLLM::Content)
+    Llm::MessageFormat.build_content(content)
+  end
 
-    text, attachments = Captain::OpenAiMessageBuilderService.extract_text_and_attachments(content)
-    attachments.any? ? RubyLLM::Content.new(text, attachments) : text
+  def chat_observability_payload
+    {
+      feature: feature_name,
+      runtime_mode: 'captain_chat',
+      account_id: resolved_account_id,
+      assistant_id: @assistant&.id,
+      conversation_record_id: @conversation&.id,
+      conversation_display_id: @conversation&.display_id || @conversation_id,
+      copilot_thread_id: @copilot_thread&.id,
+      session_id: respond_to?(:copilot_session_id, true) ? send(:copilot_session_id) : nil,
+      channel_type: resolved_channel_type,
+      source: @source,
+      model: model
+    }.compact
   end
 
   def instrumentation_params(chat = nil)
+    trace_account = @account || @assistant&.account
     {
       span_name: "llm.captain.#{feature_name}",
       account_id: resolved_account_id,
+      account: trace_account,
       conversation_id: @conversation_id,
       feature_name: feature_name,
       model: model,
       messages: chat ? chat.messages.map { |m| { role: m.role.to_s, content: m.content.to_s } } : @messages,
       temperature: temperature,
+      trace_preferences: trace_account&.captain_preferences&.dig(:runtime),
       metadata: {
         assistant_id: @assistant&.id,
         channel_type: resolved_channel_type,
@@ -104,6 +128,10 @@ module Captain::ChatHelper
   end
 
   def response_schema
+    nil
+  end
+
+  def structured_output_fallback_payload(_error)
     nil
   end
 end

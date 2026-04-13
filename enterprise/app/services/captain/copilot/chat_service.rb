@@ -1,3 +1,5 @@
+require 'securerandom'
+
 class Captain::Copilot::ChatService < Llm::BaseAiService
   include Captain::ChatHelper
 
@@ -21,20 +23,22 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def generate_response(input)
-    input_moderation_response = moderate_input_response(input)
-    return input_moderation_response if input_moderation_response
+    Llm::EventBus.with_context(request_event_context) do
+      input_moderation_response = moderate_input_response(input)
+      return input_moderation_response if input_moderation_response
 
-    @messages << { role: 'user', content: input } if input.present?
-    response = request_chat_completion
+      @messages << { role: 'user', content: input } if input.present?
+      response = request_chat_completion
 
-    Rails.logger.debug { "#{self.class.name} Assistant: #{@assistant.id}, Received response #{response}" }
-    Rails.logger.info(
-      "#{self.class.name} Assistant: #{@assistant.id}, Incrementing response usage for account #{@account.id}"
-    )
-    @account.increment_response_usage
-    @account.increment_token_usage(response.dig('usage', 'total_tokens'))
+      Rails.logger.debug { "#{self.class.name} Assistant: #{@assistant.id}, Received response #{response}" }
+      Rails.logger.info(
+        "#{self.class.name} Assistant: #{@assistant.id}, Incrementing response usage for account #{@account.id}"
+      )
+      @account.increment_response_usage
+      @account.increment_token_usage(response.dig('usage', 'total_tokens'))
 
-    response
+      response
+    end
   end
 
   private
@@ -150,33 +154,68 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def moderate_input_response(input)
-    Llm::ModerationService.check!(
+    Llm::SafetyPolicy.check!(
       feature: :copilot,
       stage: :input,
       content: input,
       account: @account
     )
     nil
-  rescue Llm::ModerationService::FlaggedContentError
+  rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_response_payload('Copilot input blocked by moderation policy')
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_response_payload('Copilot input blocked because moderation policy is unavailable')
   end
 
   def moderate_response_payload(parsed_response)
-    Llm::ModerationService.check!(
+    Llm::SafetyPolicy.check!(
       feature: :copilot,
       stage: :output,
       content: parsed_response['content'],
       account: @account
     )
     parsed_response
-  rescue Llm::ModerationService::FlaggedContentError
+  rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_response_payload('Copilot output blocked by moderation policy')
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_response_payload('Copilot output blocked because moderation policy is unavailable')
   end
 
   def blocked_response_payload(reason)
     {
       'content' => "I can't help with that request.",
       'reasoning' => reason,
+      'reply_suggestion' => false
+    }
+  end
+
+  def request_event_context
+    {
+      request_id: SecureRandom.uuid,
+      feature: feature_name,
+      runtime_mode: 'captain_chat',
+      account_id: resolved_account_id,
+      assistant_id: @assistant&.id,
+      conversation_id: @conversation&.id,
+      conversation_display_id: @conversation&.display_id || @conversation_id,
+      copilot_thread_id: @copilot_thread&.id,
+      channel_type: resolved_channel_type,
+      source: @source,
+      session_id: copilot_session_id
+    }.compact
+  end
+
+  def copilot_session_id
+    return "#{resolved_account_id}_#{@conversation.display_id}" if @conversation&.display_id.present?
+    return "#{resolved_account_id}_copilot_thread_#{@copilot_thread.id}" if @copilot_thread&.id.present?
+
+    nil
+  end
+
+  def structured_output_fallback_payload(_error)
+    {
+      'content' => "I couldn't generate a reliable copilot response. Please try again.",
+      'reasoning' => 'Copilot structured output validation failed',
       'reply_suggestion' => false
     }
   end

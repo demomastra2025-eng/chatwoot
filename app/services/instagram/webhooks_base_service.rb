@@ -27,10 +27,26 @@ class Instagram::WebhooksBaseService
   end
 
   def update_instagram_profile_link(user)
+    sync_channel_profile(user)
     return unless user['username']
 
     instagram_attributes = build_instagram_attributes(user)
     @contact.update!(additional_attributes: @contact.additional_attributes.merge(instagram_attributes))
+  end
+
+  def sync_channel_profile(user)
+    Contacts::ChannelProfileUpsertService.new(
+      contact_inbox: @contact_inbox,
+      provider: 'instagram',
+      profile_attributes: {
+        display_name: user['name'],
+        username: user['username'],
+        avatar_url: user['profile_pic'],
+        profile_data: build_instagram_attributes(user).merge(
+          'profile_pic_url' => user['profile_pic']
+        )
+      }
+    ).perform
   end
 
   def build_instagram_attributes(user)

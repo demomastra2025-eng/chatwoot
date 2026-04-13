@@ -1,0 +1,65 @@
+suite: llm.moderation
+cases:
+  - id: blank_content_skips
+    description: Blank content should skip moderation instead of failing.
+    tags: [moderation, blank]
+    feature: assistant
+    stage: input
+    content: ""
+    preferences:
+      assistant_moderation: true
+    expected:
+      status: skipped
+      reason: blank_content
+
+  - id: moderation_disabled
+    description: Feature moderation can be turned off explicitly.
+    tags: [moderation, disabled]
+    feature: assistant
+    stage: output
+    content: Hello world
+    preferences:
+      assistant_moderation: false
+    expected:
+      status: disabled
+
+  - id: provider_unavailable_fail_open
+    description: Provider unavailability should degrade to skipped in fail_open mode.
+    tags: [moderation, unavailable]
+    feature: assistant
+    stage: input
+    content: Hello world
+    provider_mode: unavailable
+    preferences:
+      assistant_moderation: true
+      moderation_failure_mode: fail_open
+    expected:
+      status: skipped
+      reason: provider_not_configured
+
+  - id: provider_unavailable_fail_closed
+    description: Provider unavailability should raise in fail_closed mode.
+    tags: [moderation, unavailable]
+    feature: assistant
+    stage: input
+    content: Hello world
+    provider_mode: unavailable
+    preferences:
+      assistant_moderation: true
+      moderation_failure_mode: fail_closed
+    expected:
+      status: unavailable
+      reason: provider_not_configured
+
+  - id: flagged_content
+    description: Flagged content should surface as a moderation failure.
+    tags: [moderation, flagged]
+    feature: assistant
+    stage: output
+    content: Unsafe response candidate
+    provider_mode: flagged
+    preferences:
+      assistant_moderation: true
+    expected:
+      status: flagged
+      reason: moderation_flagged

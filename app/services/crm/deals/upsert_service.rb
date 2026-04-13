@@ -10,6 +10,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       assert_lock_version!
 
       new_record = deal.new_record?
+      requested_position = resolve_requested_position
       stage = resolve_stage!
       pipeline = stage.pipeline
       conversation = resolve_optional_record(:originating_conversation_id, account.conversations, current: deal.originating_conversation)
@@ -49,8 +50,12 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         idempotency_key: idempotency_key,
         custom_attributes: custom_attributes
       )
+      deal.position = requested_position if requested_position.present?
       deal.closed_at = resolve_closed_at(stage: stage)
       deal.save!
+      auto_apply_default_touch_plan! if new_record
+      sync_related_touches!
+      reposition_deal!(requested_position) if requested_position.present?
 
       contacts_changed = sync_contacts!(contacts: contacts, primary_contact: primary_contact)
       write_event!(new_record: new_record, contacts_changed: contacts_changed)
@@ -126,6 +131,20 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     title
   end
 
+  def resolve_requested_position
+    return unless params.key?(:position)
+
+    resolve_integer(:position, current: deal.position, allow_nil: true)
+  end
+
+  def reposition_deal!(requested_position)
+    ::Crm::BoardPositioner.place!(
+      scope: account.crm_deals.kept.where(stage_id: deal.stage_id),
+      record: deal,
+      target_position: requested_position
+    )
+  end
+
   def sync_contacts!(contacts:, primary_contact:)
     existing_links = deal.deal_contacts.index_by(&:contact_id)
     desired_contact_ids = contacts.map(&:id)
@@ -161,5 +180,17 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         primary_contact_id: deal.primary_contact_id
       }
     )
+  end
+
+  def auto_apply_default_touch_plan!
+    Reminders::DefaultPlanService.new(
+      account: account,
+      remindable: deal,
+      actor: actor
+    ).perform
+  end
+
+  def sync_related_touches!
+    Reminders::SyncRemindableService.new(remindable: deal).perform
   end
 end

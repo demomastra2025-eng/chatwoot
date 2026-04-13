@@ -123,7 +123,12 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         instance_of(String),
         context: mock_context,
         model: 'whisper-1',
-        temperature: 0.4
+        temperature: 0.4,
+        observability: hash_including(
+          runtime_mode: 'audio_transcription',
+          feature_name: 'audio_transcription',
+          account_id: service.account.id
+        )
       ).and_return(mock_transcription)
 
       expect(service.send(:transcribe_audio)).to eq('Hello world transcription')

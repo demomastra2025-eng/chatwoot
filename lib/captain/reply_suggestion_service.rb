@@ -33,6 +33,10 @@ class Captain::ReplySuggestionService < Captain::BaseTaskService
   def event_name
     'reply_suggestion'
   end
+
+  def task_moderation_stages
+    [:output]
+  end
 end
 
 Captain::ReplySuggestionService.prepend_mod_with('Captain::ReplySuggestionService')

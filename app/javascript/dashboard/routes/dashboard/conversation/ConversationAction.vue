@@ -3,16 +3,6 @@
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
-import { useUISettings } from 'dashboard/composables/useUISettings';
-import {
-  CRM_DEAL_MANAGE_PERMISSION,
-  CRM_TASK_MANAGE_PERMISSION,
-} from 'dashboard/constants/permissions';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import {
-  getUserPermissions,
-  hasPermissions,
-} from 'dashboard/helper/permissionsHelper';
 import ContactDetailsItem from './ContactDetailsItem.vue';
 import MultiselectDropdown from 'shared/components/ui/MultiselectDropdown.vue';
 import ConversationLabels from './labels/LabelBox.vue';
@@ -36,10 +26,8 @@ export default {
   },
   setup() {
     const { agentsList } = useAgentsList();
-    const { updateUISettings } = useUISettings();
     return {
       agentsList,
-      updateUISettings,
     };
   },
   data() {
@@ -75,64 +63,12 @@ export default {
   },
   computed: {
     ...mapGetters({
-      currentAccountId: 'getCurrentAccountId',
       currentChat: 'getSelectedChat',
       currentUser: 'getCurrentUser',
-      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
       teams: 'teams/getTeams',
     }),
-    conversationDisplayId() {
-      return this.currentChat?.display_id || this.currentChat?.displayId;
-    },
-    conversationSender() {
-      return this.currentChat?.meta?.sender || {};
-    },
     hasAnAssignedTeam() {
       return !!this.currentChat?.meta?.team;
-    },
-    crmTasksEnabled() {
-      return this.isFeatureEnabledonAccount(
-        this.currentAccountId,
-        FEATURE_FLAGS.CRM_TASKS
-      );
-    },
-    crmDealsEnabled() {
-      return this.isFeatureEnabledonAccount(
-        this.currentAccountId,
-        FEATURE_FLAGS.CRM_DEALS
-      );
-    },
-    crmTaskRouteQuery() {
-      return this.buildCrmRouteQuery({
-        assigneeId: this.currentChat?.meta?.assignee?.id,
-      });
-    },
-    userPermissions() {
-      return getUserPermissions(
-        { accounts: this.currentUser?.accounts || [] },
-        this.currentAccountId
-      );
-    },
-    showCrmDealAction() {
-      return (
-        this.crmDealsEnabled &&
-        hasPermissions(
-          ['administrator', CRM_DEAL_MANAGE_PERMISSION],
-          this.userPermissions
-        )
-      );
-    },
-    showCrmTaskAction() {
-      return (
-        this.crmTasksEnabled &&
-        hasPermissions(
-          ['administrator', CRM_TASK_MANAGE_PERMISSION],
-          this.userPermissions
-        )
-      );
-    },
-    showCrmActions() {
-      return this.showCrmDealAction || this.showCrmTaskAction;
     },
     teamsList() {
       if (this.hasAnAssignedTeam) {
@@ -269,40 +205,6 @@ export default {
 
       this.assignedPriority = isSamePriority ? null : selectedPriorityItem;
     },
-    buildCrmRouteQuery(overrides = {}) {
-      const senderName = this.conversationSender?.name;
-      const query = {
-        action: 'new',
-        contactName: senderName || undefined,
-        conversationDisplayId: this.conversationDisplayId || undefined,
-        originatingConversationId: this.conversationId,
-        source: 'conversation',
-        teamId: this.currentChat?.meta?.team?.id || undefined,
-        contactId: this.conversationSender?.id || undefined,
-        ...overrides,
-      };
-
-      return Object.fromEntries(
-        Object.entries(query).filter(([, value]) => value !== undefined)
-      );
-    },
-    openCrmRoute(name, query) {
-      this.$router.push({
-        name,
-        params: { accountId: this.currentAccountId },
-        query,
-      });
-    },
-    onCreateDeal() {
-      this.updateUISettings({
-        is_contact_sidebar_open: false,
-        is_crm_deal_panel_open: true,
-        is_copilot_panel_open: false,
-      });
-    },
-    onCreateTask() {
-      this.openCrmRoute('crm_tasks_index', this.crmTaskRouteQuery);
-    },
   },
 };
 </script>
@@ -382,31 +284,5 @@ export default {
       :title="$t('CONVERSATION_SIDEBAR.ACCORDION.CONVERSATION_LABELS')"
     />
     <ConversationLabels :conversation-id="conversationId" />
-    <div v-if="showCrmActions" class="mt-4 grid gap-3">
-      <ContactDetailsItem
-        compact
-        :title="$t('CONVERSATION_SIDEBAR.CRM_ACTIONS.TITLE')"
-      />
-      <div class="grid gap-2 md:grid-cols-2">
-        <NextButton
-          v-if="showCrmDealAction"
-          size="sm"
-          color="slate"
-          variant="outline"
-          icon="i-lucide-briefcase-business"
-          :label="$t('CONVERSATION_SIDEBAR.CRM_ACTIONS.CREATE_DEAL')"
-          @click="onCreateDeal"
-        />
-        <NextButton
-          v-if="showCrmTaskAction"
-          size="sm"
-          color="slate"
-          variant="outline"
-          icon="i-lucide-list-todo"
-          :label="$t('CONVERSATION_SIDEBAR.CRM_ACTIONS.CREATE_TASK')"
-          @click="onCreateTask"
-        />
-      </div>
-    </div>
   </div>
 </template>

@@ -99,5 +99,14 @@ RSpec.describe Captain::Tools::Copilot::CustomHttpTool do
         conversation_display_id: conversation.display_id
       )
     end
+
+    it 'returns a controlled tool error when tool arguments are blocked by safety policy' do
+      account.update!(captain_runtime: { 'copilot_safety_blocklist' => ['blocked lead'] })
+
+      result = tool.execute(lead_name: 'blocked lead')
+
+      expect(result).to eq('ERROR: Tool arguments blocked by safety policy')
+      expect(WebMock).not_to have_requested(:post, 'https://example.com/leads')
+    end
   end
 end

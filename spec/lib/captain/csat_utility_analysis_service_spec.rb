@@ -13,6 +13,10 @@ RSpec.describe Captain::CsatUtilityAnalysisService do
                                                            })
     end
 
+    it 'moderates only generated output' do
+      expect(service.send(:task_moderation_stages)).to eq([:output])
+    end
+
     it 'returns parsed payload and preserves raw message for usage metering' do
       result = service.perform
 

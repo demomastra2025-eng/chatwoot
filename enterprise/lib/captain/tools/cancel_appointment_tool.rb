@@ -6,7 +6,7 @@ class Captain::Tools::CancelAppointmentTool < Captain::Tools::BasePublicTool
 
     "Cancelled appointment ##{appointment.id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

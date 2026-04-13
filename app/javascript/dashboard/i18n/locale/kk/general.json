@@ -10,7 +10,12 @@
     "BETA_DESCRIPTION": "This feature is in beta and may change as we improve it.",
     "ACCEPT": "Accept",
     "DISCARD": "Discard",
-    "PREFERRED": "Preferred"
+    "PREFERRED": "Preferred",
+    "AUTH_SESSION_REPLACED": {
+      "TITLE": "Сессия аяқталды",
+      "DESCRIPTION": "Тіркелгіңізге басқа құрылғыдан кірді. Жалғастыру үшін қайта кіріңіз.",
+      "ACTION": "Қайта кіру"
+    }
   },
   "CHOICE_TOGGLE": {
     "YES": "Yes",

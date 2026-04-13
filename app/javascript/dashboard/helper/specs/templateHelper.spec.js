@@ -3,6 +3,7 @@ import {
   buildTemplateParameters,
   processVariable,
   allKeysRequired,
+  extractTemplateVariables,
 } from '../templateHelper';
 import { templates } from '../../store/modules/specs/inboxes/templateFixtures';
 
@@ -14,6 +15,18 @@ describe('templateHelper', () => {
       expect(processVariable('{{name}}')).toBe('name');
       expect(processVariable('{{1}}')).toBe('1');
       expect(processVariable('{{customer_id}}')).toBe('customer_id');
+    });
+  });
+
+  describe('extractTemplateVariables', () => {
+    it('should return ordered template variables', () => {
+      expect(
+        extractTemplateVariables('Header {{1}} for {{customer_name}}')
+      ).toEqual(['1', 'customer_name']);
+    });
+
+    it('should return an empty array when no variables are present', () => {
+      expect(extractTemplateVariables('Static text')).toEqual([]);
     });
   });
 
@@ -351,6 +364,35 @@ describe('templateHelper', () => {
       expect(result).toEqual({});
     });
 
+    it('should build parameters for text headers with variables', () => {
+      const templateWithTextHeaderVariables = {
+        components: [
+          {
+            type: 'HEADER',
+            format: 'TEXT',
+            text: 'Order {{1}} for {{customer_name}}',
+          },
+          {
+            type: 'BODY',
+            text: 'Body {{2}}',
+          },
+        ],
+      };
+
+      const result = buildTemplateParameters(
+        templateWithTextHeaderVariables,
+        false
+      );
+
+      expect(result.header).toEqual({
+        1: '',
+        customer_name: '',
+      });
+      expect(result.body).toEqual({
+        2: '',
+      });
+    });
+
     it('should validate that replaceTemplateVariables preserves unreplaced variables', () => {
       const templateText = 'Hi {{name}}, order {{order_id}} is {{status}}';
       const partialParams = {
@@ -364,6 +406,21 @@ describe('templateHelper', () => {
       const result = replaceTemplateVariables(templateText, partialParams);
       expect(result).toBe('Hi John, order {{order_id}} is ready');
       expect(result).toContain('{{order_id}}'); // Unreplaced variable preserved
+    });
+
+    it('should replace header variables from the header section', () => {
+      const templateText = 'Order {{1}} for {{customer_name}}';
+      const processedParams = {
+        header: {
+          1: '12345',
+          customer_name: 'John',
+        },
+      };
+
+      const result = replaceTemplateVariables(templateText, processedParams, {
+        section: 'header',
+      });
+      expect(result).toBe('Order 12345 for John');
     });
   });
 });

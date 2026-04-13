@@ -20,6 +20,7 @@ Repo paths below are relative to the One Link application repository root unless
 - Setup: `bundle install && pnpm install`
 - Full dev run: `pnpm dev` or `overmind start -f ./Procfile.dev`
 - Light dev run: `pnpm dev:lite` or `foreman start -f ./Procfile.dev-lite`
+  - starts Rails, Vite, the main Sidekiq worker, and WhatsApp Web history/echo workers
 - Restart dev-lite: `./bin/dev-lite-restart` or `pnpm dev:lite:restart`
 - Restart dev-lite and prepare DB: `PREPARE_DB=1 ./bin/dev-lite-restart`
 - Enterprise bootstrap:

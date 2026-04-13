@@ -98,6 +98,16 @@ RSpec.describe CaptainFeaturable do
       end
     end
 
+    context 'when configured with a legacy Anthropic alias' do
+      before do
+        account.captain_models = { 'assistant' => 'claude-sonnet-4.6' }
+      end
+
+      it 'returns the canonical Anthropic model id' do
+        expect(account.captain_assistant_model).to eq('claude-sonnet-4-6')
+      end
+    end
+
     context 'when captain_models is nil' do
       before do
         account.update!(captain_models: nil)
@@ -137,21 +147,29 @@ RSpec.describe CaptainFeaturable do
       expect(prefs[:runtime]).to include(
         'assistant_thinking_effort' => 'none',
         'copilot_thinking_effort' => 'none',
-        'assistant_moderation' => false,
-        'copilot_moderation' => false
+        'assistant_moderation' => true,
+        'copilot_moderation' => true,
+        'trace_input_capture' => true,
+        'trace_output_capture' => true
       )
       expect(account.captain_assistant_thinking_effort).to eq('none')
-      expect(account.captain_copilot_moderation?).to be false
+      expect(account.captain_copilot_moderation?).to be true
+      expect(account.captain_trace_input_capture?).to be true
+      expect(account.captain_trace_output_capture?).to be true
     end
 
     it 'returns stored runtime preferences when configured' do
       account.update!(captain_runtime: {
                         'assistant_thinking_effort' => 'high',
-                        'copilot_moderation' => true
+                        'copilot_moderation' => true,
+                        'trace_input_capture' => false,
+                        'trace_output_capture' => false
                       })
 
       expect(account.captain_assistant_thinking_effort).to eq('high')
       expect(account.captain_copilot_moderation?).to be true
+      expect(account.captain_trace_input_capture?).to be false
+      expect(account.captain_trace_output_capture?).to be false
     end
   end
 end

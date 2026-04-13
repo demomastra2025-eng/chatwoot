@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::UpdatePriorityService < Captain::Tools::Copilot::
     conversation = conversation_operations.update_priority(priority: priority)
     "Updated conversation ##{conversation.display_id} priority to #{conversation.priority || 'none'}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

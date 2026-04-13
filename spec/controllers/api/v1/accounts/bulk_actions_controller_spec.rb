@@ -53,11 +53,28 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
                params: { type: 'Conversation', fields: { status: 'snoozed' }, ids: Conversation.first(3).pluck(:display_id) }
 
           expect(response).to have_http_status(:success)
+          expect(response.parsed_body.dig('payload', 'action_name')).to eq('update_status')
         end
 
         expect(Conversation.first.status).to eq('snoozed')
         expect(Conversation.last.status).to eq('open')
         expect(Conversation.first.assignee_id).to be_nil
+      end
+
+      it 'returns the bulk action run status for the current user' do
+        post "/api/v1/accounts/#{account.id}/bulk_actions",
+             headers: agent.create_new_auth_token,
+             params: { type: 'Conversation', fields: { status: 'snoozed' }, ids: Conversation.first(2).pluck(:display_id) }
+
+        expect(response).to have_http_status(:success)
+
+        run_id = response.parsed_body.dig('payload', 'id')
+
+        get "/api/v1/accounts/#{account.id}/bulk_action_runs/#{run_id}",
+            headers: agent.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'resource_type')).to eq('Conversation')
       end
 
       it 'Bulk update conversation team id to none' do

@@ -20,6 +20,7 @@ describe Webhooks::Twitter do
         expect(twitter_inbox.contacts.count).to be 1
         expect(twitter_inbox.conversations.count).to be 1
         expect(twitter_inbox.messages.count).to be 1
+        expect(twitter_inbox.contact_inboxes.last.channel_profile).to be_present
       end
     end
 
@@ -52,6 +53,22 @@ describe Webhooks::Twitter do
         expect(twitter_inbox.contacts.count).to be 1
         expect(twitter_inbox.conversations.count).to be 1
         expect(twitter_inbox.messages.count).to be 1
+        expect(twitter_inbox.contact_inboxes.last.channel_profile).to be_present
+        expect(twitter_inbox.contact_inboxes.last.channel_profile.username).to eq('surveyjoyHQ')
+      end
+    end
+
+    context 'when the twitter contact inbox already exists' do
+      let!(:contact) { create(:contact, account: account, name: 'Old Twitter Name') }
+      let!(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: twitter_inbox, source_id: '2') }
+
+      it 'updates the existing channel profile without creating another contact' do
+        twitter_webhook.new(tweet_params).consume
+
+        expect(twitter_inbox.contacts.count).to eq(1)
+        expect(contact_inbox.reload.channel_profile).to be_present
+        expect(contact_inbox.channel_profile.display_name).to eq('SurveyJoy')
+        expect(contact_inbox.channel_profile.username).to eq('surveyjoyHQ')
       end
     end
 

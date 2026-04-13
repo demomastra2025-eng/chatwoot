@@ -2,7 +2,7 @@ require 'ruby_llm'
 
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
-  DEFAULT_MODEL = 'gpt-4.1-mini'.freeze
+  DEFAULT_MODEL = 'gpt-5.4-mini'.freeze
   DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1'.freeze
   DEFAULT_MODERATION_MODEL = 'omni-moderation-latest'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
@@ -60,7 +60,7 @@ module Llm::Config
     end
 
     def provider_for_model(model_name)
-      Llm::Models.provider_for(model_name) || 'openai'
+      Llm::Models.provider_for(Llm::Models.canonical_model_name(model_name)) || 'openai'
     end
 
     def api_key(provider = 'openai')
@@ -79,6 +79,10 @@ module Llm::Config
 
     def moderation_model
       InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL')&.value.presence || DEFAULT_MODERATION_MODEL
+    end
+
+    def moderation_provider
+      provider_for_model(moderation_model)
     end
 
     def global_agent_system_prompt
@@ -205,20 +209,22 @@ module Llm::Config
       model_name = account.public_send(accessor_name)
       return unless model_name.present?
       return unless Llm::Models.valid_model_for?(feature_key, model_name)
-      return unless runtime_usable_model?(model_name)
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      return unless runtime_usable_model?(canonical_model)
 
-      model_name
+      canonical_model
     end
 
     def installation_model_for(feature_key)
       model_name = installation_default_model
       return if model_name.blank?
-      return model_name if feature_key.blank? && runtime_usable_model?(model_name)
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      return canonical_model if feature_key.blank? && runtime_usable_model?(canonical_model)
       return if feature_key.blank?
       return unless Llm::Models.valid_model_for?(feature_key, model_name)
-      return unless runtime_usable_model?(model_name)
+      return unless runtime_usable_model?(canonical_model)
 
-      model_name
+      canonical_model
     end
 
     def installation_text_config(name)
@@ -226,7 +232,8 @@ module Llm::Config
     end
 
     def runtime_usable_model?(model_name)
-      model_name.present? && Llm::Models.registry_known?(model_name)
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      canonical_model.present? && Llm::Models.runtime_supported?(canonical_model)
     end
   end
 end

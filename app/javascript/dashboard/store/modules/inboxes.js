@@ -10,6 +10,7 @@ import { throwErrorMessage } from '../utils/api';
 import AnalyticsHelper from '../../helper/AnalyticsHelper';
 import camelcaseKeys from 'camelcase-keys';
 import { ACCOUNT_EVENTS } from '../../helper/AnalyticsHelper/events';
+import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 import { channelActions, buildInboxData } from './inboxes/channelActions';
 import {
   COMPONENT_TYPES,
@@ -31,13 +32,140 @@ export const state = {
 };
 
 const whatsappWebRefreshRequests = new Map();
+const telegramPersonalDiagnosticsRequests = new Map();
+const telegramPersonalDiagnosticsCache = new Map();
+const TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
+
+const mergeTelegramPersonalDiagnostics = (inbox, diagnostics) => {
+  if (!inbox || !diagnostics) {
+    return inbox;
+  }
+
+  const channelState = diagnostics.channel || {};
+  const runtimeState = {
+    ...(inbox.runtime_state || {}),
+    ...(channelState.runtime_state || {}),
+  };
+
+  [
+    'auth_state',
+    'connected',
+    'authorized',
+    'last_inbound_at',
+    'last_outbound_at',
+    'flood_wait_until',
+    'flood_wait_seconds',
+    'history_sync_state',
+    'last_history_sync_at',
+    'history_sync_count',
+    'unread_reactions_count',
+    'me',
+  ].forEach(key => {
+    if (diagnostics[key] !== undefined) {
+      runtimeState[key] = diagnostics[key];
+    }
+  });
+
+  if (diagnostics.connection_state !== undefined) {
+    runtimeState.connection_state = diagnostics.connection_state;
+  }
+
+  if (diagnostics.lifecycle_state !== undefined) {
+    runtimeState.lifecycle_state = diagnostics.lifecycle_state;
+  }
+
+  return {
+    ...inbox,
+    connection_state:
+      channelState.connection_state ||
+      diagnostics.connection_state ||
+      inbox.connection_state,
+    lifecycle_state:
+      channelState.lifecycle_state ||
+      diagnostics.lifecycle_state ||
+      inbox.lifecycle_state,
+    last_error: channelState.last_error ?? inbox.last_error,
+    runtime_state: runtimeState,
+  };
+};
+
+const normalizeTelegramPersonalDiagnosticsPayload = payload => {
+  if (typeof payload === 'object' && payload !== null) {
+    return {
+      inboxId: payload.inboxId,
+      force: payload.force === true,
+    };
+  }
+
+  return {
+    inboxId: payload,
+    force: false,
+  };
+};
+
+const clearTelegramPersonalDiagnosticsCache = inboxId => {
+  telegramPersonalDiagnosticsCache.delete(String(inboxId));
+};
+
+const getCachedTelegramPersonalDiagnostics = inboxId => {
+  const cachedDiagnostics = telegramPersonalDiagnosticsCache.get(
+    String(inboxId)
+  );
+
+  if (!cachedDiagnostics) {
+    return null;
+  }
+
+  if (
+    Date.now() - cachedDiagnostics.fetchedAt >
+    TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS
+  ) {
+    clearTelegramPersonalDiagnosticsCache(inboxId);
+    return null;
+  }
+
+  return cachedDiagnostics.data;
+};
+
+const cacheTelegramPersonalDiagnostics = (inboxId, diagnostics) => {
+  telegramPersonalDiagnosticsCache.set(String(inboxId), {
+    data: diagnostics,
+    fetchedAt: Date.now(),
+  });
+};
+
+const removeInboxFromClientState = (commit, inboxId) => {
+  clearTelegramPersonalDiagnosticsCache(inboxId);
+  telegramPersonalDiagnosticsRequests.delete(String(inboxId));
+  commit(types.default.DELETE_INBOXES, inboxId);
+};
+
+const commitTelegramPersonalDiagnostics = (
+  commit,
+  inboxGetters,
+  inboxId,
+  diagnostics
+) => {
+  const currentInbox = inboxGetters?.getInbox
+    ? inboxGetters.getInbox(inboxId)
+    : null;
+  const mergedInbox = mergeTelegramPersonalDiagnostics(
+    currentInbox,
+    diagnostics
+  );
+
+  if (mergedInbox) {
+    commit(types.default.EDIT_INBOXES, mergedInbox);
+  }
+};
 
 const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox) => {
   if (!existingInbox) {
     return nextInbox;
   }
 
-  const existingAdditionalAttributes = existingInbox.additional_attributes || {};
+  const existingAdditionalAttributes =
+    existingInbox.additional_attributes || {};
   const nextAdditionalAttributes = nextInbox.additional_attributes || {};
   const existingEvolution = existingAdditionalAttributes.evolution || {};
   const nextEvolution = nextAdditionalAttributes.evolution || {};
@@ -201,6 +329,37 @@ export const getters = {
     return $state.records.filter(
       item => item.channel_type === INBOX_TYPES.WHATSAPP
     );
+  },
+  getOutboundCampaignInboxes($state) {
+    const legacyOutboundTypes = [
+      INBOX_TYPES.SMS,
+      INBOX_TYPES.TWILIO,
+      INBOX_TYPES.WHATSAPP,
+      INBOX_TYPES.EMAIL,
+      INBOX_TYPES.WHATSAPP_WEB,
+      INBOX_TYPES.TELEGRAM,
+      INBOX_TYPES.TELEGRAM_PERSONAL,
+      INBOX_TYPES.VK,
+      INBOX_TYPES.LINE,
+      INBOX_TYPES.FB,
+      INBOX_TYPES.INSTAGRAM,
+      INBOX_TYPES.TIKTOK,
+      INBOX_TYPES.TWITTER,
+    ];
+
+    return $state.records.filter(item => {
+      const capabilities = item.campaign_capabilities;
+
+      if (!capabilities) {
+        return legacyOutboundTypes.includes(item.channel_type);
+      }
+
+      return (
+        capabilities.supports_outbound_campaigns &&
+        capabilities.implemented_in_current_campaigns &&
+        capabilities.delivery_readiness === 'ready'
+      );
+    });
   },
   dialogFlowEnabledInboxes($state) {
     return $state.records.filter(
@@ -370,12 +529,19 @@ export const actions = {
   delete: async ({ commit }, inboxId) => {
     commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: true });
     try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
       await InboxesAPI.delete(inboxId);
-      commit(types.default.DELETE_INBOXES, inboxId);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: false });
+      removeInboxFromClientState(commit, inboxId);
+      return null;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: false });
+      if ([404, 410].includes(error?.response?.status)) {
+        removeInboxFromClientState(commit, inboxId);
+        return null;
+      }
+
       throw new Error(error);
+    } finally {
+      commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: false });
     }
   },
   reauthorizeFacebookPage: async ({ commit }, params) => {
@@ -400,7 +566,7 @@ export const actions = {
       throw new Error(error);
     }
   },
-  refreshWhatsappWebQr: async ({ commit, state }, payload) => {
+  refreshWhatsappWebQr: async ({ commit, getters: inboxGetters }, payload) => {
     const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
     const isStatusOnly =
       typeof payload === 'object' && payload?.statusOnly === true;
@@ -414,6 +580,13 @@ export const actions = {
           }
         : {};
     const requestKey = `${inboxId}:${isStatusOnly ? 'status' : 'refresh'}`;
+    const currentInbox = inboxGetters?.getInbox
+      ? inboxGetters.getInbox(inboxId)
+      : null;
+
+    if (isInboxPendingDeletion(currentInbox)) {
+      return currentInbox;
+    }
 
     if (whatsappWebRefreshRequests.has(requestKey)) {
       return whatsappWebRefreshRequests.get(requestKey);
@@ -432,6 +605,11 @@ export const actions = {
         return inboxPayload;
       })
       .catch(error => {
+        if ([404, 410].includes(error?.response?.status)) {
+          commit(types.default.DELETE_INBOXES, inboxId);
+          return null;
+        }
+
         throw new Error(error?.response?.data?.error || error.message);
       })
       .finally(() => {
@@ -475,6 +653,161 @@ export const actions = {
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
+  },
+  requestTelegramPersonalCode: async ({ commit }, inboxId) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.requestTelegramPersonalCode(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  requestTelegramPersonalQr: async ({ commit }, inboxId) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.requestTelegramPersonalQr(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  verifyTelegramPersonalCode: async ({ commit }, { inboxId, code }) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.verifyTelegramPersonalCode(
+        inboxId,
+        code
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  verifyTelegramPersonalPassword: async ({ commit }, { inboxId, password }) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.verifyTelegramPersonalPassword(
+        inboxId,
+        password
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  reconnectTelegramPersonal: async ({ commit }, inboxId) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.reconnectTelegramPersonal(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  historySyncTelegramPersonal: async ({ commit }, payload) => {
+    try {
+      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
+      const requestPayload =
+        typeof payload === 'object' ? payload.payload || {} : {};
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.historySyncTelegramPersonal(
+        inboxId,
+        requestPayload
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  contactsSyncTelegramPersonal: async ({ commit }, payload) => {
+    try {
+      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
+      const requestPayload =
+        typeof payload === 'object' ? payload.payload || {} : {};
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.contactsSyncTelegramPersonal(
+        inboxId,
+        requestPayload
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  disconnectTelegramPersonal: async ({ commit }, inboxId) => {
+    try {
+      clearTelegramPersonalDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.disconnectTelegramPersonal(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  getTelegramPersonalDiagnostics: async (
+    { commit, getters: inboxGetters },
+    payload
+  ) => {
+    const { inboxId, force } =
+      normalizeTelegramPersonalDiagnosticsPayload(payload);
+
+    if (!inboxId) {
+      return null;
+    }
+
+    const requestKey = String(inboxId);
+
+    if (!force) {
+      const cachedDiagnostics = getCachedTelegramPersonalDiagnostics(inboxId);
+
+      if (cachedDiagnostics) {
+        commitTelegramPersonalDiagnostics(
+          commit,
+          inboxGetters,
+          inboxId,
+          cachedDiagnostics
+        );
+        return cachedDiagnostics;
+      }
+
+      if (telegramPersonalDiagnosticsRequests.has(requestKey)) {
+        return telegramPersonalDiagnosticsRequests.get(requestKey);
+      }
+    }
+
+    const request = InboxesAPI.getTelegramPersonalDiagnostics(inboxId)
+      .then(response => {
+        cacheTelegramPersonalDiagnostics(inboxId, response.data);
+        commitTelegramPersonalDiagnostics(
+          commit,
+          inboxGetters,
+          inboxId,
+          response.data
+        );
+        return response.data;
+      })
+      .catch(error => {
+        if ([404, 410].includes(error?.response?.status)) {
+          removeInboxFromClientState(commit, inboxId);
+          return null;
+        }
+
+        throw new Error(error?.response?.data?.error || error.message);
+      })
+      .finally(() => {
+        telegramPersonalDiagnosticsRequests.delete(requestKey);
+      });
+
+    telegramPersonalDiagnosticsRequests.set(requestKey, request);
+    return request;
   },
   createCSATTemplate: async (_, { inboxId, template }) => {
     const response = await InboxesAPI.createCSATTemplate(inboxId, template);

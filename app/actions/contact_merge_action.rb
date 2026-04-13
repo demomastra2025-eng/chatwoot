@@ -12,6 +12,7 @@ class ContactMergeAction
       merge_conversations
       merge_messages
       merge_contact_inboxes
+      merge_contact_channel_profiles
       merge_contact_notes
       merge_and_remove_mergee_contact
     end
@@ -44,6 +45,10 @@ class ContactMergeAction
 
   def merge_contact_inboxes
     ContactInbox.where(contact_id: @mergee_contact.id).update(contact_id: @base_contact.id)
+  end
+
+  def merge_contact_channel_profiles
+    ContactChannelProfile.where(contact_id: @mergee_contact.id).update(contact_id: @base_contact.id)
   end
 
   def merge_and_remove_mergee_contact

@@ -1,4 +1,9 @@
-import { findComponentByType, COMPONENT_TYPES } from './templateHelper';
+import {
+  findComponentByType,
+  COMPONENT_TYPES,
+  MEDIA_FORMATS,
+  extractTemplateVariables,
+} from './templateHelper';
 
 export const DEFAULT_TEMPLATE_LANGUAGE = 'en';
 export const DEFAULT_TEMPLATE_CATEGORY = 'UTILITY';
@@ -249,4 +254,115 @@ export const getTemplateStatusTone = status => {
   }
 
   return 'amber';
+};
+
+const uniqueTemplateVariables = text => [
+  ...new Set(extractTemplateVariables(text || '')),
+];
+
+export const getTemplateParameterDefinitions = template => {
+  if (!template?.components?.length) {
+    return [];
+  }
+
+  const definitions = [];
+  const bodyComponent = findComponentByType(template, COMPONENT_TYPES.BODY);
+  const headerComponent = findComponentByType(template, COMPONENT_TYPES.HEADER);
+  const buttonComponents = template.components.filter(
+    component => component.type === COMPONENT_TYPES.BUTTONS
+  );
+
+  uniqueTemplateVariables(bodyComponent?.text).forEach(variable => {
+    definitions.push({
+      key: `body.${variable}`,
+      label: `{{${variable}}}`,
+      section: 'body',
+    });
+  });
+
+  if (String(headerComponent?.format || '').toUpperCase() === 'TEXT') {
+    uniqueTemplateVariables(headerComponent?.text).forEach(variable => {
+      definitions.push({
+        key: `header.${variable}`,
+        label: `header {{${variable}}}`,
+        section: 'header',
+      });
+    });
+  }
+
+  if (
+    MEDIA_FORMATS.includes(String(headerComponent?.format || '').toUpperCase())
+  ) {
+    definitions.push({
+      key: 'header.media_url',
+      label: 'header.media_url',
+      section: 'header',
+    });
+
+    if (String(headerComponent?.format || '').toUpperCase() === 'DOCUMENT') {
+      definitions.push({
+        key: 'header.media_name',
+        label: 'header.media_name',
+        section: 'header',
+      });
+    }
+  }
+
+  buttonComponents.forEach(buttonComponent => {
+    buttonComponent.buttons?.forEach((button, index) => {
+      if (
+        button.type === 'COPY_CODE' ||
+        (button.type === 'URL' && String(button.url || '').includes('{{'))
+      ) {
+        definitions.push({
+          key: `buttons.${index}`,
+          label: `button_${index + 1}`,
+          section: 'buttons',
+        });
+      }
+    });
+  });
+
+  return definitions;
+};
+
+export const getProcessedTemplateParamEntries = templateParams => {
+  const processedParams =
+    templateParams?.processed_params || templateParams?.processedParams || {};
+  const entries = [];
+
+  Object.entries(processedParams.header || {}).forEach(([key, value]) => {
+    if (!value) return;
+
+    entries.push({
+      key: `header.${key}`,
+      label:
+        key === 'media_url' || key === 'media_name'
+          ? `header.${key}`
+          : `header {{${key}}}`,
+      value: String(value),
+    });
+  });
+
+  Object.entries(processedParams.body || {}).forEach(([key, value]) => {
+    if (!value) return;
+
+    entries.push({
+      key: `body.${key}`,
+      label: `{{${key}}}`,
+      value: String(value),
+    });
+  });
+
+  (processedParams.buttons || []).forEach((button, index) => {
+    if (!button?.parameter) return;
+
+    entries.push({
+      key: `buttons.${index}`,
+      label: `button_${index + 1}`,
+      value: String(button.parameter),
+    });
+  });
+
+  return entries;
 };

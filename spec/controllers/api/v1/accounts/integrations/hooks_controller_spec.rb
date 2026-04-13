@@ -82,6 +82,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(response).to have_http_status(:success)
         data = response.parsed_body
         expect(data['app_id']).to eq params[:app_id]
+        expect(data['resource_id']).to eq params[:app_id]
       end
 
       it 'creates a macrocrm hook with an encrypted access token' do
@@ -99,6 +100,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.settings['app_id']).to eq 'macro-app'
         expect(response.parsed_body).not_to have_key('access_token')
         expect(response.parsed_body['reference_id']).to eq(hook.reference_id)
+        expect(response.parsed_body['resource_id']).to eq('macrocrm')
         expect(response.parsed_body.dig('metadata', 'webhook_url')).to eq(
           "https://app.example.com/webhooks/macrocrm/#{hook.reference_id}/manager_changed"
         )
@@ -158,6 +160,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(response).to have_http_status(:success)
         data = response.parsed_body
         expect(data['app_id']).to eq 'slack'
+        expect(data['resource_id']).to eq 'slack'
       end
 
       it 'updates macrocrm settings without clearing an existing token when a blank token is submitted' do
@@ -190,6 +193,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(hook.disabled?).to be true
         expect(hook.settings['app_id']).to eq 'macro-app-updated'
         expect(hook.settings['sync_incoming_messages']).to be false
+        expect(response.parsed_body['resource_id']).to eq('macrocrm')
         expect(response.parsed_body.dig('metadata', 'webhook_url')).to eq(
           "https://app.example.com/webhooks/macrocrm/#{hook.reference_id}/manager_changed"
         )

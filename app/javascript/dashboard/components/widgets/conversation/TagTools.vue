@@ -130,7 +130,6 @@ watch(filteredTools, newListOfTools => {
     v-if="filteredTools.length"
     :items="filteredTools"
     :selected-index="selectedIndex"
-    class="bottom-20"
     @select="onSelect"
   />
   <template v-else />

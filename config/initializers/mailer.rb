@@ -33,8 +33,30 @@ Rails.application.configure do
   # Use sendmail if using postfix for email
   config.action_mailer.delivery_method = :sendmail if ENV['SMTP_ADDRESS'].blank?
 
-  # You can use letter opener for your local development by setting the environment variable
-  config.action_mailer.delivery_method = :letter_opener if Rails.env.development? && ENV['LETTER_OPENER']
+  # You can use letter opener for your local development by setting the environment variable.
+  # By default we keep previews on disk without auto-opening browser tabs, which is much less noisy
+  # during history imports and other background email-producing flows.
+  if Rails.env.development? && ENV['LETTER_OPENER']
+    require 'letter_opener'
+
+    class LetterOpener::SilentDeliveryMethod < LetterOpener::DeliveryMethod
+      def deliver!(mail)
+        validate_mail!(mail)
+
+        location = File.join(
+          settings[:location],
+          "#{Time.now.to_f.to_s.tr('.', '_')}_#{Digest::SHA1.hexdigest(mail.encoded)[0..6]}"
+        )
+
+        Message.rendered_messages(mail, location: location, message_template: settings[:message_template])
+      end
+    end
+
+    ActionMailer::Base.add_delivery_method :letter_opener_silent, LetterOpener::SilentDeliveryMethod
+
+    config.action_mailer.delivery_method =
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch('LETTER_OPENER_OPEN_IN_BROWSER', false)) ? :letter_opener : :letter_opener_silent
+  end
 
   #########################################
   # Configuration Related to Action MailBox

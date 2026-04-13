@@ -3,6 +3,7 @@ import { mapGetters } from 'vuex';
 import { shouldBeUrl } from 'shared/helpers/Validators';
 import { useAlert } from 'dashboard/composables';
 import { useVuelidate } from '@vuelidate/core';
+import QRCode from 'qrcode';
 import Avatar from 'next/avatar/Avatar.vue';
 import SettingIntroBanner from 'dashboard/components/widgets/SettingIntroBanner.vue';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
@@ -26,11 +27,13 @@ import CollaboratorsPage from './settingsPage/CollaboratorsPage.vue';
 import WhatsAppTemplatesPage from './settingsPage/WhatsAppTemplatesPage.vue';
 import BotConfiguration from './components/BotConfiguration.vue';
 import AccountHealth from './components/AccountHealth.vue';
+import WebsiteTriggerCampaigns from './components/WebsiteTriggerCampaigns.vue';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
 import LockToSingleConversationPreview from './components/LockToSingleConversationPreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import SpinnerLoader from 'dashboard/components-next/spinner/Spinner.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
@@ -39,9 +42,11 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import ColorPicker from 'dashboard/components-next/colorpicker/ColorPicker.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Widget from 'dashboard/modules/widget-preview/components/Widget.vue';
+import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 
 const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
   '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
+const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
 
 export default {
   components: {
@@ -64,6 +69,7 @@ export default {
     GoogleReauthorize,
     NextButton,
     SpinnerLoader,
+    Icon,
     InstagramReauthorize,
     TiktokReauthorize,
     WhatsappReauthorize,
@@ -73,6 +79,7 @@ export default {
     ColorPicker,
     SelectInput,
     AccountHealth,
+    WebsiteTriggerCampaigns,
     Widget,
   },
   mixins: [inboxMixin],
@@ -115,6 +122,23 @@ export default {
       isRunningWhatsappWebDisconnect: false,
       isRunningWhatsappWebRepair: false,
       isRefreshingWhatsappWebQr: false,
+      telegramPersonalDiagnostics: null,
+      isLoadingTelegramPersonalDiagnostics: false,
+      isRunningTelegramPersonalRequestCode: false,
+      isRunningTelegramPersonalRequestQr: false,
+      isRunningTelegramPersonalVerifyCode: false,
+      isRunningTelegramPersonalVerifyPassword: false,
+      isRunningTelegramPersonalReconnect: false,
+      isRunningTelegramPersonalHistorySync: false,
+      isRunningTelegramPersonalFullHistorySync: false,
+      isRunningTelegramPersonalContactsSync: false,
+      isRunningTelegramPersonalDisconnect: false,
+      telegramPersonalCode: '',
+      telegramPersonalPassword: '',
+      telegramPersonalQrCode: '',
+      telegramPersonalPollingInterval: null,
+      isTelegramPersonalRawDiagnosticsVisible: false,
+      isRedirectingMissingInbox: false,
       whatsappWebConversationPending: false,
       whatsappWebHistoryLookbackDays: 0,
       whatsappWebIgnoreJids: '',
@@ -176,6 +200,161 @@ export default {
     },
     shouldShowWhatsappWebLifecycleSection() {
       return this.isAWhatsAppWebInbox;
+    },
+    isWhatsappWebDeleting() {
+      return isInboxPendingDeletion(this.inbox);
+    },
+    shouldShowTelegramPersonalLifecycleSection() {
+      return this.isATelegramPersonalChannel;
+    },
+    shouldShowVkCommunityDetailsSection() {
+      return this.isAVkCommunityChannel;
+    },
+    telegramPersonalRuntimeState() {
+      return this.inbox?.runtime_state || {};
+    },
+    telegramPersonalLifecycleState() {
+      return (
+        this.inbox?.lifecycle_state ||
+        this.telegramPersonalRuntimeState.lifecycle_state ||
+        'pending_auth'
+      );
+    },
+    telegramPersonalConnectionState() {
+      return (
+        this.inbox?.connection_state ||
+        this.telegramPersonalRuntimeState.connection_state ||
+        'disconnected'
+      );
+    },
+    telegramPersonalLastError() {
+      return (
+        this.inbox?.last_error ||
+        this.telegramPersonalDiagnostics?.last_error ||
+        this.telegramPersonalRuntimeState.last_error ||
+        ''
+      );
+    },
+    isTelegramPersonalConnected() {
+      return (
+        this.telegramPersonalLifecycleState === 'connected' ||
+        this.telegramPersonalDiagnostics?.auth_state === 'authorized' ||
+        this.telegramPersonalRuntimeState.auth_state === 'authorized'
+      );
+    },
+    isTelegramPersonalPasswordRequired() {
+      return this.telegramPersonalLifecycleState === 'password_required';
+    },
+    telegramPersonalCodeStepReady() {
+      return ['code_sent', 'password_required', 'connected'].includes(
+        this.telegramPersonalLifecycleState
+      );
+    },
+    shouldShowTelegramPersonalCodeRequest() {
+      return (
+        !this.isTelegramPersonalConnected &&
+        !this.isTelegramPersonalPasswordRequired &&
+        !this.telegramPersonalCodeStepReady
+      );
+    },
+    shouldShowTelegramPersonalCodeVerify() {
+      return (
+        !this.isTelegramPersonalConnected &&
+        !this.isTelegramPersonalPasswordRequired &&
+        this.telegramPersonalCodeStepReady
+      );
+    },
+    telegramPersonalQrUrl() {
+      return this.telegramPersonalRuntimeState.qr_login_url || '';
+    },
+    telegramPersonalQrExpiresAt() {
+      return this.telegramPersonalRuntimeState.qr_login_expires_at || '';
+    },
+    telegramPersonalQrButtonLabel() {
+      return ['qr_ready', 'qr_expired'].includes(
+        this.telegramPersonalLifecycleState
+      )
+        ? this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REFRESH_QR')
+        : this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_QR');
+    },
+    telegramPersonalAuthState() {
+      return (
+        this.telegramPersonalDiagnostics?.auth_state ||
+        this.telegramPersonalRuntimeState.auth_state ||
+        this.telegramPersonalLifecycleState
+      );
+    },
+    telegramPersonalHistorySyncState() {
+      return (
+        this.telegramPersonalDiagnostics?.history_sync_state ||
+        this.telegramPersonalRuntimeState.history_sync_state ||
+        ''
+      );
+    },
+    telegramPersonalLastHistorySyncAt() {
+      return (
+        this.telegramPersonalDiagnostics?.last_history_sync_at ||
+        this.telegramPersonalRuntimeState.last_history_sync_at ||
+        ''
+      );
+    },
+    telegramPersonalHistorySyncCount() {
+      return (
+        this.telegramPersonalDiagnostics?.history_sync_count ??
+        this.telegramPersonalRuntimeState.history_sync_count ??
+        0
+      );
+    },
+    telegramPersonalContactsSyncState() {
+      return (
+        this.telegramPersonalDiagnostics?.contacts_sync_state ||
+        this.telegramPersonalRuntimeState.contacts_sync_state ||
+        ''
+      );
+    },
+    telegramPersonalLastContactsSyncAt() {
+      return (
+        this.telegramPersonalDiagnostics?.last_contacts_sync_at ||
+        this.telegramPersonalRuntimeState.last_contacts_sync_at ||
+        ''
+      );
+    },
+    telegramPersonalContactsSyncCount() {
+      return (
+        this.telegramPersonalDiagnostics?.contacts_sync_count ??
+        this.telegramPersonalRuntimeState.contacts_sync_count ??
+        0
+      );
+    },
+    telegramPersonalLastInboundAt() {
+      return (
+        this.telegramPersonalDiagnostics?.last_inbound_at ||
+        this.telegramPersonalRuntimeState.last_inbound_at ||
+        ''
+      );
+    },
+    telegramPersonalFloodWaitSeconds() {
+      return this.telegramPersonalDiagnostics?.flood_wait_seconds;
+    },
+    telegramPersonalDiagnosticsJson() {
+      return this.telegramPersonalDiagnostics
+        ? JSON.stringify(this.telegramPersonalDiagnostics, null, 2)
+        : '';
+    },
+    telegramPersonalIntlLocale() {
+      const rawLocale = this.$root?.$i18n?.locale || this.$i18n?.locale || 'en';
+      const normalizedLocale = String(rawLocale).replace(/_/g, '-');
+
+      if (Intl.DateTimeFormat.supportedLocalesOf([normalizedLocale]).length) {
+        return normalizedLocale;
+      }
+
+      const baseLocale = normalizedLocale.split('-')[0];
+      if (Intl.DateTimeFormat.supportedLocalesOf([baseLocale]).length) {
+        return baseLocale;
+      }
+
+      return 'en';
     },
     whatsAppAPIProviderName() {
       if (this.isAWhatsAppCloudChannel) {
@@ -312,7 +491,9 @@ export default {
         this.isAnInstagramChannel ||
         this.isALineChannel ||
         this.isATiktokChannel ||
-        this.isATelegramChannel
+        this.isATelegramChannel ||
+        this.isATelegramPersonalChannel ||
+        this.isAVkCommunityChannel
       );
     },
     inboxNameLabel() {
@@ -427,11 +608,19 @@ export default {
             this.syncWhatsappWebStatus();
             this.fetchWhatsappWebDiagnostics();
           }
+          if (this.isATelegramPersonalChannel) {
+            this.fetchTelegramPersonalDiagnostics();
+          }
         }
       }
     },
     inbox: {
-      handler(newInbox, oldInbox) {
+      async handler(newInbox, oldInbox) {
+        if (this.currentInboxId && !newInbox?.id) {
+          await this.redirectToInboxListIfMissing();
+          return;
+        }
+
         if (newInbox?.id !== oldInbox?.id) {
           this.syncInboxData();
           this.fetchHealthData();
@@ -441,6 +630,9 @@ export default {
               this.syncWhatsappWebStatus();
               this.fetchWhatsappWebDiagnostics();
             }
+            if (this.isATelegramPersonalChannel) {
+              this.fetchTelegramPersonalDiagnostics();
+            }
           });
         } else {
           this.selectedFeatureFlags = newInbox?.selected_feature_flags || [];
@@ -448,11 +640,67 @@ export default {
       },
       immediate: true,
     },
+    telegramPersonalQrUrl: {
+      handler() {
+        this.renderTelegramPersonalQrCode();
+      },
+      immediate: true,
+    },
+    isTelegramPersonalConnected: {
+      handler() {
+        this.syncTelegramPersonalPolling();
+      },
+      immediate: true,
+    },
   },
   mounted() {
     this.fetchSharedData();
+    this.syncTelegramPersonalPolling();
+  },
+  beforeUnmount() {
+    this.stopTelegramPersonalPolling();
   },
   methods: {
+    async ensureCurrentInboxExists() {
+      if (!this.currentInboxId) {
+        return false;
+      }
+
+      if (this.inbox?.id) {
+        return true;
+      }
+
+      try {
+        await this.$store.dispatch('inboxes/get');
+      } catch (error) {
+        return null;
+      }
+
+      return Boolean(
+        this.$store.getters['inboxes/getInbox'](this.currentInboxId)?.id
+      );
+    },
+    async redirectToInboxListIfMissing() {
+      if (
+        !this.currentInboxId ||
+        this.isRedirectingMissingInbox ||
+        this.$route.name !== 'settings_inbox_show'
+      ) {
+        return;
+      }
+
+      const inboxExists = await this.ensureCurrentInboxExists();
+      if (inboxExists !== false) {
+        return;
+      }
+
+      this.isRedirectingMissingInbox = true;
+      this.stopTelegramPersonalPolling();
+      this.$router.replace({
+        name: 'settings_inbox_list',
+        params: { accountId: this.$route.params.accountId },
+      });
+    },
     fetchSharedData() {
       this.$store.dispatch('agents/get');
       this.$store.dispatch('teams/get');
@@ -577,6 +825,7 @@ export default {
       if (this.tabs[selectedTabIndex]?.key === 'inbox-settings') {
         this.syncWhatsappWebStatus();
         this.fetchWhatsappWebDiagnostics();
+        this.fetchTelegramPersonalDiagnostics();
       }
     },
     updateRouteWithoutRefresh(selectedTabIndex) {
@@ -602,7 +851,11 @@ export default {
       this.selectedTabIndex = tabIndex === -1 ? 0 : tabIndex;
     },
     async syncWhatsappWebStatus() {
-      if (!this.isAWhatsAppWebInbox || !this.currentInboxId) {
+      if (
+        !this.isAWhatsAppWebInbox ||
+        !this.currentInboxId ||
+        this.isWhatsappWebDeleting
+      ) {
         return;
       }
 
@@ -620,7 +873,11 @@ export default {
       }
     },
     async fetchWhatsappWebDiagnostics() {
-      if (!this.isAWhatsAppWebInbox || !this.currentInboxId) {
+      if (
+        !this.isAWhatsAppWebInbox ||
+        !this.currentInboxId ||
+        this.isWhatsappWebDeleting
+      ) {
         this.whatsappWebDiagnostics = null;
         return;
       }
@@ -637,7 +894,357 @@ export default {
         this.isLoadingWhatsappWebDiagnostics = false;
       }
     },
+    async fetchTelegramPersonalDiagnostics() {
+      if (!this.isATelegramPersonalChannel || !this.currentInboxId) {
+        this.telegramPersonalDiagnostics = null;
+        return;
+      }
+
+      try {
+        this.isLoadingTelegramPersonalDiagnostics = true;
+        this.telegramPersonalDiagnostics = await this.$store.dispatch(
+          'inboxes/getTelegramPersonalDiagnostics',
+          this.currentInboxId
+        );
+      } catch (error) {
+        this.telegramPersonalDiagnostics = null;
+      } finally {
+        this.isLoadingTelegramPersonalDiagnostics = false;
+      }
+    },
+    stopTelegramPersonalPolling() {
+      if (this.telegramPersonalPollingInterval) {
+        window.clearInterval(this.telegramPersonalPollingInterval);
+        this.telegramPersonalPollingInterval = null;
+      }
+    },
+    syncTelegramPersonalPolling() {
+      this.stopTelegramPersonalPolling();
+
+      if (
+        !this.isATelegramPersonalChannel ||
+        !this.currentInboxId ||
+        this.isTelegramPersonalConnected
+      ) {
+        return;
+      }
+
+      this.telegramPersonalPollingInterval = window.setInterval(() => {
+        this.fetchTelegramPersonalDiagnostics();
+      }, TELEGRAM_PERSONAL_POLL_INTERVAL_MS);
+    },
+    async renderTelegramPersonalQrCode() {
+      if (!this.telegramPersonalQrUrl) {
+        this.telegramPersonalQrCode = '';
+        return;
+      }
+
+      try {
+        this.telegramPersonalQrCode = await QRCode.toDataURL(
+          this.telegramPersonalQrUrl,
+          {
+            margin: 0,
+            width: 384,
+          }
+        );
+      } catch (error) {
+        this.telegramPersonalQrCode = '';
+      }
+    },
+    async requestTelegramPersonalCode() {
+      try {
+        this.isRunningTelegramPersonalRequestCode = true;
+        await this.$store.dispatch(
+          'inboxes/requestTelegramPersonalCode',
+          this.currentInboxId
+        );
+        this.telegramPersonalCode = '';
+        this.telegramPersonalPassword = '';
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_CODE_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_CODE_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalRequestCode = false;
+      }
+    },
+    async requestTelegramPersonalQr() {
+      try {
+        this.isRunningTelegramPersonalRequestQr = true;
+        await this.$store.dispatch(
+          'inboxes/requestTelegramPersonalQr',
+          this.currentInboxId
+        );
+        this.telegramPersonalCode = '';
+        this.telegramPersonalPassword = '';
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_QR_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_QR_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalRequestQr = false;
+      }
+    },
+    async verifyTelegramPersonalCode() {
+      if (!this.telegramPersonalCode.trim()) {
+        useAlert(this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_REQUIRED'));
+        return;
+      }
+
+      try {
+        this.isRunningTelegramPersonalVerifyCode = true;
+        await this.$store.dispatch('inboxes/verifyTelegramPersonalCode', {
+          inboxId: this.currentInboxId,
+          code: this.telegramPersonalCode.trim(),
+        });
+        this.telegramPersonalCode = '';
+        await this.fetchTelegramPersonalDiagnostics();
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.VERIFY_CODE_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalVerifyCode = false;
+      }
+    },
+    async verifyTelegramPersonalPassword() {
+      if (!this.telegramPersonalPassword.trim()) {
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_REQUIRED_ERROR')
+        );
+        return;
+      }
+
+      try {
+        this.isRunningTelegramPersonalVerifyPassword = true;
+        await this.$store.dispatch('inboxes/verifyTelegramPersonalPassword', {
+          inboxId: this.currentInboxId,
+          password: this.telegramPersonalPassword.trim(),
+        });
+        this.telegramPersonalPassword = '';
+        await this.fetchTelegramPersonalDiagnostics();
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.VERIFY_PASSWORD_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalVerifyPassword = false;
+      }
+    },
+    async reconnectTelegramPersonal() {
+      try {
+        this.isRunningTelegramPersonalReconnect = true;
+        await this.$store.dispatch(
+          'inboxes/reconnectTelegramPersonal',
+          this.currentInboxId
+        );
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RECONNECT_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RECONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalReconnect = false;
+      }
+    },
+    async historySyncTelegramPersonal() {
+      try {
+        this.isRunningTelegramPersonalHistorySync = true;
+        await this.$store.dispatch(
+          'inboxes/historySyncTelegramPersonal',
+          this.currentInboxId
+        );
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalHistorySync = false;
+      }
+    },
+    async fullHistorySyncTelegramPersonal() {
+      try {
+        this.isRunningTelegramPersonalFullHistorySync = true;
+        await this.$store.dispatch('inboxes/historySyncTelegramPersonal', {
+          inboxId: this.currentInboxId,
+          payload: {
+            force: true,
+            reset_cursor: true,
+            include_contacts: false,
+          },
+        });
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalFullHistorySync = false;
+      }
+    },
+    async contactsSyncTelegramPersonal() {
+      try {
+        this.isRunningTelegramPersonalContactsSync = true;
+        await this.$store.dispatch(
+          'inboxes/contactsSyncTelegramPersonal',
+          this.currentInboxId
+        );
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalContactsSync = false;
+      }
+    },
+    async disconnectTelegramPersonal() {
+      try {
+        this.isRunningTelegramPersonalDisconnect = true;
+        await this.$store.dispatch(
+          'inboxes/disconnectTelegramPersonal',
+          this.currentInboxId
+        );
+        await this.fetchTelegramPersonalDiagnostics();
+        useAlert(
+          this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DISCONNECT_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DISCONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningTelegramPersonalDisconnect = false;
+      }
+    },
+    formatTelegramPersonalValue(value) {
+      return (
+        value || this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE')
+      );
+    },
+    formatTelegramPersonalDate(value) {
+      if (!value) {
+        return this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE');
+      }
+
+      const parsedValue = new Date(value);
+      if (Number.isNaN(parsedValue.getTime())) {
+        return value;
+      }
+
+      try {
+        return new Intl.DateTimeFormat(this.telegramPersonalIntlLocale, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          hour12: false,
+        }).format(parsedValue);
+      } catch {
+        return value;
+      }
+    },
+    humanizeTelegramPersonalState(value) {
+      if (!value) {
+        return this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE');
+      }
+
+      const normalizedKey = String(value)
+        .trim()
+        .replace(/[\s-]+/g, '_')
+        .toUpperCase();
+      const translationKey = `INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.STATE_LABELS.${normalizedKey}`;
+      const translatedValue = this.$t(translationKey);
+
+      if (translatedValue !== translationKey) {
+        return translatedValue;
+      }
+
+      const normalizedValue = String(value).replace(/_/g, ' ');
+      return normalizedValue.charAt(0).toUpperCase() + normalizedValue.slice(1);
+    },
+    telegramPersonalStateBadgeClass(value) {
+      const normalizedValue = String(value || '').toLowerCase();
+
+      if (['connected', 'authorized', 'completed'].includes(normalizedValue)) {
+        return 'bg-n-teal-9/10 text-n-teal-11';
+      }
+
+      if (
+        [
+          'pending auth',
+          'pending_auth',
+          'code sent',
+          'code_sent',
+          'qr ready',
+          'qr_ready',
+          'password required',
+          'password_required',
+          'scheduled',
+          'running',
+          'delivering',
+          'connecting',
+        ].includes(normalizedValue)
+      ) {
+        return 'bg-n-amber-9/10 text-n-slate-12';
+      }
+
+      if (
+        [
+          'failed',
+          'disconnected',
+          'completed with errors',
+          'completed_with_errors',
+          'flood wait',
+          'flood_wait',
+          'cancelled',
+        ].includes(normalizedValue)
+      ) {
+        return 'bg-n-ruby-9/10 text-n-ruby-11';
+      }
+
+      return 'bg-n-alpha-2 text-n-slate-11';
+    },
+    telegramPersonalMetricValueClass(value) {
+      if (value) {
+        return 'text-n-slate-12';
+      }
+
+      return 'text-n-slate-10';
+    },
     async reconnectWhatsappWeb() {
+      if (this.isWhatsappWebDeleting) {
+        return;
+      }
+
       try {
         this.isRunningWhatsappWebReconnect = true;
         await this.$store.dispatch(
@@ -656,6 +1263,10 @@ export default {
       }
     },
     async disconnectWhatsappWeb() {
+      if (this.isWhatsappWebDeleting) {
+        return;
+      }
+
       try {
         this.isRunningWhatsappWebDisconnect = true;
         await this.$store.dispatch(
@@ -674,6 +1285,10 @@ export default {
       }
     },
     async repairWhatsappWeb() {
+      if (this.isWhatsappWebDeleting) {
+        return;
+      }
+
       try {
         this.isRunningWhatsappWebRepair = true;
         await this.$store.dispatch(
@@ -691,6 +1306,10 @@ export default {
       }
     },
     async refreshWhatsappWebQr() {
+      if (this.isWhatsappWebDeleting) {
+        return;
+      }
+
       try {
         this.isRefreshingWhatsappWebQr = true;
         await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
@@ -1426,6 +2045,810 @@ export default {
               </div>
             </SettingsAccordion>
 
+            <SettingsAccordion
+              v-if="shouldShowTelegramPersonalLifecycleSection"
+              :title="$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.TITLE')"
+              class="mt-6"
+            >
+              <div class="space-y-4">
+                <p class="text-body-main text-n-slate-11">
+                  {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SUBTITLE') }}
+                </p>
+
+                <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div
+                    class="rounded-2xl border border-n-strong bg-gradient-to-br from-n-alpha-2 via-transparent to-transparent p-5 xl:col-span-2"
+                  >
+                    <div
+                      class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+                    >
+                      <div>
+                        <p class="text-sm font-medium text-n-slate-12">
+                          {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.OVERVIEW') }}
+                        </p>
+                        <p class="mt-1 text-sm text-n-slate-10">
+                          {{
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.OVERVIEW_SUBTITLE'
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <span
+                        class="inline-flex items-center self-start rounded-full px-3 py-1 text-xs font-medium"
+                        :class="
+                          telegramPersonalStateBadgeClass(
+                            telegramPersonalLifecycleState
+                          )
+                        "
+                      >
+                        {{
+                          humanizeTelegramPersonalState(
+                            telegramPersonalLifecycleState
+                          )
+                        }}
+                      </span>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{
+                                $t(
+                                  'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PHONE_NUMBER'
+                                )
+                              }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold"
+                              :class="
+                                telegramPersonalMetricValueClass(
+                                  inbox.phone_number
+                                )
+                              "
+                            >
+                              {{
+                                formatTelegramPersonalValue(inbox.phone_number)
+                              }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-smartphone" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{
+                                $t(
+                                  'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.AUTH_STATE'
+                                )
+                              }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold text-n-slate-12"
+                            >
+                              {{
+                                humanizeTelegramPersonalState(
+                                  telegramPersonalAuthState
+                                )
+                              }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-shield-check" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{
+                                $t(
+                                  'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONNECTION'
+                                )
+                              }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold text-n-slate-12"
+                            >
+                              {{
+                                humanizeTelegramPersonalState(
+                                  telegramPersonalConnectionState
+                                )
+                              }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-plug" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{
+                                $t(
+                                  'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_SYNCED'
+                                )
+                              }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold text-n-slate-12"
+                            >
+                              {{
+                                formatTelegramPersonalDate(inbox.last_synced_at)
+                              }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-clock-3" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="telegramPersonalLastError"
+                      class="mt-4 rounded-xl border border-n-ruby-8 bg-n-ruby-9/10 p-4"
+                    >
+                      <p class="text-sm font-medium text-n-ruby-11">
+                        {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_ERROR') }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-ruby-11">
+                        {{ telegramPersonalLastError }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl border border-n-strong p-5">
+                    <p class="text-sm font-medium text-n-slate-12">
+                      {{
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SERVICE_CONTROLS')
+                      }}
+                    </p>
+                    <p class="mt-1 text-sm text-n-slate-10">
+                      {{
+                        $t(
+                          'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.SERVICE_CONTROLS_SUBTITLE'
+                        )
+                      }}
+                    </p>
+
+                    <div class="mt-4 space-y-2">
+                      <NextButton
+                        class="w-full"
+                        outline
+                        slate
+                        start
+                        icon="i-lucide-refresh-cw"
+                        :label="
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RECONNECT')
+                        "
+                        :is-loading="isRunningTelegramPersonalReconnect"
+                        @click="reconnectTelegramPersonal"
+                      />
+                      <NextButton
+                        class="w-full"
+                        outline
+                        ruby
+                        start
+                        icon="i-lucide-power"
+                        :label="
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DISCONNECT')
+                        "
+                        :is-loading="isRunningTelegramPersonalDisconnect"
+                        @click="disconnectTelegramPersonal"
+                      />
+                    </div>
+
+                    <div class="mt-4 rounded-xl bg-n-alpha-2 p-4">
+                      <p class="text-sm text-n-slate-10">
+                        {{
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.AUTO_SYNC_HINT')
+                        }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="!isTelegramPersonalConnected"
+                  class="rounded-2xl border border-n-strong p-5"
+                >
+                  <div
+                    class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                  >
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.ACCESS_SECTION')
+                        }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.ACCESS_SECTION_SUBTITLE'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <span
+                      class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                      :class="
+                        telegramPersonalStateBadgeClass(
+                          telegramPersonalLifecycleState
+                        )
+                      "
+                    >
+                      {{
+                        humanizeTelegramPersonalState(
+                          telegramPersonalLifecycleState
+                        )
+                      }}
+                    </span>
+                  </div>
+
+                  <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_LOGIN') }}
+                      </p>
+
+                      <template v-if="shouldShowTelegramPersonalCodeRequest">
+                        <p class="mt-2 text-sm text-n-slate-10">
+                          {{
+                            $t(
+                              'INBOX_MGMT.FINISH.TELEGRAM_PERSONAL.REQUEST_CODE_HINT'
+                            )
+                          }}
+                        </p>
+                        <NextButton
+                          class="mt-4 w-full sm:w-auto"
+                          outline
+                          slate
+                          start
+                          :label="
+                            $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REQUEST_CODE')
+                          "
+                          :is-loading="isRunningTelegramPersonalRequestCode"
+                          @click="requestTelegramPersonalCode"
+                        />
+                      </template>
+
+                      <template
+                        v-else-if="shouldShowTelegramPersonalCodeVerify"
+                      >
+                        <input
+                          v-model="telegramPersonalCode"
+                          class="mt-4 !mb-0 w-full rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
+                          type="text"
+                          inputmode="numeric"
+                          autocomplete="one-time-code"
+                          :placeholder="
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_PLACEHOLDER'
+                            )
+                          "
+                        />
+                        <p class="mt-2 text-sm text-n-slate-10">
+                          {{
+                            $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CODE_HINT')
+                          }}
+                        </p>
+                        <NextButton
+                          class="mt-4 w-full sm:w-auto"
+                          solid
+                          blue
+                          start
+                          icon="i-lucide-check"
+                          :label="
+                            $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.VERIFY_CODE')
+                          "
+                          :is-loading="isRunningTelegramPersonalVerifyCode"
+                          @click="verifyTelegramPersonalCode"
+                        />
+                      </template>
+                    </div>
+
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <template v-if="!isTelegramPersonalPasswordRequired">
+                        <p class="text-sm font-medium text-n-slate-12">
+                          {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_LOGIN') }}
+                        </p>
+                        <p class="mt-2 text-sm text-n-slate-10">
+                          {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_HINT') }}
+                        </p>
+                        <div
+                          v-if="telegramPersonalQrCode"
+                          class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                        >
+                          <img
+                            :src="telegramPersonalQrCode"
+                            :alt="
+                              $t(
+                                'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_IMAGE_ALT'
+                              )
+                            "
+                            class="h-auto w-full max-w-[14rem]"
+                          />
+                        </div>
+                        <div
+                          v-else
+                          class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                        >
+                          {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_EMPTY') }}
+                        </div>
+                        <p
+                          v-if="telegramPersonalQrExpiresAt"
+                          class="mt-3 text-xs text-n-slate-10"
+                        >
+                          {{
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.QR_EXPIRES_AT',
+                              {
+                                value: formatTelegramPersonalDate(
+                                  telegramPersonalQrExpiresAt
+                                ),
+                              }
+                            )
+                          }}
+                        </p>
+                        <NextButton
+                          class="mt-4 w-full sm:w-auto"
+                          outline
+                          slate
+                          start
+                          :label="telegramPersonalQrButtonLabel"
+                          :is-loading="isRunningTelegramPersonalRequestQr"
+                          @click="requestTelegramPersonalQr"
+                        />
+                      </template>
+
+                      <template v-else>
+                        <p class="text-sm font-medium text-n-slate-12">
+                          {{
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_LABEL'
+                            )
+                          }}
+                        </p>
+                        <input
+                          v-model="telegramPersonalPassword"
+                          class="mt-4 !mb-0 w-full rounded-lg border-0 bg-n-surface-1 px-3 py-2 text-sm text-n-slate-12 outline outline-1 outline-offset-[-1px] outline-n-weak focus:outline-n-brand"
+                          type="password"
+                          autocomplete="current-password"
+                          :placeholder="
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_PLACEHOLDER'
+                            )
+                          "
+                        />
+                        <p class="mt-2 text-sm text-n-slate-10">
+                          {{
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.PASSWORD_HINT'
+                            )
+                          }}
+                        </p>
+                        <NextButton
+                          class="mt-4 w-full sm:w-auto"
+                          solid
+                          blue
+                          start
+                          icon="i-lucide-lock-keyhole"
+                          :label="
+                            $t(
+                              'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.VERIFY_PASSWORD'
+                            )
+                          "
+                          :is-loading="isRunningTelegramPersonalVerifyPassword"
+                          @click="verifyTelegramPersonalPassword"
+                        />
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-n-strong p-5">
+                  <div
+                    class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                  >
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IMPORT_SECTION')
+                        }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.IMPORT_SECTION_SUBTITLE'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <span
+                        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                        :class="
+                          telegramPersonalStateBadgeClass(
+                            telegramPersonalHistorySyncState
+                          )
+                        "
+                      >
+                        {{
+                          humanizeTelegramPersonalState(
+                            telegramPersonalHistorySyncState
+                          )
+                        }}
+                      </span>
+                      <span
+                        class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                        :class="
+                          telegramPersonalStateBadgeClass(
+                            telegramPersonalContactsSyncState
+                          )
+                        "
+                      >
+                        {{
+                          humanizeTelegramPersonalState(
+                            telegramPersonalContactsSyncState
+                          )
+                        }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_STATE'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{
+                          humanizeTelegramPersonalState(
+                            telegramPersonalHistorySyncState
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_COUNT'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-2 text-2xl font-semibold text-n-slate-12">
+                        {{ telegramPersonalHistorySyncCount }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_HISTORY_SYNC_AT'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{
+                          formatTelegramPersonalDate(
+                            telegramPersonalLastHistorySyncAt
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_COUNT'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-2 text-2xl font-semibold text-n-slate-12">
+                        {{ telegramPersonalContactsSyncCount }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="mt-5 flex flex-wrap gap-2">
+                    <NextButton
+                      class="w-full sm:w-auto"
+                      outline
+                      slate
+                      start
+                      icon="i-lucide-download"
+                      :label="
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC')
+                      "
+                      :is-loading="isRunningTelegramPersonalHistorySync"
+                      @click="historySyncTelegramPersonal"
+                    />
+                    <NextButton
+                      class="w-full sm:w-auto"
+                      outline
+                      slate
+                      start
+                      icon="i-lucide-history"
+                      :label="
+                        $t(
+                          'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FULL_HISTORY_SYNC'
+                        )
+                      "
+                      :is-loading="isRunningTelegramPersonalFullHistorySync"
+                      @click="fullHistorySyncTelegramPersonal"
+                    />
+                    <NextButton
+                      class="w-full sm:w-auto"
+                      outline
+                      slate
+                      start
+                      icon="i-lucide-users"
+                      :label="
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC')
+                      "
+                      :is-loading="isRunningTelegramPersonalContactsSync"
+                      @click="contactsSyncTelegramPersonal"
+                    />
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-n-strong p-5">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DIAGNOSTICS_SECTION'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DIAGNOSTICS_SECTION_SUBTITLE'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <NextButton
+                        ghost
+                        slate
+                        sm
+                        icon="i-lucide-refresh-cw"
+                        :is-loading="isLoadingTelegramPersonalDiagnostics"
+                        :aria-label="
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REFRESH_DIAGNOSTICS'
+                          )
+                        "
+                        :title="
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.REFRESH_DIAGNOSTICS'
+                          )
+                        "
+                        @click="fetchTelegramPersonalDiagnostics"
+                      />
+                      <NextButton
+                        ghost
+                        slate
+                        sm
+                        icon="i-lucide-bug"
+                        :aria-label="
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RAW_DIAGNOSTICS_TOGGLE'
+                          )
+                        "
+                        :title="
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RAW_DIAGNOSTICS_TOGGLE'
+                          )
+                        "
+                        @click="
+                          isTelegramPersonalRawDiagnosticsVisible =
+                            !isTelegramPersonalRawDiagnosticsVisible
+                        "
+                      />
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.AUTH_STATE') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{
+                          humanizeTelegramPersonalState(
+                            telegramPersonalAuthState
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.FLOOD_WAIT') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{
+                          telegramPersonalFloodWaitSeconds === undefined ||
+                          telegramPersonalFloodWaitSeconds === null
+                            ? $t(
+                                'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE'
+                              )
+                            : telegramPersonalFloodWaitSeconds
+                        }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.LAST_INBOUND_AT'
+                          )
+                        }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{
+                          formatTelegramPersonalDate(
+                            telegramPersonalLastInboundAt
+                          )
+                        }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="isTelegramPersonalRawDiagnosticsVisible"
+                    class="mt-4 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                  >
+                    <p class="mb-3 text-sm font-medium text-n-slate-12">
+                      {{
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RAW_DIAGNOSTICS')
+                      }}
+                    </p>
+                    <woot-code
+                      v-if="telegramPersonalDiagnosticsJson"
+                      lang="text"
+                      :script="telegramPersonalDiagnosticsJson"
+                    />
+                    <p v-else class="text-sm text-n-slate-10">
+                      {{
+                        $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE')
+                      }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </SettingsAccordion>
+
+            <SettingsAccordion
+              v-if="shouldShowVkCommunityDetailsSection"
+              :title="$t('INBOX_MGMT.EDIT.VK_COMMUNITY.TITLE')"
+              class="mt-6"
+            >
+              <div class="space-y-4">
+                <p class="text-body-main text-n-slate-11">
+                  {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.SUBTITLE') }}
+                </p>
+
+                <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div class="rounded-xl border border-n-strong p-4">
+                    <p class="mb-3 text-sm font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.CALLBACK') }}
+                    </p>
+                    <div class="space-y-2 text-sm text-n-slate-11">
+                      <p>
+                        <span class="font-medium text-n-slate-12">{{
+                          $t('INBOX_MGMT.EDIT.VK_COMMUNITY.GROUP_ID')
+                        }}</span>
+                        {{ inbox.group_id }}
+                      </p>
+                      <p>
+                        <span class="font-medium text-n-slate-12">{{
+                          $t('INBOX_MGMT.EDIT.VK_COMMUNITY.API_VERSION')
+                        }}</span>
+                        {{ inbox.api_version }}
+                      </p>
+                      <p>
+                        <span class="font-medium text-n-slate-12">{{
+                          $t('INBOX_MGMT.EDIT.VK_COMMUNITY.CALLBACK_ID')
+                        }}</span>
+                        {{ inbox.callback_id }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl border border-n-strong p-4">
+                    <p class="mb-3 text-sm font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.WEBHOOK_URL') }}
+                    </p>
+                    <woot-code
+                      lang="html"
+                      :script="inbox.callback_webhook_url"
+                    />
+                    <p class="mt-3 text-sm text-n-slate-10">
+                      {{ $t('INBOX_MGMT.EDIT.VK_COMMUNITY.WEBHOOK_HINT') }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </SettingsAccordion>
+
             <SettingsFieldSection
               v-if="isAWebWidgetInbox || isAnEmailChannel"
               :label="$t('INBOX_MGMT.EDIT.SENDER_NAME_SECTION.TITLE')"
@@ -1694,6 +3117,8 @@ export default {
                   </div>
                 </div>
               </SettingsFieldSection>
+
+              <WebsiteTriggerCampaigns :inbox="inbox" />
             </SettingsAccordion>
 
             <SettingsAccordion

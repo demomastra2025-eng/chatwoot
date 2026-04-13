@@ -21,6 +21,7 @@ json.domain @account.domain
 json.features @account.enabled_features
 json.id @account.id
 json.locale @account.locale
+json.logo_url @account.logo_url
 json.name @account.name
 json.support_email @account.support_email
 json.status @account.status

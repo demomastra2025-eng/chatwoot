@@ -75,7 +75,23 @@
         "EMPTY_COLUMN_DESCRIPTION": "New deals moved to this stage will appear here.",
         "EMPTY_PIPELINE_DESCRIPTION": "Add at least one stage so the board can render columns for this pipeline.",
         "EMPTY_PIPELINE_TITLE": "This pipeline has no stages yet",
-        "EMPTY_COLUMN": "No deals in this stage"
+        "EMPTY_COLUMN": "No deals in this stage",
+        "SORT": {
+          "LABEL": "Sort by",
+          "ORDER": "Order",
+          "DIRECTIONS": {
+            "ASC": "Ascending",
+            "DESC": "Descending"
+          },
+          "OPTIONS": {
+            "AMOUNT": "Amount",
+            "CREATED_AT": "Created date",
+            "EXPECTED_CLOSE_ON": "Expected close date",
+            "NONE": "No sorting",
+            "TITLE": "Title",
+            "UPDATED_AT": "Updated date"
+          }
+        }
       },
       "LIST": {
         "EMPTY_FILTERED": "No deals match the current quick filters.",
@@ -140,7 +156,24 @@
         "EMPTY_COLUMN": "No tasks in this status",
         "EMPTY_COLUMN_DESCRIPTION": "New tasks moved to this status will appear here.",
         "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
-        "EMPTY_STATUS_TITLE": "No task statuses yet"
+        "EMPTY_STATUS_TITLE": "No task statuses yet",
+        "SORT": {
+          "LABEL": "Sort by",
+          "ORDER": "Order",
+          "DIRECTIONS": {
+            "ASC": "Ascending",
+            "DESC": "Descending"
+          },
+          "OPTIONS": {
+            "CREATED_AT": "Created date",
+            "DUE_AT": "Due date",
+            "NONE": "No sorting",
+            "PRIORITY": "Priority",
+            "START_AT": "Start date",
+            "TITLE": "Title",
+            "UPDATED_AT": "Updated date"
+          }
+        }
       },
       "LIST": {
         "EMPTY_FILTERED": "No tasks match the current quick filters.",
@@ -239,6 +272,16 @@
           "TYPE": "Type"
         },
         "TITLE": "Managed fields"
+      },
+      "DEFAULT_TOUCH_PLAN": {
+        "DEAL_TITLE": "Default touch plan for deals",
+        "DEAL_DESCRIPTION": "Apply this touch plan automatically when a new deal is created.",
+        "TASK_TITLE": "Default touch plan for tasks",
+        "TASK_DESCRIPTION": "Apply this touch plan automatically when a new CRM task is created.",
+        "LABEL": "Touch plan",
+        "NOTE": "Only plans that support this entity type are shown here.",
+        "PLACEHOLDER": "No default touch plan",
+        "SAVE": "Save default plan"
       },
       "LOADING": "Loading CRM settings...",
       "PIPELINES": {

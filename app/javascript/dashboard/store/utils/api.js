@@ -15,6 +15,8 @@ import {
 
 Cookies.defaults = { sameSite: 'Lax' };
 
+let isHandlingSessionReplacement = false;
+
 export const getLoadingStatus = state => state.fetchAPIloadingStatus;
 export const setLoadingStatus = (state, status) => {
   state.fetchAPIloadingStatus = status;
@@ -85,6 +87,24 @@ export const clearCookiesOnLogout = () => {
   const globalConfig = window.globalConfig || {};
   const logoutRedirectLink = globalConfig.LOGOUT_REDIRECT_LINK || '/';
   window.location = logoutRedirectLink;
+};
+
+export const clearCookiesOnLogoutTo = redirectLink => {
+  emitter.emit(CHATWOOT_RESET);
+  emitter.emit(ANALYTICS_RESET);
+  clearBrowserSessionCookies();
+  clearLocalStorageOnLogout();
+  clearSessionStorageOnLogout();
+  window.location = redirectLink;
+};
+
+export const handleSessionReplaced = ({ message } = {}) => {
+  if (isHandlingSessionReplacement) {
+    return;
+  }
+
+  isHandlingSessionReplacement = true;
+  emitter.emit('auth:session_replaced', { message });
 };
 
 export const parseAPIErrorResponse = error => {

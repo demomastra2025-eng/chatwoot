@@ -1,9 +1,11 @@
 class Api::BaseController < ApplicationController
   include AccessTokenAuthHelper
+  include ActiveAuthSessionEnforcer
   respond_to :json
   before_action :authenticate_access_token!, if: :authenticate_by_access_token?
   before_action :validate_bot_access_token!, if: :authenticate_by_access_token?
   before_action :authenticate_user!, unless: :authenticate_by_access_token?
+  before_action :ensure_active_auth_session!, unless: :authenticate_by_access_token?
 
   private
 

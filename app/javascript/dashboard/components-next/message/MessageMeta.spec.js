@@ -25,6 +25,7 @@ const baseInboxState = () => ({
   isAPIInbox: ref(false),
   isASmsInbox: ref(false),
   isATelegramChannel: ref(false),
+  isATelegramPersonalChannel: ref(false),
   isATwilioChannel: ref(false),
   isAWebWidgetInbox: ref(false),
   isAWhatsAppChannel: ref(false),
@@ -40,6 +41,7 @@ const baseMessageContext = status => ({
   createdAt: ref(1774504297),
   sourceId: ref('A59662051F54F088C7D7C25E1C02FBF1'),
   messageType: ref(MESSAGE_TYPES.OUTGOING),
+  additionalAttributes: ref({}),
   contentAttributes: ref({ externalEcho: true }),
 });
 
@@ -78,4 +80,32 @@ describe('MessageMeta', () => {
       ).toBe(expectedStatus);
     }
   );
+
+  it('shows read status for Telegram Personal outgoing messages', () => {
+    useInboxMock.mockReturnValue({
+      ...baseInboxState(),
+      isAWhatsAppWebChannel: ref(false),
+      isATelegramPersonalChannel: ref(true),
+    });
+    useMessageContextMock.mockReturnValue(
+      baseMessageContext(MESSAGE_STATUS.READ)
+    );
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.findComponent({ name: 'MessageStatus' }).props('status')
+    ).toBe(MESSAGE_STATUS.READ);
+  });
+
+  it('shows an edited marker when the message content was updated', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      contentAttributes: ref({ edited: true }),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('edited');
+  });
 });

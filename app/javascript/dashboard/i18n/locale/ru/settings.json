@@ -156,6 +156,7 @@
       "NOTIFICATIONS": {
         "TITLE": "Настройки уведомлений",
         "TYPE_TITLE": "Тип уведомления",
+        "INBOX": "Мои входящие",
         "EMAIL": "Эл. почта",
         "PUSH": "Push-уведомления",
         "TYPES": {
@@ -306,8 +307,13 @@
     "SWITCH": "Переключить",
     "INBOX_VIEW": "Просмотр входящих сообщений",
     "CONVERSATIONS": "Диалоги",
-    "INBOX": "Мои Входящие",
+    "ALL": "Все",
+    "INBOX": "Уведомления",
     "ALL_CONVERSATIONS": "Диалоги",
+    "PENDING_CONVERSATIONS": "AI-агенты",
+    "OPEN_CONVERSATIONS": "Открыто",
+    "SNOOZED_CONVERSATIONS": "Отложено",
+    "RESOLVED_CONVERSATIONS": "Закрыто",
     "MENTIONED_CONVERSATIONS": "Упоминания",
     "PARTICIPATING_CONVERSATIONS": "Участвующие",
     "UNATTENDED_CONVERSATIONS": "Неотвеченные",
@@ -328,11 +334,12 @@
     "SCHEDULING_SERVICES": "Услуги",
     "SCHEDULING_EXCEPTIONS": "Перерывы",
     "SCHEDULING_KASSA": "Касса",
-    "CAPTAIN": "AI-агенты",
-    "CAPTAIN_ASSISTANTS": "AI-агенты",
+    "CAPTAIN": "AI-сотрудники",
+    "CAPTAIN_ASSISTANTS": "AI-сотрудники",
     "CAPTAIN_DOCUMENTS": "Документы",
     "CAPTAIN_RESPONSES": "FAQ",
     "CAPTAIN_TOOLS": "Инструменты",
+    "CAPTAIN_OBSERVABILITY": "Наблюдаемость",
     "CAPTAIN_SCENARIOS": "Сценарии",
     "CAPTAIN_PLAYGROUND": "Площадка",
     "CAPTAIN_INBOXES": "Каналы",
@@ -347,7 +354,7 @@
     "AUDIT_LOGS": "Журнал аудита",
     "INBOXES": "Каналы",
     "NOTIFICATIONS": "Уведомления",
-    "CANNED_RESPONSES": "Шаблонные ответы",
+    "CANNED_RESPONSES": "Шаблоны",
     "INTEGRATIONS": "Интеграции",
     "PROFILE_SETTINGS": "Настройки профиля",
     "ACCOUNT_SETTINGS": "Workspace",
@@ -370,7 +377,14 @@
     "LIVE_CHAT": "Онлайн чат",
     "SMS": "SMS",
     "WHATSAPP": "WhatsApp",
-    "CAMPAIGNS": "Рассылки",
+    "OUTBOUND": "Рассылки",
+    "OUTBOUND_MASS": "Массовые",
+    "OUTBOUND_PERSONAL": "Персональные",
+    "CAMPAIGNS": "Кампании",
+    "AUDIENCES": "Аудитории",
+    "TOUCHES": "Персональные",
+    "TOUCH_PLANS": "Этапы рассылок",
+    "TEMPLATES": "Шаблоны",
     "ONGOING": "Повторяющиеся",
     "ONE_OFF": "Единоразовые",
     "REPORTS_SLA": "SLA",
@@ -395,6 +409,7 @@
       "SETTINGS": "Настройки"
     },
     "CHANNELS": "Каналы",
+    "ALL_CHANNELS": "Все",
     "SET_AUTO_OFFLINE": {
       "TEXT": "Отметить автоматически",
       "INFO_TEXT": "Позволить системе автоматически отмечать вас в автономном режиме, если вы не используете приложение или приборную панель.",
@@ -402,7 +417,7 @@
     },
     "DOCS": "Открыть документацию",
     "SECURITY": "Безопасность",
-    "CAPTAIN_AI": "AI-агенты",
+    "CAPTAIN_AI": "AI-сотрудники",
     "CONVERSATION_WORKFLOW": "Сценарии диалогов"
   },
   "BILLING_SETTINGS": {
@@ -852,11 +867,11 @@
     }
   },
   "CAPTAIN_SETTINGS": {
-    "TITLE": "Настройки AI-агентов",
-    "DESCRIPTION": "Настройте AI-модели и функции для AI-агентов. AI-агенты используют оплату по кредитам: кредиты списываются за каждое AI-действие в зависимости от выбранной модели.",
-    "LOADING": "Загрузка конфигурации AI-агентов...",
-    "LINK_TEXT": "Подробнее о кредитах AI-агентов",
-    "NOT_ENABLED": "AI-агенты не включены для вашего workspace. Перейдите на более высокий тариф, чтобы получить доступ к функциям AI-агентов.",
+    "TITLE": "Настройки AI-сотрудников",
+    "DESCRIPTION": "Настройте AI-модели и функции для AI-сотрудников. AI-сотрудники используют оплату по кредитам: кредиты списываются за каждое AI-действие в зависимости от выбранной модели.",
+    "LOADING": "Загрузка конфигурации AI-сотрудников...",
+    "LINK_TEXT": "Подробнее о кредитах AI-сотрудников",
+    "NOT_ENABLED": "AI-сотрудники не включены для вашего workspace. Перейдите на более высокий тариф, чтобы получить доступ к функциям AI-сотрудников.",
     "MODEL_CONFIG": {
       "TITLE": "Конфигурация моделей",
       "DESCRIPTION": "Выберите AI-модели для разных функций.",
@@ -900,6 +915,14 @@
       "MODERATION": {
         "TITLE": "Модерация",
         "DESCRIPTION": "Проверяет текст до и после ответа модели. Заблокированные ответы AI-агента переводятся на человека."
+      },
+      "MODERATION_FAILURE_MODE": {
+        "TITLE": "Режим отказа модерации",
+        "DESCRIPTION": "Определяет, должен ли AI-запрос продолжаться или останавливаться, если провайдер модерации недоступен.",
+        "OPTIONS": {
+          "FAIL_OPEN": "Продолжать без модерации",
+          "FAIL_CLOSED": "Блокировать запрос"
+        }
       },
       "THINKING": {
         "TITLE": "Глубина рассуждений",

@@ -2,50 +2,33 @@ module Captain::Assistant::TracePayloadHelper
   private
 
   def enrich_context_with_trace_payload!(context, message_history, message_to_process)
-    context[:captain_v2_trace_input] = serialize_trace_messages(message_history)
-    context[:captain_v2_trace_current_input] = serialize_trace_content(message_to_process)
+    preferences = context.dig(:state, :captain_runtime)
+    context[:captain_v2_trace_input] = serialize_trace_messages(message_history, preferences: preferences)
+    context[:captain_v2_trace_current_input] = serialize_trace_content(message_to_process, preferences: preferences)
   end
 
-  def serialize_trace_messages(message_history)
-    message_history.map do |message|
+  def serialize_trace_messages(message_history, preferences:)
+    payload = message_history.map do |message|
       {
         role: message[:role].to_s,
         content: trace_content_payload(message[:content])
       }
-    end.to_json
+    end
+
+    Llm::TracePayloadPolicy.capture(payload, direction: :input, preferences: preferences)
   end
 
-  def serialize_trace_content(content)
+  def serialize_trace_content(content, preferences:)
     payload = trace_content_payload(content)
-    return '' if payload.blank?
+    return nil if payload.blank?
 
-    payload.is_a?(String) ? payload : payload.to_json
+    Llm::TracePayloadPolicy.capture(payload, direction: :input, preferences: preferences)
   end
 
   def trace_content_payload(content)
-    case content
-    when RubyLLM::Content
-      trace_parts_from_ruby_llm_content(content)
-    when Array, Hash
-      content
-    when NilClass
-      ''
-    else
-      content.to_s
-    end
-  end
+    payload = Llm::MessageFormat.serialize_content(content)
+    return '' if payload.blank?
 
-  def trace_parts_from_ruby_llm_content(content)
-    parts = []
-    parts << { type: 'text', text: content.text } if content.text.present?
-
-    content.attachments.each do |attachment|
-      parts << { type: 'image_url', image_url: { url: attachment.source.to_s } }
-    end
-
-    return '' if parts.blank?
-    return parts.first[:text] if parts.one? && parts.first[:type] == 'text'
-
-    parts
+    payload
   end
 end

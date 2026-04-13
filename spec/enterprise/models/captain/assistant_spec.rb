@@ -28,7 +28,7 @@ RSpec.describe Captain::Assistant, type: :model do
       missing_tool_ids = assistant.available_tool_ids - assistant.available_assistant_tool_ids
 
       expect(missing_tool_ids).to be_empty
-      expect(assistant.available_assistant_tool_ids).to include('faq_lookup', 'create_deal', 'create_task', 'create_appointment')
+      expect(assistant.available_assistant_tool_ids).to include('faq_lookup', 'create_deal', 'create_task', 'create_appointment', 'create_touch')
     end
 
     it 'builds direct agent runtime tools through the shared tool catalog' do

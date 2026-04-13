@@ -2,8 +2,9 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   def create
     case normalized_type
     when 'Conversation'
-      enqueue_conversation_job
-      head :ok
+      bulk_action_run = create_conversation_bulk_action_run!
+      enqueue_conversation_job(bulk_action_run)
+      render json: { payload: bulk_action_run.as_progress_json }, status: :ok
     when 'Contact'
       check_authorization_for_contact_action
       enqueue_contact_job
@@ -19,11 +20,12 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     params[:type].to_s.camelize
   end
 
-  def enqueue_conversation_job
+  def enqueue_conversation_job(bulk_action_run)
     ::BulkActionsJob.perform_later(
       account: @current_account,
       user: current_user,
-      params: conversation_params
+      params: conversation_params,
+      bulk_action_run_id: bulk_action_run.id
     )
   end
 
@@ -64,5 +66,30 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     # want all objects to share a common contract: `{ action_name, action_attributes }`
     common = params.permit(:type, :action_name, ids: [], labels: [add: [], remove: []])
     base_params.merge(common)
+  end
+
+  def create_conversation_bulk_action_run!
+    @current_account.bulk_action_runs.create!(
+      user: current_user,
+      resource_type: 'Conversation',
+      action_name: conversation_action_name,
+      metadata: {
+        selected_count: Array(params[:ids]).size
+      }
+    )
+  end
+
+  def conversation_action_name
+    return params[:action_name].to_s if params[:action_name].present?
+    return 'remove_labels' if params.dig(:labels, :remove).present?
+    return 'add_labels' if params.dig(:labels, :add).present?
+
+    fields = params[:fields].to_h
+    return 'update' if fields.keys.size > 1
+    return 'update_status' if fields.key?(:status) || fields.key?('status')
+    return 'assign_agent' if fields.key?(:assignee_id) || fields.key?('assignee_id')
+    return 'assign_team' if fields.key?(:team_id) || fields.key?('team_id')
+
+    'update'
   end
 end

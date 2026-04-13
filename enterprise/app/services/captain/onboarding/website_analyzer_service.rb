@@ -59,10 +59,10 @@ class Captain::Onboarding::WebsiteAnalyzerService < Llm::BaseAiService
 
   def extract_business_info
     response = instrument_llm_call(instrumentation_params) do
-      llm_chat = chat(temperature: 0.1)
-                 .with_params(max_tokens: 1000)
-                 .with_schema(Captain::Llm::Schemas::WebsiteAnalysis)
-                 .with_instructions(analysis_prompt)
+      llm_chat = apply_chat_features(
+        chat(temperature: 0.1).with_params(max_tokens: 1000),
+        schema: Captain::Llm::Schemas::WebsiteAnalysis
+      ).with_instructions(analysis_prompt)
 
       ask_chat(llm_chat, @website_content)
     end

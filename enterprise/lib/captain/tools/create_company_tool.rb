@@ -13,7 +13,7 @@ class Captain::Tools::CreateCompanyTool < Captain::Tools::BasePublicTool
 
     "Created company #{company.name} (ID: #{company.id}) for the current contact"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

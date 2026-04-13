@@ -8,6 +8,8 @@ module Scheduling::PayloadBuilder
       resource_id: appointment.resource_id,
       contact_id: appointment.contact_id,
       service_id: appointment.service_id,
+      service_ids: appointment.custom_attributes['service_ids'].presence || Array(appointment.service_id).compact,
+      services: appointment.custom_attributes['services'].presence || [],
       company_id: appointment.company_id,
       conversation_id: appointment.conversation_id,
       created_by_id: appointment.created_by_id,

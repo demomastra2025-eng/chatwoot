@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::AddTaskCommentService < Captain::Tools::Copilot::
     comment = task_operations.add_current_task_comment(body: body)
     "Added task comment ##{comment.id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

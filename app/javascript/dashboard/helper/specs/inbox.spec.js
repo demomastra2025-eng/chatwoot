@@ -79,6 +79,12 @@ describe('#Inbox Helpers', () => {
         );
       });
 
+      it('returns correct icon for Telegram Personal', () => {
+        expect(getInboxIconByType(INBOX_TYPES.TELEGRAM_PERSONAL)).toBe(
+          'i-ri-telegram-fill'
+        );
+      });
+
       it('returns correct icon for Line', () => {
         expect(getInboxIconByType(INBOX_TYPES.LINE)).toBe('i-ri-line-fill');
       });
@@ -107,6 +113,12 @@ describe('#Inbox Helpers', () => {
         expect(getInboxIconByType(INBOX_TYPES.FB, null, 'line')).toBe(
           'i-woot-messenger'
         );
+      });
+
+      it('returns correct line icon for Telegram Personal', () => {
+        expect(
+          getInboxIconByType(INBOX_TYPES.TELEGRAM_PERSONAL, null, 'line')
+        ).toBe('i-woot-telegram');
       });
 
       it('returns correct line icon for TikTok', () => {

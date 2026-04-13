@@ -18,6 +18,23 @@ RSpec.describe Captain::ConversationCompletionService do
   end
 
   describe '#perform' do
+    it 'delegates evaluation to the reusable evaluator with normalized messages' do
+      create(:message, conversation: conversation, message_type: :incoming, content: 'What are your hours?')
+      create(:message, conversation: conversation, message_type: :outgoing, content: 'We are open 9-5 Monday to Friday.')
+      evaluator = instance_double(Captain::ConversationCompletionEvaluator, perform: { complete: true, reason: 'Done' })
+
+      expect(Captain::ConversationCompletionEvaluator).to receive(:new).with(
+        account: account,
+        conversation_display_id: conversation.display_id,
+        messages: [
+          { role: 'user', content: 'What are your hours?' },
+          { role: 'assistant', content: 'We are open 9-5 Monday to Friday.' }
+        ]
+      ).and_return(evaluator)
+
+      expect(service.perform).to eq(complete: true, reason: 'Done')
+    end
+
     context 'when conversation is complete' do
       let(:mock_response) do
         instance_double(

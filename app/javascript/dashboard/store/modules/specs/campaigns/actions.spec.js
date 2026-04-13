@@ -47,6 +47,39 @@ describe('#actions', () => {
     });
   });
 
+  describe('#preview', () => {
+    it('sends correct actions if preview API is success', async () => {
+      axios.post.mockResolvedValue({ data: { deliverable_count: 5 } });
+      await actions.preview({ commit }, { inbox_id: 1 });
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_CAMPAIGN_UI_FLAG, { isPreviewing: true }],
+        [types.default.SET_CAMPAIGN_PREVIEW, { deliverable_count: 5 }],
+        [types.default.SET_CAMPAIGN_UI_FLAG, { isPreviewing: false }],
+      ]);
+    });
+
+    it('clears preview if preview API errors', async () => {
+      axios.post.mockRejectedValue({ message: 'Incorrect header' });
+      await expect(
+        actions.preview({ commit }, { inbox_id: 1 })
+      ).rejects.toThrow(Error);
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_CAMPAIGN_UI_FLAG, { isPreviewing: true }],
+        [types.default.SET_CAMPAIGN_PREVIEW, null],
+        [types.default.SET_CAMPAIGN_UI_FLAG, { isPreviewing: false }],
+      ]);
+    });
+  });
+
+  describe('#clearPreview', () => {
+    it('clears the stored preview', () => {
+      actions.clearPreview({ commit });
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_CAMPAIGN_PREVIEW, null],
+      ]);
+    });
+  });
+
   describe('#update', () => {
     it('sends correct actions if API is success', async () => {
       axios.patch.mockResolvedValue({ data: campaignList[0] });

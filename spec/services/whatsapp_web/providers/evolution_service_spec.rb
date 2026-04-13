@@ -23,7 +23,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       )
 
       allow(service).to receive(:request)
-        .with(:get, "/instance/connect/#{channel.instance_name}")
+        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
         .and_raise(missing_instance_error)
       allow(service).to receive(:provision!).and_return(channel)
 
@@ -35,7 +35,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       service = described_class.new(channel: channel)
 
       allow(service).to receive(:request)
-        .with(:get, "/instance/connect/#{channel.instance_name}")
+        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
         .and_return(
           'message' => 'QR code limit reached, please login again',
           'statusCode' => 500
@@ -103,6 +103,39 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service).to have_received(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
       expect(service).to have_received(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything)
     end
+
+    it 'does not force a fresh qr while Evolution is already reconnecting automatically' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:sync_connection_state!) do
+        channel.update!(connection_state: 'reconnecting', lifecycle_state: 'reconnecting')
+      end
+      allow(service).to receive(:refresh_qr!).and_return(channel)
+
+      service.repair!
+
+      expect(service).not_to have_received(:refresh_qr!)
+    end
+  end
+
+  describe '#reconnect!' do
+    it 'restarts the runtime session while Evolution is already reconnecting' do
+      service = described_class.new(channel: channel)
+      channel.update!(connection_state: 'reconnecting', lifecycle_state: 'reconnecting')
+      expect(service).not_to receive(:refresh_qr!)
+
+      allow(service).to receive(:request)
+        .with(:post, "/instance/restart/#{channel.instance_name}", body: {})
+        .and_return({ 'instance' => { 'state' => 'reconnecting' } })
+      allow(service).to receive(:sync_from_runtime_response!).and_return(channel)
+
+      service.reconnect!
+
+      expect(service).to have_received(:request)
+        .with(:post, "/instance/restart/#{channel.instance_name}", body: {})
+    end
   end
 
   describe '#sync_connection_state!' do
@@ -143,6 +176,21 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.connection_state).to eq('refused')
       expect(channel.lifecycle_state).to eq('failed')
     end
+
+    it 'keeps reconnecting sessions in a transient reconnecting lifecycle state' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'reconnecting' } })
+
+      service.sync_connection_state!
+
+      channel.reload
+      expect(channel.connection_state).to eq('reconnecting')
+      expect(channel.lifecycle_state).to eq('reconnecting')
+      expect(channel.last_error).to be_nil
+    end
   end
 
   describe 'runtime payloads' do
@@ -150,7 +198,16 @@ describe WhatsappWeb::Providers::EvolutionService do
       service = described_class.new(channel: channel)
       events = service.send(:webhook_payload).dig(:webhook, :events)
 
-      expect(events).to include('CONTACTS_UPSERT', 'LABELS_EDIT', 'LABELS_ASSOCIATION', 'MESSAGING_HISTORY_SET')
+      expect(events).to include(
+        'CALL',
+        'CONTACTS_UPSERT',
+        'LABELS_EDIT',
+        'LABELS_ASSOCIATION',
+        'MESSAGING_HISTORY_SET',
+        'STATUS_INSTANCE',
+        'LOGOUT_INSTANCE',
+        'REMOVE_INSTANCE'
+      )
       expect(events).not_to include('MESSAGES_SET')
     end
 
@@ -201,6 +258,66 @@ describe WhatsappWeb::Providers::EvolutionService do
       )
 
       expect(response.dig('key', 'id')).to eq('WA-MSG-1')
+    end
+  end
+
+  describe '#mark_messages_read' do
+    it 'posts the normalized read payload to Evolution' do
+      service = described_class.new(channel: channel)
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/chat/markMessageAsRead/#{channel.instance_name}",
+        body: {
+          readMessages: [
+            {
+              remoteJid: '15551234567@s.whatsapp.net',
+              fromMe: false,
+              id: 'wa-read-1'
+            }
+          ]
+        }
+      ).and_return({})
+
+      service.mark_messages_read(messages: [
+                                   {
+                                     remoteJid: '15551234567',
+                                     fromMe: false,
+                                     id: 'wa-read-1'
+                                   }
+                                 ])
+    end
+  end
+
+  describe '#update_message' do
+    it 'posts the normalized edit payload to Evolution' do
+      service = described_class.new(channel: channel)
+      conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content: 'Original text',
+        source_id: 'wa-edit-1'
+      )
+
+      expect(service).to receive(:request).with(
+        :post,
+        "/chat/updateMessage/#{channel.instance_name}",
+        body: {
+          number: "#{conversation.contact_inbox.source_id}@s.whatsapp.net",
+          text: 'Edited text',
+          key: {
+            id: 'wa-edit-1',
+            fromMe: true,
+            remoteJid: "#{conversation.contact_inbox.source_id}@s.whatsapp.net"
+          }
+        }
+      ).and_return({})
+
+      service.update_message(message: message, content: 'Edited text')
     end
   end
 

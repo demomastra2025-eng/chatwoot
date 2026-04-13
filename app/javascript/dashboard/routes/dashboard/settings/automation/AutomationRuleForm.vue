@@ -452,11 +452,14 @@ defineExpose({ open, close });
             v-model="automation.actions[i]"
             :action-types="automationActionTypes"
             dropdown-max-height="max-h-[7.5rem]"
-            :dropdown-values="getActionDropdownValues(action.action_name)"
+            :dropdown-values="
+              getActionDropdownValues(action.action_name, eventName)
+            "
             :show-action-input="
               showActionInput(automationActionTypes, action.action_name)
             "
             :error-message="getActionErrorMessage(i)"
+            :event-name="eventName"
             :initial-file-name="
               isEditMode ? getFileName(action, automation.files) : ''
             "

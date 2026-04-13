@@ -12,6 +12,7 @@ import {
   generateCustomAttributes,
 } from 'dashboard/helper/automationHelper';
 import useAutomationValues from './useAutomationValues';
+import { useTouchPlans } from './useTouchPlans';
 
 import {
   // AUTOMATION_RULE_EVENTS,
@@ -26,6 +27,7 @@ import {
 export function useAutomation(startValue = null) {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
+  const { loadTouchPlans } = useTouchPlans();
   const { t } = useI18n();
 
   const {
@@ -324,6 +326,8 @@ export function useAutomation(startValue = null) {
 
   const loadAutomationReferences = async eventNameToLoad => {
     const jobs = [];
+
+    jobs.push(loadTouchPlans());
 
     if (
       isSchedulingEnabled.value ||

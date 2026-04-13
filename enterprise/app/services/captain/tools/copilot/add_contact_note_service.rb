@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::AddContactNoteService < Captain::Tools::Copilot::
     created_note = conversation_operations.add_contact_note(note: note)
     "Added contact note ##{created_note.id} to #{current_contact.name}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

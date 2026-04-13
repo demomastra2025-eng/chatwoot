@@ -1,19 +1,22 @@
 <script setup>
-import { reactive, computed } from 'vue';
+import { reactive, computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
-import { useMapGetter } from 'dashboard/composables/store';
+import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { useAlert } from 'dashboard/composables';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
+import CampaignPreviewSummary from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignPreviewSummary.vue';
 
 const emit = defineEmits(['submit', 'cancel']);
 
 const { t } = useI18n();
+const store = useStore();
 
 const formState = {
   uiFlags: useMapGetter('campaigns/getUIFlags'),
@@ -30,6 +33,7 @@ const initialState = {
 };
 
 const state = reactive({ ...initialState });
+const lastPreviewSignature = ref(null);
 
 const rules = {
   title: { required, minLength: minLength(1) },
@@ -42,6 +46,8 @@ const rules = {
 const v$ = useVuelidate(rules, state);
 
 const isCreating = computed(() => formState.uiFlags.value.isCreating);
+const isPreviewing = computed(() => formState.uiFlags.value.isPreviewing);
+const preview = computed(() => store.getters['campaigns/getPreview']);
 
 const currentDateTime = computed(() => {
   // Added to disable the scheduled at field from being set to the current time
@@ -77,18 +83,10 @@ const formErrors = computed(() => ({
   audience: getErrorMessage('selectedAudience', 'AUDIENCE'),
 }));
 
-const isSubmitDisabled = computed(() => v$.value.$invalid);
-
 const formatToUTCString = localDateTime =>
   localDateTime ? new Date(localDateTime).toISOString() : null;
 
-const resetState = () => {
-  Object.assign(state, initialState);
-};
-
-const handleCancel = () => emit('cancel');
-
-const prepareCampaignDetails = () => ({
+const previewPayload = computed(() => ({
   title: state.title,
   message: state.message,
   inbox_id: state.inboxId,
@@ -97,16 +95,83 @@ const prepareCampaignDetails = () => ({
     id,
     type: 'Label',
   })),
+}));
+
+const previewSignature = computed(() => JSON.stringify(previewPayload.value));
+
+const isPreviewStale = computed(() => {
+  if (!preview.value || !lastPreviewSignature.value) return false;
+  return lastPreviewSignature.value !== previewSignature.value;
 });
+
+const canSubmit = computed(
+  () =>
+    !v$.value.$invalid &&
+    !!preview.value &&
+    !isPreviewStale.value &&
+    preview.value.deliverable_count > 0
+);
+
+const previewHint = computed(() => {
+  if (!preview.value) return t('CAMPAIGN.PREVIEW.EMPTY_MESSAGE');
+  if (isPreviewStale.value) return t('CAMPAIGN.PREVIEW.STALE_MESSAGE');
+  if (preview.value.deliverable_count === 0) {
+    return t('CAMPAIGN.PREVIEW.BLOCKED_MESSAGE');
+  }
+
+  return t('CAMPAIGN.PREVIEW.READY_MESSAGE');
+});
+
+const clearPreviewState = () => {
+  store.dispatch('campaigns/clearPreview');
+  lastPreviewSignature.value = null;
+};
+
+const resetState = () => {
+  Object.assign(state, initialState);
+  clearPreviewState();
+  v$.value.$reset();
+};
+
+const handleCancel = () => {
+  clearPreviewState();
+  emit('cancel');
+};
+
+const prepareCampaignDetails = () => previewPayload.value;
+
+const handlePreview = async () => {
+  const isFormValid = await v$.value.$validate();
+  if (!isFormValid) return;
+
+  try {
+    await store.dispatch('campaigns/preview', prepareCampaignDetails());
+    lastPreviewSignature.value = previewSignature.value;
+  } catch {
+    lastPreviewSignature.value = null;
+    useAlert(t('CAMPAIGN.PREVIEW.ERROR_MESSAGE'));
+  }
+};
 
 const handleSubmit = async () => {
   const isFormValid = await v$.value.$validate();
   if (!isFormValid) return;
+  if (
+    !preview.value ||
+    isPreviewStale.value ||
+    preview.value.deliverable_count < 1
+  ) {
+    useAlert(t('CAMPAIGN.PREVIEW.SUBMIT_REQUIRES_PREVIEW'));
+    return;
+  }
 
   emit('submit', prepareCampaignDetails());
   resetState();
   handleCancel();
 };
+
+onMounted(clearPreviewState);
+onBeforeUnmount(clearPreviewState);
 </script>
 
 <template>
@@ -168,6 +233,22 @@ const handleSubmit = async () => {
       :message-type="formErrors.scheduledAt ? 'error' : 'info'"
     />
 
+    <div class="flex flex-col gap-2">
+      <CampaignPreviewSummary :preview="preview" :stale="isPreviewStale" />
+      <p class="text-xs text-n-slate-11">
+        {{ previewHint }}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        color="slate"
+        :label="t('CAMPAIGN.PREVIEW.ACTION')"
+        :is-loading="isPreviewing"
+        :disabled="isCreating || isPreviewing"
+        @click="handlePreview"
+      />
+    </div>
+
     <div class="flex items-center justify-between w-full gap-3">
       <Button
         variant="faded"
@@ -182,7 +263,7 @@ const handleSubmit = async () => {
         class="w-full"
         type="submit"
         :is-loading="isCreating"
-        :disabled="isCreating || isSubmitDisabled"
+        :disabled="isCreating || isPreviewing || !canSubmit"
       />
     </div>
   </form>

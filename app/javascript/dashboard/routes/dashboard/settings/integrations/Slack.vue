@@ -8,6 +8,7 @@ import SelectChannelWarning from './Slack/SelectChannelWarning.vue';
 import SlackIntegrationHelpText from './Slack/SlackIntegrationHelpText.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 
 const props = defineProps({
   code: { type: String, default: '' },
@@ -19,6 +20,9 @@ const route = useRoute();
 const { t } = useI18n();
 
 const integrationLoaded = ref(false);
+const isSlackConfigured = computed(
+  () => !!window.chatwootConfig?.slackConfigured
+);
 
 const integration = computed(() => {
   return store.getters['integrations/getIntegration']('slack');
@@ -54,6 +58,9 @@ const selectedChannelName = computed(() => {
 const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
 
 const integrationAction = computed(() => {
+  if (!isSlackConfigured.value) {
+    return '';
+  }
   if (integration.value.enabled) {
     return 'disconnect';
   }
@@ -102,7 +109,27 @@ onMounted(() => {
               'INTEGRATION_SETTINGS.SLACK.DELETE_CONFIRMATION.MESSAGE'
             ),
           }"
-        />
+        >
+          <template v-if="!isSlackConfigured" #action>
+            <Button
+              faded
+              slate
+              disabled
+              :label="$t('INTEGRATION_SETTINGS.SLACK.NOT_CONFIGURED.BUTTON')"
+            />
+          </template>
+        </Integration>
+        <div
+          v-if="!isSlackConfigured"
+          class="rounded-xl border border-n-weak bg-n-alpha-2 p-4 text-n-slate-11"
+        >
+          <p class="text-heading-3 text-n-slate-12">
+            {{ $t('INTEGRATION_SETTINGS.SLACK.NOT_CONFIGURED.TITLE') }}
+          </p>
+          <p class="mt-1 text-body-main">
+            {{ $t('INTEGRATION_SETTINGS.SLACK.NOT_CONFIGURED.DESCRIPTION') }}
+          </p>
+        </div>
         <div v-if="areHooksAvailable" class="flex-1">
           <SelectChannelWarning
             v-if="!isIntegrationHookEnabled"

@@ -4,17 +4,19 @@ import { useStore } from 'vuex';
 import SignupForm from './components/Signup/Form.vue';
 import Testimonials from './components/Testimonials/Index.vue';
 import Spinner from 'shared/components/Spinner.vue';
+import { useBranding } from 'shared/composables/useBranding';
 
 const store = useStore();
+const { replaceInstallationName } = useBranding();
 
 const isLoading = ref(false);
 const globalConfig = computed(() => store.getters['globalConfig/get']);
-const isAChatwootInstance = computed(
-  () => globalConfig.value.installationName === 'Chatwoot'
+const isADefaultBrandedInstance = computed(
+  () => globalConfig.value.installationName === 'OneLink'
 );
 
 onBeforeMount(() => {
-  isLoading.value = isAChatwootInstance.value;
+  isLoading.value = isADefaultBrandedInstance.value;
 });
 
 const resizeContainers = () => {
@@ -29,7 +31,7 @@ const resizeContainers = () => {
     <div
       v-show="!isLoading"
       class="relative flex max-w-[960px] bg-white dark:bg-n-solid-2 rounded-lg outline outline-1 outline-n-container shadow-sm"
-      :class="{ 'w-auto xl:w-full': isAChatwootInstance }"
+      :class="{ 'w-auto xl:w-full': isADefaultBrandedInstance }"
     >
       <div class="flex-1 flex items-center justify-center py-10 px-10">
         <div class="max-w-[420px] w-full">
@@ -47,9 +49,11 @@ const resizeContainers = () => {
             />
             <h2 class="mt-6 text-2xl font-semibold text-n-slate-12">
               {{
-                isAChatwootInstance
-                  ? $t('REGISTER.GET_STARTED')
-                  : $t('REGISTER.TRY_WOOT')
+                replaceInstallationName(
+                  isADefaultBrandedInstance
+                    ? $t('REGISTER.GET_STARTED')
+                    : $t('REGISTER.TRY_WOOT')
+                )
               }}
             </h2>
             <p class="mt-2 text-sm text-n-slate-11">
@@ -66,7 +70,7 @@ const resizeContainers = () => {
         </div>
       </div>
       <Testimonials
-        v-if="isAChatwootInstance"
+        v-if="isADefaultBrandedInstance"
         class="flex-1 hidden xl:flex"
         @resize-containers="resizeContainers"
       />

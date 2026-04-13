@@ -329,6 +329,73 @@ describe ContactInboxBuilder do
 
         expect(contact_inbox.source_id).not_to be_nil
       end
+
+      it 'creates a baseline channel profile for new contact inboxes' do
+        contact_inbox = described_class.new(
+          contact: contact,
+          inbox: api_inbox,
+          source_id: 'api-source-1'
+        ).perform
+
+        expect(contact_inbox.channel_profile).to have_attributes(
+          display_name: contact.name,
+          email: contact.email,
+          phone_number: contact.phone_number,
+          identifier: contact.identifier,
+          provider: 'api',
+          source_id: 'api-source-1'
+        )
+      end
+
+      it 'backfills a missing baseline channel profile for existing contact inboxes' do
+        existing_contact_inbox = create(
+          :contact_inbox,
+          contact: contact,
+          inbox: api_inbox,
+          source_id: 'api-source-1'
+        )
+
+        expect(existing_contact_inbox.channel_profile).to be_nil
+
+        contact_inbox = described_class.new(
+          contact: contact,
+          inbox: api_inbox,
+          source_id: 'api-source-1'
+        ).perform
+
+        expect(contact_inbox.id).to eq(existing_contact_inbox.id)
+        expect(contact_inbox.reload.channel_profile).to have_attributes(
+          display_name: contact.name,
+          email: contact.email,
+          phone_number: contact.phone_number
+        )
+      end
+
+      it 'does not override an existing channel profile' do
+        existing_contact_inbox = create(
+          :contact_inbox,
+          contact: contact,
+          inbox: api_inbox,
+          source_id: 'api-source-1'
+        )
+        create(
+          :contact_channel_profile,
+          contact_inbox: existing_contact_inbox,
+          display_name: 'Channel Name',
+          username: 'channel_user'
+        )
+
+        contact_inbox = described_class.new(
+          contact: contact,
+          inbox: api_inbox,
+          source_id: 'api-source-1'
+        ).perform
+
+        expect(contact_inbox.reload.channel_profile).to have_attributes(
+          display_name: 'Channel Name',
+          username: 'channel_user'
+        )
+      end
     end
 
     context 'when there is a race condition' do

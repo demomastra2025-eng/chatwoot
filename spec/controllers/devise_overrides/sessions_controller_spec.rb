@@ -17,6 +17,27 @@ RSpec.describe DeviseOverrides::SessionsController, type: :controller do
         expect(response).to have_http_status(:success)
       end
 
+      it 'activates the current auth client for the user' do
+        post :create, params: { email: user.email, password: 'Test@123456' }
+
+        expect(user.reload.active_auth_client_id).to eq(response.headers['client'])
+        expect(user.reload.active_auth_client_set_at).to be_present
+      end
+
+      it 'broadcasts session replacement to the previously active client' do
+        post :create, params: { email: user.email, password: 'Test@123456' }
+        previous_client_id = response.headers['client']
+
+        expect(ActionCable.server).to receive(:broadcast).with(
+          user.auth_session_stream_name(previous_client_id),
+          hash_including(event: 'auth.session_replaced')
+        )
+
+        post :create, params: { email: user.email, password: 'Test@123456' }
+
+        expect(user.reload.active_auth_client_id).to eq(response.headers['client'])
+      end
+
       it 'rejects invalid credentials' do
         post :create, params: { email: user.email, password: 'wrong' }
 

@@ -14,6 +14,7 @@ import ContactInfoRow from './ContactInfoRow.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
+import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactMergeModal from 'dashboard/modules/contact/ContactMergeModal.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
@@ -35,6 +36,7 @@ export default {
     Avatar,
     ComposeConversation,
     SocialIcons,
+    ContactChannelLabels,
     ContactMergeModal,
     VoiceCallButton,
   },
@@ -103,6 +105,12 @@ export default {
         )
       );
     },
+    canCreateSchedulingAppointment() {
+      return this.isFeatureEnabledonAccount(
+        this.currentAccountId,
+        FEATURE_FLAGS.SCHEDULING
+      );
+    },
     additionalAttributes() {
       return this.contact.additional_attributes || {};
     },
@@ -139,11 +147,44 @@ export default {
     confirmDeleteMessage() {
       return ` ${this.contact.name}?`;
     },
+    contactConversations() {
+      return this.$store.getters[
+        'contactConversations/getAllConversationsByContactId'
+      ](this.contact.id);
+    },
+    contactConversationsLoaded() {
+      const contactId = Number(this.contact?.id);
+
+      if (!contactId) {
+        return false;
+      }
+
+      return Object.prototype.hasOwnProperty.call(
+        this.$store.state.contactConversations.records,
+        contactId
+      );
+    },
+    existingConversationInboxIds() {
+      if (!this.contactConversationsLoaded) {
+        return null;
+      }
+
+      return [
+        ...new Set(
+          (this.contactConversations || [])
+            .map(conversation =>
+              Number(conversation.inboxId || conversation.inbox_id)
+            )
+            .filter(Boolean)
+        ),
+      ];
+    },
   },
   watch: {
     'contact.id': {
       handler(id) {
         this.$store.dispatch('contacts/fetchContactableInbox', id);
+        this.$store.dispatch('contactConversations/get', id);
       },
       immediate: true,
     },
@@ -233,6 +274,7 @@ export default {
           is_contact_sidebar_open: false,
           is_crm_deal_panel_open: true,
           is_copilot_panel_open: false,
+          is_touch_sidebar_open: false,
         });
         return;
       }
@@ -251,6 +293,45 @@ export default {
         source: 'contact',
       });
     },
+    onCreateAppointment() {
+      const conversationId = Number(this.$route.params.id);
+
+      this.openCrmRoute('scheduling_calendar', {
+        action: 'new',
+        contactId: this.contact.id,
+        contactName: this.contact.name || undefined,
+        contactPhone: this.contact.phone_number || undefined,
+        conversationId:
+          Number.isFinite(conversationId) && conversationId > 0
+            ? conversationId
+            : undefined,
+        source: 'contact',
+      });
+    },
+    openChannelConversation(channelIdentity) {
+      const targetConversation = (this.contactConversations || []).find(
+        conversation =>
+          Number(conversation.inboxId || conversation.inbox_id) ===
+          Number(channelIdentity.inboxId)
+      );
+
+      if (!targetConversation) {
+        this.$refs.composeConversation?.openWithChannel({
+          contact: this.contact,
+          channelIdentity,
+        });
+        return;
+      }
+
+      this.$router.push({
+        name: 'inbox_view_conversation',
+        params: {
+          accountId: this.$route.params.accountId,
+          type: 'conversation',
+          id: targetConversation.id,
+        },
+      });
+    },
   },
 };
 </script>
@@ -258,7 +339,7 @@ export default {
 <template>
   <div class="relative items-center w-full p-4">
     <div class="flex flex-col w-full gap-2 text-left rtl:text-right">
-      <div class="flex flex-row justify-between">
+      <div class="flex flex-row items-start justify-between w-full">
         <Avatar
           v-if="showAvatar"
           :src="contact.thumbnail"
@@ -267,6 +348,17 @@ export default {
           :size="48"
           hide-offline-status
           rounded-full
+        />
+        <NextButton
+          v-if="isAdmin"
+          v-tooltip.top-end="$t('DELETE_CONTACT.BUTTON_LABEL')"
+          icon="i-ph-trash"
+          slate
+          faded
+          sm
+          ruby
+          :disabled="uiFlags.isDeleting"
+          @click="toggleDeleteModal"
         />
       </div>
 
@@ -339,10 +431,18 @@ export default {
             :title="$t('CONTACT_PANEL.LOCATION')"
           />
           <SocialIcons :social-profiles="socialProfiles" />
+          <ContactChannelLabels
+            :contact-inboxes="contact.contactInboxes || []"
+            :existing-conversation-inbox-ids="existingConversationInboxIds"
+            :title="$t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
+            :copy-on-click="false"
+            @select="openChannelConversation"
+          />
         </div>
       </div>
       <div class="flex items-center w-full mt-0.5 gap-2">
         <ComposeConversation
+          ref="composeConversation"
           :contact-id="String(contact.id)"
           is-modal
           @close="closeComposeConversationModal"
@@ -386,6 +486,15 @@ export default {
           @click="onCreateTask"
         />
         <NextButton
+          v-if="canCreateSchedulingAppointment"
+          v-tooltip.top-end="$t('SCHEDULING.CALENDAR.NEW_APPOINTMENT')"
+          icon="i-lucide-calendar-clock"
+          slate
+          faded
+          sm
+          @click="onCreateAppointment"
+        />
+        <NextButton
           v-tooltip.top-end="$t('EDIT_CONTACT.BUTTON_LABEL')"
           icon="i-ph-pencil-simple"
           slate
@@ -401,17 +510,6 @@ export default {
           sm
           :disabled="uiFlags.isMerging"
           @click="openMergeModal"
-        />
-        <NextButton
-          v-if="isAdmin"
-          v-tooltip.top-end="$t('DELETE_CONTACT.BUTTON_LABEL')"
-          icon="i-ph-trash"
-          slate
-          faded
-          sm
-          ruby
-          :disabled="uiFlags.isDeleting"
-          @click="toggleDeleteModal"
         />
       </div>
       <EditContact

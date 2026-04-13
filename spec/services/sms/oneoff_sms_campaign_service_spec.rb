@@ -29,6 +29,12 @@ describe Sms::OneoffSmsCampaignService do
       expect { sms_campaign_service.perform }.to raise_error 'Completed Campaign'
     end
 
+    it 'raises error if the campaign has already failed' do
+      campaign.failed!
+
+      expect { sms_campaign_service.perform }.to raise_error 'Failed Campaign'
+    end
+
     it 'raises error invalid campaign when its not a oneoff sms campaign' do
       campaign = create(:campaign)
 
@@ -54,6 +60,16 @@ describe Sms::OneoffSmsCampaignService do
       expect(Liquid::CampaignTemplateService).to receive(:new).with(campaign: campaign, contact: contact).and_call_original
 
       sms_campaign_service.perform
+    end
+
+    it 'marks the campaign as failed when no contact can be delivered' do
+      contact_without_phone = create(:contact, account: account, phone_number: nil)
+      contact_without_phone.update_labels([label1.title])
+
+      sms_campaign_service.perform
+
+      expect(campaign.reload.failed?).to be(true)
+      expect(campaign.campaign_deliveries.find_by(contact: contact_without_phone).status).to eq('skipped')
     end
 
     it 'continues processing contacts when sending message raises an error' do

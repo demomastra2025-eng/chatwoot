@@ -62,4 +62,8 @@ class Captain::CsatUtilityAnalysisService < Captain::BaseTaskService
   def event_name
     'csat_utility_analysis'
   end
+
+  def task_moderation_stages
+    [:output]
+  end
 end

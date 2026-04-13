@@ -13,7 +13,10 @@ RSpec.describe Captain::RewriteService do
 
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
-    allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
+    allow(Llm::Config).to receive(:initialize!)
+    allow(Llm::Config).to receive(:context).and_return(mock_context)
+    allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
     allow(mock_chat).to receive(:with_instructions)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
     # Stub captain enabled check to allow specs to test base functionality
@@ -24,6 +27,10 @@ RSpec.describe Captain::RewriteService do
 
   describe '#perform with fix_spelling_grammar operation' do
     let(:operation) { 'fix_spelling_grammar' }
+
+    it 'moderates only generated output' do
+      expect(service.send(:task_moderation_stages)).to eq([:output])
+    end
 
     it 'uses fix_spelling_grammar prompt' do
       expect(service).to receive(:render_task_prompt).with('fix_spelling_grammar').and_return('Fix errors')

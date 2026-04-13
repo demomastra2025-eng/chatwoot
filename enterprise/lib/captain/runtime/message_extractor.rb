@@ -4,16 +4,7 @@ module Captain::Runtime::MessageExtractor
   module_function
 
   def content_empty?(content)
-    case content
-    when String
-      content.strip.empty?
-    when Hash, Array
-      content.empty?
-    when RubyLLM::Content
-      content.text.to_s.strip.empty? && content.attachments.blank?
-    else
-      content.nil?
-    end
+    Llm::MessageFormat.content_empty?(content)
   end
 
   def extract_messages(chat, current_agent)
@@ -45,7 +36,7 @@ module Captain::Runtime::MessageExtractor
   def base_message(msg)
     {
       role: msg.role,
-      content: message_content?(msg) ? msg.content : ''
+      content: message_content?(msg) ? Llm::MessageFormat.serialize_content(msg.content) : ''
     }
   end
   private_class_method :base_message

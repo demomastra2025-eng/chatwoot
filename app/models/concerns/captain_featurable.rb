@@ -5,8 +5,11 @@ module CaptainFeaturable
   RUNTIME_DEFAULTS = {
     'assistant_thinking_effort' => 'none',
     'copilot_thinking_effort' => 'none',
-    'assistant_moderation' => false,
-    'copilot_moderation' => false
+    'assistant_moderation' => true,
+    'copilot_moderation' => true,
+    'moderation_failure_mode' => 'fail_open',
+    'trace_input_capture' => !Rails.env.production?,
+    'trace_output_capture' => !Rails.env.production?
   }.freeze
   RUNTIME_FEATURE_KEYS = %w[assistant copilot].freeze
 
@@ -35,6 +38,14 @@ module CaptainFeaturable
         captain_runtime_with_defaults["#{feature_key}_moderation"] == true
       end
     end
+
+    define_method(:captain_trace_input_capture?) do
+      captain_runtime_with_defaults['trace_input_capture'] == true
+    end
+
+    define_method(:captain_trace_output_capture?) do
+      captain_runtime_with_defaults['trace_output_capture'] == true
+    end
   end
 
   def captain_preferences
@@ -52,7 +63,7 @@ module CaptainFeaturable
     Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
       stored_value = stored_models[feature_key]
       result[feature_key] = if stored_value.present? && Llm::Models.valid_model_for?(feature_key, stored_value)
-                              stored_value
+                              Llm::Models.canonical_model_name(stored_value)
                             else
                               Llm::Models.default_model_for(feature_key)
                             end
@@ -85,7 +96,7 @@ module CaptainFeaturable
     captain_models.each do |feature_key, model_name|
       next if model_name.blank?
       next unless Llm::Models.valid_model_for?(feature_key, model_name)
-      next if Llm::Models.registry_known?(model_name)
+      next if Llm::Models.runtime_supported?(model_name)
 
       errors.add(:captain_models, "'#{model_name}' for #{feature_key} is not available in RubyLLM.models.")
     end

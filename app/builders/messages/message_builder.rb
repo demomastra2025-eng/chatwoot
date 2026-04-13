@@ -119,6 +119,10 @@ class Messages::MessageBuilder
     @params[:campaign_id]
   end
 
+  def campaign_run_id
+    @params[:campaign_run_id]
+  end
+
   def template_params
     return if @params[:template_params].blank?
 
@@ -128,6 +132,7 @@ class Messages::MessageBuilder
   def additional_attributes
     attrs = {}
     attrs[:campaign_id] = campaign_id if campaign_id.present?
+    attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
     attrs[:template_params] = template_params if template_params.present?
     attrs.presence
   end

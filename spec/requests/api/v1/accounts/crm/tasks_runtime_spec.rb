@@ -194,6 +194,27 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(task.reload.events.where(event_type: 'task_status_changed')).to exist
   end
 
+  it 'reorders tasks inside a status using board position' do
+    status = account.crm_task_statuses.find_by!(code: 'todo')
+    first_task = create(:crm_task, account: account, status: status)
+    second_task = create(:crm_task, account: account, status: status)
+    third_task = create(:crm_task, account: account, status: status)
+
+    patch "#{path}/#{third_task.id}",
+          params: {
+            lock_version: third_task.lock_version,
+            position: 1
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'position')).to eq(1)
+    expect(status.tasks.kept.order(:position, :id).pluck(:id)).to eq(
+      [third_task.id, first_task.id, second_task.id]
+    )
+  end
+
   it 'blocks moving a task to done when required custom fields are missing' do
     open_status = account.crm_task_statuses.find_by!(code: 'todo')
     done_status = account.crm_task_statuses.find_by!(code: 'done')

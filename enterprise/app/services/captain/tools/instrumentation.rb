@@ -9,15 +9,31 @@ module Captain::Tools::Instrumentation
       scope_name: tool_scope_name,
       user: @user
     )
-      message = 'This tool is not available for the current assistant configuration.'
+      message = tool_failure('This tool is not available for the current assistant configuration.')
       audit_tool_execution(arguments: args, result: message)
       return message
     end
 
-    instrument_tool_call(name, args) do
+    instrument_tool_call(name, args, tool_instrumentation_params(args)) do
+      Captain::ToolSafety.check_arguments!(
+        feature: tool_safety_feature,
+        arguments: args,
+        account: tool_safety_account,
+        preferences: tool_safety_preferences
+      )
       result = super
+      Captain::ToolSafety.check_result!(
+        feature: tool_safety_feature,
+        result: result,
+        account: tool_safety_account,
+        preferences: tool_safety_preferences
+      )
       audit_tool_execution(arguments: args, result: result)
       result
+    rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError => e
+      message = tool_failure(Captain::ToolSafety.blocked_message(stage: e.stage, error: e))
+      audit_tool_execution(arguments: args, result: message, error: e)
+      message
     end
   rescue StandardError => e
     audit_tool_execution(arguments: args, error: e)
@@ -37,5 +53,22 @@ module Captain::Tools::Instrumentation
       user: @user,
       runtime_context: tool_runtime_context
     )
+  end
+
+  def tool_instrumentation_params(arguments)
+    {
+      account: tool_safety_account,
+      account_id: tool_safety_account&.id,
+      conversation_id: @conversation&.id,
+      feature_name: tool_safety_feature,
+      trace_preferences: tool_safety_preferences,
+      metadata: {
+        assistant_id: assistant&.id,
+        tool_name: name,
+        tool_scope: tool_scope_name,
+        tool_definition_id: tool_definition[:id],
+        argument_keys: arguments.keys.sort.join(',')
+      }.compact
+    }
   end
 end

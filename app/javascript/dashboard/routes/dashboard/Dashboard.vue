@@ -111,6 +111,7 @@ export default {
     handleCrmDealPanelModelUpdate(value) {
       this.updateUISettings({
         is_crm_deal_panel_open: value,
+        is_touch_sidebar_open: false,
       });
     },
     toggleMobileSidebar() {

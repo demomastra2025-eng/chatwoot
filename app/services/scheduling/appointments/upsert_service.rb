@@ -14,7 +14,10 @@ class Scheduling::Appointments::UpsertService
     ApplicationRecord.transaction do
       apply_attributes!
       validate_availability!
+      new_record = appointment.new_record?
       appointment.save!
+      auto_apply_default_touch_plan! if new_record
+      sync_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
       appointment.reload
     end
@@ -27,7 +30,9 @@ class Scheduling::Appointments::UpsertService
   def apply_attributes!
     resource = resolve_resource!
     contact = resolve_optional_record(:contact_id, account.contacts, current: appointment.contact)
-    service = resolve_optional_record(:service_id, account.scheduling_services, current: appointment.service)
+    ensure_contact_present!(contact)
+    services = resolve_services(current: current_services)
+    primary_service = services.first
     company = resolve_company(contact)
     conversation = resolve_optional_record(:conversation_id, account.conversations, current: appointment.conversation)
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
@@ -36,10 +41,10 @@ class Scheduling::Appointments::UpsertService
     ends_at = resolve_datetime(:ends_at, current: appointment.ends_at)
     duration_min = resolve_duration_min(starts_at: starts_at, ends_at: ends_at)
 
-    service_snapshot = resolve_service_snapshot(resource: resource, service: service)
+    service_snapshot = resolve_service_snapshot(resource: resource, services: services)
     service_amount = resolve_service_amount(
       resource: resource,
-      service: service,
+      services: services,
       resolved_price: service_snapshot[:resolved_price]
     )
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
@@ -54,7 +59,7 @@ class Scheduling::Appointments::UpsertService
       account: account,
       resource: resource,
       contact: contact,
-      service: service,
+      service: primary_service,
       company: company,
       conversation: conversation,
       created_by: created_by,
@@ -89,7 +94,7 @@ class Scheduling::Appointments::UpsertService
         settlement_amount: settlement_amount,
         requested_status: requested_payment_status
       ),
-      custom_attributes: resolve_custom_attributes
+      custom_attributes: resolve_custom_attributes(services: services)
     )
   end
 
@@ -168,26 +173,53 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_company(contact)
+    return appointment.company if appointment.persisted? && !company_attachment_enabled? && !params.key?(:company_id)
+    return nil unless company_attachment_enabled?
+
     resolve_optional_record(:company_id, account.companies, current: appointment.company || contact&.company)
   end
 
-  def resolve_custom_attributes
+  def resolve_custom_attributes(services:)
     incoming = params[:custom_attributes]
     catalog = appointment_field_catalog
 
     if catalog.definitions.blank?
-      return appointment.custom_attributes if incoming.nil?
+      base_attributes =
+        if incoming.nil?
+          current_custom_attributes_without_service_metadata
+        else
+          CustomAttributes::MutationService.merge(
+            current_custom_attributes_without_service_metadata,
+            incoming
+          )
+        end
 
-      return CustomAttributes::MutationService.merge(appointment.custom_attributes, incoming)
+      return base_attributes.to_h.deep_stringify_keys.merge(service_custom_attributes(services))
     end
 
     preserved_system_custom_attributes.merge(
       catalog.resolve_custom_attributes(
-        current_attributes: appointment.custom_attributes,
+        current_attributes: current_custom_attributes_without_service_metadata,
         incoming_attributes: incoming,
         apply_defaults: appointment.new_record?
       )
-    )
+    ).merge(service_custom_attributes(services))
+  end
+
+  def service_custom_attributes(services)
+    return {} if services.blank?
+
+    {
+      'service_ids' => services.map(&:id),
+      'services' => services.map do |service|
+        {
+          'id' => service.id,
+          'name' => service.name,
+          'service_type' => service.service_type,
+          'duration_min' => service.duration_min
+        }
+      end
+    }
   end
 
   def appointment_field_catalog
@@ -213,6 +245,13 @@ class Scheduling::Appointments::UpsertService
       PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.include?(key) ||
         PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES.any? { |prefix| key.start_with?(prefix) }
     end
+  end
+
+  def current_custom_attributes_without_service_metadata
+    appointment.custom_attributes
+               .to_h
+               .deep_stringify_keys
+               .except('service_ids', 'services')
   end
 
   def resolve_date(key, current:)
@@ -249,11 +288,50 @@ class Scheduling::Appointments::UpsertService
     raise ArgumentError, "#{key} must be an integer"
   end
 
+  def auto_apply_default_touch_plan!
+    Reminders::DefaultPlanService.new(
+      account: account,
+      remindable: appointment,
+      actor: actor
+    ).perform
+  end
+
+  def sync_related_touches!
+    Reminders::SyncRemindableService.new(remindable: appointment).perform
+  end
+
   def resolve_optional_record(key, scope, current:)
     return current unless params.key?(key)
     return nil if params[key].blank?
 
     scope.find(params[key])
+  end
+
+  def resolve_services(current:)
+    ids = normalized_service_ids(current: current)
+    return [] if ids.blank?
+
+    records_by_id = account.scheduling_services.where(id: ids).index_by(&:id)
+    missing_id = ids.find { |id| !records_by_id.key?(id) }
+    raise ActiveRecord::RecordNotFound, "service #{missing_id} not found" if missing_id
+
+    ids.map { |id| records_by_id.fetch(id) }
+  end
+
+  def normalized_service_ids(current:)
+    return normalize_ids(params[:service_ids]) if params.key?(:service_ids)
+    return normalize_ids([params[:service_id]]) if params.key?(:service_id)
+
+    current.map(&:id)
+  end
+
+  def normalize_ids(values)
+    Array(values).filter_map do |value|
+      text = value.to_s.strip
+      text.present? ? Integer(text) : nil
+    end.uniq
+  rescue ArgumentError, TypeError
+    raise ArgumentError, 'service_ids must be integers'
   end
 
   def resolve_optional_text(key, current:)
@@ -277,10 +355,10 @@ class Scheduling::Appointments::UpsertService
     raise ActiveRecord::RecordNotFound, 'resource not found'
   end
 
-  def resolve_service_amount(resource:, service:, resolved_price:)
+  def resolve_service_amount(resource:, services:, resolved_price:)
     return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
-    return 0 if service.blank?
-    pricing_changed = pricing_link_changed?(resource: resource, service: service)
+    return 0 if services.blank?
+    pricing_changed = pricing_link_changed?(resource: resource, services: services)
     return resolved_price if resolved_price.present? && pricing_changed
 
     current_amount = appointment.service_amount.to_i
@@ -291,8 +369,8 @@ class Scheduling::Appointments::UpsertService
     raise ArgumentError, 'service_amount is required and must be greater than 0'
   end
 
-  def resolve_service_snapshot(resource:, service:)
-    if service.blank?
+  def resolve_service_snapshot(resource:, services:)
+    if services.blank?
       return {
         resolved_price: nil,
         service_name_snapshot: nil,
@@ -304,6 +382,23 @@ class Scheduling::Appointments::UpsertService
       }
     end
 
+    return resolve_single_service_snapshot(resource: resource, service: services.first) if services.one?
+
+    items = services.map { |service| resolve_single_service_snapshot(resource: resource, service: service) }
+    total_expense = items.sum { |item| compute_snapshot_expense_amount(item) }
+
+    {
+      resolved_price: items.sum { |item| item[:resolved_price].to_i },
+      service_name_snapshot: services.map(&:name).join(', '),
+      service_type_snapshot: services.map(&:service_type).filter_map(&:presence).uniq.join(', ').presence,
+      service_duration_min_snapshot: services.sum { |service| service.duration_min.to_i },
+      compensation_type_snapshot: 'fixed',
+      compensation_value_snapshot: total_expense,
+      compensation_percent_snapshot: 0
+    }
+  end
+
+  def resolve_single_service_snapshot(resource:, service:)
     price = service.prices.find_by(resource_id: resource.id)
     resolved_price = if price&.active? && price.price.to_i.positive?
                        price.price
@@ -346,6 +441,22 @@ class Scheduling::Appointments::UpsertService
     }
   end
 
+  def compute_snapshot_expense_amount(snapshot)
+    service_amount = snapshot[:resolved_price].to_i
+
+    case snapshot[:compensation_type_snapshot]
+    when 'fixed'
+      snapshot[:compensation_value_snapshot].to_i
+    when 'fixed_plus_percent'
+      snapshot[:compensation_value_snapshot].to_i +
+        ((service_amount * snapshot[:compensation_percent_snapshot].to_i) / 100.0).round
+    when 'percent'
+      ((service_amount * snapshot[:compensation_value_snapshot].to_i) / 100.0).round
+    else
+      0
+    end
+  end
+
   def resolve_string(key, current:)
     value = params[key]
     return current.to_s unless params.key?(key)
@@ -356,11 +467,29 @@ class Scheduling::Appointments::UpsertService
     text
   end
 
-  def pricing_link_changed?(resource:, service:)
+  def pricing_link_changed?(resource:, services:)
     return true if appointment.new_record?
 
     appointment.resource_id != resource.id ||
-      appointment.service_id != service&.id
+      current_service_ids != services.map(&:id)
+  end
+
+  def current_service_ids
+    stored_ids = appointment.custom_attributes.to_h['service_ids']
+    normalized_ids = normalize_ids(stored_ids)
+    return normalized_ids if normalized_ids.present?
+
+    appointment.service_id.present? ? [appointment.service_id] : []
+  end
+
+  def current_services
+    ids = current_service_ids
+    return [] if ids.blank?
+
+    records_by_id = account.scheduling_services.where(id: ids).index_by(&:id)
+    ids.filter_map do |id|
+      records_by_id[id] || (appointment.service if appointment.service_id == id)
+    end
   end
 
   def keep_current_resource?(resource_id)
@@ -377,6 +506,21 @@ class Scheduling::Appointments::UpsertService
       message: 'Specialist is not available for scheduling',
       status: :unprocessable_content
     )
+  end
+
+  def ensure_contact_present!(contact)
+    return unless contact_required?
+    return if contact.present?
+
+    raise ArgumentError, 'contact_id is required'
+  end
+
+  def contact_required?
+    account.scheduling_contact_required?
+  end
+
+  def company_attachment_enabled?
+    account.scheduling_company_enabled?
   end
 
   def validate_availability!

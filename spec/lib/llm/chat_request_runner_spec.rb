@@ -6,6 +6,7 @@ RSpec.describe Llm::ChatRequestRunner do
   let(:chat) { instance_double(RubyLLM::Chat) }
   let(:context) { instance_double(RubyLLM::Context, chat: chat) }
   let(:response) { instance_double(RubyLLM::Message, content: 'Done') }
+  let(:chat_model) { instance_double('RubyLLM::Model::Info', id: 'gpt-4.1-mini') }
 
   before do
     allow(chat).to receive(:with_params).and_return(chat)
@@ -17,6 +18,7 @@ RSpec.describe Llm::ChatRequestRunner do
     allow(chat).to receive(:on_tool_result).and_return(chat)
     allow(chat).to receive(:add_message)
     allow(chat).to receive(:ask).and_return(response)
+    allow(chat).to receive(:model).and_return(chat_model)
   end
 
   it 'applies system instructions, restores history, and asks with the latest message' do
@@ -91,11 +93,17 @@ RSpec.describe Llm::ChatRequestRunner do
       string :message
     end
     tool = instance_double(RubyLLM::Tool)
+    structured_response = instance_double(
+      RubyLLM::Message,
+      content: { 'message' => 'Done' },
+      tool_call?: false
+    )
 
     expect(chat).to receive(:with_schema).with(schema)
     expect(chat).to receive(:with_tool).with(tool)
+    expect(chat).to receive(:ask).with('Hello').and_return(structured_response)
 
-    described_class.new(
+    result = described_class.new(
       context: context,
       model: 'gpt-4',
       messages: [{ role: 'user', content: 'Hello' }],
@@ -104,7 +112,45 @@ RSpec.describe Llm::ChatRequestRunner do
       params: { response_format: { type: 'json_object' } }
     ).call
 
+    expect(result).to eq(structured_response)
     expect(chat).to have_received(:with_params).with(response_format: { type: 'json_object' })
+  end
+
+  it 'raises when structured output is requested for a model without schema support' do
+    allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
+    schema = Class.new(RubyLLM::Schema) do
+      string :message
+    end
+
+    expect do
+      described_class.new(
+        context: context,
+        model: 'whisper-1',
+        messages: [{ role: 'user', content: 'Hello' }],
+        schema: schema
+      ).call
+    end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /structured outputs/)
+  end
+
+  it 'raises when structured output response is not valid json' do
+    schema = Class.new(RubyLLM::Schema) do
+      string :message
+    end
+
+    invalid_response_one = instance_double(RubyLLM::Message, content: 'not-json', tool_call?: false)
+    invalid_response_two = instance_double(RubyLLM::Message, content: 'still-not-json', tool_call?: false)
+
+    expect(chat).to receive(:with_instructions).with(/return only valid JSON/i, append: true).and_return(chat)
+    expect(chat).to receive(:ask).with('Hello').twice.and_return(invalid_response_one, invalid_response_two)
+
+    expect do
+      described_class.new(
+        context: context,
+        model: 'gpt-4.1-mini',
+        messages: [{ role: 'user', content: 'Hello' }],
+        schema: schema
+      ).call
+    end.to raise_error(Llm::StructuredOutputPolicy::InvalidStructuredOutputError, /not valid JSON/)
   end
 
   it 'registers an end_message callback with access to the chat instance' do
@@ -144,6 +190,47 @@ RSpec.describe Llm::ChatRequestRunner do
     expect(tool_result_callback.call('result')).to eq([:tool_result, 'result'])
   end
 
+  it 'publishes one observed chat event around runner execution' do
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe('llm.chat.complete') do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+    observed_response = double(
+      'message',
+      content: 'Done',
+      input_tokens: 3,
+      output_tokens: 4,
+      tool_call?: false
+    )
+
+    expect(chat).to receive(:ask).with('Hello').and_return(observed_response)
+
+    result = described_class.new(
+      context: context,
+      model: 'gpt-4.1-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      observability: {
+        feature: 'assistant',
+        account_id: 1,
+        conversation_record_id: 2,
+        conversation_display_id: 22
+      }
+    ).call
+
+    expect(result).to eq(observed_response)
+    expect(events.size).to eq(1)
+    expect(events.first.payload).to include(
+      'feature' => 'assistant',
+      'account_id' => 1,
+      'conversation_id' => 2,
+      'conversation_display_id' => 22,
+      'status' => 'success',
+      'total_tokens' => 7
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   it 'supports an already configured chat instance and multimodal content building' do
     content_builder = lambda do |content|
       next content unless content.is_a?(Array)
@@ -159,7 +246,7 @@ RSpec.describe Llm::ChatRequestRunner do
       expect(message.content).to be_a(RubyLLM::Content)
       expect(message.content.attachments.first.source.to_s).to eq('https://example.com/history.png')
     end
-    expect(chat).to receive(:ask).with('Describe it', with: ['https://example.com/final.png']).and_return(response)
+    expect(chat).to receive(:ask).with('Describe it', with: [instance_of(URI::HTTPS)]).and_return(response)
 
     described_class.new(
       chat: chat,

@@ -1,0 +1,202 @@
+name: Captain AI Stack
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - onelink-main
+      - develop
+      - master
+    paths:
+      - '.github/workflows/captain_ai_observability.yml'
+      - 'app/controllers/super_admin/captain_observability_controller.rb'
+      - 'app/controllers/api/v1/accounts/captain/preferences_controller.rb'
+      - 'app/controllers/api/v1/accounts/captain/tasks_controller.rb'
+      - 'app/jobs/internal/deliver_captain_observability_alerts_job.rb'
+      - 'app/jobs/internal/enforce_llm_event_retention_job.rb'
+      - 'app/jobs/internal/backfill_llm_event_trace_id_job.rb'
+      - 'app/javascript/dashboard/api/captain/observability.js'
+      - 'app/javascript/dashboard/components-next/sidebar/Sidebar.vue'
+      - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js'
+      - 'app/javascript/dashboard/components/copilot/CopilotContainer.vue'
+      - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
+      - 'app/javascript/dashboard/i18n/locale/kk/integrations.json'
+      - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
+      - 'app/javascript/dashboard/routes/dashboard/captain/captain.routes.js'
+      - 'app/javascript/dashboard/routes/dashboard/captain/observability/**'
+      - 'app/javascript/shared/components/charts/LineChart.vue'
+      - 'app/mailers/administrator_notifications/captain_observability_mailer.rb'
+      - 'app/models/llm_event.rb'
+      - 'app/models/concerns/captain_featurable.rb'
+      - 'app/models/llm_event_annotation.rb'
+      - 'app/views/mailers/administrator_notifications/captain_observability_mailer/**'
+      - 'config/routes.rb'
+      - 'config/schedule.yml'
+      - 'db/migrate/**'
+      - 'db/schema.rb'
+      - 'enterprise/app/controllers/api/v1/accounts/captain/observability_controller.rb'
+      - 'enterprise/app/services/captain/**'
+      - 'enterprise/lib/captain/**'
+      - 'lib/captain/**'
+      - 'lib/llm/**'
+      - 'config/llm.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/captain_ai_observability.yml'
+      - 'app/controllers/super_admin/captain_observability_controller.rb'
+      - 'app/controllers/api/v1/accounts/captain/preferences_controller.rb'
+      - 'app/controllers/api/v1/accounts/captain/tasks_controller.rb'
+      - 'app/jobs/internal/deliver_captain_observability_alerts_job.rb'
+      - 'app/jobs/internal/enforce_llm_event_retention_job.rb'
+      - 'app/jobs/internal/backfill_llm_event_trace_id_job.rb'
+      - 'app/javascript/dashboard/api/captain/observability.js'
+      - 'app/javascript/dashboard/components-next/sidebar/Sidebar.vue'
+      - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js'
+      - 'app/javascript/dashboard/components/copilot/CopilotContainer.vue'
+      - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
+      - 'app/javascript/dashboard/i18n/locale/kk/integrations.json'
+      - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
+      - 'app/javascript/dashboard/routes/dashboard/captain/captain.routes.js'
+      - 'app/javascript/dashboard/routes/dashboard/captain/observability/**'
+      - 'app/javascript/shared/components/charts/LineChart.vue'
+      - 'app/mailers/administrator_notifications/captain_observability_mailer.rb'
+      - 'app/models/llm_event.rb'
+      - 'app/models/concerns/captain_featurable.rb'
+      - 'app/models/llm_event_annotation.rb'
+      - 'app/views/mailers/administrator_notifications/captain_observability_mailer/**'
+      - 'config/routes.rb'
+      - 'config/schedule.yml'
+      - 'db/migrate/**'
+      - 'db/schema.rb'
+      - 'enterprise/app/controllers/api/v1/accounts/captain/observability_controller.rb'
+      - 'enterprise/app/services/captain/**'
+      - 'enterprise/lib/captain/**'
+      - 'lib/captain/**'
+      - 'lib/llm/**'
+      - 'config/llm.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-lint:
+    runs-on: ubuntu-22.04
+    if: ${{ hashFiles('enterprise/**/*') != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install pnpm dependencies
+        run: pnpm i
+
+      - name: Run Captain observability ESLint
+        run: |
+          pnpm exec eslint \
+            'app/javascript/dashboard/routes/dashboard/captain/observability/**/*.{js,vue}' \
+            app/javascript/dashboard/api/captain/observability.js \
+            app/javascript/shared/components/charts/LineChart.vue \
+            app/javascript/dashboard/components/copilot/CopilotContainer.vue \
+            app/javascript/dashboard/routes/dashboard/captain/captain.routes.js \
+            app/javascript/dashboard/components-next/sidebar/Sidebar.vue \
+            app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js
+
+  backend-pack:
+    runs-on: ubuntu-22.04
+    if: ${{ hashFiles('enterprise/**/*') != '' }}
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: --entrypoint redis-server
+
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
+      NODE_OPTIONS: --openssl-legacy-provider
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Create database
+        run: bundle exec rake db:create
+
+      - name: Install pgvector extension
+        run: |
+          PGPASSWORD="" psql -h localhost -U postgres -d chatwoot_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Load schema
+        run: bundle exec rake db:schema:load
+
+      - name: Run Captain AI observability pack
+        run: |
+          bundle exec rspec \
+            spec/models/llm_event_spec.rb \
+            spec/models/concerns/captain_featurable_spec.rb \
+            spec/lib/llm/runtime_policy_spec.rb \
+            spec/lib/llm/safety_policy_spec.rb \
+            spec/lib/llm/moderation_service_spec.rb \
+            spec/lib/llm/monitoring/event_recorder_spec.rb \
+            spec/lib/llm/monitoring/alert_notifier_spec.rb \
+            spec/lib/llm/monitoring/events_query_spec.rb \
+            spec/lib/llm/monitoring/metrics_snapshot_spec.rb \
+            spec/lib/llm/monitoring/release_gate_spec.rb \
+            spec/lib/llm/monitoring/retention_enforcer_spec.rb \
+            spec/lib/llm/monitoring/trace_backfill_spec.rb \
+            spec/lib/llm/release_check/runner_spec.rb \
+            spec/lib/captain/base_task_service_spec.rb \
+            spec/lib/captain/rewrite_service_spec.rb \
+            spec/lib/captain/summary_service_spec.rb \
+            spec/lib/captain/reply_suggestion_service_spec.rb \
+            spec/lib/captain/follow_up_service_spec.rb \
+            spec/lib/captain/label_suggestion_service_spec.rb \
+            spec/lib/captain/csat_utility_analysis_service_spec.rb \
+            spec/lib/llm/structured_output_policy_spec.rb \
+            spec/controllers/api/v1/accounts/captain/preferences_controller_spec.rb \
+            spec/enterprise/controllers/api/v1/accounts/captain/observability_controller_spec.rb \
+            spec/enterprise/lib/captain/runtime/runner_spec.rb \
+            spec/enterprise/lib/captain/runtime/tool_wrapper_spec.rb \
+            spec/enterprise/services/captain/assistant/agent_runner_service_spec.rb \
+            spec/enterprise/services/captain/copilot/chat_service_spec.rb \
+            --profile=10 \
+            --format documentation
+
+      - name: Upload AI observability logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: captain-ai-observability-logs
+          path: |
+            log/test.log
+            tmp/screenshots/

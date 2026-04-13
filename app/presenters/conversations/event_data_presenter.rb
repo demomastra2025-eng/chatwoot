@@ -30,18 +30,23 @@ class Conversations::EventDataPresenter < SimpleDelegator
   end
 
   def push_meta
-    {
-      sender: contact.push_event_data,
+    data = {
+      sender: contact.push_event_data(contact_inbox: contact_inbox),
       assignee: assigned_entity&.push_event_data,
       assignee_type: assignee_type,
       team: team&.push_event_data,
       hmac_verified: contact_inbox&.hmac_verified
     }
+
+    channel_profile_data = contact_inbox&.channel_profile&.push_event_data
+    data[:channel_profile] = channel_profile_data if channel_profile_data.present?
+    data
   end
 
   def push_timestamps
     {
       agent_last_seen_at: agent_last_seen_at.to_i,
+      assignee_last_seen_at: assignee_last_seen_at.to_i,
       contact_last_seen_at: contact_last_seen_at.to_i,
       last_activity_at: last_activity_at.to_i,
       timestamp: last_activity_at.to_i,

@@ -4,6 +4,7 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < ApplicationJob
   def perform(channel_id, payload)
     channel = Channel::WhatsappWeb.find_by(id: channel_id)
     return if channel.blank?
+    return if channel.inbox&.deleting?
 
     WhatsappWeb::IncomingEventService.new(
       channel: channel,

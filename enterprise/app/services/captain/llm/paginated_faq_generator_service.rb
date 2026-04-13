@@ -88,7 +88,7 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
 
     result = parse_chunk_response(response.content)
     { faqs: result['faqs'] || [], has_content: result['has_content'] != false }
-  rescue RubyLLM::Error => e
+  rescue RubyLLM::Error, Llm::StructuredOutputPolicy::StructuredOutputError => e
     Rails.logger.error I18n.t('captain.documents.page_processing_error', start: start_page, end: end_page, error: e.message)
     { faqs: [], has_content: false }
   end
@@ -102,7 +102,10 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
   end
 
   def chat_with_structured_response
-    chat(model: model).with_schema(Captain::Llm::Schemas::PaginatedFaqChunk)
+    apply_chat_features(
+      chat(model: model),
+      schema: Captain::Llm::Schemas::PaginatedFaqChunk
+    )
   end
 
   def parse_chunk_response(content)

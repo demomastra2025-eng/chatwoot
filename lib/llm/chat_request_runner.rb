@@ -2,7 +2,7 @@
 
 class Llm::ChatRequestRunner
   attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :on_end_message, :on_tool_call,
-              :on_tool_result, :content_builder
+              :on_tool_result, :content_builder, :observability
 
   def initialize(messages:, **options)
     @messages = messages
@@ -16,20 +16,24 @@ class Llm::ChatRequestRunner
     @on_tool_call = options[:on_tool_call]
     @on_tool_result = options[:on_tool_result]
     @content_builder = options[:content_builder]
+    @observability = options[:observability]
   end
 
   def call
     llm_chat = build_chat
 
     apply_system_instructions(llm_chat)
-    llm_chat.with_schema(schema) if schema
+    Llm::CapabilityPolicy.ensure_chat_features_supported!(model: effective_model_name(llm_chat), schema:, tools:)
+    Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema:) if schema
     attach_tools_and_callbacks(llm_chat)
 
     conversation_messages = normalized_conversation_messages
     return nil if conversation_messages.empty?
 
-    add_conversation_history(llm_chat, conversation_messages[0...-1])
-    ask_chat(llm_chat, conversation_messages.last[:content])
+    run_observed(llm_chat) do
+      add_conversation_history(llm_chat, conversation_messages[0...-1])
+      ask_chat(llm_chat, conversation_messages.last[:content])
+    end
   end
 
   private
@@ -76,12 +80,7 @@ class Llm::ChatRequestRunner
   end
 
   def add_conversation_history(chat, history)
-    history.each do |message|
-      llm_message = build_history_message(message)
-      next unless llm_message
-
-      chat.add_message(llm_message)
-    end
+    Llm::MessageFormat.restore_messages(chat, history)
   end
 
   def message_role(message)
@@ -95,44 +94,53 @@ class Llm::ChatRequestRunner
   def build_message_content(content)
     return content_builder.call(content) if content_builder
 
-    content
+    Llm::MessageFormat.build_content(content)
   end
 
   def ask_chat(chat, content)
-    Llm::ChatClient.ask(chat, content)
+    Llm::ChatClient.ask(chat, content, model: effective_model_name(chat))
   end
 
-  def build_history_message(message)
-    role = message[:role].to_sym
-    params = {
-      role: role,
-      content: message[:content]
-    }
+  def run_observed(chat)
+    payload = observability_payload(chat)
+    return yield if payload.blank?
 
-    if role == :assistant && message[:tool_calls].present?
-      params[:tool_calls] = build_tool_calls(message[:tool_calls])
-      params[:content] = '' if params[:content].blank?
+    Llm::EventBus.publish('chat.complete', payload) do |event_payload|
+      begin
+        response = yield
+        Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
+      end
     end
-
-    if role == :tool
-      return nil if message[:tool_call_id].blank?
-
-      params[:tool_call_id] = message[:tool_call_id]
-    end
-
-    RubyLLM::Message.new(**params)
   end
 
-  def build_tool_calls(tool_calls)
-    Array(tool_calls).each_with_object({}) do |tool_call, hash|
-      tool_call_id = tool_call[:id] || tool_call['id']
-      next if tool_call_id.blank?
+  def observability_payload(chat)
+    return {} if observability.blank?
 
-      hash[tool_call_id] = RubyLLM::ToolCall.new(
-        id: tool_call_id,
-        name: tool_call[:name] || tool_call['name'],
-        arguments: tool_call[:arguments] || tool_call['arguments'] || {}
-      )
-    end
+    payload = Llm::ObservabilityPayload.normalize(
+      observability,
+      model: effective_model_name(chat),
+      runtime_mode: 'chat_request_runner'
+    )
+    payload[:schema_name] ||= schema_name if schema.present?
+    payload[:tool_count] = tools.size if tools.present?
+    payload
+  end
+
+  def schema_name
+    return schema.name if schema.respond_to?(:name) && schema.name.present?
+
+    schema.class.name
+  end
+
+  def effective_model_name(chat)
+    chat_model = chat&.model
+    return chat_model.id if chat_model.respond_to?(:id)
+    return chat_model if chat_model.present?
+
+    model
   end
 end

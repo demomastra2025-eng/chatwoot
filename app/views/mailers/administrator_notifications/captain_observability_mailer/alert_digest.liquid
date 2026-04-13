@@ -1,0 +1,38 @@
+<p>Hello there,</p>
+
+<p>
+  Captain observability detected <strong>{{ meta.incident_count }}</strong> active issue(s)
+  for account <strong>{{ meta.account_name }}</strong>.
+</p>
+
+<p>Generated at: <strong>{{ meta.generated_at }}</strong></p>
+
+<p><strong>Active incidents</strong></p>
+<ul>
+  {% for incident in meta.incidents %}
+    <li>
+      <strong>{{ incident.severity | upcase }}</strong>:
+      {{ incident.name }}{% if incident.message %} — {{ incident.message }}{% endif %}
+      {% if incident.failed_count and incident.total_count %}
+        ({{ incident.failed_count }}/{{ incident.total_count }} failed)
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+<p><strong>Current checks</strong></p>
+<ul>
+  {% for check in meta.checks %}
+    <li>
+      {{ check.name }}: <strong>{{ check.status }}</strong>
+      {% if check.message %} — {{ check.message }}{% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+<p>
+  Open the Captain observability dashboard to inspect traces, matching events, and evaluations:
+  <a href="{{ action_url }}">{{ action_url }}</a>
+</p>
+
+<p>— The Onelink Team</p>

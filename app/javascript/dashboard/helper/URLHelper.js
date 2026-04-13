@@ -3,6 +3,18 @@ export const frontendURL = (path, params) => {
   return `/app/${path}${stringifiedParams}`;
 };
 
+const appendQueryToPath = (path, query = {}) => {
+  const queryEntries = Object.entries(query).filter(
+    ([, value]) => value !== undefined && value !== null && value !== ''
+  );
+
+  if (!queryEntries.length) {
+    return path;
+  }
+
+  return `${path}?${new URLSearchParams(queryEntries).toString()}`;
+};
+
 export const conversationUrl = ({
   accountId,
   activeInbox,
@@ -11,6 +23,7 @@ export const conversationUrl = ({
   teamId,
   conversationType = '',
   foldersId,
+  status,
 }) => {
   let url = `accounts/${accountId}/conversations/${id}`;
   if (activeInbox) {
@@ -28,7 +41,7 @@ export const conversationUrl = ({
   } else if (conversationType === 'unattended') {
     url = `accounts/${accountId}/unattended/conversations/${id}`;
   }
-  return url;
+  return appendQueryToPath(url, { status });
 };
 
 export const conversationListPageURL = ({
@@ -38,6 +51,7 @@ export const conversationListPageURL = ({
   label,
   teamId,
   customViewId,
+  status,
 }) => {
   let url = `accounts/${accountId}/dashboard`;
   if (label) {
@@ -55,7 +69,7 @@ export const conversationListPageURL = ({
     };
     url = `accounts/${accountId}/${urlMap[conversationType]}`;
   }
-  return frontendURL(url);
+  return frontendURL(appendQueryToPath(url, { status }));
 };
 
 export const isValidURL = value => {

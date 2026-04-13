@@ -1,105 +1,98 @@
-<script>
-import { mapGetters } from 'vuex';
-import { useVuelidate } from '@vuelidate/core';
-import { useAlert } from 'dashboard/composables';
-import { required } from '@vuelidate/validators';
-import router from '../../../../index';
-import PageHeader from '../../SettingsSubPageHeader.vue';
-import NextButton from 'dashboard/components-next/button/Button.vue';
+<script setup>
+import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
+import TelegramBot from './TelegramBot.vue';
+import TelegramPersonal from './TelegramPersonal.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
 
-export default {
-  components: {
-    PageHeader,
-    NextButton,
-  },
-  setup() {
-    return { v$: useVuelidate() };
-  },
-  data() {
-    return {
-      botToken: '',
-    };
-  },
-  computed: {
-    ...mapGetters({
-      uiFlags: 'inboxes/getUIFlags',
-    }),
-  },
-  validations: {
-    botToken: { required },
-  },
-  methods: {
-    async createChannel() {
-      this.v$.$touch();
-      if (this.v$.$invalid) {
-        return;
-      }
+const route = useRoute();
+const router = useRouter();
+const { t } = useI18n();
 
-      try {
-        const telegramChannel = await this.$store.dispatch(
-          'inboxes/createChannel',
-          {
-            channel: {
-              type: 'telegram',
-              bot_token: this.botToken,
-            },
-          }
-        );
+const PROVIDER_TYPES = {
+  BOT: 'telegram_bot',
+  PERSONAL: 'telegram_personal',
+};
 
-        router.replace({
-          name: 'settings_inboxes_add_agents',
-          params: {
-            page: 'new',
-            inbox_id: telegramChannel.id,
-          },
-        });
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.API.ERROR_MESSAGE')
-        );
-      }
-    },
+const selectedProvider = computed(() => route.query.provider);
+const showProviderSelection = computed(() => !selectedProvider.value);
+
+const availableProviders = computed(() => [
+  {
+    key: PROVIDER_TYPES.BOT,
+    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.TITLE'),
+    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_BOT.DESCRIPTION'),
+    icon: 'i-woot-telegram',
   },
+  {
+    key: PROVIDER_TYPES.PERSONAL,
+    title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.TITLE'),
+    description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.TELEGRAM_PERSONAL.DESCRIPTION'),
+    icon: 'i-woot-telegram',
+  },
+]);
+
+const selectedComponent = computed(() => {
+  return selectedProvider.value === PROVIDER_TYPES.PERSONAL
+    ? TelegramPersonal
+    : TelegramBot;
+});
+
+const selectProvider = provider => {
+  router.push({
+    name: route.name,
+    params: route.params,
+    query: { provider },
+  });
+};
+
+const resetProvider = () => {
+  router.push({
+    name: route.name,
+    params: route.params,
+    query: {},
+  });
 };
 </script>
 
 <template>
-  <div class="h-full w-full p-6 col-span-6">
-    <PageHeader
-      :header-title="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.TITLE')"
-      :header-content="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.DESC')"
-    />
-    <form
-      class="flex flex-wrap flex-col mx-0"
-      @submit.prevent="createChannel()"
-    >
-      <div class="flex-shrink-0 flex-grow-0">
-        <label :class="{ error: v$.botToken.$error }">
-          {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.LABEL') }}
-          <input
-            v-model="botToken"
-            type="text"
-            :placeholder="
-              $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.PLACEHOLDER')
-            "
-            @blur="v$.botToken.$touch"
-          />
-        </label>
-        <p class="help-text">
-          {{ $t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.BOT_TOKEN.SUBTITLE') }}
+  <div class="overflow-auto col-span-6 p-6 w-full h-full">
+    <div v-if="showProviderSelection">
+      <div class="mb-10 text-left">
+        <h1 class="mb-2 text-lg font-medium text-n-slate-12">
+          {{ $t('INBOX_MGMT.ADD.TELEGRAM.SELECT_PROVIDER.TITLE') }}
+        </h1>
+        <p class="text-sm leading-relaxed text-n-slate-11">
+          {{ $t('INBOX_MGMT.ADD.TELEGRAM.SELECT_PROVIDER.DESCRIPTION') }}
         </p>
       </div>
 
-      <div class="w-full mt-4">
-        <NextButton
-          :is-loading="uiFlags.isCreating"
-          type="submit"
-          solid
-          blue
-          :label="$t('INBOX_MGMT.ADD.TELEGRAM_CHANNEL.SUBMIT_BUTTON')"
+      <div class="flex gap-6 justify-start">
+        <ChannelSelector
+          v-for="provider in availableProviders"
+          :key="provider.key"
+          :title="provider.title"
+          :description="provider.description"
+          :icon="provider.icon"
+          @click="selectProvider(provider.key)"
         />
       </div>
-    </form>
+    </div>
+
+    <div v-else>
+      <div class="mb-4 flex justify-end">
+        <Button
+          link
+          xs
+          icon="i-woot-arrow-left"
+          :label="$t('INBOX_MGMT.ADD.TELEGRAM.SELECT_PROVIDER.CHANGE_ACTION')"
+          @click="resetProvider"
+        />
+      </div>
+
+      <component :is="selectedComponent" />
+    </div>
   </div>
 </template>

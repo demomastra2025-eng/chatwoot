@@ -17,8 +17,14 @@ class Captain::Llm::EmbeddingService
   def get_embedding(content, model: @embedding_model)
     return [] if content.blank?
 
-    instrument_embedding_call(instrumentation_params(content, model)) do
-      Llm::ApiClient.embed(content, model: model, dimensions: embedding_dimensions_for(model)).vectors
+    observability = instrumentation_params(content, model)
+    instrument_embedding_call(observability) do
+      Llm::ApiClient.embed(
+        content,
+        model: model,
+        dimensions: embedding_dimensions_for(model),
+        observability: observability.merge(runtime_mode: 'captain_embedding')
+      ).vectors
     end
   rescue RubyLLM::Error => e
     Rails.logger.error "Embedding API Error: #{e.message}"

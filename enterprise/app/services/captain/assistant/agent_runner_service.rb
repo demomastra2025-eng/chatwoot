@@ -1,3 +1,5 @@
+require 'securerandom'
+
 class Captain::Assistant::AgentRunnerService
   include Integrations::LlmInstrumentationConstants
   include Captain::Assistant::LlmContextHelper
@@ -5,6 +7,7 @@ class Captain::Assistant::AgentRunnerService
   include Captain::Assistant::RunnerCallbacksHelper
   include Captain::Assistant::TracePayloadHelper
 
+  PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
@@ -20,45 +23,64 @@ class Captain::Assistant::AgentRunnerService
     Llm::Config.initialize!
 
     message_to_process, context = run_payload(message_history)
-    input_moderation_response = moderate_input(message_to_process, context)
-    return input_moderation_response if input_moderation_response
+    Llm::EventBus.with_context(request_event_context(context)) do
+      input_moderation_response = moderate_input(message_to_process, context)
+      return input_moderation_response if input_moderation_response
 
-    result = runner.run(
-      message_to_process,
-      context: context,
-      max_turns: MAX_RUNTIME_TURNS,
-      runtime_options: {
-        llm_context: llm_context_for_run
-      }
-    )
+      result = runner.run(
+        message_to_process,
+        context: context,
+        max_turns: MAX_RUNTIME_TURNS,
+        runtime_options: {
+          llm_context: llm_context_for_run
+        }
+      )
 
-    process_agent_result(result)
+      process_agent_result(result)
+    end
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
     ChatwootExceptionTracker.new(e, account: @conversation&.account).capture_exception
     Rails.logger.error "[Captain V2] AgentRunnerService error: #{e.message}"
     Rails.logger.error e.backtrace.join("\n")
 
-    error_response(e.message)
+    error_response(e)
   end
 
   private
 
   def process_agent_result(result)
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
+    return provider_error_response(result.error) if result.respond_to?(:error) && result.error.present?
+
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
-  rescue Llm::ModerationService::FlaggedContentError
+  rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_by_moderation_response('Agent output blocked by moderation policy')
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable')
   end
 
-  def error_response(error_message)
+  def error_response(error)
+    message = error.respond_to?(:message) ? error.message : error.to_s
+
     {
-      'response' => 'conversation_handoff',
-      'reasoning' => "Error occurred: #{error_message}"
+      'response' => PROVIDER_ERROR_RESPONSE,
+      'reasoning' => "Error occurred: #{message}",
+      'error_class' => error.class.name,
+      'error_message' => message
+    }
+  end
+
+  def provider_error_response(error)
+    {
+      'response' => PROVIDER_ERROR_RESPONSE,
+      'reasoning' => "Provider error occurred: #{error.message}",
+      'error_class' => error.class.name,
+      'error_message' => error.message
     }
   end
 
@@ -74,6 +96,24 @@ class Captain::Assistant::AgentRunnerService
     build_conversation_state(state) if @conversation
     state[:prompt_context] = @assistant.prompt_context_state(state)
     state
+  end
+
+  def request_event_context(context)
+    state = context[:state] || {}
+    conversation = state[:conversation] || {}
+
+    {
+      request_id: SecureRandom.uuid,
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: state[:account_id],
+      assistant_id: state[:assistant_id],
+      conversation_id: conversation[:id],
+      conversation_display_id: conversation[:display_id],
+      channel_type: state[:channel_type],
+      source: state[:source],
+      session_id: context[:session_id]
+    }.compact
   end
 
   def build_conversation_state(state)
@@ -113,23 +153,26 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def install_instrumentation(runner)
-    return unless ChatwootApp.otel_enabled?
+    if ChatwootApp.otel_enabled?
+      Captain::Runtime::Instrumentation.install(
+        runner,
+        tracer: OpentelemetryConfig.tracer,
+        trace_name: 'llm.captain_v2',
+        span_attributes: {
+          ATTR_LANGFUSE_TAGS => ['captain_v2'].to_json
+        },
+        attribute_provider: ->(context_wrapper) { dynamic_trace_attributes(context_wrapper) }
+      )
+      register_trace_input_callback(runner)
+    end
 
-    Captain::Runtime::Instrumentation.install(
-      runner,
-      tracer: OpentelemetryConfig.tracer,
-      trace_name: 'llm.captain_v2',
-      span_attributes: {
-        ATTR_LANGFUSE_TAGS => ['captain_v2'].to_json
-      },
-      attribute_provider: ->(context_wrapper) { dynamic_trace_attributes(context_wrapper) }
-    )
-    register_trace_input_callback(runner)
+    Captain::Runtime::EventBusInstrumentation.install(runner)
   end
 
   def dynamic_trace_attributes(context_wrapper)
     state = context_wrapper&.context&.dig(:state) || {}
     conversation = state[:conversation] || {}
+    preferences = state[:captain_runtime]
     trace_input = context_wrapper&.context&.dig(:captain_v2_trace_input)
 
     {
@@ -139,9 +182,13 @@ class Captain::Assistant::AgentRunnerService
       format(ATTR_LANGFUSE_METADATA, 'conversation_display_id') => conversation[:display_id],
       format(ATTR_LANGFUSE_METADATA, 'channel_type') => state[:channel_type],
       format(ATTR_LANGFUSE_METADATA, 'source') => state[:source],
+      'trace_input_capture' => Llm::TracePayloadPolicy.trace_input_capture?(preferences: preferences),
+      'trace_output_capture' => Llm::TracePayloadPolicy.trace_output_capture?(preferences: preferences),
       ATTR_LANGFUSE_TRACE_INPUT => trace_input,
       ATTR_LANGFUSE_OBSERVATION_INPUT => trace_input
-    }.compact.transform_values(&:to_s)
+    }.compact.transform_values do |value|
+      value.is_a?(TrueClass) || value.is_a?(FalseClass) ? value : value.to_s
+    end
   end
 
   def add_usage_metadata_callback(runner)
@@ -192,19 +239,21 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def moderate_input(message_to_process, context)
-    Llm::ModerationService.check!(
+    Llm::SafetyPolicy.check!(
       feature: :assistant,
       stage: :input,
       content: message_to_process,
       preferences: context.dig(:state, :captain_runtime)
     )
     nil
-  rescue Llm::ModerationService::FlaggedContentError
+  rescue Llm::SafetyPolicy::UnsafeContentError
     blocked_by_moderation_response('Agent input blocked by moderation policy')
+  rescue Llm::SafetyPolicy::UnavailableError
+    blocked_by_moderation_response('Agent input blocked because moderation policy is unavailable')
   end
 
   def moderate_output!(response, runtime_preferences)
-    Llm::ModerationService.check!(
+    Llm::SafetyPolicy.check!(
       feature: :assistant,
       stage: :output,
       content: response['response'],

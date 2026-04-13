@@ -47,6 +47,16 @@ const unreadMessagesCount = computed(() => {
   return unreadCount;
 });
 
+const unreadBadgeLabel = computed(() => {
+  return unreadMessagesCount.value > 99
+    ? '99+'
+    : `${unreadMessagesCount.value}`;
+});
+
+const unreadBadgeClass = computed(() => {
+  return unreadBadgeLabel.value.length > 2 ? 'h-5 min-w-5 px-1.5' : 'size-5';
+});
+
 const hasSlaThreshold = computed(() => {
   return (
     slaCardLabelRef.value?.hasSlaThreshold && props.conversation?.slaPolicyId
@@ -67,10 +77,11 @@ defineExpose({
 
       <div
         v-if="unreadMessagesCount > 0"
-        class="inline-flex items-center justify-center flex-shrink-0 rounded-full size-5 bg-n-brand-solid"
+        class="inline-flex items-center justify-center flex-shrink-0 rounded-full bg-n-ruby-9"
+        :class="unreadBadgeClass"
       >
-        <span class="text-xs font-semibold text-white">
-          {{ unreadMessagesCount }}
+        <span class="text-[11px] font-semibold leading-none text-white">
+          {{ unreadBadgeLabel }}
         </span>
       </div>
     </div>

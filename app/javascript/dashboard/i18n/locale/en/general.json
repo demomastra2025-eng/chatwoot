@@ -10,7 +10,12 @@
     "BETA_DESCRIPTION": "This feature is in beta and may change as we improve it.",
     "ACCEPT": "Accept",
     "DISCARD": "Discard",
-    "PREFERRED": "Preferred"
+    "PREFERRED": "Preferred",
+    "AUTH_SESSION_REPLACED": {
+      "TITLE": "Session ended",
+      "DESCRIPTION": "Your account was signed in from another device. Please sign in again to continue.",
+      "ACTION": "Sign in again"
+    }
   },
   "CHOICE_TOGGLE": {
     "YES": "Yes",

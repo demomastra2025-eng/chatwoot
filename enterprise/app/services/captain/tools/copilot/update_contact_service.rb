@@ -20,7 +20,7 @@ class Captain::Tools::Copilot::UpdateContactService < Captain::Tools::Copilot::B
     )
     formatted_record(contact)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

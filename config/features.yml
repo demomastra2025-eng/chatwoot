@@ -12,11 +12,11 @@
 - name: channel_email
   display_name: Email Channel
   enabled: true
-  help_url: https://chwt.app/hc/email
+  help_url:
 - name: channel_facebook
   display_name: Facebook Channel
   enabled: true
-  help_url: https://chwt.app/hc/fb
+  help_url:
 - name: channel_twitter
   display_name: Twitter Channel
   enabled: true
@@ -34,11 +34,11 @@
 - name: help_center
   display_name: Help Center
   enabled: true
-  help_url: https://chwt.app/hc/help-center
+  help_url:
 - name: agent_bots
   display_name: Agent Bots
   enabled: true
-  help_url: https://chwt.app/hc/agent-bots
+  help_url:
 - name: macros
   display_name: Macros
   enabled: true
@@ -48,29 +48,29 @@
 - name: team_management
   display_name: Team Management
   enabled: true
-  help_url: https://chwt.app/hc/teams
+  help_url:
 - name: inbox_management
   display_name: Inbox Management
   enabled: true
 - name: labels
   display_name: Labels
   enabled: true
-  help_url: https://chwt.app/hc/labels
+  help_url:
 - name: custom_attributes
   display_name: Custom Attributes
   enabled: true
-  help_url: https://chwt.app/hc/custom-attributes
+  help_url:
 - name: automations
   display_name: Automations
   enabled: true
 - name: canned_responses
   display_name: Canned Responses
   enabled: true
-  help_url: https://chwt.app/hc/canned
+  help_url:
 - name: integrations
   display_name: Integrations
   enabled: true
-  help_url: https://chwt.app/hc/integrations
+  help_url:
 - name: voice_recorder
   display_name: Voice Recorder
   enabled: true
@@ -83,11 +83,11 @@
 - name: campaigns
   display_name: Campaigns
   enabled: true
-  help_url: https://chwt.app/hc/campaigns
+  help_url:
 - name: reports
   display_name: Reports
   enabled: true
-  help_url: https://chwt.app/hc/reports
+  help_url:
 - name: crm
   display_name: CRM
   enabled: true
@@ -124,7 +124,7 @@
   display_name: SLA
   enabled: false
   premium: true
-  help_url: https://chwt.app/hc/sla
+  help_url:
 - name: help_center_embedding_search
   display_name: Help Center Embedding Search
   enabled: false

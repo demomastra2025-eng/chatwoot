@@ -15,11 +15,23 @@ class Captain::Runtime::ToolWrapper
 
     @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
 
+    argument_error = tool_safety_error_for(:tool_arguments, normalized_args)
+    if argument_error
+      @context_wrapper.callback_manager.emit_tool_complete(@tool.name, argument_error, @context_wrapper)
+      return Captain::ToolResult.render(argument_error)
+    end
+
     result = @tool.execute(tool_context, **normalized_args)
-    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, result, @context_wrapper)
-    result
+    result_error = tool_safety_error_for(:tool_results, result)
+    final_result = result_error || result
+    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
+    Captain::ToolResult.render(final_result)
   rescue StandardError => e
-    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, "ERROR: #{e.message}", @context_wrapper)
+    @context_wrapper.callback_manager.emit_tool_complete(
+      @tool.name,
+      Captain::ToolResult.failure(error: e),
+      @context_wrapper
+    )
     raise
   end
 
@@ -54,5 +66,30 @@ class Captain::Runtime::ToolWrapper
     return args.transform_keys(&:to_sym) if args.respond_to?(:transform_keys)
 
     {}
+  end
+
+  def tool_safety_error_for(stage, content)
+    case stage
+    when :tool_arguments
+      Captain::ToolSafety.check_arguments!(
+        feature: :assistant,
+        arguments: content,
+        preferences: @context_wrapper.context.dig(:state, :captain_runtime)
+      )
+    when :tool_results
+      Captain::ToolSafety.check_result!(
+        feature: :assistant,
+        result: content,
+        preferences: @context_wrapper.context.dig(:state, :captain_runtime)
+      )
+    end
+
+    nil
+  rescue Llm::SafetyPolicy::UnsafeContentError, Llm::SafetyPolicy::UnavailableError => e
+    Captain::ToolResult.failure(
+      error: Captain::ToolSafety.blocked_message(stage: e.stage, error: e),
+      retryable: false,
+      audit: { failure_stage: e.stage.to_s, failure_reason: e.reason.to_s }
+    )
   end
 end

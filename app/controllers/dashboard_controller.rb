@@ -74,6 +74,8 @@ class DashboardController < ActionController::Base
       FB_APP_ID: GlobalConfigService.load('FB_APP_ID', ''),
       INSTAGRAM_APP_ID: GlobalConfigService.load('INSTAGRAM_APP_ID', ''),
       TIKTOK_APP_ID: GlobalConfigService.load('TIKTOK_APP_ID', ''),
+      SLACK_CONFIGURED: slack_configured?,
+      TWITTER_CONFIGURED: twitter_configured?,
       FACEBOOK_API_VERSION: GlobalConfigService.load('FACEBOOK_API_VERSION', 'v18.0'),
       WHATSAPP_APP_ID: GlobalConfigService.load('WHATSAPP_APP_ID', ''),
       WHATSAPP_CONFIGURATION_ID: GlobalConfigService.load('WHATSAPP_CONFIGURATION_ID', ''),
@@ -91,6 +93,17 @@ class DashboardController < ActionController::Base
     methods << 'google_oauth' if google_oauth_enabled && google_oauth_configured
     methods << 'saml' if ChatwootHub.pricing_plan != 'community' && GlobalConfigService.load('ENABLE_SAML_SSO_LOGIN', 'true').to_s != 'false'
     methods
+  end
+
+  def slack_configured?
+    GlobalConfigService.load('SLACK_CLIENT_ID', nil).present? &&
+      GlobalConfigService.load('SLACK_CLIENT_SECRET', nil).present?
+  end
+
+  def twitter_configured?
+    ENV.fetch('TWITTER_CONSUMER_KEY', nil).present? &&
+      ENV.fetch('TWITTER_CONSUMER_SECRET', nil).present? &&
+      ENV.fetch('TWITTER_APP_ID', nil).present?
   end
 
   def set_application_pack

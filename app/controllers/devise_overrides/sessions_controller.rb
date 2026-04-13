@@ -20,10 +20,24 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
   end
 
   def render_create_success
+    finalize_authenticated_session!
     render partial: 'devise/auth', formats: [:json], locals: { resource: @resource }
   end
 
+  def destroy
+    current_client_id = request.headers[DeviseTokenAuth.headers_names[:client]]
+
+    super do |user|
+      user.clear_active_auth_client!(current_client_id)
+    end
+  end
+
   private
+
+  def finalize_authenticated_session!
+    previous_client_id = @resource.activate_auth_client!(@token.client)
+    @resource.broadcast_session_replaced!(previous_client_id)
+  end
 
   def find_user_for_authentication
     return nil unless params[:email].present? && params[:password].present?

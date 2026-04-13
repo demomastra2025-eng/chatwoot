@@ -2,6 +2,7 @@ import {
   WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL,
   getWhatsappWebState,
   hasWhatsappWebConnectionIssue,
+  isInboxPendingDeletion,
   isWhatsappWebConnected,
   isWhatsappWebInbox,
 } from '../whatsappWeb';
@@ -57,6 +58,21 @@ describe('#whatsappWeb helpers', () => {
     expect(hasWhatsappWebConnectionIssue(disconnectedInbox)).toBe(true);
   });
 
+  it('does not flag reconnecting whatsapp web inboxes as hard failures', () => {
+    const reconnectingInbox = {
+      ...whatsappWebInbox,
+      additional_attributes: {
+        evolution: {
+          status: 'reconnecting',
+          connection_state: 'reconnecting',
+        },
+      },
+    };
+
+    expect(isWhatsappWebConnected(reconnectingInbox)).toBe(false);
+    expect(hasWhatsappWebConnectionIssue(reconnectingInbox)).toBe(false);
+  });
+
   it('ignores non-whatsapp inboxes for connection alerts', () => {
     const facebookInbox = {
       channel_type: 'Channel::FacebookPage',
@@ -70,5 +86,23 @@ describe('#whatsappWeb helpers', () => {
 
     expect(isWhatsappWebConnected(facebookInbox)).toBe(false);
     expect(hasWhatsappWebConnectionIssue(facebookInbox)).toBe(false);
+  });
+
+  it('treats deleting whatsapp web inboxes as pending deletion instead of unhealthy', () => {
+    const deletingInbox = {
+      ...whatsappWebInbox,
+      deleting: true,
+      lifecycle_state: 'deleting',
+      additional_attributes: {
+        evolution: {
+          status: 'deleting',
+          connection_state: 'close',
+        },
+      },
+    };
+
+    expect(isInboxPendingDeletion(deletingInbox)).toBe(true);
+    expect(isWhatsappWebConnected(deletingInbox)).toBe(false);
+    expect(hasWhatsappWebConnectionIssue(deletingInbox)).toBe(false);
   });
 });

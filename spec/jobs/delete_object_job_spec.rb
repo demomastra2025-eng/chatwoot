@@ -34,6 +34,32 @@ RSpec.describe DeleteObjectJob, type: :job do
       end
     end
 
+    context 'when object is a WhatsApp Web inbox' do
+      let!(:account) { create(:account) }
+      let!(:channel) { create(:channel_whatsapp_web, account: account) }
+      let!(:inbox) { channel.inbox }
+
+      it 'tears down the remote instance before destroying local records' do
+        expect(channel).to receive(:teardown_provider_instance!).ordered
+        expect(channel).to receive(:destroy).and_call_original.ordered
+
+        described_class.perform_now(inbox)
+      end
+    end
+
+    context 'when object is a Telegram Personal inbox' do
+      let!(:account) { create(:account) }
+      let!(:channel) { create(:channel_telegram_personal, account: account) }
+      let!(:inbox) { channel.inbox }
+
+      it 'tears down the gateway runtime before destroying local records' do
+        expect(channel).to receive(:teardown_runtime!).ordered
+        expect(channel).to receive(:destroy).and_call_original.ordered
+
+        described_class.perform_now(inbox)
+      end
+    end
+
     context 'when object is heavy (Account)' do
       let!(:account) { create(:account) }
       let!(:inbox1) { create(:inbox, account: account) }

@@ -7,6 +7,7 @@ RSpec.describe Campaign do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:inbox) }
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
+    it { is_expected.to have_many(:campaign_runs).dependent(:delete_all) }
   end
 
   describe '.before_create' do
@@ -25,15 +26,11 @@ RSpec.describe Campaign do
     end
   end
 
-  context 'when Inbox other then Website or Twilio SMS' do
-    before do
-      stub_request(:post, /graph.facebook.com/)
-    end
-
+  context 'when inbox type is unsupported for campaigns' do
     let(:account) { create(:account) }
-    let!(:facebook_channel) { create(:channel_facebook_page, account: account) }
-    let!(:facebook_inbox) { create(:inbox, channel: facebook_channel, account: account) }
-    let(:campaign) { build(:campaign, inbox: facebook_inbox, account: account) }
+    let!(:api_channel) { create(:channel_api, account: account) }
+    let!(:api_inbox) { create(:inbox, channel: api_channel, account: account) }
+    let(:campaign) { build(:campaign, inbox: api_inbox, account: account) }
 
     it 'would not save the campaigns' do
       expect(campaign.save).to be false
@@ -49,7 +46,7 @@ RSpec.describe Campaign do
     it 'would prevent further updates' do
       campaign.title = 'new name'
       expect(campaign.save).to be false
-      expect(campaign.errors.full_messages.first).to eq 'Status The campaign is already completed'
+      expect(campaign.errors.full_messages.first).to eq 'Status The campaign can no longer be updated'
     end
 
     it 'can be deleted' do
@@ -58,8 +55,55 @@ RSpec.describe Campaign do
     end
 
     it 'cant be triggered' do
-      expect(Twilio::OneoffSmsCampaignService).not_to receive(:new).with(campaign: campaign)
+      expect(Campaigns::OneoffRunner).not_to receive(:new).with(campaign: campaign)
       expect(campaign.trigger!).to be_nil
+    end
+  end
+
+  context 'when a campaign is already running' do
+    let(:account) { create(:account) }
+    let(:sms_channel) { create(:channel_sms, account: account) }
+    let(:sms_inbox) { create(:inbox, channel: sms_channel, account: account) }
+    let!(:campaign) { create(:campaign, account: account, inbox: sms_inbox, campaign_status: :running) }
+
+    it 'does not trigger again' do
+      expect(Campaigns::OneoffRunner).not_to receive(:new).with(campaign: campaign)
+      expect(campaign.trigger!).to be_nil
+    end
+  end
+
+  context 'when cancelling a one-off campaign' do
+    let(:account) { create(:account) }
+    let(:email_channel) { create(:channel_email, account: account) }
+    let(:email_inbox) { create(:inbox, channel: email_channel, account: account) }
+    let!(:campaign) { create(:campaign, account: account, inbox: email_inbox, campaign_status: :active) }
+
+    it 'marks an active one-off campaign as cancelled' do
+      campaign.cancel_one_off!
+
+      expect(campaign.reload.cancelled?).to be(true)
+    end
+
+    it 'raises when trying to cancel a terminal campaign' do
+      campaign.update_column(:campaign_status, Campaign.campaign_statuses[:completed])
+
+      expect { campaign.cancel_one_off! }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(campaign.reload.completed?).to be(true)
+    end
+  end
+
+  context 'when cancelling a running one-off campaign' do
+    let(:account) { create(:account) }
+    let(:email_channel) { create(:channel_email, account: account) }
+    let(:email_inbox) { create(:inbox, channel: email_channel, account: account) }
+    let!(:campaign) { create(:campaign, account: account, inbox: email_inbox, campaign_status: :running) }
+    let!(:run) { create(:campaign_run, campaign: campaign, account: account, inbox: email_inbox, status: :running) }
+
+    it 'cancels the campaign and its latest running run' do
+      campaign.cancel_one_off!
+
+      expect(campaign.reload.cancelled?).to be(true)
+      expect(run.reload.cancelled?).to be(true)
     end
   end
 
@@ -91,9 +135,31 @@ RSpec.describe Campaign do
       end
 
       it 'calls twilio service on trigger!' do
-        sms_service = double
-        expect(Twilio::OneoffSmsCampaignService).to receive(:new).with(campaign: campaign).and_return(sms_service)
-        expect(sms_service).to receive(:perform)
+        runner = double
+        expect(Campaigns::OneoffRunner).to receive(:new).with(campaign: campaign).and_return(runner)
+        expect(runner).to receive(:perform)
+        campaign.save!
+        campaign.trigger!
+      end
+
+      it 'marks the campaign as failed when the runner raises' do
+        runner = double
+        expect(Campaigns::OneoffRunner).to receive(:new).with(campaign: campaign).and_return(runner)
+        expect(runner).to receive(:perform).and_raise(StandardError, 'boom')
+
+        campaign.save!
+
+        expect { campaign.trigger! }.to raise_error(StandardError, 'boom')
+        expect(campaign.reload.failed?).to be(true)
+      end
+
+      it 'marks the campaign as running before delegating to the runner' do
+        runner = double
+        expect(Campaigns::OneoffRunner).to receive(:new).with(campaign: campaign).and_return(runner)
+        expect(runner).to receive(:perform) do
+          expect(campaign.reload.running?).to be(true)
+        end
+
         campaign.save!
         campaign.trigger!
       end
@@ -113,11 +179,31 @@ RSpec.describe Campaign do
       end
 
       it 'calls sms service on trigger!' do
-        sms_service = double
-        expect(Sms::OneoffSmsCampaignService).to receive(:new).with(campaign: campaign).and_return(sms_service)
-        expect(sms_service).to receive(:perform)
+        runner = double
+        expect(Campaigns::OneoffRunner).to receive(:new).with(campaign: campaign).and_return(runner)
+        expect(runner).to receive(:perform)
         campaign.save!
         campaign.trigger!
+      end
+    end
+
+    context 'when Email campaign' do
+      let(:account) { create(:account) }
+      let!(:email_channel) { create(:channel_email, account: account) }
+      let!(:email_inbox) { create(:inbox, channel: email_channel, account: account) }
+      let(:label) { create(:label, account: account, title: 'vip') }
+      let(:campaign) { create(:campaign, account: account, inbox: email_inbox, audience: [{ type: 'Label', id: label.id }]) }
+
+      before do
+        create(:contact, account: account, email: 'vip@example.com').update_labels([label.title])
+      end
+
+      it 'executes successfully through the trigger path' do
+        expect { campaign.trigger! }.not_to raise_error
+
+        expect(campaign.reload.completed?).to be(true)
+        expect(campaign.campaign_runs.count).to eq(1)
+        expect(campaign.campaign_runs.last.completed?).to be(true)
       end
     end
 

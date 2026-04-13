@@ -11,6 +11,9 @@ import {
 beforeEach(() => {
   process.env.TZ = 'UTC';
   vi.useFakeTimers('modern');
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = 'en';
+  }
   const mockDate = new Date(Date.UTC(2023, 4, 5));
   vi.setSystemTime(mockDate);
 });
@@ -21,10 +24,8 @@ afterEach(() => {
 
 describe('#messageStamp', () => {
   it('returns correct value', () => {
-    expect(messageStamp(1612971343)).toEqual('3:35 PM');
-    expect(messageStamp(1612971343, 'LLL d, h:mm a')).toEqual(
-      'Feb 10, 3:35 PM'
-    );
+    expect(messageStamp(1612971343)).toEqual('15:35');
+    expect(messageStamp(1612971343, 'LLL d, h:mm a')).toEqual('Feb 10 15:35');
   });
 });
 
@@ -33,14 +34,14 @@ describe('#messageTimestamp', () => {
     expect(messageTimestamp(1680777464)).toEqual('Apr 6, 2023');
   });
   it('should return the message date and time in a different format if the message was sent in a different year', () => {
-    expect(messageTimestamp(1612971343)).toEqual('Feb 10 2021, 3:35 PM');
+    expect(messageTimestamp(1612971343)).toEqual('Feb 10, 2021 15:35');
   });
 });
 
 describe('#dynamicTime', () => {
   it('returns correct value', () => {
     Date.now = vi.fn(() => new Date(Date.UTC(2023, 1, 14)).valueOf());
-    expect(dynamicTime(1612971343)).toEqual('about 2 years ago');
+    expect(dynamicTime(1612971343)).toEqual('2 years ago');
   });
 });
 
@@ -91,6 +92,17 @@ describe('#shortTimestamp', () => {
     expect(shortTimestamp('a year ago', true)).toEqual('1y ago');
     expect(shortTimestamp('1 year ago', true)).toEqual('1y ago');
     expect(shortTimestamp('4 years ago', true)).toEqual('4y ago');
+  });
+
+  it('returns locale-aware compact values for russian', () => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = 'ru';
+    }
+
+    Date.now = vi.fn(() => new Date(Date.UTC(2023, 4, 5, 12, 0, 0)).valueOf());
+
+    expect(shortTimestamp(1683284400)).toEqual('1 ч');
+    expect(shortTimestamp(1683284400, true)).toEqual('1 ч назад');
   });
 });
 

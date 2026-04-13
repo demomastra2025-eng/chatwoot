@@ -76,6 +76,14 @@ class AutomationRules::CrmActionService
     archive_task!(false)
   end
 
+  def apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params)
+  end
+
+  def create_touch(action_params)
+    touch_action_service.create_touch(action_params)
+  end
+
   def archive_deal!(archived)
     ensure_entity_kind!('deal')
 
@@ -170,5 +178,14 @@ class AutomationRules::CrmActionService
     return if entity_kind == expected_kind
 
     raise ArgumentError, "#{expected_kind} automation action cannot run for #{entity_kind}"
+  end
+
+  def touch_action_service
+    @touch_action_service ||= AutomationRules::TouchActionService.new(
+      rule: rule,
+      account: account,
+      record: record,
+      entity_kind: entity_kind
+    )
   end
 end

@@ -89,4 +89,40 @@ class InboxPolicy < ApplicationPolicy
   def whatsapp_web_diagnostics?
     @account_user.administrator?
   end
+
+  def telegram_personal_request_code?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_request_qr?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_verify_code?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_verify_password?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_reconnect?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_history_sync?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_contacts_sync?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_disconnect?
+    @account_user.administrator?
+  end
+
+  def telegram_personal_diagnostics?
+    @account_user.administrator?
+  end
 end

@@ -32,6 +32,7 @@ class ContactInbox < ApplicationRecord
   belongs_to :inbox
 
   has_many :conversations, dependent: :destroy_async
+  has_one :channel_profile, class_name: 'ContactChannelProfile', dependent: :destroy
 
   # contact_inboxes that are not associated with any conversation
   scope :stale_without_conversations, lambda { |time_period|
@@ -53,6 +54,17 @@ class ContactInbox < ApplicationRecord
 
   def current_conversation
     conversations.last
+  end
+
+  def push_event_data
+    {
+      id: id,
+      source_id: source_id,
+      inbox_id: inbox_id,
+      contact_id: contact_id,
+      hmac_verified: hmac_verified,
+      channel_profile: channel_profile&.push_event_data
+    }.compact
   end
 
   private

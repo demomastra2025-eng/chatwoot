@@ -99,6 +99,11 @@ export const FORMATTING = {
     nodes: [],
     menu: ['copilot', 'strong', 'em', 'link', 'code', 'undo', 'redo'],
   },
+  'Channel::TelegramPersonal': {
+    marks: ['strong', 'em', 'link', 'code'],
+    nodes: [],
+    menu: ['copilot', 'strong', 'em', 'link', 'code', 'undo', 'redo'],
+  },
   'Channel::Instagram': {
     marks: ['strong', 'em', 'code', 'strike'],
     nodes: ['bulletList', 'orderedList'],

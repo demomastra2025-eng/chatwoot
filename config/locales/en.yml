@@ -37,6 +37,7 @@ en:
       not_required: 'Reauthorization is not required for this inbox'
       invalid_channel: 'Invalid channel type for reauthorization'
   auth:
+    session_replaced: 'Your account was signed in from another device. Please sign in again.'
     saml:
       invalid_email: 'Please enter a valid email address'
       authentication_failed: 'Authentication failed. Please check your credentials and try again.'
@@ -278,6 +279,15 @@ en:
         issue_created: 'Linear issue %{issue_id} was created by %{user_name}'
         issue_linked: 'Linear issue %{issue_id} was linked by %{user_name}'
         issue_unlinked: 'Linear issue %{issue_id} was unlinked by %{user_name}'
+      telegram_personal:
+        contact_joined: '%{contact_name} joined Telegram'
+        history_cleared: 'Telegram chat history was cleared'
+        missed_voice_call: 'Missed Telegram call with %{contact_name}'
+        missed_video_call: 'Missed Telegram video call with %{contact_name}'
+        busy_voice_call: 'Telegram call with %{contact_name} was busy'
+        busy_video_call: 'Telegram video call with %{contact_name} was busy'
+        completed_voice_call: 'Telegram call with %{contact_name} ended'
+        completed_video_call: 'Telegram video call with %{contact_name} ended'
       csat:
         not_sent_due_to_messaging_window: 'CSAT survey not sent due to outgoing message restrictions'
       auto_resolve:

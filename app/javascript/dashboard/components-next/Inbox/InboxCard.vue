@@ -2,11 +2,8 @@
 import { computed, ref, onBeforeMount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getInboxIconByType } from 'dashboard/helper/inbox';
-import { dynamicTime, shortTimestamp } from 'shared/helpers/timeHelper';
-import {
-  snoozedReopenTimeToTimestamp,
-  shortenSnoozeTime,
-} from 'dashboard/helper/snoozeHelpers';
+import { shortTimestamp } from 'shared/helpers/timeHelper';
+import { snoozedReopenTimeToTimestamp } from 'dashboard/helper/snoozeHelpers';
 import { NOTIFICATION_TYPES_MAPPING } from 'dashboard/routes/dashboard/inbox/helpers/InboxViewHelpers';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -59,13 +56,14 @@ const hasSlaThreshold = computed(() => {
 
 const lastActivityAt = computed(() => {
   const timestamp = props.inboxItem?.lastActivityAt;
-  return timestamp ? shortTimestamp(dynamicTime(timestamp)) : '';
+  return timestamp ? shortTimestamp(timestamp) : '';
 });
 
 const menuItems = computed(() => [
   {
     key: isUnread.value ? 'mark_as_read' : 'mark_as_unread',
     icon: isUnread.value ? 'mail' : 'mail-unread',
+    // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
     label: t(`INBOX.MENU_ITEM.MARK_AS_${isUnread.value ? 'READ' : 'UNREAD'}`),
   },
   { key: 'delete', icon: 'delete', label: t('INBOX.MENU_ITEM.DELETE') },
@@ -102,15 +100,14 @@ const notificationDetails = computed(() => {
   const type = props.inboxItem?.notificationType?.toUpperCase() || '';
   const [icon = '', color = 'text-n-blue-11'] =
     NOTIFICATION_TYPES_MAPPING[type] || [];
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   return { text: type ? t(`INBOX.TYPES_NEXT.${type}`) : '', icon, color };
 });
 
 const snoozedUntilTime = computed(() => {
   const { snoozedUntil } = props.inboxItem;
   if (!snoozedUntil) return null;
-  return shortenSnoozeTime(
-    dynamicTime(snoozedReopenTimeToTimestamp(snoozedUntil))
-  );
+  return shortTimestamp(snoozedReopenTimeToTimestamp(snoozedUntil));
 });
 
 const hasLastSnoozed = computed(() => props.inboxItem?.meta?.lastSnoozedAt);
@@ -118,7 +115,7 @@ const hasLastSnoozed = computed(() => props.inboxItem?.meta?.lastSnoozedAt);
 const snoozedText = computed(() => {
   return !hasLastSnoozed.value
     ? t('INBOX.TYPES_NEXT.SNOOZED_UNTIL', {
-        time: shortTimestamp(snoozedUntilTime.value),
+        time: snoozedUntilTime.value,
       })
     : t('INBOX.TYPES_NEXT.SNOOZED_ENDS');
 });

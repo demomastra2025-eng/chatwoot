@@ -20,6 +20,7 @@ describe ContactMergeAction do
       create(:message, sender: mergee_contact)
       create(:note, contact: mergee_contact, account: mergee_contact.account)
     end
+    create(:contact_channel_profile, contact: mergee_contact, contact_inbox: mergee_contact.contact_inboxes.first)
   end
 
   describe '#perform' do
@@ -59,6 +60,13 @@ describe ContactMergeAction do
       it 'moves the contact inboxes to base contact' do
         contact_merge
         expect(base_contact.contact_inboxes.count).to be 4
+      end
+    end
+
+    context 'when mergee contact has channel profiles' do
+      it 'moves the channel profiles to base contact' do
+        contact_merge
+        expect(base_contact.contact_channel_profiles.count).to be 1
       end
     end
 

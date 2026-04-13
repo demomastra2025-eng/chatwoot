@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import ChannelIcon from 'next/icon/ChannelIcon.vue';
 import Icon from 'next/icon/Icon.vue';
 import { hasWhatsappWebConnectionIssue } from 'dashboard/helper/whatsappWeb';
+import { hasTelegramPersonalConnectionIssue } from 'dashboard/helper/telegramPersonal';
 
 const props = defineProps({
   inbox: {
@@ -12,7 +13,10 @@ const props = defineProps({
 });
 
 const hasConnectionIssue = computed(() => {
-  return hasWhatsappWebConnectionIssue(props.inbox);
+  return (
+    hasWhatsappWebConnectionIssue(props.inbox) ||
+    hasTelegramPersonalConnectionIssue(props.inbox)
+  );
 });
 </script>
 

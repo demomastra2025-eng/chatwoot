@@ -39,5 +39,30 @@ RSpec.describe Captain::Runtime::MessageExtractor do
         ]
       )
     end
+
+    it 'serializes multimodal RubyLLM::Content into persisted content parts' do
+      multimodal_chat = Struct.new(:messages).new(
+        [
+          RubyLLM::Message.new(
+            role: :user,
+            content: RubyLLM::Content.new('Look', ['https://example.com/image.png'])
+          )
+        ]
+      )
+
+      extracted = described_class.extract_messages(multimodal_chat, agent)
+
+      expect(extracted).to eq(
+        [
+          {
+            role: :user,
+            content: [
+              { type: 'text', text: 'Look' },
+              { type: 'image_url', image_url: { url: 'https://example.com/image.png' } }
+            ]
+          }
+        ]
+      )
+    end
   end
 end

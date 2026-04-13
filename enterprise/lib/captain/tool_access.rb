@@ -34,7 +34,7 @@ module Captain::ToolAccess
     available_tools_for(assistant).each_with_object({}) do |(scope_name, tools), result|
       raw_scope = raw_access[scope_name].is_a?(Hash) ? raw_access[scope_name] : {}
       available_ids = tools.map { |tool| tool[:id] }
-      default_ids = default_tool_ids_for(scope_name, available_ids)
+      default_ids = default_tool_ids_for(scope_name, tools)
       configured_tool_ids = Array(raw_scope['tool_ids']).map(&:to_s)
 
       result[scope_name] = {
@@ -76,13 +76,17 @@ module Captain::ToolAccess
     Array(available_tools_for(assistant)[scope_name]).map { |tool| tool[:id] }
   end
 
-  def default_tool_ids_for(scope_name, available_ids)
+  def default_tool_ids_for(scope_name, tools)
+    available_ids = Array(tools).map { |tool| tool[:id] || tool['id'] }
     default_ids =
       case scope_name
       when SCOPE_AGENT
         DEFAULT_AGENT_TOOL_IDS
       when SCOPE_ASSISTANT
-        available_ids
+        Array(tools).select do |tool|
+          tool = tool.with_indifferent_access
+          tool.fetch(:selected_by_default, true)
+        end.map { |tool| tool[:id] || tool['id'] }
       else
         []
       end

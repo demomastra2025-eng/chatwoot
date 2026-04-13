@@ -11,8 +11,11 @@ describe('sidebarVisibility', () => {
     const visibilityState = buildSidebarVisibilityState({});
 
     expect(visibilityState.Inbox).toBe(true);
-    expect(visibilityState.Reports).toBe(true);
+    expect(visibilityState.Campaigns).toBe(true);
+    expect(visibilityState['Campaigns:Broadcasts']).toBe(true);
     expect(visibilityState.Settings).toBe(true);
+    expect(visibilityState['Settings:Workspace']).toBe(true);
+    expect(visibilityState['Reports:Overview']).toBe(true);
   });
 
   it('normalizes saved hidden items to known sidebar sections', () => {
@@ -21,24 +24,41 @@ describe('sidebarVisibility', () => {
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
           'Reports',
           'Unknown',
-          'Settings',
+          'Settings:Workspace',
           'Reports',
         ],
       })
-    ).toEqual(['Reports', 'Settings']);
+    ).toEqual(['Reports', 'Settings:Workspace']);
   });
 
-  it('filters hidden sidebar sections from the rendered menu', () => {
+  it('filters hidden sidebar sections and subsections from the rendered menu', () => {
     const filteredMenuItems = filterSidebarMenuItems(
-      [{ name: 'Inbox' }, { name: 'Reports' }, { name: 'Settings' }],
+      [
+        { name: 'Inbox' },
+        {
+          name: 'Settings',
+          children: [
+            {
+              name: 'Settings Account Settings',
+              visibilityKey: 'Settings:Workspace',
+            },
+            { name: 'Settings Agents', visibilityKey: 'Settings:Agents' },
+          ],
+        },
+      ],
       {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Reports'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Workspace'],
       }
     );
 
     expect(filteredMenuItems).toEqual([
       { name: 'Inbox' },
-      { name: 'Settings' },
+      {
+        name: 'Settings',
+        children: [
+          { name: 'Settings Agents', visibilityKey: 'Settings:Agents' },
+        ],
+      },
     ]);
   });
 
@@ -46,9 +66,9 @@ describe('sidebarVisibility', () => {
     expect(
       getSidebarHiddenItemsFromState({
         Inbox: true,
-        Reports: false,
-        Settings: false,
+        Campaigns: false,
+        'Settings:Workspace': false,
       })
-    ).toEqual(['Reports', 'Settings']);
+    ).toEqual(['Campaigns', 'Settings:Workspace']);
   });
 });

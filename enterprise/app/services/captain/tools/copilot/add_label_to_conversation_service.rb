@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::AddLabelToConversationService < Captain::Tools::C
     conversation = conversation_operations.add_label(label_name: label_name)
     "Added label to conversation ##{conversation.display_id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

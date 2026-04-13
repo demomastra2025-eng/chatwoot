@@ -84,14 +84,15 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
 
   def generate
     response = instrument_llm_call(instrumentation_params) do
-      llm_chat = chat
-                 .with_schema(Captain::Llm::Schemas::FaqCollection)
-                 .with_instructions(system_prompt)
+      llm_chat = apply_chat_features(
+        chat,
+        schema: Captain::Llm::Schemas::FaqCollection
+      ).with_instructions(system_prompt)
 
       ask_chat(llm_chat, @content)
     end
     parse_response(response.content)
-  rescue RubyLLM::Error => e
+  rescue RubyLLM::Error, Llm::StructuredOutputPolicy::StructuredOutputError => e
     Rails.logger.error "LLM API Error: #{e.message}"
     []
   end

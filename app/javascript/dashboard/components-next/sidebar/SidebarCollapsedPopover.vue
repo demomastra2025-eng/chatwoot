@@ -9,7 +9,7 @@ import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirecti
 const props = defineProps({
   label: { type: String, required: true },
   children: { type: Array, default: () => [] },
-  activeChild: { type: Object, default: undefined },
+  activeChildNames: { type: Array, default: () => [] },
   triggerRect: { type: Object, default: () => ({ top: 0, left: 0 }) },
 });
 
@@ -33,7 +33,7 @@ const navigateAndClose = to => {
   emit('close');
 };
 
-const isActive = child => props.activeChild?.name === child.name;
+const isActive = child => props.activeChildNames.includes(child.name);
 
 const getAccessibleSubChildren = children =>
   children.filter(c => isAllowed(c.to));
@@ -69,9 +69,11 @@ onMounted(async () => {
   await nextTick();
 
   // Auto-expand subgroup if active child is inside it
-  if (props.activeChild) {
+  if (props.activeChildNames.length) {
     const parentGroup = props.children.find(child =>
-      child.children?.some(subChild => subChild.name === props.activeChild.name)
+      child.children?.some(subChild =>
+        props.activeChildNames.includes(subChild.name)
+      )
     );
     if (parentGroup) {
       expandedSubGroup.value = parentGroup.name;

@@ -2,10 +2,16 @@ class WhatsappWeb::IncomingEventService
   OUTGOING_ECHO_DELAY = 2.seconds
   MESSAGE_UPDATE_BACKFILL_DELAY = 3.seconds
   PROVIDER_HISTORY_SETTLE_DELAY = 15.seconds
+  NON_RECOVERABLE_DISCONNECTION_CODES = [401, 402, 403, 406].freeze
+  DISCONNECTED_STATUS_VALUES = %w[closed close logout logged_out disconnected].freeze
+  FAILURE_STATUS_VALUES = %w[error failed refused bad_session].freeze
+  REMOVED_INSTANCE_MESSAGE = 'Evolution instance was removed. Run repair or reconnect to create a new session.'.freeze
 
   pattr_initialize [:channel!, :payload!]
 
   def perform
+    return if channel.inbox&.deleting?
+
     case event_name
     when 'qrcode.updated'
       process_qrcode_update
@@ -13,6 +19,12 @@ class WhatsappWeb::IncomingEventService
       process_connection_update
     when 'status.instance'
       process_status_instance
+    when 'logout.instance'
+      process_logout_instance
+    when 'remove.instance'
+      process_remove_instance
+    when 'call'
+      process_call
     when 'messages.set'
       process_history_batch
     when 'messages.upsert', 'send.message'
@@ -92,7 +104,7 @@ class WhatsappWeb::IncomingEventService
     if state.to_s == 'open'
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
-    elsif %w[refused close].include?(normalized_state)
+    elsif %w[refused close reconnecting].include?(normalized_state)
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
     end
@@ -102,11 +114,35 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_status_instance
+    normalized_state = status_instance_connection_state
+
+    channel.update!(
+      connection_state: normalized_state,
+      lifecycle_state: normalized_state == 'refused' ? 'failed' : 'disconnected',
+      qr_code: {},
+      last_error: status_instance_error_message(normalized_state),
+      last_synced_at: Time.current,
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+    )
+  end
+
+  def process_logout_instance
     channel.update!(
       connection_state: 'close',
-      lifecycle_state: 'failed',
+      lifecycle_state: 'disconnected',
       qr_code: {},
-      last_error: runtime_error_message(event_data) || 'Provider reported a terminal WhatsApp Web failure',
+      last_error: nil,
+      last_synced_at: Time.current,
+      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+    )
+  end
+
+  def process_remove_instance
+    channel.update!(
+      connection_state: 'close',
+      lifecycle_state: 'disconnected',
+      qr_code: {},
+      last_error: REMOVED_INSTANCE_MESSAGE,
       last_synced_at: Time.current,
       sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
     )
@@ -164,23 +200,14 @@ class WhatsappWeb::IncomingEventService
 
   def process_message_update
     message_update_records.each do |update|
-      next unless update.dig(:key, :fromMe)
-
       mapped_status = WhatsappWeb::ProviderPayloadNormalizer.map_message_status(update.dig(:update, :status))
       next if mapped_status.blank?
 
-      message = Message.find_by(source_id: update.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
-      if message.blank?
-        channel.record_echo_status_miss!(source_id: update.dig(:key, :id).to_s)
-        log_missing_message_update(update)
-        Channels::WhatsappWeb::MessageUpdateBackfillJob.set(wait: MESSAGE_UPDATE_BACKFILL_DELAY).perform_later(
-          channel.id,
-          update.deep_stringify_keys
-        )
-        next
+      if update.dig(:key, :fromMe)
+        process_outgoing_message_update(update)
+      else
+        process_incoming_message_update(update, mapped_status)
       end
-
-      WhatsappWeb::ProviderPayloadNormalizer.apply_message_status!(message, update.dig(:update, :status))
     end
   end
 
@@ -213,6 +240,13 @@ class WhatsappWeb::IncomingEventService
       contact_count: event_data[:contactCount].to_i
     )
     request_history_sync_for_provider_snapshot!
+  end
+
+  def process_call
+    WhatsappWeb::CallEventService.new(
+      channel: channel,
+      payload: event_data
+    ).perform
   end
 
   def group_message?
@@ -269,7 +303,9 @@ class WhatsappWeb::IncomingEventService
     value = state.to_s
     return 'open' if value == 'open'
     return 'connecting' if value == 'connecting'
+    return 'reconnecting' if value == 'reconnecting'
     return 'refused' if value == 'refused'
+    return 'close' if value.in?(%w[close closed disconnected])
 
     'close'
   end
@@ -280,6 +316,8 @@ class WhatsappWeb::IncomingEventService
       'connected'
     when 'connecting'
       channel.qr_code.present? ? 'qr_ready' : 'waiting_for_qr'
+    when 'reconnecting'
+      'reconnecting'
     when 'refused'
       'failed'
     else
@@ -301,12 +339,41 @@ class WhatsappWeb::IncomingEventService
     return nil if %w[open connecting].include?(normalized_state)
 
     provider_message = runtime_error_message(event_data)
-    fallback_message = normalized_state == 'refused' ? 'Connection refused' : 'Connection closed'
+    fallback_message = case normalized_state
+                       when 'refused'
+                         'Connection refused'
+                       when 'reconnecting'
+                         'Connection lost, reconnecting automatically'
+                       else
+                         'Connection closed'
+                       end
+    resolved_message = if normalized_state == 'reconnecting'
+                         provider_message.presence || fallback_message
+                       else
+                         provider_message.presence || channel.last_error.presence || fallback_message
+                       end
 
     merged_runtime_message(
       normalized_state == 'refused' ? channel.last_error : nil,
-      provider_message.presence || channel.last_error.presence || fallback_message
+      resolved_message
     )
+  end
+
+  def status_instance_connection_state
+    status_value = event_data[:status].to_s.downcase
+    return 'close' if DISCONNECTED_STATUS_VALUES.include?(status_value)
+    return 'close' if NON_RECOVERABLE_DISCONNECTION_CODES.include?(event_data[:disconnectionReasonCode].to_i)
+    return 'refused' if FAILURE_STATUS_VALUES.include?(status_value)
+    return 'refused' if event_data[:disconnectionReasonCode].present?
+
+    'close'
+  end
+
+  def status_instance_error_message(normalized_state)
+    runtime_message = runtime_error_message(event_data)
+    return runtime_message.presence || 'Provider reported a terminal WhatsApp Web failure' if normalized_state == 'refused'
+
+    runtime_message.presence
   end
 
   def runtime_error_message(payload)
@@ -362,6 +429,57 @@ class WhatsappWeb::IncomingEventService
       body.dig(:imageMessage, :caption) ||
       body.dig(:videoMessage, :caption) ||
       body.dig(:documentMessage, :caption)
+  end
+
+  def process_outgoing_message_update(update)
+    message = Message.find_by(source_id: update.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
+    if message.blank?
+      channel.record_echo_status_miss!(source_id: update.dig(:key, :id).to_s)
+      log_missing_message_update(update)
+      Channels::WhatsappWeb::MessageUpdateBackfillJob.set(wait: MESSAGE_UPDATE_BACKFILL_DELAY).perform_later(
+        channel.id,
+        update.deep_stringify_keys
+      )
+      return
+    end
+
+    WhatsappWeb::ProviderPayloadNormalizer.apply_message_status!(message, update.dig(:update, :status))
+  end
+
+  def process_incoming_message_update(update, mapped_status)
+    return unless mapped_status == :read
+
+    message = Message.find_by(
+      source_id: update.dig(:key, :id).to_s,
+      inbox_id: channel.inbox.id,
+      message_type: :incoming
+    )
+    return if message.blank?
+
+    sync_conversation_last_seen!(message.conversation, message.created_at)
+  end
+
+  def sync_conversation_last_seen!(conversation, last_seen_at)
+    updates = {}
+    previous_changes = {}
+    timestamp = Time.current
+
+    if conversation.agent_last_seen_at.blank? || conversation.agent_last_seen_at < last_seen_at
+      updates[:agent_last_seen_at] = last_seen_at
+      previous_changes['agent_last_seen_at'] = [conversation.agent_last_seen_at, last_seen_at]
+    end
+
+    if conversation.assignee_last_seen_at.blank? || conversation.assignee_last_seen_at < last_seen_at
+      updates[:assignee_last_seen_at] = last_seen_at
+      previous_changes['assignee_last_seen_at'] = [conversation.assignee_last_seen_at, last_seen_at]
+    end
+
+    return if updates.blank?
+
+    conversation.update_columns(updates.merge(updated_at: timestamp))
+    updates.each { |attribute, value| conversation[attribute] = value }
+    conversation.updated_at = timestamp
+    conversation.dispatch_conversation_updated_event(previous_changes)
   end
 
   def log_missing_message_update(update)

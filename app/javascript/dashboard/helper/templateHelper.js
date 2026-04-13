@@ -27,6 +27,15 @@ export const processVariable = str => {
   return str.replace(/{{|}}/g, '');
 };
 
+export const extractTemplateVariables = text => {
+  const matchedVariables = String(text || '').match(/{{([^}]+)}}/g);
+  if (!matchedVariables) {
+    return [];
+  }
+
+  return matchedVariables.map(variable => processVariable(variable));
+};
+
 export const allKeysRequired = value => {
   const keys = Object.keys(value);
   return keys.every(key => value[key]);
@@ -35,11 +44,11 @@ export const allKeysRequired = value => {
 export const replaceTemplateVariables = (
   templateText,
   processedParams,
-  { previewMode = true } = {}
+  { previewMode = true, section = 'body' } = {}
 ) => {
   return templateText.replace(/{{([^}]+)}}/g, (match, variable) => {
     const variableKey = processVariable(variable);
-    const value = processedParams.body?.[variableKey];
+    const value = processedParams[section]?.[variableKey];
     if (!value) {
       return `{{${variable}}}`;
     }
@@ -53,23 +62,28 @@ export const buildTemplateParameters = (template, hasMediaHeaderValue) => {
 
   const bodyComponent = findComponentByType(template, COMPONENT_TYPES.BODY);
   const headerComponent = findComponentByType(template, COMPONENT_TYPES.HEADER);
+  const bodyVariables = extractTemplateVariables(bodyComponent?.text);
+  const headerVariables =
+    headerComponent?.format === 'TEXT'
+      ? extractTemplateVariables(headerComponent?.text)
+      : [];
 
-  if (!bodyComponent) return allVariables;
-
-  const templateString = bodyComponent.text;
-
-  // Process body variables
-  const matchedVariables = templateString.match(/{{([^}]+)}}/g);
-  if (matchedVariables) {
+  if (bodyVariables.length) {
     allVariables.body = {};
-    matchedVariables.forEach(variable => {
-      const key = processVariable(variable);
-      allVariables.body[key] = '';
+    bodyVariables.forEach(variable => {
+      allVariables.body[variable] = '';
+    });
+  }
+
+  if (headerVariables.length) {
+    allVariables.header = {};
+    headerVariables.forEach(variable => {
+      allVariables.header[variable] = '';
     });
   }
 
   if (hasMediaHeaderValue) {
-    if (!allVariables.header) allVariables.header = {};
+    allVariables.header = {};
     allVariables.header.media_url = '';
     allVariables.header.media_type = headerComponent.format.toLowerCase();
 

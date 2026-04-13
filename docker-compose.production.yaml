@@ -25,6 +25,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - telegram-personal-gateway
     ports:
       - '127.0.0.1:3000:3000'
     environment:
@@ -32,6 +33,8 @@ services:
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
       - CW_AUTO_PREPARE_DB=${CW_AUTO_PREPARE_DB:-true}
+      - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
+      - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
     networks:
@@ -46,16 +49,68 @@ services:
     depends_on:
       - postgres
       - redis
+      - telegram-personal-gateway
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
       - CW_AUTO_PREPARE_DB=false
+      - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
+      - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
     networks:
       - default
       - shared-services
+    restart: always
+
+  telegram-personal-history-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+      - telegram-personal-gateway
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
+      - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_telegram_personal_history.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
+  telegram-personal-gateway:
+    build:
+      context: ../chatwoot-messenger-gateway
+      dockerfile: ./Dockerfile
+    image: ${TELEGRAM_PERSONAL_GATEWAY_IMAGE:-onelink-telegram-personal-gateway:production}
+    env_file: .env
+    environment:
+      - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
+      - TELEGRAM_PERSONAL_GATEWAY_PUBLIC_BASE_URL=${TELEGRAM_PERSONAL_GATEWAY_PUBLIC_BASE_URL:-http://127.0.0.1:8010}
+      - TELEGRAM_PERSONAL_GATEWAY_HOST=0.0.0.0
+      - TELEGRAM_PERSONAL_GATEWAY_PORT=8000
+      - TELEGRAM_PERSONAL_MEDIA_DIR=/data/telegram-personal-gateway
+    volumes:
+      - telegram_personal_gateway_data:/data/telegram-personal-gateway
+    ports:
+      - '127.0.0.1:${TELEGRAM_PERSONAL_GATEWAY_BIND_PORT:-8010}:8000'
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).read()']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      default:
+      shared-services:
+        aliases:
+          - telegram-personal-gateway
     restart: always
 
   postgres:
@@ -98,6 +153,7 @@ volumes:
   storage_data:
   postgres_data:
   redis_data:
+  telegram_personal_gateway_data:
 
 networks:
   shared-services:

@@ -6,6 +6,9 @@ class DeleteObjectJob < ApplicationJob
   def perform(object, user = nil, ip = nil)
     deletion_context = build_post_deletion_context(object)
 
+    mark_pending_deletion(object)
+    teardown_remote_dependencies(object)
+
     # Pre-purge heavy associations for large objects to avoid
     # timeouts & race conditions due to destroy_async fan-out.
     purge_heavy_associations(object)
@@ -41,6 +44,23 @@ class DeleteObjectJob < ApplicationJob
 
       batch_destroy(object.public_send(assoc))
     end
+  end
+
+  def teardown_remote_dependencies(object)
+    return unless object.is_a?(Inbox)
+    return unless object.whatsapp_web? || object.telegram_personal?
+
+    if object.whatsapp_web?
+      object.channel&.teardown_provider_instance!
+    elsif object.telegram_personal?
+      object.channel&.teardown_runtime!
+    end
+  end
+
+  def mark_pending_deletion(object)
+    return unless object.respond_to?(:mark_pending_deletion!)
+
+    object.mark_pending_deletion!
   end
 
   def batch_destroy(relation)

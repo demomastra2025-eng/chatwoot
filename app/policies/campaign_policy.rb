@@ -15,6 +15,26 @@ class CampaignPolicy < ApplicationPolicy
     show?
   end
 
+  def preview?
+    create?
+  end
+
+  def retry_failed?
+    create?
+  end
+
+  def cancel?
+    update?
+  end
+
+  def restart?
+    create?
+  end
+
+  def resume?
+    create?
+  end
+
   def create?
     @account_user.administrator?
   end

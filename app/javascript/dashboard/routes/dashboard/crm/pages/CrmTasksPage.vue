@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { format } from 'date-fns';
+import { useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -28,6 +29,7 @@ import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
 import CrmTaskPriorityMenu from 'dashboard/components-next/CRM/CrmTaskPriorityMenu.vue';
 import CrmTaskStatusMenu from 'dashboard/components-next/CRM/CrmTaskStatusMenu.vue';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
+import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
@@ -41,6 +43,7 @@ import SchedulingRecordTable from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
+import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
 import {
   buildCalendarRange,
   formatCalendarTitle,
@@ -77,6 +80,9 @@ const router = useRouter();
 const { checkPermissions } = usePolicy();
 const { locale, t } = useI18n();
 
+const TASKS_PREFERENCES_STORAGE_KEY = 'crm-tasks-page-preferences';
+const MANUAL_BOARD_SORT_KEY = 'position';
+
 const tasks = ref([]);
 const dealOptions = ref([]);
 const currentPresentation = ref('list');
@@ -97,6 +103,15 @@ const listSort = ref({
   direction: '',
   key: '',
 });
+const boardSort = reactive({
+  key: MANUAL_BOARD_SORT_KEY,
+});
+const boardSortDirections = reactive({});
+const hasRestoredPreferences = ref(false);
+const persistedPreferencesByAccount = useLocalStorage(
+  TASKS_PREFERENCES_STORAGE_KEY,
+  {}
+);
 
 const LIST_PAGE_SIZE = 25;
 
@@ -343,6 +358,63 @@ const viewOptions = computed(() => [
   { label: t('SCHEDULING.VIEWS.CALENDAR'), value: 'calendar' },
 ]);
 
+const boardSortOptions = computed(() => [
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.NONE'),
+    value: MANUAL_BOARD_SORT_KEY,
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.DUE_AT'),
+    value: 'dueAt',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.START_AT'),
+    value: 'startAt',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.UPDATED_AT'),
+    value: 'updatedAt',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.CREATED_AT'),
+    value: 'createdAt',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.PRIORITY'),
+    value: 'priority',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.OPTIONS.TITLE'),
+    value: 'title',
+  },
+]);
+
+const boardSortDirectionOptions = computed(() => [
+  {
+    label: t('CRM.TASKS.BOARD.SORT.DIRECTIONS.ASC'),
+    value: 'asc',
+  },
+  {
+    label: t('CRM.TASKS.BOARD.SORT.DIRECTIONS.DESC'),
+    value: 'desc',
+  },
+]);
+
+const selectedBoardSortLabel = computed(
+  () =>
+    boardSortOptions.value.find(option => option.value === boardSort.key)
+      ?.label || t('CRM.TASKS.BOARD.SORT.LABEL')
+);
+
+const boardSortDirectionLabels = computed(() => ({
+  asc:
+    boardSortDirectionOptions.value.find(option => option.value === 'asc')
+      ?.label || '',
+  desc:
+    boardSortDirectionOptions.value.find(option => option.value === 'desc')
+      ?.label || '',
+}));
+
 const calendarViewOptions = computed(() => [
   { label: t('SCHEDULING.VIEWS.DAY'), value: 'day' },
   { label: t('SCHEDULING.VIEWS.WEEK'), value: 'week' },
@@ -435,9 +507,147 @@ const resolveTaskSortValue = (task, key) => {
   }
 };
 
+const prioritySortRank = {
+  none: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  urgent: 4,
+};
+
+const resolveTaskBoardSortValue = (task, key) => {
+  switch (key) {
+    case 'createdAt':
+      return task.createdAt ? new Date(task.createdAt).getTime() : null;
+    case 'dueAt':
+      return task.dueAt ? new Date(task.dueAt).getTime() : null;
+    case 'position':
+      return Number(task.position ?? Number.MAX_SAFE_INTEGER);
+    case 'priority':
+      return prioritySortRank[task.priority] ?? -1;
+    case 'startAt':
+      return task.startAt ? new Date(task.startAt).getTime() : null;
+    case 'title':
+      return normalizeFilterText(task.title);
+    case 'updatedAt':
+      return task.updatedAt ? new Date(task.updatedAt).getTime() : null;
+    default:
+      return null;
+  }
+};
+
 const sortedListTasks = computed(() =>
   sortListRecords(filteredListTasks.value, listSort.value, resolveTaskSortValue)
 );
+
+const defaultTasksPreferences = () => ({
+  boardSort: {
+    key: MANUAL_BOARD_SORT_KEY,
+  },
+  boardSortDirections: {},
+  currentCalendarView: 'week',
+  currentPresentation: 'list',
+  filters: {
+    archived: false,
+    assigneeId: '',
+    dealId: '',
+    priority: '',
+    statusId: '',
+    teamId: '',
+  },
+  listQuickFilters: {
+    q: '',
+  },
+  listSort: {
+    direction: '',
+    key: '',
+  },
+});
+
+const accountPreferenceKey = computed(() =>
+  String(accountId.value || 'default')
+);
+
+const sanitizeTasksPreferences = preferences => {
+  const defaults = defaultTasksPreferences();
+  const next = {
+    ...defaults,
+    ...preferences,
+    boardSort: {
+      ...defaults.boardSort,
+      ...(preferences?.boardSort || {}),
+    },
+    filters: {
+      ...defaults.filters,
+      ...(preferences?.filters || {}),
+    },
+    listQuickFilters: {
+      ...defaults.listQuickFilters,
+      ...(preferences?.listQuickFilters || {}),
+    },
+    listSort: {
+      ...defaults.listSort,
+      ...(preferences?.listSort || {}),
+    },
+  };
+
+  if (!['list', 'board', 'calendar'].includes(next.currentPresentation)) {
+    next.currentPresentation = defaults.currentPresentation;
+  }
+
+  if (!['day', 'week', 'month'].includes(next.currentCalendarView)) {
+    next.currentCalendarView = defaults.currentCalendarView;
+  }
+
+  if (
+    !boardSortOptions.value.some(option => option.value === next.boardSort.key)
+  ) {
+    next.boardSort.key = defaults.boardSort.key;
+  }
+
+  next.boardSortDirections = Object.entries(
+    preferences?.boardSortDirections || {}
+  ).reduce((result, [key, value]) => {
+    result[key] = value === 'desc' ? 'desc' : 'asc';
+    return result;
+  }, {});
+
+  return next;
+};
+
+const restoreTasksPreferences = () => {
+  const stored =
+    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferences = sanitizeTasksPreferences(stored);
+
+  currentPresentation.value = preferences.currentPresentation;
+  currentCalendarView.value = preferences.currentCalendarView;
+  listSort.value = { ...preferences.listSort };
+  boardSort.key = preferences.boardSort.key;
+  Object.keys(boardSortDirections).forEach(key => {
+    delete boardSortDirections[key];
+  });
+  Object.assign(boardSortDirections, preferences.boardSortDirections);
+  Object.assign(filters, preferences.filters);
+  listQuickFilters.q = preferences.listQuickFilters.q;
+};
+
+const persistTasksPreferences = () => {
+  if (!hasRestoredPreferences.value) return;
+
+  persistedPreferencesByAccount.value = {
+    ...(persistedPreferencesByAccount.value || {}),
+    [accountPreferenceKey.value]: sanitizeTasksPreferences({
+      boardSort: { ...boardSort },
+      boardSortDirections: { ...boardSortDirections },
+      currentCalendarView: currentCalendarView.value,
+      currentPresentation: currentPresentation.value,
+      filters: { ...filters },
+      listQuickFilters: { ...listQuickFilters },
+      listSort: { ...listSort.value },
+    }),
+  };
+};
 
 const paginatedListTasks = computed(() => {
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
@@ -828,6 +1038,28 @@ const handlePresentationChange = async presentation => {
   await loadTasks();
 };
 
+const toggleBoardSortDirection = statusId => {
+  const key = String(statusId);
+  boardSortDirections[key] =
+    boardSortDirections[key] === 'desc' ? 'asc' : 'desc';
+};
+
+watch(
+  [
+    currentPresentation,
+    currentCalendarView,
+    listSort,
+    () => ({ ...boardSort }),
+    () => ({ ...boardSortDirections }),
+    () => ({ ...filters }),
+    () => listQuickFilters.q,
+  ],
+  () => {
+    persistTasksPreferences();
+  },
+  { deep: true }
+);
+
 const syncFilterDraft = () => {
   Object.assign(filterDraft, {
     archived: filters.archived,
@@ -1066,31 +1298,44 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
   }
 };
 
-const handleTaskStatusChange = async ({ task, statusId }) => {
+const handleTaskStatusChange = async ({ task, statusId, position }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const nextStatusId = Number(statusId);
+  const nextPosition = Number(position);
 
-  if (!nextStatusId || Number(currentTask.statusId) === nextStatusId) {
+  if (
+    !nextStatusId ||
+    (Number(currentTask.statusId) === nextStatusId &&
+      (!nextPosition || Number(currentTask.position) === nextPosition))
+  ) {
     return;
   }
 
-  const optimisticTask = { ...currentTask, statusId: nextStatusId };
-  upsertTask(optimisticTask);
-
   if (
     selectedTask.value &&
-    Number(selectedTask.value.id) === optimisticTask.id
+    Number(selectedTask.value.id) === Number(currentTask.id)
   ) {
-    selectedTask.value = optimisticTask;
+    selectedTask.value = {
+      ...selectedTask.value,
+      position: nextPosition || selectedTask.value.position,
+      statusId: nextStatusId,
+    };
     form.statusId = nextStatusId;
   }
 
   try {
-    const response = await CrmTasksAPI.changeStatus(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      status_id: nextStatusId,
-    });
+    const response =
+      Number(currentTask.statusId) === nextStatusId
+        ? await CrmTasksAPI.update(currentTask.id, {
+            lock_version: currentTask.lockVersion,
+            position: nextPosition || currentTask.position,
+          })
+        : await CrmTasksAPI.changeStatus(currentTask.id, {
+            lock_version: currentTask.lockVersion,
+            position: nextPosition || undefined,
+            status_id: nextStatusId,
+          });
     const updatedTask = normalizePayload(response.data);
     upsertTask(updatedTask);
 
@@ -1104,6 +1349,13 @@ const handleTaskStatusChange = async ({ task, statusId }) => {
   } catch (error) {
     try {
       await loadTasks();
+
+      if (selectedTask.value) {
+        selectedTask.value =
+          tasks.value.find(
+            item => Number(item.id) === Number(currentTask.id)
+          ) || selectedTask.value;
+      }
     } catch {
       // Keep the original API error as the surfaced failure.
     }
@@ -1276,6 +1528,8 @@ const jumpCalendarToToday = async () => {
 onMounted(async () => {
   if (!canViewTasks.value) return;
 
+  restoreTasksPreferences();
+
   if (!agents.value.length) {
     await store.dispatch('agents/get');
   }
@@ -1290,6 +1544,8 @@ onMounted(async () => {
     loadDealOptions(),
   ]);
   resetForm();
+  hasRestoredPreferences.value = true;
+  persistTasksPreferences();
   await loadTasks();
   await consumeTaskPrefillQuery();
 });
@@ -1299,6 +1555,15 @@ onMounted(async () => {
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
       <template #actions>
+        <SelectMenu
+          v-if="currentPresentation === 'board'"
+          icon="i-lucide-arrow-down-up"
+          :model-value="boardSort.key"
+          :options="boardSortOptions"
+          :label="selectedBoardSortLabel"
+          sub-menu-position="bottom"
+          @update:model-value="boardSort.key = $event"
+        />
         <Input
           v-if="currentPresentation === 'list'"
           size="sm"
@@ -1661,12 +1926,18 @@ onMounted(async () => {
           :can-manage="canManageTasks"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
+          :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
           :statuses="referencesStore.taskStatuses"
+          :sort-direction-labels="boardSortDirectionLabels"
+          :sort-directions="boardSortDirections"
+          :sort-key="boardSort.key"
+          :sort-value-resolver="resolveTaskBoardSortValue"
           :tasks="tasks"
           @change-assignee="handleTaskAssigneeChange"
           @change-status="handleTaskStatusChange"
           @create-task="handleBoardCreateTask"
           @select-task="openEditDrawer"
+          @toggle-sort-direction="toggleBoardSortDirection"
         />
       </div>
     </div>
@@ -1774,6 +2045,12 @@ onMounted(async () => {
           :title="$t('CRM.CUSTOM_FIELDS.TITLE')"
           :description="$t('CRM.CUSTOM_FIELDS.DESCRIPTION')"
           @update:model-value="form.customAttributes = $event"
+        />
+
+        <EntityTouchesCard
+          v-if="selectedTask?.id"
+          remindable-type="Crm::Task"
+          :remindable-id="selectedTask.id"
         />
 
         <SchedulingFormFieldGroup

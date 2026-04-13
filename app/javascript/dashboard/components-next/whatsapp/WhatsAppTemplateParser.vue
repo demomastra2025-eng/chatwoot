@@ -19,6 +19,7 @@ import {
   buildTemplateParameters,
   allKeysRequired,
   replaceTemplateVariables,
+  extractTemplateVariables,
   DEFAULT_LANGUAGE,
   DEFAULT_CATEGORY,
   COMPONENT_TYPES,
@@ -27,6 +28,10 @@ import {
 } from 'dashboard/helper/templateHelper';
 
 const props = defineProps({
+  initialProcessedParams: {
+    type: Object,
+    default: () => ({}),
+  },
   template: {
     type: Object,
     default: () => ({}),
@@ -43,6 +48,33 @@ const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 const { t } = useI18n();
 
 const processedParams = ref({});
+
+const cloneProcessedParams = value => JSON.parse(JSON.stringify(value || {}));
+
+const mergeProcessedParams = (baseParams, initialParams) => {
+  const mergedParams = cloneProcessedParams(baseParams);
+
+  Object.entries(cloneProcessedParams(initialParams)).forEach(
+    ([section, value]) => {
+      if (Array.isArray(value)) {
+        mergedParams[section] = value.map((entry, index) => ({
+          ...(mergedParams[section]?.[index] || {}),
+          ...(entry || {}),
+        }));
+        return;
+      }
+
+      if (value && typeof value === 'object') {
+        mergedParams[section] = {
+          ...(mergedParams[section] || {}),
+          ...value,
+        };
+      }
+    }
+  );
+
+  return mergedParams;
+};
 
 const languageLabel = computed(() => {
   return `${t('WHATSAPP_TEMPLATES.PARSER.LANGUAGE')}: ${props.template.language || DEFAULT_LANGUAGE}`;
@@ -73,6 +105,14 @@ const hasMediaHeader = computed(() =>
   MEDIA_FORMATS.includes(headerComponent.value?.format)
 );
 
+const textHeaderVariables = computed(() =>
+  extractTemplateVariables(textHeader.value)
+);
+
+const hasTextHeaderVariables = computed(
+  () => textHeaderVariables.value.length > 0
+);
+
 const formatType = computed(() => {
   const format = headerComponent.value?.format;
   return format ? format.charAt(0) + format.slice(1).toLowerCase() : '';
@@ -83,7 +123,38 @@ const isDocumentTemplate = computed(() => {
 });
 
 const hasVariables = computed(() => {
-  return bodyText.value?.match(/{{([^}]+)}}/g) !== null;
+  return (
+    bodyText.value?.match(/{{([^}]+)}}/g) !== null ||
+    hasTextHeaderVariables.value
+  );
+});
+
+const headerParamEntries = computed(() => {
+  if (!hasTextHeaderVariables.value || !processedParams.value.header) {
+    return [];
+  }
+
+  return textHeaderVariables.value.map(variable => ({
+    key: variable,
+    value: processedParams.value.header?.[variable] || '',
+  }));
+});
+
+const bodyParamEntries = computed(() =>
+  Object.entries(processedParams.value.body || {}).map(([key, value]) => ({
+    key,
+    value,
+  }))
+);
+
+const renderedHeader = computed(() => {
+  if (!textHeader.value) {
+    return '';
+  }
+
+  return replaceTemplateVariables(textHeader.value, processedParams.value, {
+    section: 'header',
+  });
 });
 
 const renderedTemplate = computed(() => {
@@ -110,6 +181,13 @@ const isFormInvalid = computed(() => {
     if (hasEmptyBodyVariable) return true;
   }
 
+  if (hasTextHeaderVariables.value && processedParams.value.header) {
+    const hasEmptyHeaderVariable = textHeaderVariables.value.some(
+      variable => !processedParams.value.header?.[variable]
+    );
+    if (hasEmptyHeaderVariable) return true;
+  }
+
   if (processedParams.value.buttons) {
     const hasEmptyButtonParameter = processedParams.value.buttons.some(
       button => !button.parameter
@@ -131,9 +209,13 @@ const v$ = useVuelidate(
 );
 
 const initializeTemplateParameters = () => {
-  processedParams.value = buildTemplateParameters(
+  const baseProcessedParams = buildTemplateParameters(
     props.template,
     hasMediaHeader.value
+  );
+  processedParams.value = mergeProcessedParams(
+    baseProcessedParams,
+    props.initialProcessedParams
   );
 };
 
@@ -220,7 +302,7 @@ defineExpose({
             v-if="textHeader"
             class="mb-2 text-sm font-medium whitespace-pre-wrap text-n-slate-12"
           >
-            {{ textHeader }}
+            {{ renderedHeader }}
           </div>
           <div class="text-sm whitespace-pre-wrap text-n-slate-12">
             {{ renderedTemplate }}
@@ -234,6 +316,28 @@ defineExpose({
     </div>
 
     <div v-if="hasVariables || hasMediaHeader">
+      <div v-if="headerParamEntries.length" class="mb-4">
+        <p class="mb-2.5 text-sm font-semibold">
+          {{ t('WHATSAPP_TEMPLATES.PARSER.HEADER_VARIABLES_LABEL') }}
+        </p>
+        <div
+          v-for="variable in headerParamEntries"
+          :key="`header-${variable.key}`"
+          class="flex items-center mb-2.5"
+        >
+          <TemplateParamInput
+            v-model="processedParams.header[variable.key]"
+            type="text"
+            class="flex-1"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.PARSER.VARIABLE_PLACEHOLDER', {
+                variable: variable.key,
+              })
+            "
+          />
+        </div>
+      </div>
+
       <div v-if="hasMediaHeader" class="mb-4">
         <p class="mb-2.5 text-sm font-semibold">
           {{
@@ -274,17 +378,17 @@ defineExpose({
           {{ $t('WHATSAPP_TEMPLATES.PARSER.VARIABLES_LABEL') }}
         </p>
         <div
-          v-for="(variable, key) in processedParams.body"
-          :key="`body-${key}`"
+          v-for="variable in bodyParamEntries"
+          :key="`body-${variable.key}`"
           class="flex items-center mb-2.5"
         >
           <TemplateParamInput
-            v-model="processedParams.body[key]"
+            v-model="processedParams.body[variable.key]"
             type="text"
             class="flex-1"
             :placeholder="
               t('WHATSAPP_TEMPLATES.PARSER.VARIABLE_PLACEHOLDER', {
-                variable: key,
+                variable: variable.key,
               })
             "
           />

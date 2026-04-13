@@ -201,6 +201,27 @@ export function useBulkActions() {
     }
   }
 
+  async function onMarkConversationsRead() {
+    try {
+      await store.dispatch('bulkActions/process', {
+        type: 'Conversation',
+        ids: selectedConversations.value,
+        action_name: 'mark_read',
+      });
+      selectedConversations.value.forEach(id => {
+        store.commit('UPDATE_MESSAGE_UNREAD_COUNT', {
+          id,
+          lastSeen: new Date().toISOString(),
+          unreadCount: 0,
+        });
+      });
+      resetBulkActions();
+      useAlert(t('BULK_ACTION.MARK_READ.SUCCESS'));
+    } catch (err) {
+      useAlert(t('BULK_ACTION.MARK_READ.FAILED'));
+    }
+  }
+
   return {
     selectedConversations,
     selectedInboxes,
@@ -214,5 +235,6 @@ export function useBulkActions() {
     onRemoveLabels,
     onAssignTeamsForBulk,
     onUpdateConversations,
+    onMarkConversationsRead,
   };
 }

@@ -38,8 +38,8 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   PROVIDERS = %w[evolution].freeze
   DEFAULT_IGNORE_REMOTE_JIDS = %w[status@broadcast].freeze
-  LIFECYCLE_STATES = %w[creating waiting_for_qr qr_ready connected disconnected failed].freeze
-  CONNECTION_STATES = %w[open connecting close refused unknown].freeze
+  LIFECYCLE_STATES = %w[creating waiting_for_qr qr_ready reconnecting connected disconnected failed deleting].freeze
+  CONNECTION_STATES = %w[open connecting reconnecting close refused unknown].freeze
   DEFAULT_SYNC_STATE = {
     'history_synced_at' => nil,
     'history_sync_requested_at' => nil,
@@ -93,7 +93,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   validate :runtime_identity_is_immutable, on: :update
 
   after_create_commit :enqueue_provisioning
-  before_destroy :teardown_provider_instance
+  before_destroy :teardown_provider_instance!
 
   def name
     'WhatsApp Web'
@@ -109,7 +109,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   delegate :provision!, :refresh_qr!, :reconnect!, :disconnect!, :repair!, :sync_connection_state!, :diagnostics,
-           :send_message, to: :provider_service
+           :send_message, :update_message, to: :provider_service
 
   def generated_inbox_name
     phone_number.delete_prefix('+')
@@ -228,6 +228,24 @@ class Channel::WhatsappWeb < ApplicationRecord
     sync_state_payload['label_map'].is_a?(Hash) ? sync_state_payload['label_map'] : {}
   end
 
+  def teardown_provider_instance!
+    provider_service.destroy_remote_instance!
+  rescue StandardError => e
+    Rails.logger.warn("[WHATSAPP WEB] Failed to tear down instance #{instance_name}: #{e.message}")
+    true
+  end
+
+  def mark_pending_deletion!(timestamp: Time.current)
+    update!(
+      lifecycle_state: 'deleting',
+      connection_state: 'close',
+      qr_code: {},
+      last_error: nil,
+      last_synced_at: timestamp,
+      sync_state: sync_state_payload.merge('qr_generated_at' => nil)
+    )
+  end
+
   def last_history_sync_mode
     sync_state_payload['last_history_sync_mode'].presence
   end
@@ -257,9 +275,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     return false unless full_history_baseline_present?
     return true if provider_history_synced_at.blank?
 
-    if local_history_provider_synced_at.present?
-      return local_history_provider_synced_at >= provider_history_synced_at - 1.second
-    end
+    return local_history_provider_synced_at >= provider_history_synced_at - 1.second if local_history_provider_synced_at.present?
 
     history_synced_at >= provider_history_synced_at
   end
@@ -327,9 +343,7 @@ class Channel::WhatsappWeb < ApplicationRecord
       )
 
       sync_context = { 'requested_at' => request_time.iso8601 }
-      if expected_snapshot.present?
-        sync_context['expected_provider_history_synced_at'] = expected_snapshot.iso8601
-      end
+      sync_context['expected_provider_history_synced_at'] = expected_snapshot.iso8601 if expected_snapshot.present?
 
       job = Channels::WhatsappWeb::HistorySyncJob
       job = job.set(wait: wait) if wait.present?
@@ -586,13 +600,6 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def enqueue_provisioning
     Channels::WhatsappWeb::ProvisionJob.perform_later(id)
-  end
-
-  def teardown_provider_instance
-    provider_service.destroy_remote_instance!
-  rescue StandardError => e
-    Rails.logger.warn("[WHATSAPP WEB] Failed to tear down instance #{instance_name}: #{e.message}")
-    true
   end
 
   def evolution_api_url

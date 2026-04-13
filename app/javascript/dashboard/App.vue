@@ -4,7 +4,9 @@ import LoadingState from './components/widgets/LoadingState.vue';
 import NetworkNotification from './components/NetworkNotification.vue';
 import PaymentPendingBanner from './components/app/PaymentPendingBanner.vue';
 import PendingEmailVerificationBanner from './components/app/PendingEmailVerificationBanner.vue';
+import WootButton from 'dashboard/components-next/button/Button.vue';
 import vueActionCable from './helper/actionCable';
+import AuthAPI from './api/auth';
 import { useRouter } from 'vue-router';
 import { useStore } from 'dashboard/composables/store';
 import WootSnackbarBox from './components/SnackbarContainer.vue';
@@ -18,11 +20,17 @@ import {
 } from './helper/pushHelper';
 import ReconnectService from 'dashboard/helper/ReconnectService';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { emitter } from 'shared/helpers/mitt';
+import {
+  clearCookiesOnLogoutTo,
+  deleteIndexedDBOnLogout,
+} from './store/utils/api';
 
 export default {
   name: 'App',
 
   components: {
+    WootButton,
     LoadingState,
     NetworkNotification,
     PaymentPendingBanner,
@@ -49,6 +57,10 @@ export default {
     return {
       latestChatwootVersion: null,
       reconnectService: null,
+      sessionReplacedState: {
+        isOpen: false,
+        message: '',
+      },
     };
   },
   computed: {
@@ -83,9 +95,13 @@ export default {
     );
   },
   unmounted() {
+    emitter.off('auth:session_replaced', this.onSessionReplaced);
     if (this.reconnectService) {
       this.reconnectService.disconnect();
     }
+  },
+  created() {
+    emitter.on('auth:session_replaced', this.onSessionReplaced);
   },
   methods: {
     initializeColorTheme() {
@@ -95,8 +111,23 @@ export default {
       const mql = window.matchMedia('(prefers-color-scheme: dark)');
       mql.onchange = e => setColorTheme(e.matches);
     },
+    onSessionReplaced({ message }) {
+      this.sessionReplacedState = {
+        isOpen: true,
+        message:
+          message || this.$t('GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION'),
+      };
+    },
+    confirmSessionReplaced() {
+      deleteIndexedDBOnLogout();
+      clearCookiesOnLogoutTo('/app/login');
+    },
     setLocale(locale) {
       this.$root.$i18n.locale = locale;
+      document.documentElement.lang = locale;
+      if (window.chatwootConfig) {
+        window.chatwootConfig.selectedLocale = locale;
+      }
     },
     async initializeAccount() {
       await this.$store.dispatch('accounts/get');
@@ -106,10 +137,11 @@ export default {
       const { locale, latest_chatwoot_version: latestChatwootVersion } =
         this.getAccount(this.currentAccountId);
       const { pubsub_token: pubsubToken } = this.currentUser || {};
+      const authClientId = AuthAPI.getAuthData()?.client;
       // If user locale is set, use it; otherwise use account locale
       this.setLocale(this.uiSettings?.locale || locale);
       this.latestChatwootVersion = latestChatwootVersion;
-      vueActionCable.init(this.store, pubsubToken);
+      vueActionCable.init(this.store, pubsubToken, authClientId);
       this.reconnectService = new ReconnectService(this.store, this.router);
       window.reconnectService = this.reconnectService;
 
@@ -142,6 +174,29 @@ export default {
         <component :is="Component" />
       </transition>
     </router-view>
+    <div
+      v-if="sessionReplacedState.isOpen"
+      class="fixed inset-0 z-[1100] flex items-center justify-center bg-n-alpha-black1 backdrop-blur-[6px] p-4"
+    >
+      <div
+        class="w-full max-w-md rounded-2xl border border-n-weak bg-n-alpha-3 backdrop-blur-[100px] shadow-xl p-6 flex flex-col gap-4"
+      >
+        <div class="flex flex-col gap-2">
+          <h2 class="text-lg font-semibold text-n-slate-12">
+            {{ $t('GENERAL.AUTH_SESSION_REPLACED.TITLE') }}
+          </h2>
+          <p class="mb-0 text-sm text-n-slate-11">
+            {{ sessionReplacedState.message }}
+          </p>
+        </div>
+        <WootButton
+          class="w-full"
+          color="blue"
+          :label="$t('GENERAL.AUTH_SESSION_REPLACED.ACTION')"
+          @click="confirmSessionReplaced"
+        />
+      </div>
+    </div>
     <WootSnackbarBox />
     <NetworkNotification />
   </div>

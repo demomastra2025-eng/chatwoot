@@ -32,12 +32,25 @@ class NotificationFinder
 
   def set_up
     find_all_notifications
+    filter_inbox_notification_types
     filter_snoozed_notifications
     filter_read_notifications
   end
 
   def find_all_notifications
     @notifications = current_user.notifications.where(account_id: @current_account.id)
+  end
+
+  def filter_inbox_notification_types
+    notification_setting = current_user.notification_settings.find_by(account_id: @current_account.id)
+    return if notification_setting.blank?
+
+    selected_types = notification_setting.selected_inbox_flags.filter_map do |flag|
+      flag.to_s.delete_prefix('inbox_').presence
+    end
+    return @notifications = @notifications.none if selected_types.blank?
+
+    @notifications = @notifications.where(notification_type: selected_types)
   end
 
   def filter_snoozed_notifications

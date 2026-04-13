@@ -1,13 +1,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 
+import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
+import CompanyAPI from 'dashboard/api/companies';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
+import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
 import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNumberInput.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
@@ -60,8 +65,12 @@ const calendarStore = useSchedulingCalendarStore();
 const crmReferencesStore = useCrmReferencesStore();
 const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
+const { currentAccount } = useAccount();
+const route = useRoute();
+const router = useRouter();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
+const companyOptions = ref([]);
 const customFieldFilters = ref({});
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const appointmentDeleteDialogRef = ref(null);
@@ -74,6 +83,25 @@ const inlineContactForm = reactive({
   iin: '',
   phone: '',
 });
+
+const appointmentPrefillKeys = [
+  'action',
+  'contactId',
+  'contactName',
+  'contactPhone',
+  'conversationId',
+  'source',
+];
+
+const queryValue = key => {
+  const value = route.query[key];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const numericQueryValue = key => {
+  const value = Number(queryValue(key));
+  return Number.isFinite(value) && value > 0 ? value : '';
+};
 
 const currentView = computed({
   get: () => calendarStore.currentView,
@@ -113,6 +141,12 @@ const formErrorMessage = computed(() => formatErrorMessage(formStore.ui.error));
 
 const validationErrorMessage = key => {
   const labels = {
+    'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED': t(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
+    ),
+    'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED': t(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
+    ),
     'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START': t(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
     ),
@@ -196,6 +230,14 @@ const serviceOptions = computed(() =>
   }))
 );
 
+const companySelectionEnabled = computed(
+  () => currentAccount.value?.settings?.scheduling_company_enabled !== false
+);
+
+const contactSelectionRequired = computed(
+  () => currentAccount.value?.settings?.scheduling_contact_required !== false
+);
+
 const contactOptions = computed(() => {
   const options = formStore.contacts.map(contact => ({
     label: [contact.fullName, contact.phone].filter(Boolean).join(' '),
@@ -233,6 +275,27 @@ const contactOptions = computed(() => {
     ...options,
   ];
 });
+
+const dedupeOptions = options => {
+  const seen = new Set();
+
+  return options.filter(option => {
+    if (seen.has(option.value)) {
+      return false;
+    }
+
+    seen.add(option.value);
+    return true;
+  });
+};
+
+const buildCompanyOption = company => ({
+  label: company.name,
+  value: company.id,
+});
+
+const mergeCompanyOptions = options =>
+  dedupeOptions([...options, ...companyOptions.value]);
 
 const appointmentStatusOptions = computed(() =>
   APPOINTMENT_STATUS_VALUES.map(value => ({
@@ -311,6 +374,12 @@ const contactEditorActionLabel = computed(() =>
   isEditingContact.value
     ? t('SCHEDULING.CONTACT.EDIT_ACTION')
     : t('SCHEDULING.CONTACT.CREATE_ACTION')
+);
+
+const contactSectionDescription = computed(() =>
+  contactSelectionRequired.value
+    ? t('SCHEDULING.APPOINTMENT_FORM.CONTACT_DESCRIPTION')
+    : t('SCHEDULING.APPOINTMENT_FORM.CONTACT_OPTIONAL_DESCRIPTION')
 );
 const customFieldFilterLabels = computed(() => ({
   noLabel: t('SCHEDULING.GENERAL.NO'),
@@ -477,12 +546,13 @@ const loadPage = async () => {
   await calendarStore.fetchCalendar();
 };
 
-const openCreateAppointment = slot => {
+const openCreateAppointment = (slot, defaults = {}) => {
   pendingCreateCustomFieldDefaultsHydration.value = true;
   formStore.openCreate(slot, {
     customAttributes: buildDefaultCustomAttributes(
       appointmentFieldDefinitions.value
     ),
+    ...defaults,
   });
 };
 
@@ -493,7 +563,7 @@ const handleAnchorDateSelect = async nextDate => {
   await calendarStore.fetchCalendar();
 };
 
-const openNewAppointment = () => {
+const openNewAppointment = (defaults = {}) => {
   const preferredResources = calendarStore.visibleResources.length
     ? calendarStore.visibleResources
     : calendarStore.resources;
@@ -534,11 +604,36 @@ const openNewAppointment = () => {
     endsAt.setMinutes(endsAt.getMinutes() + primaryDurationMin);
   }
 
-  openCreateAppointment({
-    endsAt: endsAt.toISOString(),
-    resourceId: nextSlot?.resourceId || primaryResourceId,
-    startsAt: startsAt.toISOString(),
+  openCreateAppointment(
+    {
+      endsAt: endsAt.toISOString(),
+      resourceId: nextSlot?.resourceId || primaryResourceId,
+      startsAt: startsAt.toISOString(),
+    },
+    defaults
+  );
+};
+
+const clearAppointmentPrefillQuery = async () => {
+  const nextQuery = { ...route.query };
+  appointmentPrefillKeys.forEach(key => {
+    delete nextQuery[key];
   });
+
+  await router.replace({ query: nextQuery });
+};
+
+const consumeAppointmentPrefillQuery = async () => {
+  if (queryValue('action') !== 'new') return;
+
+  openNewAppointment({
+    clientName: queryValue('contactName') || '',
+    clientPhone: queryValue('contactPhone') || '',
+    contactId: numericQueryValue('contactId'),
+    conversationId: numericQueryValue('conversationId'),
+  });
+
+  await clearAppointmentPrefillQuery();
 };
 
 const handleDrawerClose = () => {
@@ -699,6 +794,36 @@ const handleContactDropdownOpen = async () => {
   }
 };
 
+const loadCompanies = async query => {
+  if (!companySelectionEnabled.value) {
+    companyOptions.value = [];
+    return;
+  }
+
+  const response = query
+    ? await CompanyAPI.search(query, 1)
+    : await CompanyAPI.get();
+  companyOptions.value = mergeCompanyOptions(
+    normalizePayload(response.data).map(buildCompanyOption)
+  );
+};
+
+const ensureSelectedCompanyOption = async companyId => {
+  if (!companyId || !companySelectionEnabled.value) return;
+  if (
+    companyOptions.value.some(
+      option => Number(option.value) === Number(companyId)
+    )
+  ) {
+    return;
+  }
+
+  const response = await CompanyAPI.show(companyId);
+  companyOptions.value = mergeCompanyOptions([
+    buildCompanyOption(normalizePayload(response.data)),
+  ]);
+};
+
 const handleStatusFiltersChange = async values => {
   calendarStore.setStatusFilters(values);
   await calendarStore.fetchCalendar();
@@ -767,17 +892,41 @@ const updateAppointmentMutation = async (
 };
 
 watch(
-  [() => formStore.form.serviceId, () => formStore.form.resourceId],
-  ([serviceId, resourceId]) => {
-    if (!serviceId || !resourceId) return;
+  [() => formStore.form.serviceIds, () => formStore.form.resourceId],
+  ([serviceIds, resourceId]) => {
+    if (!serviceIds?.length || !resourceId) return;
     formStore.syncServicePricing(referencesStore.services);
-  }
+  },
+  { deep: true }
+);
+
+watch(
+  [contactSelectionRequired, companySelectionEnabled],
+  ([contactRequired, companyEnabled]) => {
+    formStore.setRequirements({ contactRequired, companyEnabled });
+  },
+  { immediate: true }
+);
+
+watch(
+  () => formStore.form.companyId,
+  async companyId => {
+    if (!companyId) return;
+
+    try {
+      await ensureSelectedCompanyOption(companyId);
+    } catch {
+      // Surface company lookup failures only when the form submits.
+    }
+  },
+  { immediate: true }
 );
 
 onMounted(async () => {
   calendarStore.hydratePreferences();
   currentPresentation.value = 'calendar';
   await loadPage();
+  await consumeAppointmentPrefillQuery();
 });
 </script>
 
@@ -956,10 +1105,10 @@ onMounted(async () => {
         <SchedulingFormFieldGroup
           :framed="false"
           :title="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE')"
-          :description="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT_DESCRIPTION')"
+          :description="contactSectionDescription"
         >
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="flex shrink-0 items-center">
+          <div class="flex flex-wrap items-start gap-2">
+            <div class="flex shrink-0 items-start">
               <Button
                 size="sm"
                 variant="outline"
@@ -977,6 +1126,14 @@ onMounted(async () => {
                 :options="contactOptions"
                 use-api-results
                 :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.CONTACT')"
+                :message="
+                  formStore.validationErrors.contactId
+                    ? validationErrorMessage(
+                        formStore.validationErrors.contactId
+                      )
+                    : ''
+                "
+                :has-error="!!formStore.validationErrors.contactId"
                 :search-placeholder="
                   $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
                 "
@@ -1002,6 +1159,47 @@ onMounted(async () => {
                 </template>
               </SchedulingSelectField>
             </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <Input
+              v-model="formStore.form.clientName"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME')"
+              :message="
+                formStore.validationErrors.clientName
+                  ? validationErrorMessage(
+                      formStore.validationErrors.clientName
+                    )
+                  : ''
+              "
+              :message-type="
+                formStore.validationErrors.clientName ? 'error' : 'info'
+              "
+            />
+            <PhoneNumberInput
+              v-model="formStore.form.clientPhone"
+              default-country="KZ"
+              :max-digits="11"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')"
+              size="md"
+            />
+          </div>
+
+          <div v-if="companySelectionEnabled" class="grid gap-1">
+            <SchedulingSelectField
+              :model-value="formStore.form.companyId"
+              use-api-results
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.COMPANY')"
+              :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.COMPANY')"
+              :options="companyOptions"
+              :search-placeholder="
+                $t('SCHEDULING.APPOINTMENT_FORM.COMPANY_SEARCH')
+              "
+              :empty-state="$t('SCHEDULING.APPOINTMENT_FORM.COMPANY_EMPTY')"
+              @open="loadCompanies('')"
+              @search="loadCompanies"
+              @update:model-value="formStore.updateField('companyId', $event)"
+            />
           </div>
 
           <div
@@ -1085,6 +1283,7 @@ onMounted(async () => {
             <SchedulingSelectField
               :model-value="formStore.form.resourceId"
               :options="resourceOptions"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
               :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.RESOURCE')"
               :message="
                 formStore.validationErrors.resourceId
@@ -1096,12 +1295,24 @@ onMounted(async () => {
               :has-error="!!formStore.validationErrors.resourceId"
               @update:model-value="formStore.updateField('resourceId', $event)"
             />
-            <SchedulingSelectField
-              :model-value="formStore.form.serviceId"
-              :options="serviceOptions"
-              :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
-              @update:model-value="formStore.updateField('serviceId', $event)"
-            />
+            <div class="grid gap-1">
+              <span class="mb-0.5 text-sm font-medium text-n-slate-12">
+                {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE') }}
+              </span>
+              <TagMultiSelectComboBox
+                :model-value="formStore.form.serviceIds"
+                :options="serviceOptions"
+                use-api-results
+                :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
+                :search-placeholder="
+                  $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')
+                "
+                :empty-state="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')"
+                @update:model-value="
+                  formStore.updateField('serviceIds', $event)
+                "
+              />
+            </div>
             <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
               <SchedulingSelectField
                 :model-value="formStore.form.status"
@@ -1182,6 +1393,13 @@ onMounted(async () => {
             :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.COMMENT_PLACEHOLDER')"
           />
         </SchedulingFormFieldGroup>
+
+        <EntityTouchesCard
+          v-if="formStore.mode === 'edit' && formStore.selectedAppointment?.id"
+          remindable-type="Scheduling::Appointment"
+          :remindable-id="formStore.selectedAppointment.id"
+          :conversation-id="formStore.form.conversationId"
+        />
 
         <CrmCustomFieldsSection
           v-model="formStore.form.customAttributes"

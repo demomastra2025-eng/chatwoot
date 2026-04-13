@@ -15,12 +15,16 @@ class ContactInboxWithContactBuilder
 
   def find_or_create_contact_and_contact_inbox
     @contact_inbox = inbox.contact_inboxes.find_by(source_id: source_id) if source_id.present?
-    return @contact_inbox if @contact_inbox
+    if @contact_inbox
+      upsert_channel_profile
+      return @contact_inbox
+    end
 
     ActiveRecord::Base.transaction(requires_new: true) do
       build_contact_with_contact_inbox
     end
     update_contact_avatar(@contact) unless skip_runtime_events || @contact.avatar.attached?
+    upsert_channel_profile
     @contact_inbox
   end
 
@@ -46,6 +50,13 @@ class ContactInboxWithContactBuilder
 
   def update_contact_avatar(contact)
     ::Avatar::AvatarFromUrlJob.perform_later(contact, contact_attributes[:avatar_url]) if contact_attributes[:avatar_url]
+  end
+
+  def upsert_channel_profile
+    Contacts::ChannelProfileUpsertService.new(
+      contact_inbox: @contact_inbox,
+      profile_attributes: contact_attributes
+    ).perform
   end
 
   def create_contact

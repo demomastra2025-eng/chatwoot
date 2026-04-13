@@ -18,7 +18,10 @@ RSpec.describe Captain::ReplySuggestionService do
     mock_chat = instance_double(RubyLLM::Chat)
     mock_context = instance_double(RubyLLM::Context, chat: mock_chat)
 
-    allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
+    allow(Llm::Config).to receive(:initialize!)
+    allow(Llm::Config).to receive(:context).and_return(mock_context)
+    allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
     allow(mock_chat).to receive(:with_tool).and_return(mock_chat)
     allow(mock_chat).to receive(:on_end_message).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions) { |msg| captured_messages << { role: 'system', content: msg } }
@@ -30,6 +33,10 @@ RSpec.describe Captain::ReplySuggestionService do
   end
 
   describe '#perform' do
+    it 'moderates only generated output' do
+      expect(service.send(:task_moderation_stages)).to eq([:output])
+    end
+
     it 'returns the suggested reply' do
       result = service.perform
 

@@ -7,6 +7,8 @@ class RoomChannel < ApplicationCable::Channel
     ensure_stream
     update_subscription
     broadcast_presence
+  rescue ActiveRecord::RecordNotFound
+    reject
   end
 
   def update_presence
@@ -27,6 +29,7 @@ class RoomChannel < ApplicationCable::Channel
   def ensure_stream
     stream_from pubsub_token
     stream_from "account_#{@current_account.id}" if @current_account.present? && @current_user.is_a?(User)
+    stream_from @current_user.auth_session_stream_name(auth_client_id) if @current_user.is_a?(User)
   end
 
   def update_subscription
@@ -39,12 +42,23 @@ class RoomChannel < ApplicationCable::Channel
     @pubsub_token ||= params[:pubsub_token]
   end
 
+  def auth_client_id
+    @auth_client_id ||= params[:auth_client_id].presence
+  end
+
   def current_user
     @current_user ||= if params[:user_id].blank?
                         ContactInbox.find_by!(pubsub_token: pubsub_token).contact
                       else
-                        User.find_by!(pubsub_token: pubsub_token, id: params[:user_id])
+                        find_authenticated_user!
                       end
+  end
+
+  def find_authenticated_user!
+    user = User.find_by!(pubsub_token: pubsub_token, id: params[:user_id])
+    raise ActiveRecord::RecordNotFound unless user.active_auth_client?(auth_client_id)
+
+    user
   end
 
   def current_account

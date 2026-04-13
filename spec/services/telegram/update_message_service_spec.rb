@@ -46,12 +46,14 @@ describe Telegram::UpdateMessageService do
         message = create(:message, conversation: conversation, source_id: text_update_params[:edited_message][:message_id])
         described_class.new(inbox: telegram_channel.inbox, params: text_update_params.with_indifferent_access).perform
         expect(message.reload.content).to eq('updated message')
+        expect(message.content_attributes['edited']).to eq(true)
       end
 
       it 'updates the message caption when caption is present' do
         message = create(:message, conversation: conversation, source_id: caption_update_params[:edited_message][:message_id])
         described_class.new(inbox: telegram_channel.inbox, params: caption_update_params.with_indifferent_access).perform
         expect(message.reload.content).to eq('updated caption')
+        expect(message.content_attributes['edited']).to eq(true)
       end
 
       context 'when business message' do
@@ -69,6 +71,7 @@ describe Telegram::UpdateMessageService do
           message = create(:message, conversation: conversation, source_id: text_update_params[:edited_business_message][:message_id])
           described_class.new(inbox: telegram_channel.inbox, params: text_update_params.with_indifferent_access).perform
           expect(message.reload.content).to eq('updated message')
+          expect(message.content_attributes['edited']).to eq(true)
         end
       end
     end

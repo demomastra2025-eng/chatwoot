@@ -18,7 +18,20 @@ RSpec.describe Captain::BaseTaskService do
     end
   end
 
+  let(:moderated_service_class) do
+    Class.new(described_class) do
+      def event_name
+        'test_event'
+      end
+
+      def task_moderation_stages
+        %i[input output]
+      end
+    end
+  end
+
   let(:service) { test_service_class.new(account: account, conversation_display_id: conversation.display_id) }
+  let(:moderated_service) { moderated_service_class.new(account: account, conversation_display_id: conversation.display_id) }
 
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
@@ -142,6 +155,7 @@ RSpec.describe Captain::BaseTaskService do
       allow(Llm::Config).to receive(:initialize!)
       allow(Llm::Config).to receive(:context).and_return(mock_context)
       allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+      allow(mock_chat).to receive(:model).and_return(model)
       allow(mock_chat).to receive(:with_instructions)
       allow(mock_chat).to receive(:ask).and_return(mock_response)
     end
@@ -197,6 +211,53 @@ RSpec.describe Captain::BaseTaskService do
       expect(result[:usage]['completion_tokens']).to eq(20)
       expect(result[:usage]['total_tokens']).to eq(30)
     end
+
+    it 'does not run moderation for tasks that do not opt into safety stages' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
+
+      service.send(:make_api_call, model: model, messages: messages)
+
+      expect(Llm::SafetyPolicy).not_to have_received(:check!)
+    end
+
+    it 'checks task input and output through the safety policy when the task opts in' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
+
+      moderated_service.send(:make_api_call, model: model, messages: messages)
+
+      expect(Llm::SafetyPolicy).to have_received(:check!).with(
+        feature: :editor,
+        stage: :input,
+        content: 'Hello',
+        account: account,
+        preferences: include('editor_moderation' => true)
+      )
+      expect(Llm::SafetyPolicy).to have_received(:check!).with(
+        feature: :editor,
+        stage: :output,
+        content: 'Response',
+        account: account,
+        preferences: include('editor_moderation' => true)
+      )
+    end
+
+    it 'returns a controlled error when task input is blocked by moderation policy' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+        Llm::SafetyPolicy::UnsafeContentError.new(
+          feature: :editor,
+          stage: :input,
+          reason: :custom_blocklist
+        )
+      )
+
+      result = moderated_service.send(:make_api_call, model: model, messages: messages)
+
+      expect(result).to include(
+        error: 'Task input blocked by moderation policy',
+        error_code: 422,
+        request_messages: messages
+      )
+    end
   end
 
   describe 'chat setup' do
@@ -209,6 +270,7 @@ RSpec.describe Captain::BaseTaskService do
       allow(Llm::Config).to receive(:initialize!)
       allow(Llm::Config).to receive(:context).and_return(mock_context)
       allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+      allow(mock_chat).to receive(:model).and_return(model)
       allow(mock_response).to receive(:input_tokens).and_return(10)
       allow(mock_response).to receive(:output_tokens).and_return(20)
     end

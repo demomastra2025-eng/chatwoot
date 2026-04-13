@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
+import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ButtonNext from 'next/button/Button.vue';
 import Icon from 'next/icon/Icon.vue';
 import Logo from 'next/icon/Logo.vue';
@@ -61,7 +62,13 @@ const emitNewAccount = () => {
         :title="currentAccount.name"
         @click="toggle"
       >
-        <Logo class="size-7" />
+        <Avatar
+          v-if="currentAccount.logo_url"
+          :src="currentAccount.logo_url"
+          :name="currentAccount.name"
+          :size="28"
+        />
+        <Logo v-else class="size-7" />
       </button>
       <!-- Expanded view: Account name trigger -->
       <button
@@ -79,12 +86,20 @@ const emitNewAccount = () => {
         ]"
         @click="() => showAccountSwitcher && toggle()"
       >
-        <span
-          class="text-sm font-medium leading-5 text-n-slate-12 truncate"
-          aria-live="polite"
-        >
-          {{ currentAccount.name }}
-        </span>
+        <div class="flex items-center gap-2 min-w-0">
+          <Avatar
+            v-if="currentAccount.logo_url"
+            :src="currentAccount.logo_url"
+            :name="currentAccount.name"
+            :size="24"
+          />
+          <span
+            class="text-sm font-medium leading-5 text-n-slate-12 truncate"
+            aria-live="polite"
+          >
+            {{ currentAccount.name }}
+          </span>
+        </div>
 
         <span
           v-if="showAccountSwitcher"
@@ -110,6 +125,12 @@ const emitNewAccount = () => {
               :for="account.name"
               class="text-left rtl:text-right flex gap-2 items-center"
             >
+              <Avatar
+                v-if="account.logo_url"
+                :src="account.logo_url"
+                :name="account.name"
+                :size="20"
+              />
               <span
                 class="text-n-slate-12 max-w-36 truncate min-w-0"
                 :title="account.name"

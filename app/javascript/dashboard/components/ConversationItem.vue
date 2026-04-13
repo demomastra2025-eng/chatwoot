@@ -36,6 +36,10 @@ export default {
       type: String,
       default: '',
     },
+    activeStatus: {
+      type: String,
+      default: 'open',
+    },
     foldersId: {
       type: [String, Number],
       default: 0,
@@ -54,6 +58,7 @@ export default {
     :team-id="teamId"
     :folders-id="foldersId"
     :chat="source"
+    :active-status="activeStatus"
     :conversation-type="conversationType"
     :selected="isConversationSelected(source.id)"
     :show-assignee="showAssignee"

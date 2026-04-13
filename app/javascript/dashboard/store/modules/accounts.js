@@ -68,18 +68,33 @@ export const actions = {
       });
     }
   },
-  update: async ({ commit }, { options, ...updateObj }) => {
+  update: async ({ commit, dispatch }, { options, ...updateObj }) => {
     if (options?.silent !== true) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: true });
     }
 
     try {
-      const response = await AccountAPI.update('', updateObj);
+      const accountId = updateObj.id || updateObj.accountId || '';
+      const response = await AccountAPI.update(accountId, updateObj);
       commit(types.default.EDIT_ACCOUNT, response.data);
+      await dispatch('validityCheck', null, { root: true });
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
     } catch (error) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
       throw new Error(error);
+    }
+  },
+  deleteLogo: async ({ commit, dispatch }, { id }) => {
+    commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: true });
+
+    try {
+      const response = await AccountAPI.deleteLogo(id);
+      commit(types.default.EDIT_ACCOUNT, response.data);
+      await dispatch('validityCheck', null, { root: true });
+      commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
+    } catch (error) {
+      commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
+      throw error;
     }
   },
   delete: async ({ commit }, { id }) => {

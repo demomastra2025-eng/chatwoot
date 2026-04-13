@@ -16,6 +16,12 @@ describe('#getters', () => {
       campaigns[1],
       campaigns[3],
       campaigns[4],
+      campaigns[5],
+      campaigns[6],
+      campaigns[7],
+      campaigns[8],
+      campaigns[9],
+      campaigns[10],
     ]);
   });
 
@@ -65,6 +71,24 @@ describe('#getters', () => {
     expect(getters.getLiveChatCampaigns(state, mockGetters)).toEqual([
       campaigns[0],
       campaigns[2],
+    ]);
+  });
+
+  it('get Outbound campaigns', () => {
+    const state = { records: campaigns };
+    const mockGetters = {
+      getCampaigns: getters.getCampaigns(state),
+    };
+    expect(getters.getOutboundCampaigns(state, mockGetters)).toEqual([
+      campaigns[1],
+      campaigns[3],
+      campaigns[4],
+      campaigns[5],
+      campaigns[6],
+      campaigns[7],
+      campaigns[8],
+      campaigns[9],
+      campaigns[10],
     ]);
   });
 

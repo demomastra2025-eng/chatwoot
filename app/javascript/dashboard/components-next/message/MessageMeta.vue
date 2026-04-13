@@ -8,8 +8,9 @@ import Icon from 'next/icon/Icon.vue';
 import Label from 'dashboard/components-next/label/Label.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useMessageContext } from './provider.js';
+import { useAudioPlaybackState } from './audioPlaybackState';
 
-import { MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
+import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
 const {
   isAFacebookInbox,
@@ -17,6 +18,7 @@ const {
   isAPIInbox,
   isASmsInbox,
   isATelegramChannel,
+  isATelegramPersonalChannel,
   isATwilioChannel,
   isAWebWidgetInbox,
   isAWhatsAppChannel,
@@ -34,6 +36,8 @@ const {
   messageType,
   additionalAttributes,
   contentAttributes,
+  attachments,
+  orientation,
 } = useMessageContext();
 const { t } = useI18n();
 
@@ -67,6 +71,7 @@ const isSent = computed(() => {
     isAFacebookInbox.value ||
     isASmsInbox.value ||
     isATelegramChannel.value ||
+    isATelegramPersonalChannel.value ||
     isAnInstagramChannel.value ||
     isATiktokChannel.value
   ) {
@@ -91,6 +96,7 @@ const isDelivered = computed(() => {
     isATwilioChannel.value ||
     isASmsInbox.value ||
     isAFacebookInbox.value ||
+    isATelegramPersonalChannel.value ||
     isAnInstagramChannel.value ||
     isATiktokChannel.value
   ) {
@@ -117,6 +123,7 @@ const isRead = computed(() => {
     isAWhatsAppWebChannel.value ||
     isATwilioChannel.value ||
     isAFacebookInbox.value ||
+    isATelegramPersonalChannel.value ||
     isAnInstagramChannel.value ||
     isATiktokChannel.value
   ) {
@@ -141,19 +148,67 @@ const statusToShow = computed(() => {
 const isCampaignMessage = computed(
   () => !!additionalAttributes.value?.campaignId
 );
+const isDelayedMessage = computed(() => {
+  return !!(
+    additionalAttributes.value?.touchId ||
+    additionalAttributes.value?.touch_id ||
+    additionalAttributes.value?.touchSource === 'touch' ||
+    additionalAttributes.value?.touch_source === 'touch'
+  );
+});
+
+const isEdited = computed(() => !!contentAttributes.value?.edited);
+
+const firstAudioAttachmentId = computed(() => {
+  const audioAttachments = Array.isArray(attachments.value)
+    ? attachments.value
+    : [];
+  const firstAudioAttachment = audioAttachments.find(
+    attachment =>
+      attachment.fileType === ATTACHMENT_TYPES.AUDIO ||
+      attachment.file_type === ATTACHMENT_TYPES.AUDIO
+  );
+
+  return firstAudioAttachment?.id || null;
+});
+
+const audioPlaybackState = useAudioPlaybackState(firstAudioAttachmentId);
+const audioTimeLabel = computed(() => audioPlaybackState.value.timeLabel);
+const isIncomingOrientation = computed(() => orientation.value === 'left');
 </script>
 
 <template>
-  <div class="text-xs flex items-center gap-1.5">
+  <div class="message-meta-root text-xs flex items-center gap-1.5">
     <Label
       v-if="isCampaignMessage"
       :label="t('CAMPAIGN.BADGE.BROADCAST')"
       color="blue"
       compact
     />
+    <Label
+      v-if="isDelayedMessage"
+      :label="t('CAMPAIGN.BADGE.DELAYED')"
+      color="iris"
+      compact
+    />
+    <span
+      v-if="audioTimeLabel && !isIncomingOrientation"
+      class="inline tabular-nums text-n-slate-11/90 font-medium whitespace-nowrap"
+    >
+      {{ audioTimeLabel }}
+    </span>
     <div class="inline">
       <time class="inline">{{ readableTime }}</time>
     </div>
+    <span
+      v-if="audioTimeLabel && isIncomingOrientation"
+      class="inline tabular-nums text-n-slate-11/90 font-medium whitespace-nowrap"
+    >
+      {{ audioTimeLabel }}
+    </span>
+    <span v-if="isEdited" class="text-n-slate-11/80">
+      {{ t('CONVERSATION.MESSAGE_EDITED') }}
+    </span>
     <Icon v-if="isPrivate" icon="i-lucide-lock-keyhole" class="size-3" />
     <MessageStatus v-if="showStatusIndicator" :status="statusToShow" />
   </div>

@@ -36,6 +36,12 @@ export const NOTIFICATION_TYPES = [
   },
 ];
 
+export const NOTIFICATION_CHANNELS = [
+  { key: 'inbox', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.INBOX' },
+  { key: 'email', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.EMAIL' },
+  { key: 'push', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.PUSH' },
+];
+
 export const EVENT_TYPES = {
   ASSIGNED: 'assigned',
   NOTME: 'notme',

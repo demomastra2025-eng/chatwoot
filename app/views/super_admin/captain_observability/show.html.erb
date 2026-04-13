@@ -1,0 +1,154 @@
+<% content_for(:title) do %>
+  AI Fleet
+<% end %>
+
+<%
+  snapshot = @fleet_report[:snapshot] || {}
+  top_accounts = Array(@fleet_report[:top_accounts])
+  fleet_range = @fleet_report[:date_range]
+%>
+
+<header class="main-content__header" role="banner">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="main-content__page-title" id="page-title">
+        <%= content_for(:title) %>
+      </h1>
+      <p class="text-sm text-slate-700 mt-2">
+        Fleet-wide AI runtime view across accounts for the current lookback window.
+      </p>
+      <% if fleet_range.present? %>
+        <p class="text-xs text-slate-500 mt-1">
+          <%= fleet_range.begin.in_time_zone.strftime('%Y-%m-%d %H:%M') %> to <%= fleet_range.end.in_time_zone.strftime('%Y-%m-%d %H:%M') %>
+        </p>
+      <% end %>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <%= link_to 'Monitoring', super_admin_monitoring_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+      <%= link_to 'Logs', super_admin_logs_url, class: 'inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50' %>
+    </div>
+  </div>
+</header>
+
+<section class="main-content__body">
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Events</div>
+      <div class="mt-3 text-2xl font-semibold text-slate-900"><%= number_with_delimiter(snapshot[:total_events].to_i) %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Chat requests</div>
+      <div class="mt-3 text-2xl font-semibold text-slate-900"><%= number_with_delimiter(snapshot[:request_count].to_i) %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Errors</div>
+      <div class="mt-3 text-2xl font-semibold text-rose-700"><%= number_with_delimiter(snapshot[:error_count].to_i) %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white p-5">
+      <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Estimated cost</div>
+      <div class="mt-3 text-2xl font-semibold text-slate-900"><%= number_to_currency(snapshot[:total_estimated_cost].to_f) %></div>
+    </div>
+  </div>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+    <div class="rounded-lg border border-slate-200 bg-white p-5">
+      <h2 class="text-base font-medium text-slate-900">Top accounts by AI activity</h2>
+      <p class="mt-1 text-sm text-slate-600">
+        Ranked by estimated cost, then by errors and most recent activity.
+      </p>
+
+      <% if top_accounts.any? %>
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-sm">
+            <thead>
+              <tr class="text-left text-slate-500">
+                <th class="px-3 py-2 font-medium">Account</th>
+                <th class="px-3 py-2 font-medium">Events</th>
+                <th class="px-3 py-2 font-medium">Requests</th>
+                <th class="px-3 py-2 font-medium">Errors</th>
+                <th class="px-3 py-2 font-medium">Cost</th>
+                <th class="px-3 py-2 font-medium">Last event</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <% top_accounts.each do |row| %>
+                <tr>
+                  <td class="px-3 py-3">
+                    <div class="font-medium text-slate-900"><%= row[:account_name] %></div>
+                    <% if row[:account_id].present? %>
+                      <div class="text-xs text-slate-500">Account #<%= row[:account_id] %></div>
+                    <% end %>
+                  </td>
+                  <td class="px-3 py-3 text-slate-700"><%= number_with_delimiter(row[:total_events]) %></td>
+                  <td class="px-3 py-3 text-slate-700"><%= number_with_delimiter(row[:request_count]) %></td>
+                  <td class="px-3 py-3 text-rose-700"><%= number_with_delimiter(row[:error_count]) %></td>
+                  <td class="px-3 py-3 text-slate-700"><%= number_to_currency(row[:estimated_cost]) %></td>
+                  <td class="px-3 py-3 text-slate-500"><%= row[:last_event_at]&.in_time_zone&.strftime('%Y-%m-%d %H:%M') || 'n/a' %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <div class="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          No fleet AI activity found for the current window.
+        </div>
+      <% end %>
+    </div>
+
+    <div class="grid gap-6">
+      <div class="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 class="text-base font-medium text-slate-900">Distribution</h2>
+        <div class="mt-4 space-y-4 text-sm">
+          <div>
+            <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Features</div>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <% snapshot.fetch(:by_feature, {}).sort_by { |(_, count)| -count.to_i }.first(6).each do |name, count| %>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700"><%= "#{name.presence || 'none'} (#{number_with_delimiter(count)})" %></span>
+              <% end %>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Models</div>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <% snapshot.fetch(:by_model, {}).sort_by { |(_, count)| -count.to_i }.first(6).each do |name, count| %>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700"><%= "#{name.presence || 'none'} (#{number_with_delimiter(count)})" %></span>
+              <% end %>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-medium uppercase tracking-wide text-slate-500">Providers</div>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <% snapshot.fetch(:by_provider, {}).sort_by { |(_, count)| -count.to_i }.first(6).each do |name, count| %>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700"><%= "#{name.presence || 'none'} (#{number_with_delimiter(count)})" %></span>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 class="text-base font-medium text-slate-900">Recent fleet baseline</h2>
+        <div class="mt-4 space-y-3 text-sm text-slate-700">
+          <div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
+            <span>Blocked events</span>
+            <span class="font-medium"><%= number_with_delimiter(snapshot[:blocked_count].to_i) %></span>
+          </div>
+          <div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
+            <span>Schema invalid</span>
+            <span class="font-medium"><%= number_with_delimiter(snapshot[:schema_invalid_count].to_i) %></span>
+          </div>
+          <div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
+            <span>Tool failures</span>
+            <span class="font-medium"><%= number_with_delimiter(snapshot[:tool_failure_count].to_i) %></span>
+          </div>
+          <div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-3">
+            <span>Last event</span>
+            <span class="font-medium"><%= snapshot[:last_event_at]&.in_time_zone&.strftime('%Y-%m-%d %H:%M') || 'n/a' %></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

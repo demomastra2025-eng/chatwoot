@@ -4,10 +4,13 @@ import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { dynamicTime } from 'shared/helpers/timeHelper';
+import { useRoute, useRouter } from 'vue-router';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactLabels from 'dashboard/components-next/Contacts/ContactLabels/ContactLabels.vue';
+import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/ContactsForm.vue';
 import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/ContactsForm/ConfirmContactDeleteDialog.vue';
 import Policy from 'dashboard/components/policy.vue';
@@ -23,16 +26,48 @@ const emit = defineEmits(['goToContactsList']);
 
 const { t } = useI18n();
 const store = useStore();
+const route = useRoute();
+const router = useRouter();
 
 const confirmDeleteContactDialogRef = ref(null);
+const composeConversationRef = ref(null);
 
 const avatarFile = ref(null);
 const avatarUrl = ref('');
+const metadataSeparator = '•';
 
 const contactsFormRef = ref(null);
 
 const uiFlags = useMapGetter('contacts/getUIFlags');
+const contactConversations = useMapGetter(
+  'contactConversations/getAllConversationsByContactId'
+);
 const isUpdating = computed(() => uiFlags.value.isUpdating);
+const existingConversationInboxIds = computed(() => {
+  const contactId = Number(props.selectedContact?.id);
+
+  if (
+    !contactId ||
+    !Object.prototype.hasOwnProperty.call(
+      store.state.contactConversations.records,
+      contactId
+    )
+  ) {
+    return null;
+  }
+
+  const conversations = contactConversations.value(contactId) || [];
+
+  return [
+    ...new Set(
+      conversations
+        .map(conversation =>
+          Number(conversation.inboxId || conversation.inbox_id)
+        )
+        .filter(Boolean)
+    ),
+  ];
+});
 
 const isFormInvalid = computed(() => contactsFormRef.value?.isFormInvalid);
 
@@ -118,6 +153,34 @@ const handleAvatarDelete = async () => {
     );
   }
 };
+
+const openChannelConversation = async channelIdentity => {
+  const conversations =
+    contactConversations.value(props.selectedContact?.id) || [];
+
+  const targetConversation = conversations.find(
+    conversation =>
+      Number(conversation.inboxId || conversation.inbox_id) ===
+      Number(channelIdentity.inboxId)
+  );
+
+  if (!targetConversation) {
+    await composeConversationRef.value?.openWithChannel({
+      contact: props.selectedContact,
+      channelIdentity,
+    });
+    return;
+  }
+
+  router.push({
+    name: 'inbox_view_conversation',
+    params: {
+      accountId: route.params.accountId,
+      type: 'conversation',
+      id: targetConversation.id,
+    },
+  });
+};
 </script>
 
 <template>
@@ -149,7 +212,7 @@ const handleAvatarDelete = async () => {
               class="i-ph-activity text-n-slate-10 size-4"
             />
             {{ $t('CONTACTS_LAYOUT.DETAILS.CREATED_AT', { date: createdAt }) }}
-            •
+            {{ metadataSeparator }}
             {{
               $t('CONTACTS_LAYOUT.DETAILS.LAST_ACTIVITY', {
                 date: lastActivityAt,
@@ -159,6 +222,18 @@ const handleAvatarDelete = async () => {
         </div>
       </div>
       <ContactLabels :contact-id="selectedContact?.id" />
+      <ContactChannelLabels
+        :contact-inboxes="selectedContact?.contactInboxes || []"
+        :existing-conversation-inbox-ids="existingConversationInboxIds"
+        :title="t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
+        :copy-on-click="false"
+        @select="openChannelConversation"
+      />
+      <ComposeConversation
+        ref="composeConversationRef"
+        :contact-id="String(selectedContact?.id || '')"
+        is-modal
+      />
     </div>
     <div class="flex flex-col items-start gap-6">
       <ContactsForm

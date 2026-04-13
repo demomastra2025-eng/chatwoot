@@ -16,12 +16,12 @@ module Captain::Assistant::RunPayloadHelper
     return '' if last_user_msg.blank?
 
     content = message_value(last_user_msg, :content)
-    return extract_text_from_content(content) unless content.is_a?(Array)
+    return extract_text_from_content(content) unless content.is_a?(Array) || content.is_a?(RubyLLM::Content)
 
-    text, attachments = Captain::OpenAiMessageBuilderService.extract_text_and_attachments(content)
-    return text if attachments.blank?
+    built_content = Llm::MessageFormat.build_content(content)
+    return built_content unless built_content.is_a?(RubyLLM::Content) && built_content.attachments.blank?
 
-    RubyLLM::Content.new(text, attachments)
+    built_content.text
   end
 
   def message_history_without_last_user_message(message_history)
@@ -33,9 +33,10 @@ module Captain::Assistant::RunPayloadHelper
 
   def extract_text_from_content(content)
     return content[:response] || content['response'] || content.to_s if content.is_a?(Hash)
-    return content unless content.is_a?(Array)
+    return content unless content.is_a?(Array) || content.is_a?(RubyLLM::Content)
 
-    content.select { |part| part[:type] == 'text' }.pluck(:text).join(' ')
+    text, = Llm::MessageFormat.extract_text_and_attachments(content)
+    text.to_s
   end
 
   def normalize_history(message_history)

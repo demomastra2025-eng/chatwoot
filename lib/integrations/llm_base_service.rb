@@ -102,7 +102,12 @@ class Integrations::LlmBaseService
     model = parsed_body['model']
 
     Llm::Config.with_api_key(hook.settings['api_key'], api_base: api_base) do |context|
-      response = Llm::ChatRequestRunner.new(context: context, model: model, messages: messages).call
+      response = Llm::ChatRequestRunner.new(
+        context: context,
+        model: model,
+        messages: messages,
+        observability: chat_observability_payload(model)
+      ).call
       return { error: 'No conversation messages provided', error_code: 400, request_messages: messages } if response.nil?
 
       build_ruby_llm_response(response, messages)
@@ -134,6 +139,18 @@ class Integrations::LlmBaseService
       messages: parsed_body['messages'],
       temperature: parsed_body['temperature']
     }
+  end
+
+  def chat_observability_payload(model)
+    {
+      feature: event_name,
+      runtime_mode: 'integration_hook',
+      account_id: hook.account_id,
+      conversation_record_id: conversation&.id,
+      conversation_display_id: conversation&.display_id,
+      channel_type: conversation&.inbox&.channel_type,
+      model: model
+    }.compact
   end
 
   def build_error_response_from_exception(error, messages)

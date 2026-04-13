@@ -39,6 +39,8 @@ class CustomRole < ApplicationRecord
     crm_task_manage
     crm_settings_view
     crm_settings_manage
+    outbound_view
+    outbound_manage
     report_manage
     knowledge_base_manage
   ].freeze

@@ -50,6 +50,14 @@
     "UNKNOWN_FILE_TYPE": "Unknown File",
     "SAVE_CONTACT": "Save Contact",
     "NO_CONTENT": "No content to display",
+    "TELEGRAM": {
+      "FORWARDED_FROM": "Forwarded from {source}",
+      "REACTIONS": "Reactions:",
+      "REACTION": "Reaction",
+      "CUSTOM_EMOJI": "Custom emoji",
+      "PAID_REACTION": "Paid reaction",
+      "UNKNOWN_SOURCE": "Unknown source"
+    },
     "SHARED_ATTACHMENT": {
       "CONTACT": "{sender} has shared a contact",
       "LOCATION": "{sender} has shared a location",
@@ -105,7 +113,7 @@
       }
     },
     "RESOLVE_DROPDOWN": {
-      "MARK_PENDING": "Mark as pending",
+      "MARK_PENDING": "Hand over to AI agent",
       "SNOOZE_UNTIL": "Snooze",
       "SNOOZE": {
         "TITLE": "Snooze until",
@@ -146,7 +154,7 @@
       "CONFIRM": "Delete"
     },
     "CARD_CONTEXT_MENU": {
-      "PENDING": "Mark as pending",
+      "PENDING": "Hand over to AI agent",
       "RESOLVED": "Mark as resolved",
       "MARK_AS_UNREAD": "Mark as unread",
       "MARK_AS_READ": "Mark as read",
@@ -190,7 +198,7 @@
       "DISABLE_SIGN_TOOLTIP": "Disable signature",
       "CAPTAIN_ENABLE_TOOLTIP": "Enable AI Agent for this conversation",
       "CAPTAIN_DISABLE_TOOLTIP": "Disable AI Agent for this conversation",
-      "MSG_INPUT": "Shift + enter for new line. Start with '/' to select a Canned Response.",
+      "MSG_INPUT": "Shift + enter for new line. Start with '/' to select a template.",
       "PRIVATE_MSG_INPUT": "Shift + enter for new line. This will be visible only to Agents",
       "MESSAGING_RESTRICTED": "You cannot reply to this conversation",
       "MESSAGING_RESTRICTED_WHATSAPP": "You can only reply using a template message due to 24-hour message window restriction",
@@ -204,6 +212,9 @@
       "REPLY": "Reply",
       "PRIVATE_NOTE": "Private Note",
       "SEND": "Send",
+      "SEND_LATER": "Send later",
+      "CREATE_DELAYED_MESSAGE": "Create delayed message",
+      "DELAYED_MESSAGE_DESCRIPTION": "Schedule a message for this conversation. The system will reuse the current route and cancel delivery automatically if the contact replies first.",
       "CREATE": "Add Note",
       "INSERT_READ_MORE": "Read more",
       "DISMISS_REPLY": "Dismiss reply",
@@ -211,6 +222,7 @@
       "TIP_EMOJI_ICON": "Show emoji selector",
       "TIP_ATTACH_ICON": "Attach files",
       "TIP_AUDIORECORDER_ICON": "Record audio",
+      "TIP_AUDIORECORDER_CLEAR": "Clear recording",
       "TIP_AUDIORECORDER_PERMISSION": "Allow access to audio",
       "TIP_AUDIORECORDER_ERROR": "Could not open the audio",
       "DRAG_DROP": "Drag and drop here to attach",
@@ -260,10 +272,15 @@
     "FILE_SIZE_LIMIT": "File exceeds the {MAXIMUM_SUPPORTED_FILE_UPLOAD_SIZE} MB attachment limit",
     "FILE_TYPE_NOT_SUPPORTED": "This {fileName} file type is not supported in this conversation",
     "MESSAGE_ERROR": "Unable to send this message, please try again later",
+    "MESSAGE_EDITED": "edited",
+    "EDITING_MESSAGE": "Editing message",
+    "CANCEL_EDIT_MESSAGE": "Cancel",
+    "UPDATE_MESSAGE": "Update",
+    "FAIL_UPDATE_MESSAGE": "Couldn't update message. Try again",
     "SENT_BY": "Sent by:",
     "BOT": "Bot",
     "NATIVE_APP": "Native app",
-    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from OneLink to maintain the message window.",
+    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from {installationName} to maintain the message window.",
     "SEND_FAILED": "Couldn't send message! Try again",
     "TRY_AGAIN": "retry",
     "ASSIGNMENT": {
@@ -272,6 +289,7 @@
       "ASSIGN": "Assign"
     },
     "CONTEXT_MENU": {
+      "EDIT": "Edit",
       "COPY": "Copy",
       "REPLY_TO": "Reply to this message",
       "DELETE": "Delete",
@@ -347,9 +365,9 @@
       "NEW_LINK": "Click here to create tags"
     },
     "CANNED_RESPONSES": {
-      "TITLE": "Create canned responses",
-      "DESCRIPTION": "Pre-written quick reply templates help you quickly respond to a conversation. Agents can type the '/' character followed by the shortcode to insert a response.",
-      "NEW_LINK": "Click here to create a canned response"
+      "TITLE": "Create templates",
+      "DESCRIPTION": "Reusable reply templates help you respond faster. Agents can type '/' followed by the shortcode to insert a template anywhere.",
+      "NEW_LINK": "Click here to create a template"
     }
   },
   "CONVERSATION_SIDEBAR": {

@@ -811,6 +811,126 @@ RSpec.describe 'Conversations API', type: :request do
         expect(conversation.reload.agent_last_seen_at).to be_within(1.second).of(initial_agent_last_seen)
         expect(conversation.reload.assignee_last_seen_at).to be_within(1.second).of(initial_assignee_last_seen)
       end
+
+      context 'when the conversation belongs to a WhatsApp Web inbox' do
+        let(:channel) { create(:channel_whatsapp_web, account: account) }
+        let(:contact) do
+          create(
+            :contact,
+            account: account,
+            additional_attributes: {
+              canonical_jid: '15551234567@s.whatsapp.net'
+            }
+          )
+        end
+        let(:contact_inbox) do
+          create(
+            :contact_inbox,
+            contact: contact,
+            inbox: channel.inbox,
+            source_id: '15551234567'
+          )
+        end
+        let(:conversation) do
+          create(
+            :conversation,
+            account: account,
+            inbox: channel.inbox,
+            contact: contact,
+            contact_inbox: contact_inbox,
+            agent_last_seen_at: 30.minutes.ago
+          )
+        end
+        let!(:incoming_message) do
+          create(
+            :message,
+            account: account,
+            inbox: channel.inbox,
+            conversation: conversation,
+            sender: contact,
+            message_type: :incoming,
+            source_id: 'wa-incoming-1',
+            created_at: 5.minutes.ago
+          )
+        end
+
+        it 'syncs unread incoming messages back to the provider when marked read' do
+          sync_service = instance_double(
+            WhatsappWeb::MarkMessagesReadService,
+            perform: true
+          )
+
+          expect(WhatsappWeb::MarkMessagesReadService).to receive(:new).with(
+            conversation: conversation,
+            messages: array_including(incoming_message)
+          ).and_return(sync_service)
+          expect(sync_service).to receive(:perform)
+
+          post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/update_last_seen",
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+        end
+      end
+
+      context 'when the conversation belongs to a Telegram business inbox' do
+        let(:channel) { create(:channel_telegram, account: account) }
+        let(:contact) { create(:contact, account: account) }
+        let(:contact_inbox) do
+          create(
+            :contact_inbox,
+            contact: contact,
+            inbox: channel.inbox,
+            source_id: '123'
+          )
+        end
+        let(:conversation) do
+          create(
+            :conversation,
+            account: account,
+            inbox: channel.inbox,
+            contact: contact,
+            contact_inbox: contact_inbox,
+            additional_attributes: {
+              chat_id: '123',
+              business_connection_id: 'biz-1'
+            },
+            agent_last_seen_at: 30.minutes.ago
+          )
+        end
+        let!(:incoming_message) do
+          create(
+            :message,
+            account: account,
+            inbox: channel.inbox,
+            conversation: conversation,
+            sender: contact,
+            message_type: :incoming,
+            source_id: '55',
+            created_at: 5.minutes.ago
+          )
+        end
+
+        it 'syncs unread incoming messages back to telegram when marked read' do
+          sync_service = instance_double(
+            Telegram::MarkMessagesReadService,
+            perform: true
+          )
+
+          expect(Telegram::MarkMessagesReadService).to receive(:new).with(
+            conversation: conversation,
+            messages: array_including(incoming_message)
+          ).and_return(sync_service)
+          expect(sync_service).to receive(:perform)
+
+          post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/update_last_seen",
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+        end
+      end
     end
   end
 
@@ -1148,6 +1268,26 @@ RSpec.describe 'Conversations API', type: :request do
         response_body = response.parsed_body
         expect(response_body['payload'].first['file_type']).to eq('image')
         expect(response_body['payload'].first['sender']['id']).to eq(conversation.messages.last.sender.id)
+      end
+
+      it 'returns the current channel profile in sender metadata' do
+        create(
+          :contact_channel_profile,
+          contact_inbox: conversation.contact_inbox,
+          display_name: 'Telegram Contact',
+          avatar_url: 'https://chatwoot-assets.local/telegram.png'
+        )
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/attachments",
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_body = response.parsed_body
+        expect(response_body['payload'].first['sender']).to include(
+          'name' => 'Telegram Contact',
+          'thumbnail' => 'https://chatwoot-assets.local/telegram.png'
+        )
       end
 
       it 'return the attachments if you are an agent with access to inbox' do

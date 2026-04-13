@@ -68,7 +68,7 @@ class Captain::Runtime::Runner
     response = if first_turn?(session) && !session[:input_already_in_history]
                  Llm::ChatClient.ask(session[:chat], session[:input])
                else
-                 session[:chat].complete
+                 Llm::StructuredOutputPolicy.execute(chat: session[:chat]) { session[:chat].complete }
                end
 
     track_usage(response, session[:context_wrapper])

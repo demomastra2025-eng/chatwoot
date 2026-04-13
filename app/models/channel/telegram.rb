@@ -76,6 +76,47 @@ class Channel::Telegram < ApplicationRecord
     message.conversation[:additional_attributes]['business_connection_id']
   end
 
+  def update_message(message:, content:)
+    method_name, text_key =
+      if message.attachments.any?
+        ['editMessageCaption', :caption]
+      else
+        ['editMessageText', :text]
+      end
+
+    response = HTTParty.post(
+      "#{telegram_api_url}/#{method_name}",
+      body: {
+        :chat_id => chat_id(message),
+        :message_id => message.source_id,
+        :parse_mode => 'HTML',
+        text_key => convert_markdown_to_telegram_html(content.to_s)
+      }.merge(business_body(message))
+    )
+
+    raise response.parsed_response['description'] unless response.success?
+
+    response.parsed_response
+  end
+
+  def mark_message_read(message:)
+    business_connection_id = business_connection_id(message)
+    return false if business_connection_id.blank?
+
+    response = HTTParty.post(
+      "#{telegram_api_url}/readBusinessMessage",
+      body: {
+        business_connection_id: business_connection_id,
+        chat_id: chat_id(message),
+        message_id: message.source_id
+      }
+    )
+
+    raise response.parsed_response['description'] unless response.success?
+
+    true
+  end
+
   def reply_to_message_id(message)
     message.content_attributes['in_reply_to_external_id']
   end
@@ -156,9 +197,6 @@ class Channel::Telegram < ApplicationRecord
 
   def message_request(chat_id, text, reply_markup = nil, reply_to_message_id = nil, business_connection_id: nil)
     # text is already converted to HTML by MessageContentPresenter
-    business_body = {}
-    business_body[:business_connection_id] = business_connection_id if business_connection_id
-
     HTTParty.post("#{telegram_api_url}/sendMessage",
                   body: {
                     chat_id: chat_id,
@@ -166,6 +204,16 @@ class Channel::Telegram < ApplicationRecord
                     reply_markup: reply_markup,
                     parse_mode: 'HTML',
                     reply_to_message_id: reply_to_message_id
-                  }.merge(business_body))
+                  }.merge(business_body_for_connection(business_connection_id)))
+  end
+
+  def business_body(message)
+    business_body_for_connection(business_connection_id(message))
+  end
+
+  def business_body_for_connection(business_connection_id)
+    return {} if business_connection_id.blank?
+
+    { business_connection_id: business_connection_id }
   end
 end

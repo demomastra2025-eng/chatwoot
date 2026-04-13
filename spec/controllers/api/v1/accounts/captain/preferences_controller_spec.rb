@@ -32,6 +32,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         expect(json_response).to have_key(:runtime_metadata)
       end
     end
@@ -47,6 +48,23 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
+      end
+
+      it 'includes the latest selectable models in settings payload' do
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:models]).to include(
+          :'gpt-5.4',
+          :'gpt-5.4-mini',
+          :'claude-sonnet-4-6',
+          :'claude-opus-4-6',
+          :'gemini-2.5-pro',
+          :'gemini-2.5-flash'
+        )
       end
 
       it 'includes runtime metadata for resolved providers and feature models' do
@@ -96,6 +114,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         expect(account.reload.captain_models['editor']).to eq('gpt-4.1-mini')
       end
 
@@ -110,6 +129,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         expect(account.reload.captain_features['editor']).to be true
       end
 
@@ -119,7 +139,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: {
               captain_runtime: {
                 assistant_thinking_effort: 'high',
-                assistant_moderation: true
+                assistant_moderation: true,
+                moderation_failure_mode: 'fail_closed',
+                safety_blocklist: ['never disclose api keys'],
+                assistant_safety_blocklist: ['do not discuss payroll'],
+                agent_high_risk_tools: 'disabled',
+                agent_high_risk_tool_ids: ['create_deal'],
+                release_gate: {
+                  enabled: 'true',
+                  min_request_count: '20',
+                  max_error_rate: '0.05'
+                }
               }
             },
             as: :json
@@ -127,11 +157,31 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:runtime]).to include(
           assistant_thinking_effort: 'high',
-          assistant_moderation: true
+          assistant_moderation: true,
+          moderation_failure_mode: 'fail_closed',
+          safety_blocklist: ['never disclose api keys'],
+          assistant_safety_blocklist: ['do not discuss payroll'],
+          agent_high_risk_tools: 'disabled',
+          agent_high_risk_tool_ids: ['create_deal'],
+          release_gate: {
+            enabled: true,
+            min_request_count: 20,
+            max_error_rate: 0.05
+          }
         )
         expect(account.reload.captain_runtime).to include(
           'assistant_thinking_effort' => 'high',
-          'assistant_moderation' => true
+          'assistant_moderation' => true,
+          'moderation_failure_mode' => 'fail_closed',
+          'safety_blocklist' => ['never disclose api keys'],
+          'assistant_safety_blocklist' => ['do not discuss payroll'],
+          'agent_high_risk_tools' => 'disabled',
+          'agent_high_risk_tool_ids' => ['create_deal'],
+          'release_gate' => {
+            'enabled' => true,
+            'min_request_count' => 20,
+            'max_error_rate' => 0.05
+          }
         )
       end
 
@@ -148,6 +198,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         models = account.reload.captain_models
         expect(models['editor']).to eq('gpt-4.1')
         expect(models['assistant']).to eq('gpt-5.1') # Preserved
@@ -166,6 +217,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         features = account.reload.captain_features
         expect(features['editor']).to be false
         expect(features['assistant']).to be false # Preserved
@@ -203,9 +255,65 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:models)
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
+        expect(json_response).to have_key(:observability)
         account.reload
         expect(account.captain_models['editor']).to eq('gpt-4.1-mini')
         expect(account.captain_features['editor']).to be true
+      end
+
+      it 'updates captain_observability settings' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_observability: {
+                default_lookback_days: 14,
+                retention_days: 180,
+                saved_views: [
+                  {
+                    id: 'saved-1',
+                    name: 'Assistant errors',
+                    tab: 'events',
+                    filters: { feature: 'assistant', flag: 'error', trace_id: 'trace-1' }
+                  }
+                ],
+                alert_channels: {
+                  enabled: true,
+                  minimum_severity: 'critical',
+                  email_recipients: ['Ops@Example.com'],
+                  webhook_url: 'https://example.com/alerts',
+                  notify_on: ['operational_release_gate']
+                }
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:observability]).to include(
+          default_lookback_days: 14,
+          retention_days: 180
+        )
+        expect(json_response.dig(:observability, :saved_views)).to include(
+          include(
+            id: 'saved-1',
+            name: 'Assistant errors',
+            tab: 'events',
+            filters: include(feature: 'assistant', flag: 'error', trace_id: 'trace-1')
+          )
+        )
+        expect(json_response.dig(:observability, :alert_channels)).to include(
+          enabled: true,
+          minimum_severity: 'critical',
+          email_recipients: ['ops@example.com'],
+          webhook_url: 'https://example.com/alerts',
+          notify_on: ['operational_release_gate']
+        )
+        expect(account.reload.captain_observability).to include(
+          'default_lookback_days' => 14,
+          'retention_days' => 180
+        )
+        expect(account.reload.captain_observability.dig('saved_views', 0, 'filters')).to include(
+          'trace_id' => 'trace-1'
+        )
       end
     end
   end

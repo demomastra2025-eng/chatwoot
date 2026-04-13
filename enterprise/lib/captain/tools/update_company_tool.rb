@@ -13,7 +13,7 @@ class Captain::Tools::UpdateCompanyTool < Captain::Tools::BasePublicTool
 
     "Updated company #{company.name} (ID: #{company.id})"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   private

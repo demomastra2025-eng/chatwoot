@@ -10,6 +10,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       assert_lock_version!
 
       new_record = task.new_record?
+      requested_position = resolve_requested_position
       deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
       status = resolve_status!
       assignee = resolve_assignee(deal: deal)
@@ -46,7 +47,11 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
         idempotency_key: idempotency_key,
         custom_attributes: custom_attributes
       )
+      task.position = requested_position if requested_position.present?
       task.save!
+      auto_apply_default_touch_plan! if new_record
+      sync_related_touches!
+      reposition_task!(requested_position) if requested_position.present?
 
       write_event!(new_record: new_record)
 
@@ -118,6 +123,20 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     title
   end
 
+  def resolve_requested_position
+    return unless params.key?(:position)
+
+    resolve_integer(:position, current: task.position, allow_nil: true)
+  end
+
+  def reposition_task!(requested_position)
+    ::Crm::BoardPositioner.place!(
+      scope: account.crm_tasks.kept.where(status_id: task.status_id),
+      record: task,
+      target_position: requested_position
+    )
+  end
+
   def write_event!(new_record:)
     return unless new_record || filtered_previous_changes.present?
 
@@ -128,5 +147,17 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       event_type: new_record ? 'task_created' : 'task_updated',
       meta: { changes: filtered_previous_changes }
     )
+  end
+
+  def auto_apply_default_touch_plan!
+    Reminders::DefaultPlanService.new(
+      account: account,
+      remindable: task,
+      actor: actor
+    ).perform
+  end
+
+  def sync_related_touches!
+    Reminders::SyncRemindableService.new(remindable: task).perform
   end
 end

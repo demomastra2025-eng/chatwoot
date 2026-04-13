@@ -123,52 +123,67 @@ const isActive = computed(() => {
   return false;
 });
 
+const queryMatches = child => {
+  const childQuery = child?.to?.query || {};
+
+  return Object.entries(childQuery).every(([key, value]) => {
+    const routeValue =
+      key === 'status'
+        ? (route.query[key] ?? 'open')
+        : (route.query[key] ?? '');
+
+    return String(routeValue) === String(value);
+  });
+};
+
+const paramsMatch = child => {
+  const childParams = child?.to?.params || {};
+
+  return Object.keys(childParams)
+    .map(key => String(childParams[key]) === String(route.params[key]))
+    .every(Boolean);
+};
+
+const matchesChildRoute = child => {
+  if (!child?.to) {
+    return false;
+  }
+
+  if (route.path === resolvePath(child.to) && queryMatches(child)) {
+    return true;
+  }
+
+  if (child.activeOn?.includes(route.name)) {
+    return paramsMatch(child) && queryMatches(child);
+  }
+
+  return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
+};
+
+const isMenuItemActive = item => matchesChildRoute(item);
+
 // We could use the RouterLink isActive too, but our routes are not always
 // nested correctly, so we need to check the active state ourselves
 // TODO: Audit the routes and fix the nesting and remove this
-const activeChild = computed(() => {
-  const pathSame = navigableChildren.value.find(
-    child => child.to && route.path === resolvePath(child.to)
-  );
-  if (pathSame) return pathSame;
+const activeChildren = computed(() =>
+  navigableChildren.value.filter(matchesChildRoute)
+);
 
-  // Rank the activeOn Prop higher than the path match
-  // There will be cases where the path name is the same but the params are different
-  // So we need to rank them based on the params
-  // For example, contacts segment list in the sidebar effectively has the same name
-  // But the params are different
-  const activeOnPages = navigableChildren.value.filter(child =>
-    child.activeOn?.includes(route.name)
-  );
-
-  if (activeOnPages.length > 0) {
-    const rankedPage = activeOnPages.find(child => {
-      return Object.keys(child.to.params)
-        .map(key => {
-          return String(child.to.params[key]) === String(route.params[key]);
-        })
-        .every(match => match);
-    });
-
-    // If there is no ranked page, return the first activeOn page anyway
-    // Since this takes higher precedence over the path match
-    // This is not perfect, ideally we should rank each route based on all the techniques
-    // and then return the highest ranked one
-    // But this is good enough for now
-    return rankedPage ?? activeOnPages[0];
-  }
-
-  return navigableChildren.value.find(
-    child => child.to && route.path.startsWith(resolvePath(child.to))
-  );
-});
+const activeChildNames = computed(() =>
+  activeChildren.value.map(child => child.name)
+);
 
 const hasActiveChild = computed(() => {
-  return activeChild.value !== undefined;
+  return activeChildNames.value.length > 0;
 });
 
 const handleCollapsedClick = () => {
   if (hasChildren.value && hasAccessibleChildren.value) {
+    if (props.to) {
+      router.push(props.to);
+      return;
+    }
+
     const firstItem = accessibleItems.value[0];
     router.push(firstItem.to);
   }
@@ -180,9 +195,13 @@ const toggleTrigger = () => {
     !isExpanded.value &&
     !hasActiveChild.value
   ) {
-    // if not already expanded, navigate to the first child
-    const firstItem = accessibleItems.value[0];
-    router.push(firstItem.to);
+    if (props.to) {
+      router.push(props.to);
+    } else {
+      // if not already expanded, navigate to the first child
+      const firstItem = accessibleItems.value[0];
+      router.push(firstItem.to);
+    }
   }
   setExpandedItem(props.name);
 };
@@ -247,7 +266,7 @@ watch(
           v-if="hasChildren && isPopoverOpen"
           :label="label"
           :children="children"
-          :active-child="activeChild"
+          :active-child-names="activeChildNames"
           :trigger-rect="triggerRect"
           @close="closePopover"
           @mouseenter="handlePopoverMouseEnter"
@@ -281,13 +300,16 @@ watch(
             :icon="child.icon"
             :children="child.children"
             :is-expanded="isExpanded"
-            :active-child="activeChild"
+            :active-child-names="activeChildNames"
+            :to="child.to"
+            :header-active="isMenuItemActive(child)"
+            :action-label="child.actionLabel"
           />
           <SidebarGroupLeaf
             v-else-if="isAllowed(child.to)"
-            v-show="isExpanded || activeChild?.name === child.name"
+            v-show="isExpanded || activeChildNames.includes(child.name)"
             v-bind="child"
-            :active="activeChild?.name === child.name"
+            :active="activeChildNames.includes(child.name)"
           />
         </template>
       </ul>

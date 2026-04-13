@@ -80,6 +80,12 @@ const props = defineProps({
   updateSelectionWith: { type: String, default: '' },
   enableVariables: { type: Boolean, default: false },
   enableCannedResponses: { type: Boolean, default: true },
+  cannedMenuPlacement: {
+    type: String,
+    default: 'top',
+    validator: value => ['top', 'bottom'].includes(value),
+  },
+  cannedMenuVisibleItems: { type: Number, default: 0 },
   enableCaptainTools: { type: Boolean, default: false },
   enableCaptainFields: { type: Boolean, default: false },
   captainContextAssistantId: { type: Number, default: null },
@@ -758,6 +764,11 @@ function insertSpecialContent(type, content) {
   }
 }
 
+const closeFieldsMenu = () => {
+  showFieldsMenu.value = false;
+  fieldSearchKey.value = '';
+};
+
 function handleLineBreakWhenCmdAndEnterToSendEnabled(event) {
   if (
     hasPressedCommandAndEnter(event) &&
@@ -920,6 +931,8 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
     <CannedResponse
       v-if="shouldShowCannedResponses"
       :search-key="cannedSearchTerm"
+      :placement="cannedMenuPlacement"
+      :max-visible-items="cannedMenuVisibleItems"
       @replace="content => insertSpecialContent('cannedResponse', content)"
     />
     <VariableList
@@ -945,6 +958,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :search-key="fieldSearchKey"
       :assistant-id="captainContextAssistantId"
       :context-access="captainContextAccess"
+      @close="closeFieldsMenu"
       @select-field="content => insertSpecialContent('field', content)"
     />
     <CopilotMenuBar

@@ -26,7 +26,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
       "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
     end
 
-    'Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.'
+    tool_failure('Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.')
   end
 
   private

@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::AddPrivateNoteService < Captain::Tools::Copilot::
     message = conversation_operations.add_private_note(note: note)
     "Added private note message ##{message.id} to conversation ##{current_conversation.display_id}"
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

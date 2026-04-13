@@ -10,6 +10,7 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   before do
     create(:captain_inbox, inbox: inbox, captain_assistant: captain_assistant)
     stub_const('Limits::BULK_ACTIONS_LIMIT', 3)
+    inbox.account.update!(auto_resolve_after: 60)
     inbox.reload
   end
 
@@ -350,5 +351,16 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     end.not_to(change { resolvable_pending_conversation.reload.status })
 
     expect(resolvable_pending_conversation.reload.status).to eq('pending')
+  end
+
+  it 'does not resolve conversations when conversation workflow auto-resolve is disabled' do
+    inbox.account.update!(auto_resolve_after: nil)
+
+    expect do
+      described_class.perform_now(inbox)
+    end.not_to(change { resolvable_pending_conversation.reload.status })
+
+    expect(resolvable_pending_conversation.reload.status).to eq('pending')
+    expect(resolvable_pending_conversation.messages.outgoing).to be_empty
   end
 end

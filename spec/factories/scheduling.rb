@@ -78,10 +78,10 @@ FactoryBot.define do
   end
 
   factory :scheduling_appointment, class: 'Scheduling::Appointment' do
-    account { resource.account }
-    resource { association :scheduling_resource }
-    contact { association :contact, account: resource.account }
-    service { association :scheduling_service, account: resource.account }
+    account
+    resource { association :scheduling_resource, account: account }
+    contact { association :contact, account: account }
+    service { association :scheduling_service, account: account }
     starts_at { Time.zone.now.change(hour: 10, min: 0, sec: 0) }
     ends_at { starts_at + 30.minutes }
     duration_min { 30 }

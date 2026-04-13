@@ -5,6 +5,14 @@ import MentionBox from '../mentions/MentionBox.vue';
 export default {
   components: { MentionBox },
   props: {
+    placement: {
+      type: String,
+      default: 'top',
+    },
+    maxVisibleItems: {
+      type: Number,
+      default: 0,
+    },
     searchKey: {
       type: String,
       default: '',
@@ -47,6 +55,8 @@ export default {
   <MentionBox
     v-if="items.length"
     :items="items"
+    :placement="placement"
+    :max-visible-items="maxVisibleItems"
     @mention-select="handleMentionClick"
   />
 </template>

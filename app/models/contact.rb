@@ -62,6 +62,7 @@ class Contact < ApplicationRecord
   has_many :campaign_deliveries, dependent: :delete_all
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
+  has_many :contact_channel_profiles, dependent: :destroy
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :inboxes, through: :contact_inboxes
   has_many :messages, as: :sender, dependent: :destroy_async
@@ -152,8 +153,8 @@ class Contact < ApplicationRecord
     contact_inboxes.find_by!(inbox_id: inbox_id).source_id
   end
 
-  def push_event_data
-    {
+  def push_event_data(contact_inbox: nil)
+    data = {
       additional_attributes: additional_attributes,
       custom_attributes: custom_attributes,
       email: email,
@@ -165,6 +166,8 @@ class Contact < ApplicationRecord
       blocked: blocked,
       type: 'contact'
     }
+
+    apply_channel_profile_data(data, contact_inbox)
   end
 
   def webhook_data
@@ -199,6 +202,27 @@ class Contact < ApplicationRecord
   end
 
   private
+
+  def apply_channel_profile_data(data, contact_inbox)
+    profile = channel_profile_for(contact_inbox)
+    return data if profile.blank?
+
+    data[:channel_profile] = profile.push_event_data
+    data[:name] = profile.display_name if profile.display_name.present?
+    data[:thumbnail] = profile.avatar_url if profile.avatar_url.present?
+    data
+  end
+
+  def channel_profile_for(contact_inbox)
+    return if contact_inbox.blank?
+
+    if contact_inbox.association(:channel_profile).loaded?
+      profile = contact_inbox.channel_profile
+      return profile if profile.present?
+    end
+
+    contact_channel_profiles.find_by(contact_inbox_id: contact_inbox.id)
+  end
 
   def ip_lookup
     return if runtime_events_suppressed?

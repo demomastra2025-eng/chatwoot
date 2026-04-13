@@ -1,0 +1,141 @@
+# frozen_string_literal: true
+
+require 'rails_helper'
+
+class StructuredOutputPolicySpecChat
+  attr_reader :messages, :instructions, :model
+
+  def initialize(responses, model: 'gpt-4.1-mini')
+    @responses = responses
+    @messages = []
+    @instructions = []
+    @model = model
+  end
+
+  def with_schema(_schema)
+    self
+  end
+
+  def with_instructions(value, append: false, replace: nil)
+    @instructions << { value:, append:, replace: }
+    self
+  end
+
+  def ask(_content)
+    response = @responses.shift
+    @messages << response
+    response
+  end
+end
+
+class StructuredOutputPolicySpecResponse
+  attr_accessor :content
+
+  def initialize(content)
+    @content = content
+  end
+
+  def tool_call?
+    false
+  end
+end
+
+RSpec.describe Llm::StructuredOutputPolicy do
+  let(:chat) { instance_double(RubyLLM::Chat) }
+  let(:schema) do
+    Class.new(RubyLLM::Schema) do
+      string :message
+    end
+  end
+  let(:events) { [] }
+  let(:subscriber) do
+    ActiveSupport::Notifications.subscribe(/llm\.schema\./) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args)
+    end
+  end
+
+  before do
+    allow(chat).to receive(:with_schema).and_return(chat)
+    allow(chat).to receive(:model).and_return('gpt-4.1-mini')
+    subscriber
+  end
+
+  after do
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+  end
+
+  describe '.bind!' do
+    it 'validates and binds schema metadata to the chat' do
+      expect(chat).to receive(:with_schema).with(schema).and_return(chat)
+
+      result = described_class.bind!(chat:, schema:)
+
+      expect(result).to eq(chat)
+      expect(described_class.schema_for(chat)).to eq(schema)
+    end
+  end
+
+  describe '.normalize_response!' do
+    it 'returns unmodified response when no schema is bound' do
+      response = instance_double(RubyLLM::Message, content: 'plain text')
+
+      expect(described_class.normalize_response!(chat:, response:)).to eq(response)
+    end
+
+    it 'keeps hash payloads for structured output responses' do
+      described_class.bind!(chat:, schema:)
+      response = instance_double(RubyLLM::Message, content: { 'message' => 'Done' }, tool_call?: false)
+
+      expect(described_class.normalize_response!(chat:, response:)).to eq(response)
+    end
+
+    it 'parses json strings into hash payloads' do
+      described_class.bind!(chat:, schema:)
+      response = instance_double(
+        RubyLLM::Message,
+        content: '{"message":"Done"}',
+        tool_call?: false,
+        :'content=' => nil
+      )
+
+      expect(response).to receive(:content=).with(hash_including('message' => 'Done'))
+
+      described_class.normalize_response!(chat:, response:)
+    end
+
+    it 'raises when structured output is not valid json' do
+      described_class.bind!(chat:, schema:)
+      response = instance_double(RubyLLM::Message, content: 'oops', tool_call?: false)
+
+      expect do
+        described_class.normalize_response!(chat:, response:)
+      end.to raise_error(described_class::InvalidStructuredOutputError, /not valid JSON/)
+    end
+
+    it 'raises when structured output does not match the schema' do
+      described_class.bind!(chat:, schema:)
+      response = instance_double(RubyLLM::Message, content: '{"unexpected":"field"}', tool_call?: false)
+
+      expect do
+        described_class.normalize_response!(chat:, response:)
+      end.to raise_error(described_class::InvalidStructuredOutputError, /did not match schema/)
+    end
+  end
+
+  describe '.execute' do
+    it 'retries once with repair instructions and keeps only the successful response in history' do
+      response_one = StructuredOutputPolicySpecResponse.new('{"unexpected":"field"}')
+      response_two = StructuredOutputPolicySpecResponse.new('{"message":"Done"}')
+      retry_chat = StructuredOutputPolicySpecChat.new([response_one, response_two])
+
+      described_class.bind!(chat: retry_chat, schema:)
+
+      result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
+
+      expect(result.content).to include('message' => 'Done')
+      expect(retry_chat.instructions.last[:value]).to include('return only valid JSON that exactly matches the schema already provided')
+      expect(retry_chat.messages).to contain_exactly(response_two)
+      expect(events.map(&:name)).to include('llm.schema.invalid', 'llm.schema.repair_requested')
+    end
+  end
+end

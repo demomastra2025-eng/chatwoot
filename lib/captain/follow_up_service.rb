@@ -99,4 +99,8 @@ class Captain::FollowUpService < Captain::BaseTaskService
   def event_name
     'follow_up'
   end
+
+  def task_moderation_stages
+    [:output]
+  end
 end

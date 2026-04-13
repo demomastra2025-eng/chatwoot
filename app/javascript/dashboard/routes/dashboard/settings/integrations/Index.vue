@@ -41,7 +41,6 @@ onMounted(() => {
         :description="
           replaceInstallationName($t('INTEGRATION_SETTINGS.DESCRIPTION'))
         "
-        :link-text="$t('INTEGRATION_SETTINGS.LEARN_MORE')"
         :search-placeholder="$t('INTEGRATION_SETTINGS.SEARCH_PLACEHOLDER')"
         feature-name="integrations"
       />

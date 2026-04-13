@@ -54,6 +54,7 @@ const backButtonUrl = computed(() => {
     teamId,
     conversationType: conversationTypeMap[name],
     customViewId,
+    status: route.query.status,
   });
 });
 
@@ -90,6 +91,38 @@ const hasMultipleInboxes = computed(
 );
 
 const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
+
+const statusMeta = computed(() => {
+  const status = currentChat.value.status;
+
+  switch (status) {
+    case wootConstants.STATUS_TYPE.PENDING:
+      return {
+        label: t('CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.pending.TEXT'),
+        className:
+          'bg-n-violet-3 text-n-violet-9 ring-1 ring-inset ring-n-violet-6/20',
+      };
+    case wootConstants.STATUS_TYPE.SNOOZED:
+      return {
+        label: t('CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.snoozed.TEXT'),
+        className:
+          'bg-n-slate-3 text-n-slate-11 ring-1 ring-inset ring-n-slate-6/20',
+      };
+    case wootConstants.STATUS_TYPE.RESOLVED:
+      return {
+        label: t('CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.resolved.TEXT'),
+        className:
+          'bg-n-teal-3 text-n-teal-11 ring-1 ring-inset ring-n-teal-6/20',
+      };
+    case wootConstants.STATUS_TYPE.OPEN:
+    default:
+      return {
+        label: t('CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.open.TEXT'),
+        className:
+          'bg-n-blue-3 text-n-blue-11 ring-1 ring-inset ring-n-blue-6/20',
+      };
+  }
+});
 </script>
 
 <template>
@@ -135,6 +168,12 @@ const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
           class="flex items-center gap-2 overflow-hidden text-xs conversation--header--actions text-ellipsis whitespace-nowrap"
         >
           <InboxName v-if="hasMultipleInboxes" :inbox="inbox" class="!mx-0" />
+          <span
+            class="inline-flex items-center px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
+            :class="statusMeta.className"
+          >
+            {{ statusMeta.label }}
+          </span>
           <span v-if="isSnoozed" class="font-medium text-n-amber-10">
             {{ snoozedDisplayText }}
           </span>

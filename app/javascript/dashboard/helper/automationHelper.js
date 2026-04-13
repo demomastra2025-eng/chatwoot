@@ -238,13 +238,27 @@ export const getActionOptions = ({
   crmDealOwnerOptions,
   crmStageOptions,
   crmTaskStatusOptions,
+  eventName,
   teams,
   labels,
   slaPolicies,
+  touchPlans,
   type,
   addNoneToListFn,
   priorityOptions,
 }) => {
+  let entityKind = null;
+
+  if (eventName?.startsWith('appointment_')) {
+    entityKind = 'appointment';
+  } else if (eventName?.startsWith('deal_')) {
+    entityKind = 'deal';
+  } else if (eventName?.startsWith('task_')) {
+    entityKind = 'task';
+  } else if (eventName) {
+    entityKind = 'conversation';
+  }
+
   const actionsMap = {
     assign_agent: addNoneToListFn ? addNoneToListFn(agents) : agents,
     assign_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
@@ -262,6 +276,9 @@ export const getActionOptions = ({
     assign_task_assignee: addNoneToListFn ? addNoneToListFn(agents) : agents,
     assign_task_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
     change_task_priority: priorityOptions,
+    apply_touch_plan: (touchPlans || []).filter(
+      plan => !entityKind || (plan.entity_kinds || []).includes(entityKind)
+    ),
     add_sla: slaPolicies,
   };
   return actionsMap[type];

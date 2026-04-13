@@ -319,3 +319,85 @@ export const ONE_OFF_WHATSAPP_CAMPAIGN_EMPTY_STATE_CONTENT = [
     updated_at: '2024-10-30T16:15:03.157Z',
   },
 ];
+
+export const PERSONAL_CAMPAIGN_EMPTY_STATE_CONTENT = [
+  {
+    id: 'personal-empty-1',
+    status: 'pending',
+    repeat_mode: 'once',
+    scheduled_at: '2026-04-14T09:30:00.000Z',
+    remindable: {
+      id: 1206,
+      type: 'Conversation',
+      title: '1206',
+    },
+    target: {
+      inbox: {
+        id: 11,
+        name: 'WhatsApp Support',
+        channel_type: 'Channel::Whatsapp',
+        medium: 'whatsapp',
+      },
+      contact: {
+        id: 2940,
+        name: 'Айдана С.',
+        identifier: '+7 775 123 45 67',
+      },
+    },
+  },
+  {
+    id: 'personal-empty-2',
+    status: 'completed',
+    repeat_mode: 'once',
+    scheduled_at: '2026-04-14T13:45:00.000Z',
+    template_params: {
+      name: 'appointment_reminder',
+    },
+    remindable: {
+      id: 1472,
+      type: 'Conversation',
+      title: '1472',
+    },
+    target: {
+      inbox: {
+        id: 6,
+        name: 'SMS Казахстан',
+        channel_type: 'Channel::Sms',
+        medium: 'sms',
+      },
+      contact: {
+        id: 3771,
+        name: 'Нурсултан К.',
+        identifier: '+7 701 555 22 11',
+      },
+    },
+  },
+  {
+    id: 'personal-empty-3',
+    status: 'draft',
+    repeat_mode: 'daily',
+    scheduled_at: '2026-04-15T06:00:00.000Z',
+    remindable: {
+      id: 1884,
+      type: 'Conversation',
+      title: '1884',
+    },
+    target: {
+      inbox: {
+        id: 14,
+        name: 'Telegram Personal',
+        channel_type: 'Channel::TelegramPersonal',
+      },
+      contact: {
+        id: 4018,
+        name: 'One Link Demo',
+        identifier: '@onelink_demo',
+      },
+    },
+  },
+];
+
+export const ONE_OFF_OUTBOUND_CAMPAIGN_EMPTY_STATE_CONTENT = [
+  ...ONE_OFF_SMS_CAMPAIGN_EMPTY_STATE_CONTENT.slice(0, 2),
+  ...ONE_OFF_WHATSAPP_CAMPAIGN_EMPTY_STATE_CONTENT.slice(0, 2),
+];

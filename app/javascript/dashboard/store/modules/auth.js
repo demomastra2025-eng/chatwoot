@@ -1,7 +1,11 @@
 import types from '../mutation-types';
 import authAPI from '../../api/auth';
 
-import { setUser, clearCookiesOnLogout } from '../utils/api';
+import {
+  setUser,
+  clearCookiesOnLogout,
+  handleSessionReplaced,
+} from '../utils/api';
 import SessionStorage from 'shared/helpers/sessionStorage';
 import { SESSION_STORAGE_KEYS } from 'dashboard/constants/sessionStorage';
 
@@ -109,7 +113,11 @@ export const actions = {
       context.commit(types.SET_CURRENT_USER, currentUser);
     } catch (error) {
       if (error?.response?.status === 401) {
-        clearCookiesOnLogout();
+        if (error?.response?.data?.code === 'session_replaced') {
+          handleSessionReplaced(error.response.data);
+        } else {
+          clearCookiesOnLogout();
+        }
       }
     }
   },

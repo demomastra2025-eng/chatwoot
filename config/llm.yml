@@ -1,3 +1,7 @@
+capability_sets:
+  chat: &chat_capabilities [structured_output, tool_calling, multimodal_input, streaming]
+  reasoning_chat: &reasoning_chat_capabilities [structured_output, tool_calling, multimodal_input, streaming, reasoning]
+
 providers:
   openai:
     display_name: 'OpenAI'
@@ -18,74 +22,127 @@ models:
     display_name: 'GPT-4.1'
     credit_multiplier: 3
     type: chat
+    capabilities: *chat_capabilities
   gpt-4.1-mini:
     provider: openai
     display_name: 'GPT-4.1 Mini'
     credit_multiplier: 1
     type: chat
+    capabilities: *chat_capabilities
   gpt-4.1-nano:
     provider: openai
     display_name: 'GPT-4.1 Nano'
     credit_multiplier: 1
     type: chat
+    capabilities: *chat_capabilities
   gpt-5.1:
     provider: openai
     display_name: 'GPT-5.1'
     credit_multiplier: 2
     type: chat
-    capabilities: [reasoning]
+    capabilities: *reasoning_chat_capabilities
   gpt-5-mini:
     provider: openai
     display_name: 'GPT-5 Mini'
     credit_multiplier: 1
     type: chat
-    capabilities: [reasoning]
+    capabilities: *reasoning_chat_capabilities
   gpt-5-nano:
     provider: openai
     display_name: 'GPT-5 Nano'
     credit_multiplier: 1
     type: chat
-    capabilities: [reasoning]
+    capabilities: *reasoning_chat_capabilities
   gpt-5.2:
     provider: openai
     display_name: 'GPT-5.2'
     credit_multiplier: 3
     type: chat
-    capabilities: [reasoning]
-  claude-haiku-4.5:
+    capabilities: *reasoning_chat_capabilities
+  gpt-5.4:
+    provider: openai
+    display_name: 'GPT-5.4'
+    credit_multiplier: 4
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gpt-5.4-mini:
+    provider: openai
+    display_name: 'GPT-5.4 Mini'
+    credit_multiplier: 1
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gpt-5.4-nano:
+    provider: openai
+    display_name: 'GPT-5.4 Nano'
+    credit_multiplier: 1
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  claude-haiku-4-5:
     provider: anthropic
     display_name: 'Claude Haiku 4.5'
     credit_multiplier: 2
     type: chat
-    capabilities: [reasoning]
-  claude-sonnet-4.5:
+    capabilities: *reasoning_chat_capabilities
+  claude-sonnet-4-5:
     provider: anthropic
     display_name: 'Claude Sonnet 4.5'
     credit_multiplier: 3
     type: chat
-    capabilities: [reasoning]
-  gemini-3-flash:
-    provider: gemini
-    display_name: 'Gemini 3 Flash'
-    credit_multiplier: 1
-    type: chat
-    capabilities: [reasoning]
-  gemini-3-pro:
-    provider: gemini
-    display_name: 'Gemini 3 Pro'
+    capabilities: *reasoning_chat_capabilities
+  claude-sonnet-4-6:
+    provider: anthropic
+    display_name: 'Claude Sonnet 4.6'
     credit_multiplier: 3
     type: chat
-    capabilities: [reasoning]
+    capabilities: *reasoning_chat_capabilities
+  claude-opus-4-6:
+    provider: anthropic
+    display_name: 'Claude Opus 4.6'
+    credit_multiplier: 5
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gemini-2.5-flash:
+    provider: gemini
+    display_name: 'Gemini 2.5 Flash'
+    credit_multiplier: 1
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gemini-2.5-flash-lite:
+    provider: gemini
+    display_name: 'Gemini 2.5 Flash-Lite'
+    credit_multiplier: 1
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gemini-2.5-pro:
+    provider: gemini
+    display_name: 'Gemini 2.5 Pro'
+    credit_multiplier: 3
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gemini-3-flash-preview:
+    provider: gemini
+    display_name: 'Gemini 3 Flash Preview'
+    credit_multiplier: 1
+    type: chat
+    capabilities: *reasoning_chat_capabilities
+  gemini-3.1-pro-preview:
+    provider: gemini
+    display_name: 'Gemini 3.1 Pro Preview'
+    credit_multiplier: 3
+    type: chat
+    capabilities: *reasoning_chat_capabilities
   whisper-1:
     provider: openai
     display_name: 'Whisper'
     credit_multiplier: 1
     type: transcription
+    capabilities: [transcription]
   text-embedding-3-small:
     provider: openai
     display_name: 'Text Embedding 3 Small'
     credit_multiplier: 1
     type: embedding
+    capabilities: [embedding]
 
 features:
   editor:
@@ -94,44 +151,63 @@ features:
         gpt-4.1-mini,
         gpt-4.1-nano,
         gpt-5-mini,
+        gpt-5.4-mini,
+        gpt-5.4-nano,
         gpt-4.1,
         gpt-5.1,
         gpt-5.2,
-        claude-haiku-4.5,
-        gemini-3-flash,
-        gemini-3-pro,
+        gpt-5.4,
+        claude-haiku-4-5,
+        claude-sonnet-4-6,
+        gemini-2.5-flash-lite,
+        gemini-2.5-flash,
+        gemini-2.5-pro,
+        gemini-3-flash-preview,
+        gemini-3.1-pro-preview,
       ]
-    default: gpt-4.1-mini
+    default: gpt-5.4-mini
   assistant:
     models:
       [
         gpt-5-mini,
+        gpt-5.4-mini,
         gpt-4.1,
         gpt-5.1,
         gpt-5.2,
-        claude-haiku-4.5,
-        claude-sonnet-4.5,
-        gemini-3-flash,
-        gemini-3-pro,
+        gpt-5.4,
+        claude-haiku-4-5,
+        claude-sonnet-4-5,
+        claude-sonnet-4-6,
+        claude-opus-4-6,
+        gemini-2.5-flash,
+        gemini-2.5-pro,
+        gemini-3-flash-preview,
+        gemini-3.1-pro-preview,
       ]
-    default: gpt-5.1
+    default: gpt-5.4
   copilot:
     models:
       [
         gpt-5-mini,
+        gpt-5.4-mini,
         gpt-4.1,
         gpt-5.1,
         gpt-5.2,
-        claude-haiku-4.5,
-        claude-sonnet-4.5,
-        gemini-3-flash,
-        gemini-3-pro,
+        gpt-5.4,
+        claude-haiku-4-5,
+        claude-sonnet-4-5,
+        claude-sonnet-4-6,
+        claude-opus-4-6,
+        gemini-2.5-flash,
+        gemini-2.5-pro,
+        gemini-3-flash-preview,
+        gemini-3.1-pro-preview,
       ]
-    default: gpt-5.1
+    default: gpt-5.4
   label_suggestion:
     models:
-      [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gemini-3-flash, claude-haiku-4.5]
-    default: gpt-4.1-nano
+      [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
+    default: gpt-5.4-mini
   audio_transcription:
     models: [whisper-1]
     default: whisper-1

@@ -6,7 +6,8 @@ class ContactInboxBuilder
 
   def perform
     @source_id ||= generate_source_id
-    create_contact_inbox if source_id.present?
+    contact_inbox = create_contact_inbox if source_id.present?
+    ensure_channel_profile(contact_inbox)
   end
 
   private
@@ -89,6 +90,29 @@ class ContactInboxBuilder
     return if contact_inbox.blank?
 
     contact_inbox.update!(source_id: new_source_id)
+  end
+
+  def ensure_channel_profile(contact_inbox)
+    return contact_inbox if contact_inbox.blank? || @contact.blank?
+    return contact_inbox if contact_inbox.channel_profile.present?
+
+    Contacts::ChannelProfileUpsertService.new(
+      contact_inbox: contact_inbox,
+      profile_attributes: baseline_channel_profile_attributes
+    ).perform
+
+    contact_inbox.association(:channel_profile).reset
+    contact_inbox
+  end
+
+  def baseline_channel_profile_attributes
+    {
+      name: @contact.name,
+      email: @contact.email,
+      phone_number: @contact.phone_number,
+      identifier: @contact.identifier,
+      avatar_url: @contact.avatar_url
+    }.compact
   end
 
   def new_source_id

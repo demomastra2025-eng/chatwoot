@@ -333,7 +333,7 @@ RSpec.describe Account do
         expect(prefs[:runtime]['assistant_thinking_effort']).to eq('high')
         expect(prefs[:runtime]['assistant_moderation']).to be true
         expect(prefs[:runtime]['copilot_thinking_effort']).to eq('none')
-        expect(prefs[:runtime]['copilot_moderation']).to be false
+        expect(prefs[:runtime]['copilot_moderation']).to be true
       end
     end
 

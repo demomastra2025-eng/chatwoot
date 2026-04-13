@@ -24,7 +24,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
     )
     formatted_record(deal)
   rescue StandardError => e
-    e.message
+    tool_failure(e)
   end
 
   def active?

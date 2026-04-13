@@ -1,4 +1,6 @@
 class Captain::Tools::BaseTool < RubyLLM::Tool
+  include Captain::ToolResultOutput
+
   attr_accessor :assistant
 
   class << self
@@ -32,6 +34,18 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
 
   def tool_scope_name
     Captain::ToolAccess::SCOPE_ASSISTANT
+  end
+
+  def tool_safety_feature
+    :copilot
+  end
+
+  def tool_safety_account
+    assistant&.account
+  end
+
+  def tool_safety_preferences
+    tool_safety_account&.captain_preferences&.dig(:runtime)
   end
 
   def tool_definition
