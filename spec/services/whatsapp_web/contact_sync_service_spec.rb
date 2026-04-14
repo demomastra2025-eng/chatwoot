@@ -283,4 +283,61 @@ RSpec.describe WhatsappWeb::ContactSyncService do
       'provider' => 'whatsapp_web'
     )
   end
+
+  it 'merges a provisional lid contact into an existing phone contact when the phone number is already taken' do
+    telegram_channel = create(:channel_telegram_personal, account: channel.account)
+    shared_contact = create(
+      :contact,
+      account: channel.account,
+      name: 'Shared Contact',
+      phone_number: '+77077064008',
+      identifier: 'telegram_personal:23',
+      additional_attributes: {
+        'provider' => 'telegram_personal',
+        'profile_photo_url' => 'https://cdn.example.com/tg-avatar.jpg',
+        'social_telegram_user_id' => 23
+      }
+    )
+    create(:contact_inbox, inbox: telegram_channel.inbox, contact: shared_contact, source_id: '23')
+
+    provisional_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '249262822686958@lid',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    expect(Avatar::AvatarFromUrlJob).not_to receive(:perform_later)
+
+    resolved_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077064008@s.whatsapp.net',
+        remoteLid: '249262822686958@lid',
+        pushName: 'Alice',
+        profilePicUrl: 'https://cdn.example.com/wa-avatar.jpg'
+      }
+    ).perform
+
+    expect(resolved_contact_inbox).to be_present
+    expect(resolved_contact_inbox.contact_id).to eq(shared_contact.id)
+    expect(resolved_contact_inbox.reload.contact).to eq(shared_contact)
+    expect(Contact.find_by(id: provisional_contact_inbox.contact_id)).to be_nil
+    expect(channel.inbox.contact_inboxes.find_by(source_id: '249262822686958@lid')&.contact_id).to eq(shared_contact.id)
+    expect(channel.inbox.contact_inboxes.find_by(source_id: '77077064008')&.contact_id).to eq(shared_contact.id)
+
+    expect(shared_contact.reload.identifier).to eq('telegram_personal:23')
+    expect(shared_contact.additional_attributes).to include(
+      'provider' => 'telegram_personal',
+      'profile_photo_url' => 'https://cdn.example.com/tg-avatar.jpg',
+      'social_telegram_user_id' => 23
+    )
+    expect(shared_contact.additional_attributes.dig('channel_profiles', 'whatsapp_web')).to be_present
+    expect(shared_contact.additional_attributes.dig('channel_profiles', 'whatsapp_web').values.first).to include(
+      'source_id' => '77077064008',
+      'canonical_jid' => '77077064008@s.whatsapp.net',
+      'provider' => 'whatsapp_web'
+    )
+  end
 end

@@ -16,6 +16,7 @@ import {
 Cookies.defaults = { sameSite: 'Lax' };
 
 let isHandlingSessionReplacement = false;
+const SESSION_REPLACED_LOGIN_ERROR = 'session-replaced';
 
 export const getLoadingStatus = state => state.fetchAPIloadingStatus;
 export const setLoadingStatus = (state, status) => {
@@ -52,6 +53,23 @@ export const clearSessionStorageOnLogout = () => {
   SessionStorage.remove(SESSION_STORAGE_KEYS.IMPERSONATION_USER);
 };
 
+const resetClientState = () => {
+  emitter.emit(CHATWOOT_RESET);
+  emitter.emit(ANALYTICS_RESET);
+  clearBrowserSessionCookies();
+  clearLocalStorageOnLogout();
+  clearSessionStorageOnLogout();
+};
+
+const redirectBrowserTo = (redirectLink, { replace = false } = {}) => {
+  if (replace && typeof window.location.replace === 'function') {
+    window.location.replace(redirectLink);
+    return;
+  }
+
+  window.location = redirectLink;
+};
+
 export const deleteIndexedDBOnLogout = async () => {
   let dbs = [];
   try {
@@ -79,23 +97,15 @@ export const deleteIndexedDBOnLogout = async () => {
 };
 
 export const clearCookiesOnLogout = () => {
-  emitter.emit(CHATWOOT_RESET);
-  emitter.emit(ANALYTICS_RESET);
-  clearBrowserSessionCookies();
-  clearLocalStorageOnLogout();
-  clearSessionStorageOnLogout();
+  resetClientState();
   const globalConfig = window.globalConfig || {};
   const logoutRedirectLink = globalConfig.LOGOUT_REDIRECT_LINK || '/';
-  window.location = logoutRedirectLink;
+  redirectBrowserTo(logoutRedirectLink);
 };
 
-export const clearCookiesOnLogoutTo = redirectLink => {
-  emitter.emit(CHATWOOT_RESET);
-  emitter.emit(ANALYTICS_RESET);
-  clearBrowserSessionCookies();
-  clearLocalStorageOnLogout();
-  clearSessionStorageOnLogout();
-  window.location = redirectLink;
+export const clearCookiesOnLogoutTo = (redirectLink, options = {}) => {
+  resetClientState();
+  redirectBrowserTo(redirectLink, options);
 };
 
 export const handleSessionReplaced = ({ message } = {}) => {
@@ -105,6 +115,10 @@ export const handleSessionReplaced = ({ message } = {}) => {
 
   isHandlingSessionReplacement = true;
   emitter.emit('auth:session_replaced', { message });
+  deleteIndexedDBOnLogout();
+  clearCookiesOnLogoutTo(`/app/login?error=${SESSION_REPLACED_LOGIN_ERROR}`, {
+    replace: true,
+  });
 };
 
 export const parseAPIErrorResponse = error => {

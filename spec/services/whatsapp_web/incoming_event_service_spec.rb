@@ -370,6 +370,15 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       allow(Channels::WhatsappWeb::MessageUpdateBackfillJob).to receive(:set)
         .with(wait: 3.seconds)
         .and_return(delayed_job)
+      expect(Rails.logger).to receive(:info).with(
+        include(
+          'Scheduled messages.update backfill for transient missing local message',
+          'channel=',
+          'source_id=outgoing-missing-1',
+          'status=3',
+          'wait_seconds=3'
+        )
+      )
       expect(delayed_job).to receive(:perform_later).with(
         channel.id,
         hash_including(

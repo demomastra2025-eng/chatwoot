@@ -435,7 +435,7 @@ class WhatsappWeb::IncomingEventService
     message = Message.find_by(source_id: update.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
     if message.blank?
       channel.record_echo_status_miss!(source_id: update.dig(:key, :id).to_s)
-      log_missing_message_update(update)
+      log_pending_message_update_backfill(update)
       Channels::WhatsappWeb::MessageUpdateBackfillJob.set(wait: MESSAGE_UPDATE_BACKFILL_DELAY).perform_later(
         channel.id,
         update.deep_stringify_keys
@@ -482,11 +482,12 @@ class WhatsappWeb::IncomingEventService
     conversation.dispatch_conversation_updated_event(previous_changes)
   end
 
-  def log_missing_message_update(update)
-    Rails.logger.warn(
-      "[WHATSAPP WEB] Missing local message for messages.update "\
+  def log_pending_message_update_backfill(update)
+    Rails.logger.info(
+      "[WHATSAPP WEB] Scheduled messages.update backfill for transient missing local message "\
       "channel=#{channel.id} source_id=#{update.dig(:key, :id)} "\
-      "remote_jid=#{update.dig(:key, :remoteJid)} status=#{update.dig(:update, :status)}"
+      "remote_jid=#{update.dig(:key, :remoteJid)} status=#{update.dig(:update, :status)} "\
+      "wait_seconds=#{MESSAGE_UPDATE_BACKFILL_DELAY}"
     )
   end
 

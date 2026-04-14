@@ -368,7 +368,7 @@
           },
           "OPERATOR_AGENT_AOR": {
             "LABEL": "Operator Agent AOR",
-            "PLACEHOLDER": "Enter sip:agent@domain identity",
+            "PLACEHOLDER": "Enter sip:agent{'@'}domain identity",
             "REQUIRED": "Operator agent AOR is required when operator routing is selected"
           },
           "FALLBACK_MESSAGE": {

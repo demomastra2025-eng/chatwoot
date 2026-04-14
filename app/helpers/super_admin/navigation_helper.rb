@@ -12,7 +12,7 @@ module SuperAdmin::NavigationHelper
 
     return 'Workspace' if resource_name == 'accounts'
 
-    display_resource_name(resource)
+    display_resource_name(resource_name)
   end
 
   def settings_pages

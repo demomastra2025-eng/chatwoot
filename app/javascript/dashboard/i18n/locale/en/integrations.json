@@ -1785,7 +1785,7 @@
         "ALERT_CHANNELS_LABEL": "Alert delivery",
         "MIN_SEVERITY_LABEL": "Minimum severity",
         "EMAIL_RECIPIENTS_LABEL": "Email recipients",
-        "EMAIL_RECIPIENTS_PLACEHOLDER": "ops@example.com, ai@example.com",
+        "EMAIL_RECIPIENTS_PLACEHOLDER": "ops{'@'}example.com, ai{'@'}example.com",
         "WEBHOOK_URL_LABEL": "Webhook URL",
         "WEBHOOK_URL_PLACEHOLDER": "https://example.com/hooks/ai-alerts",
         "NOTIFY_ON_LABEL": "Primary alert source",

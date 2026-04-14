@@ -23,6 +23,7 @@ const ERROR_MESSAGES = {
   'business-account-only': 'LOGIN.OAUTH.BUSINESS_ACCOUNTS_ONLY',
   'saml-authentication-failed': 'LOGIN.SAML.API.ERROR_MESSAGE',
   'saml-not-enabled': 'LOGIN.SAML.API.ERROR_MESSAGE',
+  'session-replaced': 'GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION',
 };
 
 const IMPERSONATION_URL_SEARCH_KEY = 'impersonation';
@@ -126,6 +127,8 @@ export default {
           return this.$t('LOGIN.OAUTH.NO_ACCOUNT_FOUND');
         case 'LOGIN.OAUTH.BUSINESS_ACCOUNTS_ONLY':
           return this.$t('LOGIN.OAUTH.BUSINESS_ACCOUNTS_ONLY');
+        case 'GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION':
+          return this.$t('GENERAL.AUTH_SESSION_REPLACED.DESCRIPTION');
         case 'LOGIN.API.UNAUTH':
         default:
           return this.$t('LOGIN.API.UNAUTH');

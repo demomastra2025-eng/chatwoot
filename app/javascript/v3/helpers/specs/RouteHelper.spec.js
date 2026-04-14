@@ -42,6 +42,22 @@ describe('#validateRouteAccess', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it('clears stale cookies and stays on login after session replacement redirect', () => {
+    vi.spyOn(Cookies, 'get').mockReturnValueOnce(true);
+
+    validateRouteAccess(
+      {
+        name: 'login',
+        query: { error: 'session-replaced' },
+      },
+      next
+    );
+
+    expect(clearBrowserSessionCookies).toHaveBeenCalledTimes(1);
+    expect(replaceRouteWithReload).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('redirects to dashboard if auth cookie is present', () => {
     vi.spyOn(Cookies, 'get').mockReturnValueOnce(true);
 

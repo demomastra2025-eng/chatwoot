@@ -26,6 +26,14 @@ export const validateRouteAccess = (to, next, chatwootConfig = {}) => {
     return;
   }
 
+  // If we were explicitly redirected here after a forced session logout,
+  // make sure any stale auth cookie is removed before the login route renders.
+  if (to.query?.error === 'session-replaced') {
+    clearBrowserSessionCookies();
+    next();
+    return;
+  }
+
   // Redirect to dashboard if a cookie is present, the cookie
   // cleanup and token validation happens in the application pack.
   if (hasAuthCookie()) {

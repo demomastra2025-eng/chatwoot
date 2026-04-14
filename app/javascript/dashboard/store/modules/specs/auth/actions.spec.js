@@ -3,10 +3,10 @@ import Cookies from 'js-cookie';
 import { actions } from '../../auth';
 import types from '../../../mutation-types';
 import * as APIHelpers from '../../../utils/api';
-import '../../../../routes';
 
 vi.spyOn(APIHelpers, 'setUser');
 vi.spyOn(APIHelpers, 'clearCookiesOnLogout');
+vi.spyOn(APIHelpers, 'handleSessionReplaced');
 vi.spyOn(APIHelpers, 'getHeaderExpiry');
 vi.spyOn(Cookies, 'get');
 
@@ -33,7 +33,24 @@ describe('#actions', () => {
         response: { status: 401 },
       });
       await actions.validityCheck({ commit });
-      expect(APIHelpers.clearCookiesOnLogout);
+      expect(APIHelpers.clearCookiesOnLogout).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles replaced sessions with a forced relogin flow', async () => {
+      axios.get.mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'session_replaced', message: 'Session replaced' },
+        },
+      });
+
+      await actions.validityCheck({ commit });
+
+      expect(APIHelpers.handleSessionReplaced).toHaveBeenCalledWith({
+        code: 'session_replaced',
+        message: 'Session replaced',
+      });
+      expect(APIHelpers.clearCookiesOnLogout).not.toHaveBeenCalled();
     });
   });
 

@@ -5,6 +5,7 @@ import endPoints from './endPoints';
 import {
   clearCookiesOnLogout,
   deleteIndexedDBOnLogout,
+  handleSessionReplaced,
 } from '../store/utils/api';
 
 export default {
@@ -23,6 +24,19 @@ export default {
           resolve(response);
         })
         .catch(error => {
+          if (error?.response?.data?.code === 'session_replaced') {
+            handleSessionReplaced(error.response.data);
+            resolve(error.response);
+            return;
+          }
+
+          if ([401, 404].includes(error?.response?.status)) {
+            deleteIndexedDBOnLogout();
+            clearCookiesOnLogout();
+            resolve(error.response);
+            return;
+          }
+
           reject(error);
         });
     });

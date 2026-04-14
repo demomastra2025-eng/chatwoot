@@ -15,6 +15,13 @@ import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import BaseTable from 'dashboard/components-next/table/BaseTable.vue';
 import LineChart from 'shared/components/charts/LineChart.vue';
 import EventDetailsDialog from './EventDetailsDialog.vue';
+import {
+  compareDateValues,
+  durationBetweenDates,
+  formatTrendTimestamp,
+  getDateMilliseconds,
+  parseDateValue,
+} from './dateHelpers';
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -481,6 +488,7 @@ const traceGroups = computed(() => {
 
   overview.events.forEach(event => {
     const descriptor = traceDescriptor(event);
+    const eventTimestamp = getDateMilliseconds(event.created_at);
     const existingGroup = groups.get(descriptor.key) || {
       id: descriptor.key,
       type: descriptor.type,
@@ -500,15 +508,17 @@ const traceGroups = computed(() => {
     existingGroup.events.push(event);
 
     if (
-      new Date(event.created_at).getTime() >
-      new Date(existingGroup.latestAt).getTime()
+      eventTimestamp !== null &&
+      (getDateMilliseconds(existingGroup.latestAt) === null ||
+        eventTimestamp > getDateMilliseconds(existingGroup.latestAt))
     ) {
       existingGroup.latestAt = event.created_at;
     }
 
     if (
-      new Date(event.created_at).getTime() <
-      new Date(existingGroup.startedAt).getTime()
+      eventTimestamp !== null &&
+      (getDateMilliseconds(existingGroup.startedAt) === null ||
+        eventTimestamp < getDateMilliseconds(existingGroup.startedAt))
     ) {
       existingGroup.startedAt = event.created_at;
     }
@@ -520,10 +530,8 @@ const traceGroups = computed(() => {
     .map(group => {
       const events = group.events
         .slice()
-        .sort(
-          (left, right) =>
-            new Date(left.created_at).getTime() -
-            new Date(right.created_at).getTime()
+        .sort((left, right) =>
+          compareDateValues(left.created_at, right.created_at)
         );
       const providerHops = uniqueValues(
         events.map(event => traceHopLabel(event))
@@ -541,9 +549,8 @@ const traceGroups = computed(() => {
         events: annotateTraceEvents(events),
       };
     })
-    .sort(
-      (left, right) =>
-        new Date(right.latestAt).getTime() - new Date(left.latestAt).getTime()
+    .sort((left, right) =>
+      compareDateValues(left.latestAt, right.latestAt, { order: 'desc' })
     );
 });
 const deterministicSuites = computed(
@@ -1058,14 +1065,15 @@ function formatDuration(value) {
 function formatDateTime(value) {
   if (!value) return t('GENERAL.NONE');
 
-  try {
-    return new Intl.DateTimeFormat(locale.value || undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(new Date(value));
-  } catch {
+  const parsed = parseDateValue(value);
+  if (!parsed) {
     return value;
   }
+
+  return new Intl.DateTimeFormat(locale.value || undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(parsed);
 }
 
 function buildDistribution(distribution) {
@@ -1119,18 +1127,7 @@ async function applyPreset(preset) {
 }
 
 function formatTrendLabel(timestamp, bucket = 'day') {
-  const date = new Date(Number(timestamp) * 1000);
-  let options = { month: 'short', day: 'numeric' };
-
-  if (bucket === 'hour') {
-    options = { month: 'short', day: 'numeric', hour: 'numeric' };
-  } else if (bucket === 'week') {
-    options = { month: 'short', day: 'numeric' };
-  }
-
-  return new Intl.DateTimeFormat(locale.value || undefined, options).format(
-    date
-  );
+  return formatTrendTimestamp(timestamp, locale.value, bucket);
 }
 
 function buildTrendCollection({ key, label, color }) {
@@ -1422,10 +1419,7 @@ function traceHopLabel(event) {
 }
 
 function traceDuration(startedAt, endedAt) {
-  if (!startedAt || !endedAt) return null;
-
-  const duration = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  return duration >= 0 ? duration : null;
+  return durationBetweenDates(startedAt, endedAt);
 }
 
 function traceKeyFromFilters() {

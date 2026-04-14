@@ -368,7 +368,7 @@
           },
           "OPERATOR_AGENT_AOR": {
             "LABEL": "Оператор агентінің AOR-ы",
-            "PLACEHOLDER": "sip:agent@domain идентификаторын енгізіңіз",
+            "PLACEHOLDER": "sip:agent{'@'}domain идентификаторын енгізіңіз",
             "REQUIRED": "Оператор маршруты таңдалса, оператор агентінің AOR-ы міндетті"
           },
           "FALLBACK_MESSAGE": {

@@ -12,7 +12,8 @@ class Conversations::UpdateMessageStatusJob < ApplicationJob
     return unless conversation
 
     # Mark every message created before the user's viewing time read or delivered
-    conversation.messages.where(status: %w[sent delivered])
+    conversation.messages.reorder(nil)
+                .where(status: %w[sent delivered])
                 .where.not(message_type: 'incoming')
                 .where('messages.created_at <= ?', timestamp).find_each do |message|
       Messages::StatusUpdateService.new(message, status).perform

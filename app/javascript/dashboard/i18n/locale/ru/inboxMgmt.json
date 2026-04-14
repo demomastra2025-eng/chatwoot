@@ -368,7 +368,7 @@
           },
           "OPERATOR_AGENT_AOR": {
             "LABEL": "Адрес оператора (AOR)",
-            "PLACEHOLDER": "Введите идентификатор sip:agent@domain",
+            "PLACEHOLDER": "Введите идентификатор sip:agent{'@'}domain",
             "REQUIRED": "Адрес оператора (AOR) обязателен при выборе маршрутизации на оператора"
           },
           "FALLBACK_MESSAGE": {

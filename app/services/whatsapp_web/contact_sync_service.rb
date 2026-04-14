@@ -10,7 +10,8 @@ class WhatsappWeb::ContactSyncService
     contact_inbox = find_or_create_contact_inbox
     return if contact_inbox.blank?
 
-    sync_existing_contact(contact_inbox.contact)
+    resolved_contact = sync_existing_contact(contact_inbox.contact)
+    contact_inbox.reload if resolved_contact.present? && resolved_contact.id != contact_inbox.contact_id
     sync_channel_profile(contact_inbox)
     sync_avatar(contact_inbox.contact)
     contact_inbox
@@ -101,16 +102,27 @@ class WhatsappWeb::ContactSyncService
       updates[:name] = display_name
     end
 
-    return if updates.blank?
+    return contact if updates.blank?
 
     contact.skip_runtime_events = true
     contact.update!(updates)
+    contact
   rescue ActiveRecord::RecordInvalid => e
-    raise unless identifier_conflict?(e, updates)
+    if identifier_conflict?(e, updates)
+      merge_identifier_contact!(target_contact: contact)
+      contact.reload
+      retry
+    end
 
-    merge_identifier_contact!(target_contact: contact)
-    contact.reload
-    retry
+    if phone_number_conflict?(e, updates)
+      contact = merge_phone_contact!(source_contact: contact, phone_number: updates[:phone_number])
+      raise e if contact.blank?
+
+      contact.reload
+      retry
+    end
+
+    raise
   end
 
   def sync_avatar(contact)
@@ -286,6 +298,10 @@ class WhatsappWeb::ContactSyncService
     updates[:identifier].present? && error.record.errors.of_kind?(:identifier, :taken)
   end
 
+  def phone_number_conflict?(error, updates)
+    updates[:phone_number].present? && error.record.errors.of_kind?(:phone_number, :taken)
+  end
+
   def recover_existing_contact_inbox!(error)
     raise unless recoverable_builder_conflict?(error)
 
@@ -293,7 +309,7 @@ class WhatsappWeb::ContactSyncService
     raise error if contact.blank?
 
     contact.skip_runtime_events = true
-    sync_existing_contact(contact)
+    contact = sync_existing_contact(contact)
 
     ContactInboxBuilder.new(
       contact: contact,
@@ -325,6 +341,28 @@ class WhatsappWeb::ContactSyncService
     ActiveRecord::Base.transaction do
       merge_contact_records!(source_contact: source_contact, target_contact: target_contact)
     end
+  end
+
+  def merge_phone_contact!(source_contact:, phone_number:)
+    target_contact = conflicting_phone_contact(
+      phone_number: phone_number,
+      excluding_contact_id: source_contact.id
+    )
+    return if target_contact.blank?
+
+    ActiveRecord::Base.transaction do
+      merge_contact_records!(source_contact: source_contact, target_contact: target_contact)
+    end
+
+    target_contact
+  end
+
+  def conflicting_phone_contact(phone_number:, excluding_contact_id:)
+    return if phone_number.blank?
+
+    channel.inbox.account.contacts
+      .where.not(id: excluding_contact_id)
+      .find_by(phone_number: phone_number)
   end
 
   def merge_contact_records!(source_contact:, target_contact:)
