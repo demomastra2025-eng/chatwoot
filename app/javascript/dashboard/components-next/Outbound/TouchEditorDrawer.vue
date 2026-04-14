@@ -255,15 +255,18 @@ const resolvedChannelType = computed(
     resolvedInbox.value?.channel_type || resolvedInbox.value?.channelType || ''
 );
 const resolvedInboxMedium = computed(() => resolvedInbox.value?.medium || '');
+const requiresTemplateOnly = computed(
+  () => resolvedChannelType.value === INBOX_TYPES.WHATSAPP
+);
 const isWhatsAppTemplateCapable = computed(() => {
   if (!resolvedInbox.value) {
     return false;
   }
 
   return (
-    resolvedInbox.value.channelType === INBOX_TYPES.WHATSAPP ||
-    (resolvedInbox.value.channelType === INBOX_TYPES.TWILIO &&
-      resolvedInbox.value.medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
+    resolvedChannelType.value === INBOX_TYPES.WHATSAPP ||
+    (resolvedChannelType.value === INBOX_TYPES.TWILIO &&
+      resolvedInboxMedium.value === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
   );
 });
 const templateGroups = computed(() => {
@@ -276,12 +279,14 @@ const templateGroups = computed(() => {
   );
 });
 const contentModeTabs = computed(() => {
-  const tabs = [
-    {
+  const tabs = [];
+
+  if (!requiresTemplateOnly.value) {
+    tabs.push({
       id: 'free_text',
       label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.FREE_TEXT_TAB'),
-    },
-  ];
+    });
+  }
 
   if (isWhatsAppTemplateCapable.value) {
     tabs.push({
@@ -1013,6 +1018,16 @@ watch(
 );
 
 watch(
+  () => requiresTemplateOnly.value,
+  value => {
+    if (value) {
+      setContentKind('channel_template');
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   () => isWhatsAppTemplateCapable.value,
   value => {
     if (!value && form.contentKind === 'channel_template') {
@@ -1091,7 +1106,7 @@ watch(
   <TouchEditorShell
     :model-value="modelValue"
     :display-mode="displayMode"
-    width="sm"
+    width="md"
     :title="drawerTitle"
     :description="drawerDescription"
     :confirm-label="touch?.id ? drawerSaveLabel : drawerCreateLabel"

@@ -151,14 +151,13 @@ const openTouchesWorkspace = tab => {
   const routeName =
     tab === 'plans'
       ? 'outbound_touch_plans_index'
-      : 'outbound_broadcasts_index';
+      : 'outbound_broadcasts_personal_index';
 
   router.push(
     accountScopedRoute(
       routeName,
       {},
       {
-        ...(tab === 'plans' ? {} : { mode: 'personal' }),
         ...(props.conversationId
           ? { conversation_id: props.conversationId }
           : {}),

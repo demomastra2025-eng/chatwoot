@@ -20,7 +20,8 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Conversation:Labels', 'SIDEBAR.LABELS'),
   ]),
   item('Campaigns', 'SIDEBAR.CAMPAIGNS', [
-    item('Campaigns:Broadcasts', 'SIDEBAR.OUTBOUND'),
+    item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
+    item('Campaigns:PersonalBroadcasts', 'SIDEBAR.PERSONAL_BROADCASTS'),
     item('Campaigns:TouchPlans', 'SIDEBAR.TOUCH_PLANS'),
     item('Campaigns:Templates', 'SIDEBAR.TEMPLATES'),
   ]),

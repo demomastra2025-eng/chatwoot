@@ -621,10 +621,16 @@ const menuItems = computed(() => {
         icon: 'i-lucide-megaphone',
         children: [
           {
-            name: 'Broadcasts',
-            visibilityKey: 'Campaigns:Broadcasts',
-            label: t('SIDEBAR.OUTBOUND'),
+            name: 'Mass broadcasts',
+            visibilityKey: 'Campaigns:MassBroadcasts',
+            label: t('SIDEBAR.MASS_BROADCASTS'),
             to: accountScopedRoute('outbound_broadcasts_index'),
+          },
+          {
+            name: 'Personal broadcasts',
+            visibilityKey: 'Campaigns:PersonalBroadcasts',
+            label: t('SIDEBAR.PERSONAL_BROADCASTS'),
+            to: accountScopedRoute('outbound_broadcasts_personal_index'),
           },
           {
             name: 'Touch plans',

@@ -29,6 +29,13 @@ import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDra
 import TouchAnalyticsDialog from 'dashboard/components-next/Outbound/TouchAnalyticsDialog.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
 
+const props = defineProps({
+  mode: {
+    type: String,
+    default: '',
+  },
+});
+
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -90,8 +97,16 @@ const allTouches = computed(() => {
   });
 });
 
+const routeMode = computed(() => {
+  if (props.mode === 'mass' || props.mode === 'personal') {
+    return props.mode;
+  }
+
+  return route.query.mode === 'mass' ? 'mass' : 'personal';
+});
+
 const currentMode = computed(() => {
-  return route.query.mode === 'mass' && canManageMassCampaigns.value
+  return routeMode.value === 'mass' && canManageMassCampaigns.value
     ? 'mass'
     : 'personal';
 });
@@ -101,28 +116,28 @@ const selectedTouch = ref(null);
 
 const pageTitle = computed(() => {
   return isPersonalMode.value
-    ? t('OUTBOUND_WORKSPACE.TOUCHES.TITLE')
-    : t('SIDEBAR.OUTBOUND');
+    ? t('SIDEBAR.PERSONAL_BROADCASTS')
+    : t('SIDEBAR.MASS_BROADCASTS');
 });
 
 const pageDescription = computed(() => {
   return isPersonalMode.value
     ? t('OUTBOUND_WORKSPACE.TOUCHES.DESCRIPTION')
-    : t('CAMPAIGN.OUTBOUND.WORKSPACE_DESCRIPTION');
+    : t('CAMPAIGN.OUTBOUND.SECTIONS.OUTBOUND_DESCRIPTION');
 });
 
 const tabs = computed(() => [
   ...[
     {
       id: 'personal',
-      label: t('SIDEBAR.OUTBOUND_PERSONAL'),
+      label: t('SIDEBAR.PERSONAL_BROADCASTS'),
     },
   ],
   ...(canManageMassCampaigns.value
     ? [
         {
           id: 'mass',
-          label: t('SIDEBAR.OUTBOUND_MASS'),
+          label: t('SIDEBAR.MASS_BROADCASTS'),
         },
       ]
     : []),
@@ -241,22 +256,17 @@ const fetchTouches = async () => {
 };
 
 const openMassMode = () => {
-  router.push(
-    accountScopedRoute(
-      'outbound_broadcasts_index',
-      {},
-      {
-        ...route.query,
-        mode: 'mass',
-      }
-    )
-  );
+  const query = { ...route.query };
+  delete query.mode;
+  router.push(accountScopedRoute('outbound_broadcasts_index', {}, query));
 };
 
 const openPersonalMode = () => {
   const query = { ...route.query };
   delete query.mode;
-  router.push(accountScopedRoute('outbound_broadcasts_index', {}, query));
+  router.push(
+    accountScopedRoute('outbound_broadcasts_personal_index', {}, query)
+  );
 };
 
 const handleTabChanged = tab => {
@@ -343,7 +353,7 @@ const handleTouchDeleted = async () => {
 };
 
 watch(
-  () => [route.query.mode, canManageMassCampaigns.value],
+  () => [routeMode.value, canManageMassCampaigns.value],
   ([mode, canManage]) => {
     if (mode === 'mass' && !canManage) {
       openPersonalMode();

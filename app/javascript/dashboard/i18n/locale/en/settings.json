@@ -380,6 +380,8 @@
     "OUTBOUND": "Mailings",
     "OUTBOUND_MASS": "Bulk",
     "OUTBOUND_PERSONAL": "Personal",
+    "MASS_BROADCASTS": "Bulk mailings",
+    "PERSONAL_BROADCASTS": "Personal mailings",
     "CAMPAIGNS": "Campaigns",
     "AUDIENCES": "Audiences",
     "TOUCHES": "Personal",

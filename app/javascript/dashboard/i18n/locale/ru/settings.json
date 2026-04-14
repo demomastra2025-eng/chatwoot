@@ -380,6 +380,8 @@
     "OUTBOUND": "Рассылки",
     "OUTBOUND_MASS": "Массовые",
     "OUTBOUND_PERSONAL": "Персональные",
+    "MASS_BROADCASTS": "Массовые рассылки",
+    "PERSONAL_BROADCASTS": "Персональные рассылки",
     "CAMPAIGNS": "Кампании",
     "AUDIENCES": "Аудитории",
     "TOUCHES": "Персональные",

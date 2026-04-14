@@ -52,6 +52,7 @@ const runCreate = () => {
   <TouchEditorShell
     model-value
     :title="t('CAMPAIGN.OUTBOUND.CREATE.TITLE')"
+    width="md"
     @update:model-value="emit('close')"
     @close="handleClose"
   >

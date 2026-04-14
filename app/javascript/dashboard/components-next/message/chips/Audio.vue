@@ -10,11 +10,16 @@ import {
   getCurrentInstance,
   nextTick,
 } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useResizeObserver } from '@vueuse/core';
 import WaveSurfer from 'wavesurfer.js';
 import Icon from 'next/icon/Icon.vue';
-import { timeStampAppendedURL } from 'dashboard/helper/URLHelper';
+import {
+  extractFilenameFromUrl,
+  timeStampAppendedURL,
+} from 'dashboard/helper/URLHelper';
 import { downloadFile } from '@chatwoot/utils';
+import { useAlert } from 'dashboard/composables';
 import { useEmitter } from 'dashboard/composables/emitter';
 import { emitter } from 'shared/helpers/mitt';
 import {
@@ -36,6 +41,8 @@ const { attachment } = defineProps({
 defineOptions({
   inheritAttrs: false,
 });
+
+const { t } = useI18n();
 
 const waveformContainer = useTemplateRef('waveformContainer');
 const audioElement = useTemplateRef('audioElement');
@@ -71,6 +78,28 @@ const normalizedAudioURL = computed(() => {
 const timeStampURL = computed(() => {
   if (!normalizedAudioURL.value) return '';
   return timeStampAppendedURL(normalizedAudioURL.value);
+});
+
+const inferredAudioExtension = computed(() => {
+  if (attachment.extension) {
+    return String(attachment.extension).replace(/^\./, '').toLowerCase();
+  }
+
+  const filename = extractFilenameFromUrl(normalizedAudioURL.value || '');
+  const inferredExtension =
+    String(filename || '')
+      .split('.')
+      .pop() || '';
+
+  if (
+    inferredExtension &&
+    inferredExtension !== String(filename || '') &&
+    /^[a-z0-9]+$/i.test(inferredExtension)
+  ) {
+    return inferredExtension.toLowerCase();
+  }
+
+  return 'ogg';
 });
 
 const isPlaying = ref(false);
@@ -360,13 +389,35 @@ const changePlaybackSpeed = () => {
   }
 };
 
-const downloadAudio = () => {
-  const { fileType, extension } = attachment;
-  downloadFile({
-    url: normalizedAudioURL.value,
-    type: fileType,
-    extension,
-  });
+const fallbackAudioDownload = url => {
+  if (typeof window === 'undefined' || !url) return;
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `audio_${attachment.id || Date.now()}.${inferredAudioExtension.value}`;
+  link.rel = 'noreferrer noopener nofollow';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+const downloadAudio = async () => {
+  const { fileType } = attachment;
+
+  try {
+    await downloadFile({
+      url: timeStampURL.value || normalizedAudioURL.value,
+      type: fileType,
+      extension: inferredAudioExtension.value,
+    });
+  } catch {
+    if (normalizedAudioURL.value) {
+      fallbackAudioDownload(normalizedAudioURL.value);
+      return;
+    }
+
+    useAlert(t('GALLERY_VIEW.ERROR_DOWNLOADING'));
+  }
 };
 
 const onNativeAudioLoadedMetadata = () => {

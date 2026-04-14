@@ -369,6 +369,8 @@
     "OUTBOUND": "Жіберілімдер",
     "OUTBOUND_MASS": "Жаппай",
     "OUTBOUND_PERSONAL": "Жеке",
+    "MASS_BROADCASTS": "Жаппай жіберілімдер",
+    "PERSONAL_BROADCASTS": "Жеке жіберілімдер",
     "CAMPAIGNS": "Кампаниалар",
     "AUDIENCES": "Audiences",
     "TOUCHES": "Жеке",
