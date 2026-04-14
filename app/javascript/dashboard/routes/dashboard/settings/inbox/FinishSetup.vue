@@ -551,7 +551,7 @@ async function maybeScheduleTelegramPersonalSetupFullHistorySync({
       payload: {
         force: true,
         reset_cursor: true,
-        include_contacts: false,
+        include_contacts: true,
       },
     });
 
@@ -1408,6 +1408,7 @@ onBeforeUnmount(() => {
                 :is-loading="isRefreshingWhatsappWebQr"
                 outline
                 slate
+                icon="i-lucide-qr-code"
                 :label="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_NEW_QR')"
                 @click="refreshWhatsappWebQr()"
               />

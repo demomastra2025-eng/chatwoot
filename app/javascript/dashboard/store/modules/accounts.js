@@ -81,7 +81,7 @@ export const actions = {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
     } catch (error) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
-      throw new Error(error);
+      throw error;
     }
   },
   deleteLogo: async ({ commit, dispatch }, { id }) => {
@@ -104,7 +104,7 @@ export const actions = {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
     } catch (error) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
-      throw new Error(error);
+      throw error;
     }
   },
   toggleDeletion: async (
@@ -117,7 +117,7 @@ export const actions = {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
     } catch (error) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
-      throw new Error(error);
+      throw error;
     }
   },
   create: async ({ commit }, accountInfo) => {

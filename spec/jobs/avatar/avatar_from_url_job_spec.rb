@@ -7,6 +7,13 @@ RSpec.describe Avatar::AvatarFromUrlJob do
   it 'enqueues the job' do
     contact = create(:contact)
     expect { described_class.perform_later(contact, 'https://example.com/avatar.png') }
+      .to have_enqueued_job(described_class).on_queue('default')
+  end
+
+  it 'keeps non-contact avatar jobs on the purgable queue' do
+    agent_bot = create(:agent_bot)
+
+    expect { described_class.perform_later(agent_bot, 'https://example.com/avatar.png') }
       .to have_enqueued_job(described_class).on_queue('purgable')
   end
 

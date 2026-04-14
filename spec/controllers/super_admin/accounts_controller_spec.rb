@@ -77,6 +77,24 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         expect(response).to have_http_status(:redirect)
         expect(account.reload.limits).to eq({ 'agents' => 12, 'conversations' => 0 })
       end
+
+      it 'stores excluded user ids for limit counters as normalized integers' do
+        sign_in(super_admin, scope: :super_admin)
+
+        patch "/super_admin/accounts/#{account.id}", params: {
+          account: {
+            name: account.name,
+            locale: account.locale,
+            status: account.status,
+            limit_counter_excluded_user_ids_raw: "12, 15\nabc 19"
+          }
+        }
+
+        expect(response).to have_http_status(:redirect)
+        expect(
+          account.reload.custom_attributes['limit_counter_excluded_user_ids']
+        ).to eq([12, 15, 19])
+      end
     end
   end
 

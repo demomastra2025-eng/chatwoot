@@ -4,15 +4,14 @@ module SuperAdmin::NavigationHelper
   end
 
   def super_admin_resource_label(resource)
-    resource_name = if resource.respond_to?(:resource)
-                      resource.resource.to_s
-                    else
-                      resource.to_s
-                    end
+    resource_name = resource.respond_to?(:resource) ? resource.resource.to_s : resource.to_s
 
     return 'Workspace' if resource_name == 'accounts'
 
-    display_resource_name(resource_name)
+    model_name = resource_name.singularize.classify.safe_constantize&.model_name
+    return model_name.human(count: 2) if model_name.present?
+
+    resource_name.tr('/', ' ').tr('_', ' ').titleize
   end
 
   def settings_pages

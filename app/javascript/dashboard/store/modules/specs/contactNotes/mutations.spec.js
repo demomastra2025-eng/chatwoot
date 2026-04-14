@@ -33,5 +33,14 @@ describe('#mutations', () => {
       });
       expect(state.records[1]).toEqual([]);
     });
+
+    it('deletes the note even when ids use different primitive types', () => {
+      const state = { records: { 1: [{ id: 2 }, { id: 3 }] } };
+      mutations[types.DELETE_CONTACT_NOTE](state, {
+        noteId: '2',
+        contactId: 1,
+      });
+      expect(state.records[1]).toEqual([{ id: 3 }]);
+    });
   });
 });

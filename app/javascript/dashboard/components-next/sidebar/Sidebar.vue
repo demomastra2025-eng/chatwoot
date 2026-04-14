@@ -295,6 +295,10 @@ const telegramPersonalInboxes = computed(() => {
   return sortedInboxes.value.filter(inbox => isTelegramPersonalInbox(inbox));
 });
 
+const canManageWhatsappWebLifecycle = computed(() => {
+  return checkPermissions(['administrator']);
+});
+
 let whatsappWebStatusPollingTimer = null;
 let telegramPersonalStatusPollingTimer = null;
 
@@ -318,8 +322,8 @@ const stopTelegramPersonalStatusPolling = () => {
 
 const syncWhatsappWebStatuses = async () => {
   if (
-    typeof document !== 'undefined' &&
-    document.visibilityState !== 'visible'
+    !canManageWhatsappWebLifecycle.value ||
+    (typeof document !== 'undefined' && document.visibilityState !== 'visible')
   ) {
     return;
   }
@@ -361,6 +365,7 @@ const syncTelegramPersonalStatuses = async () => {
 const startWhatsappWebStatusPolling = () => {
   if (
     whatsappWebStatusPollingTimer ||
+    !canManageWhatsappWebLifecycle.value ||
     !whatsappWebInboxes.value.length ||
     (typeof document !== 'undefined' && document.visibilityState !== 'visible')
   ) {
@@ -402,9 +407,12 @@ const handleDocumentVisibilityChange = () => {
 useEventListener(document, 'visibilitychange', handleDocumentVisibilityChange);
 
 watch(
-  () => whatsappWebInboxes.value.map(inbox => inbox.id).join(':'),
+  () =>
+    `${canManageWhatsappWebLifecycle.value}:${whatsappWebInboxes.value
+      .map(inbox => inbox.id)
+      .join(':')}`,
   inboxIds => {
-    if (!inboxIds) {
+    if (!inboxIds || !inboxIds.startsWith('true:')) {
       stopWhatsappWebStatusPolling();
       return;
     }
@@ -438,8 +446,10 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
   ]);
 
-  await syncWhatsappWebStatuses();
-  startWhatsappWebStatusPolling();
+  if (canManageWhatsappWebLifecycle.value) {
+    await syncWhatsappWebStatuses();
+    startWhatsappWebStatusPolling();
+  }
   await syncTelegramPersonalStatuses();
   startTelegramPersonalStatusPolling();
 });
@@ -620,12 +630,16 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.CAMPAIGNS'),
         icon: 'i-lucide-megaphone',
         children: [
-          {
-            name: 'Mass broadcasts',
-            visibilityKey: 'Campaigns:MassBroadcasts',
-            label: t('SIDEBAR.MASS_BROADCASTS'),
-            to: accountScopedRoute('outbound_broadcasts_index'),
-          },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'Mass broadcasts',
+                  visibilityKey: 'Campaigns:MassBroadcasts',
+                  label: t('SIDEBAR.MASS_BROADCASTS'),
+                  to: accountScopedRoute('outbound_broadcasts_index'),
+                },
+              ]
+            : []),
           {
             name: 'Personal broadcasts',
             visibilityKey: 'Campaigns:PersonalBroadcasts',

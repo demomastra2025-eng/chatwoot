@@ -3,7 +3,7 @@
     next 'Inherited' if row[:value].nil?
 
     if row[:bytes]
-      "#{number_to_human_size(row[:value])} (#{number_with_delimiter(row[:value])} bytes)"
+      "#{number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true)} GB"
     else
       number_with_delimiter(row[:value])
     end

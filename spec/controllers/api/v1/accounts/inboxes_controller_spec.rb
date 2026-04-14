@@ -637,6 +637,29 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('waiting_for_qr')
       end
+
+      it 'returns both qr and pairing code when reconnect requires new auth artifacts' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:reconnect!) do |instance|
+          instance.update!(
+            lifecycle_state: 'qr_ready',
+            connection_state: 'connecting',
+            qr_code: {
+              'base64' => 'fresh-qr',
+              'pairingCode' => 'ABCD1234'
+            },
+            last_synced_at: Time.current
+          )
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/reconnect_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_ready')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('fresh-qr')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'pairingCode')).to eq('ABCD1234')
+      end
     end
 
     describe 'GET /api/v1/accounts/:account_id/inboxes/:id/whatsapp_web_diagnostics' do

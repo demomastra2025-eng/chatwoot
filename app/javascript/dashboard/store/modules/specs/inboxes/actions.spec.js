@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { actions } from '../../inboxes';
+import { actions, state as inboxState } from '../../inboxes';
 import * as types from '../../../mutation-types';
 import inboxList from './fixtures';
 
@@ -8,6 +8,15 @@ global.axios = axios;
 vi.mock('axios');
 
 describe('#actions', () => {
+  beforeEach(() => {
+    commit.mockClear();
+    inboxState.records = [];
+    axios.get.mockReset();
+    axios.post.mockReset();
+    axios.patch.mockReset();
+    axios.delete.mockReset();
+  });
+
   describe('#get', () => {
     it('sends correct actions if API is success', async () => {
       const mockedGet = vi.fn(url => {
@@ -351,9 +360,10 @@ describe('#actions', () => {
         },
       };
       axios.post.mockResolvedValue({ data: compactStatusPayload });
+      inboxState.records = [existingInbox];
 
       const response = await actions.refreshWhatsappWebQr(
-        { commit, state: { records: [existingInbox] } },
+        { commit },
         { inboxId: 123, statusOnly: true }
       );
 
@@ -442,6 +452,61 @@ describe('#actions', () => {
         inboxList[0]
       );
     });
+
+    it('requests a fresh qr after reconnect when the inbox still needs new auth artifacts', async () => {
+      const reconnectedInbox = {
+        id: 123,
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: {
+            status: 'reconnecting',
+            connection_state: 'reconnecting',
+          },
+        },
+      };
+      const refreshedInbox = {
+        ...reconnectedInbox,
+        additional_attributes: {
+          evolution: {
+            status: 'qr_ready',
+            connection_state: 'connecting',
+            qrcode: {
+              pairingCode: 'ABCD1234',
+            },
+          },
+        },
+      };
+      const dispatch = vi.fn((actionName, payload) =>
+        actions[actionName]({ commit }, payload)
+      );
+
+      axios.post
+        .mockResolvedValueOnce({ data: reconnectedInbox })
+        .mockResolvedValueOnce({ data: refreshedInbox });
+
+      const response = await actions.reconnectWhatsappWeb(
+        { commit, dispatch },
+        123
+      );
+
+      expect(response).toEqual(refreshedInbox);
+      expect(dispatch).toHaveBeenCalledWith('refreshWhatsappWebQr', {
+        inboxId: 123,
+        statusOnly: false,
+      });
+      expect(axios.post).toHaveBeenNthCalledWith(
+        1,
+        '/api/v1/inboxes/123/reconnect_whatsapp_web'
+      );
+      expect(axios.post).toHaveBeenNthCalledWith(
+        2,
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        {
+          status_only: false,
+          include_qr_code: false,
+        }
+      );
+    });
   });
 
   describe('#requestTelegramPersonalQr', () => {
@@ -491,6 +556,89 @@ describe('#actions', () => {
       expect(commit).toHaveBeenCalledWith(
         types.default.EDIT_INBOXES,
         inboxList[0]
+      );
+    });
+
+    it('requests a fresh qr after repair when the inbox is still disconnected without auth artifacts', async () => {
+      const repairedInbox = {
+        id: 123,
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: {
+            status: 'disconnected',
+            connection_state: 'close',
+          },
+        },
+      };
+      const refreshedInbox = {
+        ...repairedInbox,
+        additional_attributes: {
+          evolution: {
+            status: 'qr_ready',
+            connection_state: 'connecting',
+            qrcode: {
+              pairingCode: 'ABCD1234',
+            },
+          },
+        },
+      };
+      const dispatch = vi.fn((actionName, payload) =>
+        actions[actionName]({ commit }, payload)
+      );
+
+      axios.post
+        .mockResolvedValueOnce({ data: repairedInbox })
+        .mockResolvedValueOnce({ data: refreshedInbox });
+
+      const response = await actions.repairWhatsappWeb(
+        { commit, dispatch },
+        123
+      );
+
+      expect(response).toEqual(refreshedInbox);
+      expect(dispatch).toHaveBeenCalledWith('refreshWhatsappWebQr', {
+        inboxId: 123,
+        statusOnly: false,
+      });
+      expect(axios.post).toHaveBeenNthCalledWith(
+        1,
+        '/api/v1/inboxes/123/repair_whatsapp_web'
+      );
+      expect(axios.post).toHaveBeenNthCalledWith(
+        2,
+        '/api/v1/inboxes/123/refresh_whatsapp_web_qr',
+        {
+          status_only: false,
+          include_qr_code: false,
+        }
+      );
+    });
+
+    it('does not force a fresh qr after repair while the provider is reconnecting', async () => {
+      const repairedInbox = {
+        id: 123,
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: {
+            status: 'reconnecting',
+            connection_state: 'reconnecting',
+          },
+        },
+      };
+      const dispatch = vi.fn();
+
+      axios.post.mockResolvedValue({ data: repairedInbox });
+
+      const response = await actions.repairWhatsappWeb(
+        { commit, dispatch },
+        123
+      );
+
+      expect(response).toEqual(repairedInbox);
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/repair_whatsapp_web'
       );
     });
   });
@@ -666,14 +814,18 @@ describe('#actions', () => {
     it('removes a missing inbox from the store on 404', async () => {
       commit.mockClear();
       axios.get.mockRejectedValue({ response: { status: 404 } });
+      const missingInboxId = 321;
 
       const response = await actions.getTelegramPersonalDiagnostics(
         { commit, getters: {} },
-        123
+        missingInboxId
       );
 
       expect(response).toBeNull();
-      expect(commit).toHaveBeenCalledWith(types.default.DELETE_INBOXES, 123);
+      expect(commit).toHaveBeenCalledWith(
+        types.default.DELETE_INBOXES,
+        missingInboxId
+      );
     });
   });
 });

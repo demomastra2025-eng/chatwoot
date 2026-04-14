@@ -13,7 +13,12 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedJob do
   let(:payload) do
     {
       'action' => 'estate.managerChanged',
-      'data' => { 'event' => 'estate.managerChanged' }
+      'data' => {
+        'event' => 'estate.managerChanged',
+        'object' => {
+          'estate_id' => '12345'
+        }
+      }
     }
   end
   let(:processor_service) do
@@ -33,7 +38,7 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedJob do
 
   it 'processes manager_changed under a per-hook lock' do
     expect(lock_manager).to receive(:lock).with(
-      format(Redis::Alfred::CRM_PROCESS_MUTEX, hook_id: hook.id),
+      format(Redis::Alfred::MACROCRM_MANAGER_CHANGED_MUTEX, hook_id: hook.id, estate_id: '12345'),
       30.seconds
     ).and_return(true)
     expect(Integrations::Macrocrm::ManagerChangedProcessorService)

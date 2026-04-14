@@ -10,10 +10,10 @@
     <% field.rows.each do |row| %>
       <div>
         <label class="block font-medium mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
-        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: 1, class: "w-full" %>
+        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, class: "w-full" %>
         <p class="mt-1 text-xs text-gray-500"><%= row[:hint] %></p>
         <% if row[:bytes] && row[:value].present? %>
-          <p class="mt-1 text-xs text-gray-500">Current override: <%= number_to_human_size(row[:value]) %> (<%= number_with_delimiter(row[:value]) %> bytes)</p>
+          <p class="mt-1 text-xs text-gray-500">Current override: <%= number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true) %> GB</p>
         <% end %>
       </div>
     <% end %>

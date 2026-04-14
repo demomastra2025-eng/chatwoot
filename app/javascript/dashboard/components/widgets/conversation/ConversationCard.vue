@@ -25,7 +25,7 @@ const props = defineProps({
   foldersId: { type: [String, Number], default: 0 },
   showAssignee: { type: Boolean, default: false },
   conversationType: { type: String, default: '' },
-  activeStatus: { type: String, default: 'open' },
+  activeStatus: { type: String, default: '' },
   selected: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
   enableContextMenu: { type: Boolean, default: false },

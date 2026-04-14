@@ -7,9 +7,10 @@ class Integrations::Macrocrm::SyncJob < MutexApplicationJob
   discard_on ActiveRecord::RecordNotFound
 
   def perform(hook_id, event_name, message_id)
-    with_lock(lock_key(hook_id), LOCK_TIMEOUT) do
+    message = Message.find(message_id)
+
+    with_lock(lock_key(hook_id, message.conversation_id || "message-#{message_id}"), LOCK_TIMEOUT) do
       hook = Integrations::Hook.find(hook_id)
-      message = Message.find(message_id)
 
       Integrations::Macrocrm::ProcessorService.new(hook: hook, event_name: event_name, message: message).perform
     end
@@ -17,7 +18,7 @@ class Integrations::Macrocrm::SyncJob < MutexApplicationJob
 
   private
 
-  def lock_key(hook_id)
-    format(::Redis::Alfred::CRM_PROCESS_MUTEX, hook_id: hook_id)
+  def lock_key(hook_id, conversation_id)
+    format(::Redis::Alfred::MACROCRM_SYNC_MUTEX, hook_id: hook_id, conversation_id: conversation_id)
   end
 end

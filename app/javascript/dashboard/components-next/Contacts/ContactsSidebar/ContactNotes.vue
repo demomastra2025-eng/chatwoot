@@ -1,6 +1,7 @@
 <script setup>
 import { reactive, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
@@ -39,10 +40,14 @@ const onAdd = content => {
   state.message = '';
 };
 
-const onDelete = noteId => {
+const onDelete = async noteId => {
   if (!noteId) return;
   const { contactId } = route.params;
-  store.dispatch('contactNotes/delete', { noteId, contactId });
+  try {
+    await store.dispatch('contactNotes/delete', { noteId, contactId });
+  } catch {
+    useAlert(t('CONTACTS_LAYOUT.ATTRIBUTE_SETTINGS.API.DELETE_ERROR'));
+  }
 };
 
 const keyboardEvents = {

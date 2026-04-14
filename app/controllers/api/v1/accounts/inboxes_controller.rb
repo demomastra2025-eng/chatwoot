@@ -98,16 +98,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def refresh_whatsapp_web_qr
     if truthy_param?(:status_only)
       @inbox.channel.sync_connection_state!
-      render :show, locals: { include_whatsapp_web_qr_code: truthy_param?(:include_qr_code) }
+      render_whatsapp_web_inbox(include_qr_code: truthy_param?(:include_qr_code))
     else
       @inbox.channel.refresh_qr!
-      render :show
+      render_whatsapp_web_inbox
     end
   rescue StandardError => e
     log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
     if truthy_param?(:status_only)
       @inbox.channel.mark_failed!(e.message) if @inbox.channel.respond_to?(:mark_failed!)
-      render :show, status: :ok and return
+      render_whatsapp_web_inbox(status: :ok) and return
     end
 
     render json: { error: e.message }, status: :unprocessable_content
@@ -115,7 +115,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def reconnect_whatsapp_web
     @inbox.channel.reconnect!
-    render :show
+    render_whatsapp_web_inbox
   rescue StandardError => e
     log_whatsapp_web_runtime_error('reconnect_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -123,7 +123,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def disconnect_whatsapp_web
     @inbox.channel.disconnect!
-    render :show
+    render_whatsapp_web_inbox
   rescue StandardError => e
     log_whatsapp_web_runtime_error('disconnect_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -131,7 +131,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def repair_whatsapp_web
     @inbox.channel.repair!
-    render :show
+    render_whatsapp_web_inbox
   rescue StandardError => e
     log_whatsapp_web_runtime_error('repair_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -241,6 +241,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     Rails.logger.error(
       "[WHATSAPP WEB] #{action} failed for inbox=#{@inbox&.id} channel=#{@inbox&.channel&.id}: #{error.class}: #{error.message}"
     )
+  end
+
+  def render_whatsapp_web_inbox(include_qr_code: true, status: :ok)
+    @inbox.reload
+    render :show, status: status, locals: { include_whatsapp_web_qr_code: include_qr_code }
   end
 
   def inbox_attributes

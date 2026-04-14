@@ -14,14 +14,14 @@ export const state = {
 export const getters = {
   getAllNotesByContact: _state => contactId => {
     const records = _state.records[contactId] || [];
-    return records.sort((r1, r2) => r2.id - r1.id);
+    return [...records].sort((r1, r2) => r2.id - r1.id);
   },
   getUIFlags(_state) {
     return _state.uiFlags;
   },
   getAllNotesByContactId: _state => contactId => {
     const records = _state.records[contactId] || [];
-    const contactNotes = records.sort((r1, r2) => r2.id - r1.id);
+    const contactNotes = [...records].sort((r1, r2) => r2.id - r1.id);
     return camelcaseKeys(contactNotes);
   },
 };
@@ -83,8 +83,10 @@ export const mutations = {
     $state.records[contactId] = [...contactNotes, data];
   },
   [types.DELETE_CONTACT_NOTE]($state, { noteId, contactId }) {
-    const contactNotes = $state.records[contactId];
-    const withoutDeletedNote = contactNotes.filter(note => note.id !== noteId);
+    const contactNotes = $state.records[contactId] || [];
+    const withoutDeletedNote = contactNotes.filter(
+      note => String(note.id) !== String(noteId)
+    );
     $state.records[contactId] = [...withoutDeletedNote];
   },
 };

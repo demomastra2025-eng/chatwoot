@@ -1,6 +1,9 @@
 require 'administrate/field/base'
+require 'bigdecimal'
 
 class AccountLimitsField < Administrate::Field::Base
+  STORAGE_GB_IN_BYTES = 1.gigabyte
+
   LIMIT_DEFINITIONS = {
     agents: {
       label: 'Users',
@@ -19,9 +22,10 @@ class AccountLimitsField < Administrate::Field::Base
       hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, Telegram Personal, and API channels.'
     },
     storage_bytes: {
-      label: 'Storage quota',
-      hint: 'Account-wide file storage quota in bytes. Example: 1073741824 = 1 GB.',
-      bytes: true
+      label: 'Storage quota (GB)',
+      hint: 'Account-wide file storage quota in gigabytes. Decimals are allowed, for example 1.5.',
+      bytes: true,
+      step: '0.1'
     },
     captain_responses: {
       label: 'Captain responses',
@@ -48,7 +52,7 @@ class AccountLimitsField < Administrate::Field::Base
       meta.merge(
         key: key,
         input_id: "account_limits_#{key}",
-        value: normalize_value(overrides[key])
+        value: normalize_value(key, overrides[key])
       )
     end
   end
@@ -58,7 +62,7 @@ class AccountLimitsField < Administrate::Field::Base
       value = row[:value]
       next "#{row[:key]}: inherited" if value.nil?
 
-      "#{row[:key]}: #{value}"
+      "#{row[:key]}: #{formatted_value(row)}"
     end.join(', ')
   end
 
@@ -72,10 +76,23 @@ class AccountLimitsField < Administrate::Field::Base
     (data.presence || {}).to_h.deep_symbolize_keys
   end
 
-  def normalize_value(value)
+  def normalize_value(key, value)
     return if value.blank?
+    return bytes_to_gb(value) if key == :storage_bytes
     return Integer(value, 10) if value.is_a?(String) && value.match?(/\A\d+\z/)
 
+    value
+  end
+
+  def formatted_value(row)
+    return format('%.2f GB', row[:value].to_f).sub(/\.00 GB\z/, ' GB') if row[:bytes]
+
+    row[:value]
+  end
+
+  def bytes_to_gb(value)
+    (BigDecimal(value.to_s) / STORAGE_GB_IN_BYTES).to_f
+  rescue ArgumentError
     value
   end
 end

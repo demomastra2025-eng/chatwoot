@@ -1,0 +1,5 @@
+<% if field.normalized_ids.present? %>
+  <%= field.normalized_ids.join(', ') %>
+<% else %>
+  <span class="text-gray-400 text-xs italic">None</span>
+<% end %>

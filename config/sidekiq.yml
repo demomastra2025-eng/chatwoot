@@ -24,6 +24,7 @@
   - low
   - scheduled_jobs
   - deferred
+  - telegram_personal_history
   - purgable
   - housekeeping
   - async_database_migration

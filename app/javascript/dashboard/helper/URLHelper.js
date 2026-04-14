@@ -3,6 +3,21 @@ export const frontendURL = (path, params) => {
   return `/app/${path}${stringifiedParams}`;
 };
 
+const CONVERSATION_STATUSES = ['open', 'pending', 'snoozed', 'resolved'];
+
+const normalizeConversationStatus = status => {
+  return CONVERSATION_STATUSES.includes(status) ? status : undefined;
+};
+
+const currentConversationStatusFromLocation = () => {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return normalizeConversationStatus(params.get('status'));
+};
+
 const appendQueryToPath = (path, query = {}) => {
   const queryEntries = Object.entries(query).filter(
     ([, value]) => value !== undefined && value !== null && value !== ''
@@ -41,7 +56,11 @@ export const conversationUrl = ({
   } else if (conversationType === 'unattended') {
     url = `accounts/${accountId}/unattended/conversations/${id}`;
   }
-  return appendQueryToPath(url, { status });
+  return appendQueryToPath(url, {
+    status:
+      normalizeConversationStatus(status) ??
+      currentConversationStatusFromLocation(),
+  });
 };
 
 export const conversationListPageURL = ({

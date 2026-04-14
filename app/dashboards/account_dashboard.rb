@@ -11,7 +11,10 @@ class AccountDashboard < Administrate::BaseDashboard
   enterprise_attribute_types = if ChatwootApp.enterprise?
                                  attributes = {
                                    limits: AccountLimitsField,
-                                   account_usage_overview: AccountUsageField
+                                   account_usage_overview: AccountUsageField,
+                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField.with_options(
+                                     label: 'Limit counter excluded user IDs'
+                                   )
                                  }
 
                                  # Only show manually managed features in Chatwoot Cloud deployment
@@ -55,7 +58,12 @@ class AccountDashboard < Administrate::BaseDashboard
   # SHOW_PAGE_ATTRIBUTES
   # an array of attributes that will be displayed on the model's show page.
   enterprise_show_page_attributes = if ChatwootApp.enterprise?
-                                      attrs = %i[custom_attributes limits account_usage_overview]
+                                      attrs = %i[
+                                        custom_attributes
+                                        limit_counter_excluded_user_ids_raw
+                                        limits
+                                        account_usage_overview
+                                      ]
                                       attrs << :manually_managed_features if ChatwootApp.chatwoot_cloud?
                                       attrs << :all_features
                                       attrs
@@ -77,7 +85,11 @@ class AccountDashboard < Administrate::BaseDashboard
   # an array of attributes that will be displayed
   # on the model's form (`new` and `edit`) pages.
   enterprise_form_attributes = if ChatwootApp.enterprise?
-                                 attrs = %i[limits account_usage_overview]
+                                 attrs = %i[
+                                   limit_counter_excluded_user_ids_raw
+                                   limits
+                                   account_usage_overview
+                                 ]
                                  attrs << :manually_managed_features if ChatwootApp.chatwoot_cloud?
                                  attrs << :all_features
                                  attrs
@@ -119,6 +131,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
     attrs = super + [limits: {}]
+    attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud
     attrs << { manually_managed_features: [] } if ChatwootApp.chatwoot_cloud?

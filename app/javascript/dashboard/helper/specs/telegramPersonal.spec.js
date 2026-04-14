@@ -1,9 +1,15 @@
 import {
   TELEGRAM_PERSONAL_SIDEBAR_STATUS_POLL_INTERVAL,
+  getTelegramPersonalDisplayLabel,
+  getTelegramPersonalImportAlertKey,
   getTelegramPersonalState,
   hasTelegramPersonalConnectionIssue,
+  hasTelegramPersonalImportInProgress,
+  hasTelegramPersonalNonConnectedState,
   isTelegramPersonalConnected,
   isTelegramPersonalInbox,
+  isTelegramPersonalReconnecting,
+  isTelegramPersonalTransientState,
 } from '../telegramPersonal';
 
 describe('#telegramPersonal helpers', () => {
@@ -72,5 +78,48 @@ describe('#telegramPersonal helpers', () => {
 
     expect(isTelegramPersonalConnected(failedInbox)).toBe(false);
     expect(hasTelegramPersonalConnectionIssue(failedInbox)).toBe(true);
+  });
+
+  it('detects reconnecting telegram personal inboxes as transient non-connected states', () => {
+    const reconnectingInbox = {
+      ...telegramPersonalInbox,
+      connection_state: 'reconnecting',
+      lifecycle_state: 'reconnecting',
+      runtime_state: {
+        auth_state: 'authorized',
+        connection_state: 'reconnecting',
+        lifecycle_state: 'reconnecting',
+      },
+    };
+
+    expect(hasTelegramPersonalNonConnectedState(reconnectingInbox)).toBe(true);
+    expect(isTelegramPersonalReconnecting(reconnectingInbox)).toBe(true);
+    expect(isTelegramPersonalTransientState(reconnectingInbox)).toBe(true);
+  });
+
+  it('detects active telegram personal imports and builds display metadata', () => {
+    const importingInbox = {
+      ...telegramPersonalInbox,
+      id: 13,
+      name: 'TG Support',
+      phone_number: '+77001234567',
+      runtime_state: {
+        auth_state: 'authorized',
+        connection_state: 'connected',
+        lifecycle_state: 'connected',
+        history_sync_state: 'running',
+        history_sync_requested_at: '2026-04-14T10:00:00Z',
+        contacts_sync_state: 'scheduled',
+        contacts_sync_requested_at: '2026-04-14T10:05:00Z',
+      },
+    };
+
+    expect(hasTelegramPersonalImportInProgress(importingInbox)).toBe(true);
+    expect(getTelegramPersonalDisplayLabel(importingInbox)).toBe(
+      'TG Support (+77001234567)'
+    );
+    expect(getTelegramPersonalImportAlertKey(importingInbox)).toBe(
+      'telegram-personal:import:13:2026-04-14T10:00:00Z:2026-04-14T10:05:00Z'
+    );
   });
 });

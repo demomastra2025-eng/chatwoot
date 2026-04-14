@@ -26,7 +26,7 @@ RSpec.describe Integrations::Macrocrm::SyncJob do
 
   it 'processes the sync under a per-hook lock' do
     expect(lock_manager).to receive(:lock).with(
-      format(Redis::Alfred::CRM_PROCESS_MUTEX, hook_id: hook.id),
+      format(Redis::Alfred::MACROCRM_SYNC_MUTEX, hook_id: hook.id, conversation_id: message.conversation_id),
       30.seconds
     ).and_return(true)
     expect(Integrations::Macrocrm::ProcessorService)

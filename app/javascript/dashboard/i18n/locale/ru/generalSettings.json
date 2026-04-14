@@ -200,7 +200,15 @@
     "NOTIFICATION": {
       "OFFLINE": "Оффлайн",
       "RECONNECTING": "Повторное подключение:",
-      "RECONNECT_SUCCESS": "Повторное подключение успешно"
+      "RECONNECT_SUCCESS": "Повторное подключение успешно",
+      "WHATSAPP_WEB_DISCONNECTED": "WhatsApp Web не подключен: {inbox}",
+      "WHATSAPP_WEB_RECONNECTING": "WhatsApp Web переподключается: {inbox}",
+      "WHATSAPP_WEB_NOT_OPEN": "WhatsApp Web не в статусе open: {inbox}",
+      "TELEGRAM_PERSONAL_DISCONNECTED": "Telegram Personal не подключен: {inbox}",
+      "TELEGRAM_PERSONAL_RECONNECTING": "Telegram Personal переподключается: {inbox}",
+      "TELEGRAM_PERSONAL_NOT_CONNECTED": "Telegram Personal не подключен: {inbox}",
+      "WHATSAPP_WEB_IMPORT_IN_PROGRESS": "Идет импорт WhatsApp Web: {inbox}",
+      "TELEGRAM_PERSONAL_IMPORT_IN_PROGRESS": "Идет импорт Telegram Personal: {inbox}"
     },
     "BUTTON": {
       "REFRESH": "Обновить"

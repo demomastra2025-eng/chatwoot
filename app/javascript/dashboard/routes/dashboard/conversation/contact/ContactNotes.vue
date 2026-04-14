@@ -2,6 +2,7 @@
 import { watch, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
+import { useAlert } from 'dashboard/composables';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
@@ -64,15 +65,19 @@ const onAdd = async () => {
   closeCreateModal();
 };
 
-const onDelete = noteId => {
+const onDelete = async noteId => {
   if (!contactId.value || !noteId) {
     return;
   }
 
-  store.dispatch('contactNotes/delete', {
-    noteId,
-    contactId: contactId.value,
-  });
+  try {
+    await store.dispatch('contactNotes/delete', {
+      noteId,
+      contactId: contactId.value,
+    });
+  } catch {
+    useAlert(t('CONTACTS_LAYOUT.ATTRIBUTE_SETTINGS.API.DELETE_ERROR'));
+  }
 };
 
 const keyboardEvents = {

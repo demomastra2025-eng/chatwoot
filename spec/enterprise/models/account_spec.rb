@@ -164,6 +164,23 @@ RSpec.describe Account, type: :model do
       expect(account.usage_limits[:agents]).to eq(20)
     end
 
+    it 'excludes configured user ids from agent usage counters' do
+      included_user = create(:user)
+      excluded_user = create(:user)
+
+      create(:account_user, account: account, user: included_user, role: :agent)
+      create(:account_user, account: account, user: excluded_user, role: :administrator)
+
+      account.limit_counter_excluded_user_ids = [excluded_user.id, excluded_user.id]
+      account.save!
+
+      expect(account.limit_counter_excluded_user_ids).to eq([excluded_user.id])
+      expect(account.account_usage_overview[:agents][:consumed]).to eq(1)
+      expect(account.countable_users_for_limits.pluck(:id)).to contain_exactly(
+        included_user.id
+      )
+    end
+
     it 'returns max limits from account when enterprise version' do
       account.update(limits: { agents: 10 })
       expect(account.usage_limits[:agents]).to eq(10)

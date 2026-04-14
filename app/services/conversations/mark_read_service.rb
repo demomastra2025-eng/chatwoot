@@ -36,12 +36,7 @@ class Conversations::MarkReadService
   private
 
   def update_last_seen_on_conversation(last_seen_at, update_assignee)
-    updates = { agent_last_seen_at: last_seen_at }
-    updates[:assignee_last_seen_at] = last_seen_at if update_assignee.present?
-
-    # rubocop:disable Rails/SkipsModelValidations
-    @conversation.update_columns(updates)
-    # rubocop:enable Rails/SkipsModelValidations
+    last_seen_updater.perform(last_seen_at: last_seen_at, update_assignee: update_assignee.present?)
   end
 
   def should_update_last_seen?
@@ -112,5 +107,9 @@ class Conversations::MarkReadService
 
   def assignee?
     @conversation.assignee_id? && @user == @conversation.assignee
+  end
+
+  def last_seen_updater
+    @last_seen_updater ||= Conversations::LastSeenUpdater.new(conversation: @conversation)
   end
 end

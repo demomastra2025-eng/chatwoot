@@ -52,6 +52,10 @@ describe('#URL Helpers', () => {
     });
   });
   describe('conversationUrl', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
     it('should return direct conversation URL if activeInbox is nil', () => {
       expect(conversationUrl({ accountId: 1, id: 1 })).toBe(
         'accounts/1/conversations/1'
@@ -76,6 +80,14 @@ describe('#URL Helpers', () => {
     it('should preserve status in conversation detail urls', () => {
       expect(conversationUrl({ accountId: 1, id: 1, status: 'snoozed' })).toBe(
         'accounts/1/conversations/1?status=snoozed'
+      );
+    });
+
+    it('should preserve the current route status when explicit status is absent', () => {
+      window.history.replaceState({}, '', '/app/accounts/1?status=resolved');
+
+      expect(conversationUrl({ accountId: 1, id: 1 })).toBe(
+        'accounts/1/conversations/1?status=resolved'
       );
     });
   });

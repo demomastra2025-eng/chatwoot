@@ -118,10 +118,8 @@ export default {
       whatsappWebDiagnostics: null,
       isLoadingWhatsappWebDiagnostics: false,
       isRefreshingWhatsappWebStatus: false,
-      isRunningWhatsappWebReconnect: false,
+      isRunningWhatsappWebRecovery: false,
       isRunningWhatsappWebDisconnect: false,
-      isRunningWhatsappWebRepair: false,
-      isRefreshingWhatsappWebQr: false,
       telegramPersonalDiagnostics: null,
       isLoadingTelegramPersonalDiagnostics: false,
       isRunningTelegramPersonalRequestCode: false,
@@ -136,6 +134,7 @@ export default {
       telegramPersonalCode: '',
       telegramPersonalPassword: '',
       telegramPersonalQrCode: '',
+      whatsappWebRenderedQrCode: '',
       telegramPersonalPollingInterval: null,
       isTelegramPersonalRawDiagnosticsVisible: false,
       isRedirectingMissingInbox: false,
@@ -171,6 +170,12 @@ export default {
     whatsappWebQrCode() {
       return this.whatsappWebEvolutionState.qrcode?.base64 || '';
     },
+    whatsappWebQrValue() {
+      return this.whatsappWebEvolutionState.qrcode?.code || '';
+    },
+    whatsappWebDisplayQrCode() {
+      return this.whatsappWebQrCode || this.whatsappWebRenderedQrCode || '';
+    },
     whatsappWebPairingCode() {
       return (
         this.whatsappWebEvolutionState.qrcode?.pairing_code ||
@@ -195,8 +200,16 @@ export default {
       return Boolean(
         this.isAWhatsAppWebInbox &&
           this.whatsappWebEvolutionState.status !== 'connected' &&
-          (this.whatsappWebQrCode || this.formattedWhatsappWebPairingCode)
+          (this.whatsappWebDisplayQrCode ||
+            this.formattedWhatsappWebPairingCode)
       );
+    },
+    whatsappWebQrFingerprint() {
+      return [
+        this.whatsappWebQrCode.slice(0, 64),
+        this.whatsappWebQrValue.slice(0, 64),
+        this.formattedWhatsappWebPairingCode,
+      ].join(':');
     },
     shouldShowWhatsappWebLifecycleSection() {
       return this.isAWhatsAppWebInbox;
@@ -646,6 +659,12 @@ export default {
       },
       immediate: true,
     },
+    whatsappWebQrFingerprint: {
+      handler() {
+        this.renderWhatsappWebQrCode();
+      },
+      immediate: true,
+    },
     isTelegramPersonalConnected: {
       handler() {
         this.syncTelegramPersonalPolling();
@@ -951,6 +970,24 @@ export default {
         this.telegramPersonalQrCode = '';
       }
     },
+    async renderWhatsappWebQrCode() {
+      if (this.whatsappWebQrCode || !this.whatsappWebQrValue) {
+        this.whatsappWebRenderedQrCode = '';
+        return;
+      }
+
+      try {
+        this.whatsappWebRenderedQrCode = await QRCode.toDataURL(
+          this.whatsappWebQrValue,
+          {
+            margin: 0,
+            width: 384,
+          }
+        );
+      } catch (error) {
+        this.whatsappWebRenderedQrCode = '';
+      }
+    },
     async requestTelegramPersonalCode() {
       try {
         this.isRunningTelegramPersonalRequestCode = true;
@@ -1240,28 +1277,6 @@ export default {
 
       return 'text-n-slate-10';
     },
-    async reconnectWhatsappWeb() {
-      if (this.isWhatsappWebDeleting) {
-        return;
-      }
-
-      try {
-        this.isRunningWhatsappWebReconnect = true;
-        await this.$store.dispatch(
-          'inboxes/reconnectWhatsappWeb',
-          this.currentInboxId
-        );
-        await this.fetchWhatsappWebDiagnostics();
-        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT_STARTED'));
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT_ERROR')
-        );
-      } finally {
-        this.isRunningWhatsappWebReconnect = false;
-      }
-    },
     async disconnectWhatsappWeb() {
       if (this.isWhatsappWebDeleting) {
         return;
@@ -1284,47 +1299,26 @@ export default {
         this.isRunningWhatsappWebDisconnect = false;
       }
     },
-    async repairWhatsappWeb() {
+    async recoverWhatsappWeb() {
       if (this.isWhatsappWebDeleting) {
         return;
       }
 
       try {
-        this.isRunningWhatsappWebRepair = true;
+        this.isRunningWhatsappWebRecovery = true;
         await this.$store.dispatch(
-          'inboxes/repairWhatsappWeb',
+          'inboxes/reconnectWhatsappWeb',
           this.currentInboxId
         );
-        await this.fetchWhatsappWebDiagnostics();
-        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_SUCCESS'));
-      } catch (error) {
-        useAlert(
-          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_ERROR')
-        );
-      } finally {
-        this.isRunningWhatsappWebRepair = false;
-      }
-    },
-    async refreshWhatsappWebQr() {
-      if (this.isWhatsappWebDeleting) {
-        return;
-      }
 
-      try {
-        this.isRefreshingWhatsappWebQr = true;
-        await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
-          inboxId: this.currentInboxId,
-          statusOnly: false,
-        });
         await this.fetchWhatsappWebDiagnostics();
-        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_REFRESH_SUCCESS'));
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_SUCCESS'));
       } catch (error) {
         useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_REFRESH_ERROR')
+          error.message || this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_ERROR')
         );
       } finally {
-        this.isRefreshingWhatsappWebQr = false;
+        this.isRunningWhatsappWebRecovery = false;
       }
     },
     async updateInbox() {
@@ -1725,43 +1719,98 @@ export default {
                     </div>
                   </div>
 
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <p class="mb-3 text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.OPERATOR_ACTIONS') }}
-                    </p>
-                    <div class="flex flex-wrap gap-2">
-                      <NextButton
-                        outline
-                        slate
-                        :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECONNECT')"
-                        :is-loading="isRunningWhatsappWebReconnect"
-                        @click="reconnectWhatsappWeb"
-                      />
-                      <NextButton
-                        outline
-                        slate
-                        :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REFRESH_QR')"
-                        :is-loading="isRefreshingWhatsappWebQr"
-                        @click="refreshWhatsappWebQr"
-                      />
-                      <NextButton
-                        outline
-                        slate
-                        :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT')"
-                        :is-loading="isRunningWhatsappWebDisconnect"
-                        @click="disconnectWhatsappWeb"
-                      />
-                      <NextButton
-                        outline
-                        slate
-                        :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REPAIR_SYNC')"
-                        :is-loading="isRunningWhatsappWebRepair"
-                        @click="repairWhatsappWeb"
-                      />
+                  <div class="space-y-4">
+                    <div
+                      v-if="shouldShowWhatsappWebQrPreview"
+                      class="rounded-xl border border-n-strong p-4"
+                    >
+                      <p class="mb-3 text-sm font-medium text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_TITLE')
+                        }}
+                      </p>
+                      <div
+                        class="flex flex-col gap-4 xl:flex-row xl:items-start"
+                      >
+                        <div
+                          v-if="whatsappWebDisplayQrCode"
+                          class="flex flex-col items-center gap-3"
+                        >
+                          <div
+                            class="rounded-2xl border border-n-strong bg-white p-3"
+                          >
+                            <img
+                              :src="whatsappWebDisplayQrCode"
+                              :alt="
+                                $t(
+                                  'INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_TITLE'
+                                )
+                              "
+                              class="size-48 rounded-lg"
+                            />
+                          </div>
+                        </div>
+                        <div class="flex-1 space-y-3">
+                          <div
+                            v-if="formattedWhatsappWebPairingCode"
+                            class="rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-4 py-3"
+                          >
+                            <p
+                              class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
+                            >
+                              {{
+                                $t(
+                                  'INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL'
+                                )
+                              }}
+                            </p>
+                            <p
+                              class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
+                            >
+                              {{ formattedWhatsappWebPairingCode }}
+                            </p>
+                          </div>
+                          <p class="text-sm leading-6 text-n-slate-10">
+                            {{
+                              $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.QR_PREVIEW_HINT')
+                            }}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <p class="mt-3 text-sm text-n-slate-10">
-                      {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.AUTO_SYNC_HINT') }}
-                    </p>
+
+                    <div class="rounded-xl border border-n-strong p-4">
+                      <p class="mb-3 text-sm font-medium text-n-slate-12">
+                        {{
+                          $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.OPERATOR_ACTIONS')
+                        }}
+                      </p>
+                      <div class="flex flex-wrap gap-2">
+                        <NextButton
+                          outline
+                          slate
+                          icon="i-lucide-refresh-cw"
+                          :label="
+                            $t(
+                              'INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_CONNECTION'
+                            )
+                          "
+                          :is-loading="isRunningWhatsappWebRecovery"
+                          @click="recoverWhatsappWeb"
+                        />
+                        <NextButton
+                          outline
+                          slate
+                          icon="i-lucide-log-out"
+                          :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT')"
+                          :is-loading="isRunningWhatsappWebDisconnect"
+                          @click="disconnectWhatsappWeb"
+                        />
+                      </div>
+                      <p class="mt-3 text-sm text-n-slate-10">
+                        {{ $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_HINT') }}
+                      </p>
+                    </div>
                   </div>
                 </div>
 

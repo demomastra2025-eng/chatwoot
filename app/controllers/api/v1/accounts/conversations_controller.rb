@@ -124,12 +124,18 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       conversation: @conversation,
       user: Current.user
     ).perform
+    head :ok
   end
 
   def unread
     last_incoming_message = @conversation.messages.incoming.last
-    last_seen_at = last_incoming_message.created_at - 1.second if last_incoming_message.present?
-    update_last_seen_on_conversation(last_seen_at, true)
+    return head :ok if last_incoming_message.blank?
+
+    Conversations::LastSeenUpdater.new(conversation: @conversation).perform(
+      last_seen_at: last_incoming_message.created_at - 1.second,
+      update_assignee: true
+    )
+    head :ok
   end
 
   def custom_attributes

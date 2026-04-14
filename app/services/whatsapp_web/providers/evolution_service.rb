@@ -72,12 +72,22 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def reconnect!
-    if restart_runtime_session?
-      response = request(:post, "/instance/restart/#{channel.instance_name}", body: {})
-      sync_from_runtime_response!(response)
+    sync_connection_state!
+
+    case channel.connection_state
+    when 'open'
+      restart_runtime_session!
     else
-      refresh_qr!
+      unless authentication_artifacts_present?
+        refresh_qr!
+
+        if qr_refresh_required_after_reconnect? && restart_runtime_session?
+          restart_runtime_session!
+        end
+      end
     end
+
+    apply_runtime_configuration!
     channel
   end
 
@@ -288,7 +298,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
       {
         remoteJid: remote_jid,
-        fromMe: ActiveModel::Type::Boolean.new.cast(payload[:fromMe] || payload[:from_me]),
+        fromMe: ActiveModel::Type::Boolean.new.cast(extract_from_me(payload)),
         id: source_id
       }
     end
@@ -492,9 +502,29 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     channel.connection_state == 'connecting' && channel.qr_code.blank?
   end
 
+  def restart_runtime_session!
+    response = request(:post, "/instance/restart/#{channel.instance_name}", body: {})
+    sync_from_runtime_response!(response)
+    refresh_qr! if qr_refresh_required_after_reconnect?
+    channel
+  end
+
+  def authentication_artifacts_present?
+    channel.qr_code.present?
+  end
+
   def qr_refresh_required_after_repair?
-    channel.connection_state.in?(%w[close refused unknown]) ||
-      (channel.connection_state == 'connecting' && channel.qr_code.blank?)
+    return false if channel.connection_state == 'open'
+    return false if channel.connection_state == 'reconnecting'
+    return true if channel.connection_state.blank?
+
+    channel.connection_state.in?(%w[close refused unknown]) || channel.qr_code.blank?
+  end
+
+  def qr_refresh_required_after_reconnect?
+    return false if channel.connection_state == 'open'
+
+    channel.qr_code.blank?
   end
 
   def merged_runtime_message(*messages)
@@ -676,10 +706,21 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return if value.blank?
     return WhatsappWeb::ProviderPayloadNormalizer.provider_lookup_remote_jid(value) if value.include?('@')
 
-    digits = value.gsub(/\D/, '')
-    return if digits.blank?
+    normalized_value = if value.match?(/\A[+\d\-\(\)\s]+\z/)
+                         value.gsub(/\D/, '')
+                       else
+                         value
+                       end
+    return if normalized_value.blank?
 
-    "#{digits}@s.whatsapp.net"
+    "#{normalized_value}@s.whatsapp.net"
+  end
+
+  def extract_from_me(payload)
+    return payload[:fromMe] if payload.key?(:fromMe)
+    return payload[:from_me] if payload.key?(:from_me)
+
+    nil
   end
 
   def request(method, path, body: nil)

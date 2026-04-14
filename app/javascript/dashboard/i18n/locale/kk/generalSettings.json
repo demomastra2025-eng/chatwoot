@@ -195,7 +195,15 @@
     "NOTIFICATION": {
       "OFFLINE": "Offline",
       "RECONNECTING": "Reconnecting...",
-      "RECONNECT_SUCCESS": "Reconnected"
+      "RECONNECT_SUCCESS": "Reconnected",
+      "WHATSAPP_WEB_DISCONNECTED": "WhatsApp Web disconnected: {inbox}",
+      "WHATSAPP_WEB_RECONNECTING": "WhatsApp Web reconnecting: {inbox}",
+      "WHATSAPP_WEB_NOT_OPEN": "WhatsApp Web not open: {inbox}",
+      "TELEGRAM_PERSONAL_DISCONNECTED": "Telegram Personal disconnected: {inbox}",
+      "TELEGRAM_PERSONAL_RECONNECTING": "Telegram Personal reconnecting: {inbox}",
+      "TELEGRAM_PERSONAL_NOT_CONNECTED": "Telegram Personal not connected: {inbox}",
+      "WHATSAPP_WEB_IMPORT_IN_PROGRESS": "WhatsApp Web import in progress: {inbox}",
+      "TELEGRAM_PERSONAL_IMPORT_IN_PROGRESS": "Telegram Personal import in progress: {inbox}"
     },
     "BUTTON": {
       "REFRESH": "Refresh"

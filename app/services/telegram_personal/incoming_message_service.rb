@@ -38,24 +38,12 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def set_conversation
-    @conversation = if inbox.lock_to_single_conversation
-                      @contact_inbox.conversations.last
-                    else
-                      @contact_inbox.conversations.where.not(status: :resolved).last
-                    end
-    if @conversation.present?
-      merged_attributes = (@conversation.additional_attributes || {}).merge(conversation_additional_attributes)
-      @conversation.update!(additional_attributes: merged_attributes) if merged_attributes != @conversation.additional_attributes
-      return
-    end
-
-    @conversation = ::Conversation.create!(
-      account_id: inbox.account_id,
-      inbox_id: inbox.id,
-      contact_id: @contact.id,
-      contact_inbox_id: @contact_inbox.id,
+    @conversation = TelegramPersonal::ConversationSyncService.new(
+      inbox: inbox,
+      contact_inbox: @contact_inbox,
+      activity_at: provider_message_time || Time.current,
       additional_attributes: conversation_additional_attributes
-    )
+    ).perform
   end
 
   def build_message

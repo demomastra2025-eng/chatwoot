@@ -10,6 +10,10 @@ defineProps({
     type: String,
     default: '',
   },
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['change', 'delete']);
@@ -24,7 +28,7 @@ const emit = defineEmits(['change', 'delete']);
       :src="src || ''"
       :name="name || ''"
       :size="72"
-      allow-upload
+      :allow-upload="!disabled"
       @upload="emit('change', $event)"
       @delete="emit('delete')"
     />

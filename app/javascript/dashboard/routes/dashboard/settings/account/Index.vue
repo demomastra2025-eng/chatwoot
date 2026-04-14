@@ -8,6 +8,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
+import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
@@ -44,7 +45,7 @@ export default {
     const { uiSettings } = useUISettings();
     const { enabledLanguages } = useConfig();
     const { accountId } = useAccount();
-    const { shouldShow, shouldShowPaywall } = usePolicy();
+    const { shouldShow, shouldShowPaywall, checkPermissions } = usePolicy();
     const v$ = useVuelidate();
     const allowedLoginMethods = computed(
       () => window.chatwootConfig.allowedLoginMethods || ['email']
@@ -59,6 +60,9 @@ export default {
       return hasPermission && allowedLoginMethods.value.includes('saml');
     });
     const showSamlPaywall = computed(() => shouldShowPaywall('saml'));
+    const canManageWorkspace = computed(() =>
+      checkPermissions(['administrator'])
+    );
 
     return {
       uiSettings,
@@ -67,6 +71,7 @@ export default {
       accountId,
       shouldShowSaml,
       showSamlPaywall,
+      canManageWorkspace,
     };
   },
   data() {
@@ -124,45 +129,82 @@ export default {
         this.featureInboundEmailEnabled && !!this.features.custom_reply_email
       );
     },
+    accountRecord() {
+      return this.getAccount(this.accountId);
+    },
+    isWorkspaceReadOnly() {
+      return !this.canManageWorkspace;
+    },
+  },
+  watch: {
+    accountRecord: {
+      immediate: true,
+      handler() {
+        this.hydrateAccountForm();
+      },
+    },
   },
   mounted() {
-    this.initializeAccount();
+    this.hydrateAccountForm();
   },
   methods: {
-    async initializeAccount() {
-      try {
-        const { name, locale, id, domain, support_email, features, logo_url } =
-          this.getAccount(this.accountId);
+    normalizedFormPayload() {
+      return {
+        id: this.id,
+        locale: this.locale,
+        name: this.name.trim(),
+        domain: this.domain.trim(),
+        support_email: this.supportEmail.trim(),
+        logo: this.logoFile,
+      };
+    },
+    applyAccountToForm(account) {
+      const { name, locale, id, domain, support_email, features, logo_url } =
+        account;
 
-        this.$root.$i18n.locale = this.uiSettings?.locale || locale;
-        this.name = name;
-        this.locale = locale;
-        this.id = id;
-        this.domain = domain;
-        this.supportEmail = support_email;
-        this.features = features;
-        this.logoFile = null;
-        this.logoUrl = logo_url || '';
-      } catch (error) {
-        // Ignore error
+      this.$root.$i18n.locale = this.uiSettings?.locale || locale;
+      this.name = name;
+      this.locale = locale;
+      this.id = id;
+      this.domain = domain;
+      this.supportEmail = support_email;
+      this.features = features;
+      this.logoFile = null;
+      this.logoUrl = logo_url || '';
+    },
+
+    hydrateAccountForm() {
+      const account = this.accountRecord;
+      if (!account?.id) {
+        return;
+      }
+
+      const isSameAccount = Number(this.id) === Number(account.id);
+      const shouldHydrate =
+        !this.id || !isSameAccount || !this.v$?.$anyDirty || this.isUpdating;
+
+      if (shouldHydrate) {
+        this.applyAccountToForm(account);
       }
     },
 
     async updateAccount() {
+      if (this.isWorkspaceReadOnly) {
+        useAlert(this.$t('GENERAL_SETTINGS.LIMIT_MESSAGES.NON_ADMIN'));
+        return;
+      }
+
+      const payload = this.normalizedFormPayload();
+      this.name = payload.name;
+      this.domain = payload.domain;
+      this.supportEmail = payload.support_email;
       this.v$.$touch();
-      if (this.v$.$invalid) {
+      if (this.v$.$invalid || !this.name) {
         useAlert(this.$t('GENERAL_SETTINGS.FORM.ERROR'));
         return;
       }
       try {
-        await this.$store.dispatch('accounts/update', {
-          id: this.id,
-          locale: this.locale,
-          name: this.name,
-          domain: this.domain,
-          support_email: this.supportEmail,
-          logo: this.logoFile,
-        });
+        await this.$store.dispatch('accounts/update', payload);
         this.logoFile = null;
         this.logoUrl = this.getAccount(this.id)?.logo_url || this.logoUrl;
         // If user locale is set, update the locale with user locale
@@ -172,10 +214,15 @@ export default {
           // If user locale is not set, update the locale with account locale
           this.$root.$i18n.locale = this.locale;
         }
-        this.getAccount(this.id).locale = this.locale;
+        this.hydrateAccountForm();
         useAlert(this.$t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
       } catch (error) {
-        useAlert(this.$t('GENERAL_SETTINGS.UPDATE.ERROR'));
+        const errorMessage = parseAPIErrorResponse(error);
+        useAlert(
+          (typeof errorMessage === 'string' && errorMessage) ||
+            error?.message ||
+            this.$t('GENERAL_SETTINGS.UPDATE.ERROR')
+        );
       }
     },
     updateWorkspaceLogo({ file, url }) {
@@ -219,6 +266,7 @@ export default {
           <WorkspaceLogo
             :name="name"
             :src="logoUrl"
+            :disabled="isWorkspaceReadOnly"
             @change="updateWorkspaceLogo"
             @delete="deleteWorkspaceLogo"
           />
@@ -232,6 +280,7 @@ export default {
               v-model="name"
               type="text"
               class="w-full"
+              :disabled="isWorkspaceReadOnly"
               :placeholder="$t('GENERAL_SETTINGS.FORM.NAME.PLACEHOLDER')"
               @blur="v$.name.$touch"
             />
@@ -242,7 +291,11 @@ export default {
             :label="$t('GENERAL_SETTINGS.FORM.LANGUAGE.LABEL')"
             :error-message="$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR')"
           >
-            <NextSelect v-model="locale" class="!mb-0 text-sm">
+            <NextSelect
+              v-model="locale"
+              class="!mb-0 text-sm"
+              :disabled="isWorkspaceReadOnly"
+            >
               <option
                 v-for="lang in languagesSortedByCode"
                 :key="lang.iso_639_1_code"
@@ -261,6 +314,7 @@ export default {
               v-model="domain"
               type="text"
               class="w-full"
+              :disabled="isWorkspaceReadOnly"
               :placeholder="$t('GENERAL_SETTINGS.FORM.DOMAIN.PLACEHOLDER')"
             />
             <template #help>
@@ -284,13 +338,19 @@ export default {
               v-model="supportEmail"
               type="text"
               class="w-full"
+              :disabled="isWorkspaceReadOnly"
               :placeholder="
                 $t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.PLACEHOLDER')
               "
             />
           </WithLabel>
           <div>
-            <NextButton blue :is-loading="isUpdating" type="submit">
+            <NextButton
+              blue
+              :is-loading="isUpdating"
+              :disabled="isWorkspaceReadOnly"
+              type="submit"
+            >
               {{ $t('GENERAL_SETTINGS.SUBMIT') }}
             </NextButton>
           </div>
