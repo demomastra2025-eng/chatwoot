@@ -28,6 +28,11 @@ const isTestMode = process.env.TEST === 'true';
 const devServerBindHost = process.env.VITE_DEV_SERVER_BIND_HOST || '0.0.0.0';
 const devServerHost = process.env.VITE_DEV_SERVER_HOST || '127.0.0.1';
 const devServerPort = Number(process.env.VITE_DEV_SERVER_PORT || 3036);
+const devServerProtocol = process.env.VITE_DEV_SERVER_PROTOCOL;
+const devServerClientPort = process.env.VITE_DEV_SERVER_CLIENT_PORT
+  ? Number(process.env.VITE_DEV_SERVER_CLIENT_PORT)
+  : undefined;
+const devServerHmrPath = process.env.VITE_DEV_SERVER_HMR_PATH || undefined;
 
 const vueOptions = {
   template: {
@@ -54,6 +59,9 @@ export default defineConfig({
     hmr: {
       host: devServerHost,
       port: devServerPort,
+      ...(devServerProtocol ? { protocol: devServerProtocol } : {}),
+      ...(devServerClientPort ? { clientPort: devServerClientPort } : {}),
+      ...(devServerHmrPath ? { path: devServerHmrPath } : {}),
     },
   },
   build: {

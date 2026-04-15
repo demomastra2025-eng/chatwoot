@@ -20,20 +20,17 @@ import EmailInboxFinish from './channels/emailChannels/EmailInboxFinish.vue';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
-const WHATSAPP_WEB_QR_TTL_MS = 75 * 1000;
-const WHATSAPP_WEB_AUTO_REFRESH_COOLDOWN_MS = 8 * 1000;
-const WHATSAPP_WEB_AUTO_REFRESH_MAX_ATTEMPTS = 3;
 const TELEGRAM_PERSONAL_REDIRECT_DELAY_MS = 1500;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
 
 const isRefreshingWhatsappWebQr = ref(false);
 const hasScheduledWhatsappWebCompletion = ref(false);
-const hasSeenWhatsappWebProvisioningCode = ref(false);
 const isDashboardDarkTheme = ref(
   typeof document === 'undefined'
     ? false
@@ -42,10 +39,9 @@ const isDashboardDarkTheme = ref(
 const whatsappWebThemeObserver = ref(null);
 const whatsappWebPollingInterval = ref(null);
 const whatsappWebRedirectTimeout = ref(null);
-const whatsappWebAutoRefreshAttempts = ref(0);
-const whatsappWebLastAutoRefreshAt = ref(0);
-const whatsappWebAutoRefreshReason = ref('');
 const whatsappWebThemedQrCode = ref('');
+const isRequestingWhatsappWebCode = ref(false);
+const isRequestingWhatsappWebQr = ref(false);
 const isDocumentVisible = ref(
   typeof document === 'undefined'
     ? true
@@ -250,14 +246,6 @@ const whatsappWebStatus = computed(() => {
   );
 });
 
-const whatsappWebConnectionState = computed(() => {
-  return (
-    currentInbox.value?.connection_state ||
-    whatsappWebState.value.connection_state ||
-    'unknown'
-  );
-});
-
 const isWhatsappWebDeleting = computed(() => {
   return isInboxPendingDeletion(currentInbox.value);
 });
@@ -286,6 +274,14 @@ const whatsappWebPairingCode = computed(() => {
   );
 });
 
+const hasWhatsappWebPairingCode = computed(() => {
+  return Boolean(whatsappWebPairingCode.value);
+});
+
+const hasWhatsappWebQrImage = computed(() => {
+  return Boolean(whatsappWebQrCode.value);
+});
+
 const formattedWhatsappWebPairingCode = computed(() => {
   const sanitizedCode = whatsappWebPairingCode.value.replace(/\W/g, '');
   if (!sanitizedCode) {
@@ -307,67 +303,40 @@ const whatsappWebQrGeneratedAt = computed(() => {
   return whatsappWebState.value.qr_generated_at || '';
 });
 
-const whatsappWebQrGeneratedAtMs = computed(() => {
-  const timestamp = Date.parse(whatsappWebQrGeneratedAt.value);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-});
-
-const whatsappWebQrFingerprint = computed(() => {
-  return [
-    whatsappWebQrGeneratedAt.value,
-    whatsappWebQrCode.value.slice(0, 64),
-    whatsappWebQrValue.value.slice(0, 64),
-    formattedWhatsappWebPairingCode.value,
-  ].join(':');
-});
-
 const whatsappWebDisplayQrCode = computed(() => {
   return whatsappWebThemedQrCode.value || whatsappWebQrCode.value || '';
-});
-
-const canAutoRefreshWhatsappWebQr = computed(() => {
-  return (
-    whatsappWebAutoRefreshAttempts.value <
-    WHATSAPP_WEB_AUTO_REFRESH_MAX_ATTEMPTS
-  );
-});
-
-const isWhatsappWebQrStale = computed(() => {
-  if (!whatsappWebQrGeneratedAtMs.value || isWhatsappWebConnected.value) {
-    return false;
-  }
-
-  return (
-    Date.now() - whatsappWebQrGeneratedAtMs.value >= WHATSAPP_WEB_QR_TTL_MS
-  );
-});
-
-const isWhatsappWebRecoverableFailure = computed(() => {
-  return ['failed', 'disconnected'].includes(whatsappWebStatus.value);
-});
-
-const shouldShowWhatsappWebRefresh = computed(() => {
-  return (
-    isAWhatsAppWebChannel.value &&
-    currentInbox.value?.id &&
-    whatsappWebStatus.value !== 'connected'
-  );
 });
 
 const shouldShowWhatsappWebSuccessCard = computed(() => {
   return isWhatsappWebSetupFlow.value && isWhatsappWebConnected.value;
 });
 
-const shouldShowWhatsappWebLoader = computed(() => {
+const hasWhatsappWebAuthArtifacts = computed(() => {
+  return Boolean(
+    whatsappWebQrCode.value ||
+      whatsappWebQrValue.value ||
+      formattedWhatsappWebPairingCode.value
+  );
+});
+
+const whatsappWebRequestQrButtonLabel = computed(() => {
+  return hasWhatsappWebQrImage.value
+    ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_NEW_QR')
+    : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_QR');
+});
+
+const whatsappWebRequestCodeButtonLabel = computed(() => {
+  return hasWhatsappWebPairingCode.value
+    ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_NEW_CODE')
+    : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_CODE');
+});
+
+const shouldShowWhatsappWebQrLoader = computed(() => {
   return (
     isWhatsappWebSetupFlow.value &&
     (isRefreshingWhatsappWebQr.value ||
-      !currentInbox.value?.id ||
-      (!whatsappWebDisplayQrCode.value &&
-        !formattedWhatsappWebPairingCode.value &&
-        ['creating', 'waiting_for_qr', 'reconnecting', 'disconnected'].includes(
-          whatsappWebStatus.value
-        )))
+      isRequestingWhatsappWebQr.value ||
+      !currentInbox.value?.id)
   );
 });
 
@@ -388,43 +357,44 @@ const whatsappWebStatusMessage = computed(() => {
     return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTING');
   }
 
+  if (isRequestingWhatsappWebCode.value) {
+    return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUESTING_CODE');
+  }
+
+  if (isRefreshingWhatsappWebQr.value) {
+    return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUESTING_QR');
+  }
+
+  if (isRequestingWhatsappWebQr.value) {
+    return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUESTING_QR');
+  }
+
   switch (whatsappWebStatus.value) {
     case 'connected':
       return isWhatsappWebHistorySyncing.value
         ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY')
         : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED');
     case 'failed':
-      if (isRefreshingWhatsappWebQr.value) {
-        return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.RECOVERING');
-      }
-
       return whatsappWebError.value
         ? `${t('INBOX_MGMT.FINISH.WHATSAPP_WEB.FAILED')} ${whatsappWebError.value}`
         : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.FAILED');
     case 'qr_ready':
-      if (
-        isRefreshingWhatsappWebQr.value &&
-        whatsappWebAutoRefreshReason.value
-      ) {
-        return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EXPIRED_REFRESHING');
-      }
-
       return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.SCAN_HINT');
     case 'reconnecting':
       return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.RECONNECTING');
     case 'disconnected':
-      return isRefreshingWhatsappWebQr.value
-        ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.RECOVERING')
-        : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTING');
+      return hasWhatsappWebAuthArtifacts.value
+        ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTING')
+        : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_QR_HINT');
+    case 'creating':
+    case 'waiting_for_qr':
+      return hasWhatsappWebAuthArtifacts.value
+        ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.SCAN_HINT')
+        : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_QR_HINT');
     default:
-      if (
-        isRefreshingWhatsappWebQr.value &&
-        whatsappWebAutoRefreshReason.value
-      ) {
-        return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EXPIRED_REFRESHING');
-      }
-
-      return t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTING');
+      return hasWhatsappWebAuthArtifacts.value
+        ? t('INBOX_MGMT.FINISH.WHATSAPP_WEB.SCAN_HINT')
+        : t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTING');
   }
 });
 
@@ -580,7 +550,7 @@ function stopTelegramPersonalPolling() {
 }
 
 async function fetchTelegramPersonalDiagnostics() {
-  if (!currentInbox.value?.id) {
+  if (!isTelegramPersonalSetupFlow.value || !currentInbox.value?.id) {
     return;
   }
 
@@ -809,7 +779,10 @@ async function generateQRCodes() {
   }
 }
 
-async function refreshWhatsappWebQr({ silent = false, autoReason = '' } = {}) {
+async function refreshWhatsappWebQr({
+  silent = false,
+  artifactType = 'both',
+} = {}) {
   if (!isAWhatsAppWebChannel.value || !currentInbox.value?.id) {
     return;
   }
@@ -818,24 +791,40 @@ async function refreshWhatsappWebQr({ silent = false, autoReason = '' } = {}) {
     return;
   }
 
-  try {
-    if (autoReason) {
-      whatsappWebAutoRefreshAttempts.value += 1;
-      whatsappWebLastAutoRefreshAt.value = Date.now();
-      whatsappWebAutoRefreshReason.value = autoReason;
-    } else {
-      whatsappWebAutoRefreshAttempts.value = 0;
-      whatsappWebLastAutoRefreshAt.value = Date.now();
-      whatsappWebAutoRefreshReason.value = '';
-    }
+  const isRequestingCode = artifactType === 'code';
+  const isRequestingQr = artifactType === 'qr';
 
+  if (isRequestingCode && isRequestingWhatsappWebCode.value) {
+    return;
+  }
+
+  if (isRequestingQr && isRequestingWhatsappWebQr.value) {
+    return;
+  }
+
+  if (isRequestingCode) {
+    isRequestingWhatsappWebCode.value = true;
+  } else if (isRequestingQr) {
+    isRequestingWhatsappWebQr.value = true;
+  } else {
     isRefreshingWhatsappWebQr.value = true;
+  }
+
+  try {
     await store.dispatch('inboxes/refreshWhatsappWebQr', {
       inboxId: currentInbox.value.id,
       statusOnly: false,
     });
     if (!silent) {
-      useAlert(t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REFRESH_SUCCESS'));
+      let successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REFRESH_SUCCESS');
+
+      if (isRequestingCode) {
+        successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_CODE_SUCCESS');
+      } else if (isRequestingQr) {
+        successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_QR_SUCCESS');
+      }
+
+      useAlert(successMessage);
     }
   } catch (error) {
     if (!silent) {
@@ -844,7 +833,13 @@ async function refreshWhatsappWebQr({ silent = false, autoReason = '' } = {}) {
       );
     }
   } finally {
-    isRefreshingWhatsappWebQr.value = false;
+    if (isRequestingCode) {
+      isRequestingWhatsappWebCode.value = false;
+    } else if (isRequestingQr) {
+      isRequestingWhatsappWebQr.value = false;
+    } else {
+      isRefreshingWhatsappWebQr.value = false;
+    }
   }
 }
 
@@ -899,54 +894,8 @@ function shouldPollWhatsappWebStatus() {
     isDocumentVisible.value &&
     currentInbox.value?.id &&
     !isWhatsappWebDeleting.value &&
-    whatsappWebStatus.value !== 'connected' &&
-    (whatsappWebStatus.value !== 'failed' || canAutoRefreshWhatsappWebQr.value)
+    whatsappWebStatus.value !== 'connected'
   );
-}
-
-function maybeAutoRefreshWhatsappWebQr() {
-  if (
-    !isAWhatsAppWebChannel.value ||
-    !isWhatsappWebSetupFlow.value ||
-    !currentInbox.value?.id ||
-    isWhatsappWebDeleting.value ||
-    !isDocumentVisible.value ||
-    whatsappWebStatus.value === 'connected' ||
-    isRefreshingWhatsappWebQr.value ||
-    !canAutoRefreshWhatsappWebQr.value
-  ) {
-    return;
-  }
-
-  if (
-    whatsappWebLastAutoRefreshAt.value &&
-    Date.now() - whatsappWebLastAutoRefreshAt.value <
-      WHATSAPP_WEB_AUTO_REFRESH_COOLDOWN_MS
-  ) {
-    return;
-  }
-
-  let autoReason = '';
-
-  if (
-    !whatsappWebQrCode.value &&
-    !formattedWhatsappWebPairingCode.value &&
-    !hasSeenWhatsappWebProvisioningCode.value &&
-    whatsappWebConnectionState.value !== 'connecting' &&
-    ['creating', 'waiting_for_qr'].includes(whatsappWebStatus.value)
-  ) {
-    autoReason = 'initial';
-  } else if (isWhatsappWebQrStale.value) {
-    autoReason = 'stale';
-  } else if (isWhatsappWebRecoverableFailure.value) {
-    autoReason = 'recovery';
-  }
-
-  if (!autoReason) {
-    return;
-  }
-
-  refreshWhatsappWebQr({ silent: true, autoReason }).catch(() => {});
 }
 
 function syncWhatsappWebPolling() {
@@ -957,11 +906,6 @@ function syncWhatsappWebPolling() {
   }
 
   whatsappWebPollingInterval.value = window.setInterval(() => {
-    maybeAutoRefreshWhatsappWebQr();
-    if (isRefreshingWhatsappWebQr.value) {
-      return;
-    }
-
     store
       .dispatch('inboxes/refreshWhatsappWebQr', {
         inboxId: currentInbox.value.id,
@@ -1002,7 +946,7 @@ async function redirectToInboxListIfMissing() {
   clearTelegramPersonalRedirectTimeout();
 
   router.replace({
-    name: 'settings_inbox_list',
+    name: getInboxFlowRouteName(route, 'list'),
     params: {
       accountId: route.params.accountId,
     },
@@ -1029,7 +973,7 @@ function maybeCompleteWhatsappWebSetup() {
 
   whatsappWebRedirectTimeout.value = window.setTimeout(() => {
     router.replace({
-      name: 'settings_inbox_show',
+      name: getInboxFlowRouteName(route, 'show'),
       params: {
         accountId: route.params.accountId,
         inboxId: currentInboxId.value,
@@ -1064,7 +1008,7 @@ function maybeCompleteTelegramPersonalSetup() {
 
   telegramPersonalRedirectTimeout.value = window.setTimeout(() => {
     router.replace({
-      name: 'settings_inbox_show',
+      name: getInboxFlowRouteName(route, 'show'),
       params: {
         accountId: route.params.accountId,
         inboxId: currentInboxId.value,
@@ -1080,7 +1024,6 @@ function handleVisibilityChange() {
 
   isDocumentVisible.value = document.visibilityState === 'visible';
   if (isDocumentVisible.value) {
-    maybeAutoRefreshWhatsappWebQr();
     fetchTelegramPersonalDiagnostics();
   }
   syncWhatsappWebPolling();
@@ -1098,7 +1041,6 @@ watch(
 
     if (newInbox) {
       generateQRCodes();
-      maybeAutoRefreshWhatsappWebQr();
       renderTelegramPersonalQrCode();
     }
   },
@@ -1121,32 +1063,10 @@ watch(
     whatsappWebStatus,
     whatsappWebQrCode,
     whatsappWebQrGeneratedAt,
-    canAutoRefreshWhatsappWebQr,
   ],
   () => {
-    maybeAutoRefreshWhatsappWebQr();
     syncWhatsappWebPolling();
   }
-);
-
-watch(whatsappWebQrFingerprint, (nextFingerprint, previousFingerprint) => {
-  if (
-    nextFingerprint &&
-    nextFingerprint !== previousFingerprint &&
-    whatsappWebQrGeneratedAt.value
-  ) {
-    whatsappWebAutoRefreshReason.value = '';
-  }
-});
-
-watch(
-  [whatsappWebQrCode, formattedWhatsappWebPairingCode],
-  ([nextQrCode, nextPairingCode]) => {
-    if (nextQrCode || nextPairingCode) {
-      hasSeenWhatsappWebProvisioningCode.value = true;
-    }
-  },
-  { immediate: true }
 );
 
 watch(
@@ -1188,7 +1108,6 @@ onMounted(() => {
   generateQRCodes();
   renderTelegramPersonalQrCode();
   syncDashboardThemeState();
-  maybeAutoRefreshWhatsappWebQr();
   maybeCompleteWhatsappWebSetup();
   maybeCompleteTelegramPersonalSetup();
   syncWhatsappWebPolling();
@@ -1300,118 +1219,163 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-if="isWhatsappWebSetupFlow" class="mt-8 w-full">
-          <div
-            class="mx-auto grid w-full max-w-4xl gap-6 rounded-[28px] border border-n-weak bg-n-solid-1 p-6 text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:p-8"
-          >
-            <div class="flex min-h-full flex-col gap-5">
-              <div class="flex items-center gap-4">
-                <div
-                  class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#25D366]/10 text-[#25D366]"
-                >
-                  <i class="i-ri-whatsapp-line text-[1.75rem]" />
+          <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 text-left">
+            <div
+              class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)] lg:items-start"
+            >
+              <div class="flex min-h-full flex-col gap-5">
+                <div class="flex items-center gap-4">
+                  <div
+                    class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#25D366]/10 text-[#25D366]"
+                  >
+                    <i class="i-ri-whatsapp-line text-[1.75rem]" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-lg font-semibold text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.TITLE') }}
+                    </p>
+                    <p class="mt-1 text-sm leading-6 text-n-slate-10">
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.DESCRIPTION') }}
+                    </p>
+                  </div>
                 </div>
-                <div class="min-w-0">
-                  <p class="text-lg font-semibold text-n-slate-12">
-                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.TITLE') }}
-                  </p>
-                  <p class="mt-1 text-sm leading-6 text-n-slate-10">
-                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.DESCRIPTION') }}
-                  </p>
-                </div>
-              </div>
 
-              <p
-                v-if="whatsappWebStatusMessage"
-                class="text-sm leading-6 text-n-slate-10"
-              >
-                {{ whatsappWebStatusMessage }}
-              </p>
-
-              <div
-                v-if="shouldShowWhatsappWebSuccessCard"
-                class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-6 py-5"
-              >
-                <div
-                  class="flex size-10 items-center justify-center rounded-full bg-[#25D366] text-white"
-                >
-                  <i class="i-ri-check-line text-xl" />
-                </div>
-                <p class="text-sm font-semibold text-n-slate-12">
-                  {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SUCCESS') }}
-                </p>
-                <p class="text-sm leading-6 text-n-slate-10">
-                  {{ whatsappWebSuccessDescription }}
-                </p>
                 <p
-                  v-if="isWhatsappWebHistorySyncing"
-                  class="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+                  v-if="whatsappWebStatusMessage"
+                  class="text-sm leading-6 text-n-slate-10"
                 >
-                  <Spinner :size="14" class="text-[#25D366]" />
+                  {{ whatsappWebStatusMessage }}
+                </p>
+
+                <div
+                  v-if="shouldShowWhatsappWebSuccessCard"
+                  class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-6 py-5"
+                >
+                  <div
+                    class="flex size-10 items-center justify-center rounded-full bg-[#25D366] text-white"
+                  >
+                    <i class="i-ri-check-line text-xl" />
+                  </div>
+                  <p class="text-sm font-semibold text-n-slate-12">
+                    {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SUCCESS') }}
+                  </p>
+                  <p class="text-sm leading-6 text-n-slate-10">
+                    {{ whatsappWebSuccessDescription }}
+                  </p>
+                  <p
+                    v-if="isWhatsappWebHistorySyncing"
+                    class="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
+                  >
+                    <Spinner :size="14" class="text-[#25D366]" />
+                    {{
+                      $t(
+                        'INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY'
+                      )
+                    }}
+                  </p>
+                </div>
+
+                <div v-if="!isWhatsappWebConnected" class="grid gap-5">
+                  <div
+                    class="rounded-2xl border border-n-weak bg-n-surface-1 px-6 py-4"
+                  >
+                    <p
+                      class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
+                    >
+                      {{
+                        $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL')
+                      }}
+                    </p>
+                    <p
+                      v-if="formattedWhatsappWebPairingCode"
+                      class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
+                    >
+                      {{ formattedWhatsappWebPairingCode }}
+                    </p>
+                    <p v-else class="text-sm text-n-slate-10">
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_EMPTY') }}
+                    </p>
+                    <p class="mt-2 text-xs text-n-slate-10">
+                      {{
+                        $t(
+                          'INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_DESCRIPTION'
+                        )
+                      }}
+                    </p>
+                    <NextButton
+                      class="mt-4 w-full"
+                      type="button"
+                      outline
+                      slate
+                      :is-loading="isRequestingWhatsappWebCode"
+                      :label="whatsappWebRequestCodeButtonLabel"
+                      icon="i-lucide-key-round"
+                      @click="refreshWhatsappWebQr({ artifactType: 'code' })"
+                    />
+                  </div>
+
+                  <div
+                    class="rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                  >
+                    <p
+                      class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
+                    >
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_CODE_LABEL') }}
+                    </p>
+
+                    <div
+                    v-if="
+                        whatsappWebDisplayQrCode &&
+                        !isWhatsappWebConnected &&
+                        !shouldShowWhatsappWebQrLoader
+                      "
+                      class="flex items-center justify-center"
+                    >
+                      <img
+                        :src="whatsappWebDisplayQrCode"
+                        :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
+                        class="h-auto w-full max-w-[16rem]"
+                      />
+                    </div>
+                    <div
+                      v-else-if="shouldShowWhatsappWebQrLoader"
+                      class="flex min-h-[16rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
+                    >
+                      <Spinner class="text-[#25D366]" :size="28" />
+                      <p class="text-sm font-medium text-n-slate-11">
+                        {{
+                          $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE')
+                        }}
+                      </p>
+                    </div>
+                    <div
+                      v-else
+                      class="rounded-xl border border-dashed border-n-strong bg-n-surface-2 px-4 py-6 text-center text-sm text-n-slate-10"
+                    >
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_EMPTY') }}
+                    </div>
+
+                    <NextButton
+                      class="mt-4 w-full"
+                      type="button"
+                      outline
+                      slate
+                      icon="i-lucide-qr-code"
+                      :is-loading="isRequestingWhatsappWebQr"
+                      :label="whatsappWebRequestQrButtonLabel"
+                      @click="refreshWhatsappWebQr({ artifactType: 'qr' })"
+                    />
+                  </div>
+                </div>
+
+                <p class="mt-auto text-sm leading-6 text-n-slate-10">
                   {{
-                    $t(
-                      'INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_SYNCING_HISTORY'
-                    )
+                    whatsappWebStatus === 'connected'
+                      ? $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_REDIRECT')
+                      : $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_DESCRIPTION')
                   }}
                 </p>
               </div>
-
-              <div
-                v-if="
-                  formattedWhatsappWebPairingCode &&
-                  whatsappWebStatus !== 'connected'
-                "
-                class="rounded-2xl border border-[#25D366]/30 bg-[#25D366]/5 px-6 py-4"
-              >
-                <p
-                  class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
-                >
-                  {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL') }}
-                </p>
-                <p
-                  class="font-mono text-2xl font-semibold tracking-[0.22em] text-n-slate-12"
-                >
-                  {{ formattedWhatsappWebPairingCode }}
-                </p>
-              </div>
-
-              <p class="mt-auto text-sm leading-6 text-n-slate-10">
-                {{
-                  whatsappWebStatus === 'connected'
-                    ? $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.CONNECTED_REDIRECT')
-                    : $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_DESCRIPTION')
-                }}
-              </p>
-            </div>
-
-            <div class="flex flex-col items-center gap-4">
-              <div
-                v-if="shouldShowWhatsappWebLoader"
-                class="flex min-h-[22rem] w-full max-w-[21rem] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
-              >
-                <Spinner class="text-[#25D366]" :size="28" />
-                <p class="text-sm font-medium text-n-slate-11">
-                  {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE') }}
-                </p>
-              </div>
-              <div
-                v-else-if="whatsappWebDisplayQrCode && !isWhatsappWebConnected"
-                class="flex w-full items-center justify-center"
-              >
-                <img
-                  :src="whatsappWebDisplayQrCode"
-                  :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
-                  class="h-auto w-full max-w-[21rem]"
-                />
-              </div>
-              <NextButton
-                v-if="shouldShowWhatsappWebRefresh"
-                :is-loading="isRefreshingWhatsappWebQr"
-                outline
-                slate
-                icon="i-lucide-qr-code"
-                :label="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_NEW_QR')"
-                @click="refreshWhatsappWebQr()"
-              />
             </div>
           </div>
         </div>
@@ -1726,7 +1690,7 @@ onBeforeUnmount(() => {
         >
           <router-link
             :to="{
-              name: 'settings_inbox_show',
+              name: getInboxFlowRouteName(route, 'show'),
               params: { inboxId: currentInboxId },
             }"
           >

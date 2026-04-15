@@ -9,8 +9,8 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
 
-    it 'keeps the broader scenario tool catalog available by default' do
-      expect(assistant.allowed_agent_tool_ids).to include('faq_lookup', 'handoff', 'add_private_note')
+    it 'keeps the default agent runtime on faq and handoff by default' do
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
     it 'keeps the direct agent runtime on faq and handoff by default' do
@@ -34,7 +34,7 @@ RSpec.describe Captain::Assistant, type: :model do
     it 'builds direct agent runtime tools through the shared tool catalog' do
       allow(Captain::ToolCatalog).to receive(:build_tool).and_call_original
 
-      assistant.agent_tools
+      assistant.send(:agent_tools)
 
       expect(Captain::ToolCatalog).to have_received(:build_tool).at_least(:once).with(
         hash_including(:id),
@@ -64,6 +64,39 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.direct_agent_tool_ids).to eq(['faq_lookup'])
       expect(assistant.allowed_assistant_tool_ids).to eq(['search_documentation'])
     end
+
+    it 'adds explicitly referenced tools and fields to the effective runtime set' do
+      assistant.update!(
+        description: 'Use [Handoff to Human](tool://handoff) and greet [Email](field://contact.email).',
+        config: {
+          'context_access' => {
+            'contact' => {
+              'enabled' => true,
+              'field_ids' => ['contact.name']
+            }
+          },
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      prompt_context = assistant.send(:prompt_context)
+
+      glossary_tool_ids = prompt_context[:tool_glossary].flat_map do |group|
+        group[:entries].map { |entry| entry[:id] }
+      end
+      glossary_field_ids = prompt_context[:context_glossary].flat_map do |group|
+        group[:entries].map { |entry| entry[:id] }
+      end
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(glossary_tool_ids).to include('handoff')
+      expect(glossary_field_ids).to include('contact.email')
+    end
   end
 
   describe '#agent_instructions' do
@@ -71,7 +104,7 @@ RSpec.describe Captain::Assistant, type: :model do
     let(:assistant) { create(:captain_assistant, account: account) }
 
     before do
-      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
+      upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
     end
 
     it 'renders the unified system instruction in the assistant prompt' do
@@ -239,20 +272,20 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'rejects tools in instructions that are not allowed by tool access' do
+    it 'accepts tools in instructions when they are explicitly referenced' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:description]).to include('contains invalid tools: handoff')
+      expect(assistant).to be_valid
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
-    it 'rejects fields in response guidelines that are not allowed by context access' do
+    it 'accepts fields in response guidelines when they are explicitly referenced' do
       assistant.response_guidelines = [
         'Mention [Email](field://contact.email) only when asked.'
       ]
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:response_guidelines]).to include('contains invalid fields: contact.email')
+      expect(assistant).to be_valid
+      expect(assistant.send(:prompt_context)[:context_glossary].flat_map { |group| group[:entries].map { |entry| entry[:id] } }).to include('contact.email')
     end
   end
 end

@@ -148,13 +148,16 @@ export default {
     this.hydrateAccountForm();
   },
   methods: {
+    normalizeTextField(value) {
+      return String(value || '').trim();
+    },
     normalizedFormPayload() {
       return {
         id: this.id,
         locale: this.locale,
-        name: this.name.trim(),
-        domain: this.domain.trim(),
-        support_email: this.supportEmail.trim(),
+        name: this.normalizeTextField(this.name),
+        domain: this.normalizeTextField(this.domain),
+        support_email: this.normalizeTextField(this.supportEmail),
         logo: this.logoFile,
       };
     },
@@ -163,11 +166,11 @@ export default {
         account;
 
       this.$root.$i18n.locale = this.uiSettings?.locale || locale;
-      this.name = name;
+      this.name = name || '';
       this.locale = locale;
       this.id = id;
-      this.domain = domain;
-      this.supportEmail = support_email;
+      this.domain = domain || '';
+      this.supportEmail = support_email || '';
       this.features = features;
       this.logoFile = null;
       this.logoUrl = logo_url || '';

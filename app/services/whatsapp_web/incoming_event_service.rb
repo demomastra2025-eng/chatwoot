@@ -2,8 +2,9 @@ class WhatsappWeb::IncomingEventService
   OUTGOING_ECHO_DELAY = 2.seconds
   MESSAGE_UPDATE_BACKFILL_DELAY = 3.seconds
   PROVIDER_HISTORY_SETTLE_DELAY = 15.seconds
-  NON_RECOVERABLE_DISCONNECTION_CODES = [401, 402, 403, 406].freeze
+  NON_RECOVERABLE_DISCONNECTION_CODES = [401, 402, 403, 406, 428].freeze
   DISCONNECTED_STATUS_VALUES = %w[closed close logout logged_out disconnected].freeze
+  AUTHENTICATION_REQUIRED_STATUS_VALUES = %w[reauth_required authentication_required].freeze
   FAILURE_STATUS_VALUES = %w[error failed refused bad_session].freeze
   REMOVED_INSTANCE_MESSAGE = 'Evolution instance was removed. Run repair or reconnect to create a new session.'.freeze
 
@@ -362,6 +363,7 @@ class WhatsappWeb::IncomingEventService
   def status_instance_connection_state
     status_value = event_data[:status].to_s.downcase
     return 'close' if DISCONNECTED_STATUS_VALUES.include?(status_value)
+    return 'close' if AUTHENTICATION_REQUIRED_STATUS_VALUES.include?(status_value)
     return 'close' if NON_RECOVERABLE_DISCONNECTION_CODES.include?(event_data[:disconnectionReasonCode].to_i)
     return 'refused' if FAILURE_STATUS_VALUES.include?(status_value)
     return 'refused' if event_data[:disconnectionReasonCode].present?

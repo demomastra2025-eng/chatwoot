@@ -393,7 +393,7 @@
     "REPORTS_OVERVIEW": "Overview",
     "REAUTHORIZE": "Your inbox connection has expired, please reconnect\n to continue receiving and sending messages",
     "HELP_CENTER": {
-      "TITLE": "Ваша страница",
+      "TITLE": "Вики",
       "ARTICLES": "Статьи",
       "CATEGORIES": "Категории",
       "LOCALES": "Языки",
@@ -443,7 +443,7 @@
         "DESCRIPTION": "Automatically convert voice messages and call recordings into searchable text transcripts."
       },
       "HELP_CENTER_SEARCH": {
-        "TITLE": "Your Page Search Indexing",
+        "TITLE": "Wiki Search Indexing",
         "DESCRIPTION": "Use AI for context aware search inside your help center articles."
       },
       "LABEL_SUGGESTION": {

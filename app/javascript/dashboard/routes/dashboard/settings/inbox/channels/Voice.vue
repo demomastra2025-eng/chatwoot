@@ -7,6 +7,7 @@ import { required, requiredIf } from '@vuelidate/validators';
 import { useAlert } from 'dashboard/composables';
 import { isPhoneE164 } from 'shared/helpers/Validators';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -210,7 +211,7 @@ async function createKazakhstanChannel() {
     });
 
     router.replace({
-      name: 'settings_inboxes_add_agents',
+      name: getInboxFlowRouteName(route, 'agents'),
       params: { page: 'new', inbox_id: channel.id },
     });
   } catch (error) {
@@ -238,7 +239,7 @@ async function createTwilioChannel() {
     });
 
     router.replace({
-      name: 'settings_inboxes_add_agents',
+      name: getInboxFlowRouteName(route, 'agents'),
       params: { page: 'new', inbox_id: channel.id },
     });
   } catch (error) {

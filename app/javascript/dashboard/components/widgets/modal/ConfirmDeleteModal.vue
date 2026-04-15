@@ -62,31 +62,33 @@ export default {
 </script>
 
 <template>
-  <Modal v-model:show="localShow" @close="closeModal">
-    <woot-modal-header :header-title="title" :header-content="message" />
-    <form @submit.prevent="onConfirm">
-      <woot-input
-        v-model="value"
-        type="text"
-        :class="{ error: v$.value.$error }"
-        :placeholder="confirmPlaceHolderText"
-        @blur="v$.value.$touch"
-      />
-      <div class="flex items-center justify-end gap-2">
-        <NextButton
-          faded
-          slate
-          type="reset"
-          :label="rejectText"
-          @click.prevent="closeModal"
+  <Teleport to="body">
+    <Modal v-model:show="localShow" @close="closeModal">
+      <woot-modal-header :header-title="title" :header-content="message" />
+      <form @submit.prevent="onConfirm">
+        <woot-input
+          v-model="value"
+          type="text"
+          :class="{ error: v$.value.$error }"
+          :placeholder="confirmPlaceHolderText"
+          @blur="v$.value.$touch"
         />
-        <NextButton
-          ruby
-          type="submit"
-          :label="confirmText"
-          :disabled="v$.value.$invalid"
-        />
-      </div>
-    </form>
-  </Modal>
+        <div class="flex items-center justify-end gap-2">
+          <NextButton
+            faded
+            slate
+            type="reset"
+            :label="rejectText"
+            @click.prevent="closeModal"
+          />
+          <NextButton
+            ruby
+            type="submit"
+            :label="confirmText"
+            :disabled="v$.value.$invalid"
+          />
+        </div>
+      </form>
+    </Modal>
+  </Teleport>
 </template>

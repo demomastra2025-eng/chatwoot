@@ -43,6 +43,7 @@ import ColorPicker from 'dashboard/components-next/colorpicker/ColorPicker.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
 import Widget from 'dashboard/modules/widget-preview/components/Widget.vue';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
   '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
@@ -612,7 +613,7 @@ export default {
   },
   watch: {
     $route(to, from) {
-      if (to.name === 'settings_inbox_show') {
+      if (to.name === getInboxFlowRouteName(to, 'show')) {
         const inboxChanged = to.params.inboxId !== from.params.inboxId;
         if (inboxChanged) {
           this.syncInboxData();
@@ -703,7 +704,7 @@ export default {
       if (
         !this.currentInboxId ||
         this.isRedirectingMissingInbox ||
-        this.$route.name !== 'settings_inbox_show'
+        this.$route.name !== getInboxFlowRouteName(this.$route, 'show')
       ) {
         return;
       }
@@ -716,7 +717,7 @@ export default {
       this.isRedirectingMissingInbox = true;
       this.stopTelegramPersonalPolling();
       this.$router.replace({
-        name: 'settings_inbox_list',
+        name: getInboxFlowRouteName(this.$route, 'list'),
         params: { accountId: this.$route.params.accountId },
       });
     },
@@ -850,15 +851,23 @@ export default {
     updateRouteWithoutRefresh(selectedTabIndex) {
       const tab = this.tabs[selectedTabIndex];
       if (!tab) return;
+      const { tab: _ignoredTab, ...routeParams } = this.$route.params;
 
-      const { accountId, inboxId } = this.$route.params;
-      const baseUrl = `/app/accounts/${accountId}/settings/inboxes/${inboxId}`;
+      const resolvedRoute = this.$router.resolve({
+        name: getInboxFlowRouteName(this.$route, 'show'),
+        params: {
+          ...routeParams,
+          ...(tab.key === 'inbox-settings'
+            ? {}
+            : {
+                tab: tab.key,
+              }),
+        },
+        query: { ...this.$route.query },
+      });
 
-      // Append the tab key only if it's not the default.
-      const newUrl =
-        tab.key === 'inbox-settings' ? baseUrl : `${baseUrl}/${tab.key}`;
-      // Update URL without triggering route watcher
-      window.history.replaceState(null, '', newUrl);
+      // Update URL without triggering route watcher.
+      window.history.replaceState(null, '', resolvedRoute.href);
     },
     setTabFromRouteParam() {
       const { tab: tabParam } = this.$route.params;

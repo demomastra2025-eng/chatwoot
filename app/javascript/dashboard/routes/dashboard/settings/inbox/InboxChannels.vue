@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useBranding } from 'shared/composables/useBranding';
+import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 import PageHeader from '../SettingsSubPageHeader.vue';
 
@@ -17,10 +18,10 @@ const createFlowSteps = computed(() => {
   const steps = ['CHANNEL', 'INBOX', 'AGENT', 'FINISH'];
 
   const routes = {
-    CHANNEL: 'settings_inbox_new',
-    INBOX: 'settings_inboxes_page_channel',
-    AGENT: 'settings_inboxes_add_agents',
-    FINISH: 'settings_inbox_finish',
+    CHANNEL: getInboxFlowRouteName(route, 'new'),
+    INBOX: getInboxFlowRouteName(route, 'page'),
+    AGENT: getInboxFlowRouteName(route, 'agents'),
+    FINISH: getInboxFlowRouteName(route, 'finish'),
   };
 
   return steps.map(step => {
@@ -33,11 +34,11 @@ const createFlowSteps = computed(() => {
 });
 
 const isFirstStep = computed(() => {
-  return route.name === 'settings_inbox_new';
+  return route.name === getInboxFlowRouteName(route, 'new');
 });
 
 const isFinishStep = computed(() => {
-  return route.name === 'settings_inbox_finish';
+  return route.name === getInboxFlowRouteName(route, 'finish');
 });
 
 const pageTitle = computed(() => {

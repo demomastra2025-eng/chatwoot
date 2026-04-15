@@ -52,7 +52,14 @@ const entityContextLabel = computed(() => {
     .replace('Appointment', 'APPOINTMENT')
     .toUpperCase();
 
-  return `${t(`OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.${typeKey}`)} #${entityContext.value.remindableId}`;
+  const labelByType = {
+    APPOINTMENT: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.APPOINTMENT'),
+    CONVERSATION: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.CONVERSATION'),
+    DEAL: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.DEAL'),
+    TASK: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_KINDS.TASK'),
+  };
+
+  return `${labelByType[typeKey] || typeKey} #${entityContext.value.remindableId}`;
 });
 
 const sortedPlans = computed(() => {

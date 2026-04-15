@@ -9,6 +9,7 @@ import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import router from '../../../index';
 import PageHeader from '../SettingsSubPageHeader.vue';
 import { useVuelidate } from '@vuelidate/core';
+import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 export default {
   components: {
@@ -74,7 +75,7 @@ export default {
           agentList: this.selectedAgentIds,
         });
         router.replace({
-          name: 'settings_inbox_finish',
+          name: getInboxFlowRouteName(this.$route, 'finish'),
           params: {
             inbox_id: this.$route.params.inbox_id,
           },
@@ -98,7 +99,9 @@ export default {
             <div class="text-sm w-full text-n-slate-11 space-y-2">
               <p>{{ $t('INBOX_MGMT.ADD.AGENTS.DESC') }}</p>
               <p>
-                <strong>{{ $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE_LABEL') }}</strong>
+                <strong>{{
+                  $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE_LABEL')
+                }}</strong>
                 {{ ' ' }}
                 {{ $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE') }}
               </p>

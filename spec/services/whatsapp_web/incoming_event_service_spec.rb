@@ -543,6 +543,25 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('disconnected')
     end
 
+    it 'treats reauth_required status.instance events as disconnected instead of failed' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          data: {
+            status: 'reauth_required',
+            message: 'Authentication artifacts were not generated after reconnect',
+            disconnectionReasonCode: 428
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.last_error).to include('Authentication artifacts were not generated after reconnect')
+    end
+
     it 'marks logout.instance events as disconnected and clears stale errors' do
       channel.update!(last_error: 'Previous provider error')
 

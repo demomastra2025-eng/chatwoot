@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
+import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 import { useAccount } from 'dashboard/composables/useAccount';
 
@@ -10,6 +11,7 @@ import ChannelItem from 'dashboard/components/widgets/ChannelItem.vue';
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const { accountId, currentAccount } = useAccount();
 
 const globalConfig = useMapGetter('globalConfig/get');
@@ -119,7 +121,10 @@ const initChannelAuth = channel => {
     sub_page: channel,
     accountId: accountId.value,
   };
-  router.push({ name: 'settings_inboxes_page_channel', params });
+  router.push({
+    name: getInboxFlowRouteName(route, 'page'),
+    params,
+  });
 };
 
 onMounted(() => {

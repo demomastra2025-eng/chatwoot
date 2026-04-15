@@ -591,9 +591,9 @@
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         },
         "CONTEXT_ACCESS": {
-          "TITLE": "Access to attributes and data",
-          "DESCRIPTION": "Fields available to the agent.",
-          "HINT": "Fields appear in context and the variable picker.",
+          "TITLE": "Default data",
+          "DESCRIPTION": "Choose which fields are available by default.",
+          "HINT": "Fields referenced explicitly with field:// in instructions are added automatically.",
           "VARIABLE": "Variable",
           "LOADING": "Loading available fields...",
           "EMPTY": "No fields are available for this section yet.",
@@ -640,9 +640,9 @@
           }
         },
         "TOOL_ACCESS": {
-          "TITLE": "Tool access",
-          "DESCRIPTION": "Choose which actions the agent is allowed to execute. Allowed tools are exposed both to runtime and the prompt glossary.",
-          "HINT": "Keep only the tools the agent truly needs. Even an allowed tool is still enforced separately by runtime checks when called.",
+          "TITLE": "Default tools",
+          "DESCRIPTION": "Choose which tools are available by default.",
+          "HINT": "Tools referenced explicitly with tool:// in instructions are added automatically. Runtime policy checks still apply when a tool is called.",
           "LOADING": "Loading available tools...",
           "ERROR": "The tool catalog could not be loaded. Refresh or retry to get the current configuration.",
           "RETRY": "Retry",

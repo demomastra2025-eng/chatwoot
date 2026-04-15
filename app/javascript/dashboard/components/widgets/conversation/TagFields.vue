@@ -13,17 +13,12 @@ const props = defineProps({
     type: Number,
     default: null,
   },
-  contextAccess: {
-    type: Object,
-    default: null,
-  },
 });
 
 const emit = defineEmits(['close', 'selectField']);
 
 const selectedIndex = ref(0);
 const fields = ref([]);
-const TABLES = Object.freeze(['contact', 'conversation']);
 
 const loadFields = async () => {
   try {
@@ -36,55 +31,10 @@ const loadFields = async () => {
   }
 };
 
-const hasDraftContextAccess = computed(() =>
-  TABLES.some(tableName =>
-    Object.prototype.hasOwnProperty.call(props.contextAccess || {}, tableName)
-  )
-);
-
-const selectedFields = computed(() => {
-  if (!hasDraftContextAccess.value) {
-    return fields.value.filter(field => field.selected);
-  }
-
-  const selectedFieldIds = new Set();
-
-  TABLES.forEach(tableName => {
-    const rawScope = props.contextAccess?.[tableName] || {};
-    const tableFields = fields.value.filter(
-      field => field.table_name === tableName
-    );
-    const availableFieldIds = tableFields.map(field => field.id);
-    const hasFieldIds = Object.prototype.hasOwnProperty.call(
-      rawScope,
-      'field_ids'
-    );
-    const defaultFieldIds = tableFields
-      .filter(field => field.selected !== false)
-      .map(field => field.id);
-    const enabled =
-      Object.prototype.hasOwnProperty.call(rawScope, 'enabled') &&
-      typeof rawScope.enabled === 'boolean'
-        ? rawScope.enabled
-        : true;
-
-    if (!enabled) {
-      return;
-    }
-
-    const fieldIds = (
-      hasFieldIds ? rawScope.field_ids : defaultFieldIds
-    ).filter(fieldId => availableFieldIds.includes(fieldId));
-    fieldIds.forEach(fieldId => selectedFieldIds.add(fieldId));
-  });
-
-  return fields.value.filter(field => selectedFieldIds.has(field.id));
-});
-
 const filteredFields = computed(() => {
   const search = props.searchKey?.trim().toLowerCase() || '';
 
-  return [...selectedFields.value]
+  return [...fields.value]
     .filter(field => {
       const titleMatches = field.title.toLowerCase().includes(search);
       const groupMatches = (field.group_name || '')

@@ -3,6 +3,11 @@ export const TOUCH_CREATED_AT_ANCHOR = 'touch.created_at';
 const ANCHOR_DEFINITIONS = {
   appointment: [
     {
+      value: 'appointment.created_at',
+      labelKey:
+        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.APPOINTMENT_CREATED_AT',
+    },
+    {
       value: 'appointment.starts_at',
       labelKey: 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.APPOINTMENT_STARTS_AT',
     },
@@ -40,12 +45,20 @@ const ANCHOR_DEFINITIONS = {
   ],
   deal: [
     {
+      value: 'deal.created_at',
+      labelKey: 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.DEAL_CREATED_AT',
+    },
+    {
       value: 'deal.expected_close_on',
       labelKey:
         'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.DEAL_EXPECTED_CLOSE_ON',
     },
   ],
   task: [
+    {
+      value: 'task.created_at',
+      labelKey: 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.TASK_CREATED_AT',
+    },
     {
       value: 'task.due_at',
       labelKey: 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.TASK_DUE_AT',
@@ -62,6 +75,10 @@ const REMINDABLE_TYPE_TO_ENTITY_KIND = {
 
 const anchorLabelForValue = (t, anchorValue) => {
   switch (anchorValue) {
+    case 'appointment.created_at':
+      return t(
+        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.APPOINTMENT_CREATED_AT'
+      );
     case 'appointment.starts_at':
       return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.APPOINTMENT_STARTS_AT');
     case 'appointment.ends_at':
@@ -86,10 +103,14 @@ const anchorLabelForValue = (t, anchorValue) => {
       return t(
         'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.CONVERSATION_WAITING_SINCE'
       );
+    case 'deal.created_at':
+      return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.DEAL_CREATED_AT');
     case 'deal.expected_close_on':
       return t(
         'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.DEAL_EXPECTED_CLOSE_ON'
       );
+    case 'task.created_at':
+      return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.TASK_CREATED_AT');
     case 'task.due_at':
       return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ANCHORS.TASK_DUE_AT');
     default:
@@ -151,6 +172,10 @@ export const buildTouchAnchorOptions = ({
 };
 
 export const touchAnchorSupportedEntityKinds = anchorValue => {
+  if (anchorValue === TOUCH_CREATED_AT_ANCHOR) {
+    return [...Object.keys(ANCHOR_DEFINITIONS)];
+  }
+
   return Object.entries(ANCHOR_DEFINITIONS)
     .filter(([, options]) =>
       options.some(option => option.value === anchorValue)

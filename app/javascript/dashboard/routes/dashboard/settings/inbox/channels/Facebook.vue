@@ -6,6 +6,7 @@ import { useAlert } from 'dashboard/composables';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { required } from '@vuelidate/validators';
 import LoadingState from 'dashboard/components/widgets/LoadingState.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 import ChannelApi from '../../../../../api/channels';
 import PageHeader from '../../SettingsSubPageHeader.vue';
@@ -212,7 +213,7 @@ export default {
           .dispatch('inboxes/createFBChannel', this.channelParams())
           .then(data => {
             router.replace({
-              name: 'settings_inboxes_add_agents',
+              name: getInboxFlowRouteName(this.$route, 'agents'),
               params: { page: 'new', inbox_id: data.id },
             });
           })

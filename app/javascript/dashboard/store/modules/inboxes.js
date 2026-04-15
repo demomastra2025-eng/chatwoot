@@ -163,7 +163,7 @@ const commitTelegramPersonalDiagnostics = (
   }
 };
 
-const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox) => {
+const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox, includeQrCode = false) => {
   if (!existingInbox) {
     return nextInbox;
   }
@@ -173,6 +173,20 @@ const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox) => {
   const nextAdditionalAttributes = nextInbox.additional_attributes || {};
   const existingEvolution = existingAdditionalAttributes.evolution || {};
   const nextEvolution = nextAdditionalAttributes.evolution || {};
+  const hasNextEvolutionQrCode = Object.prototype.hasOwnProperty.call(
+    nextEvolution,
+    'qrcode'
+  );
+  const mergedEvolution = {
+    ...existingEvolution,
+    ...nextEvolution,
+  };
+
+  // If explicit qr artifact request is on, remove stale QR when provider does not
+  // return it in the status-only response.
+  if (includeQrCode && !hasNextEvolutionQrCode) {
+    mergedEvolution.qrcode = {};
+  }
 
   return {
     ...existingInbox,
@@ -181,8 +195,7 @@ const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox) => {
       ...existingAdditionalAttributes,
       ...nextAdditionalAttributes,
       evolution: {
-        ...existingEvolution,
-        ...nextEvolution,
+        ...mergedEvolution,
       },
     },
   };
@@ -602,7 +615,11 @@ export const actions = {
           record => record.id === response.data.id
         );
         const inboxPayload = isStatusOnly
-          ? mergeWhatsappWebInboxPayload(existingInbox, response.data)
+          ? mergeWhatsappWebInboxPayload(
+              existingInbox,
+              response.data,
+              includeQrCode
+            )
           : response.data;
 
         commit(types.default.EDIT_INBOXES, inboxPayload);

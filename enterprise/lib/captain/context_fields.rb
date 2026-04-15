@@ -268,6 +268,19 @@ class Captain::ContextFields
       end
     end
 
+    def effective_definitions_for(assistant, field_ids: nil)
+      definitions = definitions_for(assistant.account)
+      access = normalized_access_for(assistant, definitions)
+      explicit_field_ids = sanitize_field_ids(field_ids, definitions)
+      effective_field_ids = SCOPES.flat_map do |scope|
+        default_field_ids = access.dig(scope, :enabled) ? Array(access.dig(scope, :field_ids)) : []
+
+        default_field_ids + explicit_field_ids.select { |field_id| field_id.start_with?("#{scope}.") }
+      end.uniq
+
+      definitions.select { |field| effective_field_ids.include?(field[:id]) }
+    end
+
     def allowed_field_ids_for(assistant)
       allowed_definitions_for(assistant).map { |field| field[:id] }
     end
@@ -282,27 +295,34 @@ class Captain::ContextFields
       end
     end
 
-    def prompt_state_for(assistant:, runtime_state:)
-      access = normalized_access_for(assistant)
+    def prompt_state_for(assistant:, runtime_state:, field_ids: nil)
+      definitions = definitions_for(assistant.account)
+      access = normalized_access_for(assistant, definitions)
+      explicit_field_ids = sanitize_field_ids(field_ids, definitions)
       prompt_state = {}
       visible_fields = {}
       custom_attribute_label_maps = custom_attribute_label_maps_for_definitions(
-        allowed_definitions_for(assistant)
+        effective_definitions_for(assistant, field_ids: explicit_field_ids)
       )
 
       SCOPES.each do |scope|
         scope_access = access.fetch(scope)
-        next unless scope_access[:enabled]
+        default_field_ids = scope_access[:enabled] ? Array(scope_access[:field_ids]) : []
+        effective_field_ids = default_field_ids + explicit_field_ids.select do |field_id|
+          field_id.start_with?("#{scope}.")
+        end
+        effective_field_ids = effective_field_ids.uniq
+        next if effective_field_ids.blank?
 
         scoped_prompt_state = build_scoped_prompt_state(
           scope: scope,
           raw_scope_state: runtime_state[scope],
-          allowed_field_ids: scope_access[:field_ids]
+          allowed_field_ids: effective_field_ids
         )
         next if scoped_prompt_state.blank?
 
         prompt_state[scope] = scoped_prompt_state
-        visible_fields[scope] = visible_core_field_keys(scope_access[:field_ids], scope)
+        visible_fields[scope] = visible_core_field_keys(effective_field_ids, scope)
       end
 
       prompt_state[:visible_fields] = visible_fields if visible_fields.present?
@@ -381,6 +401,14 @@ class Captain::ContextFields
     end
 
     private
+
+    def sanitize_field_ids(field_ids, definitions)
+      available_field_ids = definitions.map { |field| field[:id] }
+
+      Array(field_ids).map { |field_id| normalize_field_id(field_id) }
+                      .uniq
+                      .select { |field_id| available_field_ids.include?(field_id) }
+    end
 
     def contact_fields
       build_field_group('contact', CONTACT_FIELD_DEFINITIONS)

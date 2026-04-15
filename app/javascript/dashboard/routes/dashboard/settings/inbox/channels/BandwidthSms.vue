@@ -4,6 +4,7 @@ import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
 import router from '../../../../index';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -62,7 +63,7 @@ export default {
         });
 
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             page: 'new',
             inbox_id: smsChannel.id,

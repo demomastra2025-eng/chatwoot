@@ -5,6 +5,7 @@ import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
 import router from '../../../../index';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 import { isPhoneE164OrEmpty } from 'shared/helpers/Validators';
 
@@ -53,7 +54,7 @@ export default {
         );
 
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             page: 'new',
             inbox_id: whatsappChannel.id,

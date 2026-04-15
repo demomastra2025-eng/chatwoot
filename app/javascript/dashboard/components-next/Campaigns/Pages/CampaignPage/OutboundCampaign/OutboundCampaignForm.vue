@@ -7,6 +7,7 @@ import {
   onMounted,
   onBeforeUnmount,
 } from 'vue';
+import { debounce } from '@chatwoot/utils';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
@@ -338,6 +339,22 @@ const previewPayload = computed(() => {
 });
 
 const previewSignature = computed(() => JSON.stringify(previewPayload.value));
+const canAutoPreviewTemplateCampaign = computed(() => {
+  if (!requiresTemplate.value) {
+    return false;
+  }
+
+  return Boolean(
+    String(state.title || '').trim() &&
+      state.inboxId &&
+      state.templateName &&
+      state.templateLanguage &&
+      state.scheduledAt &&
+      state.selectedAudience?.length &&
+      selectedTemplate.value &&
+      hasRequiredTemplateParams.value
+  );
+});
 
 const isPreviewStale = computed(() => {
   if (!preview.value || !lastPreviewSignature.value) return false;
@@ -389,6 +406,19 @@ const handlePreview = async () => {
     useAlert(t('CAMPAIGN.PREVIEW.ERROR_MESSAGE'));
   }
 };
+
+const runAutoPreview = debounce(async () => {
+  if (!canAutoPreviewTemplateCampaign.value) {
+    return;
+  }
+
+  try {
+    await store.dispatch('campaigns/preview', prepareCampaignDetails());
+    lastPreviewSignature.value = previewSignature.value;
+  } catch {
+    lastPreviewSignature.value = null;
+  }
+}, 350);
 
 const handleSubmit = async () => {
   const isFormValid = await v$.value.$validate();
@@ -464,6 +494,22 @@ watch(
   () => state.templateLanguage,
   () => {
     clearPreviewState();
+  }
+);
+
+watch(
+  () => [previewSignature.value, canAutoPreviewTemplateCampaign.value],
+  ([, canAutoPreview]) => {
+    if (!requiresTemplate.value) {
+      return;
+    }
+
+    if (!canAutoPreview) {
+      clearPreviewState();
+      return;
+    }
+
+    runAutoPreview();
   }
 );
 
@@ -627,6 +673,7 @@ defineExpose({
     >
       <SchedulingDateTimeField
         v-model="state.scheduledAt"
+        time-picker-variant="field"
         :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.LABEL')"
         :placeholder="
           t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.PLACEHOLDER')

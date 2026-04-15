@@ -33,7 +33,7 @@ class Captain::Assistant::PromptPreviewService
       compiled_prompt: compiled_prompt,
       notes: [
         'Rendered without live conversation context.',
-        'Tool access and field access are still enforced separately at runtime.'
+        'Default tools and data can expand via explicit tool:// and field:// references. Runtime policy checks still apply.'
       ],
       used_field_ids: assistant_used_field_ids,
       used_tool_ids: assistant_used_tool_ids,
@@ -89,11 +89,7 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def allowed_copilot_tools
-    Captain::ToolCatalog.allowed_tools_for(
-      assistant,
-      Captain::ToolAccess::SCOPE_ASSISTANT,
-      fallback_ids: assistant.available_assistant_tool_ids
-    )
+    assistant.allowed_assistant_tools
   end
 
   def assistant_layers
@@ -130,19 +126,27 @@ class Captain::Assistant::PromptPreviewService
   def assistant_used_tool_ids
     referenced_tool_ids_for_texts(
       [assistant.system_instruction, assistant.response_guidelines, assistant.guardrails]
-    ) & assistant.direct_agent_tool_ids
+    ) & if assistant.internal_assistant?
+          assistant.allowed_assistant_tool_ids
+        else
+          assistant.allowed_agent_tool_ids
+        end
   end
 
   def assistant_used_field_ids
-    referenced_field_ids_for_texts(
+    field_ids = referenced_field_ids_for_texts(
       [assistant.system_instruction, assistant.response_guidelines, assistant.guardrails]
-    ) & assistant.allowed_context_field_ids
+    )
+
+    field_ids & assistant.available_context_field_ids
   end
 
   def scenario_used_field_ids(scenario)
-    referenced_field_ids_for_texts(
+    field_ids = referenced_field_ids_for_texts(
       [scenario.instruction, assistant.response_guidelines, assistant.guardrails]
-    ) & assistant.allowed_context_field_ids
+    )
+
+    field_ids & assistant.available_context_field_ids
   end
 
   def referenced_tool_ids_for_texts(texts)

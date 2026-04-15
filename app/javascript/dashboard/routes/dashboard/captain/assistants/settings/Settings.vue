@@ -209,8 +209,8 @@ const handleDeleteSuccess = () => {
               :context-access="basicContextAccess"
               :tool-access="basicToolAccess"
               :show-description-field="false"
-              :show-context-access="false"
-              :show-tool-access="false"
+              show-context-access
+              show-tool-access
               :show-submit-button="false"
               @update:context-access="handleContextAccessUpdate"
               @update:tool-access="handleToolAccessUpdate"

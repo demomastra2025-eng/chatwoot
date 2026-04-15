@@ -65,9 +65,14 @@ const routeToLastActiveAssistant = () => {
     'captain_assistants_access_index', // Access page
   ].includes(navigationPath);
 
-  const navigateTo = isAValidRoute
-    ? navigationPath
-    : 'captain_assistants_responses_index';
+  let navigateTo = 'captain_assistants_responses_index';
+
+  if (isAValidRoute) {
+    navigateTo =
+      navigationPath === 'captain_assistants_access_index'
+        ? 'captain_assistants_settings_index'
+        : navigationPath;
+  }
 
   return routeToView(navigateTo, {
     accountId: route.params.accountId,

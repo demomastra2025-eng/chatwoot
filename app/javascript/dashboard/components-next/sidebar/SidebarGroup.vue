@@ -16,6 +16,10 @@ const props = defineProps({
   icon: { type: [String, Object, Function], default: null },
   to: { type: Object, default: null },
   activeOn: { type: Array, default: () => [] },
+  actionTo: { type: [Object, String], default: '' },
+  actionTitle: { type: String, default: '' },
+  actionIcon: { type: [String, Object], default: '' },
+  actionActiveOn: { type: Array, default: () => [] },
   children: { type: Array, default: undefined },
   getterKeys: { type: Object, default: () => ({}) },
 });
@@ -113,6 +117,27 @@ const hasAccessibleChildren = computed(() => {
   return accessibleItems.value.length > 0;
 });
 
+const headerActionItem = computed(() => {
+  if (props.actionTo && props.actionIcon) {
+    return {
+      to: props.actionTo,
+      label: props.actionTitle,
+      icon: props.actionIcon,
+      activeOn: props.actionActiveOn,
+    };
+  }
+
+  if (!hasChildren.value) {
+    return null;
+  }
+
+  return (
+    props.children.find(
+      child => child.headerAction && child.to && isAllowed(child.to)
+    ) || null
+  );
+});
+
 const isActive = computed(() => {
   if (props.to) {
     if (route.path === resolvePath(props.to)) return true;
@@ -138,10 +163,22 @@ const queryMatches = child => {
 
 const paramsMatch = child => {
   const childParams = child?.to?.params || {};
+  const routeParams = route.params || {};
+  const inboxIdAliases = {
+    inbox_id: 'inboxId',
+    inboxId: 'inbox_id',
+  };
 
-  return Object.keys(childParams)
-    .map(key => String(childParams[key]) === String(route.params[key]))
-    .every(Boolean);
+  return Object.keys(childParams).every(key => {
+    const childParam = String(childParams[key]);
+    const routeParam = String(routeParams[key] || '');
+    const routeParamAlias = routeParams[inboxIdAliases[key]] || '';
+
+    return (
+      childParam === routeParam ||
+      (routeParamAlias && childParam === String(routeParamAlias))
+    );
+  });
 };
 
 const matchesChildRoute = child => {
@@ -157,10 +194,19 @@ const matchesChildRoute = child => {
     return paramsMatch(child) && queryMatches(child);
   }
 
+  if (Array.isArray(child.activeOn) && child.activeOn.length > 0) {
+    return false;
+  }
+
   return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
 };
 
 const isMenuItemActive = item => matchesChildRoute(item);
+const isHeaderActionActive = computed(() => {
+  return headerActionItem.value
+    ? isMenuItemActive(headerActionItem.value)
+    : false;
+});
 
 // We could use the RouterLink isActive too, but our routes are not always
 // nested correctly, so we need to check the active state ourselves
@@ -176,6 +222,28 @@ const activeChildNames = computed(() =>
 const hasActiveChild = computed(() => {
   return activeChildNames.value.length > 0;
 });
+
+const isSubGroupHeaderActive = child => {
+  if (
+    child?.suppressHeaderActiveWhenChildActive &&
+    child?.children?.some(subChild =>
+      activeChildNames.value.includes(subChild.name)
+    )
+  ) {
+    return false;
+  }
+
+  const suppressedChildNames = child?.suppressHeaderActiveForChildren || [];
+
+  if (
+    suppressedChildNames.length > 0 &&
+    suppressedChildNames.some(name => activeChildNames.value.includes(name))
+  ) {
+    return false;
+  }
+
+  return isMenuItemActive(child);
+};
 
 const handleCollapsedClick = () => {
   if (hasChildren.value && hasAccessibleChildren.value) {
@@ -284,6 +352,10 @@ watch(
         :getter-keys="getterKeys"
         :is-active="isActive"
         :has-active-child="hasActiveChild"
+        :action-to="headerActionItem?.to"
+        :action-title="headerActionItem?.label"
+        :action-icon="headerActionItem?.icon"
+        :action-active="isHeaderActionActive"
         :expandable="hasChildren"
         :is-expanded="isExpanded"
         @toggle="toggleTrigger"
@@ -302,11 +374,14 @@ watch(
             :is-expanded="isExpanded"
             :active-child-names="activeChildNames"
             :to="child.to"
-            :header-active="isMenuItemActive(child)"
+            :header-active="isSubGroupHeaderActive(child)"
             :action-label="child.actionLabel"
+            :action-to="child.actionTo"
+            :action-title="child.actionTitle"
+            :action-icon="child.actionIcon"
           />
           <SidebarGroupLeaf
-            v-else-if="isAllowed(child.to)"
+            v-else-if="!child.headerAction && isAllowed(child.to)"
             v-show="isExpanded || activeChildNames.includes(child.name)"
             v-bind="child"
             :active="activeChildNames.includes(child.name)"

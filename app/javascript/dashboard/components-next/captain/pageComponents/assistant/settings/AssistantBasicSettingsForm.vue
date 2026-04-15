@@ -366,6 +366,7 @@ defineExpose({
       v-if="showToolAccess"
       v-model="state.toolAccess"
       :assistant-id="assistant.id"
+      :allowed-scopes="[activeToolScope]"
     />
 
     <div v-if="showSubmitButton">

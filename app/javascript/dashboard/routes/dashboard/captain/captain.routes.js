@@ -8,7 +8,6 @@ import AssistantEmptyStateIndex from './assistants/Index.vue';
 
 import AssistantSettingsIndex from './assistants/settings/Settings.vue';
 import AssistantPromptsIndex from './assistants/prompts/Index.vue';
-import AssistantAccessIndex from './assistants/access/Index.vue';
 import AssistantPlaygroundIndex from './assistants/playground/Index.vue';
 import AssistantGuardrailsIndex from './assistants/guardrails/Index.vue';
 import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
@@ -101,7 +100,11 @@ const assistantRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/access'),
-    component: AssistantAccessIndex,
+    redirect: to => ({
+      name: 'captain_assistants_settings_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_access_index',
     meta,
   },

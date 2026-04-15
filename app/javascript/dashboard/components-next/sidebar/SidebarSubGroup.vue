@@ -15,6 +15,9 @@ const props = defineProps({
   to: { type: [Object, String], default: '' },
   headerActive: { type: Boolean, default: false },
   actionLabel: { type: String, default: '' },
+  actionTo: { type: [Object, String], default: '' },
+  actionTitle: { type: String, default: '' },
+  actionIcon: { type: [Object, String], default: '' },
 });
 
 const { isAllowed } = useSidebarContext();
@@ -52,6 +55,9 @@ useEventListener(scrollableContainer, 'scroll', () => {
     :to="to"
     :active="headerActive"
     :action-label="actionLabel"
+    :action-to="actionTo"
+    :action-title="actionTitle"
+    :action-icon="actionIcon"
     class="my-1"
   />
   <ul

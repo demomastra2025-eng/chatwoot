@@ -24,6 +24,17 @@ export default {
             permissions: ['administrator'],
           },
         },
+        {
+          path: 'touch-plans',
+          name: 'automation_touch_plans_index',
+          redirect: to => {
+            return {
+              name: 'outbound_touch_plans_index',
+              params: to.params,
+              query: to.query,
+            };
+          },
+        },
       ],
     },
   ],

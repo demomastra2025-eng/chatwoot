@@ -69,11 +69,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def build_tools
-    Captain::ToolCatalog.allowed_tools_for(
-      @assistant,
-      Captain::ToolAccess::SCOPE_ASSISTANT,
-      fallback_ids: @assistant.available_assistant_tool_ids
-    ).filter_map do |tool_definition|
+    @assistant.allowed_assistant_tools.filter_map do |tool_definition|
       next unless Captain::ToolPolicy.runtime_allowed?(
         tool_definition,
         assistant: @assistant,

@@ -7,6 +7,7 @@ import ThreeSixtyDialogWhatsapp from './360DialogWhatsapp.vue';
 import CloudWhatsapp from './CloudWhatsapp.vue';
 import WhatsappEmbeddedSignup from './WhatsappEmbeddedSignup.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 const route = useRoute();
 const router = useRouter();
@@ -59,7 +60,7 @@ const availableProviders = computed(() => [
 const selectProvider = providerValue => {
   if (providerValue === PROVIDER_TYPES.WHATSAPP_WEB) {
     router.push({
-      name: 'settings_inboxes_page_channel',
+      name: getInboxFlowRouteName(route, 'page'),
       params: {
         ...route.params,
         sub_page: PROVIDER_TYPES.WHATSAPP_WEB,

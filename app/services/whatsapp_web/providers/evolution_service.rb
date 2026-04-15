@@ -329,8 +329,13 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def sync_from_runtime_response!(response)
     qr_payload = normalized_qr_payload(response)
-    runtime_state = response.dig('instance', 'state') || response.dig('instance', 'status')
+    runtime_status = response.dig('instance', 'status') || response['status']
+    runtime_state = response.dig('instance', 'state') || runtime_status
     runtime_error = runtime_error_message(response)
+
+    if runtime_status.to_s == 'reauth_required' && qr_payload.blank?
+      runtime_state = 'close'
+    end
 
     if qr_payload.blank? && runtime_state.blank? && runtime_error.present?
       channel.update!(
@@ -426,6 +431,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return 'open' if value == 'open'
     return 'connecting' if value == 'connecting'
     return 'reconnecting' if value == 'reconnecting'
+    return 'close' if value == 'reauth_required'
     return 'close' if value.in?(%w[close closed disconnected])
     return 'refused' if value == 'refused'
 
@@ -576,7 +582,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def create_payload
     {
       instanceName: channel.instance_name,
-      qrcode: true,
+      qrcode: false,
       number: channel.pairing_number,
       integration: EVOLUTION_INTEGRATION,
       readMessages: false,

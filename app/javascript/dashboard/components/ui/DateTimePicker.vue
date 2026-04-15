@@ -345,7 +345,7 @@ const popupContentClasses = computed(() => {
     return 'flex flex-col';
   }
 
-  return 'flex items-center gap-2';
+  return 'flex items-start gap-2';
 });
 
 const popupCalendarPanelClasses = computed(() => {
@@ -353,7 +353,7 @@ const popupCalendarPanelClasses = computed(() => {
 });
 
 const popupTimePanelClasses = computed(() => [
-  'shrink-0 self-center',
+  'shrink-0 self-start',
   props.type === 'datetime'
     ? 'border-l border-n-weak pl-2'
     : 'mt-2 border-t border-n-weak pt-2',

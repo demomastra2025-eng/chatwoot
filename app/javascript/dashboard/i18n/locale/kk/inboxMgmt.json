@@ -1114,11 +1114,11 @@
       "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings"
     },
     "HELP_CENTER": {
-      "LABEL": "Your Page",
-      "PLACEHOLDER": "Select Your Page",
-      "SELECT_PLACEHOLDER": "Select Your Page",
-      "REMOVE": "Remove Your Page",
-      "SUB_TEXT": "Attach a Your Page with the inbox"
+      "LABEL": "Wiki",
+      "PLACEHOLDER": "Вики таңдаңыз",
+      "SELECT_PLACEHOLDER": "Вики таңдаңыз",
+      "REMOVE": "Вики-ді жою",
+      "SUB_TEXT": "Каналға вики тіркеңіз"
     },
     "AUTO_ASSIGNMENT": {
       "MAX_ASSIGNMENT_LIMIT": "Auto assignment limit",

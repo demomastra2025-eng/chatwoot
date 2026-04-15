@@ -24,15 +24,23 @@ import {
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
+import SchedulingRelativeOffsetInput from 'dashboard/components-next/Scheduling/SchedulingRelativeOffsetInput.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import TouchEditorShell from 'dashboard/components-next/Outbound/TouchEditorShell.vue';
 import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppTemplateParser.vue';
 import WootMessageEditor from 'dashboard/components/widgets/WootWriter/Editor.vue';
 import {
+  TOUCH_CREATED_AT_ANCHOR,
   buildTouchAnchorOptions,
   touchAnchorEntityKindForRemindableType,
 } from 'dashboard/components-next/Outbound/touchAnchors';
+import {
+  normalizeRelativeOffset,
+  resolveTouchTimingState,
+  toRelativeOffsetSeconds,
+  TOUCH_TIMING_STATES,
+} from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
 import { INBOX_TYPES, TWILIO_CHANNEL_MEDIUM } from 'dashboard/helper/inbox.js';
@@ -142,7 +150,9 @@ const form = reactive({
   remindableId: '',
   remindableType: 'Conversation',
   relativeAnchor: '',
-  relativeOffsetMinutes: 0,
+  relativeOffsetDirection: TOUCH_TIMING_STATES.AFTER,
+  relativeOffsetUnit: 'minutes',
+  relativeOffsetValue: 1,
   repeatMode: 'once',
   repeatUntilAt: '',
   scheduledAt: '',
@@ -150,7 +160,7 @@ const form = reactive({
   templateLanguage: '',
   templateName: '',
   templateParams: {},
-  timingMode: 'absolute',
+  timingMode: 'relative',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   useAiAuthoring: false,
 });
@@ -256,7 +266,10 @@ const resolvedChannelType = computed(
 );
 const resolvedInboxMedium = computed(() => resolvedInbox.value?.medium || '');
 const requiresTemplateOnly = computed(
-  () => resolvedChannelType.value === INBOX_TYPES.WHATSAPP
+  () =>
+    resolvedChannelType.value === INBOX_TYPES.WHATSAPP ||
+    (resolvedChannelType.value === INBOX_TYPES.TWILIO &&
+      resolvedInboxMedium.value === TWILIO_CHANNEL_MEDIUM.WHATSAPP)
 );
 const isWhatsAppTemplateCapable = computed(() => {
   if (!resolvedInbox.value) {
@@ -377,8 +390,66 @@ const repeatModeDescription = computed(() => {
 const relativeOffsetNote = computed(() => {
   return t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_NOTE');
 });
-const canConfigureRepeat = computed(() => form.timingMode === 'absolute');
-const isRelativeTiming = computed(() => form.timingMode === 'relative');
+const timingModeTabs = computed(() => {
+  return [
+    {
+      id: TOUCH_TIMING_STATES.ABSOLUTE,
+      label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.ABSOLUTE_MODE'),
+    },
+    {
+      id: TOUCH_TIMING_STATES.AFTER,
+      label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_AFTER'),
+    },
+    {
+      id: TOUCH_TIMING_STATES.BEFORE,
+      label: t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_BEFORE'),
+    },
+  ];
+});
+const showAbsoluteTimingEditor = computed(
+  () => form.timingMode === TOUCH_TIMING_STATES.ABSOLUTE
+);
+const showRelativeTimingEditor = computed(
+  () => !showAbsoluteTimingEditor.value
+);
+const canConfigureRepeat = computed(() => showAbsoluteTimingEditor.value);
+const relativeOffsetUnitOptions = computed(() => {
+  return [
+    {
+      label: t(
+        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_UNITS.MINUTES'
+      ),
+      value: 'minutes',
+    },
+    {
+      label: t(
+        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_UNITS.HOURS'
+      ),
+      value: 'hours',
+    },
+    {
+      label: t(
+        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_UNITS.DAYS'
+      ),
+      value: 'days',
+    },
+  ];
+});
+const activeTimingTabIndex = computed(() => {
+  const activeState = resolveTouchTimingState({
+    relativeOffsetSeconds: toRelativeOffsetSeconds({
+      direction: form.relativeOffsetDirection,
+      unit: form.relativeOffsetUnit,
+      value: form.relativeOffsetValue,
+    }),
+    timingMode: form.timingMode,
+  });
+
+  const tabIndex = timingModeTabs.value.findIndex(
+    tab => tab.id === activeState
+  );
+  return tabIndex === -1 ? 0 : tabIndex;
+});
 const selectedTemplateGroup = computed(() => {
   if (!form.templateName) {
     return null;
@@ -450,9 +521,9 @@ const canSave = computed(() => {
     hasTargetRoute &&
     hasContent &&
     (form.actionType !== 'ai_agent_wakeup' || canRunAiWakeup.value) &&
-    (form.timingMode === 'absolute'
+    (showAbsoluteTimingEditor.value
       ? !!form.scheduledAt
-      : !!form.relativeAnchor)
+      : !!form.relativeAnchor && Number(form.relativeOffsetValue || 0) >= 1)
   );
 });
 
@@ -511,6 +582,22 @@ const setContentKind = kind => {
 
 const handleContentTabChanged = tab => {
   setContentKind(tab.id);
+};
+
+const setTimingState = state => {
+  if (state === TOUCH_TIMING_STATES.ABSOLUTE) {
+    form.timingMode = TOUCH_TIMING_STATES.ABSOLUTE;
+    return;
+  }
+
+  form.timingMode = 'relative';
+  form.relativeOffsetDirection = state;
+  form.repeatMode = 'once';
+  form.repeatUntilAt = '';
+};
+
+const handleTimingTabChanged = tab => {
+  setTimingState(tab.id);
 };
 
 const repeatModeOptions = computed(() => {
@@ -727,8 +814,10 @@ const resetForm = () => {
   form.remindableType = isTargetSelectionMode.value
     ? ''
     : props.remindableType || 'Conversation';
-  form.relativeAnchor = relativeAnchorOptions.value[0]?.value || '';
-  form.relativeOffsetMinutes = 1;
+  form.relativeAnchor = TOUCH_CREATED_AT_ANCHOR;
+  form.relativeOffsetDirection = TOUCH_TIMING_STATES.AFTER;
+  form.relativeOffsetUnit = 'minutes';
+  form.relativeOffsetValue = 1;
   form.repeatMode = 'once';
   form.repeatUntilAt = '';
   form.scheduledAt = '';
@@ -736,7 +825,7 @@ const resetForm = () => {
   form.templateLanguage = '';
   form.templateName = '';
   form.templateParams = {};
-  form.timingMode = 'absolute';
+  form.timingMode = 'relative';
   form.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   form.useAiAuthoring = false;
   clearTargetSelection();
@@ -769,12 +858,13 @@ const hydrateForm = () => {
   form.remindableType = isTargetSelectionMode.value
     ? ''
     : props.touch.remindable?.type || props.remindableType || 'Conversation';
-  form.relativeAnchor =
-    props.touch.relative_anchor || relativeAnchorOptions.value[0]?.value || '';
-  form.relativeOffsetMinutes = Math.round(
-    (props.touch.relative_offset_seconds || 0) / 60
+  form.relativeAnchor = props.touch.relative_anchor || TOUCH_CREATED_AT_ANCHOR;
+  const normalizedRelativeOffset = normalizeRelativeOffset(
+    props.touch.relative_offset_seconds
   );
-  form.relativeOffsetMinutes = Math.max(1, form.relativeOffsetMinutes || 0);
+  form.relativeOffsetDirection = normalizedRelativeOffset.direction;
+  form.relativeOffsetUnit = normalizedRelativeOffset.unit;
+  form.relativeOffsetValue = normalizedRelativeOffset.value;
   form.repeatMode = props.touch.repeat_mode || 'once';
   form.repeatUntilAt = toDateTimeInputValue(props.touch.repeat_until_at);
   form.scheduledAt = toDateTimeInputValue(props.touch.scheduled_at);
@@ -878,21 +968,13 @@ const buildPayload = () => {
         }
       : {
           relative_anchor: form.relativeAnchor,
-          relative_offset_seconds: Number(form.relativeOffsetMinutes || 0) * 60,
+          relative_offset_seconds: toRelativeOffsetSeconds({
+            direction: form.relativeOffsetDirection,
+            unit: form.relativeOffsetUnit,
+            value: form.relativeOffsetValue,
+          }),
         }),
   };
-};
-
-const setRelativeTiming = enabled => {
-  form.timingMode = enabled ? 'relative' : 'absolute';
-
-  if (enabled && !form.relativeAnchor) {
-    form.relativeAnchor = relativeAnchorOptions.value[0]?.value || '';
-  }
-
-  if (enabled && Number(form.relativeOffsetMinutes || 0) < 1) {
-    form.relativeOffsetMinutes = 1;
-  }
 };
 
 const saveTouch = async () => {
@@ -948,15 +1030,17 @@ watch(
     );
 
     if (!availableAnchors.includes(form.relativeAnchor)) {
-      form.relativeAnchor = availableAnchors[0] || '';
+      form.relativeAnchor = availableAnchors.includes(TOUCH_CREATED_AT_ANCHOR)
+        ? TOUCH_CREATED_AT_ANCHOR
+        : availableAnchors[0] || '';
     }
   }
 );
 
 watch(
-  () => form.relativeOffsetMinutes,
+  () => form.relativeOffsetValue,
   value => {
-    if (!isRelativeTiming.value) {
+    if (!showRelativeTimingEditor.value) {
       return;
     }
 
@@ -965,7 +1049,7 @@ watch(
       return;
     }
 
-    form.relativeOffsetMinutes = 1;
+    form.relativeOffsetValue = 1;
   }
 );
 
@@ -1106,6 +1190,7 @@ watch(
   <TouchEditorShell
     :model-value="modelValue"
     :display-mode="displayMode"
+    :close-on-outside="false"
     width="md"
     :title="drawerTitle"
     :description="drawerDescription"
@@ -1351,49 +1436,48 @@ watch(
 
       <SchedulingFormFieldGroup :framed="false">
         <div class="grid gap-4">
-          <div class="flex items-center justify-between gap-3">
-            <p class="mb-0 text-sm font-medium text-n-slate-12">
-              {{ $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.SCHEDULED_AT') }}
-            </p>
-            <label class="flex items-center gap-2 text-sm text-n-slate-11">
-              <Checkbox
-                :model-value="isRelativeTiming"
-                @update:model-value="setRelativeTiming"
-              />
-              <span>{{
-                $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_TOGGLE')
-              }}</span>
-            </label>
+          <div class="rounded-2xl bg-n-surface-1 p-1">
+            <TabBar
+              :key="`touch-timing-mode-${activeTimingTabIndex}`"
+              :tabs="timingModeTabs"
+              :initial-active-tab="activeTimingTabIndex"
+              @tab-changed="handleTimingTabChanged"
+            />
           </div>
 
           <SchedulingDateTimeField
-            v-if="!isRelativeTiming"
+            v-if="showAbsoluteTimingEditor"
+            time-picker-variant="field"
+            :label="$t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.SCHEDULED_AT')"
             :model-value="form.scheduledAt"
             type="datetime"
             @update:model-value="form.scheduledAt = $event"
           />
 
           <template v-else>
+            <SchedulingRelativeOffsetInput
+              v-model:amount="form.relativeOffsetValue"
+              v-model:unit="form.relativeOffsetUnit"
+              :label="
+                $t(
+                  'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_VALUE'
+                )
+              "
+              :unit-options="relativeOffsetUnitOptions"
+              min="1"
+              @update:amount="
+                form.relativeOffsetValue = Math.max(1, Number($event || 0))
+              "
+            />
+
             <SchedulingSelectField
+              :label="
+                $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_ANCHOR')
+              "
               :model-value="form.relativeAnchor"
               :options="relativeAnchorOptions"
               class="touch-relative-anchor-select"
               @update:model-value="form.relativeAnchor = $event"
-            />
-
-            <Input
-              :label="
-                $t(
-                  'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.RELATIVE_OFFSET_MINUTES'
-                )
-              "
-              :model-value="String(form.relativeOffsetMinutes)"
-              type="number"
-              inputmode="numeric"
-              min="1"
-              @update:model-value="
-                form.relativeOffsetMinutes = Math.max(1, Number($event || 0))
-              "
             />
 
             <p class="-mt-2 mb-0 text-xs leading-5 text-n-slate-11">

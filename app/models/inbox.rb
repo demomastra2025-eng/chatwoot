@@ -222,7 +222,7 @@ class Inbox < ApplicationRecord
   end
 
   def inbox_type
-    channel.name
+    channel&.name || channel_type.to_s.demodulize
   end
 
   def display_channel_type

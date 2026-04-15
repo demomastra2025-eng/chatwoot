@@ -6,6 +6,8 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import GreetingsEditor from 'shared/components/GreetingsEditor.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import InboxSelect from 'dashboard/components-next/select/Select.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 export default {
   components: {
@@ -13,6 +15,7 @@ export default {
     GreetingsEditor,
     NextButton,
     Editor,
+    InboxSelect,
   },
   data() {
     return {
@@ -58,7 +61,7 @@ export default {
           }
         );
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             page: 'new',
             inbox_id: website.id,
@@ -151,7 +154,7 @@ export default {
 
       <label class="w-full">
         {{ $t('INBOX_MGMT.ADD.WEBSITE_CHANNEL.CHANNEL_GREETING_TOGGLE.LABEL') }}
-        <Select v-model="greetingEnabled">
+        <InboxSelect v-model="greetingEnabled">
           <option :value="true">
             {{
               $t(
@@ -166,7 +169,7 @@ export default {
               )
             }}
           </option>
-        </Select>
+        </InboxSelect>
         <p class="help-text">
           {{
             $t(

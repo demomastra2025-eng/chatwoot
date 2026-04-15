@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORTS=(3002 3037)
+STARTUP_WAIT_SECONDS="${DEV_HYBRID_RESTART_STARTUP_WAIT_SECONDS:-15}"
+TERMINATE_TIMEOUT_SECONDS="${DEV_HYBRID_RESTART_TERMINATE_TIMEOUT_SECONDS:-10}"
+SELF_PID="$$"
+
+log() {
+  printf '[dev-hybrid-restart] %s\n' "$*"
+}
+
+normalize_pids() {
+  local pids="$1"
+
+  awk '
+    {
+      if ($1 ~ /^[0-9]+$/) print $1
+    }
+  ' <<< "${pids}" | sort -u
+}
+
+is_pid_running() {
+  local pid="$1"
+  ps -p "${pid}" >/dev/null 2>&1
+}
+
+collect_processes_by_pattern() {
+  local pattern="$1"
+  local pid
+
+  pgrep -f -- "${pattern}" | while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    if [[ "${pid}" == "${SELF_PID}" || "${pid}" == "${PPID}" ]]; then
+      continue
+    fi
+    printf '%s\n' "${pid}"
+  done
+}
+
+read_pids_by_pattern() {
+  collect_processes_by_pattern "$1" || true
+}
+
+read_listening_pids() {
+  local port="$1"
+  lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true
+}
+
+kill_pids() {
+  local pids="$1"
+  local target="$2"
+  local normalized_pids
+  local alive_pids
+  local remaining_pids
+
+  normalized_pids="$(normalize_pids "${pids}")"
+  if [[ -z "${normalized_pids}" ]]; then
+    return 0
+  fi
+
+  log "Stopping ${target}: ${normalized_pids//$'\n'/ }"
+  while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    kill -TERM "${pid}" 2>/dev/null || true
+  done <<< "${normalized_pids}"
+
+  local retries=0
+  while (( retries < TERMINATE_TIMEOUT_SECONDS )); do
+    alive_pids="$(while IFS= read -r pid; do
+      if is_pid_running "${pid}"; then
+        printf '%s\n' "${pid}"
+      fi
+    done <<< "${normalized_pids}")"
+    if [[ -z "${alive_pids}" ]]; then
+      return 0
+    fi
+    sleep 1
+    retries=$((retries + 1))
+  done
+
+  remaining_pids="$(while IFS= read -r pid; do
+    if is_pid_running "${pid}"; then
+      printf '%s\n' "${pid}"
+    fi
+  done <<< "${normalized_pids}")"
+  if [[ -n "${remaining_pids}" ]]; then
+    log "Force stopping: ${remaining_pids//$'\n'/ }"
+    while IFS= read -r pid; do
+      kill -KILL "${pid}" 2>/dev/null || true
+    done <<< "${remaining_pids}"
+  fi
+}
+
+collect_hybrid_pids_from_ports() {
+  local ports_pids port pid raw_pids=""
+
+  for port in "${PORTS[@]}"; do
+    ports_pids="$(read_listening_pids "${port}")"
+    for pid in ${ports_pids}; do
+      raw_pids="${raw_pids}${raw_pids:+$'\n'}${pid}"
+    done
+  done
+
+  printf "%s\n" "${raw_pids}" | sort -u
+}
+
+collect_hybrid_proxy_pids() {
+  local raw_pids=""
+  raw_pids="$(read_pids_by_pattern "bin/dev-hybrid start")"
+  raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "overmind start -f .*Procfile.dev-hybrid")"
+  raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "foreman start -f .*Procfile.dev-hybrid")"
+  raw_pids="${raw_pids}"$'\n'"$(read_pids_by_pattern "foreman: master")"
+
+  printf "%s\n" "${raw_pids}" | sort -u
+}
+
+wait_for_ports() {
+  local timeout_seconds="$1"
+  local attempts=0
+  local port
+  local port_pids
+
+  while (( attempts < timeout_seconds )); do
+    local ready_ports=()
+    for port in "${PORTS[@]}"; do
+      port_pids="$(read_listening_pids "${port}")"
+      if [[ -n "${port_pids}" ]]; then
+        ready_ports+=("${port}")
+      fi
+    done
+
+    if (( ${#ready_ports[@]} == ${#PORTS[@]} )); then
+      return 0
+    fi
+
+    attempts=$((attempts + 1))
+    sleep 1
+  done
+
+  log "Warning: not all ports became available within ${timeout_seconds}s: 3002 -> $(read_listening_pids 3002 || true), 3037 -> $(read_listening_pids 3037 || true)"
+  return 1
+}
+
+main() {
+  local proxy_pids hybrid_pids
+  local start_pid
+
+  cd "${APP_DIR}"
+
+  proxy_pids="$(collect_hybrid_proxy_pids)"
+  kill_pids "${proxy_pids}" "old dev-hybrid foreman processes"
+
+  hybrid_pids="$(collect_hybrid_pids_from_ports)"
+  kill_pids "${hybrid_pids}" "stale dev-hybrid listeners on 3002/3037"
+
+  sleep 1
+  setsid nohup ./bin/dev-hybrid start >/dev/null 2>&1 < /dev/null &
+  start_pid="${!}"
+  log "Started dev-hybrid in background: pid ${start_pid}"
+
+  if ! is_pid_running "${start_pid}"; then
+    log "dev-hybrid wrapper exited immediately. Check logs: ${APP_DIR}/logs/dev-hybrid.log"
+    return 1
+  fi
+
+  wait_for_ports "${STARTUP_WAIT_SECONDS}" || true
+
+  # make sure process groups are settled and output is available
+  sleep 1
+  log "Dev-hybrid log: ${APP_DIR}/logs/dev-hybrid.log"
+  log "Dev-hybrid latest log: ${APP_DIR}/logs/onelink-dev-hybrid-latest.log"
+}
+
+main "$@"

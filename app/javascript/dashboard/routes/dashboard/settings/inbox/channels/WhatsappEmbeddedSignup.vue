@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useStore } from 'vuex';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import Icon from 'next/icon/Icon.vue';
@@ -9,6 +9,7 @@ import NextButton from 'next/button/Button.vue';
 import LoadingState from 'dashboard/components/widgets/LoadingState.vue';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import globalConstants from 'dashboard/constants/globals.js';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 import {
   setupFacebookSdk,
   initWhatsAppEmbeddedSignup,
@@ -18,6 +19,7 @@ import {
 
 const store = useStore();
 const router = useRouter();
+const route = useRoute();
 const { t } = useI18n();
 
 // State
@@ -72,7 +74,7 @@ const handleSignupSuccess = inboxData => {
   if (inboxData && inboxData.id) {
     useAlert(t('INBOX_MGMT.FINISH.MESSAGE'));
     router.replace({
-      name: 'settings_inboxes_add_agents',
+      name: getInboxFlowRouteName(route, 'agents'),
       params: {
         page: 'new',
         inbox_id: inboxData.id,
@@ -81,7 +83,7 @@ const handleSignupSuccess = inboxData => {
   } else {
     useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SUCCESS_FALLBACK'));
     router.replace({
-      name: 'settings_inbox_list',
+      name: getInboxFlowRouteName(route, 'list'),
     });
   }
 };

@@ -43,6 +43,12 @@ const expandedScopes = ref(
 );
 
 const cloneAccess = access => JSON.parse(JSON.stringify(access || {}));
+const resolveTranslation = (key, fallback) => {
+  const translated = t(key);
+  return translated === key ? fallback : translated;
+};
+const resolveLocalizedValue = (translated, key, fallback) =>
+  !translated || translated === key ? fallback : translated;
 
 const defaultScopeSelection = scopeName => {
   const scopeTools = availableTools.value.filter(
@@ -75,17 +81,42 @@ const scopeMetadata = computed(() => ({
 
 const localizedGroupName = groupName => {
   const groups = {
-    Knowledge: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.KNOWLEDGE'),
-    Conversations: t(
-      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONVERSATIONS'
+    Knowledge: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.KNOWLEDGE',
+      'Knowledge'
     ),
-    Contacts: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONTACTS'),
-    Companies: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.COMPANIES'),
-    'CRM Deals': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_DEALS'),
-    'CRM Tasks': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_TASKS'),
-    Scheduling: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.SCHEDULING'),
-    'Help center': t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.HELP_CENTER'),
-    Integrations: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.INTEGRATIONS'),
+    Conversations: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONVERSATIONS',
+      'Conversations'
+    ),
+    Contacts: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CONTACTS',
+      'Contacts'
+    ),
+    Companies: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.COMPANIES',
+      'Companies'
+    ),
+    'CRM Deals': resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_DEALS',
+      'CRM Deals'
+    ),
+    'CRM Tasks': resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.CRM_TASKS',
+      'CRM Tasks'
+    ),
+    Scheduling: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.SCHEDULING',
+      'Scheduling'
+    ),
+    'Help center': resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.HELP_CENTER',
+      'Help center'
+    ),
+    Integrations: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.INTEGRATIONS',
+      'Integrations'
+    ),
   };
 
   return groups[groupName] || groupName;
@@ -94,10 +125,22 @@ const localizedGroupName = groupName => {
 const riskBadgeLabel = riskLevel => {
   const level = (riskLevel || 'low').toLowerCase();
   const labels = {
-    low: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.LOW'),
-    medium: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.MEDIUM'),
-    high: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.HIGH'),
-    custom: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.CUSTOM'),
+    low: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.LOW',
+      'Low risk'
+    ),
+    medium: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.MEDIUM',
+      'Medium risk'
+    ),
+    high: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.HIGH',
+      'High risk'
+    ),
+    custom: resolveTranslation(
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.RISK_LEVELS.CUSTOM',
+      'Custom'
+    ),
   };
 
   return labels[level] || labels.low;
@@ -403,10 +446,18 @@ const localizedToolCatalog = computed(() => ({
 }));
 
 const localizedToolTitle = tool =>
-  localizedToolCatalog.value[tool.id]?.title || tool.title;
+  resolveLocalizedValue(
+    localizedToolCatalog.value[tool.id]?.title,
+    `CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.${tool.id}.TITLE`,
+    tool.title
+  );
 
 const localizedToolDescription = tool =>
-  localizedToolCatalog.value[tool.id]?.description || tool.description;
+  resolveLocalizedValue(
+    localizedToolCatalog.value[tool.id]?.description,
+    `CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.${tool.id}.DESCRIPTION`,
+    tool.description
+  );
 
 const loadTools = async () => {
   isLoading.value = true;
@@ -448,7 +499,10 @@ const toolBadges = tool => {
   if (tool.custom) {
     badges.push({
       key: 'custom',
-      label: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.CUSTOM'),
+      label: resolveTranslation(
+        'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.CUSTOM',
+        'Custom'
+      ),
       className: 'bg-n-violet-3 text-n-violet-11',
     });
   }
@@ -464,8 +518,9 @@ const toolBadges = tool => {
   if (tool.requires_confirmation) {
     badges.push({
       key: 'confirmation',
-      label: t(
-        'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.REQUIRES_CONFIRMATION'
+      label: resolveTranslation(
+        'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.BADGES.REQUIRES_CONFIRMATION',
+        'Needs confirmation'
       ),
       className: 'bg-n-amber-3 text-n-amber-11',
     });

@@ -58,6 +58,10 @@ const transition = computed(() =>
 
 const accessibleChildren = computed(() => {
   return props.children.filter(child => {
+    if (child.headerAction) {
+      return false;
+    }
+
     if (child.children) {
       return child.children.some(subChild => isAllowed(subChild.to));
     }

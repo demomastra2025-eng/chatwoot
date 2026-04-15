@@ -6,6 +6,7 @@ import { helpers, required } from '@vuelidate/validators';
 import router from '../../../../index';
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 const e164PhoneNumber = helpers.regex(/^\+\d{6,15}$/);
 
@@ -46,7 +47,7 @@ export default {
         });
 
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             inbox_id: channel.id,
           },

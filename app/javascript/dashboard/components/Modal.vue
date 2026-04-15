@@ -1,6 +1,5 @@
 <script setup>
-// [TODO] Use Teleport to move the modal to the end of the body
-import { ref, computed, defineEmits } from 'vue';
+import { computed, defineEmits } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import Button from 'dashboard/components-next/button/Button.vue';
 
@@ -25,31 +24,18 @@ const modalClassName = computed(() => {
   return `modal-mask skip-context-menu ${modalClassNameMap[modalType] || ''}`;
 });
 
-// [TODO] Revisit this logic to use outside click directive
-const mousedDownOnBackdrop = ref(false);
-
-const handleMouseDown = event => {
-  const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('[data-modal-safe-interaction]')) {
-    return;
-  }
-
-  mousedDownOnBackdrop.value = true;
-};
-
 const close = () => {
   show.value = false;
   emit('close');
   onClose?.();
 };
 
-const onMouseUp = () => {
-  if (mousedDownOnBackdrop.value) {
-    mousedDownOnBackdrop.value = false;
-    if (closeOnBackdropClick) {
-      close();
-    }
+const handleBackdropClick = () => {
+  if (!closeOnBackdropClick) {
+    return;
   }
+
+  close();
 };
 
 const onKeydown = e => {
@@ -59,7 +45,6 @@ const onKeydown = e => {
   }
 };
 
-useEventListener(document.body, 'mouseup', onMouseUp);
 useEventListener(document, 'keydown', onKeydown);
 </script>
 
@@ -69,7 +54,7 @@ useEventListener(document, 'keydown', onKeydown);
       v-if="show"
       :class="modalClassName"
       transition="modal"
-      @mousedown="handleMouseDown"
+      @click.self="handleBackdropClick"
     >
       <div
         class="relative max-h-full overflow-auto bg-n-alpha-3 shadow-md modal-container rtl:text-right skip-context-menu"
@@ -87,7 +72,7 @@ useEventListener(document, 'keydown', onKeydown);
           ghost
           slate
           icon="i-lucide-x"
-          class="absolute z-10 ltr:right-2 rtl:left-2 top-2"
+          class="absolute z-10 right-2 top-2"
           @click="close"
         />
         <slot />

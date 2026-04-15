@@ -1,29 +1,16 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { useI18n } from 'vue-i18n';
-import { useAlert } from 'dashboard/composables';
 import { picoSearch } from '@scmmishra/pico-search';
 import Avatar from 'next/avatar/Avatar.vue';
-import { useAdmin } from 'dashboard/composables/useAdmin';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
-import {
-  useMapGetter,
-  useStoreGetters,
-  useStore,
-} from 'dashboard/composables/store';
+import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import ChannelName from './components/ChannelName.vue';
 import ChannelIcon from 'next/icon/ChannelIcon.vue';
-import Button from 'dashboard/components-next/button/Button.vue';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 
 const getters = useStoreGetters();
-const store = useStore();
-const { t } = useI18n();
-const { isAdmin } = useAdmin();
 
-const showDeletePopup = ref(false);
-const selectedInbox = ref({});
 const searchQuery = ref('');
 
 const inboxes = useMapGetter('inboxes/getInboxes');
@@ -42,46 +29,6 @@ const filteredInboxesList = computed(() => {
 });
 
 const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
-
-const deleteConfirmText = computed(
-  () => `${t('INBOX_MGMT.DELETE.CONFIRM.YES')} ${selectedInbox.value.name}`
-);
-
-const deleteRejectText = computed(
-  () => `${t('INBOX_MGMT.DELETE.CONFIRM.NO')} ${selectedInbox.value.name}`
-);
-
-const confirmDeleteMessage = computed(
-  () => `${t('INBOX_MGMT.DELETE.CONFIRM.MESSAGE')} ${selectedInbox.value.name}?`
-);
-const confirmPlaceHolderText = computed(
-  () =>
-    `${t('INBOX_MGMT.DELETE.CONFIRM.PLACE_HOLDER', {
-      inboxName: selectedInbox.value.name,
-    })}`
-);
-
-const deleteInbox = async ({ id }) => {
-  try {
-    await store.dispatch('inboxes/delete', id);
-    useAlert(t('INBOX_MGMT.DELETE.API.SUCCESS_MESSAGE'));
-  } catch (error) {
-    useAlert(t('INBOX_MGMT.DELETE.API.ERROR_MESSAGE'));
-  }
-};
-const closeDelete = () => {
-  showDeletePopup.value = false;
-  selectedInbox.value = {};
-};
-
-const confirmDeletion = () => {
-  deleteInbox(selectedInbox.value);
-  closeDelete();
-};
-const openDelete = inbox => {
-  showDeletePopup.value = true;
-  selectedInbox.value = inbox;
-};
 </script>
 
 <template>
@@ -103,11 +50,6 @@ const openDelete = inbox => {
           <span class="text-body-main text-n-slate-11">
             {{ $t('INBOX_MGMT.COUNT', { n: inboxesList.length }) }}
           </span>
-        </template>
-        <template #actions>
-          <router-link v-if="isAdmin" :to="{ name: 'settings_inbox_new' }">
-            <Button :label="$t('SETTINGS.INBOXES.NEW_INBOX')" size="sm" />
-          </router-link>
         </template>
       </BaseSettingsHeader>
     </template>
@@ -153,46 +95,8 @@ const openDelete = inbox => {
               />
             </div>
           </div>
-          <div class="flex gap-3 justify-end">
-            <router-link
-              :to="{
-                name: 'settings_inbox_show',
-                params: { inboxId: inbox.id },
-              }"
-            >
-              <Button
-                v-if="isAdmin"
-                v-tooltip.top="$t('INBOX_MGMT.SETTINGS')"
-                icon="i-woot-settings"
-                slate
-                sm
-              />
-            </router-link>
-            <Button
-              v-if="isAdmin"
-              v-tooltip.top="$t('INBOX_MGMT.DELETE.BUTTON_TEXT')"
-              icon="i-woot-bin"
-              slate
-              sm
-              class="hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-2"
-              @click="openDelete(inbox)"
-            />
-          </div>
         </div>
       </div>
     </template>
-
-    <woot-confirm-delete-modal
-      v-if="showDeletePopup"
-      v-model:show="showDeletePopup"
-      :title="$t('INBOX_MGMT.DELETE.CONFIRM.TITLE')"
-      :message="confirmDeleteMessage"
-      :confirm-text="deleteConfirmText"
-      :reject-text="deleteRejectText"
-      :confirm-value="selectedInbox.name"
-      :confirm-place-holder-text="confirmPlaceHolderText"
-      @on-confirm="confirmDeletion"
-      @on-close="closeDelete"
-    />
   </SettingsLayout>
 </template>

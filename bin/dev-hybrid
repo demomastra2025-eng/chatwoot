@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKSPACE_ROOT="$(cd "${APP_DIR}/../.." && pwd)"
+COMMAND="${1:-start}"
+PROCFILE_PATH="./Procfile.dev-hybrid"
+DEV_HYBRID_FILTER_NOISE="${DEV_HYBRID_FILTER_NOISE:-1}"
+DEV_HYBRID_PRESERVE_DEBUG="${DEV_HYBRID_PRESERVE_DEBUG:-0}"
+DEV_HYBRID_LOG_DIR="${DEV_HYBRID_LOG_DIR:-${APP_DIR}/logs}"
+DEV_HYBRID_LOG_FILE="${DEV_HYBRID_LOG_FILE:-${DEV_HYBRID_LOG_DIR}/dev-hybrid.log}"
+DEV_HYBRID_LATEST_LOG_LINK="${DEV_HYBRID_LOG_DIR}/onelink-dev-hybrid-latest.log"
+
+filter_dev_hybrid_noise() {
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    case "$line" in
+      *"Exception 'LoadError' at "*"/ffi/"*"Could not open library 'inotify':"* ) continue ;;
+      *"Exception 'LoadError' at "*"/ffi/"*"Could not open library 'libinotify.so':"* ) continue ;;
+      *"Could not open library 'libinotify.so':"* ) continue ;;
+      *"Searched in <system library path>"* ) continue ;;
+      *"Exception 'Errno::ENOTDIR' at <internal:dir>:184 - Not a directory @ dir_initialize - ${APP_DIR}/"* ) continue ;;
+      *"bootsnap/load_path_cache/path.rb:"* ) continue ;;
+      *"visit_ActiveRecord_Relation_QueryAttribute"* ) continue ;;
+      *"visit_ActiveModel_Attribute_WithCastValue"* ) continue ;;
+    esac
+
+    printf '%s\n' "$line"
+  done
+}
+
+load_env() {
+  local line key value
+  [[ -f "${WORKSPACE_ROOT}/.env.development" ]] || return
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+    [[ "${line}" != *=* ]] && continue
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    export "${key}=${value}"
+  done < "${WORKSPACE_ROOT}/.env.development"
+}
+
+setup_dev_hybrid_logging() {
+  mkdir -p "${DEV_HYBRID_LOG_DIR}"
+  ln -sfn "${DEV_HYBRID_LOG_FILE}" "${DEV_HYBRID_LATEST_LOG_LINK}"
+
+  if [[ "${DEV_HYBRID_FILTER_NOISE}" == "1" ]]; then
+    exec > >(filter_dev_hybrid_noise | tee -a "${DEV_HYBRID_LOG_FILE}")
+    exec 2> >(filter_dev_hybrid_noise | tee -a "${DEV_HYBRID_LOG_FILE}" >&2)
+  else
+    exec > >(tee -a "${DEV_HYBRID_LOG_FILE}")
+    exec 2> >(tee -a "${DEV_HYBRID_LOG_FILE}" >&2)
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bin/dev-hybrid prepare
+  bin/dev-hybrid prepare-test
+  bin/dev-hybrid start
+  bin/dev-hybrid start-foreman
+  bin/dev-hybrid rails <args...>
+  bin/dev-hybrid rspec <args...>
+  bin/dev-hybrid vite
+EOF
+}
+
+load_env
+setup_dev_hybrid_logging
+cd "${APP_DIR}"
+
+if [[ "${DEV_HYBRID_PRESERVE_DEBUG}" != "1" ]]; then
+  unset DEBUG
+fi
+
+case "${COMMAND}" in
+  prepare)
+    exec bundle exec rails db:prepare
+    ;;
+  prepare-test)
+    export RAILS_ENV=test
+    export POSTGRES_DATABASE="${POSTGRES_DATABASE:-chatwoot_test}"
+    exec bundle exec rails db:prepare
+    ;;
+  start)
+    if command -v overmind >/dev/null 2>&1; then
+      exec overmind start -f "${PROCFILE_PATH}"
+    fi
+
+    exec foreman start -f "${PROCFILE_PATH}"
+    ;;
+  start-foreman)
+    exec foreman start -f "${PROCFILE_PATH}"
+    ;;
+  rails)
+    shift
+    exec bin/rails "$@"
+    ;;
+  rspec)
+    shift
+    export RAILS_ENV=test
+    export POSTGRES_DATABASE="${POSTGRES_DATABASE:-chatwoot_test}"
+    exec bundle exec rspec "$@"
+    ;;
+  vite)
+    exec env VITE_RUBY_CONFIG_PATH="${VITE_RUBY_CONFIG_PATH:-config/vite.hybrid.json}" ./node_modules/.bin/vite build --watch --config vite.config.mts
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

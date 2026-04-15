@@ -29,6 +29,21 @@ describe GlobalConfigService do
         end
       end
 
+      it 'returns persisted false values without clearing the global cache' do
+        InstallationConfig.create!(
+          name: 'ENABLE_ACCOUNT_SIGNUP',
+          value: 'false',
+          locked: false
+        )
+        GlobalConfig.clear_cache
+        allow(GlobalConfig).to receive(:clear_cache)
+
+        value = described_class.load('ENABLE_ACCOUNT_SIGNUP', 'true')
+
+        expect(value).to be(false)
+        expect(GlobalConfig).not_to have_received(:clear_cache)
+      end
+
       # it 'get value from DB if found' do
       #   # Set a value in db first and make sure this value
       #   # is not respected even when load() method is called with

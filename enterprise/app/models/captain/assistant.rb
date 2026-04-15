@@ -99,12 +99,24 @@ class Captain::Assistant < ApplicationRecord
     Captain::ContextFields.definitions_for(account)
   end
 
-  def allowed_context_fields
+  def available_context_field_ids
+    available_context_fields.pluck(:id)
+  end
+
+  def selected_context_fields
     Captain::ContextFields.allowed_definitions_for(self)
   end
 
-  def allowed_context_field_ids
-    allowed_context_fields.pluck(:id)
+  def selected_context_field_ids
+    selected_context_fields.pluck(:id)
+  end
+
+  def allowed_context_fields(field_ids = nil)
+    Captain::ContextFields.effective_definitions_for(self, field_ids: effective_context_field_ids(field_ids))
+  end
+
+  def allowed_context_field_ids(field_ids = nil)
+    allowed_context_fields(field_ids).pluck(:id)
   end
 
   def context_glossary_groups(field_ids = nil)
@@ -123,27 +135,35 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def allowed_agent_tool_ids
-    Captain::ToolCatalog.allowed_tool_ids_for(self, Captain::ToolAccess::SCOPE_AGENT, fallback_ids: available_tool_ids)
+    effective_tool_ids_for(
+      Captain::ToolAccess::SCOPE_AGENT,
+      referenced_tool_ids: referenced_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
+    )
+  end
+
+  def selected_agent_tool_ids
+    fallback_ids = Captain::ToolAccess.default_tool_ids_for(
+      Captain::ToolAccess::SCOPE_AGENT,
+      available_agent_tools
+    )
+
+    Captain::ToolAccess.allowed_tool_ids_for(
+      self,
+      Captain::ToolAccess::SCOPE_AGENT,
+      fallback_ids: fallback_ids
+    )
   end
 
   def direct_agent_tool_ids
-    Captain::ToolCatalog.allowed_tool_ids_for(
-      self,
-      Captain::ToolAccess::SCOPE_AGENT,
-      fallback_ids: Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
-    )
+    selected_agent_tool_ids
   end
 
   def allowed_agent_tools
-    Captain::ToolCatalog.allowed_tools_for(
-      self,
-      Captain::ToolAccess::SCOPE_AGENT,
-      fallback_ids: available_tool_ids
-    )
+    select_tools_by_ids(available_agent_tools, allowed_agent_tool_ids)
   end
 
   def direct_agent_tools
-    allowed_agent_tools.select { |tool| direct_agent_tool_ids.include?(tool[:id]) }
+    select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
   end
 
   def tool_glossary_groups(tools = direct_agent_tools, tool_ids = nil)
@@ -168,26 +188,51 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def allowed_assistant_tool_ids
-    Captain::ToolCatalog.allowed_tool_ids_for(
-      self,
+    effective_tool_ids_for(
       Captain::ToolAccess::SCOPE_ASSISTANT,
-      fallback_ids: available_assistant_tool_ids
+      referenced_tool_ids: referenced_tool_ids_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT)
     )
   end
 
-  def prompt_context_state(runtime_state = {})
-    Captain::ContextFields.prompt_state_for(assistant: self, runtime_state: runtime_state)
+  def selected_assistant_tool_ids
+    fallback_ids = Captain::ToolAccess.default_tool_ids_for(
+      Captain::ToolAccess::SCOPE_ASSISTANT,
+      available_assistant_tools
+    )
+
+    Captain::ToolAccess.allowed_tool_ids_for(
+      self,
+      Captain::ToolAccess::SCOPE_ASSISTANT,
+      fallback_ids: fallback_ids
+    )
+  end
+
+  def allowed_assistant_tools
+    select_tools_by_ids(available_assistant_tools, allowed_assistant_tool_ids)
+  end
+
+  def prompt_context_state(runtime_state = {}, field_ids: nil)
+    effective_field_ids = effective_context_field_ids(field_ids || referenced_field_ids_for_texts(prompt_glossary_texts))
+
+    Captain::ContextFields.prompt_state_for(
+      assistant: self,
+      runtime_state: runtime_state,
+      field_ids: effective_field_ids
+    )
   end
 
   def render_runtime_text(text, conversation: nil)
     runtime_state = runtime_state_for(conversation)
-    prompt_state = prompt_context_state(runtime_state)
+    field_ids = referenced_field_ids_for_texts(prompt_glossary_texts + [text])
+    prompt_state = prompt_context_state(runtime_state, field_ids: field_ids)
 
-    resolve_runtime_value(text, prompt_state)
+    resolve_runtime_value(text, prompt_state, field_ids: field_ids)
   end
 
-  def resolve_runtime_prompt_context(context, prompt_state)
-    resolve_runtime_value(context, prompt_state)
+  def resolve_runtime_prompt_context(context, prompt_state, field_ids: nil)
+    effective_field_ids = field_ids || referenced_field_ids_for_texts(prompt_glossary_texts)
+
+    resolve_runtime_value(context, prompt_state, field_ids: effective_field_ids)
   end
 
   def push_event_data
@@ -281,7 +326,7 @@ class Captain::Assistant < ApplicationRecord
       response_guidelines: response_guidelines || [],
       guardrails: guardrails || [],
       context_glossary: context_glossary_groups(referenced_field_ids),
-      tool_glossary: tool_glossary_groups(direct_agent_tools, referenced_tool_ids)
+      tool_glossary: tool_glossary_groups(allowed_agent_tools, referenced_tool_ids)
     }
   end
 
@@ -293,17 +338,17 @@ class Captain::Assistant < ApplicationRecord
     config.delete('feature_contact_attributes')
   end
 
-  def resolve_runtime_value(value, prompt_state)
-    allowed_fields = allowed_context_fields
+  def resolve_runtime_value(value, prompt_state, field_ids: nil)
+    allowed_fields = allowed_context_fields(field_ids)
 
     case value
     when String
       text_with_tools = render_tool_references(value)
       Captain::ContextFields.render_references(text_with_tools, prompt_state: prompt_state, allowed_fields: allowed_fields)
     when Array
-      value.map { |item| resolve_runtime_value(item, prompt_state) }
+      value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids) }
     when Hash
-      value.transform_values { |item| resolve_runtime_value(item, prompt_state) }
+      value.transform_values { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids) }
     else
       value
     end
@@ -373,14 +418,14 @@ class Captain::Assistant < ApplicationRecord
     tool_ids = referenced_tool_ids_for_texts(texts)
     return [] if tool_ids.empty?
 
-    tool_ids - allowed_agent_tool_ids
+    tool_ids - available_runtime_tool_ids
   end
 
   def invalid_field_ids_for_texts(texts)
     field_ids = referenced_field_ids_for_texts(texts)
     return [] if field_ids.empty?
 
-    field_ids - allowed_context_field_ids
+    field_ids - available_context_field_ids
   end
 
   def prompt_glossary_texts
@@ -396,7 +441,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def glossary_context_definitions(field_ids)
-    definitions = allowed_context_fields
+    definitions = allowed_context_fields(field_ids)
     return definitions if field_ids.nil?
 
     normalized_field_ids = Array(field_ids).map(&:to_s)
@@ -421,5 +466,56 @@ class Captain::Assistant < ApplicationRecord
     return if invalid_field_ids.empty?
 
     errors.add(field, "contains invalid fields: #{invalid_field_ids.join(', ')}")
+  end
+
+  def runtime_tool_scope
+    internal_assistant? ? Captain::ToolAccess::SCOPE_ASSISTANT : Captain::ToolAccess::SCOPE_AGENT
+  end
+
+  def available_runtime_tool_ids
+    available_tool_ids_for_scope(runtime_tool_scope)
+  end
+
+  def referenced_tool_ids_for_scope(_scope_name)
+    referenced_tool_ids_for_texts(prompt_glossary_texts)
+  end
+
+  def effective_tool_ids_for(scope_name, referenced_tool_ids:)
+    available_ids = available_tool_ids_for_scope(scope_name)
+    selected_ids = selected_tool_ids_for_scope(scope_name)
+
+    (selected_ids + Array(referenced_tool_ids).map(&:to_s))
+      .uniq
+      .select { |tool_id| available_ids.include?(tool_id) }
+  end
+
+  def available_tool_ids_for_scope(scope_name)
+    case scope_name.to_s
+    when Captain::ToolAccess::SCOPE_ASSISTANT
+      available_assistant_tool_ids
+    else
+      available_tool_ids
+    end
+  end
+
+  def selected_tool_ids_for_scope(scope_name)
+    case scope_name.to_s
+    when Captain::ToolAccess::SCOPE_ASSISTANT
+      selected_assistant_tool_ids
+    else
+      selected_agent_tool_ids
+    end
+  end
+
+  def select_tools_by_ids(tools, tool_ids)
+    normalized_ids = Array(tool_ids).map(&:to_s)
+
+    Array(tools).select { |tool| normalized_ids.include?(tool[:id].to_s) }
+  end
+
+  def effective_context_field_ids(field_ids = nil)
+    (selected_context_field_ids + Array(field_ids).map(&:to_s))
+      .uniq
+      .select { |field_id| available_context_field_ids.include?(field_id) }
   end
 end

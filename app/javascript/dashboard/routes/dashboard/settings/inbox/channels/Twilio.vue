@@ -8,10 +8,13 @@ import router from '../../../../index';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import { isPhoneE164OrEmpty } from 'shared/helpers/Validators';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 export default {
   components: {
     NextButton,
+    Checkbox,
   },
   props: {
     type: {
@@ -99,7 +102,7 @@ export default {
         );
 
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             page: 'new',
             inbox_id: twilioChannel.id,
@@ -199,11 +202,7 @@ export default {
     </div>
     <div class="max-w-[65%] w-full messagingServiceHelptext">
       <label for="useAPIKey">
-        <Checkbox
-          id="useAPIKey"
-          v-model="useAPIKey"
-          class="checkbox"
-        />
+        <Checkbox id="useAPIKey" v-model="useAPIKey" class="checkbox" />
         {{ $t('INBOX_MGMT.ADD.TWILIO.API_KEY.USE_API_KEY') }}
       </label>
     </div>

@@ -1,6 +1,5 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
 import { useToggle } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import CampaignsAPI from 'dashboard/api/campaigns';
@@ -12,7 +11,6 @@ import {
   useMapGetter,
 } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
-import { useAccount } from 'dashboard/composables/useAccount';
 
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -24,7 +22,6 @@ import OutboundCampaignEmptyState from 'dashboard/components-next/Campaigns/Empt
 import PersonalCampaignEmptyState from 'dashboard/components-next/Campaigns/EmptyState/PersonalCampaignEmptyState.vue';
 import ConfirmDeleteTouchDialog from 'dashboard/components-next/Outbound/ConfirmDeleteTouchDialog.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
-import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchAnalyticsDialog from 'dashboard/components-next/Outbound/TouchAnalyticsDialog.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
@@ -37,9 +34,6 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
-const route = useRoute();
-const router = useRouter();
-const { accountScopedRoute } = useAccount();
 const { checkPermissions } = usePolicy();
 const store = useStore();
 const getters = useStoreGetters();
@@ -97,16 +91,8 @@ const allTouches = computed(() => {
   });
 });
 
-const routeMode = computed(() => {
-  if (props.mode === 'mass' || props.mode === 'personal') {
-    return props.mode;
-  }
-
-  return route.query.mode === 'mass' ? 'mass' : 'personal';
-});
-
 const currentMode = computed(() => {
-  return routeMode.value === 'mass' && canManageMassCampaigns.value
+  return props.mode === 'mass' && canManageMassCampaigns.value
     ? 'mass'
     : 'personal';
 });
@@ -124,28 +110,6 @@ const pageDescription = computed(() => {
   return isPersonalMode.value
     ? t('OUTBOUND_WORKSPACE.TOUCHES.DESCRIPTION')
     : t('CAMPAIGN.OUTBOUND.SECTIONS.OUTBOUND_DESCRIPTION');
-});
-
-const tabs = computed(() => [
-  ...[
-    {
-      id: 'personal',
-      label: t('SIDEBAR.PERSONAL_BROADCASTS'),
-    },
-  ],
-  ...(canManageMassCampaigns.value
-    ? [
-        {
-          id: 'mass',
-          label: t('SIDEBAR.MASS_BROADCASTS'),
-        },
-      ]
-    : []),
-]);
-
-const activeTabIndex = computed(() => {
-  const tabIndex = tabs.value.findIndex(tab => tab.id === currentMode.value);
-  return tabIndex >= 0 ? tabIndex : 0;
 });
 
 const touchEditorSelectionMode = computed(() => {
@@ -255,31 +219,6 @@ const fetchTouches = async () => {
   }
 };
 
-const openMassMode = () => {
-  const query = { ...route.query };
-  delete query.mode;
-  router.push(accountScopedRoute('outbound_broadcasts_index', {}, query));
-};
-
-const openPersonalMode = () => {
-  const query = { ...route.query };
-  delete query.mode;
-  router.push(
-    accountScopedRoute('outbound_broadcasts_personal_index', {}, query)
-  );
-};
-
-const handleTabChanged = tab => {
-  if (tab.id === currentMode.value) return;
-
-  if (tab.id === 'personal') {
-    openPersonalMode();
-    return;
-  }
-
-  openMassMode();
-};
-
 const openCreatePersonal = () => {
   editingTouch.value = null;
   isTouchEditorOpen.value = true;
@@ -353,25 +292,10 @@ const handleTouchDeleted = async () => {
 };
 
 watch(
-  () => [routeMode.value, canManageMassCampaigns.value],
-  ([mode, canManage]) => {
-    if (mode === 'mass' && !canManage) {
-      openPersonalMode();
-    }
-  },
-  { immediate: true }
-);
-
-watch(
   () => isPersonalMode.value,
   isPersonal => {
     if (isPersonal) {
       fetchTouches();
-      return;
-    }
-
-    if (!canManageMassCampaigns.value) {
-      openPersonalMode();
       return;
     }
 
@@ -401,14 +325,6 @@ watch(
         size="sm"
         :label="t('OUTBOUND_WORKSPACE.TOUCHES.ACTIONS.CREATE')"
         @click="openCreatePersonal"
-      />
-    </template>
-
-    <template #tabs>
-      <TabBar
-        :tabs="tabs"
-        :initial-active-tab="activeTabIndex"
-        @tab-changed="handleTabChanged"
       />
     </template>
 

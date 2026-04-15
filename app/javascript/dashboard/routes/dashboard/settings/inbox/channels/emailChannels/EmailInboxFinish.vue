@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
+import { getInboxFlowRouteName } from '../../helpers/inboxFlowRoutes';
 
 const props = defineProps({
   inbox: {
@@ -14,6 +16,7 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const route = useRoute();
 
 const message = computed(() => {
   return props.inbox.forwarding_enabled
@@ -42,7 +45,7 @@ const showForwardingAddress = computed(() => {
     <p class="mt-8 text-sm text-n-slate-11 pb-4">
       <router-link
         :to="{
-          name: 'settings_inbox_show',
+          name: getInboxFlowRouteName(route, 'show'),
           params: { inboxId: inboxId, tab: 'configuration' },
         }"
         class="text-n-woot-600 hover:text-n-woot-700 underline"

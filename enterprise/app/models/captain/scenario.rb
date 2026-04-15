@@ -77,7 +77,24 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolve_runtime_prompt_context(context, prompt_state)
-    assistant.resolve_runtime_prompt_context(context, prompt_state)
+    field_ids = referenced_field_ids_for_prompt
+    return assistant.resolve_runtime_prompt_context(context, prompt_state) if field_ids.empty?
+
+    runtime_state = Captain::ContextFields::SCOPES.each_with_object({}) do |scope, state|
+      scope_value = context[scope] || context[scope.to_s]
+      state[scope] = scope_value if scope_value.present?
+    end
+
+    effective_prompt_state = assistant.prompt_context_state(
+      runtime_state,
+      field_ids: field_ids
+    )
+
+    assistant.resolve_runtime_prompt_context(
+      context,
+      effective_prompt_state,
+      field_ids: field_ids
+    )
   end
 
   private
@@ -118,7 +135,7 @@ class Captain::Scenario < ApplicationRecord
   def resolved_tools
     return [] if tools.blank?
 
-    available_tools = assistant.allowed_agent_tools
+    available_tools = assistant.available_agent_tools
     tools.filter_map do |tool_id|
       available_tools.find { |tool| tool[:id] == tool_id }
     end.select do |tool_definition|
@@ -158,7 +175,7 @@ class Captain::Scenario < ApplicationRecord
     tool_ids = extract_tool_ids_from_text(instruction)
     return if tool_ids.empty?
 
-    all_available_tool_ids = assistant.allowed_agent_tool_ids
+    all_available_tool_ids = assistant.available_tool_ids
     invalid_tools = tool_ids - all_available_tool_ids
 
     return unless invalid_tools.any?
@@ -172,7 +189,7 @@ class Captain::Scenario < ApplicationRecord
     field_ids = Captain::ContextFields.extract_field_ids_from_text(instruction)
     return if field_ids.empty?
 
-    invalid_fields = field_ids - assistant.allowed_context_field_ids
+    invalid_fields = field_ids - assistant.available_context_field_ids
     return unless invalid_fields.any?
 
     errors.add(:instruction, "contains invalid fields: #{invalid_fields.join(', ')}")

@@ -1,6 +1,6 @@
 {
   "HELP_CENTER": {
-    "TITLE": "Сіздің бетіңіз",
+    "TITLE": "Вики",
     "NEW_PAGE": {
       "DESCRIPTION": "Қолдау орталығыңыз үшін өзіне-өзі қызмет көрсету порталдарын жасаңыз. Клиенттеріңізге жауаптарды күтпей-ақ жылдам табуға көмектесіңіз. Сұрауларды оңтайландырып, команда жүктемесін азайтыңыз және клиенттерге қолдау көрсету сапасын арттырыңыз.",
       "CREATE_PORTAL_BUTTON": "Портал құру",
@@ -510,7 +510,7 @@
       "SEARCH_BUTTON": "Search",
       "INSERT_ARTICLE": "Insert link",
       "IFRAME_ERROR": "URL is empty or invalid. Unable to display content.",
-      "OPEN_ARTICLE_SEARCH": "Insert article from Your Page",
+      "OPEN_ARTICLE_SEARCH": "Insert article from Wiki",
       "SUCCESS_ARTICLE_INSERTED": "Article inserted successfully",
       "PREVIEW_LINK": "Preview article",
       "CANCEL": "Close",
@@ -518,7 +518,7 @@
       "BACK_RESULTS": "Back to results"
     },
     "UPGRADE_PAGE": {
-      "TITLE": "Your Page",
+      "TITLE": "Wiki",
       "DESCRIPTION": "Create user-friendly self-service portals. Help your users to access the articles and get support 24/7. Upgrade your subscription to enable this feature.",
       "SELF_HOSTED_DESCRIPTION": "Create user-friendly self-service portals. Help your users to access the articles and get support 24/7. Please contact your administrator to enable this feature.",
       "BUTTON": {

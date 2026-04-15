@@ -6,6 +6,7 @@ import { required } from '@vuelidate/validators';
 import router from '../../../../index';
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 
 const shouldBeWebhookUrl = (value = '') =>
   value ? value.startsWith('http') : true;
@@ -50,7 +51,7 @@ export default {
         });
 
         router.replace({
-          name: 'settings_inboxes_add_agents',
+          name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {
             page: 'new',
             inbox_id: apiChannel.id,

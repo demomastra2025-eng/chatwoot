@@ -87,7 +87,7 @@ RSpec.describe Captain::Scenario, type: :model do
     let(:scenario) { create(:captain_scenario, assistant: assistant, account: account) }
 
     before do
-      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
+      upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
     end
 
     it 'renders deal and task context when provided through prompt context state' do
@@ -145,13 +145,14 @@ RSpec.describe Captain::Scenario, type: :model do
     end
 
     it 'renders a single glossary section instead of a duplicated available tools block' do
+      account.update!(captain_runtime: { 'agent_permissioned_tool_ids' => ['handoff'] })
       scenario.update!(instruction: 'Use [@Handoff](tool://handoff) when finance approval is needed.')
 
       rendered = scenario.agent_instructions
 
       expect(rendered).to include('# Reference Glossary')
       expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
-      expect(rendered).not_to include('# Available Tools')
+      expect(rendered.scan('## Available Tools').size).to eq(1)
     end
 
     it 'renders context glossary entries only for fields referenced in scenario prompt text' do
@@ -234,7 +235,7 @@ RSpec.describe Captain::Scenario, type: :model do
         expect(scenario.errors[:instruction]).to include('contains invalid tools: invalid_tool')
       end
 
-      it 'is invalid when the assistant tool access disables the referenced tool' do
+      it 'is valid when the assistant default tools do not preselect the referenced tool' do
         assistant.update!(
           config: {
             'context_access' => {},
@@ -252,8 +253,7 @@ RSpec.describe Captain::Scenario, type: :model do
                          account: account,
                          instruction: 'Use [@Add Contact Note](tool://add_contact_note) to document')
 
-        expect(scenario).not_to be_valid
-        expect(scenario.errors[:instruction]).to include('contains invalid tools: add_contact_note')
+        expect(scenario).to be_valid
       end
 
       it 'is invalid with multiple invalid tools' do
@@ -387,6 +387,13 @@ RSpec.describe Captain::Scenario, type: :model do
     let(:assistant) { create(:captain_assistant, account: account) }
 
     before do
+      account.update!(
+        captain_runtime: {
+          'agent_permissioned_tool_ids' => ['add_contact_note'],
+          'agent_high_risk_tools' => true
+        }
+      )
+
       allow(described_class).to receive(:built_in_tool_ids).and_return(%w[add_contact_note])
       allow(described_class).to receive(:built_in_agent_tools).and_return([
                                                                             { id: 'add_contact_note', title: 'Add Contact Note',
@@ -420,6 +427,31 @@ RSpec.describe Captain::Scenario, type: :model do
         resolved = scenario.send(:resolved_tools)
         expect(resolved.length).to eq(2)
         expect(resolved.map { |t| t[:id] }).to contain_exactly('add_contact_note', 'custom_fetch-order')
+      end
+
+      it 'resolves explicitly referenced tools even when they are not selected by default' do
+        assistant.update!(
+          config: {
+            'context_access' => {},
+            'tool_access' => {
+              'agent' => {
+                'enabled' => true,
+                'tool_ids' => ['faq_lookup']
+              }
+            }
+          }
+        )
+
+        scenario = create(
+          :captain_scenario,
+          assistant: assistant,
+          account: account,
+          instruction: 'Use [@Add Contact Note](tool://add_contact_note)'
+        )
+
+        resolved = scenario.send(:resolved_tools)
+
+        expect(resolved.map { |tool| tool[:id] }).to eq(['add_contact_note'])
       end
 
       it 'excludes disabled custom tools' do

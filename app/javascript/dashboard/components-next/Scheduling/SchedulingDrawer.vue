@@ -18,6 +18,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  closeOnOutside: {
+    type: Boolean,
+    default: true,
+  },
   isLoading: {
     type: Boolean,
     default: false,
@@ -64,6 +68,13 @@ const close = () => {
 };
 
 const confirm = () => emit('confirm');
+const handleOutsideTrigger = () => {
+  if (!props.closeOnOutside) {
+    return;
+  }
+
+  close();
+};
 
 useEventListener(document, 'keydown', event => {
   if (event.key === 'Escape' && props.modelValue) {
@@ -97,7 +108,7 @@ useEventListener(document, 'keydown', event => {
           <OnClickOutside
             class="flex justify-end w-full"
             :options="{ ignore: clickOutsideIgnore }"
-            @trigger="close"
+            @trigger="handleOutsideTrigger"
           >
             <aside
               class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"

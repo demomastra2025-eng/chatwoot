@@ -46,6 +46,27 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.connection_state).to eq('refused')
       expect(channel.last_error).to eq('QR code limit reached, please login again | status code: 500')
     end
+
+    it 'treats explicit reauth_required outcomes as disconnected instead of waiting for qr' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
+        .and_return(
+          'instance' => { 'state' => 'connecting', 'status' => 'reauth_required' },
+          'status' => 'reauth_required',
+          'message' => 'Authentication artifacts were not generated after reconnect',
+          'statusCode' => 401,
+          'qrcode' => { 'count' => 0 }
+        )
+
+      expect(service.refresh_qr!).to eq(channel)
+      expect(channel.reload.lifecycle_state).to eq('disconnected')
+      expect(channel.connection_state).to eq('close')
+      expect(channel.last_error).to eq(
+        'Authentication artifacts were not generated after reconnect | reauth_required | status code: 401'
+      )
+    end
   end
 
   describe '#provision!' do
@@ -252,6 +273,28 @@ describe WhatsappWeb::Providers::EvolutionService do
         'REMOVE_INSTANCE'
       )
       expect(events).not_to include('MESSAGES_SET')
+    end
+
+    it 'sends qrcode false when provisioning instance so artifacts are generated only on demand' do
+      service = described_class.new(channel: channel)
+      response = { 'instance' => { 'state' => 'connecting' }, 'qrcode' => { 'code' => '123456' } }
+
+      allow(service).to receive(:instance_exists?).and_return(false)
+      allow(service).to receive(:request).with(
+        :post,
+        '/instance/create',
+        body: hash_including(qrcode: false)
+      ).and_return(response)
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
+
+      service.provision!
+
+      expect(service).to have_received(:request).with(
+        :post,
+        '/instance/create',
+        body: hash_including(qrcode: false)
+      )
     end
 
     it 'sends the full settings payload required by Evolution validation' do

@@ -79,7 +79,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def context_fields
     assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
-    allowed_ids = assistant.allowed_context_field_ids
+    allowed_ids = assistant.selected_context_field_ids
 
     @context_fields = assistant.available_context_fields.map do |field|
       field.merge(selected: allowed_ids.include?(field[:id]))

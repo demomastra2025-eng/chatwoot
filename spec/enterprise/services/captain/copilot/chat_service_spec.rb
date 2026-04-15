@@ -200,8 +200,14 @@ RSpec.describe Captain::Copilot::ChatService do
 
     it 'returns a blocked payload when moderation rejects the input' do
       account.update!(captain_runtime: { 'copilot_moderation' => true })
-      moderation_result = instance_double(RubyLLM::Moderation, flagged?: true)
-      allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+        Llm::SafetyPolicy::UnsafeContentError.new(
+          feature: :copilot,
+          stage: :input,
+          reason: :moderation_flagged,
+          rule: :provider_moderation
+        )
+      )
 
       expect(service.generate_response('Hello')).to eq(
         {

@@ -13,10 +13,6 @@ const props = defineProps({
     type: Number,
     default: null,
   },
-  toolAccess: {
-    type: Object,
-    default: null,
-  },
   toolScope: {
     type: String,
     default: 'agent',
@@ -40,43 +36,10 @@ const loadTools = async () => {
   }
 };
 
-const hasDraftToolAccess = computed(() =>
-  Object.prototype.hasOwnProperty.call(props.toolAccess || {}, props.toolScope)
-);
-
-const selectedTools = computed(() => {
-  if (!hasDraftToolAccess.value) {
-    return tools.value.filter(tool => tool.selected !== false);
-  }
-
-  const rawScope = props.toolAccess?.[props.toolScope] || {};
-  const availableToolIds = tools.value.map(tool => tool.id);
-  const defaultToolIds = tools.value
-    .filter(tool => tool.selected !== false)
-    .map(tool => tool.id);
-  const hasToolIds = Object.prototype.hasOwnProperty.call(rawScope, 'tool_ids');
-  const enabled =
-    Object.prototype.hasOwnProperty.call(rawScope, 'enabled') &&
-    typeof rawScope.enabled === 'boolean'
-      ? rawScope.enabled
-      : true;
-
-  if (!enabled) {
-    return [];
-  }
-
-  const selectedToolIds = (
-    hasToolIds ? rawScope.tool_ids : defaultToolIds
-  ).filter(toolId => availableToolIds.includes(toolId));
-  const selectedSet = new Set(selectedToolIds);
-
-  return tools.value.filter(tool => selectedSet.has(tool.id));
-});
-
 const filteredTools = computed(() => {
   const search = props.searchKey?.trim().toLowerCase() || '';
 
-  return [...selectedTools.value]
+  return [...tools.value]
     .filter(tool => {
       const titleMatches = tool.title.toLowerCase().includes(search);
       const groupMatches = (tool.group_name || '')

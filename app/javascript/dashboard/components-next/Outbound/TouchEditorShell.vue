@@ -14,6 +14,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  closeOnOutside: {
+    type: Boolean,
+    default: true,
+  },
   disableConfirm: {
     type: Boolean,
     default: false,
@@ -61,6 +65,7 @@ const confirm = () => emit('confirm');
     :description="description"
     :confirm-label="confirmLabel"
     :is-loading="isLoading"
+    :close-on-outside="closeOnOutside"
     :disable-confirm="disableConfirm"
     :width="width"
     @update:model-value="emit('update:modelValue', $event)"

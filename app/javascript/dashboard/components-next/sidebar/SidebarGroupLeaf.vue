@@ -3,6 +3,7 @@ import { isVNode, computed } from 'vue';
 import Icon from 'next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import { useSidebarContext } from './provider';
+import { useRouter } from 'vue-router';
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -13,10 +14,31 @@ const props = defineProps({
 });
 
 const { resolvePermissions, resolveFeatureFlag } = useSidebarContext();
+const router = useRouter();
 
 const shouldRenderComponent = computed(() => {
   return typeof props.component === 'function' || isVNode(props.component);
 });
+
+const componentType = computed(() => {
+  if (typeof props.to === 'undefined' || props.to === null) {
+    return 'div';
+  }
+
+  if (shouldRenderComponent.value) {
+    return 'div';
+  }
+
+  return 'router-link';
+});
+
+const handleLeafClick = async () => {
+  if (!shouldRenderComponent.value) {
+    return;
+  }
+
+  await router.push(props.to);
+};
 </script>
 
 <!-- eslint-disable-next-line vue/no-root-v-if -->
@@ -28,13 +50,15 @@ const shouldRenderComponent = computed(() => {
     class="py-0.5 ltr:pl-2 rtl:pr-2 rtl:mr-3 ltr:ml-3 relative text-n-slate-11 child-item before:bg-n-slate-4 after:bg-transparent after:border-n-slate-4 before:left-0 rtl:before:right-0 min-w-0"
   >
     <component
-      :is="to ? 'router-link' : 'div'"
-      :to="to"
+      :is="componentType"
+      :to="componentType === 'router-link' ? to : undefined"
       :title="label"
+      :role="componentType === 'div' ? 'link' : undefined"
       class="flex h-8 items-center gap-2 px-2 py-1 rounded-lg hover:bg-gradient-to-r from-transparent via-n-slate-3/70 to-n-slate-3/70 group min-w-0"
       :class="{
         'text-n-slate-12 bg-n-alpha-2 active': active,
       }"
+      @click="handleLeafClick"
     >
       <component
         :is="component"

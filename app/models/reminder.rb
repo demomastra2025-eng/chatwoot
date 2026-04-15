@@ -84,9 +84,12 @@ class Reminder < ApplicationRecord
   ).freeze
   RELATIVE_ANCHORS = %w[
     touch.created_at
+    appointment.created_at
     appointment.starts_at
     appointment.ends_at
+    task.created_at
     task.due_at
+    deal.created_at
     deal.expected_close_on
   ].concat(CONVERSATION_RELATIVE_ANCHORS).freeze
 
@@ -324,12 +327,18 @@ class Reminder < ApplicationRecord
       # New delayed messages do not have created_at yet during before_validation.
       # Use the current server time so "after creation" touches materialize immediately.
       created_at || Time.current
+    when 'appointment.created_at'
+      remindable.try(:created_at)
     when 'appointment.starts_at'
       remindable.try(:starts_at)
     when 'appointment.ends_at'
       remindable.try(:ends_at)
+    when 'task.created_at'
+      remindable.try(:created_at)
     when 'task.due_at'
       remindable.try(:due_at)
+    when 'deal.created_at'
+      remindable.try(:created_at)
     when 'deal.expected_close_on'
       remindable.try(:expected_close_on)&.in_time_zone
     when 'conversation.created_at'
