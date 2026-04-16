@@ -113,10 +113,7 @@ export const hasWhatsappWebAuthenticationArtifacts = inbox => {
   );
 };
 
-const shouldRequestWhatsappWebQr = (
-  inbox,
-  { allowWhileReconnecting = false } = {}
-) => {
+const shouldRequestWhatsappWebQr = inbox => {
   if (!isWhatsappWebInbox(inbox)) {
     return false;
   }
@@ -130,11 +127,13 @@ const shouldRequestWhatsappWebQr = (
   }
 
   const state = getWhatsappWebState(inbox);
+  const lifecycleState = state.status || inbox?.lifecycle_state;
   const connectionState = state.connection_state || inbox?.connection_state;
 
-  return allowWhileReconnecting
-    ? true
-    : connectionState !== RECONNECTING_CONNECTION_STATE;
+  return (
+    lifecycleState !== CONNECTED_LIFECYCLE_STATE ||
+    connectionState !== OPEN_CONNECTION_STATE
+  );
 };
 
 export const shouldRequestWhatsappWebQrAfterRepair = inbox => {
@@ -142,9 +141,7 @@ export const shouldRequestWhatsappWebQrAfterRepair = inbox => {
 };
 
 export const shouldRequestWhatsappWebQrAfterReconnect = inbox => {
-  return shouldRequestWhatsappWebQr(inbox, {
-    allowWhileReconnecting: true,
-  });
+  return shouldRequestWhatsappWebQr(inbox);
 };
 
 export const hasWhatsappWebConnectionIssue = inbox => {

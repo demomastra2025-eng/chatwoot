@@ -22,6 +22,7 @@ const MENU = {
   TEAM: 'team',
   LABEL: 'label',
   DELETE: 'delete',
+  PIN: 'pin',
   OPEN_NEW_TAB: 'open-new-tab',
   COPY_LINK: 'copy-link',
 };
@@ -65,6 +66,10 @@ export default {
       type: Array,
       default: () => [],
     },
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: [
     'updateConversation',
@@ -76,6 +81,7 @@ export default {
     'assignLabel',
     'removeLabel',
     'deleteConversation',
+    'togglePin',
     'close',
   ],
   setup() {
@@ -164,6 +170,14 @@ export default {
         key: MENU.DELETE,
         icon: 'delete',
         label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.DELETE'),
+      },
+      pinOption: {
+        key: MENU.PIN,
+        label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.PIN'),
+      },
+      unpinOption: {
+        key: MENU.PIN,
+        label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.UNPIN'),
       },
       openInNewTabOption: {
         key: MENU.OPEN_NEW_TAB,
@@ -256,6 +270,9 @@ export default {
       } catch (error) {
         // error
       }
+    },
+    togglePin() {
+      this.$emit('togglePin', !this.isPinned);
     },
     show(key) {
       // If the conversation status is same as the action, then don't display the option
@@ -381,7 +398,16 @@ export default {
       </MenuItemWithSubmenu>
       <hr class="m-1 rounded border-b border-n-weak dark:border-n-weak" />
     </template>
-    <template v-if="isAllowed([MENU.OPEN_NEW_TAB, MENU.COPY_LINK])">
+    <template v-if="isAllowed([MENU.PIN, MENU.OPEN_NEW_TAB, MENU.COPY_LINK])">
+      <MenuItem
+        v-if="isAllowed([MENU.PIN])"
+        :option="isPinned ? unpinOption : pinOption"
+        @click.stop="togglePin"
+      />
+      <hr
+        v-if="isAllowed([MENU.PIN])"
+        class="m-1 rounded border-b border-n-weak dark:border-n-weak"
+      />
       <MenuItem
         v-if="isAllowed([MENU.OPEN_NEW_TAB])"
         :option="openInNewTabOption"

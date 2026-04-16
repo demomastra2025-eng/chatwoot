@@ -8,11 +8,11 @@ export default {
       const {
         data: { id, agent_last_seen_at: lastSeen },
       } = await ConversationApi.markMessageRead(data);
-      setTimeout(
-        () =>
-          commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, { id, lastSeen }),
-        4000
-      );
+      commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, {
+        id,
+        lastSeen,
+        unreadCount: 0,
+      });
     } catch (error) {
       // Handle error
     }

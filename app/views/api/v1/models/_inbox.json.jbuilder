@@ -1,4 +1,4 @@
-include_whatsapp_web_qr_code = true unless defined?(include_whatsapp_web_qr_code)
+include_whatsapp_web_qr_code = true if !defined?(include_whatsapp_web_qr_code) || include_whatsapp_web_qr_code.nil?
 
 json.id resource.id
 json.avatar_url resource.try(:avatar_url)

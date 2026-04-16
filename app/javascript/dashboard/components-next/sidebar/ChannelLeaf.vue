@@ -171,18 +171,18 @@ const handleMouseLeave = () => {
         class="mt-1 top-full ltr:right-0 rtl:left-0"
         @action="handleAction($event)"
       />
-      <woot-confirm-delete-modal
-        v-if="showDeletePopup"
-        v-model:show="showDeletePopup"
-        :title="$t('INBOX_MGMT.DELETE.CONFIRM.TITLE')"
-        :message="confirmDeleteMessage"
-        :confirm-text="deleteConfirmText"
-        :reject-text="deleteRejectText"
-        :confirm-value="inbox.name"
-        :confirm-place-holder-text="confirmPlaceHolderText"
-        @on-confirm="confirmDeletion"
-        @on-close="closeDelete"
-      />
     </div>
+    <woot-confirm-delete-modal
+      v-if="isAdmin && showDeletePopup"
+      v-model:show="showDeletePopup"
+      :title="$t('INBOX_MGMT.DELETE.CONFIRM.TITLE')"
+      :message="confirmDeleteMessage"
+      :confirm-text="deleteConfirmText"
+      :reject-text="deleteRejectText"
+      :confirm-value="inbox.name"
+      :confirm-place-holder-text="confirmPlaceHolderText"
+      @on-confirm="confirmDeletion"
+      @on-close="closeDelete"
+    />
   </div>
 </template>

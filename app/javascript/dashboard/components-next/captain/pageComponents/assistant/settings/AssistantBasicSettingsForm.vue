@@ -9,9 +9,19 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
-import ContextAccessSettings from '../ContextAccessSettings.vue';
-import ToolAccessSettings from '../ToolAccessSettings.vue';
 import AssistantUsageModeSelector from '../AssistantUsageModeSelector.vue';
+import {
+  ADD_CONTACT_NOTE_TOOL_ID,
+  ADD_PRIVATE_NOTE_TOOL_ID,
+  AGENT_TOOL_SCOPE,
+  ASSISTANT_TOOL_SCOPE,
+  FAQ_LOOKUP_TOOL_ID,
+  HANDOFF_TOOL_ID,
+  buildDefaultToolAccessForUsageMode,
+  isToolEnabled,
+  normalizeCapabilityToolAccess,
+  setToolEnabled,
+} from '../toolAccessDefaults';
 
 const props = defineProps({
   assistant: {
@@ -46,34 +56,13 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  contextAccess: {
-    type: Object,
-    default: undefined,
-  },
-  toolAccess: {
-    type: Object,
-    default: undefined,
-  },
-  showContextAccess: {
-    type: Boolean,
-    default: true,
-  },
-  showToolAccess: {
-    type: Boolean,
-    default: true,
-  },
   showSubmitButton: {
     type: Boolean,
     default: true,
   },
 });
 
-const emit = defineEmits([
-  'submit',
-  'update:contextAccess',
-  'update:toolAccess',
-  'update:usageMode',
-]);
+const emit = defineEmits(['submit', 'update:usageMode']);
 
 const { t } = useI18n();
 
@@ -87,13 +76,16 @@ const initialState = {
     citations: false,
   },
   contextAccess: {},
-  toolAccess: {},
+  toolAccess: buildDefaultToolAccessForUsageMode(),
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
 };
 
 const state = reactive({ ...initialState });
+const isExternalAgent = computed(
+  () => state.usageMode !== 'internal_assistant'
+);
 const activeToolScope = computed(() =>
   state.usageMode === 'internal_assistant' ? 'assistant' : 'agent'
 );
@@ -104,16 +96,6 @@ const validationRules = {
 };
 
 const v$ = useVuelidate(validationRules, state);
-const hasExternalContextAccess = computed(
-  () => props.contextAccess !== undefined
-);
-const hasExternalToolAccess = computed(() => props.toolAccess !== undefined);
-const assistantHasToolAccessConfig = computed(() =>
-  Object.prototype.hasOwnProperty.call(
-    props.assistant?.config || {},
-    'tool_access'
-  )
-);
 
 const getErrorMessage = (field, translationKey) => {
   return v$.value[field].$error
@@ -138,6 +120,64 @@ const handleAvatarDelete = () => {
   state.removeAvatar = Boolean(props.assistant?.avatar_url);
 };
 
+const handoffToHumanEnabled = computed({
+  get: () => isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, HANDOFF_TOOL_ID),
+  set: enabled => {
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      HANDOFF_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
+const faqLookupEnabled = computed({
+  get: () =>
+    isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, FAQ_LOOKUP_TOOL_ID),
+  set: enabled => {
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      FAQ_LOOKUP_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
+const notesEnabled = computed({
+  get: () => {
+    const scopeName = activeToolScope.value;
+    return (
+      isToolEnabled(state.toolAccess, scopeName, ADD_CONTACT_NOTE_TOOL_ID) &&
+      isToolEnabled(state.toolAccess, scopeName, ADD_PRIVATE_NOTE_TOOL_ID)
+    );
+  },
+  set: enabled => {
+    const scopeName =
+      state.usageMode === 'internal_assistant'
+        ? ASSISTANT_TOOL_SCOPE
+        : AGENT_TOOL_SCOPE;
+
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      scopeName,
+      ADD_CONTACT_NOTE_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      scopeName,
+      ADD_PRIVATE_NOTE_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
 const resolveInstructionText = assistant => {
   return assistant?.description?.trim?.() || '';
 };
@@ -152,8 +192,11 @@ const updateStateFromAssistant = assistant => {
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
   };
-  state.contextAccess = config.context_access || {};
-  state.toolAccess = config.tool_access || {};
+  state.contextAccess = {};
+  state.toolAccess = normalizeCapabilityToolAccess(
+    config.tool_access || {},
+    state.usageMode
+  );
   state.avatarFile = null;
   state.avatarUrl = assistant.avatar_url || '';
   state.removeAvatar = false;
@@ -190,19 +233,16 @@ const buildPayload = async () => {
         feature_faq: state.features.conversationFaqs,
         feature_memory: state.features.memories,
         feature_citation: state.features.citations,
-        context_access: state.contextAccess,
+        context_access: {},
+        tool_access: normalizeCapabilityToolAccess(
+          state.toolAccess,
+          state.usageMode
+        ),
       },
     },
     avatar: state.avatarFile,
     removeAvatar: state.removeAvatar,
   };
-
-  if (
-    assistantHasToolAccessConfig.value ||
-    Object.keys(state.toolAccess || {}).length
-  ) {
-    payload.assistant.config.tool_access = state.toolAccess;
-  }
 
   return payload;
 };
@@ -223,59 +263,12 @@ watch(
 );
 
 watch(
-  () => props.contextAccess,
-  newContextAccess => {
-    if (!hasExternalContextAccess.value) return;
-
-    const nextContextAccess = newContextAccess || {};
-    if (
-      JSON.stringify(state.contextAccess || {}) ===
-      JSON.stringify(nextContextAccess)
-    ) {
-      return;
-    }
-
-    state.contextAccess = nextContextAccess;
-  },
-  { deep: true, immediate: true }
-);
-
-watch(
-  () => props.toolAccess,
-  newToolAccess => {
-    if (!hasExternalToolAccess.value) return;
-
-    const nextToolAccess = newToolAccess || {};
-    if (
-      JSON.stringify(state.toolAccess || {}) === JSON.stringify(nextToolAccess)
-    ) {
-      return;
-    }
-
-    state.toolAccess = nextToolAccess;
-  },
-  { deep: true, immediate: true }
-);
-
-watch(
-  () => state.contextAccess,
-  newContextAccess => {
-    emit('update:contextAccess', newContextAccess);
-  },
-  { deep: true }
-);
-
-watch(
-  () => state.toolAccess,
-  newToolAccess => {
-    emit('update:toolAccess', newToolAccess);
-  },
-  { deep: true }
-);
-
-watch(
   () => state.usageMode,
   newUsageMode => {
+    state.toolAccess = normalizeCapabilityToolAccess(
+      state.toolAccess,
+      newUsageMode
+    );
     emit('update:usageMode', newUsageMode);
   },
   { immediate: true }
@@ -341,33 +334,32 @@ defineExpose({
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
       </label>
       <div class="flex flex-col gap-2">
-        <label class="flex items-center gap-2">
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
           <Checkbox v-model="state.features.conversationFaqs" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
         </label>
-        <label class="flex items-center gap-2">
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
           <Checkbox v-model="state.features.memories" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
+        </label>
+        <label class="flex items-center gap-2">
+          <Checkbox v-model="notesEnabled" />
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES') }}
         </label>
         <label class="flex items-center gap-2">
           <Checkbox v-model="state.features.citations" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
         </label>
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
+          <Checkbox v-model="faqLookupEnabled" />
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
+        </label>
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
+          <Checkbox v-model="handoffToHumanEnabled" />
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
+        </label>
       </div>
     </div>
-
-    <ContextAccessSettings
-      v-if="showContextAccess"
-      v-model="state.contextAccess"
-      :assistant-id="assistant.id"
-    />
-
-    <ToolAccessSettings
-      v-if="showToolAccess"
-      v-model="state.toolAccess"
-      :assistant-id="assistant.id"
-      :allowed-scopes="[activeToolScope]"
-    />
 
     <div v-if="showSubmitButton">
       <Button

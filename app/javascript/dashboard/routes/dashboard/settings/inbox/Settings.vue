@@ -47,6 +47,7 @@ import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
 
 const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
   '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
+const WHATSAPP_WEB_POLL_INTERVAL_MS = 5000;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
 
 export default {
@@ -136,6 +137,7 @@ export default {
       telegramPersonalPassword: '',
       telegramPersonalQrCode: '',
       whatsappWebRenderedQrCode: '',
+      whatsappWebPollingInterval: null,
       telegramPersonalPollingInterval: null,
       isTelegramPersonalRawDiagnosticsVisible: false,
       isRedirectingMissingInbox: false,
@@ -650,6 +652,9 @@ export default {
           });
         } else {
           this.selectedFeatureFlags = newInbox?.selected_feature_flags || [];
+          if (this.isAWhatsAppWebInbox) {
+            this.syncWhatsappWebPolling();
+          }
         }
       },
       immediate: true,
@@ -663,6 +668,7 @@ export default {
     whatsappWebQrFingerprint: {
       handler() {
         this.renderWhatsappWebQrCode();
+        this.syncWhatsappWebPolling();
       },
       immediate: true,
     },
@@ -675,10 +681,24 @@ export default {
   },
   mounted() {
     this.fetchSharedData();
+    this.syncWhatsappWebPolling();
     this.syncTelegramPersonalPolling();
+    if (typeof document !== 'undefined') {
+      document.addEventListener(
+        'visibilitychange',
+        this.handleVisibilityChange
+      );
+    }
   },
   beforeUnmount() {
+    this.stopWhatsappWebPolling();
     this.stopTelegramPersonalPolling();
+    if (typeof document !== 'undefined') {
+      document.removeEventListener(
+        'visibilitychange',
+        this.handleVisibilityChange
+      );
+    }
   },
   methods: {
     async ensureCurrentInboxExists() {
@@ -847,6 +867,8 @@ export default {
         this.fetchWhatsappWebDiagnostics();
         this.fetchTelegramPersonalDiagnostics();
       }
+      this.syncWhatsappWebPolling();
+      this.syncTelegramPersonalPolling();
     },
     updateRouteWithoutRefresh(selectedTabIndex) {
       const tab = this.tabs[selectedTabIndex];
@@ -877,6 +899,21 @@ export default {
       }
       const tabIndex = this.tabs.findIndex(tab => tab.key === tabParam);
       this.selectedTabIndex = tabIndex === -1 ? 0 : tabIndex;
+    },
+    handleVisibilityChange() {
+      this.syncWhatsappWebPolling();
+      this.syncTelegramPersonalPolling();
+
+      if (
+        typeof document === 'undefined' ||
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
+
+      this.syncWhatsappWebStatus();
+      this.fetchWhatsappWebDiagnostics();
+      this.fetchTelegramPersonalDiagnostics();
     },
     async syncWhatsappWebStatus() {
       if (
@@ -939,6 +976,55 @@ export default {
       } finally {
         this.isLoadingTelegramPersonalDiagnostics = false;
       }
+    },
+    stopWhatsappWebPolling() {
+      if (this.whatsappWebPollingInterval) {
+        window.clearInterval(this.whatsappWebPollingInterval);
+        this.whatsappWebPollingInterval = null;
+      }
+    },
+    shouldPollWhatsappWebStatus() {
+      if (
+        !this.isAWhatsAppWebInbox ||
+        !this.currentInboxId ||
+        this.isWhatsappWebDeleting ||
+        this.selectedTabKey !== 'inbox-settings'
+      ) {
+        return false;
+      }
+
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        return false;
+      }
+
+      const lifecycleState =
+        this.inbox?.lifecycle_state ||
+        this.whatsappWebEvolutionState.lifecycle_state ||
+        '';
+      const connectionState =
+        this.inbox?.connection_state ||
+        this.whatsappWebEvolutionState.connection_state ||
+        '';
+
+      return (
+        !['open', 'connected'].includes(connectionState) &&
+        !['open', 'connected'].includes(lifecycleState)
+      );
+    },
+    syncWhatsappWebPolling() {
+      this.stopWhatsappWebPolling();
+
+      if (!this.shouldPollWhatsappWebStatus()) {
+        return;
+      }
+
+      this.whatsappWebPollingInterval = window.setInterval(() => {
+        this.syncWhatsappWebStatus();
+        this.fetchWhatsappWebDiagnostics();
+      }, WHATSAPP_WEB_POLL_INTERVAL_MS);
     },
     stopTelegramPersonalPolling() {
       if (this.telegramPersonalPollingInterval) {

@@ -14,9 +14,34 @@ export const getSelectedChatConversation = ({
 }) =>
   allConversations.filter(conversation => conversation.id === selectedChatId);
 
+const isConversationPinned = conversation =>
+  Boolean(conversation?.custom_attributes?.pinned);
+
+const sortPinnedFirst = (leftConversation, rightConversation) => {
+  const leftPinned = isConversationPinned(leftConversation);
+  const rightPinned = isConversationPinned(rightConversation);
+
+  if (leftPinned === rightPinned) {
+    return 0;
+  }
+
+  return leftPinned ? -1 : 1;
+};
+
+const sortConversations = (conversations, sortKey) => {
+  return [...conversations].sort((leftConversation, rightConversation) => {
+    const pinSort = sortPinnedFirst(leftConversation, rightConversation);
+    if (pinSort !== 0) {
+      return pinSort;
+    }
+
+    return sortComparator(leftConversation, rightConversation, sortKey);
+  });
+};
+
 const getters = {
   getAllConversations: ({ allConversations, chatSortFilter: sortKey }) => {
-    return allConversations.sort((a, b) => sortComparator(a, b, sortKey));
+    return sortConversations(allConversations, sortKey);
   },
   getFilteredConversations: (
     { allConversations, chatSortFilter, appliedFilters },
@@ -30,23 +55,19 @@ const getters = {
 
     const permissions = getUserPermissions(currentUser, currentAccountId);
     const userRole = getUserRole(currentUser, currentAccountId);
+    const filteredConversations = allConversations.filter(conversation => {
+      const matchesFilterResult = matchesFilters(conversation, appliedFilters);
+      const allowedForRole = applyRoleFilter(
+        conversation,
+        userRole,
+        permissions,
+        currentUserId
+      );
 
-    return allConversations
-      .filter(conversation => {
-        const matchesFilterResult = matchesFilters(
-          conversation,
-          appliedFilters
-        );
-        const allowedForRole = applyRoleFilter(
-          conversation,
-          userRole,
-          permissions,
-          currentUserId
-        );
+      return matchesFilterResult && allowedForRole;
+    });
 
-        return matchesFilterResult && allowedForRole;
-      })
-      .sort((a, b) => sortComparator(a, b, chatSortFilter));
+    return sortConversations(filteredConversations, chatSortFilter);
   },
   getSelectedChat: ({ selectedChatId, allConversations }) => {
     const selectedChat = allConversations.find(
@@ -74,15 +95,18 @@ const getters = {
   },
   getMineChats: (_state, _, __, rootGetters) => activeFilters => {
     const currentUserID = rootGetters.getCurrentUser?.id;
+    const filteredConversations = _state.allConversations.filter(
+      conversation => {
+        const { assignee } = conversation.meta;
+        const isAssignedToMe = assignee && assignee.id === currentUserID;
+        const shouldFilter = applyPageFilters(conversation, activeFilters);
+        const isChatMine = isAssignedToMe && shouldFilter;
 
-    return _state.allConversations.filter(conversation => {
-      const { assignee } = conversation.meta;
-      const isAssignedToMe = assignee && assignee.id === currentUserID;
-      const shouldFilter = applyPageFilters(conversation, activeFilters);
-      const isChatMine = isAssignedToMe && shouldFilter;
+        return isChatMine;
+      }
+    );
 
-      return isChatMine;
-    });
+    return sortConversations(filteredConversations, _state.chatSortFilter);
   },
   getAppliedConversationFiltersV2: _state => {
     // TODO: Replace existing one with V2 after migrating the filters to use camelcase
@@ -96,11 +120,15 @@ const getters = {
     return hasAppliedFilters ? filterQueryGenerator(_state.appliedFilters) : [];
   },
   getUnAssignedChats: _state => activeFilters => {
-    return _state.allConversations.filter(conversation => {
-      const isUnAssigned = !conversation.meta.assignee;
-      const shouldFilter = applyPageFilters(conversation, activeFilters);
-      return isUnAssigned && shouldFilter;
-    });
+    const filteredConversations = _state.allConversations.filter(
+      conversation => {
+        const isUnAssigned = !conversation.meta.assignee;
+        const shouldFilter = applyPageFilters(conversation, activeFilters);
+        return isUnAssigned && shouldFilter;
+      }
+    );
+
+    return sortConversations(filteredConversations, _state.chatSortFilter);
   },
   getAllStatusChats: (_state, _, __, rootGetters) => activeFilters => {
     const currentUser = rootGetters.getCurrentUser;
@@ -110,17 +138,21 @@ const getters = {
     const permissions = getUserPermissions(currentUser, currentAccountId);
     const userRole = getUserRole(currentUser, currentAccountId);
 
-    return _state.allConversations.filter(conversation => {
-      const shouldFilter = applyPageFilters(conversation, activeFilters);
-      const allowedForRole = applyRoleFilter(
-        conversation,
-        userRole,
-        permissions,
-        currentUserId
-      );
+    const filteredConversations = _state.allConversations.filter(
+      conversation => {
+        const shouldFilter = applyPageFilters(conversation, activeFilters);
+        const allowedForRole = applyRoleFilter(
+          conversation,
+          userRole,
+          permissions,
+          currentUserId
+        );
 
-      return shouldFilter && allowedForRole;
-    });
+        return shouldFilter && allowedForRole;
+      }
+    );
+
+    return sortConversations(filteredConversations, _state.chatSortFilter);
   },
   getChatListLoadingStatus: ({ listLoadingStatus }) => listLoadingStatus,
   getAllMessagesLoaded(_state) {

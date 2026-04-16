@@ -62,16 +62,12 @@ const routeToLastActiveAssistant = () => {
     'captain_assistants_settings_index', // Settings page
     'captain_assistants_prompts_index', // Prompts page
     'captain_assistants_restrictions_index', // Restrictions page
-    'captain_assistants_access_index', // Access page
   ].includes(navigationPath);
 
   let navigateTo = 'captain_assistants_responses_index';
 
   if (isAValidRoute) {
-    navigateTo =
-      navigationPath === 'captain_assistants_access_index'
-        ? 'captain_assistants_settings_index'
-        : navigationPath;
+    navigateTo = navigationPath;
   }
 
   return routeToView(navigateTo, {

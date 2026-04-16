@@ -11,10 +11,20 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import ContextAccessSettings from './ContextAccessSettings.vue';
-import ToolAccessSettings from './ToolAccessSettings.vue';
 import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
 import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
+import {
+  ADD_CONTACT_NOTE_TOOL_ID,
+  ADD_PRIVATE_NOTE_TOOL_ID,
+  AGENT_TOOL_SCOPE,
+  ASSISTANT_TOOL_SCOPE,
+  FAQ_LOOKUP_TOOL_ID,
+  HANDOFF_TOOL_ID,
+  buildDefaultToolAccessForUsageMode,
+  isToolEnabled,
+  normalizeCapabilityToolAccess,
+  setToolEnabled,
+} from './toolAccessDefaults';
 
 const props = defineProps({
   mode: {
@@ -52,16 +62,7 @@ const buildInitialState = () => ({
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
   contextAccess: {},
-  toolAccess: {
-    agent: {
-      enabled: true,
-      tool_ids: ['faq_lookup', 'handoff'],
-    },
-    assistant: {
-      enabled: true,
-      tool_ids: ['search_documentation', 'faq_lookup'],
-    },
-  },
+  toolAccess: buildDefaultToolAccessForUsageMode(),
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
@@ -74,9 +75,6 @@ const isInternalAssistant = computed(
 const isExternalAgent = computed(() => !isInternalAssistant.value);
 const activeToolScope = computed(() =>
   isExternalAgent.value ? 'agent' : 'assistant'
-);
-const visibleToolScopes = computed(() =>
-  isExternalAgent.value ? ['agent'] : ['assistant']
 );
 
 const validationRules = computed(() => ({
@@ -133,6 +131,64 @@ const handleAvatarDelete = () => {
   state.removeAvatar = Boolean(safeAssistant.value?.avatar_url);
 };
 
+const handoffToHumanEnabled = computed({
+  get: () => isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, HANDOFF_TOOL_ID),
+  set: enabled => {
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      HANDOFF_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
+const faqLookupEnabled = computed({
+  get: () =>
+    isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, FAQ_LOOKUP_TOOL_ID),
+  set: enabled => {
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      FAQ_LOOKUP_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
+const notesEnabled = computed({
+  get: () => {
+    const scopeName = activeToolScope.value;
+    return (
+      isToolEnabled(state.toolAccess, scopeName, ADD_CONTACT_NOTE_TOOL_ID) &&
+      isToolEnabled(state.toolAccess, scopeName, ADD_PRIVATE_NOTE_TOOL_ID)
+    );
+  },
+  set: enabled => {
+    const scopeName =
+      state.usageMode === 'internal_assistant'
+        ? ASSISTANT_TOOL_SCOPE
+        : AGENT_TOOL_SCOPE;
+
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      scopeName,
+      ADD_CONTACT_NOTE_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+    state.toolAccess = setToolEnabled(
+      state.toolAccess,
+      scopeName,
+      ADD_PRIVATE_NOTE_TOOL_ID,
+      enabled,
+      state.usageMode
+    );
+  },
+});
+
 const resolveInstructionText = assistant => {
   return assistant?.description?.trim?.() || '';
 };
@@ -145,31 +201,6 @@ const normalizeNonNegativeInteger = value => {
 
   return Math.floor(normalizedValue);
 };
-
-const assistantHasConfiguredToolAccess = assistant =>
-  Object.prototype.hasOwnProperty.call(assistant?.config || {}, 'tool_access');
-
-const ensureDefaultToolAccessForUsageMode = usageMode => {
-  const activeScope =
-    usageMode === 'internal_assistant' ? 'assistant' : 'agent';
-
-  if (!state.toolAccess?.[activeScope]) {
-    state.toolAccess = {
-      ...state.toolAccess,
-      [activeScope]: {
-        enabled: true,
-      },
-    };
-  }
-};
-
-const pickAllowedToolAccess = access =>
-  visibleToolScopes.value.reduce((result, scope) => {
-    if (access?.[scope]) {
-      result[scope] = access[scope];
-    }
-    return result;
-  }, {});
 
 const prepareAssistantDetails = () => {
   const config = {
@@ -193,17 +224,12 @@ const prepareAssistantDetails = () => {
     history_message_limit: isExternalAgent.value
       ? normalizeNonNegativeInteger(state.historyMessageLimit)
       : 0,
-    context_access: state.contextAccess,
+    context_access: {},
+    tool_access: normalizeCapabilityToolAccess(
+      state.toolAccess,
+      state.usageMode
+    ),
   };
-
-  const visibleToolAccess = pickAllowedToolAccess(state.toolAccess);
-
-  if (
-    assistantHasConfiguredToolAccess(safeAssistant.value) ||
-    Object.keys(visibleToolAccess).length
-  ) {
-    config.tool_access = visibleToolAccess;
-  }
 
   return {
     assistant: {
@@ -247,8 +273,11 @@ const updateStateFromAssistant = assistant => {
       config.message_collapse_window_seconds || 0
     ),
     historyMessageLimit: Number(config.history_message_limit || 0),
-    contextAccess: config.context_access || {},
-    toolAccess: config.tool_access || {},
+    contextAccess: {},
+    toolAccess: normalizeCapabilityToolAccess(
+      config.tool_access || {},
+      usageMode || 'external_agent'
+    ),
     avatarFile: null,
     avatarUrl: assistant.avatar_url || '',
     removeAvatar: false,
@@ -260,15 +289,11 @@ watch(
   newAssistant => {
     if (props.mode === 'edit' && newAssistant) {
       updateStateFromAssistant(newAssistant);
-      ensureDefaultToolAccessForUsageMode(
-        newAssistant.usage_mode || 'external_agent'
-      );
       return;
     }
 
     if (props.mode === 'create') {
       Object.assign(state, buildInitialState());
-      ensureDefaultToolAccessForUsageMode('external_agent');
     }
   },
   { immediate: true }
@@ -277,7 +302,17 @@ watch(
 watch(
   () => state.usageMode,
   usageMode => {
-    ensureDefaultToolAccessForUsageMode(usageMode);
+    if (
+      props.mode === 'create' &&
+      !Object.keys(state.toolAccess || {}).length
+    ) {
+      state.toolAccess = buildDefaultToolAccessForUsageMode(usageMode);
+    } else {
+      state.toolAccess = normalizeCapabilityToolAccess(
+        state.toolAccess,
+        usageMode
+      );
+    }
     if (usageMode !== 'external_agent') {
       state.handoffMessageEnabled = false;
       state.resolutionMessageEnabled = false;
@@ -422,14 +457,14 @@ watch(
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
       </legend>
 
-      <label class="flex items-center gap-2">
+      <label v-if="isExternalAgent" class="flex items-center gap-2">
         <Checkbox v-model="state.featureFaq" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
         </span>
       </label>
 
-      <label class="flex items-center gap-2">
+      <label v-if="isExternalAgent" class="flex items-center gap-2">
         <Checkbox v-model="state.featureMemory" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
@@ -437,9 +472,30 @@ watch(
       </label>
 
       <label class="flex items-center gap-2">
+        <Checkbox v-model="notesEnabled" />
+        <span class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES') }}
+        </span>
+      </label>
+
+      <label class="flex items-center gap-2">
         <Checkbox v-model="state.featureCitation" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+        </span>
+      </label>
+
+      <label v-if="isExternalAgent" class="flex items-center gap-2">
+        <Checkbox v-model="faqLookupEnabled" />
+        <span class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
+        </span>
+      </label>
+
+      <label v-if="isExternalAgent" class="flex items-center gap-2">
+        <Checkbox v-model="handoffToHumanEnabled" />
+        <span class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
         </span>
       </label>
     </fieldset>
@@ -501,15 +557,6 @@ watch(
         message-type="info"
       />
     </div>
-
-    <ContextAccessSettings v-model="state.contextAccess" />
-
-    <ToolAccessSettings
-      v-model="state.toolAccess"
-      :assistant-id="safeAssistant.id"
-      :allowed-scopes="visibleToolScopes"
-      :default-expanded="mode !== 'create'"
-    />
 
     <div class="flex items-center justify-between w-full gap-3">
       <Button

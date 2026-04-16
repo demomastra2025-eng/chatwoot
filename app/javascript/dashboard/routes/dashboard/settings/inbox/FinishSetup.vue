@@ -819,7 +819,9 @@ async function refreshWhatsappWebQr({
       let successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REFRESH_SUCCESS');
 
       if (isRequestingCode) {
-        successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_CODE_SUCCESS');
+        successMessage = t(
+          'INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_CODE_SUCCESS'
+        );
       } else if (isRequestingQr) {
         successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REQUEST_QR_SUCCESS');
       }
@@ -914,6 +916,28 @@ function syncWhatsappWebPolling() {
       })
       .catch(() => {});
   }, 5000);
+}
+
+async function fetchWhatsappWebStatus() {
+  if (
+    !isWhatsappWebSetupFlow.value ||
+    !isDocumentVisible.value ||
+    !currentInbox.value?.id ||
+    isWhatsappWebDeleting.value ||
+    whatsappWebStatus.value === 'connected'
+  ) {
+    return;
+  }
+
+  try {
+    await store.dispatch('inboxes/refreshWhatsappWebQr', {
+      inboxId: currentInbox.value.id,
+      statusOnly: true,
+      includeQrCode: true,
+    });
+  } catch (error) {
+    // Status sync stays best-effort during setup.
+  }
 }
 
 async function ensureInboxLoaded() {
@@ -1024,6 +1048,7 @@ function handleVisibilityChange() {
 
   isDocumentVisible.value = document.visibilityState === 'visible';
   if (isDocumentVisible.value) {
+    fetchWhatsappWebStatus();
     fetchTelegramPersonalDiagnostics();
   }
   syncWhatsappWebPolling();
@@ -1104,7 +1129,9 @@ watch(
 );
 
 onMounted(() => {
-  ensureInboxLoaded();
+  ensureInboxLoaded().then(() => {
+    fetchWhatsappWebStatus();
+  });
   generateQRCodes();
   renderTelegramPersonalQrCode();
   syncDashboardThemeState();
@@ -1275,16 +1302,17 @@ onBeforeUnmount(() => {
                   </p>
                 </div>
 
-                <div v-if="!isWhatsappWebConnected" class="grid gap-5">
+                <div
+                  v-if="!isWhatsappWebConnected"
+                  class="grid gap-5 lg:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)] lg:items-stretch"
+                >
                   <div
                     class="rounded-2xl border border-n-weak bg-n-surface-1 px-6 py-4"
                   >
                     <p
                       class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
                     >
-                      {{
-                        $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL')
-                      }}
+                      {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.PAIR_CODE_LABEL') }}
                     </p>
                     <p
                       v-if="formattedWhatsappWebPairingCode"
@@ -1315,7 +1343,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div
-                    class="rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                    class="min-w-0 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
                   >
                     <p
                       class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
@@ -1324,17 +1352,17 @@ onBeforeUnmount(() => {
                     </p>
 
                     <div
-                    v-if="
+                      v-if="
                         whatsappWebDisplayQrCode &&
                         !isWhatsappWebConnected &&
                         !shouldShowWhatsappWebQrLoader
                       "
-                      class="flex items-center justify-center"
+                      class="flex w-full items-center justify-center rounded-2xl bg-white p-3"
                     >
                       <img
                         :src="whatsappWebDisplayQrCode"
                         :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
-                        class="h-auto w-full max-w-[16rem]"
+                        class="block aspect-square h-auto w-full max-w-none object-contain"
                       />
                     </div>
                     <div
@@ -1343,9 +1371,7 @@ onBeforeUnmount(() => {
                     >
                       <Spinner class="text-[#25D366]" :size="28" />
                       <p class="text-sm font-medium text-n-slate-11">
-                        {{
-                          $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE')
-                        }}
+                        {{ $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.LOADING_TITLE') }}
                       </p>
                     </div>
                     <div

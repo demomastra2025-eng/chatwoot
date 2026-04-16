@@ -65,9 +65,6 @@ const fetchDataForRoute = async (routeName, assistantId) => {
     captain_assistants_restrictions_index: async () => {
       await store.dispatch('captainAssistants/show', assistantId);
     },
-    captain_assistants_access_index: async () => {
-      await store.dispatch('captainAssistants/show', assistantId);
-    },
     captain_assistants_inboxes_index: async () => {
       await store.dispatch('captainInboxes/get', { assistantId });
       await store.dispatch('captainAssistants/show', assistantId);
@@ -85,9 +82,7 @@ const handleAssistantChange = async assistant => {
 
   const currentRouteName = route.name;
   const targetRouteName =
-    currentRouteName === 'captain_assistants_access_index'
-      ? 'captain_assistants_settings_index'
-      : currentRouteName || 'captain_assistants_responses_index';
+    currentRouteName || 'captain_assistants_responses_index';
 
   await fetchDataForRoute(targetRouteName, assistant.id);
 

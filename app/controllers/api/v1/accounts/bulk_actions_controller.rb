@@ -48,10 +48,8 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   def conversation_params
     # TODO: Align conversation payloads with the `{ action_name, action_attributes }`
     # and then remove this method in favor of a common params method.
-    base = params.permit(
-      :snoozed_until,
-      fields: [:status, :assignee_id, :team_id]
-    )
+    base = params.permit(:snoozed_until)
+    base[:fields] = conversation_fields if conversation_fields.present?
     append_common_bulk_attributes(base)
   end
 
@@ -84,12 +82,18 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     return 'remove_labels' if params.dig(:labels, :remove).present?
     return 'add_labels' if params.dig(:labels, :add).present?
 
-    fields = params[:fields].to_h
+    fields = conversation_fields
     return 'update' if fields.keys.size > 1
     return 'update_status' if fields.key?(:status) || fields.key?('status')
     return 'assign_agent' if fields.key?(:assignee_id) || fields.key?('assignee_id')
     return 'assign_team' if fields.key?(:team_id) || fields.key?('team_id')
 
     'update'
+  end
+
+  def conversation_fields
+    @conversation_fields ||= params.fetch(:fields, ActionController::Parameters.new)
+                                   .permit(:status, :assignee_id, :team_id)
+                                   .to_h
   end
 end

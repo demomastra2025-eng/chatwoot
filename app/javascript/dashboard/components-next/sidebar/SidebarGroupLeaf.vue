@@ -20,6 +20,20 @@ const shouldRenderComponent = computed(() => {
   return typeof props.component === 'function' || isVNode(props.component);
 });
 
+const INTERACTIVE_TARGET_SELECTOR = [
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  'a',
+  '[role="button"]',
+  '[role="menuitem"]',
+  '[role="dialog"]',
+  '[contenteditable="true"]',
+  '[data-prevent-sidebar-nav]',
+].join(', ');
+
 const componentType = computed(() => {
   if (typeof props.to === 'undefined' || props.to === null) {
     return 'div';
@@ -32,8 +46,19 @@ const componentType = computed(() => {
   return 'router-link';
 });
 
-const handleLeafClick = async () => {
+const handleLeafClick = async event => {
   if (!shouldRenderComponent.value) {
+    return;
+  }
+
+  if (event?.defaultPrevented) {
+    return;
+  }
+
+  if (
+    event?.target instanceof Element &&
+    event.target.closest(INTERACTIVE_TARGET_SELECTOR)
+  ) {
     return;
   }
 

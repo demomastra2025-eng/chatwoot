@@ -487,6 +487,21 @@ const actions = {
     });
   },
 
+  setConversationPinned: async ({ dispatch }, { conversationId, pinned }) => {
+    if (pinned) {
+      await dispatch('updateCustomAttributes', {
+        conversationId,
+        customAttributes: { pinned: true },
+      });
+      return;
+    }
+
+    await dispatch('deleteCustomAttributes', {
+      conversationId,
+      customAttributes: ['pinned'],
+    });
+  },
+
   deleteCustomAttributes: async (
     { commit },
     { conversationId, customAttributes }

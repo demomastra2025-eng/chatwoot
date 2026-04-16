@@ -287,7 +287,7 @@ class Captain::ContextFields
 
     def normalized_access_for(assistant, definitions = definitions_for(assistant.account))
       available_ids_by_scope = definitions.group_by { |field| field[:table_name].to_sym }
-                                        .transform_values { |fields| fields.map { |field| field[:id] } }
+                                          .transform_values { |fields| fields.map { |field| field[:id] } }
       raw_access = assistant.config&.with_indifferent_access&.dig(:context_access) || {}
 
       SCOPES.index_with do |scope|
@@ -524,16 +524,20 @@ class Captain::ContextFields
         end
 
       {
-        enabled: raw_scope.key?(:enabled) ? ActiveModel::Type::Boolean.new.cast(raw_scope[:enabled]) : default_scope_enabled(scope, available_field_ids),
+        enabled: if raw_scope.key?(:enabled)
+                   ActiveModel::Type::Boolean.new.cast(raw_scope[:enabled])
+                 else
+                   default_scope_enabled(scope,
+                                         available_field_ids)
+                 end,
         field_ids: field_ids & available_field_ids
       }
     end
 
     def default_scope_enabled(scope, available_field_ids)
       return false if available_field_ids.blank?
-      return false if %i[deal task appointment].include?(scope.to_sym)
 
-      true
+      %i[contact conversation].include?(scope.to_sym)
     end
 
     def deal_context_enabled?(account)

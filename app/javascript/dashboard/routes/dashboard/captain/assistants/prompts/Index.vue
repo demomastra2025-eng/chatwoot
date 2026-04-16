@@ -113,8 +113,6 @@ const handlePromptsSave = async () => {
                 :show-name-field="false"
                 :show-usage-mode-field="false"
                 :show-feature-flags="false"
-                :show-context-access="false"
-                :show-tool-access="false"
                 :show-submit-button="false"
               />
             </div>

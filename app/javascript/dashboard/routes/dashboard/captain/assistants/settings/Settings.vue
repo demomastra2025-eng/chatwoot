@@ -19,8 +19,6 @@ const router = useRouter();
 const store = useStore();
 
 const deleteAssistantDialog = ref(null);
-const basicContextAccess = ref({});
-const basicToolAccess = ref({});
 const generalBasicFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const draftUsageMode = ref('external_agent');
@@ -47,8 +45,6 @@ onMounted(() => {
 watch(
   assistant,
   currentAssistant => {
-    basicContextAccess.value = currentAssistant?.config?.context_access || {};
-    basicToolAccess.value = currentAssistant?.config?.tool_access || {};
     draftUsageMode.value = currentAssistant?.usage_mode || 'external_agent';
   },
   { immediate: true }
@@ -157,14 +153,6 @@ const handleDelete = () => {
   deleteAssistantDialog.value.dialogRef.open();
 };
 
-const handleContextAccessUpdate = nextContextAccess => {
-  basicContextAccess.value = nextContextAccess;
-};
-
-const handleToolAccessUpdate = nextToolAccess => {
-  basicToolAccess.value = nextToolAccess;
-};
-
 const handleUsageModeUpdate = nextUsageMode => {
   draftUsageMode.value = nextUsageMode || 'external_agent';
 };
@@ -206,14 +194,8 @@ const handleDeleteSuccess = () => {
             <AssistantBasicSettingsForm
               ref="generalBasicFormRef"
               :assistant="assistant"
-              :context-access="basicContextAccess"
-              :tool-access="basicToolAccess"
               :show-description-field="false"
-              show-context-access
-              show-tool-access
               :show-submit-button="false"
-              @update:context-access="handleContextAccessUpdate"
-              @update:tool-access="handleToolAccessUpdate"
               @update:usage-mode="handleUsageModeUpdate"
             />
           </div>

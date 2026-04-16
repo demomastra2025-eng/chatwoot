@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store.js';
 import { useConversationRequiredAttributes } from 'dashboard/composables/useConversationRequiredAttributes';
 import wootConstants from 'dashboard/constants/globals';
+import mutationTypes from 'dashboard/store/mutation-types';
 
 export function useBulkActions() {
   const store = useStore();
@@ -186,6 +187,14 @@ export function useBulkActions() {
             status,
           },
           snoozed_until: snoozedUntil,
+        });
+
+        conversationIds.forEach(conversationId => {
+          store.commit(mutationTypes.CHANGE_CONVERSATION_STATUS, {
+            conversationId,
+            status,
+            snoozedUntil,
+          });
         });
       }
 

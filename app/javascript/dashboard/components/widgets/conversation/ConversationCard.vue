@@ -2,8 +2,10 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
+import { useAlert } from 'dashboard/composables';
 import { getLastMessage } from 'dashboard/helper/conversationHelper';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
+import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import MessagePreview from './MessagePreview.vue';
 import InboxName from '../InboxName.vue';
@@ -49,10 +51,12 @@ const emit = defineEmits([
 
 const router = useRouter();
 const store = useStore();
+const { t } = useI18n();
 
 const hovered = ref(false);
 const showContextMenu = ref(false);
 const contextMenu = ref({ x: null, y: null });
+const isUpdatingPin = ref(false);
 
 // Reset UI state when conversation changes at same index (no :key, instance reused on reorder)
 // This prevents context menu/hover state from leaking to a different conversation
@@ -145,6 +149,8 @@ const messagePreviewClass = computed(() => {
     props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
   ];
 });
+
+const isPinned = computed(() => Boolean(props.chat?.custom_attributes?.pinned));
 
 const conversationPath = computed(() => {
   return frontendURL(
@@ -256,6 +262,26 @@ const deleteConversation = () => {
   emit('deleteConversation', props.chat.id);
   closeContextMenu();
 };
+
+const togglePinnedConversation = async nextPinnedState => {
+  if (isUpdatingPin.value) {
+    return;
+  }
+
+  isUpdatingPin.value = true;
+
+  try {
+    await store.dispatch('setConversationPinned', {
+      conversationId: props.chat.id,
+      pinned: nextPinnedState,
+    });
+  } catch (error) {
+    useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.PIN_UPDATE_ERROR'));
+  } finally {
+    isUpdatingPin.value = false;
+    closeContextMenu();
+  }
+};
 </script>
 
 <template>
@@ -330,10 +356,18 @@ const deleteConversation = () => {
         </div>
       </div>
       <h4
-        class="conversation--user text-sm my-0 mx-2 capitalize pt-0.5 text-ellipsis overflow-hidden whitespace-nowrap flex-1 min-w-0 ltr:pr-16 rtl:pl-16 text-n-slate-12"
+        class="conversation--user text-sm my-0 mx-2 capitalize pt-0.5 text-ellipsis overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 ltr:pr-16 rtl:pl-16 text-n-slate-12"
         :class="hasUnread ? 'font-semibold' : 'font-medium'"
       >
-        {{ currentContact.name }}
+        <span class="truncate">
+          {{ currentContact.name }}
+        </span>
+        <span
+          v-if="isPinned"
+          class="inline-flex items-center rounded-full bg-n-blue-3 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-n-blue-11"
+        >
+          {{ t('CONVERSATION.CARD_CONTEXT_MENU.PINNED_BADGE') }}
+        </span>
       </h4>
       <VoiceCallStatus
         v-if="voiceCallData.status"
@@ -408,6 +442,7 @@ const deleteConversation = () => {
         :conversation-labels="chat.labels"
         :conversation-url="conversationPath"
         :allowed-options="allowedContextMenuOptions"
+        :is-pinned="isPinned"
         @update-conversation="onUpdateConversation"
         @assign-agent="onAssignAgent"
         @assign-label="onAssignLabel"
@@ -417,6 +452,7 @@ const deleteConversation = () => {
         @mark-as-read="markAsRead"
         @assign-priority="assignPriority"
         @delete-conversation="deleteConversation"
+        @toggle-pin="togglePinnedConversation"
         @close="closeContextMenu"
       />
     </ContextMenu>

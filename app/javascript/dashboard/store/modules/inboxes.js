@@ -163,7 +163,11 @@ const commitTelegramPersonalDiagnostics = (
   }
 };
 
-const mergeWhatsappWebInboxPayload = (existingInbox, nextInbox, includeQrCode = false) => {
+const mergeWhatsappWebInboxPayload = (
+  existingInbox,
+  nextInbox,
+  includeQrCode = false
+) => {
   if (!existingInbox) {
     return nextInbox;
   }
@@ -589,14 +593,21 @@ export const actions = {
       typeof payload === 'object' && payload?.statusOnly === true;
     const includeQrCode =
       typeof payload === 'object' && payload?.includeQrCode === true;
+    const artifactType =
+      typeof payload === 'object' && payload?.artifactType
+        ? payload.artifactType
+        : 'both';
     const requestPayload =
       typeof payload === 'object' && payload !== null
         ? {
             status_only: isStatusOnly,
             include_qr_code: includeQrCode,
+            artifact_type: artifactType,
           }
         : {};
-    const requestKey = `${inboxId}:${isStatusOnly ? 'status' : 'refresh'}`;
+    const requestKey = isStatusOnly
+      ? `${inboxId}:status:${includeQrCode ? 'with_qr' : 'state_only'}`
+      : `${inboxId}:refresh:${artifactType}`;
     const currentInbox = inboxGetters?.getInbox
       ? inboxGetters.getInbox(inboxId)
       : null;

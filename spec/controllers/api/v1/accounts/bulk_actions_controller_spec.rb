@@ -128,6 +128,7 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
                params: params
 
           expect(response).to have_http_status(:success)
+          expect(response.parsed_body.dig('payload', 'action_name')).to eq('assign_agent')
         end
 
         expect(Conversation.first.assignee_id).to eq(agent_1.id)
@@ -150,6 +151,7 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
                params: params
 
           expect(response).to have_http_status(:success)
+          expect(response.parsed_body.dig('payload', 'action_name')).to eq('assign_agent')
         end
 
         expect(Conversation.first.assignee_id).to be_nil

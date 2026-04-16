@@ -1,5 +1,6 @@
 class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   prepend Captain::Tools::Instrumentation
+  include Captain::ToolResultOutput
 
   description 'Search and retrieve documentation/FAQs from knowledge base'
 
@@ -30,9 +31,11 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
 
   private
 
+  attr_reader :assistant
+
   def search_responses(query)
-    if @assistant.present?
-      @assistant.responses.approved.search(query, account_id: @account.id)
+    if assistant.present?
+      assistant.responses.approved.search(query, account_id: @account.id)
     else
       @account.captain_assistant_responses.approved.search(query, account_id: @account.id)
     end
@@ -42,5 +45,32 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
     result = "\nQuestion: #{response.question}\nAnswer: #{response.answer}\n"
     result += "Source: #{response.documentable.external_link}\n" if response.documentable.present? && response.documentable.try(:external_link)
     result
+  end
+
+  def tool_scope_name
+    Captain::ToolAccess::SCOPE_ASSISTANT
+  end
+
+  def tool_definition
+    definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}
+    definition[:id] ||= name
+    definition[:title] ||= name.to_s.humanize
+    definition
+  end
+
+  def tool_safety_account
+    @account
+  end
+
+  def tool_safety_feature
+    :assistant
+  end
+
+  def tool_safety_preferences
+    @account&.captain_preferences&.dig(:runtime)
+  end
+
+  def tool_runtime_context
+    {}
   end
 end

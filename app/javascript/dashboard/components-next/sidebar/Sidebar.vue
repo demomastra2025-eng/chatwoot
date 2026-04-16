@@ -847,13 +847,24 @@ const menuItems = computed(() => {
         icon: 'i-woot-captain',
         label: t('SIDEBAR.CAPTAIN'),
         activeOn: ['captain_assistants_create_index'],
-        actionTitle: t('SIDEBAR.CAPTAIN_SETTINGS'),
-        actionIcon: 'i-lucide-settings-2',
-        actionActiveOn: ['captain_assistants_settings_index'],
-        actionTo: accountScopedRoute('captain_assistants_index', {
-          navigationPath: 'captain_assistants_settings_index',
-        }),
+        ...(checkPermissions(['administrator'])
+          ? {
+              actionTitle: t('SIDEBAR.CAPTAIN_SETTINGS'),
+              actionIcon: 'i-lucide-settings-2',
+              actionActiveOn: ['captain_settings_index'],
+              actionTo: accountScopedRoute('captain_settings_index'),
+            }
+          : {}),
         children: [
+          {
+            name: 'Profile',
+            visibilityKey: 'Captain:Settings',
+            label: t('PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
+            activeOn: ['captain_assistants_settings_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_settings_index',
+            }),
+          },
           {
             name: 'Prompts',
             visibilityKey: 'Captain:Prompts',

@@ -74,17 +74,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def reconnect!
     sync_connection_state!
 
-    case channel.connection_state
-    when 'open'
-      restart_runtime_session!
+    if restart_runtime_session_after_reconnect?
+      restart_runtime_session!(force_refresh: true)
     else
-      unless authentication_artifacts_present?
-        refresh_qr!
-
-        if qr_refresh_required_after_reconnect? && restart_runtime_session?
-          restart_runtime_session!
-        end
-      end
+      refresh_qr!
     end
 
     apply_runtime_configuration!
@@ -129,6 +122,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     state = response.dig('instance', 'state')
     normalized_state = normalized_connection_state(state)
     lifecycle_state = lifecycle_state_for(state, channel.qr_code.present?)
+    clear_auth_artifacts = normalized_state == 'open'
 
     attributes = {
       connection_state: normalized_state,
@@ -136,8 +130,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       last_error: runtime_error_for_state(normalized_state, channel.last_error),
       last_synced_at: Time.current
     }
-    attributes[:qr_code] = {} if %w[open reconnecting close refused].include?(normalized_state)
-    attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil) if %w[open reconnecting close refused].include?(normalized_state)
+    if clear_auth_artifacts
+      attributes[:qr_code] = {}
+      attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
+    end
 
     channel.update!(attributes)
     request_history_sync_if_provider_ready if normalized_state == 'open'
@@ -160,7 +156,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       counts: {
         messages_missing_provider_message_id: inbox.messages.where(source_id: [nil, '']).count,
         conversations_missing_provider_conversation_id: inbox.conversations.joins(:contact_inbox)
-                                                           .where(contact_inboxes: { source_id: [nil, ''] }).count,
+                                                             .where(contact_inboxes: { source_id: [nil, ''] }).count,
         provisional_contacts: provisional_contacts.count,
         echo_jobs_backlog: echo_jobs[:backlog],
         messages_update_without_local_source_id_hit_count: channel.sync_state_payload['echo_status_miss_count'].to_i
@@ -185,10 +181,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def fetch_contacts(page: 1, offset: 100)
     request(:post, "/chat/findContacts/#{channel.instance_name}", body: {
-      page: page,
-      offset: offset,
-      where: {}
-    })
+              page: page,
+              offset: offset,
+              where: {}
+            })
   end
 
   def fetch_messages(page: 1, offset: 100, from: nil, to: Time.current)
@@ -212,34 +208,34 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def fetch_chats(page: 1, offset: 100)
     request(:post, "/chat/findChats/#{channel.instance_name}", body: {
-      page: page,
-      offset: offset,
-      where: {}
-    })
+              page: page,
+              offset: offset,
+              where: {}
+            })
   end
 
   def fetch_message_by_source_id(source_id:, remote_jid: nil, from_me: true)
     response = request(:post, "/chat/findMessages/#{channel.instance_name}", body: {
-      page: 1,
-      offset: 1,
-      where: {
-        key: {
-          id: source_id,
-          fromMe: from_me
-        }.tap do |key|
-          key[:remoteJid] = remote_jid if remote_jid.present?
-        end
-      }
-    })
+                         page: 1,
+                         offset: 1,
+                         where: {
+                           key: {
+                             id: source_id,
+                             fromMe: from_me
+                           }.tap do |key|
+                             key[:remoteJid] = remote_jid if remote_jid.present?
+                           end
+                         }
+                       })
 
     response.dig('messages', 'records', 0)
   end
 
   def fetch_message_media(record:, convert_to_mp4: false)
     request(:post, "/chat/getBase64FromMediaMessage/#{channel.instance_name}", body: {
-      message: record,
-      convertToMp4: convert_to_mp4
-    }).deep_symbolize_keys
+              message: record,
+              convertToMp4: convert_to_mp4
+            }).deep_symbolize_keys
   rescue RequestError => e
     raise unless MEDIA_UNAVAILABLE_STATUSES.include?(e.status)
 
@@ -261,13 +257,13 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def send_message(message)
     attachment = message.attachments.first
 
-    if attachment&.location?
-      response = request(:post, "/message/sendLocation/#{channel.instance_name}", body: location_payload(message, attachment))
-    elsif attachment.present?
-      response = request(:post, "/message/sendMedia/#{channel.instance_name}", body: media_payload(message, attachment))
-    else
-      response = request(:post, "/message/sendText/#{channel.instance_name}", body: text_payload(message))
-    end
+    response = if attachment&.location?
+                 request(:post, "/message/sendLocation/#{channel.instance_name}", body: location_payload(message, attachment))
+               elsif attachment.present?
+                 request(:post, "/message/sendMedia/#{channel.instance_name}", body: media_payload(message, attachment))
+               else
+                 request(:post, "/message/sendText/#{channel.instance_name}", body: text_payload(message))
+               end
 
     response.dig('key', 'id') || response.dig('data', 'key', 'id')
   end
@@ -279,14 +275,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     raise ArgumentError, 'Conversation remote JID is required for WhatsApp Web edits' if remote_jid.blank?
 
     request(:post, "/chat/updateMessage/#{channel.instance_name}", body: {
-      number: remote_jid,
-      text: content.to_s,
-      key: {
-        id: source_id,
-        fromMe: true,
-        remoteJid: remote_jid
-      }
-    })
+              number: remote_jid,
+              text: content.to_s,
+              key: {
+                id: source_id,
+                fromMe: true,
+                remoteJid: remote_jid
+              }
+            })
   end
 
   def mark_messages_read(messages:)
@@ -306,8 +302,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return if read_messages.blank?
 
     request(:post, "/chat/markMessageAsRead/#{channel.instance_name}", body: {
-      readMessages: read_messages
-    })
+              readMessages: read_messages
+            })
   end
 
   def destroy_remote_instance!
@@ -333,9 +329,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     runtime_state = response.dig('instance', 'state') || runtime_status
     runtime_error = runtime_error_message(response)
 
-    if runtime_status.to_s == 'reauth_required' && qr_payload.blank?
-      runtime_state = 'close'
-    end
+    runtime_state = 'close' if runtime_status.to_s == 'reauth_required' && qr_payload.blank?
 
     if qr_payload.blank? && runtime_state.blank? && runtime_error.present?
       channel.update!(
@@ -502,16 +496,18 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     end
   end
 
-  def restart_runtime_session?
-    return true if channel.connection_state.in?(%w[open reconnecting])
-
-    channel.connection_state == 'connecting' && channel.qr_code.blank?
+  def restart_runtime_session_after_reconnect?
+    channel.connection_state.in?(%w[open connecting reconnecting unknown])
   end
 
-  def restart_runtime_session!
+  def restart_runtime_session!(force_refresh: false)
     response = request(:post, "/instance/restart/#{channel.instance_name}", body: {})
     sync_from_runtime_response!(response)
-    refresh_qr! if qr_refresh_required_after_reconnect?
+    if force_refresh
+      refresh_qr! if channel.connection_state != 'open'
+    elsif qr_refresh_required_after_reconnect?
+      refresh_qr!
+    end
     channel
   end
 
@@ -601,7 +597,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
         byEvents: false,
         base64: true,
         headers: {
-          jwt_key: channel.webhook_secret,
+          :jwt_key => channel.webhook_secret,
           'x-onelink-native' => 'true',
           'x-onelink-channel-id' => channel.id.to_s,
           'x-onelink-account-id' => channel.account_id.to_s

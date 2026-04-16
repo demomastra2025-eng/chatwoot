@@ -289,11 +289,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def agent_tools
-    Captain::ToolCatalog.allowed_tools_for(
-      self,
-      Captain::ToolAccess::SCOPE_AGENT,
-      fallback_ids: Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
-    ).filter_map do |tool_metadata|
+    allowed_agent_tools.filter_map do |tool_metadata|
       next unless Captain::ToolPolicy.runtime_allowed?(
         tool_metadata,
         assistant: self,

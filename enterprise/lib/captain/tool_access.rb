@@ -5,7 +5,7 @@ module Captain::ToolAccess
     SCOPE_AGENT,
     SCOPE_ASSISTANT
   ].freeze
-  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup handoff].freeze
+  DEFAULT_AGENT_TOOL_IDS = [].freeze
 
   module_function
 
@@ -83,10 +83,7 @@ module Captain::ToolAccess
       when SCOPE_AGENT
         DEFAULT_AGENT_TOOL_IDS
       when SCOPE_ASSISTANT
-        Array(tools).select do |tool|
-          tool = tool.with_indifferent_access
-          tool.fetch(:selected_by_default, true)
-        end.map { |tool| tool[:id] || tool['id'] }
+        []
       else
         []
       end

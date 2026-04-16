@@ -26,7 +26,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
   ]),
   item('Captain', 'SIDEBAR.CAPTAIN', [
-    item('Captain:Settings', 'SIDEBAR.CAPTAIN_SETTINGS'),
+    item('Captain:Settings', 'PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
     item('Captain:Prompts', 'SIDEBAR.CAPTAIN_PROMPTS'),
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),

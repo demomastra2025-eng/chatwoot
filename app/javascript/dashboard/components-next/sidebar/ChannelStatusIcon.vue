@@ -31,12 +31,12 @@ const isReconnecting = computed(() => {
   <Icon
     v-if="isReconnecting"
     icon="i-lucide-refresh-cw"
-    class="size-4 text-n-amber-11 animate-spin"
+    class="size-[14px] text-n-amber-11 animate-spin"
   />
   <Icon
     v-else-if="hasConnectionIssue"
     icon="i-lucide-triangle-alert"
-    class="size-4 text-n-ruby-9"
+    class="size-[14px] text-n-ruby-9"
   />
   <ChannelIcon v-else :inbox="inbox" class="size-4" />
 </template>

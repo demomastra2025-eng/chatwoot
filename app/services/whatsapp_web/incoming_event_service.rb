@@ -95,6 +95,7 @@ class WhatsappWeb::IncomingEventService
   def process_connection_update
     state = event_data[:state] || event_data[:status]
     normalized_state = normalize_connection_state(state)
+    clear_auth_artifacts = state.to_s == 'open'
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state),
@@ -102,10 +103,7 @@ class WhatsappWeb::IncomingEventService
       last_synced_at: Time.current
     }
 
-    if state.to_s == 'open'
-      attributes[:qr_code] = {}
-      attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
-    elsif %w[refused close reconnecting].include?(normalized_state)
+    if clear_auth_artifacts
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
     end
@@ -331,9 +329,9 @@ class WhatsappWeb::IncomingEventService
     return {} unless raw_qrcode.respond_to?(:to_h)
 
     raw_qrcode.to_h.deep_stringify_keys
-             .slice('instance', 'pairingCode', 'pairing_code', 'code', 'base64')
-             .compact
-             .presence || {}
+              .slice('instance', 'pairingCode', 'pairing_code', 'code', 'base64')
+              .compact
+              .presence || {}
   end
 
   def connection_update_error_message(normalized_state)
@@ -486,9 +484,9 @@ class WhatsappWeb::IncomingEventService
 
   def log_pending_message_update_backfill(update)
     Rails.logger.info(
-      "[WHATSAPP WEB] Scheduled messages.update backfill for transient missing local message "\
-      "channel=#{channel.id} source_id=#{update.dig(:key, :id)} "\
-      "remote_jid=#{update.dig(:key, :remoteJid)} status=#{update.dig(:update, :status)} "\
+      '[WHATSAPP WEB] Scheduled messages.update backfill for transient missing local message ' \
+      "channel=#{channel.id} source_id=#{update.dig(:key, :id)} " \
+      "remote_jid=#{update.dig(:key, :remoteJid)} status=#{update.dig(:update, :status)} " \
       "wait_seconds=#{MESSAGE_UPDATE_BACKFILL_DELAY}"
     )
   end
