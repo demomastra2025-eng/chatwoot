@@ -128,6 +128,23 @@ RSpec.describe 'Public Articles API', type: :request do
       expect(article.reload.views).to eq 0 # View count should not increment on show
     end
 
+    it 'renders empty content for draft articles without crashing' do
+      draft_article = create(
+        :article,
+        category: category,
+        status: :draft,
+        content: nil,
+        portal: portal,
+        account_id: account.id,
+        author_id: agent.id,
+        title: 'Draft without content'
+      )
+
+      get "/hc/#{portal.slug}/articles/#{draft_article.slug}"
+
+      expect(response).to have_http_status(:success)
+    end
+
     it 'does not increment the view count if the article is not published' do
       draft_article = create(:article, category: category, status: :draft, portal: portal, account_id: account.id, author_id: agent.id, views: 0)
       get "/hc/#{portal.slug}/articles/#{draft_article.slug}"
