@@ -666,7 +666,7 @@
       "EDIT_ARTICLE": {
         "MORE_PROPERTIES": "More properties",
         "UNCATEGORIZED": "Uncategorized",
-        "EDITOR_PLACEHOLDER": "Write something..."
+        "EDITOR_PLACEHOLDER": "Мазмұнды осы жерге жазыңыз. Пішімдеу опциялары үшін '/' теріңіз."
       },
       "ARTICLE_PROPERTIES": {
         "ARTICLE_PROPERTIES": "Article properties",
