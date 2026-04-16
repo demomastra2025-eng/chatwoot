@@ -85,6 +85,14 @@ export const AUTOMATIONS = {
         name: 'ASSIGN_TEAM',
       },
       {
+        key: 'remove_assigned_agent',
+        name: 'REMOVE_ASSIGNED_AGENT',
+      },
+      {
+        key: 'remove_assigned_team',
+        name: 'REMOVE_ASSIGNED_TEAM',
+      },
+      {
         key: 'add_label',
         name: 'ADD_LABEL',
       },
@@ -211,6 +219,14 @@ export const AUTOMATIONS = {
       {
         key: 'assign_team',
         name: 'ASSIGN_TEAM',
+      },
+      {
+        key: 'remove_assigned_agent',
+        name: 'REMOVE_ASSIGNED_AGENT',
+      },
+      {
+        key: 'remove_assigned_team',
+        name: 'REMOVE_ASSIGNED_TEAM',
       },
       {
         key: 'assign_agent',
@@ -345,6 +361,14 @@ export const AUTOMATIONS = {
         name: 'ASSIGN_TEAM',
       },
       {
+        key: 'remove_assigned_agent',
+        name: 'REMOVE_ASSIGNED_AGENT',
+      },
+      {
+        key: 'remove_assigned_team',
+        name: 'REMOVE_ASSIGNED_TEAM',
+      },
+      {
         key: 'assign_agent',
         name: 'ASSIGN_AGENT',
       },
@@ -471,6 +495,14 @@ export const AUTOMATIONS = {
         name: 'ASSIGN_TEAM',
       },
       {
+        key: 'remove_assigned_agent',
+        name: 'REMOVE_ASSIGNED_AGENT',
+      },
+      {
+        key: 'remove_assigned_team',
+        name: 'REMOVE_ASSIGNED_TEAM',
+      },
+      {
         key: 'assign_agent',
         name: 'ASSIGN_AGENT',
       },
@@ -587,6 +619,14 @@ export const AUTOMATIONS = {
         name: 'ASSIGN_TEAM',
       },
       {
+        key: 'remove_assigned_agent',
+        name: 'REMOVE_ASSIGNED_AGENT',
+      },
+      {
+        key: 'remove_assigned_team',
+        name: 'REMOVE_ASSIGNED_TEAM',
+      },
+      {
         key: 'send_email_to_team',
         name: 'SEND_EMAIL_TO_TEAM',
       },
@@ -643,6 +683,16 @@ export const AUTOMATION_ACTION_TYPES = [
     key: 'assign_team',
     label: 'ASSIGN_TEAM',
     inputType: 'search_select',
+  },
+  {
+    key: 'remove_assigned_agent',
+    label: 'REMOVE_ASSIGNED_AGENT',
+    inputType: null,
+  },
+  {
+    key: 'remove_assigned_team',
+    label: 'REMOVE_ASSIGNED_TEAM',
+    inputType: null,
   },
   {
     key: 'add_label',
