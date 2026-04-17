@@ -690,7 +690,7 @@
           "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
         },
         "TIMING_MODE": {
-          "ABSOLUTE": "Specific date and time",
+          "ABSOLUTE": "Date and time",
           "RELATIVE": "Relative to record"
         },
         "TIMING_MODE_HELP": {
@@ -825,7 +825,7 @@
         "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
       },
       "TIMING_MODE": {
-        "ABSOLUTE": "Specific date and time",
+        "ABSOLUTE": "Date and time",
         "RELATIVE": "Relative to record"
       },
       "TIMING_MODE_HELP": {
@@ -870,7 +870,7 @@
         "TIMING_MODE": "When to send",
         "SCHEDULED_AT": "Scheduled at",
         "RELATIVE_TOGGLE": "relative",
-        "ABSOLUTE_MODE": "Specific date and time",
+        "ABSOLUTE_MODE": "Date and time",
         "RELATIVE_AFTER": "After",
         "RELATIVE_BEFORE": "Before",
         "REPEAT_MODE": "Repeat",
@@ -924,7 +924,7 @@
         "RELATIVE_AFTER": "After",
         "RELATIVE_BEFORE": "Before",
         "RELATIVE_MODE": "Before/after event",
-        "ABSOLUTE_MODE": "Specific date and time",
+        "ABSOLUTE_MODE": "Date and time",
         "STEPS": "Stage steps",
         "STEPS_NOTE": "These steps will be created when the stage is applied to: {entityKinds}."
       },

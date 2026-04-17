@@ -310,7 +310,7 @@
     "ALL": "Все",
     "INBOX": "Уведомления",
     "ALL_CONVERSATIONS": "Диалоги",
-    "PENDING_CONVERSATIONS": "AI-агенты",
+    "PENDING_CONVERSATIONS": "AI",
     "OPEN_CONVERSATIONS": "Открыто",
     "SNOOZED_CONVERSATIONS": "Отложено",
     "RESOLVED_CONVERSATIONS": "Закрыто",

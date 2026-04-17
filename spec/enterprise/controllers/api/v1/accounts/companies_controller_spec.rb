@@ -222,6 +222,30 @@ RSpec.describe 'Companies API', type: :request do
         expect(response_body['payload']['name']).to eq(company.name)
         expect(response_body['payload']['id']).to eq(company.id)
       end
+
+      it 'returns direct contacts and deal-related contacts for the company' do
+        direct_contact = create(:contact, account: account, company: company, name: 'Direct Contact')
+        deal_related_contact = create(:contact, account: account, name: 'Deal Contact')
+        deal = create(:crm_deal, account: account, company: company)
+        create(
+          :crm_deal_contact,
+          account: account,
+          deal: deal,
+          contact: deal_related_contact,
+          primary: true
+        )
+
+        get "/api/v1/accounts/#{account.id}/companies/#{company.id}",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_contacts = response.parsed_body.dig('payload', 'contacts')
+        expect(response_contacts.pluck('id')).to contain_exactly(
+          direct_contact.id,
+          deal_related_contact.id
+        )
+      end
     end
   end
 
@@ -260,18 +284,26 @@ RSpec.describe 'Companies API', type: :request do
       end
 
       it 'creates multiple companies without domain' do
+        auth_headers = admin.create_new_auth_token
+
         post "/api/v1/accounts/#{account.id}/companies",
              params: { company: { name: 'Company Without Domain 1', domain: '' } },
-             headers: admin.create_new_auth_token,
+             headers: auth_headers,
              as: :json
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('payload', 'domain')).to be_nil
 
+        auth_headers = auth_headers.merge(
+          response.headers
+                  .slice('access-token', 'client', 'uid', 'expiry', 'token-type')
+                  .compact
+        )
+
         expect do
           post "/api/v1/accounts/#{account.id}/companies",
                params: { company: { name: 'Company Without Domain 2', domain: '' } },
-               headers: admin.create_new_auth_token,
+               headers: auth_headers,
                as: :json
         end.to change(Company, :count).by(1)
 

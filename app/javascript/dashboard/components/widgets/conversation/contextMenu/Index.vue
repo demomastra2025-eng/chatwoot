@@ -173,10 +173,12 @@ export default {
       },
       pinOption: {
         key: MENU.PIN,
+        icon: 'pin',
         label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.PIN'),
       },
       unpinOption: {
         key: MENU.PIN,
+        icon: 'pin-off',
         label: this.$t('CONVERSATION.CARD_CONTEXT_MENU.UNPIN'),
       },
       openInNewTabOption: {
@@ -402,6 +404,7 @@ export default {
       <MenuItem
         v-if="isAllowed([MENU.PIN])"
         :option="isPinned ? unpinOption : pinOption"
+        variant="icon"
         @click.stop="togglePin"
       />
       <hr

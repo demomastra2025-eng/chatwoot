@@ -640,6 +640,116 @@
               "TITLE": "Поля записи",
               "DESCRIPTION": "Данные записи."
             }
+          },
+          "FIELDS": {
+            "CONTACT": {
+              "ID": { "TITLE": "ID контакта" },
+              "NAME": { "TITLE": "Имя" },
+              "EMAIL": { "TITLE": "Email" },
+              "PHONE_NUMBER": { "TITLE": "Номер телефона" },
+              "IDENTIFIER": { "TITLE": "Идентификатор" },
+              "CONTACT_TYPE": { "TITLE": "Тип контакта" }
+            },
+            "CONVERSATION": {
+              "ID": { "TITLE": "ID записи диалога" },
+              "DISPLAY_ID": { "TITLE": "ID диалога" },
+              "INBOX_ID": { "TITLE": "ID инбокса" },
+              "CONTACT_ID": { "TITLE": "ID контакта" },
+              "STATUS": { "TITLE": "Статус" },
+              "PRIORITY": { "TITLE": "Приоритет" },
+              "LABEL_LIST": { "TITLE": "Метки" }
+            },
+            "DEAL": {
+              "ID": { "TITLE": "ID сделки" },
+              "TITLE": { "TITLE": "Название" },
+              "DESCRIPTION": { "TITLE": "Описание" },
+              "AMOUNT_MINOR": { "TITLE": "Сумма (в минимальных единицах)" },
+              "CURRENCY": { "TITLE": "Валюта" },
+              "EXPECTED_CLOSE_ON": { "TITLE": "Ожидаемая дата закрытия" },
+              "WIN_PROBABILITY": { "TITLE": "Вероятность успеха" },
+              "CLOSED_AT": { "TITLE": "Дата закрытия" },
+              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
+              "PIPELINE_ID": { "TITLE": "ID воронки" },
+              "PIPELINE_NAME": { "TITLE": "Название воронки" },
+              "STAGE_ID": { "TITLE": "ID этапа" },
+              "STAGE_NAME": { "TITLE": "Название этапа" },
+              "OWNER_ID": { "TITLE": "ID ответственного" },
+              "OWNER_NAME": { "TITLE": "Имя ответственного" },
+              "CREATOR_ID": { "TITLE": "ID создателя" },
+              "CREATOR_NAME": { "TITLE": "Имя создателя" },
+              "TEAM_ID": { "TITLE": "ID команды" },
+              "TEAM_NAME": { "TITLE": "Название команды" },
+              "COMPANY_ID": { "TITLE": "ID компании" },
+              "COMPANY_NAME": { "TITLE": "Название компании" },
+              "ORIGINATING_CONVERSATION_ID": { "TITLE": "ID диалога" }
+            },
+            "TASK": {
+              "ID": { "TITLE": "ID задачи" },
+              "TITLE": { "TITLE": "Название" },
+              "DESCRIPTION": { "TITLE": "Описание" },
+              "DUE_AT": { "TITLE": "Срок выполнения" },
+              "START_AT": { "TITLE": "Начало" },
+              "PRIORITY": { "TITLE": "Приоритет" },
+              "COMPLETED_AT": { "TITLE": "Дата выполнения" },
+              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
+              "STATUS_ID": { "TITLE": "ID статуса" },
+              "STATUS_NAME": { "TITLE": "Название статуса" },
+              "ASSIGNEE_ID": { "TITLE": "ID исполнителя" },
+              "ASSIGNEE_NAME": { "TITLE": "Имя исполнителя" },
+              "CREATOR_ID": { "TITLE": "ID создателя" },
+              "CREATOR_NAME": { "TITLE": "Имя создателя" },
+              "TEAM_ID": { "TITLE": "ID команды" },
+              "TEAM_NAME": { "TITLE": "Название команды" },
+              "DEAL_ID": { "TITLE": "ID сделки" },
+              "DEAL_TITLE": { "TITLE": "Название сделки" },
+              "ORIGINATING_CONVERSATION_ID": { "TITLE": "ID диалога" }
+            },
+            "APPOINTMENT": {
+              "ID": { "TITLE": "ID записи" },
+              "RESOURCE_ID": { "TITLE": "ID специалиста" },
+              "CONTACT_ID": { "TITLE": "ID контакта" },
+              "SERVICE_ID": { "TITLE": "ID услуги" },
+              "COMPANY_ID": { "TITLE": "ID компании" },
+              "CONVERSATION_ID": { "TITLE": "ID диалога" },
+              "CREATED_BY_ID": { "TITLE": "ID создателя" },
+              "STARTS_AT": { "TITLE": "Время начала" },
+              "ENDS_AT": { "TITLE": "Время окончания" },
+              "DURATION_MIN": { "TITLE": "Длительность (в минутах)" },
+              "STATUS": { "TITLE": "Статус" },
+              "APPOINTMENT_TYPE": { "TITLE": "Тип записи" },
+              "CLIENT_NAME": { "TITLE": "Имя клиента" },
+              "CLIENT_PHONE": { "TITLE": "Телефон клиента" },
+              "CLIENT_IDENTIFIER": { "TITLE": "Идентификатор клиента" },
+              "CLIENT_BIRTH_DATE": { "TITLE": "Дата рождения клиента" },
+              "CLIENT_GENDER": { "TITLE": "Пол клиента" },
+              "CLIENT_COMMENT": { "TITLE": "Комментарий клиента" },
+              "SOURCE": { "TITLE": "Источник" },
+              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
+              "PAYMENT_STATUS": { "TITLE": "Статус оплаты" },
+              "SERVICE_NAME_SNAPSHOT": { "TITLE": "Название услуги" },
+              "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Тип услуги" },
+              "SERVICE_DURATION_MIN_SNAPSHOT": {
+                "TITLE": "Длительность услуги (в минутах)"
+              },
+              "SERVICE_AMOUNT": { "TITLE": "Стоимость услуги" },
+              "COMPENSATION_TYPE_SNAPSHOT": {
+                "TITLE": "Тип компенсации"
+              },
+              "COMPENSATION_VALUE_SNAPSHOT": {
+                "TITLE": "Значение компенсации"
+              },
+              "COMPENSATION_PERCENT_SNAPSHOT": {
+                "TITLE": "Процент компенсации"
+              },
+              "PREPAID_AMOUNT": { "TITLE": "Сумма предоплаты" },
+              "PREPAID_PAYMENT_METHOD": {
+                "TITLE": "Способ предоплаты"
+              },
+              "SETTLEMENT_AMOUNT": { "TITLE": "Сумма расчета" },
+              "SETTLEMENT_PAYMENT_METHOD": {
+                "TITLE": "Способ расчета"
+              }
+            }
           }
         },
         "TOOL_ACCESS": {
@@ -679,6 +789,7 @@
             "CRM_DEALS": "Сделки CRM",
             "CRM_TASKS": "Задачи CRM",
             "SCHEDULING": "Запись",
+            "OUTBOUND": "Исходящие",
             "HELP_CENTER": "База знаний",
             "INTEGRATIONS": "Интеграции"
           },
@@ -794,6 +905,10 @@
             "create_task": {
               "TITLE": "Создать задачу",
               "DESCRIPTION": "Создает CRM-задачу из текущего контекста диалога."
+            },
+            "create_touch": {
+              "TITLE": "Создать исходящее касание",
+              "DESCRIPTION": "Создает запланированное исходящее касание из текущего диалога или связанного CRM-контекста."
             },
             "update_task": {
               "TITLE": "Обновить задачу",

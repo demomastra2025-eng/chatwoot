@@ -83,6 +83,7 @@ module Crm::PayloadBuilder
       team_id: deal.team_id,
       company_id: deal.company_id,
       originating_conversation_id: deal.originating_conversation_id,
+      originating_conversation_display_id: deal.originating_conversation&.display_id,
       title: deal.title,
       description: deal.description,
       amount_minor: deal.amount_minor,

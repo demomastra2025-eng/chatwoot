@@ -1,8 +1,13 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import ToolsDropdown from 'dashboard/components-next/captain/assistant/ToolsDropdown.vue';
 import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
 import { useKeyboardNavigableList } from 'dashboard/composables/useKeyboardNavigableList';
+import {
+  filterAndSortCatalogItems,
+  localizeCatalogField,
+} from 'dashboard/helper/captainCatalog';
 
 const props = defineProps({
   searchKey: {
@@ -17,8 +22,24 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'selectField']);
 
+const { t, te } = useI18n();
+
 const selectedIndex = ref(0);
 const fields = ref([]);
+const searchQuery = ref(props.searchKey || '');
+
+const FIELD_GROUP_ORDER = [
+  'Contact',
+  'Contact Attributes',
+  'Conversation',
+  'Conversation Attributes',
+  'Appointment',
+  'Appointment Attributes',
+  'Deal',
+  'Deal Attributes',
+  'Task',
+  'Task Attributes',
+];
 
 const loadFields = async () => {
   try {
@@ -31,31 +52,15 @@ const loadFields = async () => {
   }
 };
 
+const normalizedFields = computed(() =>
+  fields.value.map(field => localizeCatalogField(field, { t, te }))
+);
+
 const filteredFields = computed(() => {
-  const search = props.searchKey?.trim().toLowerCase() || '';
-
-  return [...fields.value]
-    .filter(field => {
-      const titleMatches = field.title.toLowerCase().includes(search);
-      const groupMatches = (field.group_name || '')
-        .toLowerCase()
-        .includes(search);
-      const descriptionMatches = (field.description || '')
-        .toLowerCase()
-        .includes(search);
-
-      return titleMatches || groupMatches || descriptionMatches;
-    })
-    .sort((leftField, rightField) => {
-      const leftGroup = leftField.group_name || 'zzzzzzzz';
-      const rightGroup = rightField.group_name || 'zzzzzzzz';
-      const groupComparison = leftGroup.localeCompare(rightGroup);
-      if (groupComparison !== 0) {
-        return groupComparison;
-      }
-
-      return leftField.title.localeCompare(rightField.title);
-    });
+  return filterAndSortCatalogItems(normalizedFields.value, {
+    search: searchQuery.value,
+    groupOrder: FIELD_GROUP_ORDER,
+  });
 });
 
 const onSelect = idx => {
@@ -79,6 +84,17 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.searchKey,
+  newValue => {
+    searchQuery.value = newValue || '';
+  }
+);
+
+watch(searchQuery, () => {
+  selectedIndex.value = 0;
+});
+
 watch(filteredFields, newFields => {
   if (newFields.length < selectedIndex.value + 1) {
     selectedIndex.value = 0;
@@ -88,12 +104,11 @@ watch(filteredFields, newFields => {
 
 <template>
   <ToolsDropdown
-    v-if="filteredFields.length"
+    v-model:search-value="searchQuery"
     :items="filteredFields"
     overlay
     :selected-index="selectedIndex"
     @close="emit('close')"
     @select="onSelect"
   />
-  <template v-else />
 </template>

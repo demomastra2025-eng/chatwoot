@@ -149,6 +149,7 @@ export default {
     </div>
     <woot-modal
       v-model:show="showCustomSnoozeModal"
+      size="w-[calc(100vw-2rem)] max-w-[32rem]"
       @close="hideCustomSnoozeModal"
     >
       <CustomSnoozeModal

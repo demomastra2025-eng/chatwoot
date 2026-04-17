@@ -13,7 +13,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       requested_position = resolve_requested_position
       stage = resolve_stage!
       pipeline = stage.pipeline
-      conversation = resolve_optional_record(:originating_conversation_id, account.conversations, current: deal.originating_conversation)
+      conversation = resolve_originating_conversation
       contacts, primary_contact = resolve_contacts(conversation: conversation)
       company = resolve_company(current_contacts: contacts, primary_contact: primary_contact)
       owner = resolve_optional_record(:owner_id, account.users, current: deal.owner)
@@ -164,6 +164,16 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     end
 
     changed
+  end
+
+  def resolve_originating_conversation
+    return deal.originating_conversation unless params.key?(:originating_conversation_id)
+    return nil if params[:originating_conversation_id].blank?
+
+    value = params[:originating_conversation_id].to_s.strip
+
+    account.conversations.find_by(id: value) ||
+      account.conversations.find_by!(display_id: value)
   end
 
   def write_event!(new_record:, contacts_changed:)

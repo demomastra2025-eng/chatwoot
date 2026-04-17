@@ -673,7 +673,6 @@ defineExpose({
     >
       <SchedulingDateTimeField
         v-model="state.scheduledAt"
-        time-picker-variant="field"
         :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.LABEL')"
         :placeholder="
           t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.PLACEHOLDER')

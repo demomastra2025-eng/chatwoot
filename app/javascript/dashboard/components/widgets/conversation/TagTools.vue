@@ -1,8 +1,13 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import ToolsDropdown from 'dashboard/components-next/captain/assistant/ToolsDropdown.vue';
 import CaptainToolsAPI from 'dashboard/api/captain/tools';
 import { useKeyboardNavigableList } from 'dashboard/composables/useKeyboardNavigableList';
+import {
+  filterAndSortCatalogItems,
+  localizeCatalogTool,
+} from 'dashboard/helper/captainCatalog';
 
 const props = defineProps({
   searchKey: {
@@ -21,8 +26,11 @@ const props = defineProps({
 
 const emit = defineEmits(['selectTool']);
 
+const { t, te } = useI18n();
+
 const selectedIndex = ref(0);
 const tools = ref([]);
+const searchQuery = ref(props.searchKey || '');
 
 const loadTools = async () => {
   try {
@@ -36,27 +44,14 @@ const loadTools = async () => {
   }
 };
 
+const localizedTools = computed(() =>
+  tools.value.map(tool => localizeCatalogTool(tool, { t, te }))
+);
+
 const filteredTools = computed(() => {
-  const search = props.searchKey?.trim().toLowerCase() || '';
-
-  return [...tools.value]
-    .filter(tool => {
-      const titleMatches = tool.title.toLowerCase().includes(search);
-      const groupMatches = (tool.group_name || '')
-        .toLowerCase()
-        .includes(search);
-      return titleMatches || groupMatches;
-    })
-    .sort((leftTool, rightTool) => {
-      const leftGroup = leftTool.group_name || 'zzzzzzzz';
-      const rightGroup = rightTool.group_name || 'zzzzzzzz';
-      const groupComparison = leftGroup.localeCompare(rightGroup);
-      if (groupComparison !== 0) {
-        return groupComparison;
-      }
-
-      return leftTool.title.localeCompare(rightTool.title);
-    });
+  return filterAndSortCatalogItems(localizedTools.value, {
+    search: searchQuery.value,
+  });
 });
 
 const adjustScroll = () => {};
@@ -81,6 +76,17 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.searchKey,
+  newValue => {
+    searchQuery.value = newValue || '';
+  }
+);
+
+watch(searchQuery, () => {
+  selectedIndex.value = 0;
+});
+
 watch(filteredTools, newListOfTools => {
   if (newListOfTools.length < selectedIndex.value + 1) {
     selectedIndex.value = 0;
@@ -90,10 +96,9 @@ watch(filteredTools, newListOfTools => {
 
 <template>
   <ToolsDropdown
-    v-if="filteredTools.length"
+    v-model:search-value="searchQuery"
     :items="filteredTools"
     :selected-index="selectedIndex"
     @select="onSelect"
   />
-  <template v-else />
 </template>

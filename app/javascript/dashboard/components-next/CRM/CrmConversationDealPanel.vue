@@ -197,6 +197,10 @@ const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
 
+function formatConversationDisplayLabel(value) {
+  return value ? `#${value}` : '';
+}
+
 const buildContactOption = contact => {
   const primaryLabel =
     contact.name ||
@@ -298,6 +302,10 @@ const conversationDisplayId = computed(
   () => props.currentChat?.display_id || props.currentChat?.displayId || ''
 );
 
+const currentConversationReferenceId = computed(
+  () => conversationDisplayId.value || props.currentChat?.id || ''
+);
+
 const conversationSender = computed(
   () => props.currentChat?.meta?.sender || {}
 );
@@ -328,7 +336,7 @@ const buildConversationPrefill = () => {
     originatingConversationDisplayId: conversationDisplayId.value
       ? `#${conversationDisplayId.value}`
       : '',
-    originatingConversationId: props.currentChat?.id || '',
+    originatingConversationId: currentConversationReferenceId.value,
     ownerId: props.currentChat?.meta?.assignee?.id || currentUserId.value,
     primaryContactId: normalizedContactId,
     teamId: props.currentChat?.meta?.team?.id || '',
@@ -413,9 +421,9 @@ const populateFormFromDeal = deal => {
       ? deal.expectedCloseOn.slice(0, 10)
       : '',
     externalRef: deal.externalRef || '',
-    originatingConversationDisplayId: deal.originatingConversationId
-      ? `#${deal.originatingConversationId}`
-      : '',
+    originatingConversationDisplayId: formatConversationDisplayLabel(
+      deal.originatingConversationDisplayId ?? deal.originatingConversationId
+    ),
     originatingConversationId: deal.originatingConversationId ?? '',
     ownerId: deal.ownerId ?? currentUserId.value,
     pipelineId: deal.pipelineId,
@@ -428,19 +436,24 @@ const populateFormFromDeal = deal => {
 };
 
 const findConversationDeal = async () => {
-  if (!props.currentChat?.id) {
+  if (!currentConversationReferenceId.value) {
     return null;
   }
 
   const { data } = await CrmDealsAPI.get({
-    originating_conversation_id: props.currentChat.id,
+    originating_conversation_id: currentConversationReferenceId.value,
   });
 
   const linkedDeals = normalizePayload(data)
-    .filter(
-      deal =>
-        Number(deal.originatingConversationId) === Number(props.currentChat.id)
-    )
+    .filter(deal => {
+      const conversationReferenceId =
+        deal.originatingConversationDisplayId ?? deal.originatingConversationId;
+
+      return (
+        Number(conversationReferenceId) ===
+        Number(currentConversationReferenceId.value)
+      );
+    })
     .sort((left, right) => {
       const leftTimestamp = Date.parse(left.updatedAt || left.createdAt || 0);
       const rightTimestamp = Date.parse(
@@ -716,8 +729,13 @@ watch(
   contactIds => {
     const normalizedContactIds = contactIds.map(Number);
 
+    if (!normalizedContactIds.length) {
+      form.primaryContactId = '';
+      return;
+    }
+
     if (
-      form.primaryContactId &&
+      !form.primaryContactId ||
       !normalizedContactIds.includes(Number(form.primaryContactId))
     ) {
       form.primaryContactId = normalizedContactIds[0] || '';

@@ -185,7 +185,7 @@ const onCardClick = e => {
   // Skip if already active
   if (isActiveChat.value) return;
 
-  router.push({ path });
+  router.push(path);
 };
 
 const onThumbnailHover = () => {
@@ -364,8 +364,9 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
         <span
           v-if="isPinned"
-          class="inline-flex items-center rounded-full bg-n-blue-3 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-n-blue-11"
+          class="inline-flex items-center gap-1 rounded-md border border-n-slate-4 bg-n-slate-3 px-2 py-0.5 text-[11px] font-medium leading-4 text-n-slate-12 dark:border-n-slate-6 dark:bg-n-slate-2"
         >
+          <i class="i-lucide-pin size-3 text-n-slate-11" />
           {{ t('CONVERSATION.CARD_CONTEXT_MENU.PINNED_BADGE') }}
         </span>
       </h4>

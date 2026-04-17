@@ -64,6 +64,7 @@ useEmitter(CMD_SNOOZE_CONVERSATION, onCmdSnoozeConversation);
 <template>
   <woot-modal
     v-model:show="showCustomSnoozeModal"
+    size="w-[calc(100vw-2rem)] max-w-[32rem]"
     @close="hideCustomSnoozeModal"
   >
     <CustomSnoozeModal

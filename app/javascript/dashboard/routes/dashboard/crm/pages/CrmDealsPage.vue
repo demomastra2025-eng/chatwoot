@@ -174,6 +174,10 @@ const closeDealTitleEditor = () => {
   dealTitleDraft.value = '';
 };
 
+function formatConversationDisplayLabel(value) {
+  return value ? `#${value}` : '';
+}
+
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
 const currentUser = useMapGetter('getCurrentUser');
@@ -839,9 +843,9 @@ const populateFormFromDeal = deal => {
       ? deal.expectedCloseOn.slice(0, 10)
       : '',
     externalRef: deal.externalRef || '',
-    originatingConversationDisplayId: deal.originatingConversationId
-      ? `#${deal.originatingConversationId}`
-      : '',
+    originatingConversationDisplayId: formatConversationDisplayLabel(
+      deal.originatingConversationDisplayId ?? deal.originatingConversationId
+    ),
     originatingConversationId: deal.originatingConversationId ?? '',
     ownerId: deal.ownerId ?? '',
     pipelineId: deal.pipelineId,
@@ -1747,8 +1751,13 @@ watch(
   contactIds => {
     const normalizedContactIds = contactIds.map(Number);
 
+    if (!normalizedContactIds.length) {
+      form.primaryContactId = '';
+      return;
+    }
+
     if (
-      form.primaryContactId &&
+      !form.primaryContactId ||
       !normalizedContactIds.includes(Number(form.primaryContactId))
     ) {
       form.primaryContactId = normalizedContactIds[0] || '';

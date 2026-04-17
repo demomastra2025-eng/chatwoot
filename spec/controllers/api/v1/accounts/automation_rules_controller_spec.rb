@@ -140,6 +140,32 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(account.automation_rules.count).to eq(1)
       end
 
+      it 'creates automation rules without attachments even when storage is over limit' do
+        allow_any_instance_of(AccountLimits::StorageUsageService).to receive(:within_limit?).and_return(false)
+
+        params[:conditions] = [
+          {
+            attribute_key: 'status',
+            filter_operator: 'equal_to',
+            values: ['open'],
+            query_operator: nil
+          }
+        ]
+        params[:actions] = [
+          {
+            action_name: :assign_agent,
+            action_params: [administrator.id]
+          }
+        ]
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.count).to eq(1)
+      end
+
       it 'saves appointment automation rules with managed custom field conditions' do
         account.enable_features!('scheduling')
         create(

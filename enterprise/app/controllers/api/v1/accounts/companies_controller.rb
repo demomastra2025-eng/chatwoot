@@ -72,6 +72,23 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
         company_scope.includes(contacts: { avatar_attachment: :blob })
     end
     @company = company_scope.find(params[:id])
+    @company_contacts = fetch_company_contacts if action_name == 'show'
+  end
+
+  def fetch_company_contacts
+    direct_contact_ids = @company.contacts.pluck(:id)
+    deal_contact_ids = Current.account.crm_deal_contacts
+                              .joins(:deal)
+                              .where(crm_deals: { company_id: @company.id })
+                              .pluck(:contact_id)
+
+    contact_ids = (direct_contact_ids + deal_contact_ids).uniq
+    return Contact.none if contact_ids.empty?
+
+    Current.account.contacts
+           .includes(avatar_attachment: :blob)
+           .where(id: contact_ids)
+           .order(:name)
   end
 
   def company_params

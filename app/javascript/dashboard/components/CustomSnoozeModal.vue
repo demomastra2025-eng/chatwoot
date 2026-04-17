@@ -84,10 +84,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col">
+  <div class="flex w-full max-w-[32rem] min-w-0 flex-col overflow-x-hidden">
     <woot-modal-header :header-title="$t('CONVERSATION.CUSTOM_SNOOZE.TITLE')" />
     <form
-      class="modal-content box-border flex max-w-full min-w-0 flex-col gap-4 px-5 pb-6 pt-2"
+      class="modal-content box-border flex w-full max-w-full min-w-0 self-stretch flex-col gap-4 overflow-x-hidden px-5 pb-6 pt-2"
       @submit.prevent="chooseTime"
     >
       <SchedulingDateTimeField

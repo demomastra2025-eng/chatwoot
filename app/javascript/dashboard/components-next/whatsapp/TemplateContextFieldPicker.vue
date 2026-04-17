@@ -2,6 +2,10 @@
 import { computed, ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { loadContextFieldCatalog } from 'dashboard/helper/contextFieldCatalog';
+import {
+  filterAndSortCatalogItems,
+  localizeCatalogField,
+} from 'dashboard/helper/captainCatalog';
 
 const props = defineProps({
   searchKey: {
@@ -12,7 +16,7 @@ const props = defineProps({
 
 const emit = defineEmits(['selectField']);
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 
 const fields = ref([]);
 const isLoading = ref(false);
@@ -29,33 +33,36 @@ const loadFields = async () => {
   }
 };
 
+const FIELD_GROUP_ORDER = [
+  'Contact',
+  'Contact Attributes',
+  'Conversation',
+  'Conversation Attributes',
+  'Appointment',
+  'Appointment Attributes',
+  'Deal',
+  'Deal Attributes',
+  'Task',
+  'Task Attributes',
+];
+
+const localizedFields = computed(() =>
+  fields.value.map(field => localizeCatalogField(field, { t, te }))
+);
+
 const filteredFields = computed(() => {
-  const search = props.searchKey.trim().toLowerCase();
-
-  return [...fields.value]
-    .filter(field => {
-      if (!search) return true;
-
-      return [field.title, field.group_name, field.description]
-        .filter(Boolean)
-        .some(value => value.toLowerCase().includes(search));
-    })
-    .sort((leftField, rightField) => {
-      const groupComparison = (leftField.group_name || '').localeCompare(
-        rightField.group_name || ''
-      );
-      if (groupComparison !== 0) {
-        return groupComparison;
-      }
-
-      return leftField.title.localeCompare(rightField.title);
-    });
+  return filterAndSortCatalogItems(localizedFields.value, {
+    search: props.searchKey,
+    groupOrder: FIELD_GROUP_ORDER,
+  });
 });
 
 const groupedFields = computed(() => {
   return filteredFields.value.reduce((groups, field) => {
     const groupName =
-      field.group_name || t('WHATSAPP_TEMPLATES.PARSER.FIELD_PICKER_DEFAULT');
+      field.group_label ||
+      field.group_name ||
+      t('WHATSAPP_TEMPLATES.PARSER.FIELD_PICKER_DEFAULT');
     groups[groupName] ||= [];
     groups[groupName].push(field);
     return groups;
@@ -89,7 +96,7 @@ onMounted(loadFields);
         >
           {{ groupName }}
         </p>
-        <div class="flex flex-col gap-1">
+        <div class="ml-3 flex flex-col gap-1 border-l border-n-weak pl-3">
           <button
             v-for="field in groupFields"
             :key="field.id"

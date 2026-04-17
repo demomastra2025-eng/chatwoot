@@ -160,6 +160,15 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope.where(field_name => params[field_name])
   end
 
+  def filter_by_originating_conversation(scope)
+    return scope if params[:originating_conversation_id].blank?
+
+    conversation = resolve_originating_conversation(params[:originating_conversation_id])
+    return scope.none if conversation.blank?
+
+    scope.where(originating_conversation_id: conversation.id)
+  end
+
   def filter_by_query(scope)
     return scope if params[:q].blank?
 
@@ -175,7 +184,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_exact(scope, :owner_id)
     scope = filter_by_exact(scope, :team_id)
     scope = filter_by_exact(scope, :company_id)
-    scope = filter_by_exact(scope, :originating_conversation_id)
+    scope = filter_by_originating_conversation(scope)
     scope = filter_by_contact(scope)
     scope = filter_by_query(scope)
 
@@ -194,6 +203,14 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def set_deal
     @deal = policy_scope(::Crm::Deal).preload(:company, deal_contacts: :contact).find(params[:id])
+  end
+
+  def resolve_originating_conversation(raw_value)
+    value = raw_value.to_s.strip
+    return if value.blank?
+
+    Current.account.conversations.find_by(id: value) ||
+      Current.account.conversations.find_by(display_id: value)
   end
 
   def update_deal_params

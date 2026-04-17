@@ -31,6 +31,24 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response.parsed_body.dig('payload', 'currency')).to eq('USD')
   end
 
+  it 'creates a deal when originating conversation is provided as display id' do
+    contact = create(:contact, :with_email, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+
+    post path,
+         params: {
+           title: 'Deal from conversation panel',
+           originating_conversation_id: conversation.display_id
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
+    expect(response.parsed_body.dig('payload', 'originating_conversation_display_id')).to eq(conversation.display_id)
+    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
+  end
+
   it 'creates a standalone deal without contacts or company' do
     post path,
          params: {
@@ -49,6 +67,26 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.company_id).to be_nil
     expect(deal.originating_conversation_id).to be_nil
     expect(deal.deal_contacts).to be_empty
+  end
+
+  it 'auto-selects the first contact as primary when no primary contact is provided' do
+    company = create(:company, account: account)
+    contact = create(:contact, account: account)
+
+    post path,
+         params: {
+           title: 'Enterprise upsell',
+           company_id: company.id,
+           contact_ids: [contact.id]
+         },
+         headers: headers,
+         as: :json
+
+    deal = account.crm_deals.find(response.parsed_body.dig('payload', 'id'))
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'primary_contact_id')).to eq(contact.id)
+    expect(deal.deal_contacts.find_by(contact_id: contact.id)&.primary).to be(true)
   end
 
   it 'updates a deal to remove contacts and company' do
@@ -309,5 +347,25 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
     expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
+  end
+
+  it 'filters deals by originating conversation display id' do
+    conversation = create(:conversation, account: account)
+    matching_deal = create(
+      :crm_deal,
+      account: account,
+      originating_conversation: conversation
+    )
+    create(:crm_deal, account: account)
+
+    get path,
+        params: { originating_conversation_id: conversation.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
+    expect(response.parsed_body.dig('payload', 0, 'originating_conversation_display_id')).to eq(conversation.display_id)
   end
 end

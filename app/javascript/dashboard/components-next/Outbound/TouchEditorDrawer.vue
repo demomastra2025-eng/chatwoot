@@ -1447,7 +1447,6 @@ watch(
 
           <SchedulingDateTimeField
             v-if="showAbsoluteTimingEditor"
-            time-picker-variant="field"
             :label="$t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.SCHEDULED_AT')"
             :model-value="form.scheduledAt"
             type="datetime"

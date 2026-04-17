@@ -14,6 +14,7 @@ module AttachmentConcern
       result
     end
 
+    return [blobs, sanitized, nil] if blobs.blank?
     return [nil, nil, AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE] unless storage_limit_available?(blobs, record)
 
     [blobs, sanitized, nil]

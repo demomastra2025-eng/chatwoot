@@ -84,7 +84,7 @@ const onCardClick = e => {
     );
     return;
   }
-  router.push({ path });
+  router.push(path);
 };
 </script>
 

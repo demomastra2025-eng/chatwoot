@@ -697,7 +697,7 @@
           "MONTHLY": "После каждого успешного исполнения следующее касание будет создано на тот же день и время следующего месяца."
         },
         "TIMING_MODE": {
-          "ABSOLUTE": "Конкретные дата и время",
+          "ABSOLUTE": "Күні мен уақыты",
           "RELATIVE": "Относительно сущности"
         },
         "TIMING_MODE_HELP": {
@@ -827,7 +827,7 @@
         "MONTHLY": "После каждого успешного исполнения следующее касание будет создано на тот же день и время следующего месяца."
       },
       "TIMING_MODE": {
-        "ABSOLUTE": "Конкретные дата и время",
+        "ABSOLUTE": "Күні мен уақыты",
         "RELATIVE": "Относительно сущности"
       },
       "TIMING_MODE_HELP": {
@@ -836,18 +836,18 @@
       },
       "CONTEXT_TITLE": "Контекст касания: {entity}",
       "ROUTING_NOTE": "Система постарается использовать текущий диалог и иначе определит маршрут в момент исполнения. Если маршрут нельзя надёжно определить, касание останется в черновиках и не отправится вслепую.",
-        "ANCHORS": {
-          "TOUCH_CREATED_AT": "Кейінге қалдырылған хабарлама жасалды",
-          "APPOINTMENT_STARTS_AT": "Начало записи",
-          "APPOINTMENT_ENDS_AT": "Окончание записи",
-          "TASK_DUE_AT": "Дедлайн задачи",
-          "DEAL_EXPECTED_CLOSE_ON": "Ожидаемое закрытие сделки",
-          "CONVERSATION_CREATED_AT": "Создание диалога",
-          "CONVERSATION_LAST_ACTIVITY_AT": "Последняя активность в диалоге",
-          "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Последнее входящее сообщение",
-          "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Последнее исходящее сообщение",
-          "CONVERSATION_WAITING_SINCE": "Диалог ждёт ответа"
-        },
+      "ANCHORS": {
+        "TOUCH_CREATED_AT": "Кейінге қалдырылған хабарлама жасалды",
+        "APPOINTMENT_STARTS_AT": "Начало записи",
+        "APPOINTMENT_ENDS_AT": "Окончание записи",
+        "TASK_DUE_AT": "Дедлайн задачи",
+        "DEAL_EXPECTED_CLOSE_ON": "Ожидаемое закрытие сделки",
+        "CONVERSATION_CREATED_AT": "Создание диалога",
+        "CONVERSATION_LAST_ACTIVITY_AT": "Последняя активность в диалоге",
+        "CONVERSATION_LAST_INCOMING_MESSAGE_AT": "Последнее входящее сообщение",
+        "CONVERSATION_LAST_OUTGOING_MESSAGE_AT": "Последнее исходящее сообщение",
+        "CONVERSATION_WAITING_SINCE": "Диалог ждёт ответа"
+      },
       "FIELDS": {
         "ACTION_TYPE": "Тип касания",
         "ENTITY_TYPE": "Тип сущности",
@@ -871,7 +871,7 @@
         "TIMING_MODE": "Когда отправить",
         "SCHEDULED_AT": "Время отправки",
         "RELATIVE_TOGGLE": "арқылы",
-        "ABSOLUTE_MODE": "Нақты күн мен уақыт",
+        "ABSOLUTE_MODE": "Күні мен уақыты",
         "RELATIVE_AFTER": "Кейін",
         "RELATIVE_BEFORE": "Дейін",
         "REPEAT_MODE": "Повторять",
@@ -925,16 +925,16 @@
         "RELATIVE_AFTER": "Кейін",
         "RELATIVE_BEFORE": "Дейін",
         "RELATIVE_MODE": "Оқиғаға дейін/кейін",
-        "ABSOLUTE_MODE": "Нақты күн мен уақыт",
+        "ABSOLUTE_MODE": "Күні мен уақыты",
         "STEPS": "Шаги этапа",
         "STEPS_NOTE": "Эти шаги будут созданы, когда этап применят к: {entityKinds}."
       },
       "SUCCESS": {
-          "CREATED": "Этап рассылки создан.",
-          "UPDATED": "Этап рассылки обновлён."
+        "CREATED": "Этап рассылки создан.",
+        "UPDATED": "Этап рассылки обновлён."
       },
       "ERRORS": {
-          "SAVE": "Не удалось сохранить этап рассылки."
+        "SAVE": "Не удалось сохранить этап рассылки."
       }
     },
     "TEMPLATES": {

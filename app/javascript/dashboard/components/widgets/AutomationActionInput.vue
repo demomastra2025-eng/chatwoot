@@ -82,8 +82,10 @@ export default {
       },
     },
     inputType() {
-      return this.actionTypes.find(action => action.key === this.action_name)
-        .inputType;
+      const actionType = this.actionTypes.find(
+        action => action.key === this.action_name
+      );
+      return actionType?.inputType || null;
     },
     actionNameAsSelectModel: {
       get() {

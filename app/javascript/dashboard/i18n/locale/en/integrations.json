@@ -640,6 +640,116 @@
               "TITLE": "Appointment fields",
               "DESCRIPTION": "Appointment data."
             }
+          },
+          "FIELDS": {
+            "CONTACT": {
+              "ID": { "TITLE": "Contact ID" },
+              "NAME": { "TITLE": "Name" },
+              "EMAIL": { "TITLE": "Email" },
+              "PHONE_NUMBER": { "TITLE": "Phone Number" },
+              "IDENTIFIER": { "TITLE": "Identifier" },
+              "CONTACT_TYPE": { "TITLE": "Contact Type" }
+            },
+            "CONVERSATION": {
+              "ID": { "TITLE": "Conversation Record ID" },
+              "DISPLAY_ID": { "TITLE": "Conversation ID" },
+              "INBOX_ID": { "TITLE": "Inbox ID" },
+              "CONTACT_ID": { "TITLE": "Contact ID" },
+              "STATUS": { "TITLE": "Status" },
+              "PRIORITY": { "TITLE": "Priority" },
+              "LABEL_LIST": { "TITLE": "Labels" }
+            },
+            "DEAL": {
+              "ID": { "TITLE": "Deal ID" },
+              "TITLE": { "TITLE": "Title" },
+              "DESCRIPTION": { "TITLE": "Description" },
+              "AMOUNT_MINOR": { "TITLE": "Amount (minor units)" },
+              "CURRENCY": { "TITLE": "Currency" },
+              "EXPECTED_CLOSE_ON": { "TITLE": "Expected Close Date" },
+              "WIN_PROBABILITY": { "TITLE": "Win Probability" },
+              "CLOSED_AT": { "TITLE": "Closed At" },
+              "EXTERNAL_REF": { "TITLE": "External Reference" },
+              "PIPELINE_ID": { "TITLE": "Pipeline ID" },
+              "PIPELINE_NAME": { "TITLE": "Pipeline Name" },
+              "STAGE_ID": { "TITLE": "Stage ID" },
+              "STAGE_NAME": { "TITLE": "Stage Name" },
+              "OWNER_ID": { "TITLE": "Owner User ID" },
+              "OWNER_NAME": { "TITLE": "Owner Name" },
+              "CREATOR_ID": { "TITLE": "Created By User ID" },
+              "CREATOR_NAME": { "TITLE": "Creator Name" },
+              "TEAM_ID": { "TITLE": "Team ID" },
+              "TEAM_NAME": { "TITLE": "Team Name" },
+              "COMPANY_ID": { "TITLE": "Company ID" },
+              "COMPANY_NAME": { "TITLE": "Company Name" },
+              "ORIGINATING_CONVERSATION_ID": { "TITLE": "Conversation ID" }
+            },
+            "TASK": {
+              "ID": { "TITLE": "Task ID" },
+              "TITLE": { "TITLE": "Title" },
+              "DESCRIPTION": { "TITLE": "Description" },
+              "DUE_AT": { "TITLE": "Due At" },
+              "START_AT": { "TITLE": "Start At" },
+              "PRIORITY": { "TITLE": "Priority" },
+              "COMPLETED_AT": { "TITLE": "Completed At" },
+              "EXTERNAL_REF": { "TITLE": "External Reference" },
+              "STATUS_ID": { "TITLE": "Status ID" },
+              "STATUS_NAME": { "TITLE": "Status Name" },
+              "ASSIGNEE_ID": { "TITLE": "Assignee User ID" },
+              "ASSIGNEE_NAME": { "TITLE": "Assignee Name" },
+              "CREATOR_ID": { "TITLE": "Created By User ID" },
+              "CREATOR_NAME": { "TITLE": "Creator Name" },
+              "TEAM_ID": { "TITLE": "Team ID" },
+              "TEAM_NAME": { "TITLE": "Team Name" },
+              "DEAL_ID": { "TITLE": "Deal ID" },
+              "DEAL_TITLE": { "TITLE": "Deal Title" },
+              "ORIGINATING_CONVERSATION_ID": { "TITLE": "Conversation ID" }
+            },
+            "APPOINTMENT": {
+              "ID": { "TITLE": "Appointment ID" },
+              "RESOURCE_ID": { "TITLE": "Specialist ID" },
+              "CONTACT_ID": { "TITLE": "Contact ID" },
+              "SERVICE_ID": { "TITLE": "Service ID" },
+              "COMPANY_ID": { "TITLE": "Company ID" },
+              "CONVERSATION_ID": { "TITLE": "Conversation ID" },
+              "CREATED_BY_ID": { "TITLE": "Created By User ID" },
+              "STARTS_AT": { "TITLE": "Start Time" },
+              "ENDS_AT": { "TITLE": "End Time" },
+              "DURATION_MIN": { "TITLE": "Duration (minutes)" },
+              "STATUS": { "TITLE": "Status" },
+              "APPOINTMENT_TYPE": { "TITLE": "Appointment Type" },
+              "CLIENT_NAME": { "TITLE": "Client Name" },
+              "CLIENT_PHONE": { "TITLE": "Client Phone" },
+              "CLIENT_IDENTIFIER": { "TITLE": "Client Identifier" },
+              "CLIENT_BIRTH_DATE": { "TITLE": "Client Birth Date" },
+              "CLIENT_GENDER": { "TITLE": "Client Gender" },
+              "CLIENT_COMMENT": { "TITLE": "Client Comment" },
+              "SOURCE": { "TITLE": "Source" },
+              "EXTERNAL_REF": { "TITLE": "External Reference" },
+              "PAYMENT_STATUS": { "TITLE": "Payment Status" },
+              "SERVICE_NAME_SNAPSHOT": { "TITLE": "Service Name" },
+              "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Service Type" },
+              "SERVICE_DURATION_MIN_SNAPSHOT": {
+                "TITLE": "Service Duration (minutes)"
+              },
+              "SERVICE_AMOUNT": { "TITLE": "Service Amount" },
+              "COMPENSATION_TYPE_SNAPSHOT": {
+                "TITLE": "Compensation Type"
+              },
+              "COMPENSATION_VALUE_SNAPSHOT": {
+                "TITLE": "Compensation Value"
+              },
+              "COMPENSATION_PERCENT_SNAPSHOT": {
+                "TITLE": "Compensation Percent"
+              },
+              "PREPAID_AMOUNT": { "TITLE": "Prepaid Amount" },
+              "PREPAID_PAYMENT_METHOD": {
+                "TITLE": "Prepaid Payment Method"
+              },
+              "SETTLEMENT_AMOUNT": { "TITLE": "Settlement Amount" },
+              "SETTLEMENT_PAYMENT_METHOD": {
+                "TITLE": "Settlement Payment Method"
+              }
+            }
           }
         },
         "TOOL_ACCESS": {
@@ -679,6 +789,7 @@
             "CRM_DEALS": "CRM Deals",
             "CRM_TASKS": "CRM Tasks",
             "SCHEDULING": "Scheduling",
+            "OUTBOUND": "Outbound",
             "HELP_CENTER": "Help center",
             "INTEGRATIONS": "Integrations"
           },
@@ -794,6 +905,10 @@
             "create_task": {
               "TITLE": "Create task",
               "DESCRIPTION": "Create a CRM task from the current conversation context."
+            },
+            "create_touch": {
+              "TITLE": "Create outbound touch",
+              "DESCRIPTION": "Create a scheduled outbound touch from the current conversation or linked CRM context."
             },
             "update_task": {
               "TITLE": "Update task",
