@@ -72,11 +72,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     render json: Captain::Assistant::PromptPreviewService.new(assistant: @assistant).preview
   end
 
-  def tool_access
-    assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
-    @tools = Captain::ToolAccess.definitions_for(assistant)
-  end
-
   def context_fields
     assistant = params[:assistant_id].present? ? account_assistants.find(params[:assistant_id]) : Captain::Assistant.new(account: Current.account)
     allowed_ids = assistant.selected_context_field_ids

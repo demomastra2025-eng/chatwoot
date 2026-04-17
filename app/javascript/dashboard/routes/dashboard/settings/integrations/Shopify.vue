@@ -95,9 +95,8 @@ onMounted(() => {
     <template #header>
       <BaseSettingsHeader
         :title="$t('INTEGRATION_SETTINGS.SHOPIFY.HEADER')"
-        description=""
+        :description="integration.description || ''"
         feature-name="shopify_integration"
-        :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
       />
     </template>
     <template #body>
@@ -109,6 +108,7 @@ onMounted(() => {
           :integration-description="integration.description"
           :integration-enabled="integration.enabled"
           :integration-action="integrationAction"
+          :show-identity="false"
           :delete-confirmation-text="{
             title: t('INTEGRATION_SETTINGS.SHOPIFY.DELETE.TITLE'),
             message: t('INTEGRATION_SETTINGS.SHOPIFY.DELETE.MESSAGE'),

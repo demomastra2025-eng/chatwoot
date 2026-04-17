@@ -73,7 +73,7 @@ const updateDropdownPosition = () => {
     window.innerWidth - viewportPadding * 2
   );
   const left = Math.min(
-    Math.max(rect.right - width, viewportPadding),
+    Math.max(rect.left, viewportPadding),
     window.innerWidth - width - viewportPadding
   );
   const top = Math.max(rect.bottom + 8, viewportPadding);

@@ -22,6 +22,7 @@ const props = defineProps({
   integrationAction: { type: String, default: '' },
   actionButtonText: { type: String, default: '' },
   deleteConfirmationText: { type: Object, default: () => ({}) },
+  showIdentity: { type: Boolean, default: true },
 });
 
 const { t } = useI18n();
@@ -96,7 +97,7 @@ const confirmDeletion = () => {
           class="max-w-full rounded-md border border-n-weak shadow-sm hidden dark:block bg-n-alpha-3 dark:bg-n-alpha-2"
         />
       </div>
-      <div>
+      <div v-if="showIdentity">
         <h3 class="mb-1 text-heading-1 text-n-slate-12">
           {{ integrationName }}
         </h3>

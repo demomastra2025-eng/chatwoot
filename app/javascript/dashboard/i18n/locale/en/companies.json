@@ -58,6 +58,13 @@
       }
     },
     "DETAILS": {
+      "CONTACTS": {
+        "TITLE": "{n} contact | {n} contacts",
+        "LOADING": "Loading contacts...",
+        "EMPTY": "No contacts linked to this company yet.",
+        "NO_DETAILS": "No contact details",
+        "ERROR": "Could not load company contacts"
+      },
       "META": {
         "DOMAIN": "Domain",
         "CREATED_AT": "Created {date}",

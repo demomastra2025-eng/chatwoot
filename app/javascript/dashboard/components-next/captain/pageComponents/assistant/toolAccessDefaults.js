@@ -34,6 +34,17 @@ const activeScopeForUsageMode = usageMode =>
   usageMode === 'internal_assistant' ? ASSISTANT_TOOL_SCOPE : AGENT_TOOL_SCOPE;
 
 const cloneAccess = access => JSON.parse(JSON.stringify(access || {}));
+const toStringArray = value => {
+  if (Array.isArray(value)) {
+    return value.map(String);
+  }
+
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  return [String(value)];
+};
 
 export const buildDefaultToolAccess = () => ({});
 export const buildDefaultToolAccessForUsageMode = (
@@ -69,9 +80,9 @@ export const normalizeCapabilityToolAccess = (
 
   const toolIds = Array.from(
     new Set(
-      Array(scopeAccess.tool_ids)
-        .map(String)
-        .filter(toolId => allowedToolIds.includes(toolId))
+      toStringArray(scopeAccess.tool_ids).filter(toolId =>
+        allowedToolIds.includes(toolId)
+      )
     )
   );
 
@@ -89,7 +100,7 @@ export const normalizeCapabilityToolAccess = (
 
 export const isToolEnabled = (toolAccess, scopeName, toolId) => {
   const scopeAccess = toolAccess?.[scopeName];
-  const selectedToolIds = Array(scopeAccess?.tool_ids).map(String);
+  const selectedToolIds = toStringArray(scopeAccess?.tool_ids);
 
   return Boolean(scopeAccess?.enabled && selectedToolIds.includes(toolId));
 };
@@ -104,9 +115,9 @@ export const setToolEnabled = (
   const nextAccess = cloneAccess(toolAccess);
   const scopeAccess = {
     enabled: true,
-    tool_ids: Array(nextAccess?.[scopeName]?.tool_ids).map(String),
+    tool_ids: toStringArray(nextAccess?.[scopeName]?.tool_ids),
   };
-  const selectedToolIds = new Set(Array(scopeAccess.tool_ids).map(String));
+  const selectedToolIds = new Set(toStringArray(scopeAccess.tool_ids));
 
   if (enabled) {
     scopeAccess.enabled = true;

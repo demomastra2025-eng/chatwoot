@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, nextTick } from 'vue';
+import { computed, ref, nextTick, watch } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -135,9 +135,17 @@ const onDeleteSuccess = () => {
   }
 };
 
-onMounted(() => {
-  fetchDocuments();
-});
+watch(
+  selectedAssistantId,
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
+    fetchDocuments();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

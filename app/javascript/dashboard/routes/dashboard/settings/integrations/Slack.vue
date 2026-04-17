@@ -88,9 +88,8 @@ onMounted(() => {
     <template #header>
       <BaseSettingsHeader
         :title="$t('INTEGRATION_SETTINGS.SLACK.HEADER')"
-        description=""
+        :description="integration.description || ''"
         feature-name="slack_integration"
-        :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
       />
     </template>
     <template #body>
@@ -102,6 +101,7 @@ onMounted(() => {
           :integration-description="integration.description"
           :integration-enabled="integration.enabled"
           :integration-action="integrationAction"
+          :show-identity="false"
           :action-button-text="$t('INTEGRATION_SETTINGS.SLACK.DELETE')"
           :delete-confirmation-text="{
             title: $t('INTEGRATION_SETTINGS.SLACK.DELETE_CONFIRMATION.TITLE'),

@@ -50,7 +50,7 @@ const handleImageError = () => {
 
 <template>
   <BaseBubble
-    class="overflow-hidden p-3"
+    class="w-[11rem] overflow-hidden p-2 sm:w-[12rem]"
     data-bubble-name="image"
     @click="showGallery = true"
   >
@@ -60,9 +60,12 @@ const handleImageError = () => {
         {{ $t('COMPONENTS.MEDIA.IMAGE_UNAVAILABLE') }}
       </p>
     </div>
-    <div v-else-if="isLoaded" class="relative group rounded-lg overflow-hidden">
+    <div
+      v-else-if="isLoaded"
+      class="relative w-full overflow-hidden rounded-lg bg-n-alpha-2 group"
+    >
       <img
-        class="skip-context-menu"
+        class="block w-full h-auto skip-context-menu object-cover"
         :src="attachment.dataUrl"
         :width="attachment.width"
         :height="attachment.height"

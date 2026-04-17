@@ -19,6 +19,7 @@ import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import WhatsAppTemplateParser from 'dashboard/components-next/whatsapp/WhatsAppTemplateParser.vue';
 import CampaignPreviewSummary from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignPreviewSummary.vue';
+import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
 
 const emit = defineEmits(['submit', 'cancel']);
@@ -48,12 +49,21 @@ const state = reactive({ ...initialState });
 const templateParserRef = ref(null);
 const lastPreviewSignature = ref(null);
 
+const isFutureDateTime = value => {
+  if (!value) return true;
+
+  const parsedDate = new Date(value);
+  return (
+    !Number.isNaN(parsedDate.getTime()) && parsedDate.getTime() >= Date.now()
+  );
+};
+
 const rules = {
   title: { required, minLength: minLength(1) },
   inboxId: { required },
   templateName: { required },
   templateLanguage: { required },
-  scheduledAt: { required },
+  scheduledAt: { required, isFutureDateTime },
   selectedAudience: { required },
 };
 
@@ -62,13 +72,6 @@ const v$ = useVuelidate(rules, state);
 const isCreating = computed(() => formState.uiFlags.value.isCreating);
 const isPreviewing = computed(() => formState.uiFlags.value.isPreviewing);
 const preview = computed(() => store.getters['campaigns/getPreview']);
-
-const currentDateTime = computed(() => {
-  // Added to disable the scheduled at field from being set to the current time
-  const now = new Date();
-  const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  return localTime.toISOString().slice(0, 16);
-});
 
 const mapToOptions = (items, valueKey, labelKey) =>
   items?.map(item => ({
@@ -389,11 +392,10 @@ onBeforeUnmount(clearPreviewState);
       />
     </div>
 
-    <Input
+    <SchedulingDateTimeField
       v-model="state.scheduledAt"
       :label="t('CAMPAIGN.WHATSAPP.CREATE.FORM.SCHEDULED_AT.LABEL')"
-      type="datetime-local"
-      :min="currentDateTime"
+      type="datetime"
       :placeholder="t('CAMPAIGN.WHATSAPP.CREATE.FORM.SCHEDULED_AT.PLACEHOLDER')"
       :message="formErrors.scheduledAt"
       :message-type="formErrors.scheduledAt ? 'error' : 'info'"

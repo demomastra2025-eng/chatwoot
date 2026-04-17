@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, nextTick } from 'vue';
+import { computed, ref, nextTick, watch } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
@@ -34,7 +34,7 @@ const selectedResponse = ref(null);
 const deleteDialog = ref(null);
 const bulkDeleteDialog = ref(null);
 
-const selectedAssistantId = computed(() => route.params.assistantId);
+const selectedAssistantId = computed(() => Number(route.params.assistantId));
 const dialogType = ref('');
 const searchQuery = ref('');
 const { t } = useI18n();
@@ -237,9 +237,18 @@ const initializeFromURL = () => {
   fetchResponses(pageFromURL);
 };
 
-onMounted(() => {
-  initializeFromURL();
-});
+watch(
+  selectedAssistantId,
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
+    initializeFromURL();
+    bulkSelectedIds.value = new Set();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

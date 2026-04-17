@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useMapGetter } from 'dashboard/composables/store.js';
+import { useMapGetter, useStore } from 'dashboard/composables/store.js';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import Button from 'dashboard/components-next/button/Button.vue';
 import BackButton from 'dashboard/components/widgets/BackButton.vue';
@@ -78,6 +78,7 @@ const { t } = useI18n();
 
 const route = useRoute();
 const router = useRouter();
+const store = useStore();
 const { shouldShowPaywall } = usePolicy();
 
 const showAssistantSwitcherDropdown = ref(false);
@@ -88,6 +89,15 @@ const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 
 const currentAssistantId = computed(() => route.params.assistantId);
 const isFetchingAssistants = computed(() => uiFlags.value?.fetchingList);
+const hasActiveAssistantLoaded = computed(() => {
+  if (!currentAssistantId.value) {
+    return assistants.value.length > 0;
+  }
+
+  return assistants.value.some(
+    assistant => assistant.id === Number(currentAssistantId.value)
+  );
+});
 
 const activeAssistantName = computed(() => {
   return (
@@ -129,6 +139,30 @@ const handleAssistantCreated = assistant => {
     },
   });
 };
+
+const ensureAssistantsLoaded = async () => {
+  if (!props.showAssistantSwitcher || showPaywall.value) {
+    return;
+  }
+
+  if (isFetchingAssistants.value || hasActiveAssistantLoaded.value) {
+    return;
+  }
+
+  await store.dispatch('captainAssistants/get');
+};
+
+watch(
+  () => [
+    props.showAssistantSwitcher,
+    showPaywall.value,
+    currentAssistantId.value,
+  ],
+  () => {
+    ensureAssistantsLoaded();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

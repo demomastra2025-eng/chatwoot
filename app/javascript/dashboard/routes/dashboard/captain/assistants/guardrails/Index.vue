@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -150,20 +150,29 @@ const bulkDeleteGuardrails = async () => {
   }
 };
 
-const addAllExample = () => {
+const addAllExample = async () => {
   updateUISettings({ show_guardrails_suggestions: false });
   try {
     const exampleContents = guardrailsExample.map(example => example.content);
     const newGuardrails = [...guardrailsContent.value, ...exampleContents];
-    saveGuardrails(newGuardrails);
+    await saveGuardrails(newGuardrails);
+    useAlert(t('CAPTAIN.ASSISTANTS.GUARDRAILS.API.ADD.SUCCESS'));
   } catch {
     useAlert(t('CAPTAIN.ASSISTANTS.GUARDRAILS.API.ADD.ERROR'));
   }
 };
 
-onMounted(() => {
-  store.dispatch('captainAssistants/show', assistantId.value);
-});
+watch(
+  assistantId,
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
+    store.dispatch('captainAssistants/show', currentAssistantId);
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

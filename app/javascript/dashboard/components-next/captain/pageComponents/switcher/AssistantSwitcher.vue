@@ -50,11 +50,12 @@ const fetchDataForRoute = async (routeName, assistantId) => {
       // Playground doesn't need pre-fetching, it loads on interaction
     },
     captain_assistants_channels_index: async () => {
-      await store.dispatch('captainInboxes/get', { assistantId });
+      await store.dispatch('inboxes/get');
       await store.dispatch('captainAssistants/show', assistantId);
     },
     captain_tools_index: async () => {
       await store.dispatch('captainCustomTools/get', { page: 1 });
+      await store.dispatch('captainMcpServers/get', { page: 1 });
     },
     captain_assistants_settings_index: async () => {
       await store.dispatch('captainAssistants/show', assistantId);
@@ -66,7 +67,7 @@ const fetchDataForRoute = async (routeName, assistantId) => {
       await store.dispatch('captainAssistants/show', assistantId);
     },
     captain_assistants_inboxes_index: async () => {
-      await store.dispatch('captainInboxes/get', { assistantId });
+      await store.dispatch('inboxes/get');
       await store.dispatch('captainAssistants/show', assistantId);
     },
   };

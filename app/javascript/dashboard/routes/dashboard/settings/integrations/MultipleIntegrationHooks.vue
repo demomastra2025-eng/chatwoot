@@ -23,7 +23,7 @@ const props = defineProps({
 });
 
 defineEmits(['delete', 'add']);
-const { t } = useI18n();
+const { t, tm } = useI18n();
 
 const { integration, isHookTypeInbox, hasConnectedHooks } = useIntegrationHook(
   props.integrationId
@@ -31,6 +31,15 @@ const { integration, isHookTypeInbox, hasConnectedHooks } = useIntegrationHook(
 
 const globalConfig = useMapGetter('globalConfig/get');
 const searchQuery = ref('');
+const sidebarDescriptions = computed(() => {
+  const raw = tm('INTEGRATION_APPS.SIDEBAR_DESCRIPTION');
+  return raw && typeof raw === 'object' ? JSON.parse(JSON.stringify(raw)) : {};
+});
+const headerDescription = computed(() =>
+  (
+    sidebarDescriptions.value[integration.value.name.toUpperCase()] || ''
+  ).replace('{installationName}', globalConfig.value.installationName)
+);
 
 const hookHeaders = computed(() => {
   const headers = [...(integration.value.visible_properties || [])];
@@ -75,14 +84,8 @@ const inboxName = hook => (hook.inbox ? hook.inbox.name : '');
     <BaseSettingsHeader
       v-model:search-query="searchQuery"
       :title="integration.name || ''"
-      :description="
-        $t(
-          `INTEGRATION_APPS.SIDEBAR_DESCRIPTION.${integration.name.toUpperCase()}`,
-          { installationName: globalConfig.installationName }
-        )
-      "
+      :description="headerDescription"
       :feature-name="integrationId"
-      :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
       :search-placeholder="$t('INTEGRATION_APPS.SEARCH_PLACEHOLDER')"
     >
       <template v-if="hooks?.length" #count>

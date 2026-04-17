@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, nextTick } from 'vue';
+import { computed, ref, nextTick, watch } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
@@ -193,13 +193,19 @@ const navigateToPendingFAQs = () => {
   router.push({ name: 'captain_assistants_responses_pending' });
 };
 
-onMounted(() => {
-  initializeFromURL();
-  store.dispatch(
-    'captainResponses/fetchPendingCount',
-    selectedAssistantId.value
-  );
-});
+watch(
+  selectedAssistantId,
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
+    initializeFromURL();
+    store.dispatch('captainResponses/fetchPendingCount', currentAssistantId);
+    bulkSelectedIds.value = new Set();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

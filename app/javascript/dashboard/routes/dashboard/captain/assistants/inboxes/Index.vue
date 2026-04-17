@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch, reactive, onMounted } from 'vue';
+import { computed, watch, reactive } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -33,8 +33,6 @@ const isInternalAssistant = computed(
 const inboxes = useMapGetter('inboxes/getInboxes');
 const connectionStateByInboxId = reactive({});
 const isUpdatingByInboxId = reactive({});
-
-const i18nKey = 'CAPTAIN.INBOXES';
 
 const inboxName = inbox => {
   if (!inbox?.name) {
@@ -96,8 +94,13 @@ watch(
 
 watch(
   assistantId,
-  () => {
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
     store.dispatch('inboxes/get');
+    store.dispatch('captainAssistants/show', currentAssistantId);
   },
   { immediate: true }
 );
@@ -119,25 +122,22 @@ const toggleInboxConnection = async (inbox, nextValue) => {
         assistantId: assistantId.value,
         inboxId: inbox.id,
       });
-      useAlert(t(`${i18nKey}.CREATE.SUCCESS_MESSAGE`));
+      useAlert(t('CAPTAIN.INBOXES.CREATE.SUCCESS_MESSAGE'));
     } else {
       await store.dispatch('captainInboxes/delete', {
         assistantId: assistantId.value,
         inboxId: inbox.id,
       });
-      useAlert(t(`${i18nKey}.DELETE.SUCCESS_MESSAGE`));
+      useAlert(t('CAPTAIN.INBOXES.DELETE.SUCCESS_MESSAGE'));
     }
 
     await store.dispatch('inboxes/get');
   } catch (error) {
     connectionStateByInboxId[inbox.id] = !nextValue;
-    const errorMessage = error?.message
-      ? error.message
-      : t(
-          nextValue
-            ? `${i18nKey}.CREATE.ERROR_MESSAGE`
-            : `${i18nKey}.DELETE.ERROR_MESSAGE`
-        );
+    const fallbackErrorMessage = nextValue
+      ? t('CAPTAIN.INBOXES.CREATE.ERROR_MESSAGE')
+      : t('CAPTAIN.INBOXES.DELETE.ERROR_MESSAGE');
+    const errorMessage = error?.message || fallbackErrorMessage;
     useAlert(errorMessage);
   } finally {
     isUpdatingByInboxId[inbox.id] = false;
@@ -147,10 +147,6 @@ const toggleInboxConnection = async (inbox, nextValue) => {
 const toggleDisabled = inbox => {
   return isLockedToAnotherAssistant(inbox) || isUpdatingByInboxId[inbox.id];
 };
-
-onMounted(() => {
-  store.dispatch('captainAssistants/show', assistantId.value);
-});
 </script>
 
 <template>

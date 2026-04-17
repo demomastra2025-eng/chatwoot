@@ -37,6 +37,12 @@
       "CONVERSATION_UNASSIGNED_MANAGE": "Manage unassigned conversations and those assigned to them",
       "CONVERSATION_PARTICIPATING_MANAGE": "Manage participating conversations and those assigned to them",
       "CONTACT_MANAGE": "Manage contacts",
+      "CRM_DEAL_VIEW": "View deals",
+      "CRM_DEAL_MANAGE": "Manage deals",
+      "CRM_TASK_VIEW": "View tasks",
+      "CRM_TASK_MANAGE": "Manage tasks",
+      "CRM_SETTINGS_VIEW": "View CRM settings",
+      "CRM_SETTINGS_MANAGE": "Manage CRM settings",
       "REPORT_MANAGE": "Manage reports",
       "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base"
     },

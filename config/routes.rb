@@ -79,7 +79,6 @@ Rails.application.routes.draw do
               end
               collection do
                 get :tools
-                get :tool_access
                 get :context_fields
               end
               resources :inboxes, only: [:index, :create, :destroy], param: :inbox_id

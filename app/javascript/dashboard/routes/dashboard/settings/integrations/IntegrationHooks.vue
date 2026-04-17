@@ -7,7 +7,6 @@ import NewHook from './NewHook.vue';
 import SingleIntegrationHooks from './SingleIntegrationHooks.vue';
 import MultipleIntegrationHooks from './MultipleIntegrationHooks.vue';
 import SettingsLayout from '../SettingsLayout.vue';
-import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 
 export default {
   components: {
@@ -15,7 +14,6 @@ export default {
     SingleIntegrationHooks,
     MultipleIntegrationHooks,
     SettingsLayout,
-    BaseSettingsHeader,
   },
   props: {
     integrationId: {
@@ -120,14 +118,6 @@ export default {
 
 <template>
   <SettingsLayout :is-loading="uiFlags.isFetching">
-    <template v-if="isIntegrationSingle" #header>
-      <BaseSettingsHeader
-        :title="integration.name || ''"
-        description=""
-        :feature-name="integrationId"
-        :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
-      />
-    </template>
     <template #body>
       <div v-if="showIntegrationHooks" class="w-full">
         <div v-if="isIntegrationMultiple">

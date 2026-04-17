@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { picoSearch } from '@scmmishra/pico-search';
 import { useAlert } from 'dashboard/composables';
@@ -208,9 +208,18 @@ const addAllExampleScenarios = async () => {
   }
 };
 
-onMounted(() => {
-  store.dispatch('captainScenarios/get', { assistantId: props.assistantId });
-});
+watch(
+  () => props.assistantId,
+  assistantId => {
+    if (!assistantId) {
+      return;
+    }
+
+    bulkSelectedIds.value = new Set();
+    store.dispatch('captainScenarios/get', { assistantId });
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

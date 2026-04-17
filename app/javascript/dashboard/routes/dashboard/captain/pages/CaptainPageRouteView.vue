@@ -17,7 +17,8 @@ watch(
         last_active_assistant_id: Number(newAssistantId),
       });
     }
-  }
+  },
+  { immediate: true }
 );
 </script>
 

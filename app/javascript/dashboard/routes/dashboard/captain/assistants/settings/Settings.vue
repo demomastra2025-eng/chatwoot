@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -38,9 +38,17 @@ const isInternalAssistant = computed(
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
 
-onMounted(() => {
-  store.dispatch('captainAssistants/show', assistantId.value);
-});
+watch(
+  assistantId,
+  currentAssistantId => {
+    if (!currentAssistantId) {
+      return;
+    }
+
+    store.dispatch('captainAssistants/show', currentAssistantId);
+  },
+  { immediate: true }
+);
 
 watch(
   assistant,

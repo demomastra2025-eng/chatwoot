@@ -129,7 +129,8 @@
     "CUSTOM_SNOOZE": {
       "TITLE": "Snooze until",
       "APPLY": "Snooze",
-      "CANCEL": "Cancel"
+      "CANCEL": "Cancel",
+      "MINIMUM_NOTICE": "Choose a time at least 1 hour from now"
     },
     "PRIORITY": {
       "TITLE": "Priority",

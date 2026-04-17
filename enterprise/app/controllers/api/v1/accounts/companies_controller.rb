@@ -66,7 +66,12 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
   end
 
   def fetch_company
-    @company = Current.account.companies.find(params[:id])
+    company_scope = Current.account.companies.with_attached_avatar
+    if action_name == 'show'
+      company_scope =
+        company_scope.includes(contacts: { avatar_attachment: :blob })
+    end
+    @company = company_scope.find(params[:id])
   end
 
   def company_params

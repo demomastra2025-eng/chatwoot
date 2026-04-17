@@ -15,10 +15,6 @@ class Captain::AssistantPolicy < ApplicationPolicy
     update?
   end
 
-  def tool_access?
-    update?
-  end
-
   def create?
     @account_user.administrator?
   end

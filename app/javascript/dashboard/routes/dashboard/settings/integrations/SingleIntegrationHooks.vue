@@ -210,7 +210,6 @@ async function copyMacrocrmWebhookUrl() {
       :title="integration.name"
       :description="headerDescription"
       :feature-name="headerFeatureName"
-      :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
     >
       <template #actions>
         <div v-if="hasConnectedHooks" class="flex gap-2">
@@ -259,17 +258,7 @@ async function copyMacrocrmWebhookUrl() {
           />
         </div>
         <div class="min-w-0 flex-1">
-          <div
-            class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
-          >
-            <div class="min-w-0">
-              <h3 class="text-xl font-medium text-n-slate-12">
-                {{ integration.name }}
-              </h3>
-              <p class="mt-2 text-sm leading-6 text-n-slate-11">
-                {{ replaceInstallationName(integration.description) }}
-              </p>
-            </div>
+          <div class="flex flex-wrap items-start justify-end gap-3">
             <span
               class="inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium"
               :class="hookStatusClass"
@@ -279,7 +268,7 @@ async function copyMacrocrmWebhookUrl() {
           </div>
 
           <div
-            class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
+            class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
           >
             <div
               v-for="detail in hookDetails"

@@ -5,7 +5,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import MessageList from './MessageList.vue';
 import CaptainAssistant from 'dashboard/api/captain/assistant';
 
-const { assistantId } = defineProps({
+const props = defineProps({
   assistantId: {
     type: Number,
     required: true,
@@ -47,7 +47,7 @@ const resetConversation = () => {
 
 // Watch for assistant ID changes and reset conversation
 watch(
-  () => assistantId,
+  () => props.assistantId,
   (newId, oldId) => {
     if (oldId && newId !== oldId) {
       resetConversation();
@@ -71,7 +71,7 @@ const sendMessage = async () => {
   try {
     isLoading.value = true;
     const { data } = await CaptainAssistant.playground({
-      assistantId,
+      assistantId: props.assistantId,
       messageContent: currentMessage,
       messageHistory,
     });

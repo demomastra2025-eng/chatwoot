@@ -113,7 +113,6 @@ export default {
           $t('INTEGRATION_SETTINGS.DASHBOARD_APPS.SEARCH_PLACEHOLDER')
         "
         feature-name="dashboard_apps"
-        :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
       >
         <template v-if="records?.length" #count>
           <span class="text-body-main text-n-slate-11">

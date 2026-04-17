@@ -54,9 +54,8 @@ onMounted(() => {
     <template #header>
       <BaseSettingsHeader
         :title="$t('INTEGRATION_SETTINGS.NOTION.HEADER')"
-        description=""
+        :description="integration.description || ''"
         feature-name="notion_integration"
-        :back-button-label="$t('INTEGRATION_SETTINGS.HEADER')"
       />
     </template>
     <template #body>
@@ -67,6 +66,7 @@ onMounted(() => {
         :integration-description="integration.description"
         :integration-enabled="integration.enabled"
         :integration-action="integrationAction"
+        :show-identity="false"
         :delete-confirmation-text="{
           title: t('INTEGRATION_SETTINGS.NOTION.DELETE.TITLE'),
           message: t('INTEGRATION_SETTINGS.NOTION.DELETE.MESSAGE'),

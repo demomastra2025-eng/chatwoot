@@ -9,6 +9,8 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { CRM_DEAL_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
+import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
@@ -108,6 +110,22 @@ const currentUserId = computed(() => {
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
 );
+const currentAccountPermissions = computed(() => {
+  const currentAccount = currentUser.value?.accounts?.find(
+    account => Number(account.id) === Number(accountId.value)
+  );
+
+  return currentAccount?.permissions || [];
+});
+const canManageConversationDeals = computed(() => {
+  return (
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
+    hasPermissions(
+      ['administrator', CRM_DEAL_MANAGE_PERMISSION],
+      currentAccountPermissions.value
+    )
+  );
+});
 
 const activePipelines = computed(() =>
   referencesStore.pipelines.filter(pipeline => pipeline.active !== false)
@@ -167,7 +185,10 @@ const isConversationContext = computed(
     isAInboxViewRoute(route.name)
 );
 const shouldShowPanel = computed(
-  () => isConversationContext.value && !!props.currentChat?.id
+  () =>
+    isConversationContext.value &&
+    canManageConversationDeals.value &&
+    !!props.currentChat?.id
 );
 const isEditingDeal = computed(() => !!selectedDeal.value);
 

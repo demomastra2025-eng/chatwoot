@@ -18,9 +18,8 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle', 'edit', 'delete', 'clone']);
 
-const readableDate = date => messageStamp(new Date(date), 'LLL d, yyyy');
-const readableDateWithTime = date =>
-  messageStamp(new Date(date), 'LLL d, yyyy hh:mm a');
+const readableDate = date => messageStamp(date, 'LLL d, yyyy');
+const readableDateWithTime = date => messageStamp(date, 'LLL d, yyyy hh:mm a');
 
 const automationActive = computed({
   get: () => props.automation.active,

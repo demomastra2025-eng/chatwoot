@@ -24,6 +24,12 @@ const toolsDropdownRef = ref(null);
 
 const onItemClick = idx => emit('select', idx);
 const closeOverlay = () => emit('close');
+const shouldRenderGroupHeader = idx => {
+  const currentGroupName = props.items[idx]?.group_name;
+  const previousGroupName = props.items[idx - 1]?.group_name;
+
+  return Boolean(currentGroupName) && currentGroupName !== previousGroupName;
+};
 
 const dropdownClass = computed(() => {
   if (props.overlay) {
@@ -59,52 +65,52 @@ watch(
       />
 
       <div ref="toolsDropdownRef" :class="dropdownClass" @click.stop>
-        <div
-          v-for="(tool, idx) in items"
-          :id="`tool-item-${idx}`"
-          :key="tool.id || idx"
-          :class="{ 'bg-n-alpha-black2': idx === selectedIndex }"
-          class="flex cursor-pointer flex-col gap-1 rounded-md px-2 py-2 hover:bg-n-alpha-black2"
-          @click="onItemClick(idx)"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-medium text-n-slate-12">
-              {{ tool.title }}
-            </span>
-            <span
-              v-if="tool.group_name"
-              class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
-            >
-              {{ tool.group_name }}
-            </span>
+        <div v-for="(tool, idx) in items" :key="tool.id || idx">
+          <p
+            v-if="shouldRenderGroupHeader(idx)"
+            class="mb-1 px-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.02em] text-n-slate-11"
+          >
+            {{ tool.group_name }}
+          </p>
+          <div
+            :id="`tool-item-${idx}`"
+            :class="{ 'bg-n-alpha-black2': idx === selectedIndex }"
+            class="flex cursor-pointer flex-col gap-1 rounded-md px-2 py-2 hover:bg-n-alpha-black2"
+            @click="onItemClick(idx)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ tool.title }}
+              </span>
+            </div>
+            <span class="text-sm text-n-slate-11">{{ tool.description }}</span>
           </div>
-          <span class="text-sm text-n-slate-11">{{ tool.description }}</span>
         </div>
       </div>
     </div>
   </TeleportWithDirection>
 
   <div v-else ref="toolsDropdownRef" :class="dropdownClass">
-    <div
-      v-for="(tool, idx) in items"
-      :id="`tool-item-${idx}`"
-      :key="tool.id || idx"
-      :class="{ 'bg-n-alpha-black2': idx === selectedIndex }"
-      class="flex cursor-pointer flex-col gap-1 rounded-md px-2 py-2 hover:bg-n-alpha-black2"
-      @click="onItemClick(idx)"
-    >
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-n-slate-12">{{
-          tool.title
-        }}</span>
-        <span
-          v-if="tool.group_name"
-          class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
-        >
-          {{ tool.group_name }}
-        </span>
+    <div v-for="(tool, idx) in items" :key="tool.id || idx">
+      <p
+        v-if="shouldRenderGroupHeader(idx)"
+        class="mb-1 px-2 pt-2 text-[11px] font-semibold uppercase tracking-[0.02em] text-n-slate-11"
+      >
+        {{ tool.group_name }}
+      </p>
+      <div
+        :id="`tool-item-${idx}`"
+        :class="{ 'bg-n-alpha-black2': idx === selectedIndex }"
+        class="flex cursor-pointer flex-col gap-1 rounded-md px-2 py-2 hover:bg-n-alpha-black2"
+        @click="onItemClick(idx)"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-n-slate-12">
+            {{ tool.title }}
+          </span>
+        </div>
+        <span class="text-sm text-n-slate-11">{{ tool.description }}</span>
       </div>
-      <span class="text-sm text-n-slate-11">{{ tool.description }}</span>
     </div>
   </div>
 </template>

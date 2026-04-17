@@ -395,6 +395,15 @@ const inputInputMode = computed(() =>
   props.type === 'time' ? 'numeric' : 'numeric'
 );
 
+const todayDate = computed(() => {
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+  };
+});
+
 const isDateDisabled = dateValue => {
   if (!props.disabledDate) return false;
 
@@ -683,6 +692,16 @@ const closePickerPanel = () => {
   calendarPanel.value = 'day';
 };
 
+const isTodayCalendarDate = dateValue => {
+  if (!dateValue) return false;
+
+  return (
+    Number(dateValue.year) === todayDate.value.year &&
+    Number(dateValue.month) === todayDate.value.month &&
+    Number(dateValue.day) === todayDate.value.day
+  );
+};
+
 const handleMonthPickerChange = nextValue => {
   if (!nextValue) return;
 
@@ -703,17 +722,18 @@ const handleYearPickerChange = nextValue => {
   calendarPanel.value = 'day';
 };
 
-const calendarCellClass = ({
-  disabled,
-  outsideView,
-  selected,
-  unavailable,
-}) => [
+const calendarCellClass = (
+  { disabled, outsideView, selected, unavailable },
+  dateValue
+) => [
   'relative flex size-9 items-center justify-center whitespace-nowrap rounded-lg border border-transparent p-0 text-sm font-normal text-n-slate-12 transition-colors focus-visible:outline-none data-focus-visible:ring-2 data-focus-visible:ring-n-brand/30 data-focus-visible:ring-offset-2',
   selected
     ? 'bg-n-brand-solid text-white hover:bg-n-brand-solid hover:text-white'
     : 'hover:bg-n-alpha-2 dark:hover:bg-n-solid-3',
   outsideView && !selected ? 'text-n-slate-9' : '',
+  isTodayCalendarDate(dateValue) && !selected
+    ? 'outline outline-1 outline-n-brand/40 -outline-offset-1 !text-n-brand'
+    : '',
   disabled || unavailable
     ? 'cursor-not-allowed opacity-40 hover:bg-transparent dark:hover:bg-transparent'
     : '',
@@ -884,12 +904,27 @@ syncModelsFromDate(currentDate.value);
                       >
                         <button
                           type="button"
-                          :class="calendarCellClass(slotProps)"
+                          :class="calendarCellClass(slotProps, weekDate)"
                           :disabled="
                             slotProps.disabled || slotProps.unavailable
                           "
+                          :aria-current="
+                            isTodayCalendarDate(weekDate) ? 'date' : undefined
+                          "
+                          :title="
+                            isTodayCalendarDate(weekDate)
+                              ? t('DATE_TIME_PICKER.TODAY')
+                              : undefined
+                          "
                         >
                           {{ slotProps.dayValue }}
+                          <span
+                            v-if="
+                              isTodayCalendarDate(weekDate) &&
+                              !slotProps.selected
+                            "
+                            class="absolute bottom-1 size-1 rounded-full bg-n-brand"
+                          />
                         </button>
                       </DatePickerCellTrigger>
                     </DatePickerCell>

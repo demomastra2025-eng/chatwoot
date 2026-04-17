@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import camelcaseKeys from 'camelcase-keys';
 import { useI18n } from 'vue-i18n';
 import { formatDistanceToNow } from 'date-fns';
 import { useAlert } from 'dashboard/composables';
@@ -15,7 +16,9 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import { useCompaniesStore } from 'dashboard/stores/companies';
+import CompanyAPI from 'dashboard/api/companies';
 
 const props = defineProps({
   id: { type: Number, required: true },
@@ -43,12 +46,15 @@ const isFeatureEnabledonAccount = useMapGetter(
 const companyFormRef = ref(null);
 const deleteDialogRef = ref(null);
 const companyData = ref({});
+const companyDetails = ref(null);
+const isLoadingContacts = ref(false);
 
 const uiFlags = computed(() => companiesStore.getUIFlags);
 const isUpdating = computed(() => uiFlags.value.updatingItem);
 const displayName = computed(() => props.name || t('COMPANIES.UNNAMED'));
 const avatarSource = computed(() => props.avatarUrl || null);
 const isFormInvalid = computed(() => companyFormRef.value?.isFormInvalid);
+const companyContacts = computed(() => companyDetails.value?.contacts || []);
 const canDeleteCompany = computed(() => checkPermissions(['administrator']));
 const canCreateCrmDeal = computed(() => {
   return (
@@ -107,6 +113,39 @@ const handleToggle = () => {
   companyFormRef.value?.resetToCompany(companyData.value);
 };
 
+const contactSubtitle = contact => {
+  return (
+    contact.email ||
+    contact.phoneNumber ||
+    contact.identifier ||
+    t('COMPANIES.DETAILS.CONTACTS.NO_DETAILS')
+  );
+};
+
+const contactRoute = contact => ({
+  name: 'contacts_edit',
+  params: {
+    accountId: route.params.accountId,
+    contactId: contact.id,
+  },
+});
+
+const loadCompanyDetails = async () => {
+  if (!props.isExpanded) return;
+
+  isLoadingContacts.value = true;
+  try {
+    const {
+      data: { payload },
+    } = await CompanyAPI.show(props.id);
+    companyDetails.value = camelcaseKeys(payload, { deep: true });
+  } catch {
+    useAlert(t('COMPANIES.DETAILS.CONTACTS.ERROR'));
+  } finally {
+    isLoadingContacts.value = false;
+  }
+};
+
 const updateCompany = async () => {
   try {
     await companiesStore.update(companyData.value);
@@ -144,6 +183,16 @@ const createDealForCompany = () => {
     },
   });
 };
+
+watch(
+  () => [props.isExpanded, props.id, props.updatedAt],
+  ([isExpanded]) => {
+    if (isExpanded) {
+      loadCompanyDetails();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -231,6 +280,75 @@ const createDealForCompany = () => {
         >
           <div class="overflow-hidden">
             <div class="flex flex-col gap-6 p-6 border-t border-n-strong">
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <Icon icon="i-lucide-users" size="size-4 text-n-slate-11" />
+                    <span class="text-sm font-medium text-n-slate-12">
+                      {{
+                        t('COMPANIES.DETAILS.CONTACTS.TITLE', {
+                          n: contactsCount,
+                        })
+                      }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="isLoadingContacts"
+                  class="flex items-center gap-2 text-sm text-n-slate-11"
+                >
+                  <Spinner :size="16" />
+                  <span>{{ t('COMPANIES.DETAILS.CONTACTS.LOADING') }}</span>
+                </div>
+
+                <div
+                  v-else-if="companyContacts.length"
+                  class="grid gap-2 max-h-60 overflow-auto pr-1"
+                >
+                  <router-link
+                    v-for="contact in companyContacts"
+                    :key="contact.id"
+                    :to="contactRoute(contact)"
+                    class="flex items-center gap-3 rounded-xl border border-n-weak bg-n-alpha-2 px-3 py-2 transition-colors hover:bg-n-alpha-3"
+                  >
+                    <Avatar
+                      :username="
+                        contact.name || contact.identifier || `#${contact.id}`
+                      "
+                      :src="contact.thumbnail || null"
+                      :name="
+                        contact.name || contact.identifier || `#${contact.id}`
+                      "
+                      :size="32"
+                      hide-offline-status
+                      rounded-full
+                      class="shrink-0"
+                    />
+                    <div class="min-w-0 flex-1">
+                      <p
+                        class="mb-0 truncate text-sm font-medium text-n-slate-12"
+                      >
+                        {{
+                          contact.name || contact.identifier || `#${contact.id}`
+                        }}
+                      </p>
+                      <p class="mb-0 truncate text-xs text-n-slate-11">
+                        {{ contactSubtitle(contact) }}
+                      </p>
+                    </div>
+                    <Icon
+                      icon="i-lucide-chevron-right"
+                      size="size-4 text-n-slate-10"
+                    />
+                  </router-link>
+                </div>
+
+                <p v-else class="mb-0 text-sm text-n-slate-11">
+                  {{ t('COMPANIES.DETAILS.CONTACTS.EMPTY') }}
+                </p>
+              </div>
+
               <CompanyForm
                 ref="companyFormRef"
                 :company-data="companyData"
