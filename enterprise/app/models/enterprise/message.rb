@@ -16,6 +16,11 @@ module Enterprise::Message
       conversation.open!
       return unless conversation.saved_change_to_status?
 
+      captain_assistant = ::CaptainInbox.find_by(inbox_id: conversation.inbox_id)&.captain_assistant
+      Captain::Conversation::TypingIndicatorService.turn_off(
+        conversation: conversation,
+        assistant: captain_assistant
+      )
       create_captain_auto_open_activity_message
     ensure
       Current.user = previous_user

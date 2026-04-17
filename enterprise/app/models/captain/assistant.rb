@@ -166,6 +166,16 @@ class Captain::Assistant < ApplicationRecord
     select_tools_by_ids(available_agent_tools, direct_agent_tool_ids)
   end
 
+  def prompt_runtime_agent_tools
+    allowed_agent_tools.select do |tool_metadata|
+      Captain::ToolPolicy.runtime_allowed?(
+        tool_metadata,
+        assistant: self,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+    end
+  end
+
   def tool_glossary_groups(tools = direct_agent_tools, tool_ids = nil)
     glossary_tools = glossary_tool_definitions(tools, tool_ids)
     return [] if glossary_tools.empty?
@@ -306,12 +316,12 @@ class Captain::Assistant < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_texts(prompt_glossary_texts)
-    referenced_tool_ids = referenced_tool_ids_for_texts(prompt_glossary_texts)
 
     {
       name: name,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instruction: system_instruction,
+      runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),
       scenarios: scenarios.enabled.map do |scenario|
         {
           title: scenario.title,
@@ -322,7 +332,7 @@ class Captain::Assistant < ApplicationRecord
       response_guidelines: response_guidelines || [],
       guardrails: guardrails || [],
       context_glossary: context_glossary_groups(referenced_field_ids),
-      tool_glossary: tool_glossary_groups(allowed_agent_tools, referenced_tool_ids)
+      tool_glossary: tool_glossary_groups(prompt_runtime_agent_tools)
     }
   end
 
@@ -414,7 +424,13 @@ class Captain::Assistant < ApplicationRecord
     tool_ids = referenced_tool_ids_for_texts(texts)
     return [] if tool_ids.empty?
 
-    tool_ids - available_runtime_tool_ids
+    unavailable_tool_ids = tool_ids - available_runtime_tool_ids
+    disabled_capability_tool_ids = tool_ids.select do |tool_id|
+      capability_tool_ids_for_scope(runtime_tool_scope).include?(tool_id) &&
+        !selected_tool_ids_for_scope(runtime_tool_scope).include?(tool_id)
+    end
+
+    (unavailable_tool_ids + disabled_capability_tool_ids).uniq
   end
 
   def invalid_field_ids_for_texts(texts)
@@ -479,10 +495,26 @@ class Captain::Assistant < ApplicationRecord
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
+    capability_tool_ids = capability_tool_ids_for_scope(scope_name)
+    explicit_tool_ids = Array(referenced_tool_ids).map(&:to_s) - capability_tool_ids
 
-    (selected_ids + Array(referenced_tool_ids).map(&:to_s))
+    (selected_ids + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
+  end
+
+  def capability_tool_ids_for_scope(scope_name)
+    tools =
+      case scope_name.to_s
+      when Captain::ToolAccess::SCOPE_ASSISTANT
+        available_assistant_tools
+      else
+        available_agent_tools
+      end
+
+    Array(tools).filter_map do |tool|
+      tool[:id].to_s if ActiveModel::Type::Boolean.new.cast(tool[:capability_tool])
+    end
   end
 
   def available_tool_ids_for_scope(scope_name)

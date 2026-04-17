@@ -16,6 +16,12 @@ describe('#getTypingUsersText', () => {
     ]);
   });
 
+  it('returns the copilot thinking text for a captain assistant', () => {
+    expect(
+      getTypingUsersText([{ name: 'Assistant', type: 'captain_assistant' }])
+    ).toEqual(['CONVERSATION.REPLYBOX.COPILOT_THINKING', {}]);
+  });
+
   it('returns the correct text is there are two typing users', () => {
     expect(
       getTypingUsersText([{ name: 'Pranav' }, { name: 'Nithin' }])

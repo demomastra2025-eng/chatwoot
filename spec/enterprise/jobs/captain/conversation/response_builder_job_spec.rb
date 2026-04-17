@@ -14,13 +14,16 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Hey, welcome to Captain V2' })
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
-    it 'uses Captain::Assistant::AgentRunnerService with tool callbacks' do
+    it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,
         conversation: conversation,
         callbacks: hash_including(
+          on_agent_thinking: kind_of(Proc),
           on_tool_start: kind_of(Proc),
           on_tool_complete: kind_of(Proc)
         )
@@ -29,6 +32,19 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
 
       expect(conversation.messages.last.content).to eq('Hey, welcome to Captain V2')
+    end
+
+    it 'turns the manager typing indicator on and off around response generation' do
+      described_class.perform_now(conversation, assistant)
+
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
+        conversation: conversation,
+        assistant: assistant
+      ).at_least(:once)
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+        conversation: conversation,
+        assistant: assistant
+      ).once
     end
 
     it 'passes message history to the agent runner service' do
@@ -381,7 +397,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       it 'sends out of office message after handoff' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.to(change { conversation.messages.template.count }).by(1)
+        end.to change { conversation.messages.template.count }.by(1)
 
         expect(conversation.reload.status).to eq('open')
         ooo_message = conversation.messages.template.last
@@ -427,7 +443,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       it 'sends out of office message after error-triggered handoff' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.to(change { conversation.messages.template.count }).by(1)
+        end.to change { conversation.messages.template.count }.by(1)
 
         expect(conversation.reload.status).to eq('open')
         ooo_message = conversation.messages.template.last

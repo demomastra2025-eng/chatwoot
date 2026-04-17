@@ -95,7 +95,7 @@ class WhatsappWeb::IncomingEventService
   def process_connection_update
     state = event_data[:state] || event_data[:status]
     normalized_state = normalize_connection_state(state)
-    clear_auth_artifacts = state.to_s == 'open'
+    clear_auth_artifacts = %w[open reconnecting].include?(state.to_s)
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state),
@@ -435,6 +435,7 @@ class WhatsappWeb::IncomingEventService
     message = Message.find_by(source_id: update.dig(:key, :id).to_s, inbox_id: channel.inbox.id)
     if message.blank?
       channel.record_echo_status_miss!(source_id: update.dig(:key, :id).to_s)
+      cache_pending_message_status!(update)
       log_pending_message_update_backfill(update)
       Channels::WhatsappWeb::MessageUpdateBackfillJob.set(wait: MESSAGE_UPDATE_BACKFILL_DELAY).perform_later(
         channel.id,
@@ -489,6 +490,17 @@ class WhatsappWeb::IncomingEventService
       "remote_jid=#{update.dig(:key, :remoteJid)} status=#{update.dig(:update, :status)} " \
       "wait_seconds=#{MESSAGE_UPDATE_BACKFILL_DELAY}"
     )
+  end
+
+  def cache_pending_message_status!(update)
+    source_id = update.dig(:key, :id).to_s
+    status = update.dig(:update, :status)
+    return if source_id.blank? || status.blank?
+
+    WhatsappWeb::PendingMessageStatusCache.new(
+      inbox_id: channel.inbox.id,
+      source_id: source_id
+    ).write(status)
   end
 
   def touch_last_synced_at!

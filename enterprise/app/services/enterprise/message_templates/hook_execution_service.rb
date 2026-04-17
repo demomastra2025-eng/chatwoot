@@ -31,6 +31,10 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def schedule_captain_response
     assistant = conversation.inbox.captain_assistant
+    Captain::Conversation::TypingIndicatorService.turn_on(
+      conversation: conversation,
+      assistant: assistant
+    )
     job_args = [conversation, assistant]
     attachment_wait_time = message.attachments.blank? ? 0.seconds : calculate_attachment_wait_time
 

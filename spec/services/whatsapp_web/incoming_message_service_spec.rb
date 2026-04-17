@@ -15,6 +15,9 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
     Redis::Alfred.scan_each(match: 'MESSAGE_SOURCE_KEY::*') do |key|
       Redis::Alfred.delete(key)
     end
+    Redis::Alfred.scan_each(match: 'WHATSAPP_WEB_PENDING_MESSAGE_STATUS::*') do |key|
+      Redis::Alfred.delete(key)
+    end
   end
 
   describe '#perform' do
@@ -109,6 +112,71 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(outgoing_message.sender).to be_nil
       expect(outgoing_message.content).to eq('Sent from the phone')
       expect(outgoing_message.content_attributes['external_echo']).to eq(true)
+    end
+
+    it 'applies a cached provider status when the message arrives after a status update' do
+      WhatsappWeb::PendingMessageStatusCache.new(
+        inbox_id: inbox.id,
+        source_id: 'OUTGOING_TEXT_2'
+      ).write('READ')
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'OUTGOING_TEXT_2',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          message: {
+            extendedTextMessage: {
+              text: 'Sent from the phone after a cached status'
+            }
+          }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      outgoing_message = conversation.messages.find_by(source_id: 'OUTGOING_TEXT_2')
+      expect(outgoing_message).to be_present
+      expect(outgoing_message.status).to eq('read')
+      expect(
+        WhatsappWeb::PendingMessageStatusCache.new(
+          inbox_id: inbox.id,
+          source_id: 'OUTGOING_TEXT_2'
+        ).peek
+      ).to be_nil
+    end
+
+    it 'treats unique-index races as idempotent when the message was already created concurrently' do
+      create(
+        :message,
+        account: inbox.account,
+        inbox: inbox,
+        conversation: conversation,
+        source_id: 'RACE_MESSAGE_1',
+        message_type: :incoming
+      )
+
+      service = described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'RACE_MESSAGE_1',
+            remoteJid: '15551234567@s.whatsapp.net'
+          },
+          pushName: 'Race Winner',
+          message: {
+            conversation: 'Created elsewhere first'
+          }
+        }.with_indifferent_access
+      )
+
+      allow(service).to receive(:find_message_by_source_id).and_return(nil)
+      allow(service).to receive(:lock_message_source_id!).and_return(true)
+
+      expect { service.perform }.not_to raise_error
+      expect(inbox.messages.where(source_id: 'RACE_MESSAGE_1').count).to eq(1)
     end
 
     it 'creates outgoing echo media messages for mobile sends' do

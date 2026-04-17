@@ -32,7 +32,7 @@ RSpec.describe 'Webhooks::WhatsappWebController', type: :request do
             'data' => hash_including('state' => 'open')
           )
         )
-      )
+      ).on_queue('whatsappweb_inbound')
 
       expect(response).to have_http_status(:success)
     end
@@ -53,7 +53,7 @@ RSpec.describe 'Webhooks::WhatsappWebController', type: :request do
             'data' => [hash_including('key' => hash_including('id' => 'bootstrap-1'))]
           )
         )
-      )
+      ).on_queue('whatsappweb_inbound')
 
       expect(response).to have_http_status(:success)
     end

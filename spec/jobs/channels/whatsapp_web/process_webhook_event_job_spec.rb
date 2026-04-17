@@ -24,6 +24,40 @@ RSpec.describe Channels::WhatsappWeb::ProcessWebhookEventJob do
     described_class.perform_now(channel.id, { 'event' => 'connection.update', 'data' => { 'state' => 'open' } })
   end
 
+  it 'serializes message events by channel and remote jid' do
+    channel = create(:channel_whatsapp_web)
+    service = instance_double(WhatsappWeb::IncomingEventService, perform: true)
+    job = described_class.new
+
+    allow(WhatsappWeb::IncomingEventService).to receive(:new).and_return(service)
+    allow(job).to receive(:with_lock).and_yield
+
+    job.perform(
+      channel.id,
+      {
+        'event' => 'messages.upsert',
+        'data' => {
+          'key' => {
+            'id' => 'message-1',
+            'remoteJid' => '15551234567@s.whatsapp.net',
+            'fromMe' => false
+          },
+          'message' => { 'conversation' => 'Hello' }
+        }
+      }
+    )
+
+    expect(job).to have_received(:with_lock).with(
+      format(
+        Redis::Alfred::WHATSAPP_WEB_EVENT_MUTEX,
+        channel_id: channel.id,
+        remote_jid: '15551234567@s.whatsapp.net'
+      ),
+      described_class::LOCK_TIMEOUT
+    )
+    expect(service).to have_received(:perform)
+  end
+
   it 'ignores webhook jobs for inboxes pending deletion' do
     channel = create(:channel_whatsapp_web)
     channel.inbox.mark_pending_deletion!

@@ -33,7 +33,8 @@ class Captain::Assistant::PromptPreviewService
       compiled_prompt: compiled_prompt,
       notes: [
         'Rendered without live conversation context.',
-        'Default tools and data can expand via explicit tool:// and field:// references. Runtime policy checks still apply.'
+        'Effective runtime tools come from tool_access plus explicit tool:// references, except capability tools which activate only when their checkbox is enabled.',
+        'High-risk and confirmation policy checks still apply at runtime.'
       ],
       used_field_ids: assistant_used_field_ids,
       used_tool_ids: assistant_used_tool_ids,
@@ -99,6 +100,11 @@ class Captain::Assistant::PromptPreviewService
       list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
       list_layer('guardrails', 'Guardrails', assistant.guardrails),
       list_layer(
+        'available_runtime_tools',
+        'Available runtime tools',
+        assistant_runtime_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }
+      ),
+      list_layer(
         'scenario_handoffs',
         'Scenario handoffs',
         assistant.scenarios.enabled.map { |scenario| "#{scenario.title}: #{scenario.description}" }
@@ -124,13 +130,7 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def assistant_used_tool_ids
-    referenced_tool_ids_for_texts(
-      [assistant.system_instruction, assistant.response_guidelines, assistant.guardrails]
-    ) & if assistant.internal_assistant?
-          assistant.allowed_assistant_tool_ids
-        else
-          assistant.allowed_agent_tool_ids
-        end
+    assistant_runtime_tools.pluck(:id)
   end
 
   def assistant_used_field_ids
@@ -139,6 +139,14 @@ class Captain::Assistant::PromptPreviewService
     )
 
     field_ids & assistant.available_context_field_ids
+  end
+
+  def assistant_runtime_tools
+    if assistant.internal_assistant?
+      assistant.allowed_assistant_tools
+    else
+      assistant.prompt_runtime_agent_tools
+    end
   end
 
   def scenario_used_field_ids(scenario)

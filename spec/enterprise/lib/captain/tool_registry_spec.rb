@@ -21,6 +21,14 @@ RSpec.describe Captain::ToolRegistry do
         required_permissions: ['crm_deal_manage']
       )
     end
+
+    it 'marks capability tools that are controlled through assistant settings checkboxes' do
+      handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
+      add_private_note = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'add_private_note' }
+
+      expect(handoff).to include(id: 'handoff', capability_tool: true)
+      expect(add_private_note).to include(id: 'add_private_note', capability_tool: true)
+    end
   end
 
   describe '.resolve_agent_tool_class' do

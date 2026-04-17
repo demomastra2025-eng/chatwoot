@@ -2,6 +2,7 @@ backend: DISABLE_MINI_PROFILER=true bin/rails s -p 3000
 # https://github.com/mperham/sidekiq/issues/3090#issuecomment-389748695
 worker: ENABLE_SIDEKIQ_CRON=true dotenv bundle exec sidekiq -C config/sidekiq.yml
 whatsapp_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsapp_inbound.yml
+whatsappweb_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_inbound.yml
 audio_transcription_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_audio_transcription.yml
 telegram_personal_history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_telegram_personal_history.yml
 history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml

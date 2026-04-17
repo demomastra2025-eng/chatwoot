@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("CAPTAIN_RUNTIME_SIDEKIQ_CONCURRENCY", 2) %>
+:timeout: 25
+:max_retries: 3
+
+:queues:
+  - captain_runtime
+
+production:
+  :concurrency: <%= ENV.fetch("CAPTAIN_RUNTIME_SIDEKIQ_CONCURRENCY", 2) %>
+staging:
+  :concurrency: <%= ENV.fetch("CAPTAIN_RUNTIME_SIDEKIQ_CONCURRENCY", 2) %>

@@ -1,6 +1,6 @@
 FactoryBot.define do
   factory :channel_whatsapp_web, class: 'Channel::WhatsappWeb' do
-    account
+    association :account, factory: :account, limits: { non_web_inboxes: ChatwootApp.max_limit }
     sequence(:phone_number) { |n| "+1555123#{format('%04d', n)}" }
     provider { 'evolution' }
     provider_config { {} }

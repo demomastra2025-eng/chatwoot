@@ -18,9 +18,34 @@ RSpec.describe Captain::ToolPolicy do
       expect(allowed).to be(false)
     end
 
-    it 'allows feature-gated medium-risk agent tools when the required account feature is enabled' do
+    it 'allows feature-gated medium-risk agent tools when the required feature and runtime permission are enabled' do
       account.enable_features!('crm_deals')
+      account.update!(captain_runtime: { 'agent_permissioned_tool_ids' => ['update_deal'] })
       tool_definition = Captain::ToolRegistry.definition_for('update_deal').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(true)
+    end
+
+    it 'allows checked capability agent tools without requiring extra runtime permission policy' do
+      tool_definition = Captain::ToolRegistry.definition_for('handoff').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(true)
+    end
+
+    it 'allows note capability agent tools without requiring extra runtime permission policy' do
+      tool_definition = Captain::ToolRegistry.definition_for('add_private_note').to_h
 
       allowed = described_class.runtime_allowed?(
         tool_definition,
@@ -46,7 +71,10 @@ RSpec.describe Captain::ToolPolicy do
 
     it 'allows high-risk agent tools when the tool id is approved in runtime policy' do
       account.enable_features!('crm_deals')
-      account.update!(captain_runtime: { 'agent_high_risk_tool_ids' => ['create_deal'] })
+      account.update!(captain_runtime: {
+                        'agent_permissioned_tool_ids' => ['create_deal'],
+                        'agent_high_risk_tool_ids' => ['create_deal']
+                      })
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
 
       allowed = described_class.runtime_allowed?(
@@ -60,7 +88,10 @@ RSpec.describe Captain::ToolPolicy do
 
     it 'allows high-risk agent tools when autonomous high-risk tools are globally enabled' do
       account.enable_features!('crm_deals')
-      account.update!(captain_runtime: { 'agent_high_risk_tools' => 'enabled' })
+      account.update!(captain_runtime: {
+                        'agent_permissioned_tool_ids' => ['create_deal'],
+                        'agent_high_risk_tools' => 'enabled'
+                      })
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
 
       allowed = described_class.runtime_allowed?(

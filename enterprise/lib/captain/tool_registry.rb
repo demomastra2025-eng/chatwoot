@@ -7,6 +7,7 @@ class Captain::ToolRegistry
       group_name
       icon
       allowed_scopes
+      capability_tool
       agent_tool_class
       assistant_tool_class
       required_features
@@ -27,6 +28,7 @@ class Captain::ToolRegistry
       @group_name = attributes[:group_name]
       @icon = attributes[:icon]
       @allowed_scopes = Array(attributes.fetch(:allowed_scopes)).map(&:to_s).freeze
+      @capability_tool = ActiveModel::Type::Boolean.new.cast(attributes[:capability_tool])
       @agent_tool_class = attributes[:agent_tool_class]
       @assistant_tool_class = attributes[:assistant_tool_class]
       @required_features = Array(attributes[:required_features]).map(&:to_s).freeze
@@ -57,6 +59,7 @@ class Captain::ToolRegistry
         group_name: group_name,
         icon: icon,
         allowed_scopes: allowed_scopes,
+        capability_tool: capability_tool,
         required_features: required_features,
         required_permissions: required_permissions,
         risk_level: risk_level,
@@ -87,6 +90,7 @@ class Captain::ToolRegistry
           group_name: 'Knowledge',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
           agent_tool_class: Captain::Tools::FaqLookupTool,
           assistant_tool_class: Captain::Tools::Copilot::FaqLookupService,
           risk_level: 'low'
@@ -98,6 +102,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'note-add',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
           agent_tool_class: Captain::Tools::AddContactNoteTool,
           assistant_tool_class: Captain::Tools::Copilot::AddContactNoteService,
           required_permissions: %w[contact_manage],
@@ -110,6 +115,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'eye-off',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
           agent_tool_class: Captain::Tools::AddPrivateNoteTool,
           assistant_tool_class: Captain::Tools::Copilot::AddPrivateNoteService,
           required_permissions: %w[
@@ -174,6 +180,7 @@ class Captain::ToolRegistry
           group_name: 'Conversations',
           icon: 'user-switch',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
           agent_tool_class: Captain::Tools::HandoffTool,
           assistant_tool_class: Captain::Tools::Copilot::HandoffService,
           required_permissions: %w[

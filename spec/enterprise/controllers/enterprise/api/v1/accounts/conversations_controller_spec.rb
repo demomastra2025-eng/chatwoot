@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe 'Enterprise Conversations API', type: :request do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:admin) { create(:user, account: account, role: :administrator) }
 
   describe 'PATCH /api/v1/accounts/{account.id}/conversations/:id' do
@@ -36,6 +36,58 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(JSON.parse(response.body, symbolize_names: true)[:message]).to eq('Sla policy conversation already has a different sla')
       end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/conversations/:id/toggle_status' do
+    let(:assistant) do
+      create(
+        :captain_assistant,
+        account: account,
+        config: { 'auto_reply_on_last_incoming' => true }
+      )
+    end
+    let(:conversation) { create(:conversation, account: account, status: :open) }
+
+    before do
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      create(:message, conversation: conversation, account: account, message_type: :incoming, private: false, content: 'Need help')
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+      allow(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later)
+    end
+
+    it 'turns on typing and schedules captain when an agent moves the conversation back to pending' do
+      post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
+           params: { status: 'pending' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
+        conversation: conversation,
+        assistant: assistant
+      )
+      expect(Captain::Conversation::ResponseBuilderJob).to have_received(:perform_later).with(
+        conversation,
+        assistant,
+        expected_last_message_id: conversation.messages.incoming.last.id
+      )
+    end
+
+    it 'turns off typing when the conversation leaves pending' do
+      conversation.update!(status: :pending)
+
+      post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
+           params: { status: 'open' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+        conversation: conversation,
+        assistant: assistant
+      )
     end
   end
 end

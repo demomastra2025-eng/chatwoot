@@ -31,6 +31,7 @@ RSpec.describe Message do
 
     before do
       create(:captain_inbox, inbox: conversation.inbox, captain_assistant: captain_assistant)
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
     it 'marks the conversation open when a human sends a public outgoing message' do
@@ -50,6 +51,15 @@ RSpec.describe Message do
           message_type: :activity,
           content: auto_open_activity_content
         }
+      )
+    end
+
+    it 'turns off the captain typing indicator when a human takes over' do
+      create(:message, message_type: :outgoing, conversation: conversation)
+
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+        conversation: conversation,
+        assistant: captain_assistant
       )
     end
 

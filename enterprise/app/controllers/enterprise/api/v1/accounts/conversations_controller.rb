@@ -6,6 +6,7 @@ module Enterprise::Api::V1::Accounts::ConversationsController
 
     super
 
+    clear_captain_typing_indicator(previous_status)
     trigger_captain_auto_reply_for_last_incoming(previous_status)
   end
 
@@ -36,6 +37,10 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     last_incoming_message = latest_public_incoming_message
     return unless assistant.present? && last_incoming_message.present?
 
+    Captain::Conversation::TypingIndicatorService.turn_on(
+      conversation: @conversation,
+      assistant: assistant
+    )
     Captain::Conversation::ResponseBuilderJob.perform_later(
       @conversation,
       assistant,
@@ -54,6 +59,17 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     return false unless @conversation.inbox&.captain_active?
 
     latest_public_message&.incoming?
+  end
+
+  def clear_captain_typing_indicator(previous_status)
+    return unless previous_status == 'pending' || previous_status == Conversation.statuses[:pending]
+    return if @conversation.pending?
+
+    captain_assistant = ::CaptainInbox.find_by(inbox_id: @conversation.inbox_id)&.captain_assistant
+    Captain::Conversation::TypingIndicatorService.turn_off(
+      conversation: @conversation,
+      assistant: captain_assistant
+    )
   end
 
   def latest_public_incoming_message

@@ -68,6 +68,7 @@ class Captain::ToolPolicy
 
   def agent_permission_requirements_satisfied?
     return false if assistant.blank?
+    return true if capability_tool?
 
     Llm::RuntimePolicy.agent_permissioned_tool_allowed?(
       tool_id,
@@ -124,5 +125,9 @@ class Captain::ToolPolicy
 
   def requires_confirmation?
     ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
+  end
+
+  def capability_tool?
+    ActiveModel::Type::Boolean.new.cast(@tool_definition[:capability_tool])
   end
 end

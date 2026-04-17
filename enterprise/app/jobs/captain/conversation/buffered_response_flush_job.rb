@@ -1,5 +1,5 @@
 class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
-  queue_as :default
+  queue_as :captain_runtime
 
   retry_on LockAcquisitionError, wait: 1.second, attempts: 5
 

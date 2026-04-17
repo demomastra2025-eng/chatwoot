@@ -65,7 +65,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_assistant_tool_ids).to eq(['search_documentation'])
     end
 
-    it 'adds explicitly referenced tools and fields to the effective runtime set' do
+    it 'keeps checked capability tools in the prompt glossary together with referenced fields' do
       assistant.update!(
         description: 'Use [Handoff to Human](tool://handoff) and greet [Email](field://contact.email).',
         config: {
@@ -78,7 +78,7 @@ RSpec.describe Captain::Assistant, type: :model do
           'tool_access' => {
             'agent' => {
               'enabled' => true,
-              'tool_ids' => ['faq_lookup']
+              'tool_ids' => %w[faq_lookup handoff]
             }
           }
         }
@@ -94,8 +94,24 @@ RSpec.describe Captain::Assistant, type: :model do
       end
 
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
-      expect(glossary_tool_ids).to include('handoff')
+      expect(glossary_tool_ids).to contain_exactly('faq_lookup', 'handoff')
       expect(glossary_field_ids).to include('contact.email')
+    end
+
+    it 'treats unchecked capability tool references as invalid' do
+      assistant.description = 'Use [Handoff to Human](tool://handoff) when needed.'
+      assistant.config = {
+        'context_access' => {},
+        'tool_access' => {
+          'agent' => {
+            'enabled' => true,
+            'tool_ids' => ['faq_lookup']
+          }
+        }
+      }
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors[:description]).to include('contains invalid tools: handoff')
     end
   end
 
@@ -123,13 +139,16 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Never reveal internal routing.')
     end
 
-    it 'does not render a reference glossary when instructions do not reference tools or fields' do
+    it 'renders the default runtime tools in the prompt glossary' do
       rendered = assistant.agent_instructions
 
-      expect(rendered).not_to include('# Reference Glossary')
+      expect(rendered).to include('# Reference Glossary')
+      expect(rendered).to include('FAQ Lookup (faq_lookup): Search FAQ responses using semantic similarity')
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+      expect(rendered).to include('# Human Handoff Protocol')
     end
 
-    it 'renders a reference glossary only for fields and tools referenced in prompt text' do
+    it 'renders referenced fields alongside the effective runtime tool glossary' do
       assistant.update!(
         description: 'Use [FAQ Lookup](tool://faq_lookup) and greet [Name](field://contact.name).',
         response_guidelines: ['Mention [Conversation ID](field://conversation.display_id) when escalation starts.']
@@ -141,7 +160,8 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Name (contact.name)')
       expect(rendered).to include('Conversation ID (conversation.display_id)')
       expect(rendered).to include('FAQ Lookup (faq_lookup): Search FAQ responses using semantic similarity')
-      expect(rendered).not_to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+      expect(rendered).not_to include('Add Private Note (add_private_note): Add a private note to a conversation')
     end
 
     it 'handles array-based rules and restrictions when building the prompt glossary' do
@@ -156,6 +176,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Name (contact.name)')
       expect(rendered).to include('Conversation ID (conversation.display_id)')
       expect(rendered).to include('FAQ Lookup (faq_lookup): Search FAQ responses using semantic similarity')
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
     end
 
     it 'renders tool references in instructions as readable tool mentions' do
@@ -167,6 +188,13 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(rendered).to include('Use `FAQ Lookup` tool before replying.')
       expect(rendered).not_to include('(tool://faq_lookup)')
+    end
+
+    it 'renders handoff guidance by default when the capability is enabled in tool access' do
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+      expect(rendered).to include('# Human Handoff Protocol')
     end
 
     it 'renders deal and task context using explicitly passed visible fields' do
@@ -272,7 +300,15 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'accepts tools in instructions when they are explicitly referenced' do
+    it 'rejects capability tools in instructions when their checkbox is off' do
+      assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors[:description]).to include('contains invalid tools: handoff')
+    end
+
+    it 'accepts capability tools in instructions when their checkbox is on' do
+      assistant.config['tool_access']['agent']['tool_ids'] = %w[faq_lookup handoff]
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
       expect(assistant).to be_valid
@@ -285,7 +321,11 @@ RSpec.describe Captain::Assistant, type: :model do
       ]
 
       expect(assistant).to be_valid
-      expect(assistant.send(:prompt_context)[:context_glossary].flat_map { |group| group[:entries].map { |entry| entry[:id] } }).to include('contact.email')
+      expect(assistant.send(:prompt_context)[:context_glossary].flat_map do |group|
+        group[:entries].map do |entry|
+          entry[:id]
+        end
+      end).to include('contact.email')
     end
   end
 end

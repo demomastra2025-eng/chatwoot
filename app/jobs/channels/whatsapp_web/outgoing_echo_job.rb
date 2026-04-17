@@ -1,6 +1,9 @@
 class Channels::WhatsappWeb::OutgoingEchoJob < ApplicationJob
   queue_as :whatsappweb_echo
 
+  retry_on ActiveRecord::ConnectionTimeoutError, wait: 3.seconds, attempts: 10
+  retry_on ActiveRecord::Deadlocked, wait: 2.seconds, attempts: 8
+
   def perform(channel_id, params = {})
     channel = Channel::WhatsappWeb.find_by(id: channel_id)
     return if channel.blank? || channel.inbox.blank?

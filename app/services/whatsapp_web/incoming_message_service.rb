@@ -1,6 +1,20 @@
 class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   private
 
+  def after_message_persisted(message)
+    super
+
+    return if message.blank? || message.source_id.blank?
+
+    pending_status = WhatsappWeb::PendingMessageStatusCache.new(
+      inbox_id: inbox.id,
+      source_id: message.source_id
+    ).consume
+    return if pending_status.blank?
+
+    WhatsappWeb::ProviderPayloadNormalizer.apply_message_status!(message, pending_status)
+  end
+
   def conversation_params
     super.merge(status: inbox.channel.conversation_pending? ? :pending : :open)
   end

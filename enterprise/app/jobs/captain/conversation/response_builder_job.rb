@@ -1,6 +1,7 @@
 class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   MAX_MESSAGE_LENGTH = 10_000
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+  queue_as :captain_runtime
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
 
@@ -17,6 +18,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     Current.executed_by = @assistant
 
+    maintain_typing_indicator
     generate_and_process_response
   rescue ActiveStorage::FileNotFoundError, Faraday::BadRequestError => e
     handle_error(e)
@@ -24,6 +26,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   rescue StandardError => e
     handle_error(e)
   ensure
+    clear_typing_indicator
     Current.executed_by = nil
   end
 
@@ -226,7 +229,11 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     tool_trace_sequence = 0
 
     callbacks = {
+      on_agent_thinking: lambda { |_agent_name, *_args|
+        maintain_typing_indicator
+      },
       on_tool_start: lambda { |tool_name, *_args|
+        maintain_typing_indicator
         tool_trace_sequence += 1
         tool_trace_steps << Captain::ToolTraceBuilder.step(
           tool_name: tool_name,
@@ -235,6 +242,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         )
       },
       on_tool_complete: lambda { |tool_name, *_args|
+        maintain_typing_indicator
         tool_trace_sequence += 1
         tool_trace_steps << Captain::ToolTraceBuilder.step(
           tool_name: tool_name,
@@ -245,6 +253,24 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     }
 
     [callbacks, tool_trace_steps]
+  end
+
+  def maintain_typing_indicator
+    Captain::Conversation::TypingIndicatorService.turn_on(
+      conversation: @conversation,
+      assistant: @assistant
+    )
+    @typing_indicator_active = true
+  end
+
+  def clear_typing_indicator
+    return unless @typing_indicator_active
+
+    Captain::Conversation::TypingIndicatorService.turn_off(
+      conversation: @conversation,
+      assistant: @assistant
+    )
+    @typing_indicator_active = false
   end
 
   def attach_tool_trace_to_response!(tool_trace_steps = nil)

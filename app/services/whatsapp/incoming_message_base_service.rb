@@ -44,6 +44,9 @@ class Whatsapp::IncomingMessageBaseService
       set_conversation
       create_messages
     end
+  rescue ActiveRecord::RecordNotUnique
+    @message = Message.find_by(source_id: messages_data.first[:id].to_s, inbox_id: inbox.id)
+    after_message_persisted(@message) if @message.present?
   end
 
   def process_statuses
@@ -89,6 +92,7 @@ class Whatsapp::IncomingMessageBaseService
       create_message(contact, source_id: message[:id])
       attach_contact(contact)
       @message.save!
+      after_message_persisted(@message)
     end
   end
 
@@ -97,6 +101,7 @@ class Whatsapp::IncomingMessageBaseService
     attach_files
     attach_location if message_type == 'location'
     @message.save!
+    after_message_persisted(@message)
   end
 
   def set_contact
@@ -254,4 +259,6 @@ class Whatsapp::IncomingMessageBaseService
 
     latest_conversation
   end
+
+  def after_message_persisted(_message); end
 end

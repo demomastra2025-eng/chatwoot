@@ -11,6 +11,12 @@ RSpec.describe WhatsappWeb::IncomingEventService do
     end
   end
 
+  after do
+    Redis::Alfred.scan_each(match: 'WHATSAPP_WEB_PENDING_MESSAGE_STATUS::*') do |key|
+      Redis::Alfred.delete(key)
+    end
+  end
+
   describe '#perform' do
     let(:channel) { create(:channel_whatsapp_web) }
 
@@ -340,12 +346,12 @@ RSpec.describe WhatsappWeb::IncomingEventService do
         created_at: 10.minutes.ago
       )
 
-      expect(conversation).to receive(:dispatch_conversation_updated_event).with(
-        hash_including(
-          'agent_last_seen_at' => [initial_last_seen, message.created_at],
-          'assignee_last_seen_at' => [initial_last_seen, message.created_at]
-        )
-      ).and_call_original
+      expect_any_instance_of(Conversation).to receive(:dispatch_conversation_updated_event) do |_instance, changes|
+        expect(changes['agent_last_seen_at'].first.to_i).to eq(initial_last_seen.to_i)
+        expect(changes['agent_last_seen_at'].last.to_i).to eq(message.created_at.to_i)
+        expect(changes['assignee_last_seen_at'].first.to_i).to eq(initial_last_seen.to_i)
+        expect(changes['assignee_last_seen_at'].last.to_i).to eq(message.created_at.to_i)
+      end.and_call_original
 
       described_class.new(
         channel: channel,
@@ -367,18 +373,10 @@ RSpec.describe WhatsappWeb::IncomingEventService do
     it 'schedules a backfill when a self-sent status update arrives before the local message exists' do
       delayed_job = class_double(Channels::WhatsappWeb::MessageUpdateBackfillJob, perform_later: true)
 
+      allow(Rails.logger).to receive(:info)
       allow(Channels::WhatsappWeb::MessageUpdateBackfillJob).to receive(:set)
         .with(wait: 3.seconds)
         .and_return(delayed_job)
-      expect(Rails.logger).to receive(:info).with(
-        include(
-          'Scheduled messages.update backfill for transient missing local message',
-          'channel=',
-          'source_id=outgoing-missing-1',
-          'status=3',
-          'wait_seconds=3'
-        )
-      )
       expect(delayed_job).to receive(:perform_later).with(
         channel.id,
         hash_including(
@@ -406,6 +404,21 @@ RSpec.describe WhatsappWeb::IncomingEventService do
 
       expect(channel.reload.sync_state_payload['echo_status_miss_count']).to eq(1)
       expect(channel.sync_state_payload['last_echo_status_miss_source_id']).to eq('outgoing-missing-1')
+      expect(Rails.logger).to have_received(:info).with(
+        include(
+          'Scheduled messages.update backfill for transient missing local message',
+          'channel=',
+          'source_id=outgoing-missing-1',
+          'status=3',
+          'wait_seconds=3'
+        )
+      )
+      expect(
+        WhatsappWeb::PendingMessageStatusCache.new(
+          inbox_id: channel.inbox.id,
+          source_id: 'outgoing-missing-1'
+        ).peek
+      ).to eq('3')
     end
 
     it 'normalizes flattened status updates before enqueuing backfill' do
@@ -441,6 +454,12 @@ RSpec.describe WhatsappWeb::IncomingEventService do
 
       expect(channel.reload.sync_state_payload['echo_status_miss_count']).to eq(1)
       expect(channel.sync_state_payload['last_echo_status_miss_source_id']).to eq('outgoing-missing-flat-1')
+      expect(
+        WhatsappWeb::PendingMessageStatusCache.new(
+          inbox_id: channel.inbox.id,
+          source_id: 'outgoing-missing-flat-1'
+        ).peek
+      ).to eq('DELIVERY_ACK')
     end
 
     it 'does not enqueue a history sync when the connection opens before provider history is ready' do

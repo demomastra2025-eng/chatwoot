@@ -29,6 +29,10 @@ export const getTypingUsersText = (users = []) => {
   const count = users.length;
   const [firstUser, secondUser] = users;
 
+  if (count === 1 && firstUser?.type === 'captain_assistant') {
+    return ['CONVERSATION.REPLYBOX.COPILOT_THINKING', {}];
+  }
+
   if (count === 1) {
     return ['TYPING.ONE', { user: firstUser.name }];
   }

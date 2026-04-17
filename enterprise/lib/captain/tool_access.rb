@@ -5,7 +5,7 @@ module Captain::ToolAccess
     SCOPE_AGENT,
     SCOPE_ASSISTANT
   ].freeze
-  DEFAULT_AGENT_TOOL_IDS = [].freeze
+  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup handoff].freeze
 
   module_function
 
@@ -77,13 +77,14 @@ module Captain::ToolAccess
   end
 
   def default_tool_ids_for(scope_name, tools)
-    available_ids = Array(tools).map { |tool| tool[:id] || tool['id'] }
+    available_tools = Array(tools)
+    available_ids = available_tools.map { |tool| tool[:id] || tool['id'] }
     default_ids =
       case scope_name
       when SCOPE_AGENT
         DEFAULT_AGENT_TOOL_IDS
       when SCOPE_ASSISTANT
-        []
+        assistant_default_tool_ids(available_tools)
       else
         []
       end
@@ -93,5 +94,16 @@ module Captain::ToolAccess
 
   def sanitize_tool_ids(tool_ids, available_ids)
     Array(tool_ids).map(&:to_s).uniq.select { |tool_id| available_ids.include?(tool_id) }
+  end
+
+  def assistant_default_tool_ids(tools)
+    Array(tools).filter_map do |tool|
+      tool_definition = tool.with_indifferent_access
+      next if tool_definition[:id].blank?
+      next if tool_definition[:provider].to_s == 'mcp'
+      next if tool_definition.key?(:selected_by_default) && !ActiveModel::Type::Boolean.new.cast(tool_definition[:selected_by_default])
+
+      tool_definition[:id].to_s
+    end
   end
 end
