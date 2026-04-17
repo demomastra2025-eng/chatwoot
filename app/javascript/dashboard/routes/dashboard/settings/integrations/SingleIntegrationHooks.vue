@@ -1,5 +1,6 @@
 <script setup>
 import { computed, defineProps, defineEmits } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
@@ -23,8 +24,14 @@ const { integration, hasConnectedHooks } = useIntegrationHook(
 );
 
 const store = useStore();
+const route = useRoute();
 const { replaceInstallationName } = useBranding();
 const { t, locale } = useI18n();
+
+const backButtonUrl = computed(() => ({
+  name: 'settings_applications',
+  params: { accountId: route.params.accountId },
+}));
 
 const connectedHook = computed(() => integration.value?.hooks?.[0]);
 const uiFlags = computed(() => store.getters['integrations/getUIFlags']);
@@ -210,6 +217,8 @@ async function copyMacrocrmWebhookUrl() {
       :title="integration.name"
       :description="headerDescription"
       :feature-name="headerFeatureName"
+      :back-button-label="$t('GENERAL_SETTINGS.BACK')"
+      :back-button-url="backButtonUrl"
     >
       <template #actions>
         <div v-if="hasConnectedHooks" class="flex gap-2">

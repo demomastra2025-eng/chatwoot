@@ -37,6 +37,24 @@ const isInternalAssistant = computed(
   () => effectiveUsageMode.value === 'internal_assistant'
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
+const assistantConfig = computed(() => assistant.value?.config || {});
+
+const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'feature_faq',
+  'feature_memory',
+  'feature_citation',
+  'context_access',
+  'tool_access',
+]);
+
+const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'handoff_message',
+  'resolution_message',
+  'temperature',
+  'auto_reply_on_last_incoming',
+  'message_collapse_window_seconds',
+  'history_message_limit',
+]);
 
 watch(
   assistantId,
@@ -112,40 +130,36 @@ const handleSubmit = async updatedAssistant => {
   }
 };
 
-const mergeAssistantPayloads = (...payloads) =>
-  payloads.filter(Boolean).reduce(
-    (result, payload) => {
-      const nextAssistant = payload.assistant || {};
-      const nextConfig = nextAssistant.config || {};
-      const currentAssistant = result.assistant || {};
-
-      result.assistant = {
-        ...currentAssistant,
-        ...nextAssistant,
-        config: {
-          ...(currentAssistant.config || {}),
-          ...nextConfig,
-        },
-      };
-
-      if (payload.avatar !== undefined && payload.avatar !== null) {
-        result.avatar = payload.avatar;
-      }
-
-      if (payload.removeAvatar) {
-        result.removeAvatar = true;
-      }
-
-      return result;
-    },
-    {
-      assistant: {
-        config: {},
-      },
-      avatar: null,
-      removeAvatar: false,
+const pickConfigKeys = (config = {}, keys = []) =>
+  keys.reduce((result, key) => {
+    if (Object.prototype.hasOwnProperty.call(config, key)) {
+      result[key] = config[key];
     }
-  );
+
+    return result;
+  }, {});
+
+const mergeAssistantPayloads = (basicPayload, systemPayload) => {
+  const basicAssistant = basicPayload?.assistant || {};
+  const systemAssistant = systemPayload?.assistant || {};
+
+  return {
+    assistant: {
+      ...basicAssistant,
+      ...systemAssistant,
+      name: basicAssistant.name,
+      description: basicAssistant.description,
+      usage_mode: basicAssistant.usage_mode,
+      config: {
+        ...assistantConfig.value,
+        ...pickConfigKeys(basicAssistant.config, BASIC_SETTINGS_CONFIG_KEYS),
+        ...pickConfigKeys(systemAssistant.config, SYSTEM_SETTINGS_CONFIG_KEYS),
+      },
+    },
+    avatar: basicPayload?.avatar ?? null,
+    removeAvatar: Boolean(basicPayload?.removeAvatar),
+  };
+};
 
 const handleGeneralSave = async () => {
   const basicPayload = await generalBasicFormRef.value?.buildPayload?.();

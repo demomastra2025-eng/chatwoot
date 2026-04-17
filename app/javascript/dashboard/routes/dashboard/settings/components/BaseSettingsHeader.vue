@@ -27,6 +27,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  backButtonUrl: {
+    type: [String, Object],
+    default: '',
+  },
   searchPlaceholder: {
     type: String,
     default: '',
@@ -46,6 +50,7 @@ const helpURL = getHelpUrlForFeature(props.featureName);
       v-if="backButtonLabel"
       compact
       :button-label="backButtonLabel"
+      :back-url="backButtonUrl"
       class="my-1"
     />
     <div

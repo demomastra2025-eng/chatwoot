@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
 import {
@@ -24,10 +25,16 @@ const props = defineProps({
 
 defineEmits(['delete', 'add']);
 const { t, tm } = useI18n();
+const route = useRoute();
 
 const { integration, isHookTypeInbox, hasConnectedHooks } = useIntegrationHook(
   props.integrationId
 );
+
+const backButtonUrl = computed(() => ({
+  name: 'settings_applications',
+  params: { accountId: route.params.accountId },
+}));
 
 const globalConfig = useMapGetter('globalConfig/get');
 const searchQuery = ref('');
@@ -86,6 +93,8 @@ const inboxName = hook => (hook.inbox ? hook.inbox.name : '');
       :title="integration.name || ''"
       :description="headerDescription"
       :feature-name="integrationId"
+      :back-button-label="$t('GENERAL_SETTINGS.BACK')"
+      :back-button-url="backButtonUrl"
       :search-placeholder="$t('INTEGRATION_APPS.SEARCH_PLACEHOLDER')"
     >
       <template v-if="hooks?.length" #count>

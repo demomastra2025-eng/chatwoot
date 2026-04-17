@@ -41,6 +41,11 @@ onMounted(() => {
       <BaseSettingsHeader
         :title="$t('INTEGRATION_SETTINGS.LINEAR.HEADER')"
         :description="integration.description || ''"
+        :back-button-label="$t('GENERAL_SETTINGS.BACK')"
+        :back-button-url="{
+          name: 'settings_applications',
+          params: { accountId: $route.params.accountId },
+        }"
         feature-name="linear_integration"
       />
     </template>

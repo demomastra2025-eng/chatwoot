@@ -109,6 +109,11 @@ export default {
         v-model:search-query="searchQuery"
         :title="$t('INTEGRATION_SETTINGS.DASHBOARD_APPS.TITLE')"
         :description="$t('INTEGRATION_SETTINGS.DASHBOARD_APPS.DESCRIPTION')"
+        :back-button-label="$t('GENERAL_SETTINGS.BACK')"
+        :back-button-url="{
+          name: 'settings_applications',
+          params: { accountId: $route.params.accountId },
+        }"
         :search-placeholder="
           $t('INTEGRATION_SETTINGS.DASHBOARD_APPS.SEARCH_PLACEHOLDER')
         "
