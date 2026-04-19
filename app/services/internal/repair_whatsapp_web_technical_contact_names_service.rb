@@ -1,5 +1,6 @@
 class Internal::RepairWhatsappWebTechnicalContactNamesService
   GENERIC_ROLE_DISPLAY_NAMES = %w[reception].freeze
+  LAST_PROVIDER_DISPLAY_NAME_KEY = 'last_provider_display_name'.freeze
 
   def initialize(account: nil, batch_size: 500)
     @account = account
@@ -137,6 +138,7 @@ class Internal::RepairWhatsappWebTechnicalContactNamesService
 
     [
       profile.display_name,
+      profile_payload[LAST_PROVIDER_DISPLAY_NAME_KEY],
       profile_payload['display_name'],
       profile_payload['name']
     ].map do |value|

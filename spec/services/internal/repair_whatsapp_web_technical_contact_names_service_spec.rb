@@ -141,6 +141,49 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
       expect(profile.reload.display_name).to eq('Максим')
     end
 
+    it 'repairs a technical name from the stored last provider display name' do
+      contact = create(
+        :contact,
+        account: channel.account,
+        name: '+77077489629',
+        phone_number: '+77077489629',
+        identifier: 'whatsapp_web:129115340464278@lid',
+        additional_attributes: {
+          'raw_jid' => '77077489629@s.whatsapp.net',
+          'canonical_jid' => '77077489629@s.whatsapp.net',
+          'lid_jid' => '129115340464278@lid',
+          'provider' => 'whatsapp_web'
+        }
+      )
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '77077489629')
+      profile = create(
+        :contact_channel_profile,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        inbox: channel.inbox,
+        provider: 'whatsapp_web',
+        source_id: '77077489629',
+        display_name: '+77077489629',
+        phone_number: '+77077489629',
+        profile_data: {
+          'identifier' => 'whatsapp_web:129115340464278@lid',
+          'raw_jid' => '77077489629@s.whatsapp.net',
+          'canonical_jid' => '77077489629@s.whatsapp.net',
+          'lid_jid' => '129115340464278@lid',
+          'display_name' => '+77077489629',
+          'name' => '+77077489629',
+          'last_provider_display_name' => 'Максим',
+          'phone_number' => '+77077489629'
+        }
+      )
+
+      repaired = described_class.new(account: channel.account).perform
+
+      expect(repaired).to eq(1)
+      expect(contact.reload.name).to eq('Максим')
+      expect(profile.reload.display_name).to eq('Максим')
+    end
+
     it 'prefers a better whatsapp profile name over the phone number when repairing reception placeholders' do
       contact = create(
         :contact,

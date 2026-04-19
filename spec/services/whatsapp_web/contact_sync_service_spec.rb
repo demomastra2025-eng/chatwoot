@@ -205,6 +205,155 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox.reload.channel_profile.display_name).to eq('Максим')
   end
 
+  it 'restores the last known provider name when a later payload arrives without pushName' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077489629@s.whatsapp.net',
+        remoteLid: '129115340464278@lid',
+        pushName: 'Максим'
+      }
+    ).perform
+
+    contact = channel.account.contacts.find_by!(phone_number: '+77077489629')
+    contact.update!(
+      name: '+77077489629',
+      additional_attributes: contact.additional_attributes.merge(
+        'last_provider_display_name' => 'Максим',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      )
+    )
+    contact.contact_channel_profiles.where(provider: 'whatsapp_web').first.update!(
+      display_name: '+77077489629',
+      profile_data: contact.contact_channel_profiles.where(provider: 'whatsapp_web').first.profile_data.merge(
+        'last_provider_display_name' => 'Максим',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      )
+    )
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077489629@s.whatsapp.net',
+        remoteLid: '129115340464278@lid'
+      }
+    ).perform
+
+    expect(contact_inbox.contact.reload.name).to eq('Максим')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('Максим')
+  end
+
+  it 'does not downgrade an existing human-readable profile name when a later payload arrives without pushName' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact = create(
+      :contact,
+      account: channel.account,
+      name: 'Максим',
+      phone_number: '+77077489629',
+      identifier: 'whatsapp_web:129115340464278@lid',
+      additional_attributes: {
+        'raw_jid' => '77077489629@s.whatsapp.net',
+        'canonical_jid' => '77077489629@s.whatsapp.net',
+        'lid_jid' => '129115340464278@lid',
+        'provider' => 'whatsapp_web',
+        'last_provider_display_name' => 'Максим',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      }
+    )
+    contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '77077489629')
+    create(
+      :contact_channel_profile,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      inbox: channel.inbox,
+      provider: 'whatsapp_web',
+      source_id: '77077489629',
+      display_name: 'Максим',
+      phone_number: '+77077489629',
+      profile_data: {
+        'identifier' => 'whatsapp_web:129115340464278@lid',
+        'source_id' => '77077489629',
+        'raw_jid' => '77077489629@s.whatsapp.net',
+        'canonical_jid' => '77077489629@s.whatsapp.net',
+        'lid_jid' => '129115340464278@lid',
+        'display_name' => 'Максим',
+        'name' => 'Максим',
+        'phone_number' => '+77077489629',
+        'last_provider_display_name' => 'Максим',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      }
+    )
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077489629@s.whatsapp.net',
+        remoteLid: '129115340464278@lid'
+      }
+    ).perform
+
+    expect(contact.reload.name).to eq('Максим')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('Максим')
+  end
+
+  it 'does not overwrite an existing human-readable profile name with a different provider name' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact = create(
+      :contact,
+      account: channel.account,
+      name: 'Manual Alias',
+      phone_number: '+77077489629',
+      identifier: 'whatsapp_web:129115340464278@lid',
+      additional_attributes: {
+        'raw_jid' => '77077489629@s.whatsapp.net',
+        'canonical_jid' => '77077489629@s.whatsapp.net',
+        'lid_jid' => '129115340464278@lid',
+        'provider' => 'whatsapp_web',
+        'last_provider_display_name' => 'Manual Alias',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      }
+    )
+    contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '77077489629')
+    create(
+      :contact_channel_profile,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      inbox: channel.inbox,
+      provider: 'whatsapp_web',
+      source_id: '77077489629',
+      display_name: 'Manual Alias',
+      phone_number: '+77077489629',
+      profile_data: {
+        'identifier' => 'whatsapp_web:129115340464278@lid',
+        'source_id' => '77077489629',
+        'raw_jid' => '77077489629@s.whatsapp.net',
+        'canonical_jid' => '77077489629@s.whatsapp.net',
+        'lid_jid' => '129115340464278@lid',
+        'display_name' => 'Manual Alias',
+        'name' => 'Manual Alias',
+        'phone_number' => '+77077489629',
+        'last_provider_display_name' => 'Manual Alias',
+        'last_provider_display_name_recorded_at' => 1.minute.ago.iso8601
+      }
+    )
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077489629@s.whatsapp.net',
+        remoteLid: '129115340464278@lid',
+        pushName: 'Максим'
+      }
+    ).perform
+
+    expect(contact.reload.name).to eq('Manual Alias')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('Manual Alias')
+  end
+
   it 'falls back to the phone number when Evolution sends a generic reception name' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 
