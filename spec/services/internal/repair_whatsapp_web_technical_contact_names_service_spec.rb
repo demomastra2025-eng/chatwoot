@@ -14,7 +14,7 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
   describe '#perform' do
     let(:channel) { create(:channel_whatsapp_web) }
 
-    it 'replaces a lid-based technical name with the phone number' do
+    it 'repairs a technical lid-based name when a better local whatsapp profile name exists' do
       contact = create(
         :contact,
         account: channel.account,
@@ -36,15 +36,15 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
         inbox: channel.inbox,
         provider: 'whatsapp_web',
         source_id: '249262822686958@lid',
-        display_name: '249262822686958@lid',
+        display_name: 'Maxim',
         phone_number: '+77077064008',
         profile_data: {
           'identifier' => 'whatsapp_web:249262822686958@lid',
           'lid_jid' => '249262822686958@lid',
           'raw_jid' => '249262822686958@lid',
           'canonical_jid' => '249262822686958@lid',
-          'display_name' => '249262822686958@lid',
-          'name' => '249262822686958@lid',
+          'display_name' => 'Maxim',
+          'name' => 'Maxim',
           'phone_number' => '+77077064008'
         }
       )
@@ -52,16 +52,16 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
       repaired = described_class.new(account: channel.account).perform
 
       expect(repaired).to eq(1)
-      expect(contact.reload.name).to eq('+77077064008')
-      expect(profile.reload.display_name).to eq('+77077064008')
+      expect(contact.reload.name).to eq('Maxim')
+      expect(profile.reload.display_name).to eq('Maxim')
       expect(profile.profile_data).to include(
-        'display_name' => '+77077064008',
-        'name' => '+77077064008',
+        'display_name' => 'Maxim',
+        'name' => 'Maxim',
         'phone_number' => '+77077064008'
       )
     end
 
-    it 'replaces a digits-only technical name with the phone number' do
+    it 'does not fall back to the phone number when no trusted local human-readable name exists' do
       contact = create(
         :contact,
         account: channel.account,
@@ -73,8 +73,8 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
 
       repaired = described_class.new(account: channel.account).perform
 
-      expect(repaired).to eq(1)
-      expect(contact.reload.name).to eq('+77011332311')
+      expect(repaired).to eq(0)
+      expect(contact.reload.name).to eq('77011332311')
     end
 
     it 'does not overwrite a human-readable name' do
@@ -99,11 +99,11 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
       expect(contact.reload.name).to eq('Alice')
     end
 
-    it 'repairs a stale whatsapp channel profile even when the contact name is already normalized' do
+    it 'repairs a stale whatsapp channel profile even when the unicode human-readable name only survives in profile_data' do
       contact = create(
         :contact,
         account: channel.account,
-        name: '+77077064008',
+        name: '249262822686958@lid',
         phone_number: '+77077064008',
         identifier: 'whatsapp_web:249262822686958@lid',
         additional_attributes: {
@@ -129,7 +129,7 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
           'raw_jid' => '249262822686958@lid',
           'canonical_jid' => '249262822686958@lid',
           'display_name' => '249262822686958@lid',
-          'name' => '249262822686958@lid',
+          'name' => 'Максим',
           'phone_number' => '+77077064008'
         }
       )
@@ -137,8 +137,8 @@ RSpec.describe Internal::RepairWhatsappWebTechnicalContactNamesService do
       repaired = described_class.new(account: channel.account).perform
 
       expect(repaired).to eq(1)
-      expect(contact.reload.name).to eq('+77077064008')
-      expect(profile.reload.display_name).to eq('+77077064008')
+      expect(contact.reload.name).to eq('Максим')
+      expect(profile.reload.display_name).to eq('Максим')
     end
 
     it 'prefers a better whatsapp profile name over the phone number when repairing reception placeholders' do

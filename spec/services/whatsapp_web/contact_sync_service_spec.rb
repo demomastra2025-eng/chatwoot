@@ -188,6 +188,23 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox.contact.name).to eq('+15551234567')
   end
 
+  it 'keeps a human-readable unicode provider name instead of treating it as a placeholder' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077489629@s.whatsapp.net',
+        remoteLid: '129115340464278@lid',
+        pushName: 'Максим'
+      }
+    ).perform
+
+    expect(contact_inbox).to be_present
+    expect(contact_inbox.contact.name).to eq('Максим')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('Максим')
+  end
+
   it 'falls back to the phone number when Evolution sends a generic reception name' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 

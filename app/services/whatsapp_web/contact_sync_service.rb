@@ -211,16 +211,21 @@ class WhatsappWeb::ContactSyncService
   end
 
   def placeholder_display_name?(value)
-    normalized = normalized_display_name(value)
-    return true if normalized.blank?
+    raw_value = value.to_s.strip
+    return true if raw_value.blank?
+
+    normalized = normalized_display_name(raw_value)
     return true if %w[voce you].include?(normalized)
     return true if GENERIC_ROLE_DISPLAY_NAMES.include?(normalized)
 
-    normalized.gsub(/[^[:alnum:]]+/, '').blank?
+    raw_value.gsub(/[^\p{L}\p{N}]+/u, '').blank?
   end
 
   def normalized_display_name(value)
-    I18n.transliterate(value.to_s).strip.downcase
+    raw_value = value.to_s.strip
+    transliterated = I18n.transliterate(raw_value).to_s.strip
+
+    transliterated.presence&.downcase || raw_value.downcase
   end
 
   def should_replace_contact_name?(contact)

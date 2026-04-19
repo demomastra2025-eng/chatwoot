@@ -97,8 +97,8 @@ class Internal::RepairWhatsappWebTechnicalContactNamesService
     technical_contact_name?(contact) || placeholder_display_name?(contact.name)
   end
 
-  def technical_profile_name?(profile)
-    current_name = profile.display_name.to_s.strip
+  def technical_profile_name?(profile, value = nil)
+    current_name = value.to_s.strip.presence || profile.display_name.to_s.strip
     return false if current_name.blank?
 
     profile_phone_number = profile.phone_number.presence || profile.contact.phone_number
@@ -113,7 +113,7 @@ class Internal::RepairWhatsappWebTechnicalContactNamesService
   end
 
   def preferred_target_name(contact)
-    whatsapp_profile_display_name(contact).presence || contact.phone_number.to_s.presence
+    whatsapp_profile_display_name(contact).presence
   end
 
   def whatsapp_profile_display_name(contact)
@@ -121,13 +121,30 @@ class Internal::RepairWhatsappWebTechnicalContactNamesService
            .where(provider: 'whatsapp_web')
            .sort_by { |profile| [profile.last_synced_at || profile.updated_at, profile.id] }
            .reverse
-           .filter_map do |profile|
-      value = profile.display_name.to_s.strip
-      next if value.blank? || placeholder_display_name?(value) || technical_profile_name?(profile)
+           .flat_map { |profile| profile_display_name_candidates(profile) }
+           .filter_map do |candidate|
+      value = candidate[:value].to_s.strip
+      next if value.blank? || placeholder_display_name?(value) || technical_profile_name?(candidate[:profile], value)
 
       value
     end
-      .first
+           .uniq
+           .first
+  end
+
+  def profile_display_name_candidates(profile)
+    profile_payload = (profile.profile_data || {}).deep_stringify_keys
+
+    [
+      profile.display_name,
+      profile_payload['display_name'],
+      profile_payload['name']
+    ].map do |value|
+      {
+        profile: profile,
+        value: value
+      }
+    end
   end
 
   def identity_aliases_for(contact)
@@ -182,11 +199,20 @@ class Internal::RepairWhatsappWebTechnicalContactNamesService
   end
 
   def placeholder_display_name?(value)
-    normalized = I18n.transliterate(value.to_s).strip.downcase
-    return true if normalized.blank?
+    raw_value = value.to_s.strip
+    return true if raw_value.blank?
+
+    normalized = normalized_display_name(raw_value)
     return true if %w[voce you].include?(normalized)
     return true if GENERIC_ROLE_DISPLAY_NAMES.include?(normalized)
 
-    normalized.gsub(/[^[:alnum:]]+/, '').blank?
+    raw_value.gsub(/[^\p{L}\p{N}]+/u, '').blank?
+  end
+
+  def normalized_display_name(value)
+    raw_value = value.to_s.strip
+    transliterated = I18n.transliterate(raw_value).to_s.strip
+
+    transliterated.presence&.downcase || raw_value.downcase
   end
 end
