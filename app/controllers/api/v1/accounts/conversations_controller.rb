@@ -124,7 +124,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       conversation: @conversation,
       user: Current.user
     ).perform
-    head :ok
+    @conversation.reload
+    render :update_last_seen
   end
 
   def unread

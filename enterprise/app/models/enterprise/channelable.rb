@@ -1,6 +1,15 @@
 module Enterprise::Channelable
   extend ActiveSupport::Concern
 
+  WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS = %w[
+    connection_state
+    lifecycle_state
+    last_error
+    last_synced_at
+    qr_code
+    sync_state
+  ].freeze
+
   # Active support concern has `included` which changes the order of the method lookup chain
   # https://stackoverflow.com/q/40061982/3824876
   # manually prepend the instance methods to combat this
@@ -17,7 +26,7 @@ module Enterprise::Channelable
 
       auditable_id = inbox.id
       auditable_type = 'Inbox'
-      audited_changes = saved_changes.except('updated_at')
+      audited_changes = filtered_audited_changes
 
       return if audited_changes.blank?
 
@@ -40,6 +49,13 @@ module Enterprise::Channelable
 
       # if the only key is message_templates_last_updated, return true
       changes.key?('message_templates_last_updated')
+    end
+
+    def filtered_audited_changes
+      changes = saved_changes.except('updated_at')
+      return changes unless is_a?(::Channel::WhatsappWeb)
+
+      changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS)
     end
   end
 end

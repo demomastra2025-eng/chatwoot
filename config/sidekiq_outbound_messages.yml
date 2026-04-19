@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("OUTBOUND_MESSAGES_SIDEKIQ_CONCURRENCY", 3) %>
+:timeout: 25
+:max_retries: 3
+
+:queues:
+  - outbound_messages
+
+production:
+  :concurrency: <%= ENV.fetch("OUTBOUND_MESSAGES_SIDEKIQ_CONCURRENCY", 3) %>
+staging:
+  :concurrency: <%= ENV.fetch("OUTBOUND_MESSAGES_SIDEKIQ_CONCURRENCY", 3) %>

@@ -27,9 +27,9 @@ class Integrations::Medelement::Client
       timeout: REQUEST_TIMEOUT
     )
 
-    return [] if response.code.to_i == 404 && response.body.to_s.include?(EMPTY_RECEPTIONS_MESSAGE)
-
     parsed_response = response.parsed_response
+    return [] if empty_receptions_response?(response, parsed_response)
+
     return Array(parsed_response['receptions']) if response.success?
 
     raise ApiError, "Medelement receptions request failed: HTTP #{response.code} #{parsed_response}"
@@ -80,5 +80,17 @@ class Integrations::Medelement::Client
       'Accept' => 'application/json',
       'X-Integrator-Key' => configuration.integrator_key
     }
+  end
+
+  def empty_receptions_response?(response, parsed_response)
+    return false unless response.code.to_i == 404
+
+    messages = [
+      response.body.to_s,
+      parsed_response.is_a?(Hash) ? parsed_response['message'] : nil,
+      parsed_response
+    ]
+
+    messages.any? { |message| message.to_s.include?(EMPTY_RECEPTIONS_MESSAGE) }
   end
 end

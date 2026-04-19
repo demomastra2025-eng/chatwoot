@@ -729,6 +729,19 @@ RSpec.describe 'Conversations API', type: :request do
         expect(conversation.reload.agent_last_seen_at).not_to be_nil
       end
 
+      it 'returns the updated conversation payload' do
+        conversation.update!(agent_last_seen_at: nil)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/update_last_seen",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['id']).to eq(conversation.display_id)
+        expect(response.parsed_body['agent_last_seen_at']).to eq(conversation.reload.agent_last_seen_at.to_i)
+        expect(response.parsed_body['unread_count']).to eq(conversation.unread_incoming_messages.count)
+      end
+
       it 'updates assignee last seen' do
         conversation.update!(assignee_id: agent.id, agent_last_seen_at: nil)
 

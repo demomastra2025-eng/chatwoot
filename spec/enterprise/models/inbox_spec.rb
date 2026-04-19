@@ -146,4 +146,50 @@ RSpec.describe Inbox do
       end
     end
   end
+
+  describe 'audit log with whatsapp web channel' do
+    around do |example|
+      with_modified_env(
+        'EVOLUTION_API_URL' => 'https://evolution.example.com',
+        'EVOLUTION_API_KEY' => 'test-api-key',
+        'FRONTEND_URL' => 'https://app.example.com'
+      ) do
+        example.run
+      end
+    end
+
+    let(:channel) { create(:channel_whatsapp_web) }
+    let(:inbox) { channel.inbox }
+
+    context 'when only technical runtime fields are updated' do
+      it 'does not create an audit log entry' do
+        channel.update!(
+          last_synced_at: Time.current,
+          sync_state: channel.sync_state_payload.merge('last_incremental_sync_at' => Time.current.iso8601),
+          connection_state: 'open',
+          lifecycle_state: 'connected'
+        )
+
+        expect(Audited::Audit.where(auditable_type: 'Inbox', auditable_id: inbox.id, action: 'update').count).to eq(0)
+      end
+    end
+
+    context 'when operator settings are updated alongside runtime fields' do
+      it 'creates an audit log entry with only the meaningful settings changes' do
+        previous_import_contacts = channel.import_contacts
+
+        channel.update!(
+          import_contacts: !previous_import_contacts,
+          last_synced_at: Time.current,
+          sync_state: channel.sync_state_payload.merge('last_incremental_sync_at' => Time.current.iso8601)
+        )
+
+        audit_log = Audited::Audit.where(auditable_type: 'Inbox', auditable_id: inbox.id, action: 'update').last
+
+        expect(audit_log).to be_present
+        expect(audit_log.audited_changes).to include('import_contacts' => [previous_import_contacts, !previous_import_contacts])
+        expect(audit_log.audited_changes.keys).not_to include('last_synced_at', 'sync_state')
+      end
+    end
+  end
 end

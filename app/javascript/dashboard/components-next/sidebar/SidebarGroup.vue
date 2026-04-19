@@ -174,6 +174,12 @@ const paramsMatch = child => {
     const routeParam = String(routeParams[key] || '');
     const routeParamAlias = routeParams[inboxIdAliases[key]] || '';
 
+    if (key === 'navigationPath') {
+      return (
+        childParam === String(route.name || '') || childParam === routeParam
+      );
+    }
+
     return (
       childParam === routeParam ||
       (routeParamAlias && childParam === String(routeParamAlias))

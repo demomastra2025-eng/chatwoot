@@ -35,6 +35,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     end
   end
 
+  class UnroutableRecipientError < StandardError; end
+
   def provision!
     existing_instance = instance_exists?
 
@@ -497,7 +499,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def restart_runtime_session_after_reconnect?
-    channel.connection_state.in?(%w[open connecting reconnecting unknown])
+    channel.connection_state.in?(%w[open connecting unknown])
   end
 
   def restart_runtime_session!(force_refresh: false)
@@ -660,10 +662,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def recipient_for(message)
-    source_id = message.conversation.contact_inbox.source_id.to_s
-    return source_id if source_id.include?('@')
+    source_id = message.conversation.contact_inbox.source_id.to_s.strip
+    return source_id if source_id.present? && !source_id.include?('@')
+    return source_id if source_id.include?('@') && !source_id.end_with?('@lid')
 
-    source_id.gsub(/\D/, '')
+    remote_jid = resolved_remote_jid_for(message)
+    return remote_jid.split('@').first if remote_jid.end_with?('@s.whatsapp.net')
+
+    remote_jid
   end
 
   def quoted_payload(message)
@@ -679,10 +685,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def evolution_remote_jid_for(message)
-    source_id = message.conversation.contact_inbox.source_id.to_s
-    return source_id if source_id.include?('@')
-
-    "#{source_id.gsub(/\D/, '')}@s.whatsapp.net"
+    resolved_remote_jid_for(message)
   end
 
   def media_type_for(attachment)
@@ -716,6 +719,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     return if normalized_value.blank?
 
     "#{normalized_value}@s.whatsapp.net"
+  end
+
+  def resolved_remote_jid_for(message)
+    remote_jid = normalized_remote_jid(message_remote_jid(message))
+    return remote_jid if remote_jid.present?
+
+    raise UnroutableRecipientError,
+          "WhatsApp Web recipient is still a provisional @lid identity for conversation #{message.conversation_id}"
   end
 
   def extract_from_me(payload)

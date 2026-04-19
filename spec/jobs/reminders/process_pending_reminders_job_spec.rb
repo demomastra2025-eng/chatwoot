@@ -7,7 +7,7 @@ RSpec.describe Reminders::ProcessPendingRemindersJob do
 
       expect do
         described_class.perform_now
-      end.to have_enqueued_job(Reminders::ExecuteReminderJob).with(reminder.id)
+      end.to have_enqueued_job(Reminders::ExecuteReminderJob).with(reminder.id).on_queue('reminders')
 
       expect(reminder.reload).to be_processing
       expect(reminder.processing_started_at).to be_present

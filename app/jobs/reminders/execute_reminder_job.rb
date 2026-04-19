@@ -1,5 +1,5 @@
 class Reminders::ExecuteReminderJob < ApplicationJob
-  queue_as :high
+  queue_as :reminders
 
   discard_on ActiveRecord::RecordNotFound
 

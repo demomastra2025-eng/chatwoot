@@ -122,6 +122,42 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(resolved_contact_inbox.contact.name).to eq('+77077064008')
   end
 
+  it 'keeps the phone-based name and channel profile display name when later lid-only events arrive' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '249262822686958@lid',
+        pushName: '249262822686958'
+      }
+    ).perform
+
+    resolved_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77077064008@s.whatsapp.net',
+        remoteLid: '249262822686958@lid',
+        pushName: '249262822686958'
+      }
+    ).perform
+
+    expect(resolved_contact_inbox.contact.reload.name).to eq('+77077064008')
+    expect(resolved_contact_inbox.reload.channel_profile.display_name).to eq('+77077064008')
+
+    lid_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '249262822686958@lid',
+        pushName: '249262822686958'
+      }
+    ).perform
+
+    expect(lid_contact_inbox.contact_id).to eq(resolved_contact_inbox.contact_id)
+    expect(lid_contact_inbox.contact.reload.name).to eq('+77077064008')
+    expect(lid_contact_inbox.reload.channel_profile.display_name).to eq('+77077064008')
+  end
+
   it 'skips invalid zero phone jids' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 
@@ -150,6 +186,48 @@ RSpec.describe WhatsappWeb::ContactSyncService do
 
     expect(contact_inbox).to be_present
     expect(contact_inbox.contact.name).to eq('+15551234567')
+  end
+
+  it 'falls back to the phone number when Evolution sends a generic reception name' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77072271414@s.whatsapp.net',
+        remoteLid: '134961562669211@lid',
+        pushName: 'RECEPTION'
+      }
+    ).perform
+
+    expect(contact_inbox).to be_present
+    expect(contact_inbox.contact.name).to eq('+77072271414')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('+77072271414')
+  end
+
+  it 'replaces a phone fallback with a better provider name when it arrives later' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77072271414@s.whatsapp.net',
+        remoteLid: '134961562669211@lid',
+        pushName: 'RECEPTION'
+      }
+    ).perform
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '77072271414@s.whatsapp.net',
+        remoteLid: '134961562669211@lid',
+        pushName: 'VSETUT KAZAKHSTAN'
+      }
+    ).perform
+
+    expect(contact_inbox.contact.reload.name).to eq('VSETUT KAZAKHSTAN')
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('VSETUT KAZAKHSTAN')
   end
 
   it 'replaces an existing placeholder self-name with the phone number' do
@@ -217,7 +295,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     builder = instance_double(ContactInboxWithContactBuilder)
     allow(ContactInboxWithContactBuilder).to receive(:new).and_return(builder)
     allow(builder).to receive(:perform).and_raise(invalid_error)
- 
+
     contact_inbox = described_class.new(
       channel: channel,
       contact_payload: {

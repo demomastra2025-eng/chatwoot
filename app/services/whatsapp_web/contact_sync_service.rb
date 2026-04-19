@@ -1,4 +1,6 @@
 class WhatsappWeb::ContactSyncService
+  GENERIC_ROLE_DISPLAY_NAMES = %w[reception].freeze
+
   pattr_initialize [:channel!, :contact_payload!]
 
   def perform
@@ -59,8 +61,12 @@ class WhatsappWeb::ContactSyncService
     "+#{source_id}"
   end
 
-  def display_name
-    value = preferred_display_name || phone_number || source_id
+  def resolved_phone_number(contact = nil)
+    phone_number.presence || contact&.phone_number.presence
+  end
+
+  def display_name(contact = nil)
+    value = preferred_display_name || resolved_phone_number(contact) || source_id
     value.to_s.truncate(100)
   end
 
@@ -98,9 +104,7 @@ class WhatsappWeb::ContactSyncService
     updates[:phone_number] = phone_number if contact.phone_number.blank? && phone_number.present?
     updates[:identifier] = contact_identifier if should_update_contact_identifier?(contact)
 
-    if should_replace_contact_name?(contact)
-      updates[:name] = display_name
-    end
+    updates[:name] = display_name(contact) if should_replace_contact_name?(contact)
 
     return contact if updates.blank?
 
@@ -136,10 +140,10 @@ class WhatsappWeb::ContactSyncService
     Contacts::ChannelProfileUpsertService.new(
       contact_inbox: contact_inbox,
       provider: 'whatsapp_web',
-      profile_attributes: whatsapp_channel_profile.merge(
-        display_name: display_name,
+      profile_attributes: whatsapp_channel_profile(contact_inbox.contact).merge(
+        display_name: display_name(contact_inbox.contact),
         avatar_url: profile_pic_url,
-        profile_data: whatsapp_channel_profile
+        profile_data: whatsapp_channel_profile(contact_inbox.contact)
       )
     ).perform
   end
@@ -147,14 +151,14 @@ class WhatsappWeb::ContactSyncService
   def merged_additional_attributes(contact, current_attributes)
     merged_attributes = current_attributes.deep_dup
     merged_attributes.merge!(additional_attributes.deep_stringify_keys) if whatsapp_primary_contact?(contact)
-    merged_attributes['channel_profiles'] = merged_channel_profiles(current_attributes)
+    merged_attributes['channel_profiles'] = merged_channel_profiles(current_attributes, contact)
     merged_attributes
   end
 
-  def merged_channel_profiles(current_attributes)
+  def merged_channel_profiles(current_attributes, contact)
     channel_profiles = (current_attributes['channel_profiles'] || {}).deep_stringify_keys
     whatsapp_profiles = (channel_profiles['whatsapp_web'] || {}).deep_stringify_keys
-    whatsapp_profiles[whatsapp_profile_key] = whatsapp_channel_profile
+    whatsapp_profiles[whatsapp_profile_key] = whatsapp_channel_profile(contact)
     channel_profiles.merge('whatsapp_web' => whatsapp_profiles)
   end
 
@@ -162,14 +166,14 @@ class WhatsappWeb::ContactSyncService
     @whatsapp_profile_key ||= contact_identifier.presence || canonical_remote_jid.presence || source_id.to_s
   end
 
-  def whatsapp_channel_profile
+  def whatsapp_channel_profile(contact = nil)
     {
       identifier: contact_identifier,
       source_id: source_id.to_s,
       canonical_jid: canonical_remote_jid,
       raw_jid: raw_remote_jid,
       lid_jid: lid_jid,
-      phone_number: phone_number,
+      phone_number: resolved_phone_number(contact),
       provider: 'whatsapp_web',
       profile_pic_url: profile_pic_url,
       provisional_whatsapp_identity: lid_only_identity?
@@ -207,20 +211,31 @@ class WhatsappWeb::ContactSyncService
   end
 
   def placeholder_display_name?(value)
-    normalized = I18n.transliterate(value.to_s).strip.downcase
-    normalized.blank? || %w[voce you].include?(normalized)
+    normalized = normalized_display_name(value)
+    return true if normalized.blank?
+    return true if %w[voce you].include?(normalized)
+    return true if GENERIC_ROLE_DISPLAY_NAMES.include?(normalized)
+
+    normalized.gsub(/[^[:alnum:]]+/, '').blank?
+  end
+
+  def normalized_display_name(value)
+    I18n.transliterate(value.to_s).strip.downcase
   end
 
   def should_replace_contact_name?(contact)
-    return false if display_name.blank?
+    current_display_name = display_name(contact)
+    current_phone_number = resolved_phone_number(contact)
+
+    return false if current_display_name.blank?
     return true if contact.name.blank?
     return true if placeholder_display_name?(contact.name)
     return true if technical_identity_name?(contact.name, contact: contact)
     return true if contact.name == contact.phone_number
-    return true if phone_number.present? && contact.name == phone_number
+    return true if current_phone_number.present? && contact.name == current_phone_number
 
     normalized_name = contact.name.to_s.gsub(/\D/, '')
-    normalized_phone = phone_number.to_s.gsub(/\D/, '')
+    normalized_phone = current_phone_number.to_s.gsub(/\D/, '')
     normalized_name == normalized_phone
   end
 
@@ -243,11 +258,11 @@ class WhatsappWeb::ContactSyncService
     if contact.present?
       attributes = (contact.additional_attributes || {}).deep_stringify_keys
       aliases.concat([
-        attributes['raw_jid'],
-        attributes['canonical_jid'],
-        attributes['lid_jid'],
-        contact.identifier
-      ])
+                       attributes['raw_jid'],
+                       attributes['canonical_jid'],
+                       attributes['lid_jid'],
+                       contact.identifier
+                     ])
     end
 
     aliases
@@ -263,9 +278,7 @@ class WhatsappWeb::ContactSyncService
     aliases = [normalized]
     aliases << normalized.delete_prefix('whatsapp_web:')
 
-    if normalized.include?('@')
-      aliases << normalized.split('@').first
-    end
+    aliases << normalized.split('@').first if normalized.include?('@')
 
     aliases.uniq
   end
@@ -280,8 +293,8 @@ class WhatsappWeb::ContactSyncService
 
   def lid_jid
     @lid_jid ||= [contact_payload[:remoteLid], raw_remote_jid, canonical_remote_jid]
-      .filter_map { |value| value.to_s.presence }
-      .find { |jid| jid.end_with?('@lid') }
+                 .filter_map { |value| value.to_s.presence }
+                 .find { |jid| jid.end_with?('@lid') }
   end
 
   def lid_only_identity?
@@ -361,8 +374,8 @@ class WhatsappWeb::ContactSyncService
     return if phone_number.blank?
 
     channel.inbox.account.contacts
-      .where.not(id: excluding_contact_id)
-      .find_by(phone_number: phone_number)
+           .where.not(id: excluding_contact_id)
+           .find_by(phone_number: phone_number)
   end
 
   def merge_contact_records!(source_contact:, target_contact:)
@@ -382,7 +395,7 @@ class WhatsappWeb::ContactSyncService
       klass = class_name.safe_constantize
       next if klass.blank?
 
-      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, updated_at: now)
+      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, :updated_at => now)
     end
 
     source_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
@@ -390,11 +403,11 @@ class WhatsappWeb::ContactSyncService
     merged_additional_attributes = source_attributes.merge(target_attributes)
 
     merged_channel_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
-      .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
-        old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
-        new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
-        old_hash.merge(new_hash)
-      end
+                                                                           .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
+      old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
+      new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
+      old_hash.merge(new_hash)
+    end
     merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
 
     source_contact.update_columns(identifier: nil, updated_at: now)
@@ -414,7 +427,7 @@ class WhatsappWeb::ContactSyncService
   end
 
   def preferred_contact_name(target_contact, source_contact)
-    return display_name if should_replace_contact_name?(target_contact)
+    return display_name(target_contact) if should_replace_contact_name?(target_contact)
     return source_contact.name if target_contact.name.blank? && source_contact.name.present?
 
     target_contact.name

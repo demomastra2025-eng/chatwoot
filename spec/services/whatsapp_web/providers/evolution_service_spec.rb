@@ -510,5 +510,41 @@ describe WhatsappWeb::Providers::EvolutionService do
 
       expect(service.send_message(message)).to eq('provider-message-id')
     end
+
+    it 'rejects lid-only provisional recipients before calling Evolution' do
+      service = described_class.new(channel: channel)
+      contact = create(
+        :contact,
+        account: channel.account,
+        additional_attributes: {
+          'lid_jid' => '143907392331785@lid',
+          'raw_jid' => '143907392331785@lid',
+          'canonical_jid' => '143907392331785@lid',
+          'provisional_whatsapp_identity' => true
+        }
+      )
+      contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '143907392331785@lid')
+      conversation = create(
+        :conversation,
+        account: channel.account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+      message = create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing
+      )
+
+      expect(service).not_to receive(:request)
+
+      expect { service.send_message(message) }.to raise_error(
+        described_class::UnroutableRecipientError,
+        /provisional @lid identity/
+      )
+    end
   end
 end
