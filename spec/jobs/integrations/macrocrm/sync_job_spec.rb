@@ -37,4 +37,18 @@ RSpec.describe Integrations::Macrocrm::SyncJob do
 
     described_class.perform_now(hook.id, 'message.created', message.id)
   end
+
+  it 'uses the lock-specific retry policy for lock acquisition failures' do
+    allow(lock_manager).to receive(:lock).and_return(false)
+
+    freeze_time do
+      clear_enqueued_jobs
+
+      expect do
+        described_class.perform_now(hook.id, 'message.created', message.id)
+      end.to have_enqueued_job(described_class).with(hook.id, 'message.created', message.id).on_queue('medium')
+
+      expect(Time.zone.at(enqueued_jobs.last[:at])).to be_within(1.second).of(5.seconds.from_now)
+    end
+  end
 end

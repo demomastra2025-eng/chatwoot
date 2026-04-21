@@ -49,10 +49,15 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   end
 
   def tool_definition
-    definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}
+    definition = registry_definition ? registry_definition.to_h : {}
     definition[:id] ||= name
     definition[:title] ||= name.to_s.humanize
     definition
+  end
+
+  def registry_definition
+    Captain::ToolRegistry.definition_for_class(self.class, scope_name: tool_scope_name) ||
+      Captain::ToolRegistry.definition_for(name)
   end
 
   def tool_runtime_context

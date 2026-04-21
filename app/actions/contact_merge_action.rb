@@ -32,23 +32,39 @@ class ContactMergeAction
   end
 
   def merge_conversations
-    Conversation.where(contact_id: @mergee_contact.id).update(contact_id: @base_contact.id)
+    bulk_reassign(
+      Conversation.where(contact_id: @mergee_contact.id),
+      contact_id: @base_contact.id
+    )
   end
 
   def merge_contact_notes
-    Note.where(contact_id: @mergee_contact.id, account_id: @mergee_contact.account_id).update(contact_id: @base_contact.id)
+    bulk_reassign(
+      Note.where(contact_id: @mergee_contact.id, account_id: @mergee_contact.account_id),
+      contact_id: @base_contact.id
+    )
   end
 
   def merge_messages
-    Message.where(sender: @mergee_contact).update(sender: @base_contact)
+    bulk_reassign(
+      Message.where(sender: @mergee_contact),
+      sender_id: @base_contact.id,
+      sender_type: @base_contact.class.base_class.name
+    )
   end
 
   def merge_contact_inboxes
-    ContactInbox.where(contact_id: @mergee_contact.id).update(contact_id: @base_contact.id)
+    bulk_reassign(
+      ContactInbox.where(contact_id: @mergee_contact.id),
+      contact_id: @base_contact.id
+    )
   end
 
   def merge_contact_channel_profiles
-    ContactChannelProfile.where(contact_id: @mergee_contact.id).update(contact_id: @base_contact.id)
+    bulk_reassign(
+      ContactChannelProfile.where(contact_id: @mergee_contact.id),
+      contact_id: @base_contact.id
+    )
   end
 
   def merge_and_remove_mergee_contact
@@ -63,5 +79,13 @@ class ContactMergeAction
     Rails.configuration.dispatcher.dispatch(CONTACT_MERGED, Time.zone.now, contact: @base_contact,
                                                                            tokens: [@base_contact.contact_inboxes.filter_map(&:pubsub_token)])
     @base_contact.update!(merged_attributes)
+  end
+
+  def bulk_reassign(relation, attributes)
+    # Bulk FK remaps are the hot path for large merges; row-by-row updates
+    # trigger callbacks and can blow through the request timeout.
+    # rubocop:disable Rails/SkipsModelValidations
+    relation.update_all(attributes.merge(updated_at: Time.current))
+    # rubocop:enable Rails/SkipsModelValidations
   end
 end

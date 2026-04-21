@@ -5,32 +5,23 @@ class Conversations::MarkReadService
   end
 
   def perform
-    whatsapp_web_messages = unread_incoming_messages_for_whatsapp_web_sync
-    telegram_messages = unread_incoming_messages_for_telegram_sync
-    telegram_personal_messages = unread_incoming_messages_for_telegram_personal_sync
-
-    if assignee? && @conversation.assignee_unread_messages.any?
+    if assignee? && @conversation.assignee_unread_messages.exists?
+      sync_payload = unread_message_sync_payload
       update_last_seen_on_conversation(Time.current.utc, true)
-      sync_whatsapp_web_messages_read!(whatsapp_web_messages)
-      sync_telegram_messages_read!(telegram_messages)
-      sync_telegram_personal_messages_read!(telegram_personal_messages)
+      sync_mark_read_receipts(sync_payload)
       return
     end
 
-    if !assignee? && @conversation.unread_messages.any?
+    if !assignee? && @conversation.unread_messages.exists?
+      sync_payload = unread_message_sync_payload
       update_last_seen_on_conversation(Time.current.utc, false)
-      sync_whatsapp_web_messages_read!(whatsapp_web_messages)
-      sync_telegram_messages_read!(telegram_messages)
-      sync_telegram_personal_messages_read!(telegram_personal_messages)
+      sync_mark_read_receipts(sync_payload)
       return
     end
 
     return unless should_update_last_seen?
 
     update_last_seen_on_conversation(Time.current.utc, assignee?)
-    sync_whatsapp_web_messages_read!(whatsapp_web_messages)
-    sync_telegram_messages_read!(telegram_messages)
-    sync_telegram_personal_messages_read!(telegram_personal_messages)
   end
 
   private
@@ -47,35 +38,36 @@ class Conversations::MarkReadService
     agent_needs_update || assignee_needs_update
   end
 
-  def unread_incoming_messages_for_whatsapp_web_sync
-    return [] unless @conversation.inbox.channel.is_a?(Channel::WhatsappWeb)
+  def unread_message_sync_payload
+    channel = @conversation.inbox.channel
 
+    case channel
+    when Channel::WhatsappWeb
+      { whatsapp_web_messages: unread_incoming_messages_for_sync(:source_id) }
+    when Channel::Telegram
+      return {} if @conversation.additional_attributes['business_connection_id'].blank?
+
+      { telegram_messages: unread_incoming_messages_for_sync(:source_id) }
+    when Channel::TelegramPersonal
+      { telegram_personal_messages: unread_incoming_messages_for_sync(:source_id, :content_attributes) }
+    else
+      {}
+    end
+  end
+
+  def unread_incoming_messages_for_sync(*columns)
     @conversation.unread_messages
                  .where(account_id: @conversation.account_id)
                  .incoming
                  .where.not(source_id: [nil, ''])
+                 .select(:id, *columns)
                  .to_a
   end
 
-  def unread_incoming_messages_for_telegram_sync
-    return [] unless @conversation.inbox.channel.is_a?(Channel::Telegram)
-    return [] if @conversation.additional_attributes['business_connection_id'].blank?
-
-    @conversation.unread_messages
-                 .where(account_id: @conversation.account_id)
-                 .incoming
-                 .where.not(source_id: [nil, ''])
-                 .to_a
-  end
-
-  def unread_incoming_messages_for_telegram_personal_sync
-    return [] unless @conversation.inbox.channel.is_a?(Channel::TelegramPersonal)
-
-    @conversation.unread_messages
-                 .where(account_id: @conversation.account_id)
-                 .incoming
-                 .where.not(source_id: [nil, ''])
-                 .to_a
+  def sync_mark_read_receipts(sync_payload)
+    sync_whatsapp_web_messages_read!(sync_payload[:whatsapp_web_messages])
+    sync_telegram_messages_read!(sync_payload[:telegram_messages])
+    sync_telegram_personal_messages_read!(sync_payload[:telegram_personal_messages])
   end
 
   def sync_whatsapp_web_messages_read!(messages)

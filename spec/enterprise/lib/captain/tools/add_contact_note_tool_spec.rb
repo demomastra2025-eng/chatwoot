@@ -113,4 +113,14 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
       expect(tool.active?).to be true
     end
   end
+
+  describe 'registry metadata' do
+    it 'resolves the registered tool definition from the tool class' do
+      definition = tool.send(:tool_definition)
+
+      expect(definition[:id]).to eq('add_contact_note')
+      expect(definition[:capability_tool]).to be(true)
+      expect(definition[:required_permissions]).to eq(['contact_manage'])
+    end
+  end
 end

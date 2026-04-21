@@ -44,11 +44,16 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   end
 
   def tool_definition
-    definition = Captain::ToolRegistry.definition_for(name)&.to_h || {}
+    definition = registry_definition ? registry_definition.to_h : {}
     definition[:id] ||= name
     definition[:title] ||= name.to_s.humanize
     definition[:required_permissions] = permissions if definition[:required_permissions].blank? && permissions.present?
     definition
+  end
+
+  def registry_definition
+    Captain::ToolRegistry.definition_for_class(self.class, scope_name: tool_scope_name) ||
+      Captain::ToolRegistry.definition_for(name)
   end
 
   def audit_tool_execution(arguments:, result: nil, error: nil, runtime_context: {})

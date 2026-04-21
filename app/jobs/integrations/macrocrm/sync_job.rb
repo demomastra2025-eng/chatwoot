@@ -2,8 +2,8 @@ class Integrations::Macrocrm::SyncJob < MutexApplicationJob
   queue_as :medium
   LOCK_TIMEOUT = 30.seconds
 
-  retry_on LockAcquisitionError, wait: 5.seconds, attempts: 12
   retry_on StandardError, wait: 10.seconds, attempts: 3
+  retry_on LockAcquisitionError, wait: 5.seconds, attempts: 12
   discard_on ActiveRecord::RecordNotFound
 
   def perform(hook_id, event_name, message_id)
