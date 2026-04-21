@@ -43,6 +43,13 @@
 # rubocop:enable Layout/LineLength
 
 class Contact < ApplicationRecord
+  DISPLAY_PREFERENCES_KEY = 'display_preferences'.freeze
+  PRIMARY_NAME_SOURCE_KEY = 'primary_name_source'.freeze
+  PRIMARY_AVATAR_SOURCE_KEY = 'primary_avatar_source'.freeze
+  DISPLAY_SOURCE_KIND_MANUAL = 'manual'.freeze
+  DISPLAY_SOURCE_KIND_CONTACT_AVATAR = 'contact_avatar'.freeze
+  DISPLAY_SOURCE_KIND_CHANNEL_PROFILE = 'channel_profile'.freeze
+
   include Avatarable
   include AvailabilityStatusable
   include Labelable
@@ -162,7 +169,7 @@ class Contact < ApplicationRecord
       identifier: identifier,
       name: name,
       phone_number: phone_number,
-      thumbnail: avatar_url,
+      thumbnail: resolved_avatar_url,
       blocked: blocked,
       type: 'contact'
     }
@@ -174,14 +181,14 @@ class Contact < ApplicationRecord
     {
       account: account.webhook_data,
       additional_attributes: additional_attributes,
-      avatar: avatar_url,
+      avatar: resolved_avatar_url,
       custom_attributes: custom_attributes,
       email: email,
       id: id,
       identifier: identifier,
       name: name,
       phone_number: phone_number,
-      thumbnail: avatar_url,
+      thumbnail: resolved_avatar_url,
       blocked: blocked
     }
   end
@@ -190,6 +197,87 @@ class Contact < ApplicationRecord
     return where(contact_type: 'lead') if use_crm_v2
 
     where("contacts.email <> '' OR contacts.phone_number <> '' OR contacts.identifier <> ''")
+  end
+
+  def display_preferences
+    (additional_attributes || {}).with_indifferent_access[DISPLAY_PREFERENCES_KEY].to_h.deep_stringify_keys
+  end
+
+  def primary_name_source
+    display_preferences[PRIMARY_NAME_SOURCE_KEY].to_h.deep_stringify_keys
+  end
+
+  def primary_avatar_source
+    display_preferences[PRIMARY_AVATAR_SOURCE_KEY].to_h.deep_stringify_keys
+  end
+
+  def resolved_primary_name_source
+    resolve_display_source(primary_name_source) || inferred_primary_name_source
+  end
+
+  def resolved_primary_avatar_source
+    resolve_display_source(primary_avatar_source) || inferred_primary_avatar_source
+  end
+
+  def display_source_for_contact_inbox(contact_inbox, kind: DISPLAY_SOURCE_KIND_CHANNEL_PROFILE)
+    return if contact_inbox.blank?
+
+    profile = channel_profile_for(contact_inbox)
+    {
+      'kind' => kind,
+      'contact_inbox_id' => contact_inbox.id,
+      'inbox_id' => contact_inbox.inbox_id,
+      'channel_type' => contact_inbox.inbox&.channel_type,
+      'provider' => profile&.provider.presence || contact_inbox.inbox&.channel_type.to_s.demodulize.underscore,
+      'source_id' => contact_inbox.source_id,
+      'identifier' => profile&.identifier
+    }.compact
+  end
+
+  def merge_display_source(additional_attributes:, key:, source:)
+    attrs = (additional_attributes || {}).deep_stringify_keys
+    next_source = source.to_h.deep_stringify_keys
+    return attrs if next_source.blank?
+
+    prefs = (attrs[DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
+    attrs.merge(DISPLAY_PREFERENCES_KEY => prefs.merge(key => next_source))
+  end
+
+  def name_updates_allowed_for?(contact_inbox:, replaceable_current_name:)
+    return true if replaceable_current_name
+
+    source = resolve_display_source(primary_name_source)
+    return display_source_matches_contact_inbox?(source, contact_inbox) if source.present?
+
+    false
+  end
+
+  def avatar_updates_allowed_for?(contact_inbox:)
+    source = resolve_display_source(primary_avatar_source)
+    return display_source_matches_contact_inbox?(source, contact_inbox) if source.present?
+
+    !linked_to_other_channel_type?(contact_inbox)
+  end
+
+  def resolved_avatar_url
+    explicit_source = resolve_display_source(primary_avatar_source)
+    explicit_avatar = avatar_url_from_source(explicit_source)
+    return explicit_avatar if explicit_avatar.present?
+
+    current_avatar = attached_avatar_url
+    return current_avatar if current_avatar.present?
+
+    name_avatar = avatar_url_from_source(resolve_display_source(primary_name_source))
+    return name_avatar if name_avatar.present?
+
+    fallback_avatar = latest_avatar_profile&.avatar_url.to_s
+    return fallback_avatar if fallback_avatar.present?
+
+    ''
+  end
+
+  def contact_avatar_url
+    attached_avatar_url
   end
 
   def discard_invalid_attrs
@@ -275,6 +363,115 @@ class Contact < ApplicationRecord
     legacy_country_code = nil unless legacy_country_code.match?(/\A[a-z]{2}\z/i)
 
     country_code.presence || additional_attributes_country_code || legacy_country_code
+  end
+
+  def resolve_display_source(source)
+    candidate = source.to_h.deep_stringify_keys
+    return if candidate.blank?
+
+    kind = candidate['kind'].to_s
+    return candidate if kind == DISPLAY_SOURCE_KIND_MANUAL
+    return candidate if kind == DISPLAY_SOURCE_KIND_CONTACT_AVATAR && attached_avatar_url.present?
+    return candidate if kind == DISPLAY_SOURCE_KIND_CHANNEL_PROFILE && channel_profile_for_display_source(candidate).present?
+
+    nil
+  end
+
+  def inferred_primary_name_source
+    normalized_name = name.to_s.strip
+    return if normalized_name.blank?
+
+    profile = sorted_channel_profiles.find do |channel_profile|
+      channel_profile.display_name.to_s.strip == normalized_name
+    end
+
+    display_source_for_channel_profile(profile)
+  end
+
+  def inferred_primary_avatar_source
+    return({ 'kind' => DISPLAY_SOURCE_KIND_CONTACT_AVATAR }) if attached_avatar_url.present?
+
+    profile = latest_avatar_profile
+    display_source_for_channel_profile(profile)
+  end
+
+  def avatar_url_from_source(source)
+    return '' if source.blank?
+
+    case source['kind']
+    when DISPLAY_SOURCE_KIND_CONTACT_AVATAR
+      attached_avatar_url
+    when DISPLAY_SOURCE_KIND_CHANNEL_PROFILE
+      channel_profile_for_display_source(source)&.avatar_url.to_s
+    else
+      ''
+    end
+  end
+
+  def attached_avatar_url
+    return '' unless avatar.attached? && avatar.representable?
+
+    url_for(avatar.representation(resize_to_fill: [250, nil]))
+  end
+
+  def latest_avatar_profile
+    sorted_channel_profiles.find { |profile| profile.avatar_url.present? }
+  end
+
+  def sorted_channel_profiles
+    @sorted_channel_profiles ||= contact_channel_profiles.to_a.sort_by do |profile|
+      [profile.last_synced_at || profile.updated_at || Time.zone.at(0), profile.id]
+    end.reverse
+  end
+
+  def display_source_for_channel_profile(profile)
+    return if profile.blank?
+
+    {
+      'kind' => DISPLAY_SOURCE_KIND_CHANNEL_PROFILE,
+      'contact_inbox_id' => profile.contact_inbox_id,
+      'inbox_id' => profile.inbox_id,
+      'channel_type' => profile.channel_type,
+      'provider' => profile.provider,
+      'source_id' => profile.source_id,
+      'identifier' => profile.identifier
+    }.compact
+  end
+
+  def channel_profile_for_display_source(source)
+    return if source.blank?
+
+    source = source.to_h.deep_stringify_keys
+    return unless source['kind'] == DISPLAY_SOURCE_KIND_CHANNEL_PROFILE
+
+    return contact_channel_profiles.find_by(contact_inbox_id: source['contact_inbox_id']) if source['contact_inbox_id'].present?
+
+    if source['identifier'].present?
+      profile = contact_channel_profiles.find_by(identifier: source['identifier'])
+      return profile if profile.present?
+    end
+
+    return if source['source_id'].blank?
+
+    scope = contact_channel_profiles.where(source_id: source['source_id'])
+    scope = scope.where(provider: source['provider']) if source['provider'].present?
+    scope.order(last_synced_at: :desc, updated_at: :desc, id: :desc).first
+  end
+
+  def display_source_matches_contact_inbox?(source, contact_inbox)
+    return false if source.blank? || contact_inbox.blank?
+    return false unless source['kind'] == DISPLAY_SOURCE_KIND_CHANNEL_PROFILE
+
+    return source['contact_inbox_id'].to_s == contact_inbox.id.to_s if source['contact_inbox_id'].present?
+
+    source['source_id'].to_s == contact_inbox.source_id.to_s &&
+      source['inbox_id'].to_s == contact_inbox.inbox_id.to_s
+  end
+
+  def linked_to_other_channel_type?(contact_inbox)
+    return false if contact_inbox.blank?
+
+    contact_inboxes.joins(:inbox).where.not(inboxes: { channel_type: contact_inbox.inbox.channel_type }).exists?
   end
 
   def sync_contact_attributes

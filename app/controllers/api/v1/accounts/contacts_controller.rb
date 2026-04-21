@@ -183,9 +183,28 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def contact_additional_attributes
-    return @contact.additional_attributes.merge(permitted_params[:additional_attributes]) if permitted_params[:additional_attributes]
+    current_attributes = (@contact.additional_attributes || {}).deep_stringify_keys
+    incoming_attributes = permitted_params[:additional_attributes].to_h.deep_stringify_keys
+    merged_attributes = current_attributes.merge(incoming_attributes)
 
-    @contact.additional_attributes
+    display_preferences = (merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] || {}).deep_stringify_keys
+
+    if permitted_params[:name].present? && permitted_params[:name] != @contact.name &&
+       display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY].blank?
+      display_preferences[Contact::PRIMARY_NAME_SOURCE_KEY] = {
+        'kind' => Contact::DISPLAY_SOURCE_KIND_MANUAL
+      }
+    end
+
+    if (permitted_params[:avatar].present? || params[:avatar_url].present?) &&
+       display_preferences[Contact::PRIMARY_AVATAR_SOURCE_KEY].blank?
+      display_preferences[Contact::PRIMARY_AVATAR_SOURCE_KEY] = {
+        'kind' => Contact::DISPLAY_SOURCE_KIND_CONTACT_AVATAR
+      }
+    end
+
+    merged_attributes[Contact::DISPLAY_PREFERENCES_KEY] = display_preferences if display_preferences.present?
+    merged_attributes
   end
 
   def contact_update_params

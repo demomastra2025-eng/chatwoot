@@ -39,7 +39,23 @@ class TelegramPersonal::ContactSyncService
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
     updates[:identifier] = contact_identifier if should_update_contact_identifier?
     updates[:phone_number] = normalized_phone_number if @contact.phone_number.blank? && normalized_phone_number.present?
-    updates[:name] = display_name if should_replace_contact_name?(@contact)
+
+    if should_replace_contact_name?(@contact, contact_inbox: @contact_inbox)
+      updates[:name] = display_name
+      merged_attributes = @contact.merge_display_source(
+        additional_attributes: merged_attributes,
+        key: Contact::PRIMARY_NAME_SOURCE_KEY,
+        source: @contact.display_source_for_contact_inbox(@contact_inbox)
+      )
+    elsif should_initialize_primary_name_source?(@contact) && telegram_primary_contact?
+      merged_attributes = @contact.merge_display_source(
+        additional_attributes: merged_attributes,
+        key: Contact::PRIMARY_NAME_SOURCE_KEY,
+        source: @contact.display_source_for_contact_inbox(@contact_inbox)
+      )
+    end
+
+    updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
 
     if latest_activity_at.present? && (@contact.last_activity_at.blank? || latest_activity_at > @contact.last_activity_at)
       updates[:last_activity_at] = latest_activity_at
@@ -170,6 +186,7 @@ class TelegramPersonal::ContactSyncService
   def should_refresh_contact_avatar?(current_attributes)
     return false if safe_avatar_url.blank?
     return false unless telegram_primary_contact?
+    return false unless @contact.avatar_updates_allowed_for?(contact_inbox: @contact_inbox)
     return true unless @contact.avatar.attached?
 
     current_attributes['profile_photo_url'] != safe_avatar_url
@@ -225,7 +242,7 @@ class TelegramPersonal::ContactSyncService
       klass = class_name.safe_constantize
       next if klass.blank?
 
-      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, updated_at: now)
+      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, :updated_at => now)
     end
 
     source_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
@@ -233,11 +250,11 @@ class TelegramPersonal::ContactSyncService
     merged_additional_attributes = source_attributes.merge(target_attributes)
 
     merged_channel_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
-      .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
-        old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
-        new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
-        old_hash.merge(new_hash)
-      end
+                                                                           .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
+      old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
+      new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
+      old_hash.merge(new_hash)
+    end
     merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
 
     source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
@@ -257,20 +274,28 @@ class TelegramPersonal::ContactSyncService
   end
 
   def preferred_contact_name(target_contact, source_contact)
-    return display_name if should_replace_contact_name?(target_contact)
+    return display_name if should_replace_contact_name?(target_contact, contact_inbox: @contact_inbox)
     return source_contact.name if target_contact.name.blank? && source_contact.name.present?
 
     target_contact.name
   end
 
-  def should_replace_contact_name?(contact)
+  def should_replace_contact_name?(contact, contact_inbox:)
     return false if display_name.blank?
     return false if self_profile_payload?
-    return true if contact.name.blank?
-    return true if contact.name == contact.phone_number
+
+    replaceable_current_name = contact.name.blank? || contact.name == contact.phone_number
 
     normalized_name = contact.name.to_s.strip
-    identity_aliases.include?(normalized_name)
+    replaceable_current_name ||= identity_aliases.include?(normalized_name)
+
+    contact.name_updates_allowed_for?(contact_inbox: contact_inbox, replaceable_current_name: replaceable_current_name)
+  end
+
+  def should_initialize_primary_name_source?(contact)
+    return false if self_profile_payload?
+
+    contact.primary_name_source.blank? && contact.name.to_s.strip == display_name.to_s.strip
   end
 
   def identity_aliases
@@ -358,9 +383,9 @@ class TelegramPersonal::ContactSyncService
     return @self_profile_payload if defined?(@self_profile_payload)
 
     @self_profile_payload = sync_source.in?(%w[message_event activity_event]) &&
-      normalized_phone_number.present? &&
-      channel_phone_number.present? &&
-      normalized_phone_number == channel_phone_number
+                            normalized_phone_number.present? &&
+                            channel_phone_number.present? &&
+                            normalized_phone_number == channel_phone_number
   end
 
   def channel_phone_number

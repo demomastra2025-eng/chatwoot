@@ -564,6 +564,7 @@ RSpec.describe 'Contacts API', type: :request do
           'EVOLUTION_API_KEY' => 'test-api-key',
           'FRONTEND_URL' => 'https://app.example.com'
         ) do
+          account.update!(limits: { non_web_inboxes: ChatwootApp.max_limit })
           whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
           whatsapp_web_inbox = whatsapp_web_channel.inbox
           create(:inbox_member, user: agent, inbox: whatsapp_web_inbox)
@@ -668,7 +669,33 @@ RSpec.describe 'Contacts API', type: :request do
         expect(contact.reload.name).to eq('Test Blub')
         # custom attributes are merged properly without overwriting existing ones
         expect(contact.custom_attributes).to eq({ 'test' => 'new test', 'test1' => 'test1', 'test2' => 'test2' })
-        expect(contact.additional_attributes).to eq({ 'attr1' => 'attr1', 'attr2' => 'new attr2', 'attr3' => 'attr3' })
+        expect(contact.additional_attributes).to eq(
+          {
+            'attr1' => 'attr1',
+            'attr2' => 'new attr2',
+            'attr3' => 'attr3',
+            'display_preferences' => {
+              'primary_name_source' => {
+                'kind' => 'manual'
+              }
+            }
+          }
+        )
+      end
+
+      it 'marks manual name edits as the primary name source' do
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { name: 'Manual Alias' },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.additional_attributes.dig('display_preferences', 'primary_name_source')).to eq(
+          'kind' => 'manual'
+        )
+        expect(response.parsed_body.dig('payload', 'primary_name_source')).to eq(
+          'kind' => 'manual'
+        )
       end
 
       it 'prevents the update of contact of another account' do
@@ -718,6 +745,9 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         contact.reload
         expect(contact.avatar.attached?).to be(true)
+        expect(contact.additional_attributes.dig('display_preferences', 'primary_avatar_source')).to eq(
+          'kind' => 'contact_avatar'
+        )
       end
 
       it 'updated avatar with avatar_url' do

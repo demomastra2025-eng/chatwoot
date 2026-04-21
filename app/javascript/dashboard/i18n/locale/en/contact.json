@@ -22,6 +22,22 @@
     "CALL": "Call",
     "CALL_INITIATED": "Calling the contact…",
     "CALL_FAILED": "Unable to start the call. Please try again.",
+    "SOURCE_IDENTITIES": {
+      "TITLE": "Names and photos from sources",
+      "DESCRIPTION": "Choose which synced source controls the main contact name and photo.",
+      "PRIMARY_NAME": "Primary name",
+      "PRIMARY_PHOTO": "Primary photo",
+      "USE_NAME": "Use name",
+      "USE_PHOTO": "Use photo",
+      "NAME_IN_USE": "Name in use",
+      "PHOTO_IN_USE": "Photo in use",
+      "EMPTY": "No synced source names or photos are available yet.",
+      "NO_NAME": "No synced name",
+      "MANUAL_NAME": "Manual",
+      "CONTACT_CARD": "Saved contact",
+      "CONTACT_PHOTO": "Contact photo",
+      "UNKNOWN": "Unknown source"
+    },
     "VOICE_INBOX_PICKER": {
       "TITLE": "Choose a calling line"
     },

@@ -11,26 +11,39 @@ import { CONTACTS_EVENTS } from '../../../helper/AnalyticsHelper/events';
 
 const buildContactFormData = contactParams => {
   const formData = new FormData();
+  const appendValue = (keyPath, value) => {
+    if (value === null || value === undefined || value === '') {
+      return;
+    }
+
+    if (value instanceof File) {
+      formData.append(keyPath, value);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => {
+        appendValue(`${keyPath}[${index}]`, entry);
+      });
+      return;
+    }
+
+    if (typeof value === 'object') {
+      Object.keys(value).forEach(key => {
+        appendValue(`${keyPath}[${key}]`, value[key]);
+      });
+      return;
+    }
+
+    formData.append(keyPath, value);
+  };
+
   const { additional_attributes = {}, ...contactProperties } = contactParams;
   Object.keys(contactProperties).forEach(key => {
-    if (contactProperties[key]) {
-      formData.append(key, contactProperties[key]);
-    }
+    appendValue(key, contactProperties[key]);
   });
-  const { social_profiles, ...additionalAttributesProperties } =
-    additional_attributes;
-  Object.keys(additionalAttributesProperties).forEach(key => {
-    formData.append(
-      `additional_attributes[${key}]`,
-      additionalAttributesProperties[key]
-    );
-  });
-  Object.keys(social_profiles).forEach(key => {
-    formData.append(
-      `additional_attributes[social_profiles][${key}]`,
-      social_profiles[key]
-    );
-  });
+
+  appendValue('additional_attributes', additional_attributes);
   return formData;
 };
 

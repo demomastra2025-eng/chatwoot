@@ -27,6 +27,10 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox).to be_present
     expect(contact_inbox.source_id).to eq('15551234567')
     expect(contact_inbox.contact.phone_number).to eq('+15551234567')
+    expect(contact_inbox.contact.additional_attributes.dig('display_preferences', 'primary_name_source')).to include(
+      'kind' => 'channel_profile',
+      'contact_inbox_id' => contact_inbox.id
+    )
   end
 
   it 'imports lid-only identities as provisional contacts that can be upgraded later' do
@@ -45,7 +49,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(contact_inbox.contact.phone_number).to be_nil
     expect(contact_inbox.contact.identifier).to eq('whatsapp_web:143907392331785@lid')
     expect(contact_inbox.contact.additional_attributes['canonical_jid']).to eq('143907392331785@lid')
-    expect(contact_inbox.contact.additional_attributes['provisional_whatsapp_identity']).to eq(true)
+    expect(contact_inbox.contact.additional_attributes['provisional_whatsapp_identity']).to be(true)
   end
 
   it 'imports lid identities when Evolution provides a canonical phone jid alternative' do
@@ -509,6 +513,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     ).perform
 
     expect(contact_inbox.contact).to eq(shared_contact)
+    expect(shared_contact.reload.name).to eq('Shared Contact')
     expect(shared_contact.reload.identifier).to eq('telegram_personal:23')
     expect(shared_contact.additional_attributes).to include(
       'provider' => 'telegram_personal',
@@ -526,6 +531,33 @@ RSpec.describe WhatsappWeb::ContactSyncService do
       'profile_pic_url' => 'https://cdn.example.com/wa-avatar.jpg',
       'provider' => 'whatsapp_web'
     )
+  end
+
+  it 'does not auto-claim the primary name source for a shared contact when the same name already exists' do
+    telegram_channel = create(:channel_telegram_personal, account: channel.account)
+    shared_contact = create(
+      :contact,
+      account: channel.account,
+      name: 'Arman',
+      phone_number: '+15551234567',
+      identifier: 'telegram_personal:23',
+      additional_attributes: {
+        'provider' => 'telegram_personal',
+        'social_telegram_user_id' => 23
+      }
+    )
+    create(:contact_inbox, inbox: telegram_channel.inbox, contact: shared_contact, source_id: '23')
+
+    described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15551234567@s.whatsapp.net',
+        pushName: 'Arman'
+      }
+    ).perform
+
+    expect(shared_contact.reload.name).to eq('Arman')
+    expect(shared_contact.additional_attributes.dig('display_preferences', 'primary_name_source')).to be_blank
   end
 
   it 'merges a provisional lid contact into an existing phone contact when the phone number is already taken' do

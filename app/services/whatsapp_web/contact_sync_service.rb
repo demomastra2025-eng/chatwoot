@@ -14,10 +14,11 @@ class WhatsappWeb::ContactSyncService
     contact_inbox = find_or_create_contact_inbox
     return if contact_inbox.blank?
 
-    resolved_contact = sync_existing_contact(contact_inbox.contact)
+    @contact_inbox = contact_inbox
+    resolved_contact = sync_existing_contact(contact_inbox.contact, contact_inbox: contact_inbox)
     contact_inbox.reload if resolved_contact.present? && resolved_contact.id != contact_inbox.contact_id
     sync_channel_profile(contact_inbox)
-    sync_avatar(contact_inbox.contact)
+    sync_avatar(contact_inbox.contact, contact_inbox: contact_inbox)
     contact_inbox
   end
 
@@ -103,7 +104,7 @@ class WhatsappWeb::ContactSyncService
     merge_provider_display_name!(attributes)
   end
 
-  def sync_existing_contact(contact)
+  def sync_existing_contact(contact, contact_inbox: nil)
     updates = {}
     current_attributes = (contact.additional_attributes || {}).deep_stringify_keys
     merged_attributes = merged_additional_attributes(contact, current_attributes)
@@ -112,7 +113,24 @@ class WhatsappWeb::ContactSyncService
     updates[:phone_number] = phone_number if contact.phone_number.blank? && phone_number.present?
     updates[:identifier] = contact_identifier if should_update_contact_identifier?(contact)
 
-    updates[:name] = display_name(contact) if should_replace_contact_name?(contact)
+    if should_replace_contact_name?(contact, contact_inbox: contact_inbox)
+      updates[:name] = display_name(contact)
+      if contact_inbox.present?
+        merged_attributes = contact.merge_display_source(
+          additional_attributes: merged_attributes,
+          key: Contact::PRIMARY_NAME_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(contact_inbox)
+        )
+      end
+    elsif contact_inbox.present? && should_initialize_primary_name_source?(contact) && whatsapp_primary_contact?(contact)
+      merged_attributes = contact.merge_display_source(
+        additional_attributes: merged_attributes,
+        key: Contact::PRIMARY_NAME_SOURCE_KEY,
+        source: contact.display_source_for_contact_inbox(contact_inbox)
+      )
+    end
+
+    updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
 
     return contact if updates.blank?
 
@@ -137,9 +155,9 @@ class WhatsappWeb::ContactSyncService
     raise
   end
 
-  def sync_avatar(contact)
+  def sync_avatar(contact, contact_inbox:)
     return if profile_pic_url.blank?
-    return unless should_refresh_contact_avatar?(contact)
+    return unless should_refresh_contact_avatar?(contact, contact_inbox: contact_inbox)
 
     Avatar::AvatarFromUrlJob.perform_later(contact, profile_pic_url)
   end
@@ -196,8 +214,9 @@ class WhatsappWeb::ContactSyncService
     contact.identifier.blank? && contact_identifier.present? && whatsapp_primary_contact?(contact)
   end
 
-  def should_refresh_contact_avatar?(contact)
+  def should_refresh_contact_avatar?(contact, contact_inbox:)
     return false unless whatsapp_primary_contact?(contact)
+    return false unless contact.avatar_updates_allowed_for?(contact_inbox: contact_inbox)
 
     current_attributes = (contact.additional_attributes || {}).deep_stringify_keys
     current_attributes['profile_pic_url'] != profile_pic_url || !contact.avatar.attached?
@@ -246,20 +265,35 @@ class WhatsappWeb::ContactSyncService
     transliterated.presence&.downcase || raw_value.downcase
   end
 
-  def should_replace_contact_name?(contact)
+  def should_replace_contact_name?(contact, contact_inbox:)
     current_display_name = display_name(contact)
     current_phone_number = resolved_phone_number(contact)
 
     return false if current_display_name.blank?
-    return true if contact.name.blank?
-    return true if placeholder_display_name?(contact.name)
-    return true if technical_identity_name?(contact.name, contact: contact)
-    return true if contact.name == contact.phone_number
-    return true if current_phone_number.present? && contact.name == current_phone_number
+
+    replaceable_current_name =
+      contact.name.blank? ||
+      placeholder_display_name?(contact.name) ||
+      technical_identity_name?(contact.name, contact: contact) ||
+      contact.name == contact.phone_number ||
+      (current_phone_number.present? && contact.name == current_phone_number)
 
     normalized_name = contact.name.to_s.gsub(/\D/, '')
     normalized_phone = current_phone_number.to_s.gsub(/\D/, '')
-    normalized_name == normalized_phone
+
+    replaceable_current_name ||=
+      current_phone_number.present? &&
+      normalized_name.present? &&
+      normalized_name == normalized_phone
+
+    contact.name_updates_allowed_for?(
+      contact_inbox: contact_inbox,
+      replaceable_current_name: replaceable_current_name
+    )
+  end
+
+  def should_initialize_primary_name_source?(contact)
+    contact.primary_name_source.blank? && contact.name.to_s.strip == display_name(contact).to_s.strip
   end
 
   def should_replace_profile_display_name?(profile, contact:)
@@ -568,7 +602,7 @@ class WhatsappWeb::ContactSyncService
   end
 
   def preferred_contact_name(target_contact, source_contact)
-    return display_name(target_contact) if should_replace_contact_name?(target_contact)
+    return display_name(target_contact) if should_replace_contact_name?(target_contact, contact_inbox: @contact_inbox)
     return source_contact.name if target_contact.name.blank? && source_contact.name.present?
 
     target_contact.name

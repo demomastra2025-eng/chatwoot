@@ -256,4 +256,95 @@ RSpec.describe Contact do
       end
     end
   end
+
+  describe 'display source preferences' do
+    around do |example|
+      with_modified_env(
+        'EVOLUTION_API_URL' => 'https://evolution.example.com',
+        'EVOLUTION_API_KEY' => 'test-api-key',
+        'FRONTEND_URL' => 'https://app.example.com'
+      ) do
+        example.run
+      end
+    end
+
+    let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
+    let(:contact) { create(:contact, account: account, name: 'Arman', phone_number: '+77757770014') }
+    let(:telegram_channel) { create(:channel_telegram_personal, account: account) }
+    let(:whatsapp_channel) { create(:channel_whatsapp_web, account: account) }
+    let!(:telegram_contact_inbox) do
+      create(:contact_inbox, contact: contact, inbox: telegram_channel.inbox, source_id: '435536951')
+    end
+    let!(:whatsapp_contact_inbox) do
+      create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: '77757770014')
+    end
+    let(:telegram_profile) do
+      create(
+        :contact_channel_profile,
+        contact: contact,
+        contact_inbox: telegram_contact_inbox,
+        inbox: telegram_channel.inbox,
+        provider: 'telegram_personal',
+        source_id: '435536951',
+        display_name: 'Arman',
+        avatar_url: 'https://cdn.example.com/tg-avatar.jpg'
+      )
+    end
+    let(:whatsapp_profile) do
+      create(
+        :contact_channel_profile,
+        contact: contact,
+        contact_inbox: whatsapp_contact_inbox,
+        inbox: whatsapp_channel.inbox,
+        provider: 'whatsapp_web',
+        source_id: '77757770014',
+        display_name: 'Akhan',
+        avatar_url: 'https://cdn.example.com/wa-avatar.jpg'
+      )
+    end
+
+    before do
+      telegram_profile
+      whatsapp_profile
+    end
+
+    it 'blocks cross-channel name overwrites when another source is primary' do
+      contact.update!(
+        additional_attributes: contact.merge_display_source(
+          additional_attributes: contact.additional_attributes,
+          key: Contact::PRIMARY_NAME_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(telegram_contact_inbox)
+        )
+      )
+
+      expect(
+        contact.name_updates_allowed_for?(
+          contact_inbox: whatsapp_contact_inbox,
+          replaceable_current_name: false
+        )
+      ).to be(false)
+      expect(
+        contact.name_updates_allowed_for?(
+          contact_inbox: telegram_contact_inbox,
+          replaceable_current_name: false
+        )
+      ).to be(true)
+    end
+
+    it 'resolves the contact thumbnail from the selected source avatar' do
+      contact.update!(
+        additional_attributes: contact.merge_display_source(
+          additional_attributes: contact.additional_attributes,
+          key: Contact::PRIMARY_AVATAR_SOURCE_KEY,
+          source: contact.display_source_for_contact_inbox(telegram_contact_inbox)
+        )
+      )
+
+      expect(contact.resolved_avatar_url).to eq('https://cdn.example.com/tg-avatar.jpg')
+      expect(contact.resolved_primary_avatar_source).to include(
+        'kind' => 'channel_profile',
+        'contact_inbox_id' => telegram_contact_inbox.id
+      )
+    end
+  end
 end
