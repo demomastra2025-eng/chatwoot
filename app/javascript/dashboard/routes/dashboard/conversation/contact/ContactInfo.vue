@@ -10,8 +10,11 @@ import {
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { useAdmin } from 'dashboard/composables/useAdmin';
+import {
+  displayContactSourceLabel,
+  getContactSourceIconClass,
+} from 'dashboard/helper/contactIdentity';
 import ContactInfoRow from './ContactInfoRow.vue';
-import ContactIdentitySources from './ContactIdentitySources.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SocialIcons from './SocialIcons.vue';
 import EditContact from './EditContact.vue';
@@ -33,7 +36,6 @@ export default {
   components: {
     NextButton,
     ContactInfoRow,
-    ContactIdentitySources,
     EditContact,
     Avatar,
     ComposeConversation,
@@ -125,10 +127,16 @@ export default {
       );
     },
     primaryNameSourceLabel() {
-      return this.displaySourceLabel(this.primaryNameSource);
+      return displayContactSourceLabel(this.primaryNameSource, this.$t);
     },
     primaryAvatarSourceLabel() {
-      return this.displaySourceLabel(this.primaryAvatarSource);
+      return displayContactSourceLabel(this.primaryAvatarSource, this.$t);
+    },
+    primaryNameSourceIconClass() {
+      return getContactSourceIconClass(this.primaryNameSource);
+    },
+    primaryAvatarSourceIconClass() {
+      return getContactSourceIconClass(this.primaryAvatarSource);
     },
     location() {
       const {
@@ -231,93 +239,6 @@ export default {
     closeDelete() {
       this.showDeleteModal = false;
       this.showEditModal = false;
-    },
-    sourceValue(source, camelKey, snakeKey = null) {
-      if (!source) {
-        return undefined;
-      }
-
-      const resolvedSnakeKey =
-        snakeKey ||
-        camelKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-
-      return source[camelKey] ?? source[resolvedSnakeKey];
-    },
-    humanizeSourceName(value) {
-      const rawValue = value?.replace('Channel::', '') || '';
-      if (!rawValue) {
-        return this.$t('CONTACT_PANEL.SOURCE_IDENTITIES.UNKNOWN');
-      }
-
-      return rawValue
-        .replace(/_/g, ' ')
-        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-        .split(' ')
-        .filter(Boolean)
-        .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-        .join(' ');
-    },
-    displaySourceLabel(source) {
-      const kind = this.sourceValue(source, 'kind');
-
-      if (kind === 'manual') {
-        return this.$t('CONTACT_PANEL.SOURCE_IDENTITIES.MANUAL_NAME');
-      }
-
-      if (kind === 'contact_avatar') {
-        return this.$t('CONTACT_PANEL.SOURCE_IDENTITIES.CONTACT_PHOTO');
-      }
-
-      const provider =
-        this.sourceValue(source, 'provider') ||
-        this.sourceValue(source, 'channelType');
-
-      return this.humanizeSourceName(provider);
-    },
-    buildSourcePreference(source, preferenceType = 'name') {
-      const resolvedSource =
-        preferenceType === 'avatar'
-          ? source.avatarSource || source
-          : source.nameSource || source;
-
-      return {
-        kind: this.sourceValue(resolvedSource, 'kind') || 'channel_profile',
-        contactInboxId: this.sourceValue(resolvedSource, 'contactInboxId'),
-        inboxId: this.sourceValue(resolvedSource, 'inboxId'),
-        channelType: this.sourceValue(resolvedSource, 'channelType'),
-        provider: this.sourceValue(resolvedSource, 'provider'),
-        sourceId: this.sourceValue(resolvedSource, 'sourceId'),
-        identifier: this.sourceValue(resolvedSource, 'identifier'),
-      };
-    },
-    async setPrimaryNameSource(source) {
-      try {
-        await this.$store.dispatch('contacts/update', {
-          id: this.contact.id,
-          name: this.sourceValue(source, 'displayName'),
-          additionalAttributes: {
-            displayPreferences: {
-              primaryNameSource: this.buildSourcePreference(source, 'name'),
-            },
-          },
-        });
-      } catch (error) {
-        useAlert(this.$t('CONTACT_FORM.ERROR_MESSAGE'));
-      }
-    },
-    async setPrimaryAvatarSource(source) {
-      try {
-        await this.$store.dispatch('contacts/update', {
-          id: this.contact.id,
-          additionalAttributes: {
-            displayPreferences: {
-              primaryAvatarSource: this.buildSourcePreference(source, 'avatar'),
-            },
-          },
-        });
-      } catch (error) {
-        useAlert(this.$t('CONTACT_FORM.ERROR_MESSAGE'));
-      }
     },
     findCountryFlag(countryCode, cityAndCountry) {
       try {
@@ -502,18 +423,34 @@ export default {
             <span
               class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-n-alpha-2 text-n-slate-11"
             >
-              <span class="font-medium">{{
+              <span class="font-medium text-n-slate-12">{{
                 $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME')
               }}</span>
-              <span>{{ primaryNameSourceLabel }}</span>
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
+              >
+                <span
+                  class="text-sm leading-none"
+                  :class="primaryNameSourceIconClass"
+                />
+                <span>{{ primaryNameSourceLabel }}</span>
+              </span>
             </span>
             <span
               class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-n-alpha-2 text-n-slate-11"
             >
-              <span class="font-medium">{{
+              <span class="font-medium text-n-slate-12">{{
                 $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO')
               }}</span>
-              <span>{{ primaryAvatarSourceLabel }}</span>
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
+              >
+                <span
+                  class="text-sm leading-none"
+                  :class="primaryAvatarSourceIconClass"
+                />
+                <span>{{ primaryAvatarSourceLabel }}</span>
+              </span>
             </span>
           </div>
 
@@ -642,13 +579,6 @@ export default {
           />
         </div>
       </div>
-
-      <ContactIdentitySources
-        :contact="contact"
-        :is-updating="uiFlags.isUpdating"
-        @select-name-source="setPrimaryNameSource"
-        @select-avatar-source="setPrimaryAvatarSource"
-      />
 
       <EditContact
         v-if="showEditModal"

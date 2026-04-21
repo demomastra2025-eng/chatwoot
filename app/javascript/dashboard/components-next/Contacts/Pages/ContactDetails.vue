@@ -15,6 +15,11 @@ import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/Contac
 import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/ContactsForm/ConfirmContactDeleteDialog.vue';
 import Policy from 'dashboard/components/policy.vue';
 import ContactIdentitySources from 'dashboard/routes/dashboard/conversation/contact/ContactIdentitySources.vue';
+import {
+  displayContactSourceLabel,
+  getContactSourceIconClass,
+  sourceValue,
+} from 'dashboard/helper/contactIdentity';
 
 const props = defineProps({
   selectedContact: {
@@ -89,50 +94,6 @@ watch(
   { immediate: true }
 );
 
-const sourceValue = (source, camelKey, snakeKey = null) => {
-  if (!source) {
-    return undefined;
-  }
-
-  const resolvedSnakeKey =
-    snakeKey ||
-    camelKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-
-  return source[camelKey] ?? source[resolvedSnakeKey];
-};
-
-const humanizeSourceName = value => {
-  const rawValue = value?.replace('Channel::', '') || '';
-  if (!rawValue) {
-    return t('CONTACT_PANEL.SOURCE_IDENTITIES.UNKNOWN');
-  }
-
-  return rawValue
-    .replace(/_/g, ' ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .split(' ')
-    .filter(Boolean)
-    .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-    .join(' ');
-};
-
-const displaySourceLabel = source => {
-  const kind = sourceValue(source, 'kind');
-
-  if (kind === 'manual') {
-    return t('CONTACT_PANEL.SOURCE_IDENTITIES.MANUAL_NAME');
-  }
-
-  if (kind === 'contact_avatar') {
-    return t('CONTACT_PANEL.SOURCE_IDENTITIES.CONTACT_PHOTO');
-  }
-
-  const provider =
-    sourceValue(source, 'provider') || sourceValue(source, 'channelType');
-
-  return humanizeSourceName(provider);
-};
-
 const buildSourcePreference = (source, preferenceType = 'name') => {
   const resolvedSource =
     preferenceType === 'avatar'
@@ -182,11 +143,19 @@ const primaryAvatarSource = computed(
 );
 
 const primaryNameSourceLabel = computed(() =>
-  displaySourceLabel(primaryNameSource.value)
+  displayContactSourceLabel(primaryNameSource.value, t)
 );
 
 const primaryAvatarSourceLabel = computed(() =>
-  displaySourceLabel(primaryAvatarSource.value)
+  displayContactSourceLabel(primaryAvatarSource.value, t)
+);
+
+const primaryNameSourceIconClass = computed(() =>
+  getContactSourceIconClass(primaryNameSource.value)
+);
+
+const primaryAvatarSourceIconClass = computed(() =>
+  getContactSourceIconClass(primaryAvatarSource.value)
 );
 
 const createdAt = computed(() => {
@@ -341,7 +310,7 @@ const openChannelConversation = async channelIdentity => {
 
 <template>
   <div class="flex flex-col items-start gap-8 pb-6">
-    <div class="flex w-full flex-col gap-5 lg:flex-row lg:items-start">
+    <div class="flex w-full flex-col gap-5">
       <div class="flex min-w-0 flex-1 flex-col gap-4">
         <div class="flex items-start gap-4">
           <Avatar
@@ -390,22 +359,45 @@ const openChannelConversation = async channelIdentity => {
               <span
                 class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2.5 py-1 text-n-slate-11"
               >
-                <span class="font-medium">
+                <span class="font-medium text-n-slate-12">
                   {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME') }}
                 </span>
-                <span>{{ primaryNameSourceLabel }}</span>
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
+                >
+                  <span
+                    class="text-sm leading-none"
+                    :class="primaryNameSourceIconClass"
+                  />
+                  <span>{{ primaryNameSourceLabel }}</span>
+                </span>
               </span>
               <span
                 class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2.5 py-1 text-n-slate-11"
               >
-                <span class="font-medium">
+                <span class="font-medium text-n-slate-12">
                   {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO') }}
                 </span>
-                <span>{{ primaryAvatarSourceLabel }}</span>
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
+                >
+                  <span
+                    class="text-sm leading-none"
+                    :class="primaryAvatarSourceIconClass"
+                  />
+                  <span>{{ primaryAvatarSourceLabel }}</span>
+                </span>
               </span>
             </div>
           </div>
         </div>
+
+        <ContactIdentitySources
+          :contact="selectedContact"
+          :is-updating="isUpdating"
+          @select-name-source="setPrimaryNameSource"
+          @select-avatar-source="setPrimaryAvatarSource"
+        />
 
         <ContactLabels :contact-id="selectedContact?.id" />
         <ContactChannelLabels
@@ -421,14 +413,6 @@ const openChannelConversation = async channelIdentity => {
           is-modal
         />
       </div>
-
-      <ContactIdentitySources
-        :contact="selectedContact"
-        :is-updating="isUpdating"
-        max-width-class="lg:max-w-[18.75rem]"
-        @select-name-source="setPrimaryNameSource"
-        @select-avatar-source="setPrimaryAvatarSource"
-      />
     </div>
     <div class="flex flex-col items-start gap-6">
       <ContactsForm

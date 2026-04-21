@@ -3,6 +3,10 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import {
+  getContactSourceIconClass,
+  sourceValue,
+} from 'dashboard/helper/contactIdentity';
 
 const props = defineProps({
   contact: {
@@ -13,27 +17,13 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  maxWidthClass: {
-    type: String,
-    default: 'md:max-w-[22rem]',
-  },
 });
 
 const emit = defineEmits(['select-name-source', 'select-avatar-source']);
 
 const { t } = useI18n();
 
-const valueFor = (object, camelKey, snakeKey = null) => {
-  if (!object) {
-    return undefined;
-  }
-
-  const resolvedSnakeKey =
-    snakeKey ||
-    camelKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-
-  return object[camelKey] ?? object[resolvedSnakeKey];
-};
+const valueFor = sourceValue;
 
 const humanizeSource = value => {
   const rawValue = value?.replace('Channel::', '') || '';
@@ -127,6 +117,7 @@ const contactRecordSource = computed(() => {
     id: 'contact-record',
     cardKey: 'contact-record',
     label: t('CONTACT_PANEL.SOURCE_IDENTITIES.CONTACT_CARD'),
+    iconClass: 'i-lucide-user-round',
     displayName,
     avatarUrl,
     secondaryLine: email || phoneNumber || '',
@@ -193,6 +184,7 @@ const normalizedSources = computed(() => {
         displayName,
         avatarUrl,
         label: humanizeSource(provider),
+        iconClass: getContactSourceIconClass(channelSource),
         secondaryLine: username || phoneNumber || '',
         fallbackLine: sourceId || valueFor(profile, 'identifier') || '',
         nameSource: displayName ? channelSource : null,
@@ -240,105 +232,122 @@ const sourceCardClass = source => {
 
   return 'border-n-weak bg-white dark:bg-slate-900/40';
 };
+
+const sourceIconClass = source =>
+  source.iconClass ||
+  getContactSourceIconClass(source.nameSource || source.avatarSource || source);
 </script>
 
 <template>
-  <aside
-    class="w-full shrink-0 rounded-3xl border border-n-weak bg-n-solid-1 p-3"
-    :class="maxWidthClass"
-  >
-    <div class="flex flex-col gap-1 px-1 pb-3">
-      <p class="mb-0 text-sm font-medium text-n-slate-12">
-        {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.TITLE') }}
-      </p>
-      <p class="mb-0 text-xs text-n-slate-11">
-        {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.DESCRIPTION') }}
-      </p>
-    </div>
+  <section class="w-full rounded-3xl border border-n-weak bg-n-solid-1 p-3">
+    <div v-if="normalizedSources.length" class="relative">
+      <div
+        v-if="normalizedSources.length > 1"
+        class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-solid-1 to-transparent"
+      />
+      <div
+        v-if="normalizedSources.length > 1"
+        class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-solid-1 to-transparent"
+      />
 
-    <div v-if="normalizedSources.length" class="flex flex-col gap-2">
-      <article
-        v-for="source in normalizedSources"
-        :key="source.cardKey"
-        class="rounded-2xl border p-3 shadow-sm transition-colors"
-        :class="sourceCardClass(source)"
+      <div
+        class="flex gap-3 overflow-x-auto pb-1 scroll-smooth snap-x snap-mandatory no-scrollbar"
       >
-        <div class="flex items-start gap-3">
-          <Avatar
-            :src="source.avatarUrl"
-            :name="source.displayName || source.label"
-            :size="36"
-            rounded-full
-          />
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
-              >
+        <article
+          v-for="source in normalizedSources"
+          :key="source.cardKey"
+          data-source-card
+          class="basis-[84%] shrink-0 snap-start rounded-2xl border p-2.5 shadow-sm transition-colors sm:basis-[72%] xl:basis-[68%]"
+          :class="sourceCardClass(source)"
+        >
+          <div class="flex items-start gap-3">
+            <Avatar
+              :src="source.avatarUrl"
+              :name="source.displayName || source.label"
+              :size="32"
+              rounded-full
+            />
+
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <span
+                  class="inline-flex max-w-full items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
+                >
+                  <span
+                    class="shrink-0 text-sm leading-none"
+                    :class="sourceIconClass(source)"
+                  />
+                  <span class="truncate">
+                    {{
+                      source.label ||
+                      $t('CONTACT_PANEL.SOURCE_IDENTITIES.UNKNOWN')
+                    }}
+                  </span>
+                </span>
+
+                <div class="flex flex-wrap justify-end gap-1">
+                  <span
+                    v-if="source.nameSelected"
+                    class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+                  >
+                    {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.NAME_IN_USE') }}
+                  </span>
+                  <span
+                    v-if="source.avatarSelected"
+                    class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                  >
+                    {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PHOTO_IN_USE') }}
+                  </span>
+                </div>
+              </div>
+
+              <p class="mb-0 mt-2 truncate text-sm font-medium text-n-slate-12">
                 {{
-                  source.label || $t('CONTACT_PANEL.SOURCE_IDENTITIES.UNKNOWN')
+                  source.displayName ||
+                  $t('CONTACT_PANEL.SOURCE_IDENTITIES.NO_NAME')
                 }}
-              </span>
-              <span
-                v-if="source.nameSelected"
-                class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+              </p>
+              <p
+                v-if="source.secondaryLine || source.fallbackLine"
+                class="mb-0 mt-0.5 truncate text-xs text-n-slate-11"
               >
-                {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.NAME_IN_USE') }}
-              </span>
-              <span
-                v-if="source.avatarSelected"
-                class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
-              >
-                {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PHOTO_IN_USE') }}
-              </span>
+                {{ source.secondaryLine || source.fallbackLine }}
+              </p>
             </div>
-
-            <p class="mb-0 mt-2 truncate text-sm font-medium text-n-slate-12">
-              {{
-                source.displayName ||
-                $t('CONTACT_PANEL.SOURCE_IDENTITIES.NO_NAME')
-              }}
-            </p>
-            <p
-              v-if="source.secondaryLine || source.fallbackLine"
-              class="mb-0 mt-1 truncate text-xs text-n-slate-11"
-            >
-              {{ source.secondaryLine || source.fallbackLine }}
-            </p>
           </div>
-        </div>
 
-        <div class="mt-3 flex flex-wrap gap-2">
-          <NextButton
-            icon="i-lucide-badge-check"
-            slate
-            sm
-            :faded="!source.nameSelected"
-            :disabled="
-              isUpdating ||
-              !source.nameSource ||
-              !source.displayName ||
-              source.nameSelected
-            "
-            :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_NAME')"
-            @click="emit('select-name-source', source)"
-          />
-          <NextButton
-            icon="i-lucide-image-up"
-            slate
-            sm
-            :faded="!source.avatarSelected"
-            :disabled="
-              isUpdating ||
-              !source.avatarSource ||
-              !source.avatarUrl ||
-              source.avatarSelected
-            "
-            :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_PHOTO')"
-            @click="emit('select-avatar-source', source)"
-          />
-        </div>
-      </article>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <NextButton
+              icon="i-lucide-badge-check"
+              slate
+              sm
+              :faded="!source.nameSelected"
+              :disabled="
+                isUpdating ||
+                !source.nameSource ||
+                !source.displayName ||
+                source.nameSelected
+              "
+              :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_NAME')"
+              @click="emit('select-name-source', source)"
+            />
+            <NextButton
+              icon="i-lucide-image-up"
+              slate
+              sm
+              :faded="!source.avatarSelected"
+              :disabled="
+                isUpdating ||
+                !source.avatarSource ||
+                !source.avatarUrl ||
+                source.avatarSelected
+              "
+              :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_PHOTO')"
+              @click="emit('select-avatar-source', source)"
+            />
+          </div>
+        </article>
+      </div>
     </div>
 
     <div
@@ -347,5 +356,5 @@ const sourceCardClass = source => {
     >
       {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.EMPTY') }}
     </div>
-  </aside>
+  </section>
 </template>
