@@ -39,6 +39,10 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
       let(:valid_external_url) { 'http://example.com/image.jpg' }
 
       before do
+        allow(Resolv).to receive(:getaddresses).and_call_original
+        allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34'])
+        allow(Resolv).to receive(:getaddresses).with('error.example.com').and_return(['93.184.216.34'])
+        allow(Resolv).to receive(:getaddresses).with('nonexistent.example.com').and_return(['93.184.216.34'])
         stub_request(:get, valid_external_url)
           .to_return(status: 200, body: File.new(Rails.root.join('spec/assets/avatar.png')), headers: { 'Content-Type' => 'image/png' })
       end
@@ -82,7 +86,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
              params: { external_url: 'http://nonexistent.example.com' }
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq('Invalid URL provided')
+        expect(response.parsed_body['error']).to eq('Failed to fetch file from URL')
       end
 
       it 'handles HTTP errors' do
@@ -96,6 +100,51 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
         expect(response).to have_http_status(:unprocessable_content)
         expect(response.parsed_body['error']).to start_with('Failed to fetch file from URL')
       end
+
+      it 'rejects oversized files' do
+        allow(GlobalConfigService).to receive(:load).with('MAXIMUM_FILE_UPLOAD_SIZE', 40).and_return('1')
+        stub_request(:get, valid_external_url)
+          .to_return(status: 200, body: 'x' * (1.megabyte + 1), headers: { 'Content-Type' => 'image/png' })
+
+        post upload_url,
+             headers: user.create_new_auth_token,
+             params: { external_url: valid_external_url }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('File exceeds the maximum allowed size')
+      end
+
+      it 'rejects unsupported content types' do
+        stub_request(:get, valid_external_url)
+          .to_return(status: 200, body: '<html></html>', headers: { 'Content-Type' => 'text/html' })
+
+        post upload_url,
+             headers: user.create_new_auth_token,
+             params: { external_url: valid_external_url }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('File type not supported (only images and videos are allowed)')
+      end
+
+      it 'blocks private IP literals' do
+        post upload_url,
+             headers: user.create_new_auth_token,
+             params: { external_url: 'http://10.0.0.1/secret' }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Invalid URL provided')
+      end
+
+      it 'blocks hostnames resolving to private IPs' do
+        allow(Resolv).to receive(:getaddresses).with('evil.attacker.com').and_return(['10.0.0.1'])
+
+        post upload_url,
+             headers: user.create_new_auth_token,
+             params: { external_url: 'http://evil.attacker.com/secret' }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Invalid URL provided')
+      end
     end
 
     it 'returns an error when no file or URL is provided' do
@@ -104,7 +153,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
            params: {}
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to eq('No file or URL provided')
+      expect(response.parsed_body['error']).to eq(I18n.t('errors.upload.missing_input'))
     end
   end
 end
