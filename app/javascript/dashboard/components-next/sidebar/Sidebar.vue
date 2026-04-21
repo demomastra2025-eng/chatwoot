@@ -34,11 +34,11 @@ import {
 import {
   isInboxPendingDeletion,
   isWhatsappWebInbox,
-  WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL,
+  isWhatsappWebConnected,
 } from 'dashboard/helper/whatsappWeb';
 import {
   isTelegramPersonalInbox,
-  TELEGRAM_PERSONAL_SIDEBAR_STATUS_POLL_INTERVAL,
+  isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
 
 const props = defineProps({
@@ -54,6 +54,9 @@ const emit = defineEmits([
   'showCreateAccountModal',
   'closeMobileSidebar',
 ]);
+
+const SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS = 60 * 1000;
+const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
 const { accountScopedRoute, isOnChatwootCloud } = useAccount();
 const route = useRoute();
@@ -405,6 +408,19 @@ const inboxFlowRouteNames = computed(() =>
     : getInboxFlowRouteNames(route)
 );
 
+const hasDedicatedInboxRuntimePolling = computed(() => {
+  return route.name === inboxFlowRouteNames.value.finish;
+});
+
+const dedicatedRuntimePollingInboxId = computed(() => {
+  if (!hasDedicatedInboxRuntimePolling.value) {
+    return null;
+  }
+
+  const inboxId = Number(route.params.inboxId || route.params.inbox_id);
+  return Number.isFinite(inboxId) && inboxId > 0 ? inboxId : null;
+});
+
 const withConversationStatus = (name, params = {}) =>
   accountScopedRoute(name, params, {
     ...route.query,
@@ -427,49 +443,113 @@ const whatsappWebInboxes = computed(() => {
   );
 });
 
+const whatsappWebHealthyInboxes = computed(() => {
+  return whatsappWebInboxes.value.filter(inbox =>
+    isWhatsappWebConnected(inbox)
+  );
+});
+
+const whatsappWebAttentionInboxes = computed(() => {
+  return whatsappWebInboxes.value.filter(
+    inbox => !isWhatsappWebConnected(inbox)
+  );
+});
+
 const telegramPersonalInboxes = computed(() => {
   return sortedInboxes.value.filter(inbox => isTelegramPersonalInbox(inbox));
 });
+
+const telegramPersonalHealthyInboxes = computed(() => {
+  return telegramPersonalInboxes.value.filter(inbox =>
+    isTelegramPersonalConnected(inbox)
+  );
+});
+
+const telegramPersonalAttentionInboxes = computed(() => {
+  return telegramPersonalInboxes.value.filter(
+    inbox => !isTelegramPersonalConnected(inbox)
+  );
+});
+
+const excludeDedicatedRuntimePollingInbox = inboxList => {
+  if (!dedicatedRuntimePollingInboxId.value) {
+    return inboxList;
+  }
+
+  return inboxList.filter(
+    inbox => Number(inbox.id) !== dedicatedRuntimePollingInboxId.value
+  );
+};
+
+const sidebarWhatsappWebHealthyInboxes = computed(() =>
+  excludeDedicatedRuntimePollingInbox(whatsappWebHealthyInboxes.value)
+);
+
+const sidebarWhatsappWebAttentionInboxes = computed(() =>
+  excludeDedicatedRuntimePollingInbox(whatsappWebAttentionInboxes.value)
+);
+
+const sidebarTelegramPersonalHealthyInboxes = computed(() =>
+  excludeDedicatedRuntimePollingInbox(telegramPersonalHealthyInboxes.value)
+);
+
+const sidebarTelegramPersonalAttentionInboxes = computed(() =>
+  excludeDedicatedRuntimePollingInbox(telegramPersonalAttentionInboxes.value)
+);
 
 const canManageWhatsappWebLifecycle = computed(() => {
   return checkPermissions(['administrator']);
 });
 
-let whatsappWebStatusPollingTimer = null;
-let telegramPersonalStatusPollingTimer = null;
+const sidebarRuntimePollingTimers = {
+  whatsappHealthy: null,
+  whatsappAttention: null,
+  telegramHealthy: null,
+  telegramAttention: null,
+};
 
-const stopWhatsappWebStatusPolling = () => {
-  if (!whatsappWebStatusPollingTimer) {
+const isSidebarRuntimePollingAllowed = () => {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  return document.visibilityState === 'visible';
+};
+
+const stopSidebarRuntimePollingTimer = key => {
+  if (!sidebarRuntimePollingTimers[key]) {
     return;
   }
 
-  window.clearInterval(whatsappWebStatusPollingTimer);
-  whatsappWebStatusPollingTimer = null;
+  window.clearInterval(sidebarRuntimePollingTimers[key]);
+  sidebarRuntimePollingTimers[key] = null;
 };
 
-const stopTelegramPersonalStatusPolling = () => {
-  if (!telegramPersonalStatusPollingTimer) {
+const stopSidebarRuntimePolling = () => {
+  Object.keys(sidebarRuntimePollingTimers).forEach(
+    stopSidebarRuntimePollingTimer
+  );
+};
+
+const startSidebarRuntimePollingTimer = (key, callback, interval) => {
+  if (sidebarRuntimePollingTimers[key]) {
     return;
   }
 
-  window.clearInterval(telegramPersonalStatusPollingTimer);
-  telegramPersonalStatusPollingTimer = null;
+  sidebarRuntimePollingTimers[key] = window.setInterval(callback, interval);
 };
 
-const syncWhatsappWebStatuses = async () => {
+const syncWhatsappWebStatuses = async inboxList => {
   if (
     !canManageWhatsappWebLifecycle.value ||
-    (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+    !isSidebarRuntimePollingAllowed() ||
+    !inboxList.length
   ) {
     return;
   }
 
-  if (!whatsappWebInboxes.value.length) {
-    return;
-  }
-
   await Promise.allSettled(
-    whatsappWebInboxes.value.map(inbox =>
+    inboxList.map(inbox =>
       store.dispatch('inboxes/refreshWhatsappWebQr', {
         inboxId: inbox.id,
         statusOnly: true,
@@ -479,95 +559,97 @@ const syncWhatsappWebStatuses = async () => {
   );
 };
 
-const syncTelegramPersonalStatuses = async () => {
-  if (
-    typeof document !== 'undefined' &&
-    document.visibilityState !== 'visible'
-  ) {
-    return;
-  }
-
-  if (!telegramPersonalInboxes.value.length) {
+const syncTelegramPersonalStatuses = async inboxList => {
+  if (!isSidebarRuntimePollingAllowed() || !inboxList.length) {
     return;
   }
 
   await Promise.allSettled(
-    telegramPersonalInboxes.value.map(inbox =>
+    inboxList.map(inbox =>
       store.dispatch('inboxes/getTelegramPersonalDiagnostics', inbox.id)
     )
   );
 };
 
-const startWhatsappWebStatusPolling = () => {
-  if (
-    whatsappWebStatusPollingTimer ||
-    !canManageWhatsappWebLifecycle.value ||
-    !whatsappWebInboxes.value.length ||
-    (typeof document !== 'undefined' && document.visibilityState !== 'visible')
-  ) {
+const syncSidebarRuntimePolling = () => {
+  stopSidebarRuntimePolling();
+
+  if (!isSidebarRuntimePollingAllowed()) {
     return;
   }
 
-  whatsappWebStatusPollingTimer = window.setInterval(() => {
-    syncWhatsappWebStatuses();
-  }, WHATSAPP_WEB_SIDEBAR_STATUS_POLL_INTERVAL);
-};
-
-const startTelegramPersonalStatusPolling = () => {
-  if (
-    telegramPersonalStatusPollingTimer ||
-    !telegramPersonalInboxes.value.length ||
-    (typeof document !== 'undefined' && document.visibilityState !== 'visible')
-  ) {
-    return;
-  }
-
-  telegramPersonalStatusPollingTimer = window.setInterval(() => {
-    syncTelegramPersonalStatuses();
-  }, TELEGRAM_PERSONAL_SIDEBAR_STATUS_POLL_INTERVAL);
-};
-
-const handleDocumentVisibilityChange = () => {
-  if (document.visibilityState === 'visible') {
-    syncWhatsappWebStatuses();
-    startWhatsappWebStatusPolling();
-    syncTelegramPersonalStatuses();
-    startTelegramPersonalStatusPolling();
-    return;
-  }
-
-  stopWhatsappWebStatusPolling();
-  stopTelegramPersonalStatusPolling();
-};
-
-useEventListener(document, 'visibilitychange', handleDocumentVisibilityChange);
-
-watch(
-  () =>
-    `${canManageWhatsappWebLifecycle.value}:${whatsappWebInboxes.value
-      .map(inbox => inbox.id)
-      .join(':')}`,
-  inboxIds => {
-    if (!inboxIds || !inboxIds.startsWith('true:')) {
-      stopWhatsappWebStatusPolling();
-      return;
+  if (canManageWhatsappWebLifecycle.value) {
+    if (sidebarWhatsappWebHealthyInboxes.value.length) {
+      syncWhatsappWebStatuses(sidebarWhatsappWebHealthyInboxes.value);
+      startSidebarRuntimePollingTimer(
+        'whatsappHealthy',
+        () => syncWhatsappWebStatuses(sidebarWhatsappWebHealthyInboxes.value),
+        SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS
+      );
     }
 
-    syncWhatsappWebStatuses();
-    startWhatsappWebStatusPolling();
+    if (sidebarWhatsappWebAttentionInboxes.value.length) {
+      syncWhatsappWebStatuses(sidebarWhatsappWebAttentionInboxes.value);
+      startSidebarRuntimePollingTimer(
+        'whatsappAttention',
+        () => syncWhatsappWebStatuses(sidebarWhatsappWebAttentionInboxes.value),
+        SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS
+      );
+    }
   }
+
+  if (sidebarTelegramPersonalHealthyInboxes.value.length) {
+    syncTelegramPersonalStatuses(sidebarTelegramPersonalHealthyInboxes.value);
+    startSidebarRuntimePollingTimer(
+      'telegramHealthy',
+      () =>
+        syncTelegramPersonalStatuses(
+          sidebarTelegramPersonalHealthyInboxes.value
+        ),
+      SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS
+    );
+  }
+
+  if (sidebarTelegramPersonalAttentionInboxes.value.length) {
+    syncTelegramPersonalStatuses(sidebarTelegramPersonalAttentionInboxes.value);
+    startSidebarRuntimePollingTimer(
+      'telegramAttention',
+      () =>
+        syncTelegramPersonalStatuses(
+          sidebarTelegramPersonalAttentionInboxes.value
+        ),
+      SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS
+    );
+  }
+};
+
+const handleSidebarRuntimeVisibilityChange = () => {
+  syncSidebarRuntimePolling();
+};
+
+useEventListener(
+  document,
+  'visibilitychange',
+  handleSidebarRuntimeVisibilityChange
 );
 
 watch(
-  () => telegramPersonalInboxes.value.map(inbox => inbox.id).join(':'),
-  inboxIds => {
-    if (!inboxIds) {
-      stopTelegramPersonalStatusPolling();
-      return;
-    }
-
-    syncTelegramPersonalStatuses();
-    startTelegramPersonalStatusPolling();
+  () =>
+    [
+      canManageWhatsappWebLifecycle.value,
+      hasDedicatedInboxRuntimePolling.value,
+      dedicatedRuntimePollingInboxId.value,
+      sidebarWhatsappWebHealthyInboxes.value.map(inbox => inbox.id).join(':'),
+      sidebarWhatsappWebAttentionInboxes.value.map(inbox => inbox.id).join(':'),
+      sidebarTelegramPersonalHealthyInboxes.value
+        .map(inbox => inbox.id)
+        .join(':'),
+      sidebarTelegramPersonalAttentionInboxes.value
+        .map(inbox => inbox.id)
+        .join(':'),
+    ].join('|'),
+  () => {
+    syncSidebarRuntimePolling();
   }
 );
 
@@ -582,17 +664,11 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
   ]);
 
-  if (canManageWhatsappWebLifecycle.value) {
-    await syncWhatsappWebStatuses();
-    startWhatsappWebStatusPolling();
-  }
-  await syncTelegramPersonalStatuses();
-  startTelegramPersonalStatusPolling();
+  syncSidebarRuntimePolling();
 });
 
 onBeforeUnmount(() => {
-  stopWhatsappWebStatusPolling();
-  stopTelegramPersonalStatusPolling();
+  stopSidebarRuntimePolling();
 });
 
 const closeMobileSidebar = () => {

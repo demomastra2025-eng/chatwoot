@@ -1,13 +1,18 @@
 <script setup>
-import { defineModel } from 'vue';
+import { computed, defineModel } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Input from 'dashboard/components-next/input/Input.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
 defineProps({
   authType: {
     type: String,
     required: true,
     validator: value => ['none', 'bearer', 'basic', 'api_key'].includes(value),
+  },
+  errors: {
+    type: Object,
+    default: () => ({}),
   },
 });
 
@@ -17,6 +22,17 @@ const authConfig = defineModel('authConfig', {
   type: Object,
   default: () => ({}),
 });
+
+const apiKeyLocationOptions = computed(() => [
+  {
+    value: 'header',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_LOCATIONS.HEADER'),
+  },
+  {
+    value: 'query',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_LOCATIONS.QUERY'),
+  },
+]);
 </script>
 
 <template>
@@ -28,6 +44,8 @@ const authConfig = defineModel('authConfig', {
       :placeholder="
         t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.BEARER_TOKEN_PLACEHOLDER')
       "
+      :message="errors.token"
+      :message-type="errors.token ? 'error' : 'info'"
     />
     <template v-else-if="authType === 'basic'">
       <Input
@@ -36,6 +54,8 @@ const authConfig = defineModel('authConfig', {
         :placeholder="
           t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.USERNAME_PLACEHOLDER')
         "
+        :message="errors.username"
+        :message-type="errors.username ? 'error' : 'info'"
       />
       <Input
         v-model="authConfig.password"
@@ -44,15 +64,44 @@ const authConfig = defineModel('authConfig', {
         :placeholder="
           t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.PASSWORD_PLACEHOLDER')
         "
+        :message="errors.password"
+        :message-type="errors.password ? 'error' : 'info'"
       />
     </template>
     <template v-else-if="authType === 'api_key'">
+      <div class="flex flex-col gap-1">
+        <label class="mb-0.5 text-sm font-medium text-n-slate-12">
+          {{
+            t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_LOCATION_LABEL')
+          }}
+        </label>
+        <ComboBox
+          v-model="authConfig.location"
+          :options="apiKeyLocationOptions"
+          :placeholder="
+            t(
+              'CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_LOCATION_PLACEHOLDER'
+            )
+          "
+          class="[&>div>button]:bg-n-alpha-black2"
+        />
+      </div>
       <Input
         v-model="authConfig.name"
-        :label="t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY')"
-        :placeholder="
-          t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_PLACEHOLDER')
+        :label="
+          authConfig.location === 'query'
+            ? t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_QUERY_NAME')
+            : t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY')
         "
+        :placeholder="
+          authConfig.location === 'query'
+            ? t(
+                'CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_QUERY_NAME_PLACEHOLDER'
+              )
+            : t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_KEY_PLACEHOLDER')
+        "
+        :message="errors.name"
+        :message-type="errors.name ? 'error' : 'info'"
       />
       <Input
         v-model="authConfig.key"
@@ -60,6 +109,8 @@ const authConfig = defineModel('authConfig', {
         :placeholder="
           t('CAPTAIN.CUSTOM_TOOLS.FORM.AUTH_CONFIG.API_VALUE_PLACEHOLDER')
         "
+        :message="errors.key"
+        :message-type="errors.key ? 'error' : 'info'"
       />
     </template>
   </div>

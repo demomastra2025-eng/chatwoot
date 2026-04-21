@@ -30,10 +30,10 @@ class Captain::Scenario < ApplicationRecord
   # Format: "scenario_{id}_{slug}_agent" for persisted records (stable + readable),
   # and "scenario_draft_{slug}_agent" for unsaved records, with slug truncated
   # based on the available length budget.
-  HANDOFF_TOOL_PREFIX = 'handoff_to_'.freeze
+  HANDOFF_TOOL_PREFIX = Captain::HandoffNaming::TOOL_PREFIX
   HANDOFF_KEY_PREFIX = 'scenario'.freeze
   HANDOFF_KEY_SUFFIX = 'agent'.freeze
-  MAX_HANDOFF_TOOL_NAME_LENGTH = 60
+  MAX_HANDOFF_TOOL_NAME_LENGTH = Captain::HandoffNaming::MAX_TOOL_NAME_LENGTH
   MAX_AGENT_NAME_LENGTH = MAX_HANDOFF_TOOL_NAME_LENGTH - HANDOFF_TOOL_PREFIX.length
   MAX_HANDOFF_SLUG_LENGTH = 24
 
@@ -62,18 +62,27 @@ class Captain::Scenario < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_prompt
+    available_runtime_tools = runtime_tools
 
     {
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
-      tools: resolved_tools,
-      assistant_name: assistant.name.downcase.gsub(/\s+/, '_'),
+      tools: available_runtime_tools,
+      assistant_handoff_tool_name: assistant.handoff_tool_name,
       response_guidelines: response_guidelines || [],
       guardrails: guardrails || [],
       context_glossary: assistant.context_glossary_groups(referenced_field_ids),
-      tool_glossary: assistant.tool_glossary_groups(resolved_tools)
+      tool_glossary: assistant.tool_glossary_groups(available_runtime_tools)
     }
+  end
+
+  def runtime_tools
+    resolved_tools
+  end
+
+  def runtime_tool_ids
+    runtime_tools.pluck(:id)
   end
 
   def resolve_runtime_prompt_context(context, prompt_state)
@@ -125,7 +134,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def agent_tools
-    resolved_tools.filter_map { |tool| resolve_tool_instance(tool) }
+    runtime_tools.filter_map { |tool| resolve_tool_instance(tool) }
   end
 
   def resolved_instructions
@@ -136,9 +145,11 @@ class Captain::Scenario < ApplicationRecord
     return [] if tools.blank?
 
     available_tools = assistant.available_agent_tools
-    tools.filter_map do |tool_id|
+    resolved_tools = tools.filter_map do |tool_id|
       available_tools.find { |tool| tool[:id] == tool_id }
-    end.select do |tool_definition|
+    end
+
+    resolved_tools.select do |tool_definition|
       Captain::ToolPolicy.runtime_allowed?(
         tool_definition,
         assistant: assistant,

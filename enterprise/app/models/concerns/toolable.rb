@@ -41,9 +41,13 @@ module Concerns::Toolable
   end
 
   def build_request_url(params, template_context: params)
-    return endpoint_url if endpoint_url.blank? || endpoint_url.exclude?('{{')
+    built_url = if endpoint_url.blank? || endpoint_url.exclude?('{{')
+                  endpoint_url
+                else
+                  render_template(endpoint_url, template_context)
+                end
 
-    render_template(endpoint_url, template_context)
+    apply_query_auth_to_url(built_url)
   end
 
   def build_request_body(params, template_context: params)
@@ -143,6 +147,21 @@ module Concerns::Toolable
   end
 
   private
+
+  def apply_query_auth_to_url(url)
+    return url unless auth_type == 'api_key'
+    return url unless auth_config['location'] == 'query'
+    return url if auth_config['name'].blank? || auth_config['key'].blank?
+
+    uri = URI.parse(url)
+    query_pairs = URI.decode_www_form(uri.query.to_s)
+    query_pairs.reject! { |key, _value| key == auth_config['name'] }
+    query_pairs << [auth_config['name'], auth_config['key'].to_s]
+    uri.query = URI.encode_www_form(query_pairs)
+    uri.to_s
+  rescue URI::InvalidURIError
+    url
+  end
 
   def render_template(template, context)
     Captain::PromptRegistry.render_inline!(template, variables: context)

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -35,6 +35,7 @@ const state = reactive({
   preview: null,
   response: null,
 });
+const showSampleErrors = ref(false);
 
 const agentParamDefinitions = computed(() =>
   (props.customTool.param_schema || []).filter(
@@ -59,6 +60,19 @@ const isTesting = computed(() => formState.uiFlags.value.testingTool);
 const isBusy = computed(
   () => props.disabled || isPreviewing.value || isTesting.value
 );
+
+const sampleInputErrorMessages = computed(() => ({
+  REQUIRED: t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.REQUIRED'),
+  INVALID_NUMBER: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_NUMBER'
+  ),
+  INVALID_ARRAY: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_ARRAY'
+  ),
+  INVALID_OBJECT: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_OBJECT'
+  ),
+}));
 
 function formatBlockValue(value) {
   if (value === null || value === undefined || value === '') {
@@ -99,6 +113,7 @@ const syncValueMap = (target, keys) => {
 watch(
   [agentParamDefinitions, contextParamDefinitions],
   ([nextAgentParams, nextContextParams]) => {
+    showSampleErrors.value = false;
     syncValueMap(
       state.agentValues,
       nextAgentParams.map(param => param.name.trim())
@@ -109,6 +124,14 @@ watch(
     );
   },
   { immediate: true }
+);
+
+watch(
+  () => [state.agentValues, state.contextValues],
+  () => {
+    showSampleErrors.value = false;
+  },
+  { deep: true }
 );
 
 watch(
@@ -170,6 +193,32 @@ const requestPreviewBody = computed(() => {
   return formatBlockValue(state.preview.body);
 });
 
+const previewUrl = computed(() => {
+  const url = state.preview?.url;
+  if (!url) {
+    return '';
+  }
+
+  if (
+    props.customTool.auth_type !== 'api_key' ||
+    props.customTool.auth_config?.location !== 'query' ||
+    !props.customTool.auth_config?.name
+  ) {
+    return url;
+  }
+
+  try {
+    const previewUrlObject = new URL(url);
+    previewUrlObject.searchParams.set(
+      props.customTool.auth_config.name,
+      '••••••'
+    );
+    return previewUrlObject.toString();
+  } catch {
+    return url;
+  }
+});
+
 const resolvedParamsPreview = computed(() =>
   state.preview?.resolved_params
     ? formatBlockValue(state.preview.resolved_params)
@@ -184,9 +233,18 @@ const formattedResponseBody = computed(() =>
   state.response ? formatBlockValue(state.response.formatted_body) : ''
 );
 
-const showFormattedResponse = computed(
+const hasFormattedResponseBody = computed(
   () =>
     !!state.response &&
+    state.response.formatted_body !== undefined &&
+    state.response.formatted_body !== null
+);
+
+const responseFormatError = computed(() => state.response?.format_error || '');
+
+const showFormattedResponse = computed(
+  () =>
+    hasFormattedResponseBody.value &&
     (props.customTool.response_template?.trim() ||
       state.response.formatted_body !== state.response.body)
 );
@@ -232,6 +290,96 @@ const inputPlaceholder = param => {
   return t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.TEXT_PLACEHOLDER');
 };
 
+const parseStructuredSampleValue = value => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const sampleInputErrorFor = (param, value) => {
+  const normalizedValue =
+    typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+
+  if (param.required && normalizedValue === '') {
+    return sampleInputErrorMessages.value.REQUIRED;
+  }
+
+  if (normalizedValue === '') {
+    return '';
+  }
+
+  if (param.type === 'number' && Number.isNaN(Number(normalizedValue))) {
+    return sampleInputErrorMessages.value.INVALID_NUMBER;
+  }
+
+  if (!['array', 'object'].includes(param.type)) {
+    return '';
+  }
+
+  const parsedValue = parseStructuredSampleValue(normalizedValue);
+  if (parsedValue === null) {
+    return param.type === 'array'
+      ? sampleInputErrorMessages.value.INVALID_ARRAY
+      : sampleInputErrorMessages.value.INVALID_OBJECT;
+  }
+
+  if (param.type === 'array' && !Array.isArray(parsedValue)) {
+    return sampleInputErrorMessages.value.INVALID_ARRAY;
+  }
+
+  if (
+    param.type === 'object' &&
+    (typeof parsedValue !== 'object' ||
+      Array.isArray(parsedValue) ||
+      parsedValue === null)
+  ) {
+    return sampleInputErrorMessages.value.INVALID_OBJECT;
+  }
+
+  return '';
+};
+
+const agentSampleErrors = computed(() =>
+  Object.fromEntries(
+    agentParamDefinitions.value.map(param => [
+      param.name,
+      sampleInputErrorFor(param, state.agentValues[param.name]),
+    ])
+  )
+);
+
+const contextSampleErrors = computed(() =>
+  Object.fromEntries(
+    contextParamDefinitions.value.map(param => [
+      param.context_path,
+      sampleInputErrorFor(param, state.contextValues[param.context_path]),
+    ])
+  )
+);
+
+const visibleAgentSampleErrors = computed(() =>
+  showSampleErrors.value ? agentSampleErrors.value : {}
+);
+
+const visibleContextSampleErrors = computed(() =>
+  showSampleErrors.value ? contextSampleErrors.value : {}
+);
+
+const validateSampleInputs = () => {
+  showSampleErrors.value = true;
+
+  return [
+    ...Object.values(agentSampleErrors.value),
+    ...Object.values(contextSampleErrors.value),
+  ].every(errorMessage => !errorMessage);
+};
+
 const buildRequestPayload = () => ({
   customTool: {
     title: props.customTool.title,
@@ -252,16 +400,22 @@ const buildRequestPayload = () => ({
 });
 
 const ensureRunnable = async () => {
-  if (!props.validateBeforeRun) {
+  const isFormValid = props.validateBeforeRun
+    ? await props.validateBeforeRun()
+    : true;
+
+  const areSampleInputsValid = validateSampleInputs();
+
+  if (isFormValid && areSampleInputsValid) {
     return true;
   }
 
-  const isValid = await props.validateBeforeRun();
-  if (!isValid) {
-    useAlert(t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.VALIDATION_ERROR'));
-  }
-
-  return isValid;
+  useAlert(
+    isFormValid
+      ? t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.FIX_ERRORS')
+      : t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.VALIDATION_ERROR')
+  );
+  return false;
 };
 
 const handlePreview = async () => {
@@ -350,6 +504,10 @@ const handleTest = async () => {
             :label="param.name"
             :placeholder="inputPlaceholder(param)"
             :rows="3"
+            :message="visibleAgentSampleErrors[param.name]"
+            :message-type="
+              visibleAgentSampleErrors[param.name] ? 'error' : 'info'
+            "
             class="[&_textarea]:font-mono"
           />
           <Input
@@ -357,6 +515,10 @@ const handleTest = async () => {
             v-model="state.agentValues[param.name]"
             :label="param.name"
             :placeholder="inputPlaceholder(param)"
+            :message="visibleAgentSampleErrors[param.name]"
+            :message-type="
+              visibleAgentSampleErrors[param.name] ? 'error' : 'info'
+            "
             class="[&_input]:font-mono"
           />
           <p class="mt-1 text-xs text-n-slate-10">
@@ -382,6 +544,10 @@ const handleTest = async () => {
             :label="param.name"
             :placeholder="inputPlaceholder(param)"
             :rows="3"
+            :message="visibleContextSampleErrors[param.context_path]"
+            :message-type="
+              visibleContextSampleErrors[param.context_path] ? 'error' : 'info'
+            "
             class="[&_textarea]:font-mono"
           />
           <Input
@@ -389,6 +555,10 @@ const handleTest = async () => {
             v-model="state.contextValues[param.context_path]"
             :label="param.name"
             :placeholder="inputPlaceholder(param)"
+            :message="visibleContextSampleErrors[param.context_path]"
+            :message-type="
+              visibleContextSampleErrors[param.context_path] ? 'error' : 'info'
+            "
             class="[&_input]:font-mono"
           />
           <p class="mt-1 text-xs text-n-slate-10">
@@ -457,7 +627,7 @@ const handleTest = async () => {
         </p>
         <pre
           class="p-3 overflow-x-auto text-xs rounded-lg bg-n-alpha-black2 text-n-slate-12 whitespace-pre-wrap break-all"
-        ><code>{{ state.preview.url }}</code></pre>
+        ><code>{{ previewUrl }}</code></pre>
       </div>
 
       <div class="flex flex-col gap-1">
@@ -492,6 +662,19 @@ const handleTest = async () => {
           <pre
             class="p-3 overflow-x-auto text-xs rounded-lg bg-n-alpha-black2 text-n-slate-12 whitespace-pre-wrap break-all"
           ><code>{{ rawResponseBody }}</code></pre>
+        </div>
+
+        <div v-if="responseFormatError" class="flex flex-col gap-1">
+          <p class="text-xs font-medium uppercase tracking-wide text-n-ruby-11">
+            {{
+              t(
+                'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.RESPONSE.FORMAT_ERROR_LABEL'
+              )
+            }}
+          </p>
+          <pre
+            class="p-3 overflow-x-auto text-xs rounded-lg bg-n-ruby-3/40 text-n-ruby-11 whitespace-pre-wrap break-all"
+          ><code>{{ responseFormatError }}</code></pre>
         </div>
 
         <div v-if="showFormattedResponse" class="flex flex-col gap-1">

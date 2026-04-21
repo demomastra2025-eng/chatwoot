@@ -12,6 +12,7 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   id: {
@@ -33,6 +34,10 @@ const props = defineProps({
   tools: {
     type: Array,
     default: () => [],
+  },
+  enabled: {
+    type: Boolean,
+    default: true,
   },
   assistantId: {
     type: Number,
@@ -63,6 +68,8 @@ const state = reactive({
   title: '',
   description: '',
   instruction: '',
+  tools: [],
+  enabled: true,
 });
 
 const instructionContentRef = ref();
@@ -80,6 +87,7 @@ const startEdit = () => {
     description: props.description,
     instruction: props.instruction,
     tools: props.tools,
+    enabled: props.enabled,
   });
   toggleEditing(true);
 };
@@ -103,6 +111,26 @@ const descriptionError = computed(() =>
     ? t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.FORM.DESCRIPTION.ERROR')
     : ''
 );
+
+const buildScenarioPayload = overrides => ({
+  id: props.id,
+  title: props.title,
+  description: props.description,
+  instruction: props.instruction,
+  tools: props.tools,
+  enabled: props.enabled,
+  ...overrides,
+});
+
+const enabledLabel = computed(() =>
+  props.enabled
+    ? t('CAPTAIN.ASSISTANTS.SCENARIOS.STATUS.ENABLED')
+    : t('CAPTAIN.ASSISTANTS.SCENARIOS.STATUS.DISABLED')
+);
+
+const onToggleEnabled = enabled => {
+  emit('update', buildScenarioPayload({ enabled }));
+};
 
 const onClickUpdate = () => {
   v$.value.$touch();
@@ -134,6 +162,7 @@ const renderInstruction = instruction => () =>
     :class="{
       '[&>div]:ltr:!pr-4 [&>div]:rtl:!pl-4': !isEditing,
       '[&>div]:ltr:!pr-10 [&>div]:rtl:!pl-10': isEditing,
+      'opacity-80': !enabled && !isEditing,
     }"
     layout="row"
     @mouseenter="emit('hover', true)"
@@ -149,12 +178,33 @@ const renderInstruction = instruction => () =>
     <div v-if="!isEditing" class="flex h-full flex-col w-full">
       <div class="flex items-start justify-between w-full gap-2">
         <div class="flex min-w-0 flex-col items-start">
-          <span class="text-sm text-n-slate-12 font-medium">{{ title }}</span>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-sm text-n-slate-12 font-medium truncate">
+              {{ title }}
+            </span>
+            <span
+              class="inline-flex shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
+              :class="
+                enabled
+                  ? 'bg-n-brand/10 text-n-brand'
+                  : 'bg-n-alpha-2 text-n-slate-11'
+              "
+            >
+              {{ enabledLabel }}
+            </span>
+          </div>
           <span class="mt-2 text-sm text-n-slate-11">
             {{ description }}
           </span>
         </div>
         <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2">
+            <Switch
+              :model-value="enabled"
+              @click.stop
+              @change="onToggleEnabled"
+            />
+          </div>
           <!-- <Button label="Test" slate xs ghost class="!text-sm" />
           <span class="w-px h-4 bg-n-weak" /> -->
           <Button icon="i-lucide-pen" slate xs ghost @click="startEdit" />
@@ -205,6 +255,21 @@ const renderInstruction = instruction => () =>
       </span>
     </div>
     <div v-else class="overflow-hidden flex flex-col gap-4 w-full">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-n-slate-12 font-medium">
+          {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.TOGGLE.LABEL') }}
+        </span>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-n-slate-11">
+            {{
+              state.enabled
+                ? t('CAPTAIN.ASSISTANTS.SCENARIOS.STATUS.ENABLED')
+                : t('CAPTAIN.ASSISTANTS.SCENARIOS.STATUS.DISABLED')
+            }}
+          </span>
+          <Switch v-model="state.enabled" />
+        </div>
+      </div>
       <Input
         v-model="state.title"
         :label="t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.FORM.TITLE.LABEL')"

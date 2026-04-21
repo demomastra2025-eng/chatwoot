@@ -1,6 +1,7 @@
 class Captain::Tools::HttpRequestExecutor
   class MissingRequiredParametersError < StandardError; end
   class ToolConfigurationError < StandardError; end
+
   class HttpRequestFailedError < StandardError
     attr_reader :status
 
@@ -33,8 +34,9 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def call(params = {})
-    request_preview = preview(params)
-    response = execute_http_request(request_preview[:url], request_preview[:body])
+    request_preview = build_request_preview(params)
+    execution_url = request_preview.delete(:execution_url)
+    response = execute_http_request(execution_url, request_preview[:body])
     @custom_tool.format_response(response.body)
   rescue MissingRequiredParametersError => e
     Rails.logger.warn("HttpTool missing parameters for #{@custom_tool.slug}: #{e.message}")
@@ -62,20 +64,42 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def preview(params = {})
-    build_request_preview(params)
+    build_request_preview(params).except(:execution_url)
   end
 
   def execute_with_details(params = {}, raise_on_http_error: false)
     request_preview = build_request_preview(params)
+    execution_url = request_preview.delete(:execution_url)
     argument_error = preview_safety_error_for(:tool_arguments, request_preview[:resolved_params])
     return blocked_details_response(request_preview, argument_error) if argument_error
 
     response = execute_http_request(
-      request_preview[:url],
+      execution_url,
       request_preview[:body],
       raise_on_http_error: raise_on_http_error
     )
-    formatted_body = @custom_tool.format_response(response.body)
+    formatted_body, format_error = format_response_details(response.body)
+    if format_error
+      return {
+        preview: request_preview,
+        tool_result: Captain::ToolResult.failure(
+          error: format_error,
+          retryable: false,
+          audit: failure_audit(
+            request_preview,
+            failure_stage: 'response_template',
+            http_status: response.code.to_i
+          )
+        ),
+        response: build_response_details(
+          response,
+          formatted_body: nil,
+          format_error: format_error,
+          successful: false
+        )
+      }
+    end
+
     result_error = preview_safety_error_for(:tool_results, formatted_body)
     return blocked_details_response(request_preview, result_error, response: response) if result_error
 
@@ -87,25 +111,30 @@ class Captain::Tools::HttpRequestExecutor
     {
       preview: request_preview,
       tool_result: tool_result,
-      response: {
-        successful: response.is_a?(Net::HTTPSuccess),
-        status: response.code.to_i,
-        body: response.body,
-        formatted_body: formatted_body,
-        headers: normalize_response_headers(response.to_hash)
-      }
+      response: build_response_details(response, formatted_body: formatted_body)
     }
   end
 
   private
 
+  def format_response_details(raw_response_body)
+    [@custom_tool.format_response(raw_response_body), nil]
+  rescue StandardError => e
+    [nil, e.message]
+  end
+
   def build_request_preview(params)
     request_params = resolve_request_params(params, @state)
     template_context = build_template_context(request_params, @state)
+    execution_url = @custom_tool.build_request_url(
+      request_params,
+      template_context: template_context
+    )
 
     {
       resolved_params: request_params,
-      url: @custom_tool.build_request_url(request_params, template_context: template_context),
+      url: masked_preview_url(execution_url),
+      execution_url: execution_url,
       body: @custom_tool.build_request_body(request_params, template_context: template_context)
     }
   end
@@ -127,6 +156,27 @@ class Captain::Tools::HttpRequestExecutor
       'account' => account_template_context,
       'visible_fields' => prompt_context['visible_fields'] || {}
     }.merge(safe_root_params)
+  end
+
+  def masked_preview_url(url)
+    return url unless @custom_tool.auth_type == 'api_key'
+    return url unless @custom_tool.auth_config['location'] == 'query'
+
+    api_key_name = @custom_tool.auth_config['name'].to_s
+    return url if api_key_name.blank?
+
+    uri = URI.parse(url)
+    query_pairs = URI.decode_www_form(uri.query.to_s)
+    return url unless query_pairs.any? { |key, _value| key == api_key_name }
+
+    uri.query = URI.encode_www_form(
+      query_pairs.map do |key, value|
+        key == api_key_name ? [key, 'REDACTED'] : [key, value]
+      end
+    )
+    uri.to_s
+  rescue URI::InvalidURIError
+    url
   end
 
   def resolve_request_params(params, state)
@@ -314,6 +364,19 @@ class Captain::Tools::HttpRequestExecutor
     headers.to_h.transform_values do |value|
       value.is_a?(Array) && value.one? ? value.first : value
     end
+  end
+
+  def build_response_details(response, formatted_body:, format_error: nil, successful: nil)
+    successful = response.is_a?(Net::HTTPSuccess) if successful.nil?
+
+    {
+      successful: successful,
+      status: response.code.to_i,
+      body: response.body,
+      formatted_body: formatted_body,
+      format_error: format_error,
+      headers: normalize_response_headers(response.to_hash)
+    }.compact
   end
 
   def preview_safety_error_for(stage, content)

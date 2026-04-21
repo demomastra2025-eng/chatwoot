@@ -1261,6 +1261,13 @@
           "CANCEL": "Отменить",
           "UPDATE": "Обновить изменения"
         },
+        "STATUS": {
+          "ENABLED": "Включен",
+          "DISABLED": "Выключен"
+        },
+        "TOGGLE": {
+          "LABEL": "Доступность"
+        },
         "LIST": {
           "SEARCH_PLACEHOLDER": "Поиск..."
         },
@@ -1502,9 +1509,17 @@
           "USERNAME_PLACEHOLDER": "Введите имя пользователя",
           "PASSWORD": "Пароль",
           "PASSWORD_PLACEHOLDER": "Введите пароль",
+          "API_KEY_LOCATION_LABEL": "Куда передавать API key",
+          "API_KEY_LOCATION_PLACEHOLDER": "Выберите место передачи API key",
+          "API_KEY_LOCATIONS": {
+            "HEADER": "Заголовок",
+            "QUERY": "Query-параметр"
+          },
           "API_KEY": "Имя заголовка",
           "API_KEY_PLACEHOLDER": "X-API-Key",
-          "API_VALUE": "Значение заголовка",
+          "API_KEY_QUERY_NAME": "Имя query-параметра",
+          "API_KEY_QUERY_NAME_PLACEHOLDER": "api_key",
+          "API_VALUE": "Значение API key",
           "API_VALUE_PLACEHOLDER": "Введите значения API key"
         },
         "PARAMETERS": {
@@ -1571,7 +1586,14 @@
             "TEXT_PLACEHOLDER": "Введите тестовое значение",
             "NUMBER_PLACEHOLDER": "Введите тестовое число",
             "BOOLEAN_PLACEHOLDER": "true или false",
-            "JSON_PLACEHOLDER": "Введите тестовый JSON"
+            "JSON_PLACEHOLDER": "Введите тестовый JSON",
+            "ERRORS": {
+              "REQUIRED": "Тестовое значение обязательно",
+              "INVALID_NUMBER": "Введите корректное число",
+              "INVALID_ARRAY": "Введите корректный JSON-массив",
+              "INVALID_OBJECT": "Введите корректный JSON-объект",
+              "FIX_ERRORS": "Исправьте ошибки тестовых значений перед запуском инструмента."
+            }
           },
           "PREVIEW": {
             "ACTION": "Превью",
@@ -1592,16 +1614,24 @@
             "SUCCESS_STATUS": "HTTP {status}",
             "ERROR_STATUS": "HTTP {status}",
             "RAW_LABEL": "Сырой ответ",
-            "FORMATTED_LABEL": "Отформатированный ответ"
+            "FORMATTED_LABEL": "Отформатированный ответ",
+            "FORMAT_ERROR_LABEL": "Ошибка шаблона ответа"
           }
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Имя параметра обязательно",
           "PARAM_NAME_INVALID": "Используйте только буквы, цифры и подчёркивания, а начинать нужно с буквы или подчёркивания",
-          "PARAM_NAME_RESERVED": "Это имя зарезервировано под системный контекст. Используйте другое имя, а своё значение при необходимости обращайте как {{ params.имя_параметра }}.",
+          "PARAM_NAME_RESERVED": "Это имя зарезервировано под системный контекст. Используйте другое имя, а своё значение при необходимости обращайте как {'{{'} params.имя_параметра {'}}'}.",
+          "PARAM_NAME_DUPLICATE": "Имена параметров не должны повторяться",
           "PARAM_DESCRIPTION_REQUIRED": "Описание параметра обязательно",
           "PARAM_CONTEXT_PATH_REQUIRED": "Выберите поле контекста для этого параметра",
-          "PARAM_FIXED_VALUE_REQUIRED": "Для этого параметра требуется фиксированное значение"
+          "PARAM_FIXED_VALUE_REQUIRED": "Для этого параметра требуется фиксированное значение",
+          "PARAM_FIXED_VALUE_JSON_INVALID": "Введите корректный JSON, соответствующий выбранному типу параметра",
+          "AUTH_BEARER_TOKEN_REQUIRED": "Bearer token обязателен",
+          "AUTH_BASIC_USERNAME_REQUIRED": "Имя пользователя обязательно",
+          "AUTH_BASIC_PASSWORD_REQUIRED": "Пароль обязателен",
+          "AUTH_API_KEY_NAME_REQUIRED": "Имя API key обязательно",
+          "AUTH_API_KEY_VALUE_REQUIRED": "Значение API key обязательно"
         }
       },
       "UNGROUPED": "Без группы"

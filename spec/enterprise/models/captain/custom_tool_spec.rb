@@ -8,6 +8,7 @@ RSpec.describe Captain::CustomTool, type: :model do
   describe 'validations' do
     it { is_expected.to validate_presence_of(:title) }
     it { is_expected.to validate_presence_of(:endpoint_url) }
+
     it do
       expect(subject).to define_enum_for(:http_method).with_values(
         'GET' => 'GET',
@@ -290,6 +291,73 @@ RSpec.describe Captain::CustomTool, type: :model do
     end
   end
 
+  describe 'auth_config validation' do
+    let(:account) { create(:account) }
+
+    it 'defaults API key auth to header mode when location is omitted' do
+      tool = build(
+        :captain_custom_tool,
+        account: account,
+        auth_type: 'api_key',
+        auth_config: { name: 'X-API-Key', key: 'secret' }
+      )
+
+      expect(tool).to be_valid
+      expect(tool.auth_config['location']).to eq('header')
+    end
+
+    it 'is invalid when bearer auth is missing a token' do
+      tool = build(
+        :captain_custom_tool,
+        account: account,
+        auth_type: 'bearer',
+        auth_config: {}
+      )
+
+      expect(tool).not_to be_valid
+      expect(tool.errors[:auth_config]).to include('bearer token is required')
+    end
+
+    it 'is invalid when basic auth is missing credentials' do
+      tool = build(
+        :captain_custom_tool,
+        account: account,
+        auth_type: 'basic',
+        auth_config: { username: '' }
+      )
+
+      expect(tool).not_to be_valid
+      expect(tool.errors[:auth_config]).to include('username is required')
+      expect(tool.errors[:auth_config]).to include('password is required')
+    end
+  end
+
+  describe 'template syntax validation' do
+    let(:account) { create(:account) }
+
+    it 'is invalid when endpoint_url contains broken Liquid syntax' do
+      tool = build(
+        :captain_custom_tool,
+        account: account,
+        endpoint_url: 'https://api.example.com/orders/{{ order_id '
+      )
+
+      expect(tool).not_to be_valid
+      expect(tool.errors[:endpoint_url].join).to include('invalid Liquid syntax')
+    end
+
+    it 'is invalid when request_template contains broken Liquid syntax' do
+      tool = build(
+        :captain_custom_tool,
+        account: account,
+        request_template: '{"order_id":"{{ order_id "}'
+      )
+
+      expect(tool).not_to be_valid
+      expect(tool.errors[:request_template].join).to include('invalid Liquid syntax')
+    end
+  end
+
   describe 'slug generation' do
     let(:account) { create(:account) }
 
@@ -436,6 +504,20 @@ RSpec.describe Captain::CustomTool, type: :model do
         )
 
         expect(result).to eq('https://api.example.com/contacts/+1234567890')
+      end
+
+      it 'appends API key auth to the query string when configured' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          auth_type: 'api_key',
+          auth_config: { key: 'secret', location: 'query', name: 'api_key' },
+          endpoint_url: 'https://api.example.com/orders?details=true'
+        )
+
+        expect(tool.build_request_url({})).to eq(
+          'https://api.example.com/orders?details=true&api_key=secret'
+        )
       end
     end
 

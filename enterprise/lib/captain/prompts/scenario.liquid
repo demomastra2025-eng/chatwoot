@@ -11,7 +11,7 @@ You are a specialized agent called "{{ title }}", your task is to handle the fol
 {{ global_system_instruction }}
 {% endif -%}
 
-If you believe the user's request is not within the scope of your role, you can assign this conversation back to the orchestrator agent using the `handoff_to_{{ assistant_name }}` tool
+If you believe the user's request is not within the scope of your role, you can assign this conversation back to the orchestrator agent using the `{{ assistant_handoff_tool_name }}` tool
 
 {% if conversation or contact or deal or task or appointment or campaign != blank %}
 # Current Context

@@ -62,5 +62,29 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('Handoff to Human (handoff)')
     end
+
+    it 'reports only runtime-available scenario tools in preview metadata' do
+      custom_tool = create(
+        :captain_custom_tool,
+        account: account,
+        slug: 'custom_fetch-order',
+        title: 'Fetch Order'
+      )
+      create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        instruction: 'Use [@Fetch Order](tool://custom_fetch-order)'
+      )
+
+      custom_tool.update!(enabled: false)
+
+      preview = described_class.new(assistant: assistant).preview
+
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq([])
+      expect(preview.dig(:scenarios, 0, :layers)).to include(
+        include(id: 'tool_ids', title: 'Runtime tool IDs', enabled: false, values: [])
+      )
+    end
   end
 end

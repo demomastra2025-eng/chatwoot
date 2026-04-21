@@ -179,30 +179,55 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:param_schema]).to eq([
-                                                    {
-                                                      name: 'lead_name',
-                                                      type: 'string',
-                                                      description: 'Lead name',
-                                                      required: false,
-                                                      source: 'agent'
-                                                    },
-                                                    {
-                                                      name: 'customer_phone',
-                                                      type: 'string',
-                                                      description: 'Phone from system context',
-                                                      required: true,
-                                                      source: 'context',
-                                                      context_path: 'contact.phone_number'
-                                                    },
-                                                    {
-                                                      name: 'filters',
-                                                      type: 'object',
-                                                      description: 'Static filters',
-                                                      required: false,
-                                                      source: 'fixed',
-                                                      fixed_value: '{"pipeline":"sales"}'
-                                                    }
-                                                  ])
+                                                     {
+                                                       name: 'lead_name',
+                                                       type: 'string',
+                                                       description: 'Lead name',
+                                                       required: false,
+                                                       source: 'agent'
+                                                     },
+                                                     {
+                                                       name: 'customer_phone',
+                                                       type: 'string',
+                                                       description: 'Phone from system context',
+                                                       required: true,
+                                                       source: 'context',
+                                                       context_path: 'contact.phone_number'
+                                                     },
+                                                     {
+                                                       name: 'filters',
+                                                       type: 'object',
+                                                       description: 'Static filters',
+                                                       required: false,
+                                                       source: 'fixed',
+                                                       fixed_value: '{"pipeline":"sales"}'
+                                                     }
+                                                   ])
+      end
+
+      it 'defaults API key authentication to header mode when created from the modal payload shape' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+             params: {
+               custom_tool: {
+                 title: 'Protected endpoint',
+                 endpoint_url: 'https://api.example.com/protected',
+                 http_method: 'GET',
+                 auth_type: 'api_key',
+                 auth_config: {
+                   name: 'X-API-Key',
+                   key: 'secret'
+                 }
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:auth_config]).to eq({
+                                                    name: 'X-API-Key',
+                                                    key: 'secret',
+                                                    location: 'header'
+                                                  })
       end
 
       context 'with invalid parameters' do
@@ -225,6 +250,26 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         end
       end
 
+      context 'with invalid authentication config' do
+        it 'returns unprocessable entity when bearer auth is missing a token' do
+          post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+               params: {
+                 custom_tool: {
+                   title: 'Broken bearer tool',
+                   endpoint_url: 'https://api.example.com/protected',
+                   http_method: 'GET',
+                   auth_type: 'bearer',
+                   auth_config: {}
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include('bearer token is required')
+        end
+      end
+
       context 'with invalid endpoint URL' do
         let(:invalid_url_attributes) do
           {
@@ -243,6 +288,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                as: :json
 
           expect(response).to have_http_status(:unprocessable_content)
+        end
+      end
+
+      context 'with invalid Liquid template syntax' do
+        it 'returns unprocessable entity status' do
+          post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+               params: {
+                 custom_tool: {
+                   title: 'Broken template tool',
+                   endpoint_url: 'https://api.example.com/orders/{{ order_id ',
+                   http_method: 'GET'
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include('invalid Liquid syntax')
         end
       end
     end
@@ -322,30 +385,52 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:param_schema]).to eq([
-                                                    {
-                                                      name: 'lead_name',
-                                                      type: 'string',
-                                                      description: 'Lead name',
-                                                      required: false,
-                                                      source: 'agent'
-                                                    },
-                                                    {
-                                                      name: 'customer_phone',
-                                                      type: 'string',
-                                                      description: 'Phone from system context',
-                                                      required: true,
-                                                      source: 'context',
-                                                      context_path: 'contact.phone_number'
-                                                    },
-                                                    {
-                                                      name: 'pipeline',
-                                                      type: 'string',
-                                                      description: 'Static pipeline',
-                                                      required: false,
-                                                      source: 'fixed',
-                                                      fixed_value: 'sales'
-                                                    }
-                                                  ])
+                                                     {
+                                                       name: 'lead_name',
+                                                       type: 'string',
+                                                       description: 'Lead name',
+                                                       required: false,
+                                                       source: 'agent'
+                                                     },
+                                                     {
+                                                       name: 'customer_phone',
+                                                       type: 'string',
+                                                       description: 'Phone from system context',
+                                                       required: true,
+                                                       source: 'context',
+                                                       context_path: 'contact.phone_number'
+                                                     },
+                                                     {
+                                                       name: 'pipeline',
+                                                       type: 'string',
+                                                       description: 'Static pipeline',
+                                                       required: false,
+                                                       source: 'fixed',
+                                                       fixed_value: 'sales'
+                                                     }
+                                                   ])
+      end
+
+      it 'defaults missing API key location to header on update as well' do
+        patch "/api/v1/accounts/#{account.id}/captain/custom_tools/#{custom_tool.id}",
+              params: {
+                custom_tool: {
+                  auth_type: 'api_key',
+                  auth_config: {
+                    name: 'X-API-Key',
+                    key: 'updated-secret'
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:auth_config]).to eq({
+                                                    name: 'X-API-Key',
+                                                    key: 'updated-secret',
+                                                    location: 'header'
+                                                  })
       end
 
       context 'with invalid parameters' do
@@ -364,6 +449,25 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                 as: :json
 
           expect(response).to have_http_status(:unprocessable_content)
+        end
+      end
+
+      context 'with invalid authentication config' do
+        it 'returns unprocessable entity when API key auth is missing the header name' do
+          patch "/api/v1/accounts/#{account.id}/captain/custom_tools/#{custom_tool.id}",
+                params: {
+                  custom_tool: {
+                    auth_type: 'api_key',
+                    auth_config: {
+                      key: 'secret'
+                    }
+                  }
+                },
+                headers: admin.create_new_auth_token,
+                as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include('API key name is required')
         end
       end
     end
@@ -464,6 +568,36 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(WebMock).not_to have_requested(:post, /api\.example\.com/)
       end
 
+      it 'redacts query API key values in preview payloads while using the raw URL for execution' do
+        stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42&api_key=secret')
+          .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
+          .to_return(status: 200, body: '{"status":"accepted"}', headers: { 'Content-Type' => 'application/json' })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.deep_merge(
+               preview_only: false,
+               custom_tool: {
+                 auth_type: 'api_key',
+                 auth_config: {
+                   name: 'api_key',
+                   key: 'secret',
+                   location: 'query'
+                 }
+               }
+             ),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:preview][:url]).to eq(
+          'https://api.example.com/hooks/alice/sales?contact_id=42&api_key=REDACTED'
+        )
+        expect(WebMock).to have_requested(
+          :post,
+          'https://api.example.com/hooks/alice/sales?contact_id=42&api_key=secret'
+        )
+      end
+
       it 'executes the tool and returns preview plus response details' do
         stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
           .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
@@ -503,6 +637,30 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
           status: 422,
           body: '{"error":"invalid manager"}'
         )
+        expect(json_response[:response][:format_error]).to include(
+          'undefined variable status'
+        )
+      end
+
+      it 'marks response template failures as non-successful even on HTTP 200' do
+        stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
+          .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
+          .to_return(status: 200, body: '{"error":"missing status"}', headers: { 'Content-Type' => 'application/json' })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: false),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:response]).to include(
+          successful: false,
+          status: 200,
+          body: '{"error":"missing status"}'
+        )
+        expect(json_response[:response][:format_error]).to include(
+          'undefined variable status'
+        )
       end
 
       it 'returns a blocked preview response when tool arguments violate safety policy' do
@@ -520,7 +678,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
           blocked: true,
           stage: 'tool_arguments',
           reason: 'custom_blocklist',
-          body: nil,
           formatted_body: 'ERROR: Tool arguments blocked by safety policy'
         )
         expect(WebMock).not_to have_requested(:post, /api\.example\.com/)

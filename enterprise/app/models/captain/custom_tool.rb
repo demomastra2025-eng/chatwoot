@@ -93,6 +93,7 @@ class Captain::CustomTool < ApplicationRecord
 
   before_validation :normalize_group_name
   before_validation :generate_slug
+  before_validation :normalize_auth_config
   before_validation :normalize_param_schema
 
   validates :slug, presence: true, uniqueness: { scope: :account_id }
@@ -102,7 +103,9 @@ class Captain::CustomTool < ApplicationRecord
   validates_with JsonSchemaValidator,
                  schema: PARAM_SCHEMA_VALIDATION,
                  attribute_resolver: ->(record) { record.param_schema }
+  validate :validate_auth_configuration
   validate :validate_param_schema_sources
+  validate :validate_template_syntax
 
   scope :enabled, -> { where(enabled: true) }
 
@@ -231,6 +234,24 @@ class Captain::CustomTool < ApplicationRecord
     self.group_name = group_name.to_s.squish.presence
   end
 
+  def normalize_auth_config
+    raw_auth_config = auth_config.respond_to?(:to_h) ? auth_config.to_h : {}
+    normalized_auth_config = raw_auth_config.deep_stringify_keys
+
+    self.auth_config = case auth_type.to_s
+                       when 'bearer'
+                         normalized_auth_config.slice('token')
+                       when 'basic'
+                         normalized_auth_config.slice('username', 'password')
+                       when 'api_key'
+                         normalized_auth_config.slice('name', 'key', 'location').tap do |config|
+                           config['location'] = config['location'].presence || 'header'
+                         end
+                       else
+                         {}
+                       end
+  end
+
   def generate_slug
     return if slug.present?
     return if title.blank?
@@ -287,6 +308,37 @@ class Captain::CustomTool < ApplicationRecord
       validate_param_source(param_definition, available_field_ids)
       validate_fixed_param_value(param_definition)
     end
+  end
+
+  def validate_auth_configuration
+    case auth_type.to_s
+    when 'bearer'
+      errors.add(:auth_config, 'bearer token is required') if auth_config['token'].to_s.strip.blank?
+    when 'basic'
+      errors.add(:auth_config, 'username is required') if auth_config['username'].to_s.strip.blank?
+      errors.add(:auth_config, 'password is required') if auth_config['password'].to_s.strip.blank?
+    when 'api_key'
+      errors.add(:auth_config, 'API key name is required') if auth_config['name'].to_s.strip.blank?
+      errors.add(:auth_config, 'API key value is required') if auth_config['key'].to_s.strip.blank?
+      return if %w[header query].include?(auth_config['location'])
+
+      errors.add(:auth_config, 'API key location must be header or query')
+    end
+  end
+
+  def validate_template_syntax
+    validate_template_attribute(:endpoint_url)
+    validate_template_attribute(:request_template)
+    validate_template_attribute(:response_template)
+  end
+
+  def validate_template_attribute(attribute_name)
+    template = public_send(attribute_name)
+    return if template.blank?
+
+    Liquid::Template.parse(template, error_mode: :strict)
+  rescue Liquid::SyntaxError => e
+    errors.add(attribute_name, "contains invalid Liquid syntax: #{e.message}")
   end
 
   def validate_param_definition_shape(param_definition, parameter_names)

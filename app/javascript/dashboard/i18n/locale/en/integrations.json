@@ -1261,6 +1261,13 @@
           "CANCEL": "Cancel",
           "UPDATE": "Update changes"
         },
+        "STATUS": {
+          "ENABLED": "Enabled",
+          "DISABLED": "Disabled"
+        },
+        "TOGGLE": {
+          "LABEL": "Availability"
+        },
         "LIST": {
           "SEARCH_PLACEHOLDER": "Search..."
         },
@@ -1502,9 +1509,17 @@
           "USERNAME_PLACEHOLDER": "Enter username",
           "PASSWORD": "Password",
           "PASSWORD_PLACEHOLDER": "Enter password",
+          "API_KEY_LOCATION_LABEL": "API Key Location",
+          "API_KEY_LOCATION_PLACEHOLDER": "Choose where to send the API key",
+          "API_KEY_LOCATIONS": {
+            "HEADER": "Header",
+            "QUERY": "Query parameter"
+          },
           "API_KEY": "Header Name",
           "API_KEY_PLACEHOLDER": "X-API-Key",
-          "API_VALUE": "Header Value",
+          "API_KEY_QUERY_NAME": "Query Parameter Name",
+          "API_KEY_QUERY_NAME_PLACEHOLDER": "api_key",
+          "API_VALUE": "API Key Value",
           "API_VALUE_PLACEHOLDER": "Enter API key value"
         },
         "PARAMETERS": {
@@ -1571,7 +1586,14 @@
             "TEXT_PLACEHOLDER": "Enter a sample value",
             "NUMBER_PLACEHOLDER": "Enter a sample number",
             "BOOLEAN_PLACEHOLDER": "true or false",
-            "JSON_PLACEHOLDER": "Enter sample JSON"
+            "JSON_PLACEHOLDER": "Enter sample JSON",
+            "ERRORS": {
+              "REQUIRED": "Sample value is required",
+              "INVALID_NUMBER": "Enter a valid number",
+              "INVALID_ARRAY": "Enter valid JSON array",
+              "INVALID_OBJECT": "Enter valid JSON object",
+              "FIX_ERRORS": "Fix the sample input errors before running this tool."
+            }
           },
           "PREVIEW": {
             "ACTION": "Preview request",
@@ -1592,16 +1614,24 @@
             "SUCCESS_STATUS": "HTTP {status}",
             "ERROR_STATUS": "HTTP {status}",
             "RAW_LABEL": "Raw response",
-            "FORMATTED_LABEL": "Formatted response"
+            "FORMATTED_LABEL": "Formatted response",
+            "FORMAT_ERROR_LABEL": "Response template error"
           }
         },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Parameter name is required",
           "PARAM_NAME_INVALID": "Use letters, numbers, and underscores only, and start with a letter or underscore",
-          "PARAM_NAME_RESERVED": "This parameter name is reserved for system context. Use a different name and reference your value via {{ params.your_name }} if needed.",
+          "PARAM_NAME_RESERVED": "This parameter name is reserved for system context. Use a different name and reference your value via {'{{'} params.your_name {'}}'} if needed.",
+          "PARAM_NAME_DUPLICATE": "Parameter names must be unique",
           "PARAM_DESCRIPTION_REQUIRED": "Parameter description is required",
           "PARAM_CONTEXT_PATH_REQUIRED": "Select a context field for this parameter",
-          "PARAM_FIXED_VALUE_REQUIRED": "Fixed value is required for this parameter"
+          "PARAM_FIXED_VALUE_REQUIRED": "Fixed value is required for this parameter",
+          "PARAM_FIXED_VALUE_JSON_INVALID": "Enter valid JSON that matches the selected parameter type",
+          "AUTH_BEARER_TOKEN_REQUIRED": "Bearer token is required",
+          "AUTH_BASIC_USERNAME_REQUIRED": "Username is required",
+          "AUTH_BASIC_PASSWORD_REQUIRED": "Password is required",
+          "AUTH_API_KEY_NAME_REQUIRED": "API key name is required",
+          "AUTH_API_KEY_VALUE_REQUIRED": "API key value is required"
         }
       },
       "UNGROUPED": "Ungrouped"

@@ -11,6 +11,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  allParamNames: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['remove']);
@@ -20,6 +24,8 @@ const PARAM_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED_PARAM_NAMES = [
   'contact',
   'conversation',
+  'deal',
+  'task',
   'appointment',
   'assistant',
   'account',
@@ -27,6 +33,7 @@ const RESERVED_PARAM_NAMES = [
   'p',
   'visible_fields',
 ];
+const JSON_PARAM_TYPES = ['array', 'object'];
 
 const name = defineModel('name', {
   type: String,
@@ -90,31 +97,45 @@ const paramSourceOptions = computed(() => [
 ]);
 
 const fixedValuePlaceholder = computed(() => {
-  if (['array', 'object'].includes(type.value)) {
+  if (JSON_PARAM_TYPES.includes(type.value)) {
     return t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_FIXED_VALUE.JSON_PLACEHOLDER');
   }
 
   return t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_FIXED_VALUE.PLACEHOLDER');
 });
 
-const validationErrorMessages = computed(() => ({
-  PARAM_NAME_REQUIRED: t(
-    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_REQUIRED'
-  ),
-  PARAM_NAME_INVALID: t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_INVALID'),
-  PARAM_NAME_RESERVED: t(
-    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_RESERVED'
-  ),
-  PARAM_DESCRIPTION_REQUIRED: t(
-    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_DESCRIPTION_REQUIRED'
-  ),
-  PARAM_CONTEXT_PATH_REQUIRED: t(
-    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_CONTEXT_PATH_REQUIRED'
-  ),
-  PARAM_FIXED_VALUE_REQUIRED: t(
-    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_FIXED_VALUE_REQUIRED'
-  ),
-}));
+const hasDuplicateParamName = computed(() => {
+  const trimmedName = name.value?.trim();
+  if (!trimmedName) {
+    return false;
+  }
+
+  return (
+    props.allParamNames.filter(paramName => paramName?.trim() === trimmedName)
+      .length > 1
+  );
+});
+
+const hasInvalidFixedJsonValue = computed(() => {
+  if (
+    source.value !== 'fixed' ||
+    !JSON_PARAM_TYPES.includes(type.value) ||
+    !fixedValue.value
+  ) {
+    return false;
+  }
+
+  try {
+    const parsedValue = JSON.parse(fixedValue.value);
+    return type.value === 'array'
+      ? !Array.isArray(parsedValue)
+      : typeof parsedValue !== 'object' ||
+          Array.isArray(parsedValue) ||
+          parsedValue === null;
+  } catch {
+    return true;
+  }
+});
 
 const validationError = computed(() => {
   if (!name.value || name.value.trim() === '') {
@@ -125,6 +146,9 @@ const validationError = computed(() => {
   }
   if (RESERVED_PARAM_NAMES.includes(name.value.trim())) {
     return 'PARAM_NAME_RESERVED';
+  }
+  if (hasDuplicateParamName.value) {
+    return 'PARAM_NAME_DUPLICATE';
   }
   if (!description.value || description.value.trim() === '') {
     return 'PARAM_DESCRIPTION_REQUIRED';
@@ -140,14 +164,36 @@ const validationError = computed(() => {
   ) {
     return 'PARAM_FIXED_VALUE_REQUIRED';
   }
+  if (hasInvalidFixedJsonValue.value) {
+    return 'PARAM_FIXED_VALUE_JSON_INVALID';
+  }
   return null;
 });
 
-const validationErrorMessage = computed(() =>
-  validationError.value
-    ? validationErrorMessages.value[validationError.value]
-    : ''
-);
+const validationErrorMessage = computed(() => {
+  switch (validationError.value) {
+    case 'PARAM_NAME_REQUIRED':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_REQUIRED');
+    case 'PARAM_NAME_INVALID':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_INVALID');
+    case 'PARAM_NAME_RESERVED':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_RESERVED');
+    case 'PARAM_NAME_DUPLICATE':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_NAME_DUPLICATE');
+    case 'PARAM_DESCRIPTION_REQUIRED':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_DESCRIPTION_REQUIRED');
+    case 'PARAM_CONTEXT_PATH_REQUIRED':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_CONTEXT_PATH_REQUIRED');
+    case 'PARAM_FIXED_VALUE_REQUIRED':
+      return t('CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_FIXED_VALUE_REQUIRED');
+    case 'PARAM_FIXED_VALUE_JSON_INVALID':
+      return t(
+        'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.PARAM_FIXED_VALUE_JSON_INVALID'
+      );
+    default:
+      return '';
+  }
+});
 
 watch(
   [name, type, description, required, source, contextPath, fixedValue],

@@ -9,6 +9,7 @@ const sampleScenarios = [
     instruction:
       'Gather order details and reason for refund. Use [Order Search](tool://order_search) then submit with [Refund Payment](tool://refund_payment).',
     tools: ['order_search', 'refund_payment'],
+    enabled: true,
   },
   {
     id: 2,
@@ -17,6 +18,7 @@ const sampleScenarios = [
     instruction:
       'Ask for reproduction steps and environment. Check [Known Issues](tool://known_issues) then create ticket with [Create Bug Report](tool://bug_report_create).',
     tools: ['known_issues', 'bug_report_create'],
+    enabled: false,
   },
 ];
 </script>
@@ -38,6 +40,7 @@ const sampleScenarios = [
           :description="scenario.description"
           :instruction="scenario.instruction"
           :tools="scenario.tools"
+          :enabled="scenario.enabled"
         />
       </div>
     </Variant>

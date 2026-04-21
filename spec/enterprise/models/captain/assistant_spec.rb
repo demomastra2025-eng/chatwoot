@@ -3,6 +3,35 @@ require 'rails_helper'
 RSpec.describe Captain::Assistant, type: :model do
   describe 'validations' do
     it { is_expected.to validate_length_of(:description).is_at_most(10_000) }
+
+    it 'requires a handoff-safe normalized name' do
+      assistant = build(:captain_assistant, name: '!!!')
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors[:name]).to include('must contain letters or numbers that can be used for handoff tools')
+    end
+
+    it 'rejects names whose normalized handoff target exceeds the runtime limit' do
+      assistant = build(
+        :captain_assistant,
+        name: 'a' * (Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH + 1)
+      )
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors[:name]).to include(
+        "is too long for handoff tools (maximum #{Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH} normalized characters)"
+      )
+    end
+
+    it 'allows unrelated updates for legacy assistants with already-invalid names' do
+      assistant = create(:captain_assistant)
+      assistant.update_column(:name, '!!!')
+
+      assistant.description = 'Updated without renaming the assistant.'
+
+      expect { assistant.save! }.not_to raise_error
+      expect(assistant.reload.description).to eq('Updated without renaming the assistant.')
+    end
   end
 
   describe 'tool access' do

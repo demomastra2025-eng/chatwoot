@@ -65,6 +65,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_response_guideline_fields
   validate :validate_guardrail_tools
   validate :validate_guardrail_fields
+  validate :validate_handoff_target_name, if: :handoff_target_name_validation_required?
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -77,6 +78,14 @@ class Captain::Assistant < ApplicationRecord
 
   def available_name
     name
+  end
+
+  def handoff_target_name
+    Captain::HandoffNaming.normalize_target_name(name)
+  end
+
+  def handoff_tool_name
+    Captain::HandoffNaming.tool_name_for(handoff_target_name)
   end
 
   def available_agent_tools
@@ -295,7 +304,22 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def agent_name
-    name.parameterize(separator: '_')
+    handoff_target_name
+  end
+
+  def validate_handoff_target_name
+    if handoff_target_name.blank?
+      errors.add(:name, 'must contain letters or numbers that can be used for handoff tools')
+      return
+    end
+
+    return if handoff_target_name.length <= Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH
+
+    errors.add(:name, "is too long for handoff tools (maximum #{Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH} normalized characters)")
+  end
+
+  def handoff_target_name_validation_required?
+    new_record? || will_save_change_to_name?
   end
 
   def agent_tools

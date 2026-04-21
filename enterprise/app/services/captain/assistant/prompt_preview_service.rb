@@ -33,7 +33,7 @@ class Captain::Assistant::PromptPreviewService
       compiled_prompt: compiled_prompt,
       notes: [
         'Rendered without live conversation context.',
-        'Effective runtime tools come from tool_access plus explicit tool:// references, except capability tools which activate only when their checkbox is enabled.',
+        effective_runtime_tools_note,
         'High-risk and confirmation policy checks still apply at runtime.'
       ],
       used_field_ids: assistant_used_field_ids,
@@ -65,29 +65,7 @@ class Captain::Assistant::PromptPreviewService
     }
   end
 
-  def scenario_previews
-    assistant.scenarios.enabled.map do |scenario|
-      compiled_prompt = scenario.agent_instructions
-
-      {
-        id: scenario.id,
-        title: scenario.title,
-        handoff_key: scenario.handoff_key,
-        prompt_id: "captain_v2.scenario.#{scenario.id}",
-        template_name: 'scenario',
-        prompt_sha256: digest(compiled_prompt),
-        compiled_prompt: compiled_prompt,
-        used_field_ids: scenario_used_field_ids(scenario),
-        used_tool_ids: Array(scenario.tools),
-        layers: [
-          text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
-          text_layer('description', 'Description', scenario.description),
-          text_layer('instructions', 'Scenario instructions', scenario.instruction),
-          list_layer('tool_ids', 'Resolved tool IDs', Array(scenario.tools))
-        ]
-      }
-    end
-  end
+  def scenario_previews = assistant.scenarios.enabled.map { |scenario| scenario_preview(scenario) }
 
   def allowed_copilot_tools
     assistant.allowed_assistant_tools
@@ -147,6 +125,34 @@ class Captain::Assistant::PromptPreviewService
     else
       assistant.prompt_runtime_agent_tools
     end
+  end
+
+  def effective_runtime_tools_note
+    'Effective runtime tools come from tool_access plus explicit tool:// references, ' \
+      'except capability tools which activate only when their checkbox is enabled.'
+  end
+
+  def scenario_preview(scenario)
+    compiled_prompt = scenario.agent_instructions
+    runtime_tool_ids = scenario.runtime_tool_ids
+
+    {
+      id: scenario.id,
+      title: scenario.title,
+      handoff_key: scenario.handoff_key,
+      prompt_id: "captain_v2.scenario.#{scenario.id}",
+      template_name: 'scenario',
+      prompt_sha256: digest(compiled_prompt),
+      compiled_prompt: compiled_prompt,
+      used_field_ids: scenario_used_field_ids(scenario),
+      used_tool_ids: runtime_tool_ids,
+      layers: [
+        text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
+        text_layer('description', 'Description', scenario.description),
+        text_layer('instructions', 'Scenario instructions', scenario.instruction),
+        list_layer('tool_ids', 'Runtime tool IDs', runtime_tool_ids)
+      ]
+    }
   end
 
   def scenario_used_field_ids(scenario)

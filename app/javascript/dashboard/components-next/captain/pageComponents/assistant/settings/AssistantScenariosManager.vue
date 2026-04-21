@@ -324,6 +324,7 @@ watch(
           :description="scenario.description"
           :instruction="scenario.instruction"
           :tools="scenario.tools"
+          :enabled="scenario.enabled"
           :assistant-id="assistantId"
           :is-selected="bulkSelectedIds.has(scenario.id)"
           :selectable="hoveredCard === scenario.id || bulkSelectedIds.size > 0"

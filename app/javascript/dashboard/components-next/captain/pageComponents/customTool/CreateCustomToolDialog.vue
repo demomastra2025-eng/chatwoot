@@ -25,6 +25,7 @@ const { t } = useI18n();
 const store = useStore();
 
 const dialogRef = ref(null);
+const formRenderKey = ref(0);
 
 const updateTool = toolDetails =>
   store.dispatch('captainCustomTools/update', {
@@ -32,8 +33,18 @@ const updateTool = toolDetails =>
     ...toolDetails,
   });
 
-const i18nKey = computed(
-  () => `CAPTAIN.CUSTOM_TOOLS.${props.type.toUpperCase()}`
+const dialogCopy = computed(() =>
+  props.type === 'edit'
+    ? {
+        title: t('CAPTAIN.CUSTOM_TOOLS.EDIT.TITLE'),
+        successMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.SUCCESS_MESSAGE'),
+        errorMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.ERROR_MESSAGE'),
+      }
+    : {
+        title: t('CAPTAIN.CUSTOM_TOOLS.CREATE.TITLE'),
+        successMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.SUCCESS_MESSAGE'),
+        errorMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.ERROR_MESSAGE'),
+      }
 );
 
 const createTool = toolDetails =>
@@ -46,16 +57,17 @@ const handleSubmit = async updatedTool => {
     } else {
       await createTool(updatedTool);
     }
-    useAlert(t(`${i18nKey.value}.SUCCESS_MESSAGE`));
+    useAlert(dialogCopy.value.successMessage);
     dialogRef.value.close();
   } catch (error) {
     const errorMessage =
-      parseAPIErrorResponse(error) || t(`${i18nKey.value}.ERROR_MESSAGE`);
+      parseAPIErrorResponse(error) || dialogCopy.value.errorMessage;
     useAlert(errorMessage);
   }
 };
 
 const handleClose = () => {
+  formRenderKey.value += 1;
   emit('close');
 };
 
@@ -71,13 +83,14 @@ defineExpose({ dialogRef });
     ref="dialogRef"
     width="2xl"
     :render-on-open-only="false"
-    :title="$t(`${i18nKey}.TITLE`)"
+    :title="dialogCopy.title"
     :description="$t('CAPTAIN.CUSTOM_TOOLS.FORM_DESCRIPTION')"
     :show-cancel-button="false"
     :show-confirm-button="false"
     @close="handleClose"
   >
     <CustomToolForm
+      :key="`${type}-${selectedTool?.id || 'new'}-${formRenderKey}`"
       :mode="type"
       :tool="selectedTool"
       @submit="handleSubmit"

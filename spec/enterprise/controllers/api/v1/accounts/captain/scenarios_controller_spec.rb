@@ -41,7 +41,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
         expect(json_response[:payload].length).to eq(5)
       end
 
-      it 'returns only enabled scenarios' do
+      it 'returns enabled and disabled scenarios for management' do
         create(:captain_scenario, assistant: assistant, account: account, enabled: true)
         create(:captain_scenario, assistant: assistant, account: account, enabled: false)
         get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/scenarios",
@@ -49,8 +49,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
             as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response[:payload].length).to eq(1)
-        expect(json_response[:payload].first[:enabled]).to be(true)
+        expect(json_response[:payload].length).to eq(2)
+        expect(json_response[:payload].map { |scenario| scenario[:enabled] }).to contain_exactly(true, false)
       end
     end
   end

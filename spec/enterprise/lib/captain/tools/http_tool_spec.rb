@@ -461,7 +461,9 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       it 'returns a helpful error without executing the request' do
         result = tool.perform(tool_context_with_prompt_context)
 
-        expect(result).to eq('The tool could not run because customer_phone is missing')
+        expect(result).to eq(
+          'ERROR: The tool could not run because customer_phone is missing'
+        )
         expect(WebMock).not_to have_requested(:any, 'https://example.com/leads')
       end
     end
@@ -532,6 +534,29 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    context 'with API key query authentication' do
+      before do
+        custom_tool.update!(
+          auth_type: 'api_key',
+          auth_config: { 'key' => 'api_key_123', 'location' => 'query', 'name' => 'api_key' },
+          endpoint_url: 'https://example.com/data?details=true',
+          response_template: nil
+        )
+        stub_request(:get, 'https://example.com/data?details=true&api_key=api_key_123')
+          .to_return(status: 200, body: '{"authenticated": true}')
+      end
+
+      it 'adds API key query parameter to the request URL' do
+        result = tool.perform(tool_context)
+
+        expect(result).to eq('{"authenticated": true}')
+        expect(WebMock).to have_requested(
+          :get,
+          'https://example.com/data?details=true&api_key=api_key_123'
+        )
+      end
+    end
+
     context 'with response template' do
       before do
         custom_tool.update!(
@@ -556,7 +581,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('An error occurred while executing the request')
+        expect(result).to eq('ERROR: An error occurred while executing the request')
       end
 
       it 'returns generic error message on timeout' do
@@ -565,7 +590,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('An error occurred while executing the request')
+        expect(result).to eq('ERROR: An error occurred while executing the request')
       end
 
       it 'returns generic error message on HTTP 404' do
@@ -574,7 +599,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('An error occurred while executing the request')
+        expect(result).to eq('ERROR: HTTP request failed with status 404')
       end
 
       it 'returns generic error message on HTTP 500' do
@@ -583,7 +608,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('An error occurred while executing the request')
+        expect(result).to eq('ERROR: HTTP request failed with status 500')
       end
 
       it 'returns generic error message when a hostname resolves to mixed public and private IPs' do
@@ -593,7 +618,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('An error occurred while executing the request')
+        expect(result).to eq('ERROR: An error occurred while executing the request')
         expect(WebMock).not_to have_requested(:get, 'https://example.com/data')
       end
 
@@ -733,23 +758,23 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
       it 'does not leak filtered-out contact fields through metadata headers' do
         tool_context_with_filtered_prompt_context = Struct.new(:state).new({
-                                                                            account_id: account.id,
-                                                                            assistant_id: assistant.id,
-                                                                            prompt_context: {
-                                                                              contact: {
-                                                                                id: contact.id
-                                                                              },
-                                                                              conversation: {
-                                                                                id: conversation.id,
-                                                                                display_id: conversation.display_id
-                                                                              }
-                                                                            },
-                                                                            contact: {
-                                                                              id: contact.id,
-                                                                              email: contact.email,
-                                                                              phone_number: contact.phone_number
-                                                                            }
-                                                                          })
+                                                                             account_id: account.id,
+                                                                             assistant_id: assistant.id,
+                                                                             prompt_context: {
+                                                                               contact: {
+                                                                                 id: contact.id
+                                                                               },
+                                                                               conversation: {
+                                                                                 id: conversation.id,
+                                                                                 display_id: conversation.display_id
+                                                                               }
+                                                                             },
+                                                                             contact: {
+                                                                               id: contact.id,
+                                                                               email: contact.email,
+                                                                               phone_number: contact.phone_number
+                                                                             }
+                                                                           })
 
         stub_request(:get, 'https://example.com/api/data')
           .with do |request|
@@ -876,12 +901,12 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         tool.perform(tool_context_with_state)
 
-        expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
-          .with { |request|
+        expect(WebMock).to(have_requested(:get, 'https://example.com/api/data')
+          .with do |request|
             request.headers['X-Chatwoot-Contact-Email'].blank? &&
               request.headers['X-Chatwoot-Appointment-Status'].blank? &&
               request.headers['X-Chatwoot-Appointment-Starts-At'].blank?
-          }
+          end)
       end
 
       it 'does not fall back to raw metadata when prompt context disables the table' do
@@ -895,12 +920,12 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         tool.perform(tool_context_with_state)
 
-        expect(WebMock).to have_requested(:get, 'https://example.com/api/data')
-          .with { |request|
+        expect(WebMock).to(have_requested(:get, 'https://example.com/api/data')
+          .with do |request|
             request.headers['X-Chatwoot-Contact-Id'].blank? &&
               request.headers['X-Chatwoot-Conversation-Id'].blank? &&
               request.headers['X-Chatwoot-Appointment-Id'].blank?
-          }
+          end)
       end
 
       it 'includes unverified contact inbox status explicitly as false' do

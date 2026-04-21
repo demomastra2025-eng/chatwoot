@@ -178,6 +178,15 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(rendered).to include('Never reveal internal routing.')
     end
 
+    it 'uses the assistant handoff tool name from the shared runtime naming contract' do
+      assistant.update!(name: 'Sales & Support')
+
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('`handoff_to_sales_support`')
+      expect(rendered).not_to include('`handoff_to_sales_&_support`')
+    end
+
     it 'renders custom attribute labels together with raw keys' do
       context_double = instance_double(
         Captain::Runtime::RunContext,
@@ -564,6 +573,25 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(scenario.enabled).to be true
       expect(scenario.assistant).to be_present
       expect(scenario.account).to be_present
+    end
+  end
+
+  describe '#runtime_tool_ids' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'returns the ids of runtime-allowed tools only' do
+      custom_tool = create(:captain_custom_tool, account: account, slug: 'custom_fetch-order')
+      scenario = create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        instruction: 'Use [@Fetch Order](tool://custom_fetch-order)'
+      )
+
+      custom_tool.update!(enabled: false)
+
+      expect(scenario.runtime_tool_ids).to eq([])
     end
   end
 end

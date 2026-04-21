@@ -47,6 +47,10 @@ const formState = {
   uiFlags: useMapGetter('captainCustomTools/getUIFlags'),
 };
 
+const PARAM_UI_KEY = '__uiKey';
+const API_KEY_LOCATIONS = ['header', 'query'];
+let nextParamUiKey = 0;
+
 const createInitialState = () => ({
   title: '',
   group_name: '',
@@ -72,6 +76,12 @@ const DEFAULT_PARAM = {
   fixed_value: '',
 };
 
+const buildParamUiKey = () => {
+  const currentKey = nextParamUiKey;
+  nextParamUiKey += 1;
+  return `param-${currentKey}`;
+};
+
 const serializeFixedValue = value => {
   if (value === null || value === undefined) {
     return '';
@@ -84,13 +94,100 @@ const serializeFixedValue = value => {
   return String(value);
 };
 
-const normalizeParam = param => ({
+const normalizeAuthConfig = (authType, authConfig = {}) => {
+  const config =
+    authConfig && typeof authConfig === 'object' ? { ...authConfig } : {};
+
+  switch (authType) {
+    case 'bearer':
+      return {
+        token: config.token || '',
+      };
+    case 'basic':
+      return {
+        username: config.username || '',
+        password: config.password || '',
+      };
+    case 'api_key':
+      return {
+        name: config.name || '',
+        key: config.key || '',
+        location: API_KEY_LOCATIONS.includes(config.location)
+          ? config.location
+          : 'header',
+      };
+    default:
+      return {};
+  }
+};
+
+const createParamState = param => ({
   ...DEFAULT_PARAM,
-  ...param,
-  source: param?.source || 'agent',
+  name: param?.name || '',
+  type: param?.type || DEFAULT_PARAM.type,
+  description: param?.description || '',
+  required: Boolean(param?.required),
+  source: param?.source || DEFAULT_PARAM.source,
   context_path: param?.context_path || '',
   fixed_value: serializeFixedValue(param?.fixed_value),
+  [PARAM_UI_KEY]: param?.[PARAM_UI_KEY] || buildParamUiKey(),
 });
+
+const serializeParamForPayload = param => {
+  const serializedParam = {
+    name: param?.name || '',
+    type: param?.type || DEFAULT_PARAM.type,
+    description: param?.description || '',
+    required: Boolean(param?.required),
+    source: param?.source || DEFAULT_PARAM.source,
+  };
+
+  if (serializedParam.source === 'context') {
+    serializedParam.context_path = param?.context_path || '';
+  }
+
+  if (serializedParam.source === 'fixed') {
+    serializedParam.fixed_value = serializeFixedValue(param?.fixed_value);
+  }
+
+  return serializedParam;
+};
+
+const isStructurallyValidEndpointUrl = value => {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const sanitizedValue = value.replace(/\{\{[^}]+\}\}/g, 'placeholder');
+    const parsedUrl = new URL(sanitizedValue);
+    const host = parsedUrl.hostname || '';
+
+    if (parsedUrl.protocol !== 'https:') {
+      return false;
+    }
+
+    if (
+      !host ||
+      host.toLowerCase() === 'localhost' ||
+      host.endsWith('.local')
+    ) {
+      return false;
+    }
+
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':')) {
+      return false;
+    }
+
+    if (Array.from(host).some(char => char.charCodeAt(0) > 127)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const syncFormState = updater => {
   isSyncingFormState.value = true;
@@ -119,8 +216,11 @@ const applyToolState = tool => {
       request_template: tool.request_template || '',
       response_template: tool.response_template || '',
       auth_type: tool.auth_type || 'none',
-      auth_config: tool.auth_config ? { ...tool.auth_config } : {},
-      param_schema: (tool.param_schema || []).map(normalizeParam),
+      auth_config: normalizeAuthConfig(
+        tool.auth_type || 'none',
+        tool.auth_config
+      ),
+      param_schema: (tool.param_schema || []).map(createParamState),
     });
   });
 };
@@ -145,14 +245,17 @@ watch(
       return;
     }
 
-    state.auth_config = {};
+    state.auth_config = normalizeAuthConfig(authType);
   },
   { flush: 'sync' }
 );
 
 const validationRules = {
   title: { required },
-  endpoint_url: { required },
+  endpoint_url: {
+    required,
+    isStructurallyValidEndpointUrl,
+  },
   http_method: { required },
   auth_type: { required },
 };
@@ -213,6 +316,26 @@ const fieldErrorMessages = computed(() => ({
   ENDPOINT_URL: t('CAPTAIN.CUSTOM_TOOLS.FORM.ENDPOINT_URL.ERROR'),
 }));
 
+const authConfigErrorMessages = computed(() => ({
+  BEARER_TOKEN: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.AUTH_BEARER_TOKEN_REQUIRED'
+  ),
+  BASIC_USERNAME: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.AUTH_BASIC_USERNAME_REQUIRED'
+  ),
+  BASIC_PASSWORD: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.AUTH_BASIC_PASSWORD_REQUIRED'
+  ),
+  API_KEY_NAME: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.AUTH_API_KEY_NAME_REQUIRED'
+  ),
+  API_KEY_VALUE: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.ERRORS.AUTH_API_KEY_VALUE_REQUIRED'
+  ),
+}));
+
+const showAuthConfigErrors = ref(false);
+
 const submitLabel = computed(() =>
   props.mode === 'edit' ? t('CAPTAIN.FORM.EDIT') : t('CAPTAIN.FORM.CREATE')
 );
@@ -226,6 +349,46 @@ const formErrors = computed(() => ({
   endpoint_url: getErrorMessage('endpoint_url', 'ENDPOINT_URL'),
 }));
 
+const authConfigErrors = computed(() => {
+  const normalizedAuthConfig = normalizeAuthConfig(
+    state.auth_type,
+    state.auth_config
+  );
+
+  switch (state.auth_type) {
+    case 'bearer':
+      return {
+        token: normalizedAuthConfig.token?.trim()
+          ? ''
+          : authConfigErrorMessages.value.BEARER_TOKEN,
+      };
+    case 'basic':
+      return {
+        username: normalizedAuthConfig.username?.trim()
+          ? ''
+          : authConfigErrorMessages.value.BASIC_USERNAME,
+        password: normalizedAuthConfig.password?.trim()
+          ? ''
+          : authConfigErrorMessages.value.BASIC_PASSWORD,
+      };
+    case 'api_key':
+      return {
+        name: normalizedAuthConfig.name?.trim()
+          ? ''
+          : authConfigErrorMessages.value.API_KEY_NAME,
+        key: normalizedAuthConfig.key?.trim()
+          ? ''
+          : authConfigErrorMessages.value.API_KEY_VALUE,
+      };
+    default:
+      return {};
+  }
+});
+
+const visibleAuthConfigErrors = computed(() =>
+  showAuthConfigErrors.value ? authConfigErrors.value : {}
+);
+
 const paramsRef = useTemplateRef('paramsRef');
 
 const isParamsValid = () => {
@@ -234,6 +397,9 @@ const isParamsValid = () => {
   }
   return paramsRef.value.every(param => param.validate());
 };
+
+const isAuthConfigValid = () =>
+  Object.values(authConfigErrors.value).every(errorMessage => !errorMessage);
 
 const toolDraftForTesting = computed(() => ({
   title: state.title,
@@ -244,8 +410,8 @@ const toolDraftForTesting = computed(() => ({
   request_template: showRequestTemplate.value ? state.request_template : '',
   response_template: state.response_template,
   auth_type: state.auth_type,
-  auth_config: { ...state.auth_config },
-  param_schema: state.param_schema.map(normalizeParam),
+  auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
+  param_schema: state.param_schema.map(serializeParamForPayload),
 }));
 
 const removeParam = index => {
@@ -253,7 +419,7 @@ const removeParam = index => {
 };
 
 const addParam = () => {
-  state.param_schema.push({ ...DEFAULT_PARAM });
+  state.param_schema.push(createParamState());
 };
 
 const loadContextFields = async () => {
@@ -304,9 +470,18 @@ watch(
 
 const handleCancel = () => emit('cancel');
 
+watch(
+  () => [state.auth_type, state.auth_config],
+  () => {
+    showAuthConfigErrors.value = false;
+  },
+  { deep: true }
+);
+
 const validateBeforeToolTest = async () => {
   const isFormValid = await v$.value.$validate();
-  return isFormValid && isParamsValid();
+  showAuthConfigErrors.value = true;
+  return isFormValid && isAuthConfigValid() && isParamsValid();
 };
 
 const handleSubmit = async () => {
@@ -316,8 +491,9 @@ const handleSubmit = async () => {
 
   emit('submit', {
     ...state,
+    auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
     request_template: showRequestTemplate.value ? state.request_template : '',
-    param_schema: state.param_schema.map(normalizeParam),
+    param_schema: state.param_schema.map(serializeParamForPayload),
   });
 };
 </script>
@@ -386,6 +562,7 @@ const handleSubmit = async () => {
     <AuthConfig
       v-model:auth-config="state.auth_config"
       :auth-type="state.auth_type"
+      :errors="visibleAuthConfigErrors"
     />
 
     <div class="flex flex-col gap-2">
@@ -398,7 +575,7 @@ const handleSubmit = async () => {
       <ul v-if="state.param_schema.length > 0" class="grid gap-2 list-none">
         <ParamRow
           v-for="(param, index) in state.param_schema"
-          :key="index"
+          :key="param[PARAM_UI_KEY]"
           ref="paramsRef"
           v-model:name="param.name"
           v-model:type="param.type"
@@ -407,6 +584,7 @@ const handleSubmit = async () => {
           v-model:source="param.source"
           v-model:context-path="param.context_path"
           v-model:fixed-value="param.fixed_value"
+          :all-param-names="state.param_schema.map(item => item.name)"
           :context-field-options="contextFieldOptions"
           @remove="removeParam(index)"
         />
