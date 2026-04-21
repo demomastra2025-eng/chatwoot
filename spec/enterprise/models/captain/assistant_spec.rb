@@ -66,6 +66,11 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.direct_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
+    it 'keeps scenario default runtime limited to human handoff' do
+      expect(assistant.send(:scenario_default_tool_ids)).to eq(['handoff'])
+      expect(assistant.scenario_agent_tool_ids).to eq(['handoff'])
+    end
+
     it 'includes enabled custom tools in the assistant scope catalog by default' do
       custom_tool = create(:captain_custom_tool, account: account)
 
@@ -164,6 +169,69 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  describe '#rule_entries' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'exposes default system rules together with structured editable rules from config' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => [
+            {
+              'id' => 'reply_short',
+              'type' => 'response_guideline',
+              'group' => 'Conversation flow',
+              'content' => 'Reply in one short paragraph.',
+              'enabled' => true
+            },
+            {
+              'id' => 'block_legal_advice',
+              'type' => 'guardrail',
+              'group' => 'Restrictions',
+              'content' => 'Do not provide legal advice.',
+              'enabled' => false
+            }
+          ]
+        )
+      )
+
+      expect(assistant.rule_entries.select { |entry| entry[:type] == 'system' }).not_to be_empty
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'reply_short',
+          type: 'response_guideline',
+          group: 'Conversation flow',
+          content: 'Reply in one short paragraph.',
+          enabled: true,
+          editable: true
+        )
+      )
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'block_legal_advice',
+          type: 'guardrail',
+          group: 'Restrictions',
+          enabled: false
+        )
+      )
+      expect(assistant.response_guidelines).to eq(['Reply in one short paragraph.'])
+      expect(assistant.guardrails).to eq([])
+    end
+
+    it 'keeps compatibility when legacy array fields are cleared' do
+      assistant.update!(
+        response_guidelines: ['Ask one clarifying question first.'],
+        guardrails: ['Do not request passwords.']
+      )
+
+      assistant.update!(response_guidelines: [])
+
+      expect(assistant.response_guidelines).to eq([])
+      expect(assistant.rule_entries.none? { |entry| entry[:type] == 'response_guideline' }).to be(true)
+      expect(assistant.guardrails).to eq(['Do not request passwords.'])
+    end
+  end
+
   describe '#agent_instructions' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
@@ -186,6 +254,14 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(rendered).to include('# Global System Instructions')
       expect(rendered).to include('Never reveal internal routing.')
+    end
+
+    it 'renders system rules from the structured rules config' do
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('# System Rules')
+      expect(rendered).to include('Stay within your configured scope and instructions.')
+      expect(rendered).to include('Always detect the user')
     end
 
     it 'renders the default runtime tools in the prompt glossary' do

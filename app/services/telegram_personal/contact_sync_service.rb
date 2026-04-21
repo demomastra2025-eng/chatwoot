@@ -74,10 +74,15 @@ class TelegramPersonal::ContactSyncService
   end
 
   def sync_channel_profile_avatar!(profile)
-    return unless @channel_profile_avatar_refresh_required
     return if profile.blank?
 
-    Avatar::AvatarFromUrlJob.perform_later(profile, avatar_url)
+    if self_profile_payload? || avatar_fingerprint.blank?
+      purge_channel_profile_avatar!(profile)
+      return
+    end
+    return unless @channel_profile_avatar_refresh_required
+
+    TelegramPersonal::SyncProfileAvatarJob.perform_later(profile.id, avatar_fingerprint)
   rescue StandardError => e
     Rails.logger.info("[TELEGRAM PERSONAL] Avatar sync enqueue failed for channel profile #{profile&.id || 'new'}: #{e.class}: #{e.message}")
   end
@@ -95,6 +100,7 @@ class TelegramPersonal::ContactSyncService
         profile_data: profile_data
       )
     ).perform
+    clear_channel_profile_avatar_fingerprint!(profile)
     repair_self_profile_channel_profile!(profile)
     profile
   end
@@ -181,7 +187,9 @@ class TelegramPersonal::ContactSyncService
       sync_source: sync_source,
       last_message_at: latest_activity_at&.iso8601,
       unread_count: unread_count
-    }.compact.deep_stringify_keys
+    }.compact.deep_stringify_keys.tap do |profile|
+      profile['avatar_fingerprint'] = avatar_fingerprint
+    end
   end
 
   def telegram_channel_profile_for_contact_attributes
@@ -191,13 +199,34 @@ class TelegramPersonal::ContactSyncService
   end
 
   def should_refresh_channel_profile_avatar?(profile)
-    return false if safe_avatar_url.blank?
     return false if self_profile_payload?
+    return false if peer_user_id.blank?
+    return false if avatar_fingerprint.blank?
     return true if profile.blank?
     return true unless profile.avatar.attached?
-    return false if avatar_fingerprint.blank?
 
     profile.avatar_fingerprint != avatar_fingerprint
+  end
+
+  def purge_channel_profile_avatar!(profile)
+    return if profile.blank?
+    return unless profile.avatar.attached?
+
+    profile.avatar.purge_later
+  rescue StandardError => e
+    Rails.logger.info(
+      "[TELEGRAM PERSONAL] Avatar purge failed for channel profile #{profile.id}: #{e.class}: #{e.message}"
+    )
+  end
+
+  def clear_channel_profile_avatar_fingerprint!(profile)
+    return if profile.blank?
+    return if avatar_fingerprint.present?
+
+    cleaned_profile_data = (profile.profile_data || {}).deep_stringify_keys.except('avatar_fingerprint')
+    return if cleaned_profile_data == (profile.profile_data || {}).deep_stringify_keys
+
+    profile.update!(profile_data: cleaned_profile_data)
   end
 
   def should_update_contact_identifier?
@@ -409,6 +438,8 @@ class TelegramPersonal::ContactSyncService
   def repair_self_profile_channel_profile!(profile)
     return unless self_profile_payload?
     return if profile.blank?
+
+    profile.avatar.purge_later if profile.avatar.attached?
 
     cleaned_profile_data = (profile.profile_data || {}).deep_stringify_keys.except(
       'avatar_url',

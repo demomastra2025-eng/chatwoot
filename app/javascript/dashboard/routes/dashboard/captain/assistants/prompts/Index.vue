@@ -12,6 +12,7 @@ import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageCo
 import AssistantRulesManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRulesManager.vue';
 import AssistantScenariosManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue';
 import PromptInspector from 'dashboard/components-next/captain/pageComponents/assistant/PromptInspector.vue';
+import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -28,6 +29,17 @@ const isInternalAssistant = computed(
   () => assistant.value?.usage_mode === 'internal_assistant'
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
+const promptTabs = computed(() => [
+  {
+    key: 'rules',
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_TABS.RULES'),
+  },
+  {
+    key: 'scenarios',
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_TABS.SCENARIOS'),
+  },
+]);
+const activePromptTab = ref(promptTabs.value[0]?.key || 'rules');
 
 watch(
   assistantId,
@@ -87,6 +99,10 @@ const handlePromptsSave = async () => {
 
   await handleSubmit(mergeAssistantPayloads(instructionPayload));
 };
+
+const onPromptTabChanged = tab => {
+  activePromptTab.value = tab?.key || 'rules';
+};
 </script>
 
 <template>
@@ -140,18 +156,31 @@ const handlePromptsSave = async () => {
         <div v-if="isExternalAgent" class="flex flex-col gap-6 pt-2">
           <div class="border-t border-n-weak" />
           <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-6">
-            <AssistantRulesManager
-              :assistant-id="assistantId"
-              :items="assistant?.response_guidelines || []"
-              :context-access="assistant?.config?.context_access || {}"
-              :tool-access="assistant?.config?.tool_access || {}"
-              field="response_guidelines"
-            />
-          </div>
+            <div class="flex items-center justify-between gap-4">
+              <SettingsHeader
+                :heading="$t('CAPTAIN.ASSISTANTS.RULES.TAB_TITLE')"
+                :description="$t('CAPTAIN.ASSISTANTS.RULES.TAB_DESCRIPTION')"
+              />
+              <TabBar
+                :tabs="promptTabs"
+                :initial-active-tab="
+                  promptTabs.findIndex(tab => tab.key === activePromptTab)
+                "
+                @tab-changed="onPromptTabChanged"
+              />
+            </div>
 
-          <div class="border-t border-n-weak" />
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-6">
-            <AssistantScenariosManager :assistant-id="assistantId" />
+            <AssistantRulesManager
+              v-if="activePromptTab === 'rules'"
+              :assistant-id="assistantId"
+              :assistant="assistant"
+              :show-header="false"
+            />
+            <AssistantScenariosManager
+              v-else
+              :assistant-id="assistantId"
+              :show-header="false"
+            />
           </div>
         </div>
       </div>

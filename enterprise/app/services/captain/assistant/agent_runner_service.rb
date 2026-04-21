@@ -152,7 +152,10 @@ class Captain::Assistant::AgentRunnerService
     scenario_agents = @assistant.scenarios.enabled.map(&:agent)
 
     assistant_agent.register_handoffs(*scenario_agents) if scenario_agents.any?
-    scenario_agents.each { |scenario_agent| scenario_agent.register_handoffs(assistant_agent) }
+    scenario_agents.each do |scenario_agent|
+      sibling_agents = scenario_agents.reject { |agent| agent.equal?(scenario_agent) }
+      scenario_agent.register_handoffs(assistant_agent, *sibling_agents)
+    end
 
     [assistant_agent] + scenario_agents
   end

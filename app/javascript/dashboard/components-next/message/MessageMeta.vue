@@ -45,6 +45,29 @@ const readableTime = computed(() =>
   messageTimestamp(createdAt.value, 'LLL d, h:mm a')
 );
 
+const formatAgentName = agentName => {
+  if (!agentName) return '';
+
+  let normalized = String(agentName).trim();
+  if (!normalized) return '';
+
+  normalized = normalized.replace(/^scenario_(?:draft_)?/, '');
+  normalized = normalized.replace(/^\d+_/, '');
+  normalized = normalized.replace(/_agent$/, '');
+
+  return normalized
+    .split('_')
+    .filter(Boolean)
+    .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+};
+
+const subagentName = computed(
+  () =>
+    formatAgentName(additionalAttributes.value?.agentName) ||
+    formatAgentName(additionalAttributes.value?.agent_name)
+);
+
 const showStatusIndicator = computed(() => {
   if (isPrivate.value) return false;
   // Don't show status for failed messages, we already show error message
@@ -200,6 +223,9 @@ const isIncomingOrientation = computed(() => orientation.value === 'left');
     <div class="inline">
       <time class="inline">{{ readableTime }}</time>
     </div>
+    <span v-if="subagentName" class="inline text-n-slate-11/90 font-medium">
+      {{ subagentName }}
+    </span>
     <span
       v-if="audioTimeLabel && isIncomingOrientation"
       class="inline tabular-nums text-n-slate-11/90 font-medium whitespace-nowrap"

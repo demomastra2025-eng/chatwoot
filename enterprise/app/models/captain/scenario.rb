@@ -52,7 +52,8 @@ class Captain::Scenario < ApplicationRecord
 
   scope :enabled, -> { where(enabled: true) }
 
-  delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, to: :assistant
+  delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, :system_rule_groups,
+           :response_guideline_groups, :guardrail_groups, :system_rule_contents, to: :assistant
 
   before_save :resolve_tool_references
 
@@ -68,10 +69,15 @@ class Captain::Scenario < ApplicationRecord
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
+      runtime_tool_ids: available_runtime_tools.pluck(:id),
       tools: available_runtime_tools,
       assistant_handoff_tool_name: assistant.handoff_tool_name,
+      handoff_scenarios: sibling_handoff_scenarios,
+      system_rule_groups: system_rule_groups,
       response_guidelines: response_guidelines || [],
       guardrails: guardrails || [],
+      response_guideline_groups: response_guideline_groups,
+      guardrail_groups: guardrail_groups,
       context_glossary: assistant.context_glossary_groups(referenced_field_ids),
       tool_glossary: assistant.tool_glossary_groups(available_runtime_tools)
     }
@@ -142,11 +148,11 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def resolved_tools
-    return [] if tools.blank?
-
     available_tools = assistant.available_agent_tools
     effective_tool_ids = assistant.scenario_agent_tool_ids(referenced_tool_ids: tools)
-    resolved_tools = tools.filter_map do |tool_id|
+    return [] if effective_tool_ids.empty?
+
+    resolved_tools = effective_tool_ids.filter_map do |tool_id|
       next unless effective_tool_ids.include?(tool_id.to_s)
 
       available_tools.find { |tool| tool[:id] == tool_id }
@@ -232,7 +238,19 @@ class Captain::Scenario < ApplicationRecord
 
   def referenced_field_ids_for_prompt
     Captain::ContextFields.extract_field_ids_from_text(
-      [instruction, response_guidelines, guardrails].flatten.compact.join("\n")
+      [instruction, system_rule_contents, response_guidelines, guardrails].flatten.compact.join("\n")
     )
+  end
+
+  def sibling_handoff_scenarios
+    scenarios = assistant.scenarios.enabled.to_a.reject { |scenario| scenario.id == id }
+
+    scenarios.map do |scenario|
+      {
+        title: scenario.title,
+        key: scenario.handoff_key,
+        description: scenario.description
+      }
+    end
   end
 end

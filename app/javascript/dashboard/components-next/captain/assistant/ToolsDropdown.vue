@@ -114,7 +114,7 @@ watch(
           </div>
         </div>
 
-        <div class="max-h-[min(20rem,calc(100vh-10rem))] overflow-y-auto pt-2">
+        <div class="max-h-[80vh] overflow-y-auto pt-2">
           <template v-if="groupedItems.length">
             <div
               v-for="(section, sectionIndex) in groupedItems"
@@ -185,7 +185,7 @@ watch(
       </div>
     </div>
 
-    <div class="max-h-[min(20rem,calc(100vh-10rem))] overflow-y-auto pt-2">
+    <div class="max-h-[80vh] overflow-y-auto pt-2">
       <template v-if="groupedItems.length">
         <div
           v-for="(section, sectionIndex) in groupedItems"

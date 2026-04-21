@@ -13,6 +13,9 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:assistant, :layers)).to include(
         include(id: 'instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
+      expect(preview.dig(:assistant, :layers)).to include(
+        include(id: 'system_rules', title: 'System rules', enabled: true)
+      )
       expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff])
       expect(preview.dig(:assistant, :compiled_prompt)).to include('FAQ Lookup (faq_lookup)')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('Handoff to Human (handoff)')
@@ -81,9 +84,14 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
 
       preview = described_class.new(assistant: assistant).preview
 
-      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq([])
+      expect(preview.dig(:scenarios, 0, :used_tool_ids)).to eq(['handoff'])
       expect(preview.dig(:scenarios, 0, :layers)).to include(
-        include(id: 'tool_ids', title: 'Runtime tool IDs', enabled: false, values: [])
+        include(
+          id: 'tool_ids',
+          title: 'Runtime tool IDs',
+          enabled: true,
+          values: ['handoff']
+        )
       )
     end
   end

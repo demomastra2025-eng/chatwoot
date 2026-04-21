@@ -1,19 +1,64 @@
 <script setup>
 import { computed, h, ref, watch } from 'vue';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
+
 import Button from 'dashboard/components-next/button/Button.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 
 const props = defineProps({
   id: {
-    type: Number,
+    type: [String, Number],
     required: true,
   },
   content: {
     type: String,
     required: true,
+  },
+  group: {
+    type: String,
+    default: '',
+  },
+  type: {
+    type: String,
+    default: '',
+  },
+  enabled: {
+    type: Boolean,
+    default: true,
+  },
+  editable: {
+    type: Boolean,
+    default: true,
+  },
+  selectable: {
+    type: Boolean,
+    default: false,
+  },
+  isSelected: {
+    type: Boolean,
+    default: false,
+  },
+  typeOptions: {
+    type: Array,
+    default: () => [],
+  },
+  typeBadgeMap: {
+    type: Object,
+    default: () => ({}),
+  },
+  groupLabel: {
+    type: String,
+    default: '',
+  },
+  groupPlaceholder: {
+    type: String,
+    default: '',
   },
   enableCaptainFields: {
     type: Boolean,
@@ -39,18 +84,13 @@ const props = defineProps({
     type: String,
     default: 'agent',
   },
-  selectable: {
-    type: Boolean,
-    default: false,
-  },
-  isSelected: {
-    type: Boolean,
-    default: false,
-  },
 });
 
-const emit = defineEmits(['select', 'hover', 'edit', 'delete']);
+const emit = defineEmits(['select', 'hover', 'update', 'edit', 'delete']);
 const { formatMessage } = useMessageFormatter();
+const isStructuredMode = computed(
+  () => props.typeOptions.length > 0 || !!props.type || !!props.group
+);
 
 const modelValue = computed({
   get: () => props.isSelected,
@@ -58,29 +98,67 @@ const modelValue = computed({
 });
 
 const isEditing = ref(false);
-const editedContent = ref(props.content);
+const localRule = ref({
+  id: props.id,
+  content: props.content,
+  group: props.group,
+  type: props.type,
+  enabled: props.enabled,
+  editable: props.editable,
+});
 
-// Local content to display to avoid flicker until parent prop updates on inline edit
-const localContent = ref(props.content);
-
-// Keeps localContent in sync when parent updates content prop
 watch(
-  () => props.content,
-  newVal => {
-    localContent.value = newVal;
+  () => [
+    props.id,
+    props.content,
+    props.group,
+    props.type,
+    props.enabled,
+    props.editable,
+  ],
+  ([id, content, group, type, enabled, editable]) => {
+    localRule.value = { id, content, group, type, enabled, editable };
   }
 );
 
 const startEdit = () => {
+  if (!props.editable) return;
+
+  localRule.value = {
+    id: props.id,
+    content: props.content,
+    group: props.group,
+    type: props.type,
+    enabled: props.enabled,
+    editable: props.editable,
+  };
   isEditing.value = true;
-  editedContent.value = props.content;
+};
+
+const stopEdit = () => {
+  isEditing.value = false;
 };
 
 const saveEdit = () => {
-  isEditing.value = false;
-  // Update local content
-  localContent.value = editedContent.value;
-  emit('edit', { id: props.id, content: editedContent.value });
+  emit('update', { ...localRule.value });
+  emit('edit', {
+    id: props.id,
+    content: localRule.value.content,
+  });
+  stopEdit();
+};
+
+const onToggleEnabled = enabled => {
+  if (!isStructuredMode.value) return;
+
+  emit('update', {
+    id: props.id,
+    content: props.content,
+    group: props.group,
+    type: props.type,
+    enabled,
+    editable: props.editable,
+  });
 };
 
 const LINK_RULE_CLASS =
@@ -91,47 +169,136 @@ const renderRuleContent = content => () =>
     class: `block text-sm text-n-slate-12 prose prose-sm min-w-0 break-words ${LINK_RULE_CLASS}`,
     innerHTML: formatMessage(content, false),
   });
+
+const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
 </script>
 
 <template>
   <CardLayout
     selectable
-    class="relative [&>div]:!py-5 [&>div]:ltr:!pr-4 [&>div]:rtl:!pl-4"
+    class="relative [&>div]:!py-5"
+    :class="{
+      '[&>div]:ltr:!pl-10 [&>div]:rtl:!pr-10': selectable,
+      'opacity-80': !enabled && !isEditing,
+    }"
     layout="row"
     @mouseenter="emit('hover', true)"
     @mouseleave="emit('hover', false)"
   >
-    <div v-show="selectable" class="absolute top-6 ltr:left-3 rtl:right-3">
+    <div v-if="selectable" class="absolute top-6 ltr:left-3 rtl:right-3">
       <Checkbox v-model="modelValue" />
     </div>
-    <Editor
-      v-if="isEditing"
-      v-model="editedContent"
-      focus-on-mount
-      :show-character-count="false"
-      :enable-captain-tools="enableCaptainTools"
-      :enable-captain-fields="enableCaptainFields"
-      :captain-context-assistant-id="captainContextAssistantId"
-      :captain-context-access="captainContextAccess"
-      :captain-tool-access="captainToolAccess"
-      :captain-tool-scope="captainToolScope"
-      class="flex-1"
-    />
-    <component :is="renderRuleContent(localContent)" v-else class="flex-1" />
-    <div class="flex items-center gap-2">
-      <template v-if="isEditing">
-        <Button icon="i-lucide-check" slate xs ghost @click="saveEdit" />
-        <span class="w-px h-4 bg-n-weak" />
-      </template>
-      <Button icon="i-lucide-pen" slate xs ghost @click="startEdit" />
-      <span class="w-px h-4 bg-n-weak" />
-      <Button
-        icon="i-lucide-trash"
-        slate
-        xs
-        ghost
-        @click="emit('delete', id)"
-      />
+
+    <div class="flex w-full gap-4">
+      <div
+        v-if="isStructuredMode"
+        class="captain-rule-handle mt-0.5 flex items-start text-n-slate-10 cursor-grab active:cursor-grabbing"
+      >
+        <Icon icon="i-lucide-grip-vertical" class="size-4" />
+      </div>
+
+      <div class="flex min-w-0 flex-1 flex-col gap-3">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <span
+              v-if="typeBadge.label"
+              class="inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
+              :class="typeBadge.className"
+            >
+              {{ typeBadge.label }}
+            </span>
+            <span
+              v-if="!editable && isStructuredMode"
+              class="inline-flex rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+            >
+              <span class="i-lucide-lock mr-1 size-3" />
+              {{ typeBadge.lockedLabel }}
+            </span>
+            <span
+              v-if="!enabled && isStructuredMode"
+              class="inline-flex rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+            >
+              {{ typeBadge.disabledLabel }}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <Switch
+              v-if="isStructuredMode"
+              :model-value="enabled"
+              @change="onToggleEnabled"
+            />
+            <template v-if="editable">
+              <Button
+                v-if="!isEditing"
+                icon="i-lucide-pen"
+                slate
+                xs
+                ghost
+                @click="startEdit"
+              />
+              <template v-else>
+                <Button
+                  icon="i-lucide-check"
+                  slate
+                  xs
+                  ghost
+                  @click="saveEdit"
+                />
+                <Button icon="i-lucide-x" slate xs ghost @click="stopEdit" />
+              </template>
+              <span class="h-4 w-px bg-n-weak" />
+              <Button
+                icon="i-lucide-trash"
+                slate
+                xs
+                ghost
+                @click="emit('delete', id)"
+              />
+            </template>
+          </div>
+        </div>
+
+        <template v-if="isEditing && editable">
+          <div v-if="isStructuredMode" class="grid grid-cols-2 gap-3">
+            <div class="flex min-w-0 flex-col gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ groupLabel }}
+              </span>
+              <Input
+                v-model="localRule.group"
+                :placeholder="groupPlaceholder"
+              />
+            </div>
+            <div class="flex min-w-0 flex-col gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ typeBadge.typeLabel }}
+              </span>
+              <Select
+                v-model="localRule.type"
+                :options="typeOptions"
+                class="w-full"
+              />
+            </div>
+          </div>
+
+          <Editor
+            v-model="localRule.content"
+            focus-on-mount
+            :show-character-count="false"
+            :enable-captain-tools="enableCaptainTools"
+            :enable-captain-fields="enableCaptainFields"
+            :captain-context-assistant-id="captainContextAssistantId"
+            :captain-context-access="captainContextAccess"
+            :captain-tool-access="captainToolAccess"
+            :captain-tool-scope="captainToolScope"
+          />
+        </template>
+
+        <template v-else>
+          <component :is="renderRuleContent(content)" />
+        </template>
+      </div>
     </div>
   </CardLayout>
 </template>

@@ -58,6 +58,65 @@ RSpec.describe TelegramPersonal::GatewayClient do
     end
   end
 
+  describe '#fetch_profile_avatar!' do
+    it 'downloads profile avatar bytes from the internal avatar endpoint' do
+      response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        body: 'avatar-bytes',
+        headers: { 'content-type' => 'image/png; charset=binary' }
+      )
+
+      expect(HTTParty).to receive(:get) do |url, options|
+        expect(url).to eq("#{ENV.fetch('TELEGRAM_PERSONAL_GATEWAY_URL')}/internal/channels/42/contacts/23/avatar")
+        expect(options).to include(
+          headers: { 'Authorization' => 'Bearer test-gateway-token' },
+          query: { fingerprint: 'telegram-photo-23' },
+          timeout: 60
+        )
+      end.and_return(response)
+
+      expect(
+        client.fetch_profile_avatar!(peer_user_id: '23', avatar_fingerprint: 'telegram-photo-23')
+      ).to eq(
+        body: 'avatar-bytes',
+        content_type: 'image/png'
+      )
+    end
+
+    it 'syncs the runtime and retries when the avatar endpoint reports an unsynced channel' do
+      unsynced_response = instance_double(
+        HTTParty::Response,
+        success?: false,
+        parsed_response: { error: 'Channel 42 is not synced' },
+        body: '{"error":"Channel 42 is not synced"}',
+        headers: {}
+      )
+      sync_response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        parsed_response: { channel: { lifecycle_state: 'connected' } }
+      )
+      avatar_response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        body: 'avatar-bytes',
+        headers: { 'content-type' => 'image/jpeg' }
+      )
+
+      expect(HTTParty).to receive(:get).ordered.and_return(unsynced_response)
+      expect(HTTParty).to receive(:post).ordered.and_return(sync_response)
+      expect(HTTParty).to receive(:get).ordered.and_return(avatar_response)
+
+      expect(
+        client.fetch_profile_avatar!(peer_user_id: '23', avatar_fingerprint: 'telegram-photo-23')
+      ).to eq(
+        body: 'avatar-bytes',
+        content_type: 'image/jpeg'
+      )
+    end
+  end
+
   describe '#send_message!' do
     it 'falls back chat_id to contact_inbox source_id when conversation chat_id is missing' do
       contact_inbox = instance_double(ContactInbox, source_id: '77')

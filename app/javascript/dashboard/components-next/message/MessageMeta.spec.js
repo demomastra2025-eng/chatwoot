@@ -43,6 +43,8 @@ const baseMessageContext = status => ({
   messageType: ref(MESSAGE_TYPES.OUTGOING),
   additionalAttributes: ref({}),
   contentAttributes: ref({ externalEcho: true }),
+  attachments: ref([]),
+  orientation: ref('right'),
 });
 
 const mountComponent = () =>
@@ -107,5 +109,18 @@ describe('MessageMeta', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('edited');
+  });
+
+  it('shows a humanized subagent name when agentName is present', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      additionalAttributes: ref({ agentName: 'scenario_35_andalusiya_agent' }),
+      contentAttributes: ref({}),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('Andalusiya');
+    expect(wrapper.text()).not.toContain('scenario_35_andalusiya_agent');
   });
 });

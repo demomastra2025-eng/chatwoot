@@ -20,6 +20,10 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  showHeader: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const { t } = useI18n();
@@ -57,6 +61,32 @@ const scenariosExample = [
       'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.PROSPECTIVE_BUYER.INSTRUCTION'
     ),
     tools: ['add_private_note', 'add_label_to_conversation', 'handoff'],
+  },
+  {
+    id: 2,
+    title: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.DESCRIPTION'
+    ),
+    instruction: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.INSTRUCTION'
+    ),
+    tools: ['add_private_note', 'handoff'],
+  },
+  {
+    id: 3,
+    title: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.DESCRIPTION'
+    ),
+    instruction: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.INSTRUCTION'
+    ),
+    tools: ['faq_lookup', 'handoff'],
   },
 ];
 
@@ -170,6 +200,15 @@ const bulkDeleteScenarios = async ids => {
 };
 
 const addScenario = async scenario => {
+  const alreadyExists = scenarios.value.some(
+    existing =>
+      existing.title === scenario.title &&
+      existing.description === scenario.description
+  );
+  if (alreadyExists) {
+    return;
+  }
+
   try {
     await store.dispatch('captainScenarios/create', {
       assistantId: props.assistantId,
@@ -189,8 +228,21 @@ const addScenario = async scenario => {
 
 const addAllExampleScenarios = async () => {
   try {
+    const existingScenarioKeys = new Set(
+      scenarios.value.map(
+        scenario => `${scenario.title}:${scenario.description}`
+      )
+    );
+    const scenariosToCreate = scenariosExample.filter(
+      scenario =>
+        !existingScenarioKeys.has(`${scenario.title}:${scenario.description}`)
+    );
+    if (!scenariosToCreate.length) {
+      return;
+    }
+
     await Promise.all(
-      scenariosExample.map(scenario =>
+      scenariosToCreate.map(scenario =>
         store.dispatch('captainScenarios/create', {
           assistantId: props.assistantId,
           ...scenario,
@@ -225,6 +277,7 @@ watch(
 <template>
   <div class="flex flex-col gap-4">
     <SettingsHeader
+      v-if="showHeader"
       :heading="$t('CAPTAIN.ASSISTANTS.SCENARIOS.TITLE')"
       :description="$t('CAPTAIN.ASSISTANTS.SCENARIOS.DESCRIPTION')"
     />
@@ -237,32 +290,48 @@ watch(
         @add="addAllExampleScenarios"
       >
         <template #default="{ item }">
-          <div class="flex items-center gap-3 justify-between">
-            <span class="text-sm text-n-slate-12">
-              {{ item.title }}
-            </span>
-            <Button
-              :label="
-                $t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.ADD_SINGLE')
-              "
-              ghost
-              xs
-              slate
-              class="!text-sm !text-n-slate-11 flex-shrink-0"
-              @click="addScenario(item)"
-            />
-          </div>
-          <div class="flex flex-col">
-            <span class="text-sm text-n-slate-11 mt-2">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-flex rounded-full bg-n-brand/10 px-2 py-0.5 text-[0.6875rem] font-medium text-n-brand"
+                >
+                  {{
+                    $t(
+                      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.SCENARIO_TAG'
+                    )
+                  }}
+                </span>
+                <span class="text-sm text-n-slate-12">
+                  {{ item.title }}
+                </span>
+              </div>
+              <Button
+                :label="
+                  $t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.ADD_SINGLE')
+                "
+                ghost
+                xs
+                slate
+                class="!text-sm !text-n-slate-11 flex-shrink-0"
+                @click="addScenario(item)"
+              />
+            </div>
+            <span class="text-sm text-n-slate-11">
               {{ item.description }}
             </span>
             <component
               :is="renderInstruction(formatMessage(item.instruction, false))"
             />
-            <span class="text-sm text-n-slate-11 font-medium mb-1">
-              {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TOOLS_USED') }}
-              {{ item.tools?.map(tool => `@${tool}`).join(', ') }}
-            </span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span
+                v-for="tool in item.tools"
+                :key="tool"
+                class="inline-flex rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+              >
+                {{ tool }}
+              </span>
+            </div>
           </div>
         </template>
       </SuggestedScenarios>

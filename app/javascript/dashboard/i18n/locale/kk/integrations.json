@@ -670,6 +670,10 @@
             "DESCRIPTION": "Agent messages, additive instructions, prompt visibility, and behavior controls.",
             "SECTION": "Edit the live assistant and Copilot instruction layers without changing the base system prompt."
           },
+          "PROMPT_TABS": {
+            "RULES": "Rules",
+            "SCENARIOS": "Scenarios"
+          },
           "ACCESS": {
             "LABEL": "Access",
             "DESCRIPTION": "Control which context fields and tools the assistant and Copilot can use."
@@ -805,6 +809,75 @@
           }
         }
       },
+      "RULES": {
+        "TITLE": "Rules",
+        "TAB_TITLE": "Rules and scenarios",
+        "TAB_DESCRIPTION": "Manage system rules, response rules, restrictions, and handoff scenarios in one place.",
+        "DESCRIPTION": "System rules and regular assistant rules. Group them, toggle them, and reorder them to match your workflow.",
+        "SYSTEM_LOCKED": "System",
+        "STATUS": {
+          "DISABLED": "Disabled"
+        },
+        "TYPES": {
+          "SYSTEM": "System rule",
+          "RESPONSE_GUIDELINE": "Response rule",
+          "GUARDRAIL": "Restriction"
+        },
+        "GROUPS": {
+          "STRICT": "Strict rules",
+          "CONVERSATION": "Conversation flow",
+          "RESTRICTIONS": "Restrictions"
+        },
+        "FORM": {
+          "TYPE": "Rule type",
+          "GROUP": "Group",
+          "GROUP_PLACEHOLDER": "For example, Strict rules"
+        },
+        "BULK_ACTION": {
+          "SELECTED": "{count} item selected | {count} items selected",
+          "SELECT_ALL": "Select all ({count})",
+          "UNSELECT_ALL": "Unselect all ({count})",
+          "BULK_DELETE_BUTTON": "Delete"
+        },
+        "ADD": {
+          "SUGGESTED": {
+            "TITLE": "Example rules",
+            "ADD": "Add all",
+            "ADD_SINGLE": "Add this"
+          },
+          "NEW": {
+            "CREATE": "Add a rule",
+            "CONFIRM": "Save",
+            "CANCEL": "Cancel",
+            "PLACEHOLDER": "Describe the rule or restriction..."
+          }
+        },
+        "EXAMPLES": {
+          "OPEN_DIRECTLY": "Start with a short direct answer first, then add detail and explanation only when it helps.",
+          "CLARIFY_FIRST": "If there is not enough information for a confident answer, ask one clarifying question before proposing a solution.",
+          "SENSITIVE_INFO": "Block queries that share or request sensitive personal information, such as phone numbers or passwords.",
+          "DIAGNOSIS": "Deflect requests where the assistant is asked for legal or medical diagnosis or treatment."
+        },
+        "LIST": {
+          "SEARCH_PLACEHOLDER": "Search..."
+        },
+        "EMPTY_MESSAGE": "No rules yet. Add examples or create your own.",
+        "SEARCH_EMPTY_MESSAGE": "No rules found for this search.",
+        "API": {
+          "ADD": {
+            "SUCCESS": "Rule added successfully",
+            "ERROR": "There was an error adding the rule. Please try again."
+          },
+          "UPDATE": {
+            "SUCCESS": "Rules updated successfully",
+            "ERROR": "There was an error updating the rules. Please try again."
+          },
+          "DELETE": {
+            "SUCCESS": "Rules deleted successfully",
+            "ERROR": "There was an error deleting the rules. Please try again."
+          }
+        }
+      },
       "RESPONSE_GUIDELINES": {
         "TITLE": "Response Guidelines",
         "DESCRIPTION": "The vibe and structure of your assistant’s replies—clear and friendly? Short and snappy? Detailed and formal?",
@@ -865,7 +938,25 @@
             "TITLE": "Example scenarios",
             "ADD": "Add all",
             "ADD_SINGLE": "Add this",
-            "TOOLS_USED": "Tools used :"
+            "SCENARIO_TAG": "Scenario",
+            "TOOLS_USED": "Tools used :",
+            "EXAMPLES": {
+              "PROSPECTIVE_BUYER": {
+                "TITLE": "Prospective Buyer",
+                "DESCRIPTION": "Handle customers who are showing interest in purchasing a license",
+                "INSTRUCTION": "If someone is interested in purchasing a license, ask them for the following:\n\n1. How many licenses are they willing to purchase?\n2. Are they migrating from another platform?\n\nOnce these details are collected, do the following steps:\n1. Add a private note with the information you collected using [Add Private Note](tool://add_private_note)\n2. Add label \"sales\" to the conversation using [Add Label to Conversation](tool://add_label_to_conversation)\n3. Reply saying \"one of us will reach out soon\", provide an estimated timeline for the response, and [Handoff to Human](tool://handoff)"
+              },
+              "BILLING_ISSUE": {
+                "TITLE": "Complex billing issue",
+                "DESCRIPTION": "Collect billing context for failed charges, disputed invoices, or payment confusion before handing off",
+                "INSTRUCTION": "If the user reports a billing issue, first collect the invoice or payment reference, the charge date, and a short summary of the problem. Then save that context using [Add Private Note](tool://add_private_note) and hand the conversation to a human using [Handoff to Human](tool://handoff)."
+              },
+              "ONBOARDING_HELP": {
+                "TITLE": "Onboarding help",
+                "DESCRIPTION": "Guide new customers through the next setup step and escalate quickly when onboarding gets blocked",
+                "INSTRUCTION": "If the user is just getting started, identify which setup step they are on, then use [FAQ Lookup](tool://faq_lookup) to guide the next action. If the issue remains blocked after clarification, transfer the conversation to a human using [Handoff to Human](tool://handoff)."
+              }
+            }
           },
           "NEW": {
             "CREATE": "Add a scenario",

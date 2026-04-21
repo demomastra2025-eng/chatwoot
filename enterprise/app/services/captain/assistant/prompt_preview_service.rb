@@ -75,6 +75,7 @@ class Captain::Assistant::PromptPreviewService
     [
       text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
       text_layer('instruction', 'System instruction', assistant.system_instruction),
+      list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
       list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
       list_layer('guardrails', 'Guardrails', assistant.guardrails),
       list_layer(
@@ -113,7 +114,12 @@ class Captain::Assistant::PromptPreviewService
 
   def assistant_used_field_ids
     field_ids = referenced_field_ids_for_texts(
-      [assistant.system_instruction, assistant.response_guidelines, assistant.guardrails]
+      [
+        assistant.system_instruction,
+        assistant.system_rule_contents,
+        assistant.response_guidelines,
+        assistant.guardrails
+      ]
     )
 
     field_ids & assistant.available_context_field_ids
@@ -150,6 +156,9 @@ class Captain::Assistant::PromptPreviewService
         text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
         text_layer('description', 'Description', scenario.description),
         text_layer('instructions', 'Scenario instructions', scenario.instruction),
+        list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
+        list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
+        list_layer('guardrails', 'Guardrails', assistant.guardrails),
         list_layer('tool_ids', 'Runtime tool IDs', runtime_tool_ids)
       ]
     }
@@ -157,7 +166,12 @@ class Captain::Assistant::PromptPreviewService
 
   def scenario_used_field_ids(scenario)
     field_ids = referenced_field_ids_for_texts(
-      [scenario.instruction, assistant.response_guidelines, assistant.guardrails]
+      [
+        scenario.instruction,
+        assistant.system_rule_contents,
+        assistant.response_guidelines,
+        assistant.guardrails
+      ]
     )
 
     field_ids & assistant.available_context_field_ids
@@ -203,5 +217,14 @@ class Captain::Assistant::PromptPreviewService
 
   def digest(prompt)
     Digest::SHA256.hexdigest(prompt.to_s)
+  end
+
+  def grouped_rule_values(groups)
+    Array(groups).flat_map do |group|
+      rules = Array(group[:rules]).map(&:to_s)
+      next rules if group[:group_name].blank?
+
+      rules.map { |rule| "#{group[:group_name]}: #{rule}" }
+    end
   end
 end

@@ -9,10 +9,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:scenario) { create(:captain_scenario, assistant: assistant, enabled: true) }
+  let(:second_scenario) { create(:captain_scenario, assistant: assistant, enabled: true) }
 
   let(:mock_runner) { instance_double(Captain::Runtime::AgentRunner) }
   let(:mock_agent) { instance_double(Captain::Runtime::Agent) }
   let(:mock_scenario_agent) { instance_double(Captain::Runtime::Agent) }
+  let(:mock_second_scenario_agent) { instance_double(Captain::Runtime::Agent) }
   let(:mock_result) do
     instance_double(
       Captain::Runtime::Result,
@@ -83,6 +85,25 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(scenario).to receive(:agent).and_return(mock_scenario_agent)
       expect(mock_agent).to receive(:register_handoffs).with(mock_scenario_agent)
       expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_agent)
+
+      service.generate_response(message_history: message_history)
+    end
+
+    it 'wires sibling scenarios for direct handoff' do
+      scenarios_relation = instance_double(Captain::Scenario)
+      allow(scenarios_relation).to receive(:enabled).and_return([scenario, second_scenario])
+      allow(assistant).to receive(:scenarios).and_return(scenarios_relation)
+      allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
+      allow(second_scenario).to receive(:agent).and_return(mock_second_scenario_agent)
+
+      expect(mock_agent).to receive(:register_handoffs).with(mock_scenario_agent, mock_second_scenario_agent)
+      expect(mock_scenario_agent).to receive(:register_handoffs).with(mock_agent, mock_second_scenario_agent)
+      expect(mock_second_scenario_agent).to receive(:register_handoffs).with(mock_agent, mock_scenario_agent)
+      expect(Captain::Runtime::Runner).to receive(:with_agents).with(
+        mock_agent,
+        mock_scenario_agent,
+        mock_second_scenario_agent
+      ).and_return(mock_runner)
 
       service.generate_response(message_history: message_history)
     end

@@ -1,6 +1,6 @@
 class TelegramPersonal::GatewayClient
   class GatewayError < StandardError; end
-  RUNTIME_NOT_SYNCED_ERROR = /\bChannel\s+\d+\s+is not synced\b/i.freeze
+  RUNTIME_NOT_SYNCED_ERROR = /\bChannel\s+\d+\s+is not synced\b/i
 
   pattr_initialize [:channel!]
 
@@ -58,6 +58,13 @@ class TelegramPersonal::GatewayClient
 
   def diagnostics
     get("/internal/channels/#{channel.id}/diagnostics")
+  end
+
+  def fetch_profile_avatar!(peer_user_id:, avatar_fingerprint:)
+    get_file_with_runtime_retry(
+      "/internal/channels/#{channel.id}/contacts/#{peer_user_id}/avatar",
+      query: { fingerprint: avatar_fingerprint }
+    )
   end
 
   def send_message!(message)
@@ -185,6 +192,37 @@ class TelegramPersonal::GatewayClient
     return parsed if response.success?
 
     raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway request failed'
+  end
+
+  def parse_file_response(response)
+    if response.success?
+      return {
+        body: response.body,
+        content_type: response.headers['content-type'].to_s.split(';').first.presence || 'image/jpeg'
+      }
+    end
+
+    parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response.with_indifferent_access : {}
+    raise GatewayError, parsed[:error].presence || response.body.presence || 'Telegram Personal gateway file request failed'
+  end
+
+  def get_file_with_runtime_retry(path, query:)
+    get_file(path, query: query)
+  rescue GatewayError => e
+    raise unless runtime_not_synced_error?(e)
+
+    sync_channel!
+    get_file(path, query: query)
+  end
+
+  def get_file(path, query:)
+    response = HTTParty.get(
+      "#{base_url}#{path}",
+      headers: headers.except('Content-Type'),
+      query: query,
+      timeout: 60
+    )
+    parse_file_response(response)
   end
 
   def headers

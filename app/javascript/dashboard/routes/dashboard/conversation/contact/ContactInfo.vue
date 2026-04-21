@@ -10,7 +10,6 @@ import {
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { useAdmin } from 'dashboard/composables/useAdmin';
-import { displayableIdentityDetail } from 'dashboard/helper/contactIdentity';
 import ContactInfoRow from './ContactInfoRow.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SocialIcons from './SocialIcons.vue';
@@ -114,9 +113,6 @@ export default {
     },
     additionalAttributes() {
       return this.contact.additional_attributes || {};
-    },
-    displayIdentifier() {
-      return displayableIdentityDetail(this.contact.identifier);
     },
     location() {
       const {
@@ -417,13 +413,6 @@ export default {
               emoji="📞"
               :title="$t('CONTACT_PANEL.PHONE_NUMBER')"
               show-copy
-            />
-            <ContactInfoRow
-              v-if="displayIdentifier"
-              :value="displayIdentifier"
-              icon="contact-identify"
-              emoji="🪪"
-              :title="$t('CONTACT_PANEL.IDENTIFIER')"
             />
             <ContactInfoRow
               v-if="additionalAttributes.company_name"

@@ -87,6 +87,15 @@ RSpec.describe Captain::Scenario, type: :model do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
     let(:scenario) { create(:captain_scenario, assistant: assistant, account: account) }
+    let!(:peer_scenario) do
+      create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        title: 'Billing Escalations',
+        description: 'Handle complex billing issues and escalations'
+      )
+    end
 
     before do
       upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
@@ -148,7 +157,6 @@ RSpec.describe Captain::Scenario, type: :model do
 
     it 'renders a single glossary section instead of a duplicated available tools block' do
       account.update!(captain_runtime: { 'agent_permissioned_tool_ids' => ['handoff'] })
-      scenario.update!(instruction: 'Use [@Handoff](tool://handoff) when finance approval is needed.')
 
       rendered = scenario.agent_instructions
 
@@ -178,6 +186,13 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(rendered).to include('# Global System Instructions')
       expect(rendered).to include('Never reveal internal routing.')
+    end
+
+    it 'renders assistant system rules in scenario prompts' do
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# System Rules')
+      expect(rendered).to include('Stay within your configured scope and instructions.')
     end
 
     it 'uses the assistant handoff tool name from the shared runtime naming contract' do
@@ -221,6 +236,23 @@ RSpec.describe Captain::Scenario, type: :model do
       rendered = scenario.agent_instructions(context_double)
 
       expect(rendered).to include('Sales Region (sales_region): EMEA')
+    end
+
+    it 'renders human handoff guidance by default when the assistant keeps handoff enabled' do
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# Human Handoff Protocol')
+      expect(rendered).to include('`captain--tools--handoff`')
+      expect(rendered).to include('Handoff to Human (handoff): Hand off the current conversation to a human team')
+    end
+
+    it 'renders direct sibling scenario handoff guidance' do
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('If another specialized scenario is a better fit')
+      expect(rendered).to include(peer_scenario.title)
+      expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
+      expect(rendered).not_to include("`handoff_to_#{scenario.handoff_key}`")
     end
   end
 
@@ -431,10 +463,11 @@ RSpec.describe Captain::Scenario, type: :model do
                           instruction: 'Use [@Fetch Order](tool://custom_fetch-order)')
 
         resolved = scenario.send(:resolved_tools)
-        expect(resolved.length).to eq(1)
-        expect(resolved.first[:id]).to eq('custom_fetch-order')
-        expect(resolved.first[:title]).to eq('Fetch Order')
-        expect(resolved.first[:description]).to eq('Gets order details')
+        expect(resolved.map { |tool| tool[:id] }).to contain_exactly('handoff', 'custom_fetch-order')
+
+        custom_tool = resolved.find { |tool| tool[:id] == 'custom_fetch-order' }
+        expect(custom_tool[:title]).to eq('Fetch Order')
+        expect(custom_tool[:description]).to eq('Gets order details')
       end
 
       it 'includes both static and custom tools' do
@@ -445,8 +478,8 @@ RSpec.describe Captain::Scenario, type: :model do
                           instruction: 'Use [@Add Note](tool://add_contact_note) and [@Fetch Order](tool://custom_fetch-order)')
 
         resolved = scenario.send(:resolved_tools)
-        expect(resolved.length).to eq(2)
-        expect(resolved.map { |t| t[:id] }).to contain_exactly('add_contact_note', 'custom_fetch-order')
+        expect(resolved.length).to eq(3)
+        expect(resolved.map { |t| t[:id] }).to contain_exactly('handoff', 'add_contact_note', 'custom_fetch-order')
       end
 
       it 'resolves explicitly referenced tools even when they are not selected by default' do
@@ -484,7 +517,7 @@ RSpec.describe Captain::Scenario, type: :model do
         custom_tool.update!(enabled: false)
 
         resolved = scenario.send(:resolved_tools)
-        expect(resolved).to be_empty
+        expect(resolved.map { |tool| tool[:id] }).to eq(['handoff'])
       end
 
       it 'does not expose explicitly referenced tools when the assistant agent scope is disabled' do
@@ -555,8 +588,9 @@ RSpec.describe Captain::Scenario, type: :model do
                           instruction: 'Use [@Fetch Order](tool://custom_fetch-order)')
 
         tools = scenario.send(:agent_tools)
-        expect(tools.length).to eq(1)
-        expect(tools.first).to be_a(Captain::Tools::HttpTool)
+        expect(tools.length).to eq(2)
+        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HttpTool) }).to be(true)
+        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HandoffTool) }).to be(true)
       end
 
       it 'excludes disabled custom tools from execution' do
@@ -569,7 +603,8 @@ RSpec.describe Captain::Scenario, type: :model do
         custom_tool.update!(enabled: false)
 
         tools = scenario.send(:agent_tools)
-        expect(tools).to be_empty
+        expect(tools.length).to eq(1)
+        expect(tools.first).to be_a(Captain::Tools::HandoffTool)
       end
 
       it 'returns mixed static and custom tool instances' do
@@ -586,8 +621,9 @@ RSpec.describe Captain::Scenario, type: :model do
         )
 
         tools = scenario.send(:agent_tools)
-        expect(tools.length).to eq(2)
-        expect(tools.last).to be_a(Captain::Tools::HttpTool)
+        expect(tools.length).to eq(3)
+        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HttpTool) }).to be(true)
+        expect(tools.any? { |tool| tool.is_a?(Captain::Tools::HandoffTool) }).to be(true)
       end
     end
   end
@@ -626,7 +662,7 @@ RSpec.describe Captain::Scenario, type: :model do
 
       custom_tool.update!(enabled: false)
 
-      expect(scenario.runtime_tool_ids).to eq([])
+      expect(scenario.runtime_tool_ids).to eq(['handoff'])
     end
   end
 end

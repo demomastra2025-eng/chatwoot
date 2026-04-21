@@ -362,15 +362,15 @@ const sourceIconClass = source =>
 </script>
 
 <template>
-  <section class="w-full rounded-3xl border border-n-weak bg-n-solid-1 p-3">
+  <section class="w-full">
     <div v-if="visibleSources.length" class="relative">
       <div
         v-if="visibleSources.length > 1"
-        class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-solid-1 to-transparent"
+        class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-alpha-2 to-transparent"
       />
       <div
         v-if="visibleSources.length > 1"
-        class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-solid-1 to-transparent"
+        class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-alpha-2 to-transparent"
       />
 
       <div
@@ -380,10 +380,10 @@ const sourceIconClass = source =>
           v-for="source in visibleSources"
           :key="source.cardKey"
           data-source-card
-          class="basis-[84%] shrink-0 snap-start rounded-2xl border p-2.5 shadow-sm transition-colors sm:basis-[72%] xl:basis-[68%]"
+          class="flex min-h-[11.25rem] basis-[84%] shrink-0 snap-start flex-col rounded-2xl border p-2.5 shadow-sm transition-colors sm:basis-[72%] xl:basis-[68%]"
           :class="sourceCardClass(source)"
         >
-          <div class="flex items-start gap-3">
+          <div class="flex min-h-0 flex-1 items-start gap-3">
             <Avatar
               :src="source.avatarUrl"
               :name="source.displayName || source.label"
@@ -424,25 +424,29 @@ const sourceIconClass = source =>
                 </div>
               </div>
 
-              <p class="mb-0 mt-2 truncate text-sm font-medium text-n-slate-12">
-                {{
-                  source.displayName ||
-                  source.label ||
-                  $t('CONTACT_PANEL.SOURCE_IDENTITIES.NO_NAME')
-                }}
-              </p>
+              <div class="mt-2 flex items-center gap-2">
+                <p
+                  class="mb-0 min-w-0 flex-1 truncate text-sm font-medium text-n-slate-12"
+                >
+                  {{
+                    source.displayName ||
+                    source.label ||
+                    $t('CONTACT_PANEL.SOURCE_IDENTITIES.NO_NAME')
+                  }}
+                </p>
+                <span
+                  v-if="displayIdentifier(source)"
+                  class="inline-flex max-w-[52%] shrink-0 items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] text-n-slate-11"
+                >
+                  <span class="i-lucide-id-card size-3 shrink-0" />
+                  <span class="truncate">{{ displayIdentifier(source) }}</span>
+                </span>
+              </div>
               <p
                 v-if="source.secondaryLine"
                 class="mb-0 mt-0.5 truncate text-xs text-n-slate-11"
               >
                 {{ source.secondaryLine }}
-              </p>
-              <p
-                v-if="displayIdentifier(source)"
-                class="mb-0 mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] text-n-slate-11"
-              >
-                <span class="i-lucide-id-card size-3 shrink-0" />
-                <span class="truncate">{{ displayIdentifier(source) }}</span>
               </p>
             </div>
           </div>
@@ -451,7 +455,7 @@ const sourceIconClass = source =>
             v-if="
               canUseName(source) || canUsePhoto(source) || canMessage(source)
             "
-            class="mt-3 flex flex-wrap gap-2"
+            class="mt-auto flex flex-wrap gap-2 pt-3"
           >
             <NextButton
               v-if="canUseName(source)"
@@ -489,7 +493,7 @@ const sourceIconClass = source =>
 
     <div
       v-else-if="!hideEmptyState"
-      class="rounded-2xl border border-dashed border-n-weak px-4 py-5 text-sm text-n-slate-11"
+      class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
     >
       {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.EMPTY') }}
     </div>

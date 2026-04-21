@@ -41,7 +41,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
           unread_count: 4
         }
       ).perform
-    end.to have_enqueued_job(Avatar::AvatarFromUrlJob)
+    end.to have_enqueued_job(TelegramPersonal::SyncProfileAvatarJob)
 
     contact = contact_inbox.contact
 
@@ -75,6 +75,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
     expect(contact.additional_attributes).not_to have_key('profile_photo_url')
 
     profile = contact_inbox.reload.channel_profile
+    expect(enqueued_jobs.last[:args]).to eq([profile.id, 'telegram-photo-23'])
     expect(profile.stored_avatar_url).to be_nil
     expect(profile.profile_data).not_to have_key('profile_photo_url')
     expect(profile.push_event_data[:avatar_url]).to be_nil
@@ -104,7 +105,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
   end
 
   it 'does not fail contact sync when avatar enqueue is unavailable' do
-    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later).and_raise(StandardError, 'redis unavailable')
+    allow(TelegramPersonal::SyncProfileAvatarJob).to receive(:perform_later).and_raise(StandardError, 'redis unavailable')
 
     contact_inbox = nil
     expect do
@@ -156,7 +157,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
           sync_source: 'private_dialog'
         }
       ).perform
-    end.to have_enqueued_job(Avatar::AvatarFromUrlJob)
+    end.to have_enqueued_job(TelegramPersonal::SyncProfileAvatarJob)
 
     expect(contact_inbox.contact).to eq(contact)
     expect(contact.reload.identifier).to eq('whatsapp_web:77066318623@lid')
@@ -179,6 +180,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
     )
 
     profile = contact_inbox.reload.channel_profile
+    expect(enqueued_jobs.last[:args]).to eq([profile.id, 'telegram-photo-23'])
     expect(profile.stored_avatar_url).to be_nil
     expect(profile.profile_data).not_to have_key('profile_photo_url')
   end
@@ -356,6 +358,53 @@ RSpec.describe TelegramPersonal::ContactSyncService do
           sync_source: 'private_dialog'
         }
       ).perform
-    end.not_to have_enqueued_job(Avatar::AvatarFromUrlJob)
+    end.not_to have_enqueued_job(TelegramPersonal::SyncProfileAvatarJob)
+  end
+
+  it 'clears a stale avatar fingerprint when telegram no longer provides a profile photo' do
+    contact = create(
+      :contact,
+      account: account,
+      name: 'Sojan Jose',
+      identifier: 'telegram_personal:23',
+      additional_attributes: {
+        'provider' => 'telegram_personal'
+      }
+    )
+    contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: contact, source_id: '23')
+    profile = create(
+      :contact_channel_profile,
+      contact_inbox: contact_inbox,
+      contact: contact,
+      inbox: channel.inbox,
+      account: account,
+      provider: 'telegram_personal',
+      source_id: '23',
+      profile_data: {
+        'identifier' => 'telegram_personal:23',
+        'source_id' => '23',
+        'avatar_fingerprint' => 'telegram-photo-23'
+      }
+    )
+    profile.avatar.attach(
+      io: StringIO.new(File.binread(Rails.root.join('spec/assets/avatar.png'))),
+      filename: 'avatar.png',
+      content_type: 'image/png'
+    )
+
+    expect do
+      described_class.new(
+        inbox: channel.inbox,
+        params: {
+          peer_user_id: '23',
+          first_name: 'Sojan',
+          last_name: 'Jose',
+          username: 'sojan',
+          sync_source: 'private_dialog'
+        }
+      ).perform
+    end.not_to have_enqueued_job(TelegramPersonal::SyncProfileAvatarJob)
+
+    expect(profile.reload.profile_data).not_to have_key('avatar_fingerprint')
   end
 end

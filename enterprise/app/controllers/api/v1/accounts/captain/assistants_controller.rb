@@ -103,6 +103,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_array_param!(permitted, :guardrails)
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
+    merge_optional_config_param!(permitted, :rules)
 
     permitted
   end

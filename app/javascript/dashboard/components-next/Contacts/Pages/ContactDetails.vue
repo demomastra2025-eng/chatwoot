@@ -16,7 +16,6 @@ import ConfirmContactDeleteDialog from 'dashboard/components-next/Contacts/Conta
 import Policy from 'dashboard/components/policy.vue';
 import ContactIdentitySources from 'dashboard/routes/dashboard/conversation/contact/ContactIdentitySources.vue';
 import {
-  displayContactSourceLabel,
   displayableIdentityDetail,
   getContactSourceIconClass,
   sourceValue,
@@ -136,14 +135,6 @@ const primaryAvatarSource = computed(
     contactData.value?.primary_avatar_source
 );
 
-const primaryNameSourceLabel = computed(() =>
-  displayContactSourceLabel(primaryNameSource.value, t)
-);
-
-const primaryAvatarSourceLabel = computed(() =>
-  displayContactSourceLabel(primaryAvatarSource.value, t)
-);
-
 const primaryNameSourceIconClass = computed(() =>
   getContactSourceIconClass(primaryNameSource.value)
 );
@@ -152,8 +143,12 @@ const primaryAvatarSourceIconClass = computed(() =>
   getContactSourceIconClass(primaryAvatarSource.value)
 );
 
-const hasPrimaryAvatarChannelBadge = computed(
-  () => sourceValue(primaryAvatarSource.value, 'kind') === 'channel_profile'
+const hasPrimaryNameSourceBadge = computed(() =>
+  Boolean(sourceValue(primaryNameSource.value, 'kind'))
+);
+
+const hasPrimaryAvatarSourceBadge = computed(() =>
+  Boolean(sourceValue(primaryAvatarSource.value, 'kind'))
 );
 
 const hasIdentityAccordion = computed(() => {
@@ -344,7 +339,7 @@ const openChannelConversation = async channelIdentity => {
           >
             <template #badge>
               <div
-                v-if="hasPrimaryAvatarChannelBadge"
+                v-if="hasPrimaryAvatarSourceBadge"
                 class="absolute bottom-0 right-0 z-20 flex size-6 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
               >
                 <span
@@ -355,9 +350,20 @@ const openChannelConversation = async channelIdentity => {
             </template>
           </Avatar>
           <div class="min-w-0 flex-1">
-            <h3 class="mb-0 text-base font-medium text-n-slate-12">
-              {{ contactData?.name }}
-            </h3>
+            <div class="relative inline-block max-w-full pr-7">
+              <h3 class="mb-0 text-base font-medium text-n-slate-12">
+                {{ contactData?.name }}
+              </h3>
+              <span
+                v-if="hasPrimaryNameSourceBadge"
+                class="absolute right-0 top-0 z-10 inline-flex size-5 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
+              >
+                <span
+                  class="size-3 shrink-0"
+                  :class="primaryNameSourceIconClass"
+                />
+              </span>
+            </div>
             <div class="mt-1 flex flex-col gap-1.5">
               <span
                 v-if="displayIdentifier"
@@ -383,43 +389,13 @@ const openChannelConversation = async channelIdentity => {
                 }}
               </span>
             </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <span
-                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-12"
-              >
-                {{ t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME') }}
-              </span>
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-solid-2 px-2.5 py-1 text-xs text-n-slate-12"
-              >
-                <span
-                  class="shrink-0 text-sm leading-none"
-                  :class="primaryNameSourceIconClass"
-                />
-                <span>{{ primaryNameSourceLabel }}</span>
-              </span>
-              <span
-                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-12"
-              >
-                {{ t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO') }}
-              </span>
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-solid-2 px-2.5 py-1 text-xs text-n-slate-12"
-              >
-                <span
-                  class="shrink-0 text-sm leading-none"
-                  :class="primaryAvatarSourceIconClass"
-                />
-                <span>{{ primaryAvatarSourceLabel }}</span>
-              </span>
-            </div>
           </div>
         </div>
 
         <ContactLabels :contact-id="selectedContact?.id" />
         <details
           v-if="hasIdentityAccordion"
-          class="w-full rounded-3xl border border-n-weak bg-n-solid-1 px-4 py-3"
+          class="w-full rounded-2xl bg-n-alpha-2 px-4 py-3"
         >
           <summary
             class="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden"
