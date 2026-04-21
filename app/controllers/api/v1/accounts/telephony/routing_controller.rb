@@ -40,7 +40,7 @@ class Api::V1::Accounts::Telephony::RoutingController < Api::V1::Accounts::Telep
   end
 
   def routing_params
-    params.permit(:mode, :ai_app_ref, :operator_agent_ref, :operator_agent_aor, :fallback_mode, :fallback_message)
+    params.permit(:mode, :app_ref, :ai_app_ref, :operator_agent_ref, :operator_agent_aor, :fallback_mode, :fallback_message)
   end
 
   def ai_toggle_params

@@ -32,7 +32,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   self.table_name = 'telephony_routing_policies'
 
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze
-  VALID_FALLBACK_MODES = %w[reject operator app voicemail].freeze
+  VALID_FALLBACK_MODES = %w[reject operator app ai voicemail].freeze
   BRIDGE_SUPPORTED_MODES = %w[operator app ai reject].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -43,6 +43,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   validate :validate_ai_app_ref
   validate :validate_app_mode_configuration
   validate :validate_operator_mode_configuration
+  validate :validate_ai_fallback_configuration
 
   before_validation :normalize_values
 
@@ -74,6 +75,13 @@ class Telephony::RoutingPolicy < ApplicationRecord
     end
   end
 
+  def operator_target_payload
+    target = resolved_operator_agent_aor
+    return {} if target.blank?
+
+    sip_target?(target) ? { agent_aor: target } : { destination: target }
+  end
+
   def to_telephony_h
     {
       mode: mode,
@@ -97,7 +105,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
     when 'app'
       { app_ref: number_binding&.configured_app_ref }
     when 'operator'
-      { agent_aor: resolved_operator_agent_aor }
+      operator_target_payload
     when 'reject'
       { message: fallback_message }
     else
@@ -131,6 +139,13 @@ class Telephony::RoutingPolicy < ApplicationRecord
     errors.add(:mode, 'operator routing requires a configured operator agent')
   end
 
+  def validate_ai_fallback_configuration
+    return unless fallback_mode == 'ai'
+    return if ai_app_ref.present?
+
+    errors.add(:fallback_mode, 'ai fallback requires ai_app_ref')
+  end
+
   def resolved_operator_binding
     scope = account&.telephony_agent_bindings
     return if scope.blank?
@@ -140,5 +155,9 @@ class Telephony::RoutingPolicy < ApplicationRecord
     elsif operator_agent_aor.present?
       scope.find_by(agent_aor: operator_agent_aor)
     end
+  end
+
+  def sip_target?(target)
+    target.to_s.downcase.start_with?('sip:')
   end
 end

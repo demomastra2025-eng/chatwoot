@@ -65,7 +65,7 @@ export const useCallsStore = defineStore('calls', {
     removeCall(callSid) {
       const callToRemove = this.calls.find(c => c.callSid === callSid);
       if (callToRemove?.isActive) {
-        WebphoneClient.endClientCall();
+        WebphoneClient.endClientCall(callToRemove.provider);
       }
       this.calls = this.calls.filter(c => c.callSid !== callSid);
     },
@@ -78,7 +78,7 @@ export const useCallsStore = defineStore('calls', {
     },
 
     clearActiveCall() {
-      WebphoneClient.endClientCall();
+      WebphoneClient.endClientCall(this.activeCall?.provider);
       this.calls = this.calls.filter(call => !call.isActive);
     },
 

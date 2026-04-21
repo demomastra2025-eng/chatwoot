@@ -109,10 +109,7 @@ class Telephony::NumberBinding < ApplicationRecord
     operator_agent_aor = policy&.resolved_operator_agent_aor
 
     if mode == 'operator' && operator_agent_aor.present?
-      {
-        fallback_mode: 'operator',
-        fallback_agent_aor: operator_agent_aor
-      }
+      operator_fallback_payload(operator_agent_aor)
     elsif configured_app_ref.present?
       {
         fallback_mode: 'app',
@@ -123,6 +120,16 @@ class Telephony::NumberBinding < ApplicationRecord
         fallback_mode: 'clear'
       }
     end
+  end
+
+  def operator_fallback_payload(operator_target)
+    payload = { fallback_mode: 'operator' }
+    if operator_target.to_s.downcase.start_with?('sip:')
+      payload[:fallback_agent_aor] = operator_target
+    else
+      payload[:fallback_destination] = operator_target
+    end
+    payload
   end
 
   def app_ref_for_policy(policy = routing_policy)
@@ -142,7 +149,8 @@ class Telephony::NumberBinding < ApplicationRecord
       provider: provider,
       number_ref: number_ref,
       phone_number: phone_number,
-      app_ref: app_ref,
+      app_ref: configured_app_ref,
+      effective_app_ref: app_ref_for_policy(routing_policy),
       trunk_ref: trunk_ref,
       last_synced_at: last_synced_at,
       routing_policy: routing_policy&.to_telephony_h

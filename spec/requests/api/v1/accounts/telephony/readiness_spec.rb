@@ -20,7 +20,7 @@ RSpec.describe 'Telephony Readiness API', type: :request do
       voice_inbox
 
       stub_request(:get, 'https://bridge.example/healthz')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret' })
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
         .to_return(
           status: 200,
           body: {
@@ -94,7 +94,7 @@ RSpec.describe 'Telephony Readiness API', type: :request do
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
     ) do
       stub_request(:get, 'https://bridge.example/healthz')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret' })
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
         .to_return(
           status: 200,
           body: {

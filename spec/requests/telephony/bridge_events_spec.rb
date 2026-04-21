@@ -1,8 +1,10 @@
 require 'rails_helper'
+require 'tempfile'
 
 RSpec.describe 'Telephony Bridge Events', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230000') }
+  let(:voice_phone_number) { "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}" }
+  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: voice_phone_number) }
   let(:voice_inbox) { voice_channel.inbox }
   let(:path) { '/telephony/internal/events' }
   let(:compatibility_path) { '/internal/voice/inbound/event' }
@@ -178,5 +180,173 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(call_session.inbox_id).to eq(voice_inbox.id)
     expect(call_session.number_binding_id).to eq(voice_inbox.telephony_number_binding.id)
     expect(call_session.agent_binding_id).to eq(agent_binding.id)
+  end
+
+  it 'uses the account header when the payload includes blank account fields' do
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post compatibility_path,
+           params: {
+             event_key: 'evt-blank-account-1',
+             call_ref: 'call-outbound-blank-account',
+             event: 'answered',
+             status: 'answered',
+             direction: 'OUTBOUND_API',
+             account_id: '',
+             accountId: '',
+             from_number: voice_channel.phone_number,
+             to_number: '+15557650004'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-outbound-blank-account')
+    expect(call_session.status).to eq('in-progress')
+    expect(call_session.direction).to eq('outbound')
+    expect(account.telephony_events.find_by!(event_key: 'evt-blank-account-1')).to be_processed
+  end
+
+  it 'handles repeated late bridge events for the same call without raising uniqueness errors' do
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post compatibility_path,
+           params: {
+             event_key: 'evt-dup-start-1',
+             call_ref: 'call-in-dup-1',
+             event: 'session_started',
+             status: 'ringing',
+             direction: 'FROM_PSTN',
+             number_ref: voice_inbox.telephony_number_binding.number_ref,
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15557650005'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+
+      late_event_payload = {
+        call_ref: 'call-in-dup-1',
+        direction: 'FROM_PSTN',
+        account_id: account.id.to_s
+      }
+
+      post compatibility_path,
+           params: late_event_payload.merge(
+             event_key: 'evt-dup-answered-1',
+             event: 'answered',
+             status: 'answered'
+           ),
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+
+      post compatibility_path,
+           params: late_event_payload.merge(
+             event_key: 'evt-dup-answered-1',
+             event: 'answered',
+             status: 'answered'
+           ),
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+
+      post compatibility_path,
+           params: late_event_payload.merge(
+             event_key: 'evt-dup-completed-1',
+             event: 'session_completed',
+             status: 'completed'
+           ),
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+
+      post compatibility_path,
+           params: late_event_payload.merge(
+             event_key: 'evt-dup-completed-1',
+             event: 'session_completed',
+             status: 'completed'
+           ),
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(account.telephony_call_sessions.where(external_call_ref: 'call-in-dup-1').count).to eq(1)
+    expect(account.telephony_events.where(event_key: 'evt-dup-answered-1').count).to eq(1)
+    expect(account.telephony_events.where(event_key: 'evt-dup-completed-1').count).to eq(1)
+    expect(account.telephony_events.find_by!(event_key: 'evt-dup-answered-1')).to be_processed
+    expect(account.telephony_events.find_by!(event_key: 'evt-dup-completed-1')).to be_processed
+    expect(account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-dup-1').status).to eq('completed')
+  end
+
+  it 'writes inbound event request and response to the dedicated telephony debug log' do
+    debug_log_file = Tempfile.new('telephony-event-debug')
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
+      TELEPHONY_DEBUG_LOGGING: 'true',
+      TELEPHONY_BRIDGE_DEBUG_LOG_PATH: debug_log_file.path
+    ) do
+      post compatibility_path,
+           params: {
+             event_key: 'evt-log-1',
+             call_ref: 'call-in-log-1',
+             event: 'session_started',
+             status: 'ringing',
+             direction: 'FROM_PSTN',
+             number_ref: voice_inbox.telephony_number_binding.number_ref,
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15557650009'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+
+    written_events = File.readlines(debug_log_file.path).map { |line| JSON.parse(line) }
+    expect(written_events).to include(
+      include(
+        'event' => 'telephony_inbound_event_request',
+        'path' => compatibility_path,
+        'call_ref' => 'call-in-log-1',
+        'account_id' => account.id.to_s,
+        'event_type' => 'session_started'
+      ),
+      include(
+        'event' => 'telephony_inbound_event_response',
+        'path' => compatibility_path,
+        'call_ref' => 'call-in-log-1',
+        'response_payload' => include('status' => 'ok', 'call_ref' => 'call-in-log-1')
+      )
+    )
+  ensure
+    debug_log_file&.close!
   end
 end

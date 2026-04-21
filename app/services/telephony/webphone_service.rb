@@ -1,7 +1,7 @@
 class Telephony::WebphoneService
-  def initialize(account:, bridge_client: Telephony::BridgeClient.new)
+  def initialize(account:, bridge_client: nil)
     @account = account
-    @bridge_client = bridge_client
+    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def token_for(user:, inbox: nil)
@@ -17,7 +17,7 @@ class Telephony::WebphoneService
     )
 
     response = response.deep_dup
-    response['provider'] ||= inbox&.channel&.provider || 'fonoster'
+    response['provider'] ||= inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
     response['agent_ref'] ||= agent_binding&.agent_ref
     response['calling_supported'] = bridge_calling_supported?(response)
     response
@@ -28,11 +28,42 @@ class Telephony::WebphoneService
   attr_reader :account, :bridge_client
 
   def bridge_calling_supported?(response)
-    provider = response['provider'].presence || 'fonoster'
-    return false unless provider == 'twilio'
+    provider = response_value(response, 'provider').presence || 'fonoster'
+    return fonoster_browser_calling_supported?(response) if provider == 'fonoster'
 
-    return response['calling_supported'] unless response['calling_supported'].nil?
+    calling_supported = response_value(response, 'calling_supported', 'callingSupported')
+    return calling_supported unless calling_supported.nil?
 
-    true
+    provider == 'twilio'
+  end
+
+  def fonoster_browser_calling_supported?(response)
+    calling_supported = response_value(response, 'calling_supported', 'callingSupported')
+    return false if calling_supported == false
+
+    required_values_present?(
+      response,
+      %w[token username domain],
+      %w[signalingServer signaling_server],
+      %w[targetAor target_aor aor]
+    )
+  end
+
+  def required_values_present?(response, required_keys, *alternative_key_groups)
+    required_keys.all? { |key| response_value(response, key).present? } &&
+      alternative_key_groups.all? do |group|
+        group.any? { |key| response_value(response, key).present? }
+      end
+  end
+
+  def response_value(response, *keys)
+    keys.each do |key|
+      return response[key] if response.key?(key)
+
+      symbol_key = key.to_sym
+      return response[symbol_key] if response.key?(symbol_key)
+    end
+
+    nil
   end
 end

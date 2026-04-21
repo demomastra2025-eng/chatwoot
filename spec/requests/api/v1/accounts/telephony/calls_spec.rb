@@ -24,12 +24,13 @@ RSpec.describe 'Telephony Calls API', type: :request do
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
     ) do
       stub_request(:post, 'https://bridge.example/telephony/calls/outbound')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret' })
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
         .with do |request|
           body = JSON.parse(request.body)
           expect(body['from_number_ref']).to eq(voice_inbox.telephony_number_binding.number_ref)
           expect(body['to']).to eq(contact.phone_number)
           expect(body['app_ref']).to eq('ai-app-ref')
+          expect(body['appRef']).to eq('ai-app-ref')
           expect(body.dig('metadata', 'chatwoot_inbox_id')).to eq(voice_inbox.id)
           true
         end

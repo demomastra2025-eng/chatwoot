@@ -17,6 +17,7 @@ const {
   incomingCalls,
   hasActiveCall,
   isJoining,
+  canHandleCallInBrowser,
   joinCall,
   endCall: endCallSession,
   rejectIncomingCall,
@@ -61,11 +62,10 @@ const openConversation = call => {
 };
 
 const browserJoinSupportedForCall = call => {
-  if (!call) return false;
-  if (call.browserJoinSupported === false) return false;
-
-  const { inbox } = getCallInfo(call);
-  return (call.provider || inbox?.provider) === 'twilio';
+  return canHandleCallInBrowser({
+    ...call,
+    provider: call?.provider || getCallInfo(call)?.provider,
+  });
 };
 
 const handleBrowserJoinUnavailable = (call, { notify = true } = {}) => {
@@ -81,11 +81,13 @@ const handleEndCall = async () => {
   if (!call) return;
 
   const inboxId = call.inboxId || getCallInfo(call).conversation?.inbox_id;
-  if (!inboxId) return;
+  const provider = call.provider || getCallInfo(call).provider;
+  if (provider === 'twilio' && !inboxId) return;
 
   await endCallSession({
     conversationId: call.conversationId,
     inboxId,
+    provider,
   });
 };
 
@@ -110,6 +112,8 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
     conversationId: call.conversationId,
     inboxId,
     callSid: call.callSid,
+    provider: call.provider || getCallInfo(call).provider,
+    callDirection: call.callDirection,
   });
 
   if (result?.joinSupported === false) {
@@ -230,7 +234,7 @@ watch(
               @click="
                 hasActiveCall
                   ? handleEndCall()
-                  : rejectIncomingCall(incomingCalls[0]?.callSid)
+                  : rejectIncomingCall(incomingCalls[0])
               "
             >
               <i class="text-lg text-white i-ph-phone-x-bold" />

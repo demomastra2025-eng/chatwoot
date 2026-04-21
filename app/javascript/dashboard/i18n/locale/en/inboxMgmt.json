@@ -367,10 +367,15 @@
             "REQUIRED": "AI app ref is required when AI routing is selected"
           },
           "OPERATOR_AGENT_AOR": {
-            "LABEL": "Operator Agent AOR",
-            "PLACEHOLDER": "Enter sip:agent{'@'}domain identity",
-            "REQUIRED": "Operator agent AOR is required when operator routing is selected"
+            "LABEL": "Operator target",
+            "PLACEHOLDER": "Enter sip:agent{'@'}domain or local username",
+            "REQUIRED": "Operator target is required when operator routing is selected"
           },
+          "OPERATOR_AGENT_REF": {
+            "LABEL": "Operator agent ref",
+            "PLACEHOLDER": "Optional Fonoster agent reference"
+          },
+          "OPERATOR_TARGET_REQUIRED": "Operator agent ref or AOR is required when operator routing is selected",
           "FALLBACK_MESSAGE": {
             "LABEL": "Reject Message",
             "PLACEHOLDER": "Optional message played when the call is rejected"
@@ -405,12 +410,18 @@
           "TWILIO_STATUS_URL_SUBTITLE": "Configure this URL as the Status Callback URL on your Twilio phone number.",
           "FONOSTER_TITLE": "Fonoster connection",
           "FONOSTER_SUBTITLE": "This calls channel is managed through the Onelink telephony bridge and Fonoster routing.",
+          "FONOSTER_ROUTING_TITLE": "Call routing",
+          "FONOSTER_ROUTING_SUBTITLE": "Choose the active route for this number and the fallback used when the primary target is unavailable.",
           "FONOSTER_READINESS_TITLE": "Fonoster readiness",
           "FONOSTER_READINESS_SUBTITLE": "Checks the telephony bridge, inbox binding, and effective route for this voice inbox.",
           "ROUTING_MODE": "Routing mode",
+          "FALLBACK_MODE": "Fallback mode",
           "PRIMARY_APP_REF": "Primary app ref",
           "AI_APP_REF": "AI app ref",
-          "OPERATOR_AGENT_AOR": "Operator agent AOR",
+          "OPERATOR_AGENT_AOR": "Operator target",
+          "UPDATE_ROUTE": "Update route",
+          "ROUTE_UPDATE_SUCCESS": "Call routing has been updated",
+          "ROUTE_UPDATE_ERROR": "We were not able to update call routing",
           "READY": "Ready",
           "ACTION_REQUIRED": "Action required",
           "HEALTHY": "Healthy",

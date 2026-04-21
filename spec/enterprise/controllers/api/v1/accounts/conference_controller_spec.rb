@@ -49,6 +49,7 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
 
         expect(response).to have_http_status(:ok)
         body = response.parsed_body
+        expect(body['provider']).to eq('twilio')
         expect(body['token']).to eq('jwt-token')
         expect(body['account_id']).to eq(account.id)
         expect(body['inbox_id']).to eq(voice_inbox.id)

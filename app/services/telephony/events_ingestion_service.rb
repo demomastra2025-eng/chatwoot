@@ -25,13 +25,12 @@ class Telephony::EventsIngestionService
   def perform
     account = resolve_account!
     event = persist_event!(account)
-    return event.call_session if event.processed?
+    return event.call_session if event.processed? && event.call_session.present?
 
     call_session = nil
 
     ActiveRecord::Base.transaction do
-      call_session = resolve_call_session!(account)
-      upsert_call_session!(call_session, account)
+      call_session = upsert_call_session!(resolve_call_session!(account), account)
       ensure_conversation!(call_session, account)
       apply_call_status!(call_session)
       sync_voice_message!(call_session)
@@ -49,10 +48,13 @@ class Telephony::EventsIngestionService
   attr_reader :payload
 
   def persist_event!(account)
-    event = account.telephony_events.find_or_initialize_by(event_key: event_key)
-    event.event_type = resolved_event_type
-    event.payload = payload
-    event.save! if event.new_record? || event.changed?
+    event = find_or_create_event!(account)
+    return event if event.processed?
+
+    updates = {}
+    updates[:event_type] = resolved_event_type if event.event_type != resolved_event_type
+    updates[:payload] = payload if event.payload != payload
+    event.update!(updates) if updates.any?
     event
   end
 
@@ -84,17 +86,24 @@ class Telephony::EventsIngestionService
   def resolve_call_session!(account)
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
-    account.telephony_call_sessions.find_or_initialize_by(external_call_ref: call_ref)
+    account.telephony_call_sessions.find_by(external_call_ref: call_ref) ||
+      account.telephony_call_sessions.build(external_call_ref: call_ref)
   end
 
   def upsert_call_session!(call_session, account)
+    persist_call_session!(account, call_session) do |current_call_session|
+      call_session_attributes(account, current_call_session)
+    end
+  end
+
+  def call_session_attributes(account, call_session)
     conversation = resolve_existing_conversation(account, call_session)
     inbox = resolve_inbox(account)
     number_binding = resolve_number_binding || inbox&.telephony_number_binding
     contact = resolve_contact(account, conversation)
     agent_binding = resolve_agent_binding(account)
 
-    call_session.assign_attributes(
+    attributes = {
       account: account,
       conversation: conversation || call_session.conversation,
       contact: contact || call_session.contact,
@@ -115,8 +124,7 @@ class Telephony::EventsIngestionService
       ended_at: resolved_ended_at || call_session.ended_at,
       last_event_at: resolved_occurred_at || Time.current,
       metadata: merged_metadata(call_session)
-    )
-    call_session.save!
+    }
   end
 
   def ensure_conversation!(call_session, account)
@@ -251,6 +259,46 @@ class Telephony::EventsIngestionService
     base['last_payload'] = payload
     base['metadata'] = metadata if metadata.present?
     base.compact
+  end
+
+  def find_or_create_event!(account)
+    account.telephony_events.find_by(event_key: event_key) || begin
+      event = account.telephony_events.new(
+        event_key: event_key,
+        event_type: resolved_event_type,
+        payload: payload
+      )
+      event.save!
+      event
+    rescue ActiveRecord::RecordNotUnique
+      account.telephony_events.find_by!(event_key: event_key)
+    rescue ActiveRecord::RecordInvalid => e
+      raise unless uniqueness_conflict?(e.record, :event_key)
+
+      account.telephony_events.find_by!(event_key: event_key)
+    end
+  end
+
+  def persist_call_session!(account, call_session)
+    save_call_session!(call_session, yield(call_session))
+  rescue ActiveRecord::RecordNotUnique
+    existing_call_session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+    save_call_session!(existing_call_session, yield(existing_call_session))
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless uniqueness_conflict?(e.record, :external_call_ref)
+
+    existing_call_session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+    save_call_session!(existing_call_session, yield(existing_call_session))
+  end
+
+  def save_call_session!(call_session, attributes)
+    call_session.assign_attributes(attributes)
+    call_session.save!
+    call_session
+  end
+
+  def uniqueness_conflict?(record, attribute)
+    record&.errors&.of_kind?(attribute, :taken)
   end
 
   def event_key

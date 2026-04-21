@@ -13,9 +13,9 @@ class Telephony::CallsService
     'rejected' => 'failed'
   }.freeze
 
-  def initialize(account:, bridge_client: Telephony::BridgeClient.new)
+  def initialize(account:, bridge_client: nil)
     @account = account
-    @bridge_client = bridge_client
+    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def create_outbound!(inbox:, contact:, user:, conversation:)
@@ -78,10 +78,13 @@ class Telephony::CallsService
   end
 
   def outbound_payload(number_binding, inbox, contact, user, conversation, agent_binding)
+    app_ref = number_binding.effective_app_ref
+
     {
       from_number_ref: number_binding.number_ref,
       to: contact.phone_number,
-      app_ref: number_binding.effective_app_ref,
+      app_ref: app_ref,
+      appRef: app_ref,
       conversation_id: conversation.id,
       contact_id: contact.id,
       metadata: {

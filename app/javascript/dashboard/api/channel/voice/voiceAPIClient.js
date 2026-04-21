@@ -29,16 +29,34 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data);
   }
 
-  getToken(inboxId) {
-    if (!inboxId) return Promise.reject(new Error('Inbox ID is required'));
+  getWebphoneToken(inboxId = null) {
+    if (inboxId) {
+      return axios
+        .get(`${this.baseUrl()}/inboxes/${inboxId}/conference/token`)
+        .then(r => r.data);
+    }
+
     return axios
-      .get(`${this.baseUrl()}/inboxes/${inboxId}/conference/token`)
-      .then(r => r.data);
+      .post(`${this.baseUrl()}/telephony/webphone/token`)
+      .then(r => r.data.payload || r.data);
+  }
+
+  getToken(inboxId) {
+    return this.getWebphoneToken(inboxId);
   }
 
   getReadiness() {
     return axios
       .get(`${this.baseUrl()}/telephony/resources/readiness`)
+      .then(r => r.data);
+  }
+
+  updateNumberRoute(numberRef, payload) {
+    return axios
+      .post(
+        `${this.baseUrl()}/telephony/numbers/${encodeURIComponent(numberRef)}/route`,
+        payload
+      )
       .then(r => r.data);
   }
 }

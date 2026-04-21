@@ -25,13 +25,13 @@ class Telephony::InboundRoutingService
 
       fallback_decision(reason: 'operator_unavailable')
     when 'app'
-      return app_decision(reason: 'app_route') if number_binding.configured_app_ref.present?
+      return app_decision(reason: 'app_route') if resolved_primary_app_ref.present?
 
-      fallback_decision(reason: 'app_ref_missing')
+      fallback_decision(reason: primary_app_failure_reason)
     when 'ai'
-      return ai_decision(reason: 'ai_route') if routing_policy.ai_app_ref.present?
+      return ai_decision(reason: 'ai_route') if resolved_ai_app_ref.present?
 
-      fallback_decision(reason: 'ai_app_ref_missing')
+      fallback_decision(reason: ai_app_failure_reason)
     when 'reject'
       reject_decision(reason: 'reject_route')
     else
@@ -44,8 +44,10 @@ class Telephony::InboundRoutingService
       case mode
       when 'operator'
         return operator_decision(reason: reason) if operator_available?
+      when 'ai'
+        return ai_decision(reason: reason) if resolved_ai_app_ref.present?
       when 'app'
-        return app_decision(reason: reason) if number_binding.configured_app_ref.present?
+        return app_decision(reason: reason) if resolved_primary_app_ref.present?
       end
     end
 
@@ -58,6 +60,8 @@ class Telephony::InboundRoutingService
       %w[operator app]
     when 'app'
       %w[app operator]
+    when 'ai'
+      %w[ai operator app]
     else
       []
     end
@@ -89,15 +93,14 @@ class Telephony::InboundRoutingService
   def operator_decision(reason:)
     {
       action: 'operator',
-      agent_aor: resolved_operator_aor,
       reason: reason
-    }.merge(shared_context)
+    }.merge(routing_policy.operator_target_payload).merge(shared_context)
   end
 
   def app_decision(reason:)
     {
       action: 'app',
-      app_ref: number_binding.configured_app_ref,
+      app_ref: resolved_primary_app_ref,
       reason: reason
     }.merge(shared_context)
   end
@@ -105,7 +108,7 @@ class Telephony::InboundRoutingService
   def ai_decision(reason:)
     {
       action: 'ai',
-      app_ref: routing_policy.ai_app_ref,
+      app_ref: resolved_ai_app_ref,
       reason: reason
     }.merge(shared_context)
   end
@@ -138,6 +141,33 @@ class Telephony::InboundRoutingService
 
   def routing_policy
     @routing_policy ||= number_binding&.routing_policy
+  end
+
+  def resolved_primary_app_ref
+    @resolved_primary_app_ref ||= routable_app_ref(number_binding&.configured_app_ref)
+  end
+
+  def resolved_ai_app_ref
+    @resolved_ai_app_ref ||= routable_app_ref(routing_policy&.ai_app_ref)
+  end
+
+  def primary_app_failure_reason
+    number_binding&.configured_app_ref.present? ? 'recursive_runtime_app_ref' : 'app_ref_missing'
+  end
+
+  def ai_app_failure_reason
+    routing_policy&.ai_app_ref.present? ? 'recursive_runtime_app_ref' : 'ai_app_ref_missing'
+  end
+
+  def routable_app_ref(candidate_app_ref)
+    return if candidate_app_ref.blank?
+    return if runtime_app_ref.present? && candidate_app_ref == runtime_app_ref
+
+    candidate_app_ref
+  end
+
+  def runtime_app_ref
+    payload_value('app_ref', 'appRef')
   end
 
   def inbox

@@ -1,7 +1,7 @@
 class Telephony::ReadinessService
-  def initialize(account:, bridge_client: Telephony::BridgeClient.new)
+  def initialize(account:, bridge_client: nil)
     @account = account
-    @bridge_client = bridge_client
+    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def summary
@@ -132,12 +132,14 @@ class Telephony::ReadinessService
   end
 
   def build_route_warnings(binding, policy)
-    [
+    route_warnings = [
       bridge_mode_downgrade_warning(policy),
       app_route_warning(binding, policy),
       ai_route_warning(policy),
       operator_route_warning(policy)
     ].compact
+
+    route_warnings + fallback_route_warnings(binding, policy)
   end
 
   def warning(code, message); { code: code, message: message }; end
@@ -207,5 +209,24 @@ class Telephony::ReadinessService
     return unless policy.operator_mode? && policy.resolved_operator_agent_aor.blank?
 
     warning('mode_requires_operator_agent', 'Operator routing requires a resolvable operator agent')
+  end
+
+  def fallback_route_warnings(binding, policy)
+    case policy.fallback_mode
+    when 'app'
+      return [] if binding.configured_app_ref.present?
+
+      [warning('fallback_requires_app_ref', 'App fallback requires a configured primary app ref')]
+    when 'ai'
+      return [] if policy.ai_app_ref.present?
+
+      [warning('fallback_requires_ai_app_ref', 'AI fallback requires ai_app_ref')]
+    when 'operator'
+      return [] if policy.resolved_operator_agent_aor.present?
+
+      [warning('fallback_requires_operator_agent', 'Operator fallback requires a resolvable operator agent')]
+    else
+      []
+    end
   end
 end

@@ -1,9 +1,12 @@
 class Telephony::BridgeClient
   DEFAULT_TIMEOUT_SECONDS = 10
 
-  def initialize(base_url: ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', ''), secret: ENV.fetch('TELEPHONY_BRIDGE_SHARED_SECRET', ''))
+  def initialize(base_url: ENV.fetch('TELEPHONY_BRIDGE_BASE_URL', ''), secret: ENV.fetch('TELEPHONY_BRIDGE_SHARED_SECRET', ''), account_id: nil, request_id: Current.request_id, debug_log_path: Telephony::DebugLogger.default_log_path)
     @base_url = base_url.to_s
     @secret = secret.to_s
+    @account_id = account_id.presence
+    @request_id = request_id.presence
+    @debug_log_path = debug_log_path.to_s
   end
 
   def get(path, query: {})
@@ -16,7 +19,7 @@ class Telephony::BridgeClient
 
   private
 
-  attr_reader :base_url, :secret
+  attr_reader :account_id, :base_url, :debug_log_path, :request_id, :secret
 
   def perform_request(method, path, query: nil, payload: nil)
     raise Telephony::Error.new(code: 'BRIDGE_NOT_CONFIGURED', message: 'Telephony bridge is not configured', status: :service_unavailable) if base_url.blank?
@@ -29,11 +32,24 @@ class Telephony::BridgeClient
     options[:query] = query if query.present?
     options[:body] = payload.to_json if payload.present? || method == :post
 
+    log_debug_request(method, path, url, payload)
     response = HTTParty.public_send(method, url, options)
+    log_debug_response(method, path, response)
     handle_response(response, method: method, path: path)
   rescue SocketError, EOFError, Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH,
          Net::OpenTimeout, Net::ReadTimeout, Net::HTTPBadResponse, Net::ProtocolError,
          OpenSSL::SSL::SSLError, Timeout::Error, HTTParty::Error => e
+    log_debug_event(
+      event: 'telephony_bridge_debug_network_error',
+      method: method.to_s.upcase,
+      path: path,
+      url: url,
+      account_id: account_id,
+      request_id: request_id,
+      error_class: e.class.name,
+      error_message: e.message
+    )
+
     raise Telephony::Error.new(
       code: 'BRIDGE_UNAVAILABLE',
       message: "Telephony bridge request failed: #{e.message}",
@@ -74,6 +90,8 @@ class Telephony::BridgeClient
       'Content-Type' => 'application/json'
     }
     headers['X-Bridge-Secret'] = secret if secret.present?
+    headers['X-Account-Id'] = account_id.to_s if account_id.present?
+    headers['X-Request-Id'] = request_id if request_id.present?
     headers
   end
 
@@ -90,5 +108,41 @@ class Telephony::BridgeClient
     return :unauthorized if code.to_i == 401
 
     :bad_gateway
+  end
+
+  def log_debug_request(method, path, url, payload)
+    return unless debug_logging_enabled?(method, path)
+
+    log_debug_event(
+      event: 'telephony_bridge_debug_request',
+      method: method.to_s.upcase,
+      path: path,
+      url: url,
+      account_id: account_id,
+      request_id: request_id,
+      payload: payload
+    )
+  end
+
+  def log_debug_response(method, path, response)
+    return unless debug_logging_enabled?(method, path)
+
+    log_debug_event(
+      event: 'telephony_bridge_debug_response',
+      method: method.to_s.upcase,
+      path: path,
+      account_id: account_id,
+      request_id: request_id,
+      status: response.code.to_i,
+      body: parsed_response(response)
+    )
+  end
+
+  def debug_logging_enabled?(method, path)
+    Telephony::DebugLogger.enabled? && method.to_sym == :post && path.to_s == '/telephony/calls/outbound'
+  end
+
+  def log_debug_event(event)
+    Telephony::DebugLogger.log(event: event.delete(:event), payload: event, log_path: debug_log_path)
   end
 end

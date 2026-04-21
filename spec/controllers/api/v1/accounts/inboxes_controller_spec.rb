@@ -428,6 +428,39 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
+      it 'returns a telephony error when creating a Fonoster voice inbox without a bridge' do
+        account.enable_features!('channel_voice')
+
+        with_modified_env('TELEPHONY_BRIDGE_BASE_URL' => '') do
+          expect do
+            post "/api/v1/accounts/#{account.id}/inboxes",
+                 headers: admin.create_new_auth_token,
+                 params: {
+                   name: 'Fonoster Voice Inbox',
+                   channel: {
+                     type: 'voice',
+                     phone_number: '+15551234567',
+                     provider: 'fonoster',
+                     provider_config: {
+                       number_ref: 'number-ref-1',
+                       app_ref: 'runtime-app-ref-1',
+                       trunk_ref: 'trunk-ref-1',
+                       routing_mode: 'app',
+                       fallback_mode: 'reject'
+                     }
+                   }
+                 },
+                 as: :json
+          end.not_to change(Inbox, :count)
+        end
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body).to include(
+          'code' => 'BRIDGE_NOT_CONFIGURED',
+          'error' => 'Telephony bridge is not configured'
+        )
+      end
+
       it 'does not create a main channel inbox when the account main channel limit is reached' do
         account.update!(limits: { non_web_inboxes: 1 })
         create(:channel_api, account: account)

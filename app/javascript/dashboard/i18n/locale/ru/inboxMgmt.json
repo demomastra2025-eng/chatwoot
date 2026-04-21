@@ -367,10 +367,15 @@
             "REQUIRED": "Ссылка на AI-приложение обязательна при выборе AI-маршрутизации"
           },
           "OPERATOR_AGENT_AOR": {
-            "LABEL": "Адрес оператора (AOR)",
-            "PLACEHOLDER": "Введите идентификатор sip:agent{'@'}domain",
-            "REQUIRED": "Адрес оператора (AOR) обязателен при выборе маршрутизации на оператора"
+            "LABEL": "Цель оператора",
+            "PLACEHOLDER": "Введите sip:agent{'@'}domain или локальное имя пользователя",
+            "REQUIRED": "Цель оператора обязательна при выборе маршрутизации на оператора"
           },
+          "OPERATOR_AGENT_REF": {
+            "LABEL": "Идентификатор оператора",
+            "PLACEHOLDER": "Необязательный Fonoster agent ref"
+          },
+          "OPERATOR_TARGET_REQUIRED": "Для маршрута на оператора нужен идентификатор оператора или AOR",
           "FALLBACK_MESSAGE": {
             "LABEL": "Сообщение при отклонении",
             "PLACEHOLDER": "Необязательное сообщение, которое проигрывается при отклонении звонка"
@@ -405,12 +410,18 @@
           "TWILIO_STATUS_URL_SUBTITLE": "Настройте этот URL как Status Callback URL на ваш Twilio номер телефона.",
           "FONOSTER_TITLE": "Подключение Fonoster",
           "FONOSTER_SUBTITLE": "Этот канал звонков работает через telephony bridge Onelink и маршрутизацию Fonoster.",
+          "FONOSTER_ROUTING_TITLE": "Маршрутизация звонков",
+          "FONOSTER_ROUTING_SUBTITLE": "Выберите активный маршрут для номера и fallback, если основная цель недоступна.",
           "FONOSTER_READINESS_TITLE": "Готовность Fonoster",
           "FONOSTER_READINESS_SUBTITLE": "Проверяет telephony bridge, binding номера и эффективный маршрут для этого voice inbox.",
           "ROUTING_MODE": "Режим маршрутизации",
+          "FALLBACK_MODE": "Fallback-режим",
           "PRIMARY_APP_REF": "Ссылка на основное приложение",
           "AI_APP_REF": "Ссылка на AI-приложение",
-          "OPERATOR_AGENT_AOR": "Адрес оператора (AOR)",
+          "OPERATOR_AGENT_AOR": "Цель оператора",
+          "UPDATE_ROUTE": "Обновить маршрут",
+          "ROUTE_UPDATE_SUCCESS": "Маршрутизация звонков обновлена",
+          "ROUTE_UPDATE_ERROR": "Не удалось обновить маршрутизацию звонков",
           "READY": "Готово",
           "ACTION_REQUIRED": "Нужно действие",
           "HEALTHY": "Исправно",

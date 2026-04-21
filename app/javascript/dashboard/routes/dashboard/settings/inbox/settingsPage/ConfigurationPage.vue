@@ -12,6 +12,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import TextArea from 'next/textarea/TextArea.vue';
 import WhatsappReauthorize from '../channels/whatsapp/Reauthorize.vue';
 import FonosterReadiness from '../components/FonosterReadiness.vue';
+import FonosterRoutingForm from '../components/FonosterRoutingForm.vue';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 
 export default {
@@ -25,6 +26,7 @@ export default {
     TextArea,
     WhatsappReauthorize,
     FonosterReadiness,
+    FonosterRoutingForm,
   },
   mixins: [inboxMixin],
   props: {
@@ -46,6 +48,7 @@ export default {
       allowedDomains: '',
       isUpdatingAllowedDomains: false,
       isSettingDefaults: false,
+      fonosterReadinessKey: 0,
     };
   },
   validations: {
@@ -172,10 +175,20 @@ export default {
       }
     },
     routingModeLabel(mode) {
-      const normalizedMode = (mode || 'operator').toUpperCase();
-      return this.$t(
-        `INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.${normalizedMode}`
-      );
+      switch (mode) {
+        case 'app':
+          return this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.APP');
+        case 'ai':
+          return this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.AI');
+        case 'reject':
+          return this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.REJECT');
+        case 'operator':
+        default:
+          return this.$t('INBOX_MGMT.ADD.VOICE.FONOSTER.ROUTING.MODE.OPERATOR');
+      }
+    },
+    handleFonosterRouteSaved() {
+      this.fonosterReadinessKey += 1;
     },
     async handleReconfigure() {
       if (this.$refs.whatsappReauth) {
@@ -248,28 +261,44 @@ export default {
         <div class="flex flex-col gap-4">
           <woot-code :script="inbox.telephony?.number_ref || ''" lang="text" />
           <div class="text-sm text-n-slate-11">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}:
+            <span class="after:content-[':']">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.ROUTING_MODE') }}
+            </span>
             {{ routingModeLabel(inbox.telephony?.routing_policy?.mode) }}
           </div>
           <div v-if="inbox.telephony?.app_ref" class="text-sm text-n-slate-11">
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PRIMARY_APP_REF') }}:
+            <span class="after:content-[':']">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.PRIMARY_APP_REF') }}
+            </span>
             {{ inbox.telephony.app_ref }}
           </div>
           <div
             v-if="inbox.telephony?.routing_policy?.ai_app_ref"
             class="text-sm text-n-slate-11"
           >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.AI_APP_REF') }}:
+            <span class="after:content-[':']">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.AI_APP_REF') }}
+            </span>
             {{ inbox.telephony.routing_policy.ai_app_ref }}
           </div>
           <div
             v-if="inbox.telephony?.routing_policy?.operator_agent_aor"
             class="text-sm text-n-slate-11"
           >
-            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR') }}:
+            <span class="after:content-[':']">
+              {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.OPERATOR_AGENT_AOR') }}
+            </span>
             {{ inbox.telephony.routing_policy.operator_agent_aor }}
           </div>
         </div>
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_ROUTING_TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_ROUTING_SUBTITLE')
+        "
+      >
+        <FonosterRoutingForm :inbox="inbox" @saved="handleFonosterRouteSaved" />
       </SettingsFieldSection>
       <SettingsFieldSection
         :label="
@@ -279,7 +308,7 @@ export default {
           $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.FONOSTER_READINESS_SUBTITLE')
         "
       >
-        <FonosterReadiness :inbox="inbox" />
+        <FonosterReadiness :key="fonosterReadinessKey" :inbox="inbox" />
       </SettingsFieldSection>
     </template>
   </div>

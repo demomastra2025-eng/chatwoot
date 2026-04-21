@@ -1,7 +1,7 @@
 class Telephony::AgentsService
-  def initialize(account:, bridge_client: Telephony::BridgeClient.new)
+  def initialize(account:, bridge_client: nil)
     @account = account
-    @bridge_client = bridge_client
+    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def list_remote

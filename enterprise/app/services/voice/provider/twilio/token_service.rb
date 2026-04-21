@@ -3,6 +3,7 @@ class Voice::Provider::Twilio::TokenService
 
   def generate
     {
+      provider: 'twilio',
       token: access_token.to_jwt,
       identity: identity,
       voice_enabled: true,

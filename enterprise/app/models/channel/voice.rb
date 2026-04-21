@@ -112,16 +112,16 @@ class Channel::Voice < ApplicationRecord
     errors.add(:provider_config, 'number_ref is required for Fonoster provider') if config[:number_ref].blank? && config[:fonoster_number_ref].blank?
     errors.add(:provider_config, 'routing_mode must be one of operator, app, ai, reject') unless routing_mode.in?(%w[operator app ai reject])
 
-    if routing_mode == 'ai' && config[:ai_app_ref].blank?
-      errors.add(:provider_config, 'ai_app_ref is required when routing_mode is ai')
+    if (routing_mode == 'ai' || config[:fallback_mode].to_s == 'ai') && config[:ai_app_ref].blank?
+      errors.add(:provider_config, 'ai_app_ref is required for AI routing or fallback')
     end
 
     if routing_mode == 'app' && config[:app_ref].blank?
       errors.add(:provider_config, 'app_ref is required when routing_mode is app')
     end
 
-    if routing_mode == 'operator' && config[:operator_agent_aor].blank?
-      errors.add(:provider_config, 'operator_agent_aor is required when routing_mode is operator')
+    if routing_mode == 'operator' && config[:operator_agent_aor].blank? && config[:operator_agent_ref].blank?
+      errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when routing_mode is operator')
     end
   end
 

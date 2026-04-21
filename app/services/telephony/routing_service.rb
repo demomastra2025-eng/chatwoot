@@ -1,7 +1,17 @@
 class Telephony::RoutingService
-  def initialize(account:, bridge_client: Telephony::BridgeClient.new)
+  ROUTE_CONFIG_KEYS = {
+    mode: :routing_mode,
+    app_ref: :app_ref,
+    ai_app_ref: :ai_app_ref,
+    operator_agent_ref: :operator_agent_ref,
+    operator_agent_aor: :operator_agent_aor,
+    fallback_mode: :fallback_mode,
+    fallback_message: :fallback_message
+  }.freeze
+
+  def initialize(account:, bridge_client: nil)
     @account = account
-    @bridge_client = bridge_client
+    @bridge_client = bridge_client || Telephony::BridgeClient.new(account_id: account.id)
   end
 
   def capabilities
@@ -33,8 +43,11 @@ class Telephony::RoutingService
   end
 
   def update_number_route!(number_binding:, attributes:)
+    attributes = normalized_route_attributes(attributes)
+    sync_voice_channel_route_config!(number_binding, attributes)
+
     policy = number_binding.routing_policy || number_binding.build_routing_policy(account: account)
-    policy.assign_attributes(attributes)
+    policy.assign_attributes(policy_attributes(attributes))
     policy.save!
 
     response = bridge_client.post("/telephony/numbers/#{number_binding.number_ref}/route", policy.bridge_payload)
@@ -74,6 +87,37 @@ class Telephony::RoutingService
   private
 
   attr_reader :account, :bridge_client
+
+  def normalized_route_attributes(attributes)
+    attributes.to_h.with_indifferent_access
+  end
+
+  def policy_attributes(attributes)
+    attributes.except(:app_ref)
+  end
+
+  def sync_voice_channel_route_config!(number_binding, attributes)
+    channel = number_binding.voice_channel
+    return unless channel&.provider == 'fonoster'
+
+    config = channel.provider_config_hash.with_indifferent_access
+    ROUTE_CONFIG_KEYS.each do |attribute_key, config_key|
+      next unless attributes.key?(attribute_key)
+
+      value = route_config_value(attribute_key, attributes[attribute_key])
+      value.present? ? config[config_key] = value : config.delete(config_key)
+    end
+
+    channel.update!(provider_config: config.to_h)
+    number_binding.reload
+  end
+
+  def route_config_value(attribute_key, value)
+    normalized_value = value.to_s.strip.presence
+    return normalized_value unless attribute_key == :mode && normalized_value.present?
+
+    Telephony::RoutingPolicy::BRIDGE_SUPPORTED_MODES.include?(normalized_value) ? normalized_value : 'reject'
+  end
 
   def toggle_ai_payload(number_binding, policy, enabled:)
     payload = {

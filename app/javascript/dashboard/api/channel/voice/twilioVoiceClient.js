@@ -13,10 +13,14 @@ class WebphoneClient extends EventTarget {
     this.sessionConfig = null;
   }
 
-  async initializeDevice(inboxId) {
+  async initializeDevice(sessionConfigOrInboxId, { inboxId = null } = {}) {
     this.destroyDevice();
 
-    const response = await VoiceAPI.getToken(inboxId);
+    const response =
+      typeof sessionConfigOrInboxId === 'object' &&
+      sessionConfigOrInboxId !== null
+        ? sessionConfigOrInboxId
+        : await VoiceAPI.getWebphoneToken(sessionConfigOrInboxId);
     const {
       token,
       account_id: accountId,
@@ -25,7 +29,11 @@ class WebphoneClient extends EventTarget {
     } = response || {};
 
     this.sessionConfig = response || {};
-    this.inboxId = inboxId;
+    this.inboxId =
+      inboxId ||
+      (typeof sessionConfigOrInboxId === 'number'
+        ? sessionConfigOrInboxId
+        : null);
 
     if (!callingSupported) {
       this.initialized = true;
@@ -56,7 +64,7 @@ class WebphoneClient extends EventTarget {
     this.device.on('disconnect', this.onDisconnect);
 
     this.device.on('tokenWillExpire', async () => {
-      const r = await VoiceAPI.getToken(this.inboxId);
+      const r = await VoiceAPI.getWebphoneToken(this.inboxId);
       if (r?.token) this.device.updateToken(r.token);
     });
 

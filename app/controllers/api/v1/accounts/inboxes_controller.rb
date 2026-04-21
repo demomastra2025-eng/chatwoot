@@ -1,5 +1,7 @@
 class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
+  rescue_from Telephony::Error, with: :render_telephony_error
+
   before_action :fetch_inbox, except: [:index, :create]
   before_action :fetch_agent_bot, only: [:set_agent_bot]
   before_action :validate_limit, only: [:create]
@@ -246,6 +248,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def render_whatsapp_web_inbox(include_qr_code: true, status: :ok)
     @inbox.reload
     render :show, status: status, locals: { include_whatsapp_web_qr_code: include_qr_code }
+  end
+
+  def render_telephony_error(error)
+    body = { code: error.code, error: error.message }
+    body[:details] = error.details if error.details.present?
+    render json: body, status: error.status
   end
 
   def inbox_attributes

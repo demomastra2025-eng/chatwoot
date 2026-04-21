@@ -367,10 +367,15 @@
             "REQUIRED": "AI маршруты таңдалса, AI қосымшасының сілтемесі міндетті"
           },
           "OPERATOR_AGENT_AOR": {
-            "LABEL": "Оператор агентінің AOR-ы",
-            "PLACEHOLDER": "sip:agent{'@'}domain идентификаторын енгізіңіз",
-            "REQUIRED": "Оператор маршруты таңдалса, оператор агентінің AOR-ы міндетті"
+            "LABEL": "Оператор бағыты",
+            "PLACEHOLDER": "sip:agent{'@'}domain немесе жергілікті пайдаланушы атын енгізіңіз",
+            "REQUIRED": "Оператор маршруты таңдалса, оператор бағыты міндетті"
           },
+          "OPERATOR_AGENT_REF": {
+            "LABEL": "Оператор агентінің идентификаторы",
+            "PLACEHOLDER": "Қосымша Fonoster agent ref"
+          },
+          "OPERATOR_TARGET_REQUIRED": "Оператор маршруты үшін оператор идентификаторы немесе AOR қажет",
           "FALLBACK_MESSAGE": {
             "LABEL": "Қабылдамау хабарламасы",
             "PLACEHOLDER": "Қоңырау қабылданбағанда ойналатын қосымша хабарлама"
@@ -405,12 +410,18 @@
           "TWILIO_STATUS_URL_SUBTITLE": "Осы URL-ді Twilio телефон нөміріңіздегі Status Callback URL ретінде баптаңыз.",
           "FONOSTER_TITLE": "Fonoster байланысы",
           "FONOSTER_SUBTITLE": "Бұл қоңырау арнасы Onelink telephony bridge және Fonoster маршрутизациясы арқылы басқарылады.",
+          "FONOSTER_ROUTING_TITLE": "Қоңырау маршрутизациясы",
+          "FONOSTER_ROUTING_SUBTITLE": "Нөмір үшін белсенді маршрутты және негізгі бағыт қолжетімсіз болса қолданылатын fallback таңдаңыз.",
           "FONOSTER_READINESS_TITLE": "Fonoster дайындығы",
           "FONOSTER_READINESS_SUBTITLE": "Осы voice inbox үшін telephony bridge, нөмір binding-і және тиімді маршрут тексеріледі.",
           "ROUTING_MODE": "Маршрутизация режимі",
+          "FALLBACK_MODE": "Fallback режимі",
           "PRIMARY_APP_REF": "Негізгі қосымша сілтемесі",
           "AI_APP_REF": "AI қосымшасының сілтемесі",
-          "OPERATOR_AGENT_AOR": "Оператор агентінің AOR-ы",
+          "OPERATOR_AGENT_AOR": "Оператор бағыты",
+          "UPDATE_ROUTE": "Маршрутты жаңарту",
+          "ROUTE_UPDATE_SUCCESS": "Қоңырау маршрутизациясы жаңартылды",
+          "ROUTE_UPDATE_ERROR": "Қоңырау маршрутизациясын жаңарту мүмкін болмады",
           "READY": "Дайын",
           "ACTION_REQUIRED": "Әрекет қажет",
           "HEALTHY": "Қалыпты",
