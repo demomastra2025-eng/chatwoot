@@ -223,8 +223,8 @@ ru:
         error_code: 'Код ошибки: %{error_code}'
     activity:
       captain:
-        resolved: Диалог был решен %{user_name} из-за бездействия
-        open: Диалог был открыт %{user_name}
+        resolved: Диалог был решен с %{user_name} из-за бездействия
+        open: Диалог был открыт с %{user_name}
         resolved_with_reason: Conversation was marked resolved by %{user_name} (%{reason})
         resolved_by_tool: 'Диалог был завершен %{user_name} с причиной: %{reason}'
         open_with_reason: Conversation was marked open by %{user_name} (%{reason})
@@ -233,10 +233,10 @@ ru:
         error_moved_to_open: Диалог был открыт системой из-за ошибки робота сотрудника.
       status:
         resolved: "%{user_name} завершил диалог"
-        contact_resolved: Разговор был закрыт %{contact_name}
+        contact_resolved: Разговор был закрыт с %{contact_name}
         open: "%{user_name} открыл заново диалог"
-        pending: Разговор был помечен как ожидающий %{user_name}
-        snoozed: Разговор был помечен как отложенный %{user_name}
+        pending: Разговор с %{user_name}, был передан AI-агенту
+        snoozed: Разговор с %{user_name}, был помечен как отложенный 
         auto_resolved_days: Разговор был помечен системой решённым из-за неактивности в течение %{count} дней
         auto_resolved_hours: Диалог был решен системой из-за %{count} часов бездействия
         auto_resolved_minutes: Диалог был решён системой из-за %{count} минут бездействия
