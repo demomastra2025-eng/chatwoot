@@ -33,6 +33,12 @@ if ENV.fetch('JUDOSCALE_URL', false).present?
   require 'judoscale-sidekiq'
 end
 
+if defined?(RubyLLM)
+  RubyLLM.configure do |config|
+    config.use_new_acts_as = true
+  end
+end
+
 module Chatwoot
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.

@@ -38,26 +38,66 @@
 #  fk_rails_...  (inbox_id => inboxes.id)
 #
 class ContactChannelProfile < ApplicationRecord
+  include Rails.application.routes.url_helpers
+  include AccountStorageLimitable
+
+  TELEGRAM_PERSONAL_PROVIDER = 'telegram_personal'.freeze
+  TELEGRAM_PERSONAL_TRANSIENT_AVATAR_PATH = '/telegram-personal/media/'.freeze
+  TELEGRAM_PERSONAL_TRANSIENT_AVATAR_KEYS = %w[avatar_url profile_photo_url profile_pic_url].freeze
+
   belongs_to :account
   belongs_to :contact
   belongs_to :contact_inbox
   belongs_to :inbox
 
+  has_one_attached :avatar
+
   before_validation :sync_context_from_contact_inbox
 
+  validate :acceptable_avatar, if: -> { avatar.changed? }
+  account_storage_attachments :avatar
   validates :account_id, :contact_id, :contact_inbox_id, :inbox_id, :channel_type, :provider, :source_id, presence: true
   validates :contact_inbox_id, uniqueness: true
   validates :display_name, length: { maximum: 255 }
   validates :username, :phone_number, :email, :identifier, length: { maximum: 255 }
 
+  def self.persistable_avatar_url(provider:, avatar_url:)
+    value = avatar_url.to_s.strip
+    return if value.blank?
+    return if provider.to_s == TELEGRAM_PERSONAL_PROVIDER && value.include?(TELEGRAM_PERSONAL_TRANSIENT_AVATAR_PATH)
+
+    value
+  end
+
+  def self.sanitize_profile_data(provider:, profile_data:)
+    data = (profile_data || {}).deep_stringify_keys
+    return data unless provider.to_s == TELEGRAM_PERSONAL_PROVIDER
+
+    data.except(*TELEGRAM_PERSONAL_TRANSIENT_AVATAR_KEYS)
+  end
+
   def name
     display_name
+  end
+
+  def avatar_url
+    return attached_avatar_url if attached_avatar_url.present?
+
+    self.class.persistable_avatar_url(provider: provider, avatar_url: stored_avatar_url)
+  end
+
+  def stored_avatar_url
+    self[:avatar_url]
+  end
+
+  def avatar_fingerprint
+    (profile_data || {}).with_indifferent_access[:avatar_fingerprint].presence&.to_s
   end
 
   def push_event_data
     profile_identity_data.merge(
       profile_display_data,
-      profile_data: profile_data || {},
+      profile_data: serialized_profile_data,
       last_synced_at: last_synced_at&.to_i
     ).compact
   end
@@ -88,6 +128,25 @@ class ContactChannelProfile < ApplicationRecord
       phone_number: phone_number,
       email: email
     }
+  end
+
+  def serialized_profile_data
+    self.class.sanitize_profile_data(provider: provider, profile_data: profile_data)
+  end
+
+  def attached_avatar_url
+    return unless avatar.attached? && avatar.representable?
+
+    url_for(avatar.representation(resize_to_fill: [250, nil]))
+  end
+
+  def acceptable_avatar
+    return unless avatar.attached?
+
+    errors.add(:avatar, 'is too big') if avatar.byte_size > 15.megabytes
+
+    acceptable_types = ['image/jpeg', 'image/png', 'image/gif'].freeze
+    errors.add(:avatar, 'filetype not supported') unless acceptable_types.include?(avatar.content_type)
   end
 
   def sync_context_from_contact_inbox

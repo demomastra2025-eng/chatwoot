@@ -53,6 +53,11 @@ class Captain::Assistant::AgentRunnerService
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
     return provider_error_response(result.error) if result.respond_to?(:error) && result.error.present?
 
+    if result.context&.dig(:pending_human_handoff).present?
+      return human_handoff_response(result.context[:pending_human_handoff],
+                                    result.context[:current_agent])
+    end
+
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
@@ -266,5 +271,16 @@ class Captain::Assistant::AgentRunnerService
       'response' => 'conversation_handoff',
       'reasoning' => reason
     }
+  end
+
+  def human_handoff_response(handoff_payload, agent_name)
+    reason = handoff_payload[:reason].presence || handoff_payload['reason'].presence
+
+    {
+      'response' => 'conversation_handoff',
+      'reasoning' => reason.present? ? "Human handoff requested: #{reason}" : 'Human handoff requested',
+      'handoff_reason' => reason,
+      'agent_name' => agent_name
+    }.compact
   end
 end

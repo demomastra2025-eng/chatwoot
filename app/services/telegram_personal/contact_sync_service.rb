@@ -13,8 +13,8 @@ class TelegramPersonal::ContactSyncService
 
     @contact = @contact_inbox.contact
     sync_existing_contact!
-    sync_channel_profile!
-    sync_avatar!
+    profile = sync_channel_profile!
+    sync_channel_profile_avatar!(profile)
     @contact_inbox.reload
   end
 
@@ -25,15 +25,13 @@ class TelegramPersonal::ContactSyncService
       name: display_name,
       phone_number: safe_phone_number,
       identifier: contact_identifier,
-      additional_attributes: additional_attributes,
-      avatar_url: safe_avatar_url
+      additional_attributes: additional_attributes
     }.compact
   end
 
   def sync_existing_contact!
     current_attributes = (@contact.additional_attributes || {}).deep_stringify_keys
     merged_attributes = merged_additional_attributes(current_attributes)
-    @avatar_refresh_required = should_refresh_contact_avatar?(current_attributes)
 
     updates = {}
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
@@ -75,27 +73,30 @@ class TelegramPersonal::ContactSyncService
     retry
   end
 
-  def sync_avatar!
-    return unless @avatar_refresh_required
+  def sync_channel_profile_avatar!(profile)
+    return unless @channel_profile_avatar_refresh_required
+    return if profile.blank?
 
-    Avatar::AvatarFromUrlJob.perform_later(@contact, avatar_url)
+    Avatar::AvatarFromUrlJob.perform_later(profile, avatar_url)
   rescue StandardError => e
-    Rails.logger.info("[TELEGRAM PERSONAL] Avatar sync enqueue failed for contact #{@contact.id}: #{e.class}: #{e.message}")
+    Rails.logger.info("[TELEGRAM PERSONAL] Avatar sync enqueue failed for channel profile #{profile&.id || 'new'}: #{e.class}: #{e.message}")
   end
 
   def sync_channel_profile!
+    current_profile = @contact_inbox.channel_profile
+    @channel_profile_avatar_refresh_required = should_refresh_channel_profile_avatar?(current_profile)
     profile_data = telegram_channel_profile
     profile = Contacts::ChannelProfileUpsertService.new(
       contact_inbox: @contact_inbox,
       provider: 'telegram_personal',
       profile_attributes: profile_data.merge(
         display_name: channel_profile_display_name,
-        avatar_url: safe_avatar_url,
         phone_number: channel_profile_phone_number,
         profile_data: profile_data
       )
     ).perform
     repair_self_profile_channel_profile!(profile)
+    profile
   end
 
   def display_name
@@ -118,7 +119,6 @@ class TelegramPersonal::ContactSyncService
       first_name: safe_first_name,
       last_name: safe_last_name,
       phone_number: safe_phone_number,
-      profile_photo_url: safe_avatar_url,
       is_bot: boolean_value(:is_bot),
       is_contact: boolean_value(:is_contact),
       is_mutual_contact: boolean_value(:is_mutual_contact),
@@ -139,13 +139,14 @@ class TelegramPersonal::ContactSyncService
     merged_attributes.merge!(telegram_shared_additional_attributes)
     merged_attributes.merge!(additional_attributes.deep_stringify_keys) if telegram_primary_contact? && !self_profile_payload?
     merged_attributes['channel_profiles'] = merged_channel_profiles(current_attributes)
+    scrub_contact_avatar_attributes!(merged_attributes) if telegram_primary_contact? || current_provider == 'telegram_personal'
     merged_attributes
   end
 
   def merged_channel_profiles(current_attributes)
     channel_profiles = (current_attributes['channel_profiles'] || {}).deep_stringify_keys
     telegram_profiles = (channel_profiles['telegram_personal'] || {}).deep_stringify_keys
-    telegram_profiles[contact_identifier] = telegram_channel_profile
+    telegram_profiles[contact_identifier] = telegram_channel_profile_for_contact_attributes
     channel_profiles.merge('telegram_personal' => telegram_profiles)
   end
 
@@ -167,7 +168,7 @@ class TelegramPersonal::ContactSyncService
       first_name: safe_first_name,
       last_name: safe_last_name,
       phone_number: safe_phone_number,
-      profile_photo_url: safe_avatar_url,
+      avatar_fingerprint: avatar_fingerprint,
       is_bot: boolean_value(:is_bot),
       is_contact: boolean_value(:is_contact),
       is_mutual_contact: boolean_value(:is_mutual_contact),
@@ -183,13 +184,20 @@ class TelegramPersonal::ContactSyncService
     }.compact.deep_stringify_keys
   end
 
-  def should_refresh_contact_avatar?(current_attributes)
-    return false if safe_avatar_url.blank?
-    return false unless telegram_primary_contact?
-    return false unless @contact.avatar_updates_allowed_for?(contact_inbox: @contact_inbox)
-    return true unless @contact.avatar.attached?
+  def telegram_channel_profile_for_contact_attributes
+    return telegram_channel_profile unless self_profile_payload?
 
-    current_attributes['profile_photo_url'] != safe_avatar_url
+    telegram_channel_profile.except('avatar_fingerprint', 'first_name', 'last_name', 'phone_number', 'username')
+  end
+
+  def should_refresh_channel_profile_avatar?(profile)
+    return false if safe_avatar_url.blank?
+    return false if self_profile_payload?
+    return true if profile.blank?
+    return true unless profile.avatar.attached?
+    return false if avatar_fingerprint.blank?
+
+    profile.avatar_fingerprint != avatar_fingerprint
   end
 
   def should_update_contact_identifier?
@@ -323,6 +331,10 @@ class TelegramPersonal::ContactSyncService
     params[:avatar_url].presence
   end
 
+  def avatar_fingerprint
+    params[:avatar_fingerprint].presence&.to_s
+  end
+
   def safe_first_name
     return if self_profile_payload?
 
@@ -400,6 +412,7 @@ class TelegramPersonal::ContactSyncService
 
     cleaned_profile_data = (profile.profile_data || {}).deep_stringify_keys.except(
       'avatar_url',
+      'avatar_fingerprint',
       'display_name',
       'first_name',
       'last_name',
@@ -416,6 +429,10 @@ class TelegramPersonal::ContactSyncService
       phone_number: channel_profile_phone_number,
       profile_data: cleaned_profile_data
     )
+  end
+
+  def scrub_contact_avatar_attributes!(attributes)
+    attributes.except!('avatar_fingerprint', 'avatar_url_hash', 'last_avatar_sync_at', 'profile_photo_url')
   end
 
   def social_telegram_user_id

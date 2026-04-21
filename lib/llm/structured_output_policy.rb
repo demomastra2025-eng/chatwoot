@@ -25,11 +25,11 @@ class Llm::StructuredOutputPolicy
       begin
         attempts += 1
         response = yield(attempts)
-        normalize_response!(chat:, response:)
+        normalize_response!(chat: chat, response: response)
       rescue InvalidStructuredOutputError => e
         raise if schema_for(chat).blank? || attempts >= max_attempts
 
-        prepare_retry!(chat:, response:, error: e, attempt: attempts)
+        prepare_retry!(chat: chat, response: response, error: e, attempt: attempts)
         retry
       end
     end
@@ -38,6 +38,7 @@ class Llm::StructuredOutputPolicy
       schema = schema_for(chat)
       return response if schema.blank?
       return response unless response.respond_to?(:content)
+      return response if halt_result?(response)
       return response if response.respond_to?(:tool_call?) && response.tool_call?
 
       normalized_content = normalize_content(response.content)
@@ -45,7 +46,7 @@ class Llm::StructuredOutputPolicy
       response.content = normalized_content if response.respond_to?(:content=)
       response
     rescue InvalidStructuredOutputError => e
-      publish_invalid_event(chat:, response:, error: e)
+      publish_invalid_event(chat: chat, response: response, error: e)
       raise InvalidStructuredOutputError, "#{e.message} for schema #{schema_name(schema)}"
     end
 
@@ -57,8 +58,8 @@ class Llm::StructuredOutputPolicy
 
     def prepare_retry!(chat:, response:, error:, attempt:)
       rollback_failed_response!(chat, response)
-      publish_repair_requested_event(chat:, error:, attempt:)
-      append_repair_instruction!(chat, error:, attempt:)
+      publish_repair_requested_event(chat: chat, error: error, attempt: attempt)
+      append_repair_instruction!(chat, error: error, attempt: attempt)
     end
 
     def validate_schema!(schema)
@@ -133,7 +134,7 @@ class Llm::StructuredOutputPolicy
     def append_repair_instruction!(chat, error:, attempt:)
       return unless chat.respond_to?(:with_instructions)
 
-      chat.with_instructions(repair_prompt(error:, attempt:), append: true)
+      chat.with_instructions(repair_prompt(error: error, attempt: attempt), append: true)
     end
 
     def repair_prompt(error:, attempt:)
@@ -180,6 +181,10 @@ class Llm::StructuredOutputPolicy
       return chat_model if chat_model.present?
 
       nil
+    end
+
+    def halt_result?(response)
+      defined?(RubyLLM::Tool::Halt) && response.is_a?(RubyLLM::Tool::Halt)
     end
 
     def response_type(content)

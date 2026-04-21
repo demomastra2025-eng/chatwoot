@@ -56,4 +56,24 @@ RSpec.describe Contacts::ChannelProfileUpsertService do
     expect(profile.avatar_url).to eq('https://chatwoot-assets.local/avatar.png')
     expect(profile.username).to eq('new_username')
   end
+
+  it 'does not persist transient telegram personal avatar urls' do
+    profile = described_class.new(
+      contact_inbox: contact_inbox,
+      provider: 'telegram_personal',
+      profile_attributes: {
+        name: 'Telegram Name',
+        avatar_url: 'https://app.one-link.kz/telegram-personal/media/avatar-1?token=temporary',
+        profile_data: {
+          avatar_fingerprint: 'telegram-photo-1',
+          profile_photo_url: 'https://app.one-link.kz/telegram-personal/media/avatar-1?token=temporary'
+        }
+      }
+    ).perform
+
+    expect(profile.stored_avatar_url).to be_nil
+    expect(profile.profile_data).not_to have_key('profile_photo_url')
+    expect(profile.push_event_data[:avatar_url]).to be_nil
+    expect(profile.push_event_data[:profile_data]).not_to have_key('profile_photo_url')
+  end
 end

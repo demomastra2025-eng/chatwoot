@@ -56,9 +56,11 @@ class Contacts::ChannelProfileUpsertService
   end
 
   def preferred_avatar_url(profile)
-    attributes[:avatar_url].presence || attributes[:profile_photo_url].presence || attributes[:profile_pic_url].presence ||
-      profile_data[:avatar_url].presence || profile_data[:profile_photo_url].presence || profile_data[:profile_pic_url].presence ||
-      profile.avatar_url
+    candidate = attributes[:avatar_url].presence || attributes[:profile_photo_url].presence || attributes[:profile_pic_url].presence ||
+                profile_data[:avatar_url].presence || profile_data[:profile_photo_url].presence || profile_data[:profile_pic_url].presence ||
+                profile.stored_avatar_url
+
+    ContactChannelProfile.persistable_avatar_url(provider: provider_name, avatar_url: candidate)
   end
 
   def preferred_username(profile)
@@ -79,7 +81,8 @@ class Contacts::ChannelProfileUpsertService
   end
 
   def merged_profile_data(profile)
-    (profile.profile_data || {}).deep_stringify_keys.deep_merge(profile_data.deep_stringify_keys)
+    merged_data = (profile.profile_data || {}).deep_stringify_keys.deep_merge(profile_data.deep_stringify_keys)
+    ContactChannelProfile.sanitize_profile_data(provider: provider_name, profile_data: merged_data)
   end
 
   def profile_data

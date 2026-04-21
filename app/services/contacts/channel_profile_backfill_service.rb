@@ -86,7 +86,7 @@ class Contacts::ChannelProfileBackfillService
 
   def profile_attributes(contact_inbox)
     contact = contact_inbox.contact
-    profile_data = merged_profile_data(contact_inbox)
+    profile_data = sanitized_profile_data(contact_inbox, merged_profile_data(contact_inbox))
 
     {
       name: contact.name,
@@ -94,7 +94,7 @@ class Contacts::ChannelProfileBackfillService
       phone_number: contact.phone_number,
       identifier: contact.identifier,
       username: preferred_username(contact_inbox, profile_data),
-      avatar_url: preferred_avatar_url(contact, profile_data),
+      avatar_url: preferred_avatar_url(contact_inbox, contact, profile_data),
       profile_data: profile_data
     }.compact
   end
@@ -132,12 +132,24 @@ class Contacts::ChannelProfileBackfillService
       instagram_username(contact_inbox.contact.additional_attributes.to_h.deep_stringify_keys).presence
   end
 
-  def preferred_avatar_url(contact, profile_data)
-    profile_data['avatar_url'].presence ||
-      profile_data['profile_photo_url'].presence ||
-      profile_data['profile_pic_url'].presence ||
-      profile_data['profile_image_url'].presence ||
-      contact.avatar_url.presence
+  def preferred_avatar_url(contact_inbox, contact, profile_data)
+    candidate = profile_data['avatar_url'].presence ||
+                profile_data['profile_photo_url'].presence ||
+                profile_data['profile_pic_url'].presence ||
+                profile_data['profile_image_url'].presence ||
+                contact.avatar_url.presence
+
+    ContactChannelProfile.persistable_avatar_url(
+      provider: provider_name(contact_inbox),
+      avatar_url: candidate
+    )
+  end
+
+  def sanitized_profile_data(contact_inbox, profile_data)
+    ContactChannelProfile.sanitize_profile_data(
+      provider: provider_name(contact_inbox),
+      profile_data: profile_data
+    )
   end
 
   def instagram_username(additional_attributes)

@@ -43,8 +43,8 @@ class Captain::Scenario < ApplicationRecord
   belongs_to :account
 
   validates :title, presence: true
-  validates :description, presence: true
-  validates :instruction, presence: true
+  validates :description, presence: true, length: { maximum: 2000 }
+  validates :instruction, presence: true, length: { maximum: 10_000 }
   validates :assistant_id, presence: true
   validates :account_id, presence: true
   validate :validate_instruction_tools
@@ -145,7 +145,10 @@ class Captain::Scenario < ApplicationRecord
     return [] if tools.blank?
 
     available_tools = assistant.available_agent_tools
+    effective_tool_ids = assistant.scenario_agent_tool_ids(referenced_tool_ids: tools)
     resolved_tools = tools.filter_map do |tool_id|
+      next unless effective_tool_ids.include?(tool_id.to_s)
+
       available_tools.find { |tool| tool[:id] == tool_id }
     end
 

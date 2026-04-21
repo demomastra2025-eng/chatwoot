@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import {
+  displayableIdentityDetail,
   getContactSourceIconClass,
   sourceValue,
 } from 'dashboard/helper/contactIdentity';
@@ -17,9 +18,29 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  onlyActionable: {
+    type: Boolean,
+    default: false,
+  },
+  hideEmptyState: {
+    type: Boolean,
+    default: false,
+  },
+  showMessageAction: {
+    type: Boolean,
+    default: false,
+  },
+  showIdentifiers: {
+    type: Boolean,
+    default: false,
+  },
 });
 
-const emit = defineEmits(['select-name-source', 'select-avatar-source']);
+const emit = defineEmits([
+  'select-name-source',
+  'select-avatar-source',
+  'open-channel-conversation',
+]);
 
 const { t } = useI18n();
 
@@ -100,6 +121,10 @@ const rawProfiles = computed(
   () => props.contact.channelProfiles || props.contact.channel_profiles || []
 );
 
+const rawContactInboxes = computed(
+  () => props.contact.contactInboxes || props.contact.contact_inboxes || []
+);
+
 const contactRecordSource = computed(() => {
   const displayName = props.contact.name || '';
   const avatarUrl =
@@ -120,8 +145,7 @@ const contactRecordSource = computed(() => {
     iconClass: 'i-lucide-user-round',
     displayName,
     avatarUrl,
-    secondaryLine: email || phoneNumber || '',
-    fallbackLine: '',
+    secondaryLine: displayableIdentityDetail(email, phoneNumber),
     nameSource: hasSelectableName ? { kind: 'manual' } : null,
     avatarSource: hasSelectableAvatar ? { kind: 'contact_avatar' } : null,
     nameSelected: sourceMatches(primaryNameSource.value, { kind: 'manual' }),
@@ -143,6 +167,13 @@ const parsedTimestamp = value => {
 };
 
 const normalizedSources = computed(() => {
+  const profiledContactInboxIds = new Set(
+    rawProfiles.value
+      .map(profile => valueFor(profile, 'contactInboxId'))
+      .filter(Boolean)
+      .map(String)
+  );
+
   const profileSources = rawProfiles.value
     .map(profile => {
       const displayName =
@@ -185,10 +216,19 @@ const normalizedSources = computed(() => {
         avatarUrl,
         label: humanizeSource(provider),
         iconClass: getContactSourceIconClass(channelSource),
-        secondaryLine: username || phoneNumber || '',
-        fallbackLine: sourceId || valueFor(profile, 'identifier') || '',
+        secondaryLine: displayableIdentityDetail(username, phoneNumber),
+        identifierLine: displayableIdentityDetail(
+          sourceId,
+          valueFor(profile, 'identifier')
+        ),
         nameSource: displayName ? channelSource : null,
         avatarSource: avatarUrl ? channelSource : null,
+        channelIdentity: valueFor(profile, 'inboxId')
+          ? {
+              inboxId: valueFor(profile, 'inboxId'),
+              sourceId,
+            }
+          : null,
         nameSelected: sourceMatches(primaryNameSource.value, channelSource),
         avatarSelected: sourceMatches(primaryAvatarSource.value, channelSource),
         sourcePriority: 0,
@@ -200,12 +240,63 @@ const normalizedSources = computed(() => {
       };
     })
     .filter(
-      source => source.displayName || source.avatarUrl || source.fallbackLine
+      source =>
+        source.displayName ||
+        source.avatarUrl ||
+        source.identifierLine ||
+        source.channelIdentity
     );
 
-  const sources = [contactRecordSource.value, ...profileSources].filter(
-    Boolean
-  );
+  const inboxSources = rawContactInboxes.value
+    .filter(
+      contactInbox =>
+        !profiledContactInboxIds.has(String(valueFor(contactInbox, 'id')))
+    )
+    .map(contactInbox => {
+      const inbox = valueFor(contactInbox, 'inbox') || {};
+      const inboxId = valueFor(contactInbox, 'inboxId');
+      const sourceId = valueFor(contactInbox, 'sourceId');
+      const provider =
+        valueFor(inbox, 'provider') || valueFor(inbox, 'channelType');
+      const channelSource = {
+        kind: 'channel_profile',
+        contactInboxId: valueFor(contactInbox, 'id'),
+        inboxId,
+        channelType: valueFor(inbox, 'channelType'),
+        provider,
+        sourceId,
+      };
+
+      return {
+        id: `contact-inbox:${valueFor(contactInbox, 'id') || sourceId}`,
+        cardKey: `contact-inbox:${valueFor(contactInbox, 'id') || sourceId}`,
+        displayName: valueFor(inbox, 'name') || humanizeSource(provider),
+        avatarUrl: valueFor(inbox, 'avatarUrl') || '',
+        label: humanizeSource(provider),
+        iconClass: getContactSourceIconClass(channelSource),
+        secondaryLine: '',
+        identifierLine: displayableIdentityDetail(sourceId),
+        nameSource: null,
+        avatarSource: null,
+        channelIdentity: inboxId
+          ? {
+              inboxId,
+              sourceId,
+            }
+          : null,
+        nameSelected: false,
+        avatarSelected: false,
+        sourcePriority: -1,
+        sortTimestamp: 0,
+      };
+    })
+    .filter(source => source.identifierLine || source.channelIdentity);
+
+  const sources = [
+    contactRecordSource.value,
+    ...profileSources,
+    ...inboxSources,
+  ].filter(Boolean);
 
   return sources.sort((left, right) => {
     const leftRank =
@@ -225,6 +316,38 @@ const normalizedSources = computed(() => {
   });
 });
 
+const canUseName = source =>
+  Boolean(source.nameSource && source.displayName && !source.nameSelected);
+
+const canUsePhoto = source =>
+  Boolean(source.avatarSource && source.avatarUrl && !source.avatarSelected);
+
+const canMessage = source =>
+  Boolean(
+    props.showMessageAction &&
+      source.channelIdentity &&
+      source.channelIdentity.inboxId
+  );
+
+const visibleSources = computed(() => {
+  if (!props.onlyActionable) {
+    return normalizedSources.value;
+  }
+
+  return normalizedSources.value.filter(
+    source => canUseName(source) || canUsePhoto(source) || canMessage(source)
+  );
+});
+
+const displayIdentifier = source => {
+  if (!props.showIdentifiers) {
+    return '';
+  }
+
+  const value = source.identifierLine || '';
+  return value && value !== source.secondaryLine ? value : '';
+};
+
 const sourceCardClass = source => {
   if (source.nameSelected || source.avatarSelected) {
     return 'border-n-slate-5 bg-n-alpha-1 shadow-md';
@@ -240,13 +363,13 @@ const sourceIconClass = source =>
 
 <template>
   <section class="w-full rounded-3xl border border-n-weak bg-n-solid-1 p-3">
-    <div v-if="normalizedSources.length" class="relative">
+    <div v-if="visibleSources.length" class="relative">
       <div
-        v-if="normalizedSources.length > 1"
+        v-if="visibleSources.length > 1"
         class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-solid-1 to-transparent"
       />
       <div
-        v-if="normalizedSources.length > 1"
+        v-if="visibleSources.length > 1"
         class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-solid-1 to-transparent"
       />
 
@@ -254,7 +377,7 @@ const sourceIconClass = source =>
         class="flex gap-3 overflow-x-auto pb-1 scroll-smooth snap-x snap-mandatory no-scrollbar"
       >
         <article
-          v-for="source in normalizedSources"
+          v-for="source in visibleSources"
           :key="source.cardKey"
           data-source-card
           class="basis-[84%] shrink-0 snap-start rounded-2xl border p-2.5 shadow-sm transition-colors sm:basis-[72%] xl:basis-[68%]"
@@ -304,46 +427,60 @@ const sourceIconClass = source =>
               <p class="mb-0 mt-2 truncate text-sm font-medium text-n-slate-12">
                 {{
                   source.displayName ||
+                  source.label ||
                   $t('CONTACT_PANEL.SOURCE_IDENTITIES.NO_NAME')
                 }}
               </p>
               <p
-                v-if="source.secondaryLine || source.fallbackLine"
+                v-if="source.secondaryLine"
                 class="mb-0 mt-0.5 truncate text-xs text-n-slate-11"
               >
-                {{ source.secondaryLine || source.fallbackLine }}
+                {{ source.secondaryLine }}
+              </p>
+              <p
+                v-if="displayIdentifier(source)"
+                class="mb-0 mt-1 inline-flex max-w-full items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] text-n-slate-11"
+              >
+                <span class="i-lucide-id-card size-3 shrink-0" />
+                <span class="truncate">{{ displayIdentifier(source) }}</span>
               </p>
             </div>
           </div>
 
-          <div class="mt-3 flex flex-wrap gap-2">
+          <div
+            v-if="
+              canUseName(source) || canUsePhoto(source) || canMessage(source)
+            "
+            class="mt-3 flex flex-wrap gap-2"
+          >
             <NextButton
+              v-if="canUseName(source)"
               icon="i-lucide-badge-check"
               slate
               sm
               :faded="!source.nameSelected"
-              :disabled="
-                isUpdating ||
-                !source.nameSource ||
-                !source.displayName ||
-                source.nameSelected
-              "
+              :disabled="isUpdating"
               :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_NAME')"
               @click="emit('select-name-source', source)"
             />
             <NextButton
+              v-if="canUsePhoto(source)"
               icon="i-lucide-image-up"
               slate
               sm
               :faded="!source.avatarSelected"
-              :disabled="
-                isUpdating ||
-                !source.avatarSource ||
-                !source.avatarUrl ||
-                source.avatarSelected
-              "
+              :disabled="isUpdating"
               :label="$t('CONTACT_PANEL.SOURCE_IDENTITIES.USE_PHOTO')"
               @click="emit('select-avatar-source', source)"
+            />
+            <NextButton
+              v-if="canMessage(source)"
+              icon="i-ph-chat-circle-dots"
+              slate
+              sm
+              :disabled="isUpdating"
+              :label="$t('CONTACT_PANEL.NEW_MESSAGE')"
+              @click="emit('open-channel-conversation', source.channelIdentity)"
             />
           </div>
         </article>
@@ -351,7 +488,7 @@ const sourceIconClass = source =>
     </div>
 
     <div
-      v-else
+      v-else-if="!hideEmptyState"
       class="rounded-2xl border border-dashed border-n-weak px-4 py-5 text-sm text-n-slate-11"
     >
       {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.EMPTY') }}

@@ -3,7 +3,7 @@ import { computed, h, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToggle, useElementSize } from '@vueuse/core';
 import { useVuelidate } from '@vuelidate/core';
-import { required, minLength } from '@vuelidate/validators';
+import { required, minLength, maxLength } from '@vuelidate/validators';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -57,6 +57,8 @@ const emit = defineEmits(['select', 'hover', 'delete', 'update']);
 
 const { t } = useI18n();
 const { formatMessage } = useMessageFormatter();
+const SCENARIO_DESCRIPTION_MAX_LENGTH = 2000;
+const SCENARIO_INSTRUCTION_MAX_LENGTH = 10000;
 
 const modelValue = computed({
   get: () => props.isSelected,
@@ -94,8 +96,14 @@ const startEdit = () => {
 
 const rules = {
   title: { required, minLength: minLength(1) },
-  description: { required },
-  instruction: { required },
+  description: {
+    required,
+    maxLength: maxLength(SCENARIO_DESCRIPTION_MAX_LENGTH),
+  },
+  instruction: {
+    required,
+    maxLength: maxLength(SCENARIO_INSTRUCTION_MAX_LENGTH),
+  },
 };
 
 const v$ = useVuelidate(rules, state);
@@ -290,6 +298,7 @@ const renderInstruction = instruction => () =>
         "
         :message="descriptionError"
         :message-type="descriptionError ? 'error' : 'info'"
+        :max-length="SCENARIO_DESCRIPTION_MAX_LENGTH"
         show-character-count
       />
       <Editor
@@ -302,7 +311,7 @@ const renderInstruction = instruction => () =>
         "
         :message="instructionError"
         :message-type="instructionError ? 'error' : 'info'"
-        :show-character-count="false"
+        :max-length="SCENARIO_INSTRUCTION_MAX_LENGTH"
         enable-captain-tools
         enable-captain-fields
         :captain-context-assistant-id="assistantId"

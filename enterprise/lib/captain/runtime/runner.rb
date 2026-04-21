@@ -92,6 +92,7 @@ class Captain::Runtime::Runner
 
   def resolve_response(session, response)
     return handle_handoff(session) if handoff_requested?(session, response)
+    return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
 
     finalize_run(
@@ -103,7 +104,11 @@ class Captain::Runtime::Runner
   end
 
   def handoff_requested?(session, response)
-    response.is_a?(RubyLLM::Tool::Halt) && session[:context_wrapper].context[:pending_handoff]
+    halt_response?(response) && session[:context_wrapper].context[:pending_handoff]
+  end
+
+  def halt_response?(response)
+    response.is_a?(RubyLLM::Tool::Halt)
   end
 
   def handle_handoff(session)

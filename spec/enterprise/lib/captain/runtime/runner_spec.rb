@@ -145,7 +145,7 @@ RSpec.describe Captain::Runtime::Runner do
         params: { max_tokens: 22 }
       )
     end
-    let(:handoff_response) { instance_double(RubyLLM::Tool::Halt) }
+    let(:handoff_response) { RubyLLM::Tool::Halt.new('Transferred to scenario') }
     let(:first_chat) { RuntimeRunnerSpecChat.new(ask_response: handoff_response) }
     let(:second_chat) { RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done')) }
 
@@ -211,11 +211,23 @@ RSpec.describe Captain::Runtime::Runner do
 
       allow(Captain::Runtime::InputComparer).to receive(:last_message_matches?).and_return(true)
       expect(Llm::ChatClient).to receive(:build).and_return(chat)
-      expect(Llm::StructuredOutputPolicy).to receive(:execute).with(chat:).and_call_original
+      expect(Llm::StructuredOutputPolicy).to receive(:execute).with(chat: chat).and_call_original
 
       result = runner.run(agent, 'Continue', registry: { agent.name => agent }, llm_context: llm_context)
 
       expect(result.output).to eq(response.content)
+    end
+
+    it 'finalizes generic halt responses that are not agent-to-agent handoffs' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
+      chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new('conversation_handoff'))
+
+      expect(Llm::ChatClient).to receive(:build).and_return(chat)
+
+      result = runner.run(agent, 'Escalate', registry: { agent.name => agent }, llm_context: llm_context)
+
+      expect(result.output).to eq('conversation_handoff')
+      expect(result.context[:current_agent]).to eq('assistant_agent')
     end
   end
 end

@@ -17,6 +17,20 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  class ToolWrapperSpecHaltingTool < Captain::Runtime::Tool
+    def name
+      'tool_wrapper_halting_spec'
+    end
+
+    def description
+      'Tool wrapper halting spec tool'
+    end
+
+    def perform(_tool_context, **_params)
+      halt('Transferred to specialist')
+    end
+  end
+
   let(:events) { [] }
   let(:context_wrapper) do
     Captain::Runtime::RunContext.new(
@@ -26,8 +40,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         }
       },
       callbacks: {
-        tool_start: [lambda { |tool_name, args, _context| events << [:start, tool_name, args] }],
-        tool_complete: [lambda { |tool_name, result, _context| events << [:complete, tool_name, result] }]
+        tool_start: [->(tool_name, args, _context) { events << [:start, tool_name, args] }],
+        tool_complete: [->(tool_name, result, _context) { events << [:complete, tool_name, result] }]
       }
     )
   end
@@ -63,12 +77,14 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     call_count = 0
     allow(Llm::SafetyPolicy).to receive(:check!) do |stage:, **|
       call_count += 1
-      raise Llm::SafetyPolicy::UnsafeContentError.new(
-        feature: :assistant,
-        stage: :tool_results,
-        reason: :custom_blocklist,
-        rule: 'classified'
-      ) if stage == :tool_results
+      if stage == :tool_results
+        raise Llm::SafetyPolicy::UnsafeContentError.new(
+          feature: :assistant,
+          stage: :tool_results,
+          reason: :custom_blocklist,
+          rule: 'classified'
+        )
+      end
 
       Llm::SafetyPolicy::CheckResult.new(status: :allowed, feature: :assistant, stage: :tool_arguments)
     end
@@ -95,5 +111,16 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       error: 'Provider timeout',
       retryable: true
     )
+  end
+
+  it 'returns halting tool results without coercing them into plain strings' do
+    halting_wrapper = described_class.new(ToolWrapperSpecHaltingTool.new, context_wrapper)
+
+    result = halting_wrapper.call({})
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect(result.content).to eq('Transferred to specialist')
+    expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_halting_spec'])
+    expect(events.last[2]).to be_a(RubyLLM::Tool::Halt)
   end
 end

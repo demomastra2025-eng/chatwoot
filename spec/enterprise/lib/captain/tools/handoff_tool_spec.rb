@@ -8,7 +8,8 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
-  let(:tool_context) { Struct.new(:state).new({ conversation: { id: conversation.id } }) }
+  let(:run_context) { Captain::Runtime::RunContext.new({ state: { conversation: { id: conversation.id } } }) }
+  let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
 
   describe '#description' do
     it 'returns the correct description' do
@@ -29,52 +30,22 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   describe '#perform' do
     context 'when conversation exists' do
       context 'with reason provided' do
-        it 'creates a private note with reason and hands off conversation' do
+        it 'stores pending handoff context and halts the runtime' do
           reason = 'Customer needs specialized support'
 
           expect do
             result = tool.perform(tool_context, reason: reason)
-            expect(result).to eq("Conversation handed off to human support team (Reason: #{reason})")
-          end.to change(Message, :count).by(1)
-        end
+            expect(result).to be_a(RubyLLM::Tool::Halt)
+            expect(result.content).to eq("Conversation handed off to human support team (Reason: #{reason})")
+          end.not_to change(Message, :count)
 
-        it 'creates message with correct attributes' do
-          reason = 'Customer needs specialized support'
-          tool.perform(tool_context, reason: reason)
-
-          created_message = Message.last
-          expect(created_message.content).to eq(reason)
-          expect(created_message.message_type).to eq('outgoing')
-          expect(created_message.private).to be true
-          expect(created_message.sender).to eq(assistant)
-          expect(created_message.account).to eq(account)
-          expect(created_message.inbox).to eq(inbox)
-          expect(created_message.conversation).to eq(conversation)
-        end
-
-        it 'triggers bot handoff on conversation' do
-          # The tool finds the conversation by ID, so we need to mock the found conversation
-          found_conversation = Conversation.find(conversation.id)
-          scoped_conversations = Conversation.where(account_id: assistant.account_id)
-          allow(Conversation).to receive(:where).with(account_id: assistant.account_id).and_return(scoped_conversations)
-          allow(scoped_conversations).to receive(:find_by).with(id: conversation.id).and_return(found_conversation)
-          expect(found_conversation).to receive(:bot_handoff!)
-
-          tool.perform(tool_context, reason: 'Test reason')
+          expect(run_context.context[:pending_human_handoff]).to include(reason: reason)
         end
 
         it 'creates a conversation_bot_handoff reporting event' do
-          create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
-          Current.executed_by = assistant
-
-          perform_enqueued_jobs do
+          expect do
             tool.perform(tool_context, reason: 'Customer needs specialized support')
-          end
-
-          reporting_event = ReportingEvent.find_by(conversation_id: conversation.id, name: 'conversation_bot_handoff')
-          expect(reporting_event).to be_present
-        ensure
-          Current.reset
+          end.not_to change(ReportingEvent, :count)
         end
 
         it 'logs tool usage with reason' do
@@ -89,14 +60,14 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       end
 
       context 'without reason provided' do
-        it 'creates a private note with nil content and hands off conversation' do
+        it 'halts the runtime without creating messages' do
           expect do
             result = tool.perform(tool_context)
-            expect(result).to eq('Conversation handed off to human support team')
-          end.to change(Message, :count).by(1)
+            expect(result).to be_a(RubyLLM::Tool::Halt)
+            expect(result.content).to eq('Conversation handed off to human support team')
+          end.not_to change(Message, :count)
 
-          created_message = Message.last
-          expect(created_message.content).to be_nil
+          expect(run_context.context[:pending_human_handoff]).to include(reason: nil)
         end
 
         it 'logs tool usage with default reason' do
@@ -111,12 +82,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
       context 'when handoff fails' do
         before do
-          # Mock the conversation lookup and handoff failure
-          found_conversation = Conversation.find(conversation.id)
-          scoped_conversations = Conversation.where(account_id: assistant.account_id)
-          allow(Conversation).to receive(:where).with(account_id: assistant.account_id).and_return(scoped_conversations)
-          allow(scoped_conversations).to receive(:find_by).with(id: conversation.id).and_return(found_conversation)
-          allow(found_conversation).to receive(:bot_handoff!).and_raise(StandardError, 'Handoff error')
+          allow(tool).to receive(:request_handoff).and_raise(StandardError, 'Handoff error')
 
           exception_tracker = instance_double(ChatwootExceptionTracker)
           allow(ChatwootExceptionTracker).to receive(:new).and_return(exception_tracker)
@@ -125,7 +91,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
         it 'returns error message' do
           result = tool.perform(tool_context, reason: 'Test')
-          expect(result).to eq('Failed to handoff conversation')
+          expect(result).to eq('ERROR: Failed to handoff conversation')
         end
 
         it 'captures exception' do
@@ -194,10 +160,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       it 'sends out of office message after handoff' do
         expect do
           tool.perform(tool_context, reason: 'Customer needs help')
-        end.to change { conversation.messages.template.count }.by(1)
-
-        ooo_message = conversation.messages.template.last
-        expect(ooo_message.content).to eq('We are currently closed. Please leave your email.')
+        end.not_to(change { conversation.messages.template.count })
       end
     end
 

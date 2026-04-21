@@ -2,8 +2,8 @@
 
 class Captain::ToolResult
   NORMALIZED_KEYS = %i[success data message error retryable audit].freeze
-  ERROR_PREFIX = 'ERROR:'.freeze
-  DEFAULT_SUCCESS_MESSAGE = 'Done'.freeze
+  ERROR_PREFIX = 'ERROR:'
+  DEFAULT_SUCCESS_MESSAGE = 'Done'
 
   class << self
     def success(message: nil, data: nil, audit: nil)
@@ -59,7 +59,11 @@ class Captain::ToolResult
       return error_output(normalized[:error].presence || normalized[:message].presence || fallback_message) if error?(normalized)
       return normalized[:message].to_s if normalized[:message].present? && normalized[:data].blank?
       return serialize_payload(normalized[:data]) if normalized[:data].present? && normalized[:message].blank?
-      return serialize_payload({ message: normalized[:message], data: normalized[:data] }) if normalized[:message].present? && normalized[:data].present?
+
+      if normalized[:message].present? && normalized[:data].present?
+        return serialize_payload({ message: normalized[:message],
+                                   data: normalized[:data] })
+      end
 
       fallback_message
     end
@@ -101,6 +105,7 @@ class Captain::ToolResult
     end
 
     def normalize_raw(result)
+      return normalize_raw(result.content) if halt_result?(result)
       return { success: false, error: result.to_s } if error_string?(result)
       return { success: true, message: result } if result.is_a?(String)
 
@@ -134,6 +139,10 @@ class Captain::ToolResult
       JSON.generate(value)
     rescue StandardError
       value.to_s
+    end
+
+    def halt_result?(result)
+      defined?(RubyLLM::Tool::Halt) && result.is_a?(RubyLLM::Tool::Halt)
     end
   end
 end

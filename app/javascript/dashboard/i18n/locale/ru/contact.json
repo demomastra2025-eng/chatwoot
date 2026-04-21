@@ -17,6 +17,7 @@
     "IP_ADDRESS": "IP адрес",
     "CREATED_AT_LABEL": "Создан",
     "NEW_MESSAGE": "Новое сообщение",
+    "IDENTIFIERS": "Идентификаторы",
     "CHANNEL_IDENTITIES": "Идентификаторы каналов",
     "NO_CHANNEL_CONVERSATION": "Для этого канала еще нет диалога.",
     "CALL": "Вызов",

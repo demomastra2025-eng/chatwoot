@@ -6,16 +6,15 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
 
+    request_handoff(tool_context, reason)
+
     # Log the handoff with reason
     log_tool_usage('tool_handoff', {
                      conversation_id: conversation.id,
                      reason: reason || 'Agent requested handoff'
                    })
 
-    # Use existing handoff mechanism from ResponseBuilderJob
-    trigger_handoff(conversation, reason)
-
-    "Conversation handed off to human support team#{" (Reason: #{reason})" if reason}"
+    halt("Conversation handed off to human support team#{" (Reason: #{reason})" if reason}")
   rescue StandardError => e
     ChatwootExceptionTracker.new(e).capture_exception
     tool_failure('Failed to handoff conversation')
@@ -23,30 +22,11 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   private
 
-  def trigger_handoff(conversation, reason)
-    # post the reason as a private note
-    conversation.messages.create!(
-      message_type: :outgoing,
-      private: true,
-      sender: @assistant,
-      account: conversation.account,
-      inbox: conversation.inbox,
-      content: reason
-    )
-
-    # Trigger the bot handoff (sets status to open + dispatches events)
-    conversation.bot_handoff!
-
-    # Send out of office message if applicable (since template messages were suppressed while Captain was handling)
-    send_out_of_office_message_if_applicable(conversation)
-  end
-
-  def send_out_of_office_message_if_applicable(conversation)
-    # Campaign conversations should never receive OOO templates — the campaign itself
-    # serves as the initial outreach, and OOO would be confusing in that context.
-    return if conversation.campaign.present?
-
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation)
+  def request_handoff(tool_context, reason)
+    tool_context.context[:pending_human_handoff] = {
+      reason: reason.presence,
+      timestamp: Time.current
+    }
   end
 
   # TODO: Future enhancement - Add team assignment capability

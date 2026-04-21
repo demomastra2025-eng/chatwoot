@@ -17,6 +17,7 @@
     "IP_ADDRESS": "IP Address",
     "CREATED_AT_LABEL": "Created",
     "NEW_MESSAGE": "New message",
+    "IDENTIFIERS": "Identifiers",
     "CHANNEL_IDENTITIES": "Channel identities",
     "NO_CHANNEL_CONVERSATION": "There is no conversation for this channel yet.",
     "CALL": "Call",

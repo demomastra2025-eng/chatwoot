@@ -79,3 +79,15 @@ export const getContactSourceIconClass = source => {
 
   return getInboxIconByType(channelType, sourceValue(source, 'medium'), 'fill');
 };
+
+const HIDDEN_CHANNEL_IDENTITY_PATTERN =
+  /^(?:[a-z_]+:)?[^@\s]+@(?:lid|s\.whatsapp\.net)$/i;
+
+export const displayableIdentityDetail = (...values) => {
+  return (
+    values
+      .map(value => String(value || '').trim())
+      .find(value => value && !HIDDEN_CHANNEL_IDENTITY_PATTERN.test(value)) ||
+    ''
+  );
+};

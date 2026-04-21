@@ -199,6 +199,31 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil })
     end
 
+    it 'returns a standardized handoff payload when the runtime requests a human handoff' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: 'conversation_handoff',
+          context: {
+            current_agent: 'assistant_agent',
+            pending_human_handoff: { reason: 'Needs manual review' }
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to eq(
+        {
+          'response' => 'conversation_handoff',
+          'reasoning' => 'Human handoff requested: Needs manual review',
+          'handoff_reason' => 'Needs manual review',
+          'agent_name' => 'assistant_agent'
+        }
+      )
+    end
+
     context 'when no scenarios are enabled' do
       before do
         scenarios_relation = instance_double(Captain::Scenario)

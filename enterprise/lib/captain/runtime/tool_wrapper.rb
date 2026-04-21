@@ -22,9 +22,11 @@ class Captain::Runtime::ToolWrapper
     end
 
     result = @tool.execute(tool_context, **normalized_args)
-    result_error = tool_safety_error_for(:tool_results, result)
+    result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
     final_result = result_error || result
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
+    return final_result if halt_result?(final_result)
+
     Captain::ToolResult.render(final_result)
   rescue StandardError => e
     @context_wrapper.callback_manager.emit_tool_complete(
@@ -91,5 +93,15 @@ class Captain::Runtime::ToolWrapper
       retryable: false,
       audit: { failure_stage: e.stage.to_s, failure_reason: e.reason.to_s }
     )
+  end
+
+  def halt_result?(result)
+    defined?(RubyLLM::Tool::Halt) && result.is_a?(RubyLLM::Tool::Halt)
+  end
+
+  def safety_checked_result(result)
+    return result.content if halt_result?(result)
+
+    result
   end
 end

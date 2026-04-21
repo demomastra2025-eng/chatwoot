@@ -81,7 +81,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def handoff_target_name
-    Captain::HandoffNaming.normalize_target_name(name)
+    normalized_handoff_target_name.presence || fallback_handoff_target_name
   end
 
   def handoff_tool_name
@@ -148,6 +148,24 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess::SCOPE_AGENT,
       referenced_tool_ids: referenced_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
     )
+  end
+
+  def effective_agent_tool_ids(referenced_tool_ids: [])
+    effective_tool_ids_for(
+      Captain::ToolAccess::SCOPE_AGENT,
+      referenced_tool_ids: referenced_tool_ids
+    )
+  end
+
+  def scenario_agent_tool_ids(referenced_tool_ids: [])
+    return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
+
+    available_ids = available_tool_ids
+    explicit_tool_ids = Array(referenced_tool_ids).map(&:to_s)
+
+    (selected_agent_tool_ids + explicit_tool_ids)
+      .uniq
+      .select { |tool_id| available_ids.include?(tool_id) }
   end
 
   def selected_agent_tool_ids
@@ -308,18 +326,28 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def validate_handoff_target_name
-    if handoff_target_name.blank?
+    if normalized_handoff_target_name.blank?
       errors.add(:name, 'must contain letters or numbers that can be used for handoff tools')
       return
     end
 
-    return if handoff_target_name.length <= Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH
+    return if normalized_handoff_target_name.length <= Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH
 
     errors.add(:name, "is too long for handoff tools (maximum #{Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH} normalized characters)")
   end
 
   def handoff_target_name_validation_required?
-    new_record? || will_save_change_to_name?
+    external_agent? && (new_record? || will_save_change_to_name?)
+  end
+
+  def normalized_handoff_target_name
+    Captain::HandoffNaming.normalize_target_name(name)
+  end
+
+  def fallback_handoff_target_name
+    return "assistant_#{id}" if id.present?
+
+    'assistant_draft'
   end
 
   def agent_tools
@@ -517,6 +545,8 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def effective_tool_ids_for(scope_name, referenced_tool_ids:)
+    return [] unless tool_scope_enabled?(scope_name)
+
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
     capability_tool_ids = capability_tool_ids_for_scope(scope_name)
@@ -525,6 +555,11 @@ class Captain::Assistant < ApplicationRecord
     (selected_ids + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
+  end
+
+  def tool_scope_enabled?(scope_name)
+    normalized_scope = normalized_tool_access[scope_name.to_s] || {}
+    normalized_scope['enabled'] != false
   end
 
   def capability_tool_ids_for_scope(scope_name)

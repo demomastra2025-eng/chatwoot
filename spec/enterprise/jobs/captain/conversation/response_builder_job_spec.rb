@@ -55,6 +55,54 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
     end
 
+    it 'infers scenario agent_name from captain trace when legacy messages are missing explicit attribution' do
+      conversation.messages.destroy_all
+      create(
+        :message,
+        conversation: conversation,
+        content: 'Start scenario',
+        message_type: :incoming
+      )
+      create(
+        :message,
+        conversation: conversation,
+        content: 'Scenario answer',
+        message_type: :outgoing,
+        sender: assistant,
+        additional_attributes: {
+          captain_trace: {
+            version: 1,
+            tool_steps: [
+              {
+                event: 'complete',
+                tool_name: 'handoff_to_scenario_35_andalusiya_agent'
+              }
+            ]
+          }
+        }
+      )
+      create(
+        :message,
+        conversation: conversation,
+        content: 'Continue please',
+        message_type: :incoming
+      )
+
+      expect(agent_runner_service).to receive(:generate_response).with(
+        message_history: [
+          { content: 'Start scenario', role: 'user' },
+          {
+            content: 'Scenario answer',
+            role: 'assistant',
+            agent_name: 'scenario_35_andalusiya_agent'
+          },
+          { content: 'Continue please', role: 'user' }
+        ]
+      )
+
+      described_class.perform_now(conversation, assistant)
+    end
+
     it 'generates and processes a response' do
       described_class.perform_now(conversation, assistant)
 
@@ -182,6 +230,21 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
 
         expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
+      end
+
+      it 'creates a private note with the handoff reason when provided by the runtime' do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Customer requested billing specialist'
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        private_note = conversation.reload.messages.where(private: true).last
+        expect(private_note.content).to eq('Customer requested billing specialist')
+        expect(private_note.sender).to eq(assistant)
       end
     end
 

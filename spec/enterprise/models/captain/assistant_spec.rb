@@ -23,6 +23,17 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
+    it 'allows internal assistants to keep names that are not handoff-safe' do
+      assistant = build(
+        :captain_assistant,
+        account: create(:account),
+        usage_mode: 'internal_assistant',
+        name: '!!!'
+      )
+
+      expect(assistant).to be_valid
+    end
+
     it 'allows unrelated updates for legacy assistants with already-invalid names' do
       assistant = create(:captain_assistant)
       assistant.update_column(:name, '!!!')
@@ -31,6 +42,15 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect { assistant.save! }.not_to raise_error
       expect(assistant.reload.description).to eq('Updated without renaming the assistant.')
+    end
+
+    it 'falls back to a stable internal handoff name for legacy assistants with invalid names' do
+      assistant = create(:captain_assistant)
+      assistant.update_column(:name, '!!!')
+
+      expect(assistant.handoff_target_name).to eq("assistant_#{assistant.id}")
+      expect(assistant.handoff_tool_name).to eq("handoff_to_assistant_#{assistant.id}")
+      expect(assistant.agent.name).to eq("assistant_#{assistant.id}")
     end
   end
 

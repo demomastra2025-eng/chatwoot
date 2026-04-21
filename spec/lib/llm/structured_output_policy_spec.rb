@@ -17,7 +17,7 @@ class StructuredOutputPolicySpecChat
   end
 
   def with_instructions(value, append: false, replace: nil)
-    @instructions << { value:, append:, replace: }
+    @instructions << { value: value, append: append, replace: replace }
     self
   end
 
@@ -68,7 +68,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
     it 'validates and binds schema metadata to the chat' do
       expect(chat).to receive(:with_schema).with(schema).and_return(chat)
 
-      result = described_class.bind!(chat:, schema:)
+      result = described_class.bind!(chat: chat, schema: schema)
 
       expect(result).to eq(chat)
       expect(described_class.schema_for(chat)).to eq(schema)
@@ -79,45 +79,52 @@ RSpec.describe Llm::StructuredOutputPolicy do
     it 'returns unmodified response when no schema is bound' do
       response = instance_double(RubyLLM::Message, content: 'plain text')
 
-      expect(described_class.normalize_response!(chat:, response:)).to eq(response)
+      expect(described_class.normalize_response!(chat: chat, response: response)).to eq(response)
     end
 
     it 'keeps hash payloads for structured output responses' do
-      described_class.bind!(chat:, schema:)
+      described_class.bind!(chat: chat, schema: schema)
       response = instance_double(RubyLLM::Message, content: { 'message' => 'Done' }, tool_call?: false)
 
-      expect(described_class.normalize_response!(chat:, response:)).to eq(response)
+      expect(described_class.normalize_response!(chat: chat, response: response)).to eq(response)
+    end
+
+    it 'bypasses schema normalization for halting tool results' do
+      described_class.bind!(chat: chat, schema: schema)
+      response = RubyLLM::Tool::Halt.new('Transferred to specialist')
+
+      expect(described_class.normalize_response!(chat: chat, response: response)).to eq(response)
     end
 
     it 'parses json strings into hash payloads' do
-      described_class.bind!(chat:, schema:)
+      described_class.bind!(chat: chat, schema: schema)
       response = instance_double(
         RubyLLM::Message,
         content: '{"message":"Done"}',
         tool_call?: false,
-        :'content=' => nil
+        'content=': nil
       )
 
       expect(response).to receive(:content=).with(hash_including('message' => 'Done'))
 
-      described_class.normalize_response!(chat:, response:)
+      described_class.normalize_response!(chat: chat, response: response)
     end
 
     it 'raises when structured output is not valid json' do
-      described_class.bind!(chat:, schema:)
+      described_class.bind!(chat: chat, schema: schema)
       response = instance_double(RubyLLM::Message, content: 'oops', tool_call?: false)
 
       expect do
-        described_class.normalize_response!(chat:, response:)
+        described_class.normalize_response!(chat: chat, response: response)
       end.to raise_error(described_class::InvalidStructuredOutputError, /not valid JSON/)
     end
 
     it 'raises when structured output does not match the schema' do
-      described_class.bind!(chat:, schema:)
+      described_class.bind!(chat: chat, schema: schema)
       response = instance_double(RubyLLM::Message, content: '{"unexpected":"field"}', tool_call?: false)
 
       expect do
-        described_class.normalize_response!(chat:, response:)
+        described_class.normalize_response!(chat: chat, response: response)
       end.to raise_error(described_class::InvalidStructuredOutputError, /did not match schema/)
     end
   end
@@ -128,7 +135,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
       response_two = StructuredOutputPolicySpecResponse.new('{"message":"Done"}')
       retry_chat = StructuredOutputPolicySpecChat.new([response_one, response_two])
 
-      described_class.bind!(chat: retry_chat, schema:)
+      described_class.bind!(chat: retry_chat, schema: schema)
 
       result = described_class.execute(chat: retry_chat) { retry_chat.ask('Hello') }
 

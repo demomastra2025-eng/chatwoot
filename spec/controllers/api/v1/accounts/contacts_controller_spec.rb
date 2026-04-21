@@ -758,6 +758,42 @@ RSpec.describe 'Contacts API', type: :request do
         expect(Avatar::AvatarFromUrlJob).to have_been_enqueued.with(contact, 'http://example.com/avatar.png')
       end
 
+      it 'returns the selected channel profile avatar as the contact thumbnail' do
+        inbox = create(:inbox, account: account)
+        contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+        create(
+          :contact_channel_profile,
+          contact_inbox: contact_inbox,
+          contact: contact,
+          inbox: inbox,
+          account: account,
+          provider: 'whatsapp_web',
+          avatar_url: 'https://cdn.example.com/selected-avatar.jpg'
+        )
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: {
+                additional_attributes: {
+                  display_preferences: {
+                    primary_avatar_source: contact.display_source_for_contact_inbox(contact_inbox)
+                  }
+                }
+              },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(contact.reload.additional_attributes.dig('display_preferences', 'primary_avatar_source')).to include(
+          'kind' => 'channel_profile',
+          'contact_inbox_id' => contact_inbox.id
+        )
+        expect(response.parsed_body.dig('payload', 'thumbnail')).to eq('https://cdn.example.com/selected-avatar.jpg')
+        expect(response.parsed_body.dig('payload', 'primary_avatar_source')).to include(
+          'kind' => 'channel_profile',
+          'contact_inbox_id' => contact_inbox.id
+        )
+      end
+
       it 'allows blocking of contact' do
         patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
               params: { blocked: true },

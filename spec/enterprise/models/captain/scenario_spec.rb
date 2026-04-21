@@ -10,6 +10,8 @@ RSpec.describe Captain::Scenario, type: :model do
     it { is_expected.to validate_presence_of(:title) }
     it { is_expected.to validate_presence_of(:description) }
     it { is_expected.to validate_presence_of(:instruction) }
+    it { is_expected.to validate_length_of(:description).is_at_most(2000) }
+    it { is_expected.to validate_length_of(:instruction).is_at_most(10_000) }
     it { is_expected.to validate_presence_of(:assistant_id) }
     it { is_expected.to validate_presence_of(:account_id) }
   end
@@ -185,6 +187,15 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(rendered).to include('`handoff_to_sales_support`')
       expect(rendered).not_to include('`handoff_to_sales_&_support`')
+    end
+
+    it 'falls back to a stable assistant handoff tool name for legacy invalid assistant names' do
+      assistant.update_column(:name, '!!!')
+
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include("`handoff_to_assistant_#{assistant.id}`")
+      expect(rendered).not_to include('`handoff_to_`')
     end
 
     it 'renders custom attribute labels together with raw keys' do
@@ -474,6 +485,30 @@ RSpec.describe Captain::Scenario, type: :model do
 
         resolved = scenario.send(:resolved_tools)
         expect(resolved).to be_empty
+      end
+
+      it 'does not expose explicitly referenced tools when the assistant agent scope is disabled' do
+        assistant.update!(
+          config: {
+            'context_access' => {},
+            'tool_access' => {
+              'agent' => {
+                'enabled' => false,
+                'tool_ids' => []
+              }
+            }
+          }
+        )
+
+        scenario = create(
+          :captain_scenario,
+          assistant: assistant,
+          account: account,
+          instruction: 'Use [@Add Contact Note](tool://add_contact_note)'
+        )
+
+        expect(scenario.send(:resolved_tools)).to be_empty
+        expect(scenario.runtime_tool_ids).to eq([])
       end
     end
 

@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useToggle } from '@vueuse/core';
 import { useVuelidate } from '@vuelidate/core';
 import { vOnClickOutside } from '@vueuse/components';
-import { required, minLength } from '@vuelidate/validators';
+import { required, minLength, maxLength } from '@vuelidate/validators';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -21,6 +21,8 @@ const props = defineProps({
 const emit = defineEmits(['add']);
 
 const { t } = useI18n();
+const SCENARIO_DESCRIPTION_MAX_LENGTH = 2000;
+const SCENARIO_INSTRUCTION_MAX_LENGTH = 10000;
 
 const [showPopover, togglePopover] = useToggle();
 
@@ -33,8 +35,14 @@ const state = reactive({
 
 const rules = {
   title: { required, minLength: minLength(1) },
-  description: { required },
-  instruction: { required },
+  description: {
+    required,
+    maxLength: maxLength(SCENARIO_DESCRIPTION_MAX_LENGTH),
+  },
+  instruction: {
+    required,
+    maxLength: maxLength(SCENARIO_INSTRUCTION_MAX_LENGTH),
+  },
 };
 
 const v$ = useVuelidate(rules, state);
@@ -124,6 +132,7 @@ const onClickCancel = () => {
           "
           :message="descriptionError"
           :message-type="descriptionError ? 'error' : 'info'"
+          :max-length="SCENARIO_DESCRIPTION_MAX_LENGTH"
           show-character-count
         />
         <Editor
@@ -138,7 +147,7 @@ const onClickCancel = () => {
           "
           :message="instructionError"
           :message-type="instructionError ? 'error' : 'info'"
-          :show-character-count="false"
+          :max-length="SCENARIO_INSTRUCTION_MAX_LENGTH"
           enable-captain-tools
           enable-captain-fields
           :captain-context-assistant-id="props.assistantId"

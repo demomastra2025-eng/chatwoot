@@ -97,13 +97,14 @@ describe('#actions', () => {
   describe('#update', () => {
     it('sends correct mutations if API is success', async () => {
       axios.patch.mockResolvedValue({ data: { payload: contactList[0] } });
-      await actions.update(
+      const result = await actions.update(
         { commit },
         {
           id: contactList[0].id,
           contactParams: contactList[0],
         }
       );
+      expect(result).toEqual(contactList[0]);
       expect(commit.mock.calls).toEqual([
         [types.SET_CONTACT_UI_FLAG, { isUpdating: true }],
         [types.EDIT_CONTACT, contactList[0]],

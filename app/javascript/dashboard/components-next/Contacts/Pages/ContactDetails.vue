@@ -5,10 +5,10 @@ import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { useRoute, useRouter } from 'vue-router';
+import camelcaseKeys from 'camelcase-keys';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import ContactChannelLabels from 'dashboard/components-next/Contacts/ContactChannelLabels.vue';
 import ContactLabels from 'dashboard/components-next/Contacts/ContactLabels/ContactLabels.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import ContactsForm from 'dashboard/components-next/Contacts/ContactsForm/ContactsForm.vue';
@@ -17,6 +17,7 @@ import Policy from 'dashboard/components/policy.vue';
 import ContactIdentitySources from 'dashboard/routes/dashboard/conversation/contact/ContactIdentitySources.vue';
 import {
   displayContactSourceLabel,
+  displayableIdentityDetail,
   getContactSourceIconClass,
   sourceValue,
 } from 'dashboard/helper/contactIdentity';
@@ -49,31 +50,6 @@ const contactConversations = useMapGetter(
   'contactConversations/getAllConversationsByContactId'
 );
 const isUpdating = computed(() => uiFlags.value.isUpdating);
-const existingConversationInboxIds = computed(() => {
-  const contactId = Number(props.selectedContact?.id);
-
-  if (
-    !contactId ||
-    !Object.prototype.hasOwnProperty.call(
-      store.state.contactConversations.records,
-      contactId
-    )
-  ) {
-    return null;
-  }
-
-  const conversations = contactConversations.value(contactId) || [];
-
-  return [
-    ...new Set(
-      conversations
-        .map(conversation =>
-          Number(conversation.inboxId || conversation.inbox_id)
-        )
-        .filter(Boolean)
-    ),
-  ];
-});
 
 const isFormInvalid = computed(() => contactsFormRef.value?.isFormInvalid);
 
@@ -82,6 +58,20 @@ const contactData = ref({});
 const getInitialContactData = () => {
   if (!props.selectedContact) return {};
   return { ...props.selectedContact };
+};
+
+const applyUpdatedContact = updatedContact => {
+  if (!updatedContact) {
+    return;
+  }
+
+  contactData.value = {
+    ...contactData.value,
+    ...camelcaseKeys(updatedContact, {
+      deep: true,
+      stopPaths: ['custom_attributes'],
+    }),
+  };
 };
 
 watch(
@@ -130,16 +120,20 @@ const updateLocalDisplayPreference = (preferenceKey, preferenceValue) => {
   };
 };
 
+const displayIdentifier = computed(() =>
+  displayableIdentityDetail(contactData.value?.identifier)
+);
+
 const primaryNameSource = computed(
   () =>
-    props.selectedContact?.primaryNameSource ||
-    props.selectedContact?.primary_name_source
+    contactData.value?.primaryNameSource ||
+    contactData.value?.primary_name_source
 );
 
 const primaryAvatarSource = computed(
   () =>
-    props.selectedContact?.primaryAvatarSource ||
-    props.selectedContact?.primary_avatar_source
+    contactData.value?.primaryAvatarSource ||
+    contactData.value?.primary_avatar_source
 );
 
 const primaryNameSourceLabel = computed(() =>
@@ -157,6 +151,20 @@ const primaryNameSourceIconClass = computed(() =>
 const primaryAvatarSourceIconClass = computed(() =>
   getContactSourceIconClass(primaryAvatarSource.value)
 );
+
+const hasPrimaryAvatarChannelBadge = computed(
+  () => sourceValue(primaryAvatarSource.value, 'kind') === 'channel_profile'
+);
+
+const hasIdentityAccordion = computed(() => {
+  const contactInboxes = contactData.value?.contactInboxes || [];
+  const channelProfiles =
+    contactData.value?.channelProfiles ||
+    contactData.value?.channel_profiles ||
+    [];
+
+  return contactInboxes.length > 0 || channelProfiles.length > 0;
+});
 
 const createdAt = computed(() => {
   return contactData.value?.createdAt
@@ -181,7 +189,11 @@ const handleFormUpdate = updatedData => {
 const updateContact = async () => {
   try {
     const { customAttributes, ...basicContactData } = contactData.value;
-    await store.dispatch('contacts/update', basicContactData);
+    const updatedContact = await store.dispatch(
+      'contacts/update',
+      basicContactData
+    );
+    applyUpdatedContact(updatedContact);
     await store.dispatch(
       'contacts/fetchContactableInbox',
       props.selectedContact.id
@@ -197,7 +209,7 @@ const setPrimaryNameSource = async source => {
   const displayName = sourceValue(source, 'displayName');
 
   try {
-    await store.dispatch('contacts/update', {
+    const updatedContact = await store.dispatch('contacts/update', {
       id: props.selectedContact.id,
       name: displayName,
       additionalAttributes: {
@@ -207,10 +219,13 @@ const setPrimaryNameSource = async source => {
       },
     });
 
-    if (displayName) {
-      contactData.value.name = displayName;
+    applyUpdatedContact(updatedContact);
+    if (!updatedContact) {
+      if (displayName) {
+        contactData.value.name = displayName;
+      }
+      updateLocalDisplayPreference('primaryNameSource', preference);
     }
-    updateLocalDisplayPreference('primaryNameSource', preference);
   } catch (error) {
     useAlert(t('CONTACT_FORM.ERROR_MESSAGE'));
   }
@@ -221,7 +236,7 @@ const setPrimaryAvatarSource = async source => {
   const resolvedAvatarUrl = sourceValue(source, 'avatarUrl');
 
   try {
-    await store.dispatch('contacts/update', {
+    const updatedContact = await store.dispatch('contacts/update', {
       id: props.selectedContact.id,
       additionalAttributes: {
         displayPreferences: {
@@ -231,10 +246,13 @@ const setPrimaryAvatarSource = async source => {
     });
 
     avatarUrl.value = '';
-    if (resolvedAvatarUrl) {
-      contactData.value.thumbnail = resolvedAvatarUrl;
+    applyUpdatedContact(updatedContact);
+    if (!updatedContact) {
+      if (resolvedAvatarUrl) {
+        contactData.value.thumbnail = resolvedAvatarUrl;
+      }
+      updateLocalDisplayPreference('primaryAvatarSource', preference);
     }
-    updateLocalDisplayPreference('primaryAvatarSource', preference);
   } catch (error) {
     useAlert(t('CONTACT_FORM.ERROR_MESSAGE'));
   }
@@ -249,11 +267,12 @@ const handleAvatarUpload = async ({ file, url }) => {
   avatarUrl.value = url;
 
   try {
-    await store.dispatch('contacts/update', {
+    const updatedContact = await store.dispatch('contacts/update', {
       ...contactsFormRef.value?.state,
       avatar: file,
       isFormData: true,
     });
+    applyUpdatedContact(updatedContact);
     useAlert(t('CONTACTS_LAYOUT.DETAILS.AVATAR.UPLOAD.SUCCESS_MESSAGE'));
   } catch {
     useAlert(t('CONTACTS_LAYOUT.DETAILS.AVATAR.UPLOAD.ERROR_MESSAGE'));
@@ -263,13 +282,15 @@ const handleAvatarUpload = async ({ file, url }) => {
 const handleAvatarDelete = async () => {
   try {
     if (props.selectedContact && props.selectedContact.id) {
-      await store.dispatch('contacts/deleteAvatar', props.selectedContact.id);
+      const updatedContact = await store.dispatch(
+        'contacts/deleteAvatar',
+        props.selectedContact.id
+      );
+      applyUpdatedContact(updatedContact);
       useAlert(t('CONTACTS_LAYOUT.DETAILS.AVATAR.DELETE.SUCCESS_MESSAGE'));
     }
     avatarFile.value = null;
     avatarUrl.value = '';
-    contactData.value.thumbnail = null;
-    contactData.value.contactAvatarUrl = null;
   } catch (error) {
     useAlert(
       error.message
@@ -291,7 +312,7 @@ const openChannelConversation = async channelIdentity => {
 
   if (!targetConversation) {
     await composeConversationRef.value?.openWithChannel({
-      contact: props.selectedContact,
+      contact: contactData.value,
       channelIdentity,
     });
     return;
@@ -315,31 +336,40 @@ const openChannelConversation = async channelIdentity => {
         <div class="flex items-start gap-4">
           <Avatar
             :src="avatarSrc || ''"
-            :name="selectedContact?.name || ''"
+            :name="contactData?.name || ''"
             :size="72"
             allow-upload
             @upload="handleAvatarUpload"
             @delete="handleAvatarDelete"
-          />
+          >
+            <template #badge>
+              <div
+                v-if="hasPrimaryAvatarChannelBadge"
+                class="absolute bottom-0 right-0 z-20 flex size-6 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
+              >
+                <span
+                  class="size-3.5 shrink-0"
+                  :class="primaryAvatarSourceIconClass"
+                />
+              </div>
+            </template>
+          </Avatar>
           <div class="min-w-0 flex-1">
             <h3 class="mb-0 text-base font-medium text-n-slate-12">
-              {{ selectedContact?.name }}
+              {{ contactData?.name }}
             </h3>
             <div class="mt-1 flex flex-col gap-1.5">
               <span
-                v-if="selectedContact?.identifier"
+                v-if="displayIdentifier"
                 class="inline-flex items-center gap-1 text-sm text-n-slate-11"
               >
                 <span class="i-ph-user-gear text-n-slate-10 size-4" />
-                {{ selectedContact?.identifier }}
+                {{ displayIdentifier }}
               </span>
               <span
                 class="inline-flex items-center gap-1 text-sm text-n-slate-11"
               >
-                <span
-                  v-if="selectedContact?.identifier"
-                  class="i-ph-activity text-n-slate-10 size-4"
-                />
+                <span class="i-ph-activity text-n-slate-10 size-4" />
                 {{
                   $t('CONTACTS_LAYOUT.DETAILS.CREATED_AT', {
                     date: createdAt,
@@ -353,60 +383,73 @@ const openChannelConversation = async channelIdentity => {
                 }}
               </span>
             </div>
-            <div
-              class="mt-3 flex flex-wrap items-center gap-2 text-xs text-n-slate-11"
-            >
+            <div class="mt-3 flex flex-wrap gap-2">
               <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2.5 py-1 text-n-slate-11"
+                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-12"
               >
-                <span class="font-medium text-n-slate-12">
-                  {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME') }}
-                </span>
-                <span
-                  class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
-                >
-                  <span
-                    class="text-sm leading-none"
-                    :class="primaryNameSourceIconClass"
-                  />
-                  <span>{{ primaryNameSourceLabel }}</span>
-                </span>
+                {{ t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME') }}
               </span>
               <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2.5 py-1 text-n-slate-11"
+                class="inline-flex items-center gap-1 rounded-full bg-n-solid-2 px-2.5 py-1 text-xs text-n-slate-12"
               >
-                <span class="font-medium text-n-slate-12">
-                  {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO') }}
-                </span>
                 <span
-                  class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
-                >
-                  <span
-                    class="text-sm leading-none"
-                    :class="primaryAvatarSourceIconClass"
-                  />
-                  <span>{{ primaryAvatarSourceLabel }}</span>
-                </span>
+                  class="shrink-0 text-sm leading-none"
+                  :class="primaryNameSourceIconClass"
+                />
+                <span>{{ primaryNameSourceLabel }}</span>
+              </span>
+              <span
+                class="inline-flex items-center rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs font-medium text-n-slate-12"
+              >
+                {{ t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO') }}
+              </span>
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-n-solid-2 px-2.5 py-1 text-xs text-n-slate-12"
+              >
+                <span
+                  class="shrink-0 text-sm leading-none"
+                  :class="primaryAvatarSourceIconClass"
+                />
+                <span>{{ primaryAvatarSourceLabel }}</span>
               </span>
             </div>
           </div>
         </div>
 
-        <ContactIdentitySources
-          :contact="selectedContact"
-          :is-updating="isUpdating"
-          @select-name-source="setPrimaryNameSource"
-          @select-avatar-source="setPrimaryAvatarSource"
-        />
-
         <ContactLabels :contact-id="selectedContact?.id" />
-        <ContactChannelLabels
-          :contact-inboxes="selectedContact?.contactInboxes || []"
-          :existing-conversation-inbox-ids="existingConversationInboxIds"
-          :title="t('CONTACT_PANEL.CHANNEL_IDENTITIES')"
-          :copy-on-click="false"
-          @select="openChannelConversation"
-        />
+        <details
+          v-if="hasIdentityAccordion"
+          class="w-full rounded-3xl border border-n-weak bg-n-solid-1 px-4 py-3"
+        >
+          <summary
+            class="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden"
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="i-lucide-id-card size-4 text-n-slate-10" />
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ t('CONTACT_PANEL.IDENTIFIERS') }}
+              </span>
+            </div>
+            <span
+              class="i-lucide-chevron-down size-4 shrink-0 text-n-slate-10"
+              aria-hidden="true"
+            />
+          </summary>
+
+          <div class="mt-4 flex flex-col gap-4">
+            <ContactIdentitySources
+              :contact="contactData"
+              :is-updating="isUpdating"
+              only-actionable
+              hide-empty-state
+              show-message-action
+              show-identifiers
+              @select-name-source="setPrimaryNameSource"
+              @select-avatar-source="setPrimaryAvatarSource"
+              @open-channel-conversation="openChannelConversation"
+            />
+          </div>
+        </details>
         <ComposeConversation
           ref="composeConversationRef"
           :contact-id="String(selectedContact?.id || '')"

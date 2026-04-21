@@ -31,6 +31,13 @@ RSpec.describe Captain::ToolResult do
       expect(result[:success]).to be(false)
       expect(result[:error]).to include('StandardError')
     end
+
+    it 'normalizes halting tool results as success messages' do
+      result = described_class.normalize(RubyLLM::Tool::Halt.new('Transferred'))
+
+      expect(result).to include(success: true, message: 'Transferred')
+      expect(result[:data]).to be_nil
+    end
   end
 
   describe '.error?' do
@@ -60,6 +67,10 @@ RSpec.describe Captain::ToolResult do
         'message' => 'Created',
         'data' => { 'id' => 1 }
       )
+    end
+
+    it 'renders halting tool results as their content' do
+      expect(described_class.render(RubyLLM::Tool::Halt.new('Transferred'))).to eq('Transferred')
     end
   end
 end

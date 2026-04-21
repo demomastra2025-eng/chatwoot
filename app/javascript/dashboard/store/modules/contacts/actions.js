@@ -140,9 +140,10 @@ export const actions = {
       );
       commit(types.EDIT_CONTACT, response.data.payload);
       commit(types.SET_CONTACT_UI_FLAG, { isUpdating: false });
+      return response.data.payload;
     } catch (error) {
       commit(types.SET_CONTACT_UI_FLAG, { isUpdating: false });
-      handleContactOperationErrors(error);
+      return handleContactOperationErrors(error);
     }
   },
 
@@ -228,6 +229,7 @@ export const actions = {
     try {
       const response = await ContactAPI.destroyAvatar(id);
       commit(types.EDIT_CONTACT, response.data.payload);
+      return response.data.payload;
     } catch (error) {
       throw new Error(error);
     }

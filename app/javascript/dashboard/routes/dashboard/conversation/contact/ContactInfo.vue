@@ -10,10 +10,7 @@ import {
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 import { useAdmin } from 'dashboard/composables/useAdmin';
-import {
-  displayContactSourceLabel,
-  getContactSourceIconClass,
-} from 'dashboard/helper/contactIdentity';
+import { displayableIdentityDetail } from 'dashboard/helper/contactIdentity';
 import ContactInfoRow from './ContactInfoRow.vue';
 import Avatar from 'next/avatar/Avatar.vue';
 import SocialIcons from './SocialIcons.vue';
@@ -118,25 +115,8 @@ export default {
     additionalAttributes() {
       return this.contact.additional_attributes || {};
     },
-    primaryNameSource() {
-      return this.contact.primary_name_source || this.contact.primaryNameSource;
-    },
-    primaryAvatarSource() {
-      return (
-        this.contact.primary_avatar_source || this.contact.primaryAvatarSource
-      );
-    },
-    primaryNameSourceLabel() {
-      return displayContactSourceLabel(this.primaryNameSource, this.$t);
-    },
-    primaryAvatarSourceLabel() {
-      return displayContactSourceLabel(this.primaryAvatarSource, this.$t);
-    },
-    primaryNameSourceIconClass() {
-      return getContactSourceIconClass(this.primaryNameSource);
-    },
-    primaryAvatarSourceIconClass() {
-      return getContactSourceIconClass(this.primaryAvatarSource);
+    displayIdentifier() {
+      return displayableIdentityDetail(this.contact.identifier);
     },
     location() {
       const {
@@ -417,48 +397,12 @@ export default {
             </div>
           </div>
 
-          <div
-            class="flex flex-wrap items-center gap-2 text-xs text-n-slate-11"
-          >
-            <span
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-n-alpha-2 text-n-slate-11"
-            >
-              <span class="font-medium text-n-slate-12">{{
-                $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_NAME')
-              }}</span>
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
-              >
-                <span
-                  class="text-sm leading-none"
-                  :class="primaryNameSourceIconClass"
-                />
-                <span>{{ primaryNameSourceLabel }}</span>
-              </span>
-            </span>
-            <span
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-n-alpha-2 text-n-slate-11"
-            >
-              <span class="font-medium text-n-slate-12">{{
-                $t('CONTACT_PANEL.SOURCE_IDENTITIES.PRIMARY_PHOTO')
-              }}</span>
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-n-solid-1 px-2 py-0.5 text-n-slate-12"
-              >
-                <span
-                  class="text-sm leading-none"
-                  :class="primaryAvatarSourceIconClass"
-                />
-                <span>{{ primaryAvatarSourceLabel }}</span>
-              </span>
-            </span>
-          </div>
-
           <p v-if="additionalAttributes.description" class="break-words mb-0.5">
             {{ additionalAttributes.description }}
           </p>
           <div class="flex flex-col items-start w-full gap-2">
             <ContactInfoRow
+              v-if="contact.email"
               :href="contact.email ? `mailto:${contact.email}` : ''"
               :value="contact.email"
               icon="mail"
@@ -475,13 +419,14 @@ export default {
               show-copy
             />
             <ContactInfoRow
-              v-if="contact.identifier"
-              :value="contact.identifier"
+              v-if="displayIdentifier"
+              :value="displayIdentifier"
               icon="contact-identify"
               emoji="🪪"
               :title="$t('CONTACT_PANEL.IDENTIFIER')"
             />
             <ContactInfoRow
+              v-if="additionalAttributes.company_name"
               :value="additionalAttributes.company_name"
               icon="building-bank"
               emoji="🏢"

@@ -79,8 +79,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         role: determine_role(message)
       }
 
-      # Include agent_name if present in additional_attributes
-      message_hash[:agent_name] = message.additional_attributes['agent_name'] if message.additional_attributes&.dig('agent_name').present?
+      agent_name = message_agent_name_for_history(message)
+      message_hash[:agent_name] = agent_name if agent_name.present?
 
       message_hash
     end
@@ -121,6 +121,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     case action
     when 'handoff'
       I18n.with_locale(@assistant.account.locale) do
+        create_handoff_private_note
         create_handoff_message
         @conversation.bot_handoff!
         send_out_of_office_message_if_applicable
@@ -146,6 +147,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     create_outgoing_message(
       @assistant.render_runtime_text(handoff_message, conversation: @conversation)
     )
+  end
+
+  def create_handoff_private_note
+    reason = @response['handoff_reason'].to_s.strip
+    return if reason.blank?
+
+    create_private_note(reason)
   end
 
   def create_messages
@@ -204,6 +212,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     additional_attrs = {}
     additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
     additional_attrs
+  end
+
+  def message_agent_name_for_history(message)
+    explicit_agent_name = message.additional_attributes&.dig('agent_name').presence
+    return explicit_agent_name if explicit_agent_name.present?
+    return unless message.sender_type == 'Captain::Assistant'
+
+    inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace'))
+  end
+
+  def inferred_agent_name_from_trace(trace_payload)
+    tool_steps = trace_payload&.dig('tool_steps') || trace_payload&.dig(:tool_steps)
+    return if tool_steps.blank?
+
+    last_handoff_tool_name = Array(tool_steps).reverse.filter_map do |step|
+      next unless (step['event'] || step[:event]).to_s == 'complete'
+
+      tool_name = (step['tool_name'] || step[:tool_name]).to_s
+      next unless tool_name.start_with?('handoff_to_')
+
+      tool_name
+    end.first
+
+    last_handoff_tool_name&.delete_prefix('handoff_to_')&.presence
   end
 
   def handle_error(error)
