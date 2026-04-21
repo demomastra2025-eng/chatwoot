@@ -33,6 +33,25 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     )
   end
 
+  it 'treats low-trust payload display names as non-authoritative' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '15551234567@s.whatsapp.net',
+        pushName: 'Operator Alias'
+      },
+      trust_payload_display_name: false
+    ).perform
+
+    expect(contact_inbox).to be_present
+    expect(contact_inbox.contact.reload.name).to eq('+15551234567')
+    expect(contact_inbox.contact.additional_attributes['last_provider_display_name']).to be_nil
+    expect(contact_inbox.reload.channel_profile.display_name).to eq('+15551234567')
+    expect(contact_inbox.channel_profile.profile_data['last_provider_display_name']).to be_nil
+  end
+
   it 'imports lid-only identities as provisional contacts that can be upgraded later' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 

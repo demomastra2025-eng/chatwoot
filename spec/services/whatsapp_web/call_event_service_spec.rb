@@ -69,7 +69,7 @@ RSpec.describe WhatsappWeb::CallEventService do
             timestamp: 1_717_171_777
           }
         ).perform
-      end.not_to change { conversation.reload.messages.voice_calls.count }
+      end.not_to(change { conversation.reload.messages.voice_calls.count })
 
       voice_message = conversation.reload.messages.voice_calls.last
       expect(conversation.additional_attributes['call_status']).to eq('completed')
@@ -77,6 +77,25 @@ RSpec.describe WhatsappWeb::CallEventService do
       expect(voice_message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(voice_message.content_attributes.dig('data', 'meta', 'duration')).to eq(42)
       expect(voice_message.content_attributes.dig('data', 'meta', 'ended_at')).to eq(1_717_171_777)
+    end
+
+    it 'does not trust outbound call display names for contact naming' do
+      conversation = described_class.new(
+        channel: channel,
+        payload: {
+          id: 'call-out-1',
+          from: '15557654321@s.whatsapp.net',
+          status: 'offer',
+          fromMe: true,
+          name: 'Akhan',
+          timestamp: 1_717_171_717
+        }
+      ).perform
+
+      expect(conversation).to be_present
+      expect(conversation.contact.reload.name).to eq('+15557654321')
+      expect(conversation.contact.additional_attributes['last_provider_display_name']).to be_nil
+      expect(conversation.messages.voice_calls.last.message_type).to eq('outgoing')
     end
 
     it 'ignores unsupported raw transport callback payloads' do
@@ -90,7 +109,7 @@ RSpec.describe WhatsappWeb::CallEventService do
             }
           }
         ).perform
-      end.not_to change { channel.inbox.messages.count }
+      end.not_to(change { channel.inbox.messages.count })
     end
   end
 end

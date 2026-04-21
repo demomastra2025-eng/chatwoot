@@ -26,14 +26,15 @@ class WhatsappWeb::HistoryImportService
 
   def normalized_records
     Array.wrap(records)
-      .map { |record| record.to_h.deep_symbolize_keys }
-      .sort_by { |record| record[:messageTimestamp].to_i }
+         .map { |record| record.to_h.deep_symbolize_keys }
+         .sort_by { |record| record[:messageTimestamp].to_i }
   end
 
   def import_record(record)
     key = record[:key].to_h.deep_symbolize_keys
     source_id = key[:id].to_s
     remote_jid = key[:remoteJid].to_s
+    from_me = ActiveModel::Type::Boolean.new.cast(key[:fromMe])
     return if source_id.blank? || remote_jid.blank?
     return if ignored_remote_jid?(remote_jid)
     return if remote_jid.end_with?('@g.us')
@@ -53,7 +54,8 @@ class WhatsappWeb::HistoryImportService
         remoteJidAlt: key[:remoteJidAlt],
         remoteLid: key[:remoteLid],
         pushName: record[:pushName]
-      }
+      },
+      trust_payload_display_name: !from_me
     ).perform
     return if contact_inbox.blank?
 
@@ -290,14 +292,20 @@ class WhatsappWeb::HistoryImportService
 
   def download_provider_attachment(record, attachment_payload, source_id:)
     provider_payload = fetch_provider_attachment_payload(record, source_id: source_id)
-    return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false } if provider_attachment_available?(provider_payload)
+    if provider_attachment_available?(provider_payload)
+      return { file: build_provider_attachment_file(provider_payload, attachment_payload),
+               unavailable: false }
+    end
     return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
     refreshed_record = refetch_provider_message(record)
     return { file: nil, unavailable: false } if refreshed_record.blank?
 
     provider_payload = fetch_provider_attachment_payload(refreshed_record, source_id: source_id, refreshed: true)
-    return { file: build_provider_attachment_file(provider_payload, attachment_payload), unavailable: false } if provider_attachment_available?(provider_payload)
+    if provider_attachment_available?(provider_payload)
+      return { file: build_provider_attachment_file(provider_payload, attachment_payload),
+               unavailable: false }
+    end
     return { file: nil, unavailable: true } if provider_attachment_unavailable?(provider_payload)
 
     { file: nil, unavailable: false }
@@ -341,6 +349,7 @@ class WhatsappWeb::HistoryImportService
       from_me: from_me
     )
     return if provider_record.blank?
+
     provider_record.deep_symbolize_keys
   rescue StandardError => e
     Rails.logger.info("[WHATSAPP WEB] Provider message lookup failed for #{source_id}: #{e.message}")

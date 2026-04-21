@@ -119,7 +119,8 @@ class WhatsappWeb::HistorySyncService
         remoteJid: remote_jid,
         pushName: payload[:pushName],
         profilePicUrl: payload[:profilePicUrl]
-      }
+      },
+      trust_payload_display_name: false
     ).perform
     return if contact_inbox.blank?
 
@@ -170,13 +171,15 @@ class WhatsappWeb::HistorySyncService
   end
 
   def persist_sync_state(message_count:, contact_count:, fulfilled_provider_history_synced_at:)
-    return channel.record_history_sync!(
-      message_count: message_count,
-      contact_count: contact_count,
-      error: nil,
-      fulfilled_provider_history_synced_at: fulfilled_provider_history_synced_at,
-      sync_context: sync_context_payload
-    ) if full_sync?
+    if full_sync?
+      return channel.record_history_sync!(
+        message_count: message_count,
+        contact_count: contact_count,
+        error: nil,
+        fulfilled_provider_history_synced_at: fulfilled_provider_history_synced_at,
+        sync_context: sync_context_payload
+      )
+    end
 
     channel.record_incremental_sync!(
       message_count: message_count,

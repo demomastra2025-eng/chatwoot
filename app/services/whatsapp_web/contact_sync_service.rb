@@ -3,7 +3,7 @@ class WhatsappWeb::ContactSyncService
   LAST_PROVIDER_DISPLAY_NAME_KEY = 'last_provider_display_name'.freeze
   LAST_PROVIDER_DISPLAY_NAME_RECORDED_AT_KEY = 'last_provider_display_name_recorded_at'.freeze
 
-  pattr_initialize [:channel!, :contact_payload!]
+  pattr_initialize [:channel!, :contact_payload!, { trust_payload_display_name: true }]
 
   def perform
     return if canonical_remote_jid.blank?
@@ -236,6 +236,8 @@ class WhatsappWeb::ContactSyncService
   end
 
   def preferred_display_name
+    return unless trust_payload_display_name
+
     [contact_payload[:pushName], contact_payload[:name]].find do |value|
       value.present? && !placeholder_display_name?(value) && !technical_identity_name?(value)
     end
@@ -449,6 +451,8 @@ class WhatsappWeb::ContactSyncService
   end
 
   def merge_provider_display_name!(attributes)
+    return attributes unless trust_payload_display_name
+
     name = preferred_display_name.to_s.strip
     return attributes if name.blank?
 

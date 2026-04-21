@@ -114,6 +114,31 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(outgoing_message.content_attributes['external_echo']).to eq(true)
     end
 
+    it 'does not overwrite the contact name with an outgoing echo pushName' do
+      contact.update!(name: 'Alice')
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'OUTGOING_TEXT_NAME_GUARD',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          pushName: 'Akhan',
+          message: {
+            extendedTextMessage: {
+              text: 'Outgoing name should stay low trust'
+            }
+          }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      expect(contact.reload.name).to eq('Alice')
+      expect(contact.additional_attributes['last_provider_display_name']).to be_nil
+    end
+
     it 'applies a cached provider status when the message arrives after a status update' do
       WhatsappWeb::PendingMessageStatusCache.new(
         inbox_id: inbox.id,

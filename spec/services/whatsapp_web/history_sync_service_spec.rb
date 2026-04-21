@@ -66,5 +66,6 @@ RSpec.describe WhatsappWeb::HistorySyncService do
     expect(result).to eq(messages_imported: 0, contacts_touched: 1)
     expect(channel.inbox.conversations.count).to eq(1)
     expect(channel.inbox.conversations.first.contact_inbox.source_id).to eq('15551234567')
+    expect(channel.inbox.conversations.first.contact.reload.name).to eq('+15551234567')
   end
 end

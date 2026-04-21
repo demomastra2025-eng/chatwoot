@@ -190,6 +190,34 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(messages.last.content_attributes['imported_history']).to eq(true)
   end
 
+  it 'does not treat outgoing history pushName as the contact display name' do
+    described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-outgoing-low-trust',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          pushName: 'Akhan',
+          messageTimestamp: 90.minutes.ago.to_i,
+          message: {
+            extendedTextMessage: {
+              text: 'Outgoing from device history'
+            }
+          }
+        }
+      ]
+    ).perform
+
+    conversation = channel.inbox.conversations.last
+
+    expect(conversation).to be_present
+    expect(conversation.contact.reload.name).to eq('+15551234567')
+    expect(conversation.contact.additional_attributes['last_provider_display_name']).to be_nil
+  end
+
   it 'skips records from ignored jids' do
     channel.update!(ignore_jids: ['15559876543@s.whatsapp.net'])
 

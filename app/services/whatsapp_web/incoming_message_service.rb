@@ -82,7 +82,8 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
         remoteJidAlt: params.dig(:key, :remoteJidAlt),
         remoteLid: params.dig(:key, :remoteLid),
         pushName: params[:pushName]
-      }
+      },
+      trust_payload_display_name: !outgoing_echo
     ).perform
     return if contact_inbox.blank?
 

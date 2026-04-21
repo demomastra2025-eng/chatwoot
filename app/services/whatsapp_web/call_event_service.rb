@@ -38,7 +38,8 @@ class WhatsappWeb::CallEventService
         remoteJidAlt: payload[:chatId],
         remoteLid: payload[:from],
         pushName: payload[:name] || payload[:notify] || payload[:pushName]
-      }
+      },
+      trust_payload_display_name: !explicit_outgoing?
     ).perform
     return if contact_inbox.blank?
 
@@ -224,7 +225,7 @@ class WhatsappWeb::CallEventService
 
     if value.is_a?(Numeric) || value.to_s.match?(/\A\d+\z/)
       number = value.to_i
-      number = number / 1000 if number > 9_999_999_999
+      number /= 1000 if number > 9_999_999_999
       return Time.zone.at(number)
     end
 
