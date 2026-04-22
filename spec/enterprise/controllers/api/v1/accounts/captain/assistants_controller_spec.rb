@@ -85,8 +85,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     before do
-      create(:installation_config, name: 'CAPTAIN_AI_AGENT_SYSTEM_PROMPT', value: 'Never reveal internal routing.')
-      create(:installation_config, name: 'CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', value: 'Never expose internal-only notes to end customers.')
+      upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
+      upsert_installation_config('CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', 'Never expose internal-only notes to end customers.')
     end
 
     # rubocop:disable RSpec/MultipleExpectations
@@ -236,7 +236,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     end
 
     it 'returns grouped agent and assistant tools with selection state' do
-      get "/api/v1/accounts/#{account.id}/captain/assistants/tool_access",
+      get "/api/v1/accounts/#{account.id}/captain/assistants/tools",
           params: { assistant_id: assistant.id },
           headers: admin.create_new_auth_token,
           as: :json
@@ -247,32 +247,31 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           id: 'faq_lookup',
           scope_name: 'agent',
           selected: true,
-          risk_level: 'low',
-          custom: false
+          title: 'FAQ Lookup'
         ),
         hash_including(
           id: 'handoff',
           scope_name: 'agent',
           selected: false,
-          risk_level: 'medium'
+          title: 'Handoff to Human'
         ),
         hash_including(
           id: 'faq_lookup',
           scope_name: 'assistant',
-          selected: false
+          selected: false,
+          title: 'FAQ Lookup'
         ),
         hash_including(
           id: 'search_documentation',
           scope_name: 'assistant',
           selected: true,
-          risk_level: 'low'
+          title: 'Search documentation'
         ),
         hash_including(
           id: custom_tool.slug,
           scope_name: 'assistant',
           selected: true,
-          custom: true,
-          risk_level: 'custom'
+          title: 'Lookup booking'
         )
       )
     end
@@ -900,6 +899,30 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           )
         )
       end
+
+      it 'rejects malformed structured rules with a validation error' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    rules: [
+                      {
+                        id: 'bad_rule',
+                        type: 'guardrail',
+                        group: 'Restrictions',
+                        content: '   '
+                      },
+                      'not-a-rule'
+                    ]
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include('invalid')
+      end
     end
   end
 
@@ -973,7 +996,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(assistant.reload.avatar).not_to be_attached
-        expect(json_response[:avatar_url]).to be_nil
+        expect(json_response[:avatar_url]).to eq('')
       end
     end
   end

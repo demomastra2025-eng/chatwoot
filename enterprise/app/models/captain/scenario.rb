@@ -105,13 +105,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def runtime_tools
-    resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids).select do |tool_definition|
-      Captain::ToolPolicy.runtime_allowed?(
-        tool_definition,
-        assistant: assistant,
-        scope_name: Captain::ToolAccess::SCOPE_AGENT
-      )
-    end
+    resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids)
   end
 
   def prompt_runtime_tools
@@ -120,8 +114,7 @@ class Captain::Scenario < ApplicationRecord
     resolved_tools(referenced_tool_ids: explicit_tool_ids).select do |tool_definition|
       assistant.prompt_visible_tool?(
         tool_definition,
-        scope_name: Captain::ToolAccess::SCOPE_AGENT,
-        explicit_tool_ids: explicit_tool_ids
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
       )
     end
   end

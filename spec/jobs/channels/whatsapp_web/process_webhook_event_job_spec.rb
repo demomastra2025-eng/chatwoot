@@ -24,7 +24,7 @@ RSpec.describe Channels::WhatsappWeb::ProcessWebhookEventJob do
     described_class.perform_now(channel.id, { 'event' => 'connection.update', 'data' => { 'state' => 'open' } })
   end
 
-  it 'serializes message events by channel and remote jid' do
+  it 'serializes single-message events by channel and message source id' do
     channel = create(:channel_whatsapp_web)
     service = instance_double(WhatsappWeb::IncomingEventService, perform: true)
     job = described_class.new
@@ -49,9 +49,9 @@ RSpec.describe Channels::WhatsappWeb::ProcessWebhookEventJob do
 
     expect(job).to have_received(:with_lock).with(
       format(
-        Redis::Alfred::WHATSAPP_WEB_EVENT_MUTEX,
+        Redis::Alfred::WHATSAPP_WEB_MESSAGE_EVENT_MUTEX,
         channel_id: channel.id,
-        remote_jid: '15551234567@s.whatsapp.net'
+        source_id: 'message-1'
       ),
       described_class::LOCK_TIMEOUT
     )

@@ -44,10 +44,23 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
   end
 
   def message_lock_key(channel_id, payload)
+    source_id = lock_source_id(payload)
+    return format(::Redis::Alfred::WHATSAPP_WEB_MESSAGE_EVENT_MUTEX, channel_id: channel_id, source_id: source_id) if source_id.present?
+
     remote_jid = lock_remote_jid(payload)
     return if remote_jid.blank?
 
     format(::Redis::Alfred::WHATSAPP_WEB_EVENT_MUTEX, channel_id: channel_id, remote_jid: remote_jid)
+  end
+
+  def lock_source_id(payload)
+    return if payload.blank?
+    return unless MESSAGE_EVENT_NAMES.include?(payload[:event].to_s)
+
+    source_ids = extract_source_ids(payload).uniq
+    return if source_ids.blank? || source_ids.many?
+
+    source_ids.first
   end
 
   def lock_remote_jid(payload)
@@ -71,10 +84,28 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
     end
   end
 
+  def extract_source_ids(payload)
+    case payload[:event].to_s
+    when 'messages.update'
+      update_source_ids(payload[:data])
+    when 'call'
+      []
+    else
+      key_source_ids(payload[:data])
+    end
+  end
+
   def update_remote_jids(data)
     Array.wrap(data).filter_map do |entry|
       normalized_entry = WhatsappWeb::ProviderPayloadNormalizer.normalize_message_update(entry)
       normalized_entry&.dig(:key, :remoteJid).presence
+    end
+  end
+
+  def update_source_ids(data)
+    Array.wrap(data).filter_map do |entry|
+      normalized_entry = WhatsappWeb::ProviderPayloadNormalizer.normalize_message_update(entry)
+      normalized_entry&.dig(:key, :id).presence
     end
   end
 
@@ -98,5 +129,11 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
         key[:remoteLid]
       ).presence
     ].compact
+  end
+
+  def key_source_ids(data)
+    key = data.to_h[:key].to_h.deep_symbolize_keys
+
+    [key[:id].presence].compact
   end
 end

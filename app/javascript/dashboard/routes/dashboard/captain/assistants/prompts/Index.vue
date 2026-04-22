@@ -19,6 +19,7 @@ const route = useRoute();
 const store = useStore();
 
 const promptDescriptionFormRef = ref(null);
+const promptRulesManagerRef = ref(null);
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetching = computed(() => uiFlags.value.fetchingItem);
 const assistantId = computed(() => Number(route.params.assistantId));
@@ -93,11 +94,26 @@ const mergeAssistantPayloads = (...payloads) =>
   );
 
 const handlePromptsSave = async () => {
-  const instructionPayload =
-    await promptDescriptionFormRef.value?.buildPayload?.();
-  if (!instructionPayload) return;
+  try {
+    const instructionPayload =
+      await promptDescriptionFormRef.value?.buildPayload?.();
+    const rulesPayload =
+      activePromptTab.value === 'rules'
+        ? await promptRulesManagerRef.value?.buildPayload?.()
+        : null;
+    const mergedPayload = mergeAssistantPayloads(
+      instructionPayload,
+      rulesPayload
+    );
 
-  await handleSubmit(mergeAssistantPayloads(instructionPayload));
+    if (!instructionPayload && !rulesPayload) {
+      return;
+    }
+
+    await handleSubmit(mergedPayload);
+  } catch (error) {
+    useAlert(error?.message || t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE'));
+  }
 };
 
 const onPromptTabChanged = tab => {
@@ -168,6 +184,7 @@ const onPromptTabChanged = tab => {
 
             <AssistantRulesManager
               v-if="activePromptTab === 'rules'"
+              ref="promptRulesManagerRef"
               :assistant-id="assistantId"
               :assistant="assistant"
               :show-header="false"

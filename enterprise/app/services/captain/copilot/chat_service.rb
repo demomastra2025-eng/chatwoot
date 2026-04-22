@@ -70,13 +70,6 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   def build_tools
     @assistant.allowed_assistant_tools.filter_map do |tool_definition|
-      next unless Captain::ToolPolicy.runtime_allowed?(
-        tool_definition,
-        assistant: @assistant,
-        scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
-        user: @user
-      )
-
       Captain::Copilot::ToolCatalog.build_tool(
         tool_definition,
         assistant: @assistant,

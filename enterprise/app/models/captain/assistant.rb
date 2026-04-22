@@ -27,6 +27,8 @@ class Captain::Assistant < ApplicationRecord
   include Concerns::CaptainToolsHelpers
   include Concerns::Agentable
 
+  attr_accessor :raw_rules_config_input
+
   self.table_name = 'captain_assistants'
   INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
   RULES_CONFIG_KEY = 'rules'
@@ -273,6 +275,7 @@ class Captain::Assistant < ApplicationRecord
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
   before_validation :normalize_instruction_description
+  before_validation :capture_raw_rules_config_input
   before_validation :normalize_rules_config
 
   validates :name, presence: true
@@ -291,6 +294,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_instruction_fields
   validate :validate_system_rule_tools
   validate :validate_system_rule_fields
+  validate :validate_structured_rules_config
   validate :validate_response_guideline_tools
   validate :validate_response_guideline_fields
   validate :validate_guardrail_tools
@@ -376,12 +380,12 @@ class Captain::Assistant < ApplicationRecord
     Captain::ToolAccess.normalized_access_for(self)
   end
 
-  def prompt_visible_tool?(tool_definition, scope_name:, explicit_tool_ids: [])
+  def prompt_visible_tool?(tool_definition, scope_name:)
     Captain::ToolPolicy.runtime_allowed?(
       tool_definition,
       assistant: self,
       scope_name: scope_name
-    ) || Array(explicit_tool_ids).map(&:to_s).include?(tool_definition[:id].to_s)
+    )
   end
 
   def allowed_agent_tool_ids
@@ -610,6 +614,11 @@ class Captain::Assistant < ApplicationRecord
     remove_legacy_config_keys
   end
 
+  def capture_raw_rules_config_input
+    self.config = (config || {}).deep_stringify_keys
+    self.raw_rules_config_input = config.key?(RULES_CONFIG_KEY) ? config[RULES_CONFIG_KEY] : nil
+  end
+
   def normalize_rules_config
     self.config = (config || {}).deep_stringify_keys
 
@@ -631,12 +640,6 @@ class Captain::Assistant < ApplicationRecord
 
   def agent_tools
     allowed_agent_tools.filter_map do |tool_metadata|
-      next unless Captain::ToolPolicy.runtime_allowed?(
-        tool_metadata,
-        assistant: self,
-        scope_name: Captain::ToolAccess::SCOPE_AGENT
-      )
-
       Captain::ToolCatalog.build_tool(
         tool_metadata,
         assistant: self,
@@ -772,6 +775,13 @@ class Captain::Assistant < ApplicationRecord
     add_invalid_field_error(:config, invalid_field_ids_for_texts(system_rule_contents))
   end
 
+  def validate_structured_rules_config
+    invalid_rules = invalid_structured_rules(raw_rules_config_input)
+    return if invalid_rules.empty?
+
+    errors.add(:config, "contains invalid rules: #{invalid_rules.join(', ')}")
+  end
+
   def invalid_tool_ids_for_texts(texts)
     tool_ids = referenced_tool_ids_for_texts(texts)
     return [] if tool_ids.empty?
@@ -791,13 +801,23 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def effective_legacy_rule_values(rule_type)
-    case rule_type
-    when RULE_TYPE_RESPONSE_GUIDELINE
-      self[:response_guidelines]
-    when RULE_TYPE_GUARDRAIL
-      self[:guardrails]
-    else
-      []
+    return nil unless changed_legacy_rule_types.include?(rule_type)
+
+    rule_type == RULE_TYPE_RESPONSE_GUIDELINE ? response_guidelines : guardrails
+  end
+
+  def invalid_structured_rules(entries)
+    return [] if entries.nil?
+    return ['rules must be an array'] unless entries.is_a?(Array)
+
+    Array(entries).filter_map.with_index do |entry, index|
+      raw_entry = entry.respond_to?(:to_h) ? entry.to_h : nil
+      next "rule_#{index}: invalid object" unless raw_entry.is_a?(Hash)
+
+      rule_type = raw_entry['type'].to_s.presence
+      content = raw_entry['content'].to_s.strip
+      next "rule_#{index}: invalid type" unless RULE_TYPES.include?(rule_type)
+      next "rule_#{index}: blank content" if content.blank?
     end
   end
 
@@ -857,9 +877,9 @@ class Captain::Assistant < ApplicationRecord
           'group' => existing_rule&.dig(:group) || rule[:group],
           'content' => existing_rule&.dig(:content) || rule[:content],
           'enabled' => existing_rule.nil? || existing_rule[:enabled],
-          'slot' => existing_rule&.dig(:slot) || rule[:slot],
-          'editable' => existing_rule&.dig(:editable).nil? ? rule[:editable] : existing_rule[:editable],
-          'deletable' => existing_rule&.dig(:deletable).nil? ? rule[:deletable] : existing_rule[:deletable]
+          'slot' => rule[:slot],
+          'editable' => rule[:editable],
+          'deletable' => rule[:deletable]
         },
         index
       )
@@ -996,9 +1016,10 @@ class Captain::Assistant < ApplicationRecord
 
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
+    default_ids = default_tool_ids_for_scope(scope_name)
     explicit_tool_ids = Array(referenced_tool_ids).map(&:to_s)
 
-    (selected_ids + explicit_tool_ids)
+    ((selected_ids & default_ids) + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
   end
@@ -1040,6 +1061,18 @@ class Captain::Assistant < ApplicationRecord
     end
   end
 
+  def default_tool_ids_for_scope(scope_name)
+    tools =
+      case scope_name.to_s
+      when Captain::ToolAccess::SCOPE_ASSISTANT
+        available_assistant_tools
+      else
+        available_agent_tools
+      end
+
+    Captain::ToolAccess.default_tool_ids_for(scope_name.to_s, tools)
+  end
+
   def select_tools_by_ids(tools, tool_ids)
     normalized_ids = Array(tool_ids).map(&:to_s)
 
@@ -1063,16 +1096,15 @@ class Captain::Assistant < ApplicationRecord
     select_tools_by_ids(tools, prompt_tool_ids).select do |tool_definition|
       prompt_visible_tool?(
         tool_definition,
-        scope_name: scope_name,
-        explicit_tool_ids: explicit_tool_ids
+        scope_name: scope_name
       )
     end
   end
 
   def effective_context_field_ids(field_ids = nil)
-    (selected_context_field_ids + Array(field_ids).map(&:to_s))
-      .uniq
-      .select { |field_id| available_context_field_ids.include?(field_id) }
+    Array(field_ids).map(&:to_s)
+                    .uniq
+                    .select { |field_id| available_context_field_ids.include?(field_id) }
   end
 
   def prompt_glossary_texts_for_template(template_name)

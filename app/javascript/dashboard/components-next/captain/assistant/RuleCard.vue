@@ -206,15 +206,22 @@ const saveEdit = () => {
 const onToggleEnabled = enabled => {
   if (!isStructuredMode.value) return;
 
+  const sourceRule = isEditing.value
+    ? localRule.value
+    : {
+        id: props.id,
+        content: props.content,
+        group: props.group,
+        type: props.type,
+        editable: props.editable,
+        deletable: props.deletable,
+        slot: props.ruleSlot,
+      };
+
   emit('update', {
-    id: props.id,
-    content: props.content,
-    group: props.group,
-    type: props.type,
+    ...sourceRule,
+    content: sourceRule.content?.toString().trim() || '',
     enabled,
-    editable: props.editable,
-    deletable: props.deletable,
-    slot: props.ruleSlot,
   });
 };
 
@@ -304,16 +311,16 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
                 />
                 <Button icon="i-lucide-x" slate xs ghost @click="stopEdit" />
               </template>
-              <span class="h-4 w-px bg-n-weak" />
-              <Button
-                v-if="deletable"
-                icon="i-lucide-trash"
-                slate
-                xs
-                ghost
-                @click="emit('delete', id)"
-              />
+              <span v-if="deletable" class="h-4 w-px bg-n-weak" />
             </template>
+            <Button
+              v-if="deletable"
+              icon="i-lucide-trash"
+              slate
+              xs
+              ghost
+              @click="emit('delete', id)"
+            />
           </div>
         </div>
 

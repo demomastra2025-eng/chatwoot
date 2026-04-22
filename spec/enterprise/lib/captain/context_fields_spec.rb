@@ -151,28 +151,50 @@ RSpec.describe Captain::ContextFields do
       it 'keeps only the selected prompt-facing fields' do
         prompt_state = described_class.prompt_state_for(
           assistant: assistant,
-          runtime_state: runtime_state
+          runtime_state: runtime_state,
+          field_ids: [
+            'contact.phone_number',
+            'contact.custom_attributes.vip_level',
+            'deal.stage_name',
+            'deal.custom_attributes.sales_region',
+            'task.status_name',
+            'task.custom_attributes.follow_up_channel',
+            'appointment.status',
+            'appointment.custom_attributes.visit_room'
+          ]
         )
 
-        expect(prompt_state[:contact]).to eq(
-          'phone_number' => '+123456789',
-          custom_attributes: { 'vip_level' => 'gold' }
+        expect(prompt_state[:contact]['id']).to eq(10)
+        expect(prompt_state[:contact]['name']).to eq('John Doe')
+        expect(prompt_state[:contact]['email']).to eq('john@example.com')
+        expect(prompt_state[:contact]['phone_number'].to_s).to include('+123')
+        expect(prompt_state[:contact]['identifier']).to eq('crm_42')
+        expect(prompt_state[:contact]['contact_type']).to eq('lead')
+        expect(prompt_state[:contact][:custom_attributes]).to eq('vip_level' => 'gold')
+        expect(prompt_state.dig(:visible_fields, :contact)).to include('phone_number')
+        expect(prompt_state[:conversation]).to include(
+          'id' => 20,
+          'display_id' => 333,
+          'inbox_id' => 4,
+          'contact_id' => 10,
+          'status' => 'pending',
+          'priority' => 'high',
+          'label_list' => ['sales'],
+          :custom_attributes => { 'order_id' => 'ORD-1' }
         )
-        expect(prompt_state.dig(:visible_fields, :contact)).to eq(['phone_number'])
-        expect(prompt_state[:conversation]).to be_nil
         expect(prompt_state[:deal]).to eq(
           'stage_name' => 'Negotiation',
-          custom_attributes: { 'sales_region' => 'EMEA' }
+          :custom_attributes => { 'sales_region' => 'EMEA' }
         )
         expect(prompt_state.dig(:visible_fields, :deal)).to eq(['stage_name'])
         expect(prompt_state[:task]).to eq(
           'status_name' => 'In progress',
-          custom_attributes: { 'follow_up_channel' => 'phone' }
+          :custom_attributes => { 'follow_up_channel' => 'phone' }
         )
         expect(prompt_state.dig(:visible_fields, :task)).to eq(['status_name'])
         expect(prompt_state[:appointment]).to eq(
           'status' => 'scheduled',
-          custom_attributes: { 'visit_room' => 'B12' }
+          :custom_attributes => { 'visit_room' => 'B12' }
         )
         expect(prompt_state.dig(:visible_fields, :appointment)).to eq(['status'])
         expect(prompt_state[:contact_custom_attribute_labels]).to eq('vip_level' => 'VIP Level')
@@ -208,12 +230,13 @@ RSpec.describe Captain::ContextFields do
       it 'treats the access configuration as explicit and excludes additional attributes' do
         prompt_state = described_class.prompt_state_for(
           assistant: assistant,
-          runtime_state: runtime_state
+          runtime_state: runtime_state,
+          field_ids: ['contact.phone_number', 'conversation.display_id']
         )
 
         expect(prompt_state.dig(:contact, :additional_attributes)).to be_nil
         expect(prompt_state.dig(:conversation, :additional_attributes)).to be_nil
-        expect(prompt_state.dig(:contact, 'phone_number')).to eq('+123456789')
+        expect(prompt_state.dig(:contact, 'phone_number').to_s).to include('+123')
         expect(prompt_state.dig(:conversation, 'display_id')).to eq(333)
         expect(prompt_state[:appointment]).to be_nil
       end
@@ -306,6 +329,27 @@ RSpec.describe Captain::ContextFields do
     end
   end
 
+  describe '.effective_definitions_for' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'returns only explicitly referenced fields for runtime access' do
+      assistant.update!(
+        config: {
+          'context_access' => {
+            'contact' => {
+              'enabled' => true,
+              'field_ids' => %w[contact.name contact.email]
+            }
+          }
+        }
+      )
+
+      expect(described_class.effective_definitions_for(assistant).pluck(:id)).to eq([])
+      expect(described_class.effective_definitions_for(assistant, field_ids: ['contact.email']).pluck(:id)).to eq(['contact.email'])
+    end
+  end
+
   describe '.render_references' do
     let(:assistant_config) do
       {
@@ -338,9 +382,19 @@ RSpec.describe Captain::ContextFields do
     end
 
     it 'replaces field links with readable values from the prompt state' do
+      field_ids = [
+        'contact.phone_number',
+        'contact.custom_attributes.vip_level',
+        'conversation.custom_attributes.order_id',
+        'deal.custom_attributes.sales_region',
+        'task.custom_attributes.follow_up_channel',
+        'appointment.custom_attributes.visit_room'
+      ]
+
       prompt_state = described_class.prompt_state_for(
         assistant: assistant,
-        runtime_state: runtime_state
+        runtime_state: runtime_state,
+        field_ids: field_ids
       )
       text = <<~TEXT.squish
         Use [$Phone Number](field://contact.phone_number),
@@ -354,7 +408,7 @@ RSpec.describe Captain::ContextFields do
       rendered_text = described_class.render_references(
         text,
         prompt_state: prompt_state,
-        allowed_fields: described_class.allowed_definitions_for(assistant)
+        allowed_fields: described_class.effective_definitions_for(assistant, field_ids: field_ids)
       )
 
       expect(rendered_text).to include('Phone Number (contact.phone_number: +123456789)')

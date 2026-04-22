@@ -3,17 +3,6 @@ module Captain::Tools::Instrumentation
   include Integrations::LlmInstrumentation
 
   def execute(**args)
-    unless Captain::ToolPolicy.runtime_allowed?(
-      tool_definition,
-      assistant: assistant,
-      scope_name: tool_scope_name,
-      user: @user
-    )
-      message = tool_failure('This tool is not available for the current assistant configuration.')
-      audit_tool_execution(arguments: args, result: message)
-      return message
-    end
-
     instrument_tool_call(name, args, tool_instrumentation_params(args)) do
       Captain::ToolSafety.check_arguments!(
         feature: tool_safety_feature,

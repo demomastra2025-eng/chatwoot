@@ -21,6 +21,19 @@ RSpec.describe Captain::ToolCatalog do
       expect(assistant_tool_ids).to include(custom_tool.slug)
     end
 
+    it 'does not expose account-private custom tools from a different account' do
+      own_tool = create(:captain_custom_tool, account: account, slug: 'custom_own-tool')
+      other_tool = create(:captain_custom_tool, account: create(:account), slug: 'custom_other-tool')
+
+      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+
+      expect(agent_tool_ids).to include(own_tool.slug)
+      expect(agent_tool_ids).not_to include(other_tool.slug)
+      expect(assistant_tool_ids).to include(own_tool.slug)
+      expect(assistant_tool_ids).not_to include(other_tool.slug)
+    end
+
     it 'includes discovered MCP tools for the requested scope' do
       create(:captain_mcp_server, account: account)
       allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)

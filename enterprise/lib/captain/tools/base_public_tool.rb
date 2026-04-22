@@ -7,20 +7,10 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   end
 
   def active?
-    Captain::ToolPolicy.runtime_allowed?(
-      tool_definition,
-      assistant: assistant,
-      scope_name: Captain::ToolAccess::SCOPE_AGENT
-    )
+    true
   end
 
   def execute(tool_context, **params)
-    unless active?
-      message = tool_failure('This tool is not available for the current assistant configuration.')
-      audit_tool_execution(arguments: params, result: message, runtime_context: runtime_context(tool_context))
-      return message
-    end
-
     result = super
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result

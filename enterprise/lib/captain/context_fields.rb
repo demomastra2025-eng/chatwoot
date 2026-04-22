@@ -270,15 +270,9 @@ class Captain::ContextFields
 
     def effective_definitions_for(assistant, field_ids: nil)
       definitions = definitions_for(assistant.account)
-      access = normalized_access_for(assistant, definitions)
       explicit_field_ids = sanitize_field_ids(field_ids, definitions)
-      effective_field_ids = SCOPES.flat_map do |scope|
-        default_field_ids = access.dig(scope, :enabled) ? Array(access.dig(scope, :field_ids)) : []
 
-        default_field_ids + explicit_field_ids.select { |field_id| field_id.start_with?("#{scope}.") }
-      end.uniq
-
-      definitions.select { |field| effective_field_ids.include?(field[:id]) }
+      definitions.select { |field| explicit_field_ids.include?(field[:id]) }
     end
 
     def allowed_field_ids_for(assistant)
@@ -297,7 +291,6 @@ class Captain::ContextFields
 
     def prompt_state_for(assistant:, runtime_state:, field_ids: nil)
       definitions = definitions_for(assistant.account)
-      access = normalized_access_for(assistant, definitions)
       explicit_field_ids = sanitize_field_ids(field_ids, definitions)
       prompt_state = {}
       visible_fields = {}
@@ -306,9 +299,7 @@ class Captain::ContextFields
       )
 
       SCOPES.each do |scope|
-        scope_access = access.fetch(scope)
-        default_field_ids = scope_access[:enabled] ? Array(scope_access[:field_ids]) : []
-        effective_field_ids = default_field_ids + explicit_field_ids.select do |field_id|
+        effective_field_ids = always_visible_prompt_field_ids(definitions, scope) + explicit_field_ids.select do |field_id|
           field_id.start_with?("#{scope}.")
         end
         effective_field_ids = effective_field_ids.uniq
@@ -408,6 +399,14 @@ class Captain::ContextFields
       Array(field_ids).map { |field_id| normalize_field_id(field_id) }
                       .uniq
                       .select { |field_id| available_field_ids.include?(field_id) }
+    end
+
+    def always_visible_prompt_field_ids(definitions, scope)
+      return [] unless %i[contact conversation].include?(scope.to_sym)
+
+      definitions
+        .select { |field| field[:table_name].to_sym == scope.to_sym }
+        .map { |field| field[:id] }
     end
 
     def contact_fields

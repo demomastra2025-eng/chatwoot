@@ -689,5 +689,18 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(scenario.runtime_tool_ids).to eq(['handoff'])
     end
+
+    it 'keeps explicitly referenced built-in tools in the scenario runtime set' do
+      account.enable_features!('crm_deals')
+      scenario = create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        instruction: 'Use [@Create Deal](tool://create_deal)'
+      )
+
+      expect(scenario.runtime_tool_ids).to eq(%w[handoff create_deal])
+      expect(scenario.send(:agent_tools).map(&:class)).to contain_exactly(Captain::Tools::HandoffTool, Captain::Tools::CreateDealTool)
+    end
   end
 end

@@ -79,6 +79,16 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_assistant_tool_ids).to include(custom_tool.slug)
     end
 
+    it 'keeps account-private tools scoped to the assistant account only' do
+      own_tool = create(:captain_custom_tool, account: account, slug: 'custom_own-tool')
+      create(:captain_custom_tool, account: create(:account), slug: 'custom_other-tool')
+
+      expect(assistant.available_tool_ids).to include(own_tool.slug)
+      expect(assistant.available_assistant_tool_ids).to include(own_tool.slug)
+      expect(assistant.available_tool_ids).not_to include('custom_other-tool')
+      expect(assistant.available_assistant_tool_ids).not_to include('custom_other-tool')
+    end
+
     it 'keeps every built-in agent tool available in the assistant catalog' do
       missing_tool_ids = assistant.available_tool_ids - assistant.available_assistant_tool_ids
 
@@ -169,6 +179,25 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
+    it 'does not include non-default tools in the runtime set when they are only checked but not referenced' do
+      account.enable_features!('crm_deals')
+
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => %w[faq_lookup handoff create_deal]
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'handoff')
+    end
+
     it 'keeps explicitly referenced custom tools in the final runtime tool set' do
       create(
         :captain_custom_tool,
@@ -193,6 +222,31 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'custom_fetch-order')
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'custom_fetch-order')
+
+      tools = assistant.send(:agent_tools)
+      expect(tools.map(&:class)).to include(Captain::Tools::FaqLookupTool)
+      expect(tools.any?(Captain::Tools::HttpTool)).to be(true)
+    end
+
+    it 'keeps explicitly referenced non-default built-in tools in the final runtime tool set without extra runtime policy gates' do
+      account.enable_features!('crm_deals')
+
+      assistant.update!(
+        description: 'Use [@Create Deal](tool://create_deal) when greeted.',
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'create_deal')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'create_deal')
+      expect(assistant.send(:agent_tools).map(&:class)).to contain_exactly(Captain::Tools::FaqLookupTool, Captain::Tools::CreateDealTool)
     end
 
     it 'does not expose scenario-only template tool references in the root assistant prompt' do
@@ -307,6 +361,67 @@ RSpec.describe Captain::Assistant, type: :model do
           deletable: true
         )
       )
+    end
+
+    it 'restores canonical metadata for built-in default system rules even when stored config drifted' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => [
+            {
+              'id' => 'stay_within_scope',
+              'type' => 'system',
+              'group' => 'Strict rules',
+              'content' => "Stay within your configured scope and instructions. Don't digress away from them.",
+              'enabled' => true,
+              'editable' => false,
+              'deletable' => true
+            },
+            {
+              'id' => 'assistant_system_context',
+              'type' => 'system',
+              'group' => 'Assistant structure',
+              'content' => 'Corrupted slot should not survive.',
+              'enabled' => true,
+              'slot' => 'wrong_slot',
+              'editable' => false,
+              'deletable' => true
+            }
+          ]
+        )
+      )
+
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'stay_within_scope',
+          editable: true,
+          deletable: false
+        )
+      )
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'assistant_system_context',
+          slot: 'assistant_system_context',
+          editable: true,
+          deletable: false
+        )
+      )
+    end
+
+    it 'rejects malformed structured rules instead of silently dropping them' do
+      assistant.config = assistant.config.merge(
+        'rules' => [
+          {
+            'id' => 'bad_rule',
+            'type' => 'guardrail',
+            'group' => 'Restrictions',
+            'content' => '   '
+          },
+          'not-a-rule'
+        ]
+      )
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors[:config].join).to include('invalid')
     end
 
     it 'keeps compatibility when legacy array fields are cleared' do

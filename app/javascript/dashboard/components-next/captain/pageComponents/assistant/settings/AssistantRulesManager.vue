@@ -90,7 +90,9 @@ const normalizeRuleForList = (rule, index) => {
 };
 
 const syncOrderedRules = list => {
-  orderedRules.value = Array(list).map((rule, index) =>
+  const sourceList = Array.isArray(list) ? list : [];
+
+  orderedRules.value = sourceList.map((rule, index) =>
     normalizeRuleForList(rule, index)
   );
 };
@@ -296,6 +298,20 @@ const saveRules = async nextRules => {
   }
 };
 
+const buildPayload = () => {
+  if (orderedRules.value.some(isMalformedRule)) {
+    throw new Error(t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULES_ERROR'));
+  }
+
+  return {
+    assistant: {
+      config: {
+        rules: serializeRules(orderedRules.value),
+      },
+    },
+  };
+};
+
 const normalizeIncomingRule = rule => ({
   id: rule.id || createRuleId(),
   type: rule.type,
@@ -413,6 +429,11 @@ const startsGroupAt = (list, index) =>
 const onDragEnd = async () => {
   await saveRules(orderedRules.value);
 };
+
+defineExpose({
+  buildPayload,
+  saveRules,
+});
 </script>
 
 <template>

@@ -301,4 +301,49 @@ describe('AssistantRulesManager', () => {
       'CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULES_ERROR'
     );
   });
+
+  it('keeps every incoming rule as a distinct ordered rule entry', () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [
+            ...systemRules,
+            {
+              id: 'mirror_user_language',
+              type: 'system',
+              group: 'Conversation flow',
+              content: 'Always detect the user language.',
+              enabled: true,
+              editable: true,
+              deletable: false,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(wrapper.vm.orderedRules).toHaveLength(2);
+    expect(wrapper.vm.orderedRules.map(rule => rule.id)).toEqual([
+      'stay_within_scope',
+      'mirror_user_language',
+    ]);
+  });
+
+  it('treats non-array legacy rules payloads as an empty list instead of crashing', () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: {
+            id: 'legacy_bad_shape',
+            type: 'system',
+            content: 'broken',
+          },
+        },
+      },
+    });
+
+    expect(wrapper.vm.orderedRules).toEqual([]);
+  });
 });
