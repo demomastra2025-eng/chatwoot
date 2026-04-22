@@ -1,5 +1,7 @@
 import {
+  SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
+  SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
   getSidebarHiddenItems,
@@ -12,7 +14,7 @@ describe('sidebarVisibility', () => {
 
     expect(visibilityState.Inbox).toBe(true);
     expect(visibilityState.Campaigns).toBe(true);
-    expect(visibilityState['Campaigns:Broadcasts']).toBe(true);
+    expect(visibilityState['Campaigns:Templates']).toBe(true);
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Workspace']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);
@@ -29,6 +31,41 @@ describe('sidebarVisibility', () => {
         ],
       })
     ).toEqual(['Reports', 'Settings:Workspace']);
+  });
+
+  it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Captain:Prompts'],
+      })
+    ).toEqual([]);
+
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Captain:Restrictions'],
+      })
+    ).toEqual([]);
+  });
+
+  it('keeps merged prompts hidden when both legacy items were hidden', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Captain:Prompts',
+          'Captain:Restrictions',
+        ],
+      })
+    ).toEqual(['Captain:Prompts']);
+  });
+
+  it('preserves the current prompts visibility once the new schema version is saved', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Captain:Prompts'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })
+    ).toEqual(['Captain:Prompts']);
   });
 
   it('filters hidden sidebar sections and subsections from the rendered menu', () => {

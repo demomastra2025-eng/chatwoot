@@ -7,6 +7,10 @@ defineProps({
     type: String,
     default: '',
   },
+  showClose: {
+    type: Boolean,
+    default: true,
+  },
   items: {
     type: Array,
     default: () => [],
@@ -44,6 +48,7 @@ const onClickClose = () => {
         />
       </div>
       <Button
+        v-if="showClose"
         ghost
         xs
         slate

@@ -161,6 +161,31 @@ const renderInstruction = instruction => () =>
     class: `text-sm text-n-slate-12 py-4 mb-0 prose prose-sm min-w-0 break-words max-w-none ${LINK_INSTRUCTION_CLASS}`,
     innerHTML: instruction,
   });
+
+const toolLabels = computed(() => ({
+  search_documentation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_documentation.TITLE'
+  ),
+  faq_lookup: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.faq_lookup.TITLE'),
+  add_contact_note: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_contact_note.TITLE'
+  ),
+  add_private_note: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_private_note.TITLE'
+  ),
+  add_label_to_conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_label_to_conversation.TITLE'
+  ),
+  update_priority: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_priority.TITLE'
+  ),
+  resolve_conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.resolve_conversation.TITLE'
+  ),
+  handoff: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.handoff.TITLE'),
+}));
+
+const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
 </script>
 
 <template>
@@ -259,7 +284,7 @@ const renderInstruction = instruction => () =>
         class="mt-3 text-sm text-n-slate-11 font-medium"
       >
         {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TOOLS_USED') }}
-        {{ tools?.map(tool => `@${tool}`).join(', ') }}
+        {{ tools?.map(humanizeToolId).join(', ') }}
       </span>
     </div>
     <div v-else class="overflow-hidden flex flex-col gap-4 w-full">

@@ -54,6 +54,32 @@ const scenariosExample = [
     ),
     tools: ['add_private_note', 'add_label_to_conversation', 'handoff'],
   },
+  {
+    id: 2,
+    title: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.DESCRIPTION'
+    ),
+    instruction: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.BILLING_ISSUE.INSTRUCTION'
+    ),
+    tools: ['add_private_note', 'handoff'],
+  },
+  {
+    id: 3,
+    title: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.TITLE'
+    ),
+    description: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.DESCRIPTION'
+    ),
+    instruction: t(
+      'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.EXAMPLES.ONBOARDING_HELP.INSTRUCTION'
+    ),
+    tools: ['faq_lookup', 'handoff'],
+  },
 ];
 
 const filteredScenarios = computed(() => {
@@ -64,7 +90,10 @@ const filteredScenarios = computed(() => {
 });
 
 const shouldShowSuggestedRules = computed(() => {
-  return uiSettings.value?.show_scenarios_suggestions !== false;
+  return (
+    scenarios.value.length === 0 ||
+    uiSettings.value?.show_scenarios_suggestions !== false
+  );
 });
 
 const closeSuggestedRules = () => {
@@ -166,6 +195,15 @@ const bulkDeleteScenarios = async ids => {
 };
 
 const addScenario = async scenario => {
+  const alreadyExists = scenarios.value.some(
+    existing =>
+      existing.title === scenario.title &&
+      existing.description === scenario.description
+  );
+  if (alreadyExists) {
+    return;
+  }
+
   try {
     await store.dispatch('captainScenarios/create', {
       assistantId: assistantId.value,
@@ -184,12 +222,29 @@ const addScenario = async scenario => {
 
 const addAllExampleScenarios = async () => {
   try {
-    scenariosExample.forEach(async scenario => {
-      await store.dispatch('captainScenarios/create', {
-        assistantId: assistantId.value,
-        ...scenario,
-      });
-    });
+    const existingScenarioKeys = new Set(
+      scenarios.value.map(
+        scenario => `${scenario.title}:${scenario.description}`
+      )
+    );
+    const scenariosToCreate = scenariosExample.filter(
+      scenario =>
+        !existingScenarioKeys.has(`${scenario.title}:${scenario.description}`)
+    );
+
+    if (!scenariosToCreate.length) {
+      return;
+    }
+
+    await Promise.all(
+      scenariosToCreate.map(scenario =>
+        store.dispatch('captainScenarios/create', {
+          assistantId: assistantId.value,
+          ...scenario,
+          tools: getToolsFromInstruction(scenario.instruction),
+        })
+      )
+    );
     useAlert(t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.SUCCESS'));
   } catch (error) {
     const errorMessage = getScenarioErrorMessage(
@@ -223,36 +278,53 @@ onMounted(() => {
         <SuggestedScenarios
           :title="$t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TITLE')"
           :items="scenariosExample"
+          :show-close="scenarios.length > 0"
           @close="closeSuggestedRules"
           @add="addAllExampleScenarios"
         >
           <template #default="{ item }">
-            <div class="flex items-center gap-3 justify-between">
-              <span class="text-sm text-n-slate-12">
-                {{ item.title }}
-              </span>
-              <Button
-                :label="
-                  $t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.ADD_SINGLE')
-                "
-                ghost
-                xs
-                slate
-                class="!text-sm !text-n-slate-11 flex-shrink-0"
-                @click="addScenario(item)"
-              />
-            </div>
-            <div class="flex flex-col">
-              <span class="text-sm text-n-slate-11 mt-2">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="inline-flex rounded-full bg-n-brand/10 px-2 py-0.5 text-[0.6875rem] font-medium text-n-brand"
+                  >
+                    {{
+                      $t(
+                        'CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.SCENARIO_TAG'
+                      )
+                    }}
+                  </span>
+                  <span class="text-sm text-n-slate-12">
+                    {{ item.title }}
+                  </span>
+                </div>
+                <Button
+                  :label="
+                    $t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.ADD_SINGLE')
+                  "
+                  ghost
+                  xs
+                  slate
+                  class="!text-sm !text-n-slate-11 flex-shrink-0"
+                  @click="addScenario(item)"
+                />
+              </div>
+              <span class="text-sm text-n-slate-11">
                 {{ item.description }}
               </span>
               <component
                 :is="renderInstruction(formatMessage(item.instruction, false))"
               />
-              <span class="text-sm text-n-slate-11 font-medium mb-1">
-                {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TOOLS_USED') }}
-                {{ item.tools?.map(tool => `@${tool}`).join(', ') }}
-              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <span
+                  v-for="tool in item.tools"
+                  :key="tool"
+                  class="inline-flex rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
+                >
+                  {{ tool }}
+                </span>
+              </div>
             </div>
           </template>
         </SuggestedScenarios>
@@ -290,13 +362,19 @@ onMounted(() => {
             />
           </div>
         </div>
-        <div v-if="scenarios.length === 0" class="mt-1 mb-2">
-          <span class="text-n-slate-11 text-sm">
+        <div
+          v-if="scenarios.length === 0"
+          class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
+        >
+          <span>
             {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.EMPTY_MESSAGE') }}
           </span>
         </div>
-        <div v-else-if="filteredScenarios.length === 0" class="mt-1 mb-2">
-          <span class="text-n-slate-11 text-sm">
+        <div
+          v-else-if="filteredScenarios.length === 0"
+          class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
+        >
+          <span>
             {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.SEARCH_EMPTY_MESSAGE') }}
           </span>
         </div>

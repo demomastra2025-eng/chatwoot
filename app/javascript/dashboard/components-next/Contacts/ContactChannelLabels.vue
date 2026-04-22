@@ -94,7 +94,7 @@ const handleChannelIdentityClick = async channelLabel => {
         v-for="channelLabel in channelLabels"
         :key="channelLabel.id"
         type="button"
-        class="inline-flex items-center max-w-full gap-2 px-2.5 py-1 text-xs border rounded-full bg-n-alpha-2 border-n-strong text-n-slate-12 hover:bg-n-alpha-3"
+        class="inline-flex max-w-full items-center gap-2 rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-12 shadow-sm transition-colors hover:border-n-slate-4 hover:bg-n-alpha-1"
         :class="channelLabel.willCreateNewConversation ? 'border-dashed' : ''"
         :title="
           channelLabel.inboxName
@@ -106,7 +106,7 @@ const handleChannelIdentityClick = async channelLabel => {
         <span
           v-if="channelLabel.willCreateNewConversation"
           data-testid="new-conversation-indicator"
-          class="inline-flex items-center justify-center flex-shrink-0 w-4 h-4 text-[10px] font-semibold rounded-full bg-n-surface-1 border border-n-strong text-n-slate-12"
+          class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-n-weak bg-n-alpha-1 text-[10px] font-semibold text-n-slate-12"
           :title="t('CONTACT_PANEL.NO_CHANNEL_CONVERSATION')"
         >
           <span class="i-lucide-plus size-2.5" />

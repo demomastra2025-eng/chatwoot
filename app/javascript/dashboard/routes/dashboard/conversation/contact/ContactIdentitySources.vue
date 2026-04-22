@@ -350,10 +350,10 @@ const displayIdentifier = source => {
 
 const sourceCardClass = source => {
   if (source.nameSelected || source.avatarSelected) {
-    return 'border-n-slate-5 bg-n-alpha-1 shadow-md';
+    return 'border-n-brand/20 bg-n-solid-1 ring-1 ring-inset ring-n-brand/10 shadow-sm';
   }
 
-  return 'border-n-weak bg-white dark:bg-slate-900/40';
+  return 'border-n-weak bg-n-solid-1 shadow-sm hover:border-n-slate-4';
 };
 
 const sourceIconClass = source =>
@@ -366,11 +366,11 @@ const sourceIconClass = source =>
     <div v-if="visibleSources.length" class="relative">
       <div
         v-if="visibleSources.length > 1"
-        class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-alpha-2 to-transparent"
+        class="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-n-alpha-1 to-transparent"
       />
       <div
         v-if="visibleSources.length > 1"
-        class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-alpha-2 to-transparent"
+        class="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-n-alpha-1 to-transparent"
       />
 
       <div
@@ -380,7 +380,7 @@ const sourceIconClass = source =>
           v-for="source in visibleSources"
           :key="source.cardKey"
           data-source-card
-          class="flex min-h-[11.25rem] basis-[84%] shrink-0 snap-start flex-col rounded-2xl border p-2.5 shadow-sm transition-colors sm:basis-[72%] xl:basis-[68%]"
+          class="flex min-h-[10rem] basis-[78%] min-w-[15.5rem] max-w-[18.75rem] shrink-0 snap-start flex-col rounded-2xl border p-3 transition-colors sm:basis-[58%] lg:basis-[48%] xl:basis-[44%]"
           :class="sourceCardClass(source)"
         >
           <div class="flex min-h-0 flex-1 items-start gap-3">
@@ -394,7 +394,7 @@ const sourceIconClass = source =>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <span
-                  class="inline-flex max-w-full items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
+                  class="inline-flex max-w-full items-center gap-1 rounded-full border border-n-weak bg-n-alpha-1 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
                 >
                   <span
                     class="shrink-0 text-sm leading-none"
@@ -436,7 +436,7 @@ const sourceIconClass = source =>
                 </p>
                 <span
                   v-if="displayIdentifier(source)"
-                  class="inline-flex max-w-[52%] shrink-0 items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[11px] text-n-slate-11"
+                  class="inline-flex max-w-[52%] shrink-0 items-center gap-1 rounded-full border border-n-weak bg-n-alpha-1 px-2 py-0.5 text-[11px] text-n-slate-11"
                 >
                   <span class="i-lucide-id-card size-3 shrink-0" />
                   <span class="truncate">{{ displayIdentifier(source) }}</span>
@@ -455,7 +455,7 @@ const sourceIconClass = source =>
             v-if="
               canUseName(source) || canUsePhoto(source) || canMessage(source)
             "
-            class="mt-auto flex flex-wrap gap-2 pt-3"
+            class="mt-auto flex flex-wrap gap-2 border-t border-n-weak pt-3"
           >
             <NextButton
               v-if="canUseName(source)"

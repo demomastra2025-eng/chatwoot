@@ -1,6 +1,14 @@
 /* global axios */
 import ApiClient from '../ApiClient';
 
+const normalizeAssistantPayload = (data = {}) => {
+  if (Object.prototype.hasOwnProperty.call(data, 'assistant')) {
+    return data;
+  }
+
+  return { assistant: data };
+};
+
 class CaptainAssistant extends ApiClient {
   constructor() {
     super('captain/assistants', { accountScoped: true });
@@ -24,6 +32,14 @@ class CaptainAssistant extends ApiClient {
 
   promptPreview(assistantId) {
     return axios.get(`${this.url}/${assistantId}/prompt_preview`);
+  }
+
+  create(data) {
+    return axios.post(this.url, normalizeAssistantPayload(data));
+  }
+
+  update(id, data) {
+    return axios.patch(`${this.url}/${id}`, normalizeAssistantPayload(data));
   }
 
   updateAvatar(assistantId, avatar) {

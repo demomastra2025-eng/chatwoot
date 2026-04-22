@@ -60,6 +60,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  groupLabels: {
+    type: Object,
+    default: () => ({}),
+  },
   enableCaptainFields: {
     type: Boolean,
     default: false,
@@ -138,6 +142,23 @@ const startEdit = () => {
 const stopEdit = () => {
   isEditing.value = false;
 };
+
+const resolveDisplayGroup = value => props.groupLabels[value] || value;
+const resolveStoredGroup = value => {
+  const normalizedValue = value?.toString().trim() || '';
+  const matchedEntry = Object.entries(props.groupLabels).find(
+    ([, label]) => label === normalizedValue
+  );
+
+  return matchedEntry?.[0] || normalizedValue;
+};
+
+const groupInputValue = computed({
+  get: () => resolveDisplayGroup(localRule.value.group),
+  set: value => {
+    localRule.value.group = resolveStoredGroup(value);
+  },
+});
 
 const saveEdit = () => {
   emit('update', { ...localRule.value });
@@ -266,7 +287,7 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
                 {{ groupLabel }}
               </span>
               <Input
-                v-model="localRule.group"
+                v-model="groupInputValue"
                 :placeholder="groupPlaceholder"
               />
             </div>

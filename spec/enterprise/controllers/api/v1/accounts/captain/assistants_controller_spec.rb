@@ -619,6 +619,72 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           }
         )
       end
+
+      it 'updates structured rules config and syncs legacy rule lists' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    rules: [
+                      {
+                        id: 'clarify_first',
+                        type: 'response_guideline',
+                        group: 'Conversation flow',
+                        content: 'Ask one clarifying question before proposing a solution.',
+                        enabled: true
+                      },
+                      {
+                        id: 'no_passwords',
+                        type: 'guardrail',
+                        group: 'Restrictions',
+                        content: 'Never request passwords or verification codes.',
+                        enabled: false
+                      }
+                    ]
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.response_guidelines).to eq(
+          ['Ask one clarifying question before proposing a solution.']
+        )
+        expect(assistant.guardrails).to eq([])
+        expect(assistant.config['rules']).to include(
+          hash_including(
+            'id' => 'clarify_first',
+            'type' => 'response_guideline',
+            'group' => 'Conversation flow',
+            'content' => 'Ask one clarifying question before proposing a solution.',
+            'enabled' => true
+          ),
+          hash_including(
+            'id' => 'no_passwords',
+            'type' => 'guardrail',
+            'group' => 'Restrictions',
+            'content' => 'Never request passwords or verification codes.',
+            'enabled' => false
+          )
+        )
+        expect(json_response.dig(:config, :rules)).to include(
+          hash_including(
+            id: 'clarify_first',
+            type: 'response_guideline',
+            group: 'Conversation flow',
+            content: 'Ask one clarifying question before proposing a solution.',
+            enabled: true
+          ),
+          hash_including(
+            id: 'no_passwords',
+            type: 'guardrail',
+            group: 'Restrictions',
+            content: 'Never request passwords or verification codes.',
+            enabled: false
+          )
+        )
+      end
     end
   end
 

@@ -947,6 +947,9 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
             activeOn: [
               'captain_assistants_prompts_index',
+              'captain_assistants_scenarios_index',
+              'captain_assistants_restrictions_index',
+              'captain_assistants_guardrails_index',
               'captain_assistants_guidelines_index',
             ],
             to: accountScopedRoute('captain_assistants_index', {
@@ -991,18 +994,6 @@ const menuItems = computed(() => {
             ],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_responses_index',
-            }),
-          },
-          {
-            name: 'Restrictions',
-            visibilityKey: 'Captain:Restrictions',
-            label: t('SIDEBAR.CAPTAIN_RESTRICTIONS'),
-            activeOn: [
-              'captain_assistants_restrictions_index',
-              'captain_assistants_guardrails_index',
-            ],
-            to: accountScopedRoute('captain_assistants_index', {
-              navigationPath: 'captain_assistants_restrictions_index',
             }),
           },
           {

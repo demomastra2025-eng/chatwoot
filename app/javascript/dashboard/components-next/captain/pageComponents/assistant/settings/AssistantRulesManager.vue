@@ -105,6 +105,16 @@ const typeBadgeMap = computed(() => ({
   },
 }));
 
+const groupLabels = computed(() => ({
+  [CANONICAL_GROUPS.strict]: t('CAPTAIN.ASSISTANTS.RULES.GROUPS.STRICT'),
+  [CANONICAL_GROUPS.conversation]: t(
+    'CAPTAIN.ASSISTANTS.RULES.GROUPS.CONVERSATION'
+  ),
+  [CANONICAL_GROUPS.restrictions]: t(
+    'CAPTAIN.ASSISTANTS.RULES.GROUPS.RESTRICTIONS'
+  ),
+}));
+
 const suggestedItems = computed(() => [
   {
     id: 'rule_open_directly',
@@ -172,16 +182,7 @@ const selectedCountLabel = computed(() =>
   })
 );
 
-const displayGroupName = groupName =>
-  ({
-    [CANONICAL_GROUPS.strict]: t('CAPTAIN.ASSISTANTS.RULES.GROUPS.STRICT'),
-    [CANONICAL_GROUPS.conversation]: t(
-      'CAPTAIN.ASSISTANTS.RULES.GROUPS.CONVERSATION'
-    ),
-    [CANONICAL_GROUPS.restrictions]: t(
-      'CAPTAIN.ASSISTANTS.RULES.GROUPS.RESTRICTIONS'
-    ),
-  })[groupName] || groupName;
+const displayGroupName = groupName => groupLabels.value[groupName] || groupName;
 
 const createRuleId = () =>
   `assistant_rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -395,6 +396,7 @@ const onDragEnd = async () => {
             :placeholder="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.PLACEHOLDER')"
             :type-options="typeOptions"
             :default-groups="defaultGroups"
+            :group-labels="groupLabels"
             enable-captain-tools
             enable-captain-fields
             :captain-context-assistant-id="assistantId"
@@ -439,6 +441,7 @@ const onDragEnd = async () => {
           :is-selected="bulkSelectedIds.has(rule.id)"
           :type-options="typeOptions"
           :type-badge-map="typeBadgeMap"
+          :group-labels="groupLabels"
           :group-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP')"
           :group-placeholder="
             $t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP_PLACEHOLDER')
@@ -482,6 +485,7 @@ const onDragEnd = async () => {
             :is-selected="bulkSelectedIds.has(element.id)"
             :type-options="typeOptions"
             :type-badge-map="typeBadgeMap"
+            :group-labels="groupLabels"
             :group-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP')"
             :group-placeholder="
               $t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP_PLACEHOLDER')

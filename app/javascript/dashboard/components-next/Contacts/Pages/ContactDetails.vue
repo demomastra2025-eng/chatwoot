@@ -395,24 +395,28 @@ const openChannelConversation = async channelIdentity => {
         <ContactLabels :contact-id="selectedContact?.id" />
         <details
           v-if="hasIdentityAccordion"
-          class="w-full rounded-2xl bg-n-alpha-2 px-4 py-3"
+          class="identity-accordion w-full overflow-hidden rounded-2xl border border-n-weak bg-n-solid-1 p-2 shadow-sm"
         >
           <summary
-            class="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden"
+            class="identity-accordion__summary flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-transparent bg-n-solid-1 px-3 py-3 transition-colors hover:border-n-weak hover:bg-n-alpha-1 [&::-webkit-details-marker]:hidden"
           >
             <div class="flex min-w-0 items-center gap-2">
-              <span class="i-lucide-id-card size-4 text-n-slate-10" />
+              <span
+                class="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-n-weak bg-n-alpha-1 text-n-slate-11 shadow-sm"
+              >
+                <span class="i-lucide-id-card size-4 text-n-slate-10" />
+              </span>
               <span class="text-sm font-medium text-n-slate-12">
                 {{ t('CONTACT_PANEL.IDENTIFIERS') }}
               </span>
             </div>
             <span
-              class="i-lucide-chevron-down size-4 shrink-0 text-n-slate-10"
+              class="identity-accordion__chevron i-lucide-chevron-down size-4 shrink-0 text-n-slate-10"
               aria-hidden="true"
             />
           </summary>
 
-          <div class="mt-4 flex flex-col gap-4">
+          <div class="px-1 pb-1 pt-4">
             <ContactIdentitySources
               :contact="contactData"
               :is-updating="isUpdating"
@@ -474,3 +478,17 @@ const openChannelConversation = async channelIdentity => {
     </Policy>
   </div>
 </template>
+
+<style scoped lang="scss">
+.identity-accordion__chevron {
+  transition: transform 0.2s ease;
+}
+
+.identity-accordion[open] .identity-accordion__summary {
+  @apply border-n-weak bg-n-alpha-1;
+}
+
+.identity-accordion[open] .identity-accordion__chevron {
+  transform: rotate(180deg);
+}
+</style>

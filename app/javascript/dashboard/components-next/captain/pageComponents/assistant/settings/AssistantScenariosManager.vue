@@ -100,9 +100,12 @@ const filteredScenarios = computed(() => {
   ]);
 });
 
-const shouldShowSuggestedRules = computed(
-  () => uiSettings.value?.show_scenarios_suggestions !== false
-);
+const shouldShowSuggestedRules = computed(() => {
+  return (
+    scenarios.value.length === 0 ||
+    uiSettings.value?.show_scenarios_suggestions !== false
+  );
+});
 
 const closeSuggestedRules = () => {
   updateUISettings({ show_scenarios_suggestions: false });
@@ -148,6 +151,31 @@ const getScenarioErrorMessage = (error, fallbackMessage) =>
   error?.response?.data?.error ||
   error?.response?.message ||
   fallbackMessage;
+
+const toolLabels = computed(() => ({
+  search_documentation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.search_documentation.TITLE'
+  ),
+  faq_lookup: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.faq_lookup.TITLE'),
+  add_contact_note: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_contact_note.TITLE'
+  ),
+  add_private_note: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_private_note.TITLE'
+  ),
+  add_label_to_conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.add_label_to_conversation.TITLE'
+  ),
+  update_priority: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.update_priority.TITLE'
+  ),
+  resolve_conversation: t(
+    'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.resolve_conversation.TITLE'
+  ),
+  handoff: t('CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.handoff.TITLE'),
+}));
+
+const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
 
 const updateScenario = async scenario => {
   try {
@@ -286,6 +314,7 @@ watch(
       <SuggestedScenarios
         :title="$t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.SUGGESTED.TITLE')"
         :items="scenariosExample"
+        :show-close="scenarios.length > 0"
         @close="closeSuggestedRules"
         @add="addAllExampleScenarios"
       >
@@ -329,7 +358,7 @@ watch(
                 :key="tool"
                 class="inline-flex rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
               >
-                {{ tool }}
+                {{ humanizeToolId(tool) }}
               </span>
             </div>
           </div>
@@ -374,13 +403,19 @@ watch(
       <div v-if="isFetching" class="text-sm text-n-slate-11">
         {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.LOADING_MESSAGE') }}
       </div>
-      <div v-else-if="scenarios.length === 0" class="mt-1 mb-2">
-        <span class="text-n-slate-11 text-sm">
+      <div
+        v-else-if="scenarios.length === 0"
+        class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
+      >
+        <span>
           {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.EMPTY_MESSAGE') }}
         </span>
       </div>
-      <div v-else-if="filteredScenarios.length === 0" class="mt-1 mb-2">
-        <span class="text-n-slate-11 text-sm">
+      <div
+        v-else-if="filteredScenarios.length === 0"
+        class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
+      >
+        <span>
           {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.SEARCH_EMPTY_MESSAGE') }}
         </span>
       </div>

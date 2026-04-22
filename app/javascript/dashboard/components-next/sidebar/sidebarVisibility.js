@@ -1,5 +1,11 @@
 export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
+export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
+  'dashboard_sidebar_hidden_items_version';
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 2;
+
+const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
+const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
 
 const item = (key, labelKey, children = []) => ({
   key,
@@ -31,7 +37,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
-    item('Captain:Restrictions', 'SIDEBAR.CAPTAIN_RESTRICTIONS'),
     item('Captain:Documents', 'SIDEBAR.CAPTAIN_DOCUMENTS'),
     item('Captain:Playground', 'SIDEBAR.CAPTAIN_PLAYGROUND'),
   ]),
@@ -100,14 +105,48 @@ const SIDEBAR_VISIBILITY_ITEM_KEYS = flattenSidebarVisibilityItems(
 const getItemKey = sidebarItem =>
   sidebarItem?.visibilityKey || sidebarItem?.name;
 
+const toHiddenItemsSet = hiddenItems =>
+  new Set(Array.isArray(hiddenItems) ? hiddenItems : []);
+
 export const normalizeSidebarHiddenItems = hiddenItems => {
-  const hiddenItemsSet = new Set(Array.isArray(hiddenItems) ? hiddenItems : []);
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
 
   return SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => hiddenItemsSet.has(key));
 };
 
+const normalizeLegacyCaptainPromptsVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  const shouldMigrateLegacyVisibility =
+    Number(version || 0) < SIDEBAR_VISIBILITY_CURRENT_VERSION;
+
+  if (!shouldMigrateLegacyVisibility) {
+    return hiddenItemsSet;
+  }
+
+  const promptsWasHidden = hiddenItemsSet.has(CAPTAIN_PROMPTS_VISIBILITY_KEY);
+  const restrictionsWasHidden = hiddenItemsSet.has(
+    LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY
+  );
+
+  hiddenItemsSet.delete(CAPTAIN_PROMPTS_VISIBILITY_KEY);
+  hiddenItemsSet.delete(LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY);
+
+  if (promptsWasHidden && restrictionsWasHidden) {
+    hiddenItemsSet.add(CAPTAIN_PROMPTS_VISIBILITY_KEY);
+  }
+
+  return hiddenItemsSet;
+};
+
 export const getSidebarHiddenItems = uiSettings =>
-  normalizeSidebarHiddenItems(uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]);
+  normalizeSidebarHiddenItems(
+    Array.from(
+      normalizeLegacyCaptainPromptsVisibility(
+        uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+        uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
+      )
+    )
+  );
 
 export const buildSidebarVisibilityState = uiSettings => {
   const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));

@@ -45,6 +45,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  groupLabels: {
+    type: Object,
+    default: () => ({}),
+  },
   enableCaptainFields: {
     type: Boolean,
     default: false,
@@ -82,11 +86,27 @@ const [showPopover, togglePopover] = useToggle();
 const isStructuredMode = computed(() => props.typeOptions.length > 0);
 
 const firstType = computed(() => props.typeOptions[0]?.value || '');
+const resolveDisplayGroup = value => props.groupLabels[value] || value;
+const resolveStoredGroup = value => {
+  const normalizedValue = value?.toString().trim() || '';
+  const matchedEntry = Object.entries(props.groupLabels).find(
+    ([, label]) => label === normalizedValue
+  );
+
+  return matchedEntry?.[0] || normalizedValue;
+};
 
 const state = reactive({
   type: firstType.value,
   group: props.defaultGroups[firstType.value] || '',
   content: '',
+});
+
+const groupInputValue = computed({
+  get: () => resolveDisplayGroup(state.group),
+  set: value => {
+    state.group = resolveStoredGroup(value);
+  },
 });
 
 const resetState = () => {
@@ -172,7 +192,7 @@ const onClickCancel = () => {
           <Select v-model="state.type" :options="typeOptions" class="w-full" />
         </div>
         <Input
-          v-model="state.group"
+          v-model="groupInputValue"
           :label="groupLabel"
           :placeholder="groupPlaceholder"
         />

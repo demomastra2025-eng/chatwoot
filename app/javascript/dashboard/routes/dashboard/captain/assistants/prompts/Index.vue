@@ -155,12 +155,8 @@ const onPromptTabChanged = tab => {
 
         <div v-if="isExternalAgent" class="flex flex-col gap-6 pt-2">
           <div class="border-t border-n-weak" />
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-6">
-            <div class="flex items-center justify-between gap-4">
-              <SettingsHeader
-                :heading="$t('CAPTAIN.ASSISTANTS.RULES.TAB_TITLE')"
-                :description="$t('CAPTAIN.ASSISTANTS.RULES.TAB_DESCRIPTION')"
-              />
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6 flex flex-col gap-5">
+            <div class="flex items-center justify-start">
               <TabBar
                 :tabs="promptTabs"
                 :initial-active-tab="

@@ -55,13 +55,15 @@ const routeToLastActiveAssistant = () => {
   const isAValidRoute = [
     'captain_assistants_responses_index', // Faq page
     'captain_assistants_documents_index', // Document page
-    'captain_assistants_scenarios_index', // Scenario page
+    'captain_assistants_scenarios_index', // Legacy prompts alias
     'captain_assistants_playground_index', // Playground page
     'captain_assistants_channels_index', // Channels page
     'captain_tools_index', // Tools page
     'captain_assistants_settings_index', // Settings page
     'captain_assistants_prompts_index', // Prompts page
-    'captain_assistants_restrictions_index', // Restrictions page
+    'captain_assistants_restrictions_index', // Legacy prompts alias
+    'captain_assistants_guardrails_index', // Legacy prompts alias
+    'captain_assistants_guidelines_index', // Legacy prompts alias
   ].includes(navigationPath);
 
   let navigateTo = 'captain_assistants_responses_index';

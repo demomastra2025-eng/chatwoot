@@ -45,6 +45,16 @@ const bulkSelectBarStub = {
   `,
 };
 
+const suggestedRulesStub = {
+  name: 'SuggestedRules',
+  props: ['items'],
+  template: `
+    <div data-testid="suggested-rules">
+      <slot :item="items[0]" />
+    </div>
+  `,
+};
+
 const addNewRulesDialogStub = {
   name: 'AddNewRulesDialog',
   emits: ['add'],
@@ -73,7 +83,7 @@ const buildWrapper = props =>
         Input: true,
         RuleCard: true,
         SettingsHeader: true,
-        SuggestedRules: true,
+        SuggestedRules: suggestedRulesStub,
       },
     },
   });
@@ -140,5 +150,27 @@ describe('AssistantRulesManager', () => {
         ],
       },
     });
+  });
+
+  it('renders localized rule group labels in suggested rules', () => {
+    useUISettingsMock.mockReturnValue({
+      uiSettings: ref({
+        show_assistant_rules_suggestions: true,
+      }),
+      updateUISettings: updateUISettingsMock,
+    });
+
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [],
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.ASSISTANTS.RULES.GROUPS.CONVERSATION'
+    );
   });
 });

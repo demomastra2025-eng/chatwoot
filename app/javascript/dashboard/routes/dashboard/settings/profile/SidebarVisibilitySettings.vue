@@ -7,7 +7,9 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import {
   SIDEBAR_VISIBILITY_ITEMS,
+  SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
+  SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   buildSidebarVisibilityState,
   getSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
@@ -43,7 +45,11 @@ const hasChanges = computed(
 const checkboxId = itemKey =>
   `sidebar-visibility-${itemKey.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-const sidebarItemLabel = item => (item.labelKey ? t(item.labelKey) : item.key);
+const sidebarItemLabel = item =>
+  item.labelKey
+    ? // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- sidebar items use a fixed internal whitelist of label keys
+      t(item.labelKey)
+    : item.key;
 
 const isExpanded = item => expandedSections.value[item.key] === true;
 
@@ -59,6 +65,8 @@ const toggleSection = item => {
 const saveSidebarVisibility = () => {
   updateUISettings({
     [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: draftHiddenItems.value,
+    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+      SIDEBAR_VISIBILITY_CURRENT_VERSION,
   });
 
   useAlert(

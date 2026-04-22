@@ -120,7 +120,20 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
     raw_value = assistant_config[field_name]
     permitted[:config] ||= {}
-    permitted[:config][field_name] = raw_value.respond_to?(:permit!) ? raw_value.permit!.to_h : raw_value
+    permitted[:config][field_name] = normalize_optional_config_value(raw_value)
+  end
+
+  def normalize_optional_config_value(value)
+    case value
+    when ActionController::Parameters
+      value.to_unsafe_h.transform_values { |item| normalize_optional_config_value(item) }
+    when Array
+      value.map { |item| normalize_optional_config_value(item) }
+    when Hash
+      value.transform_values { |item| normalize_optional_config_value(item) }
+    else
+      value
+    end
   end
 
   def avatar_params

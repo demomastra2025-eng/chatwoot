@@ -9,7 +9,6 @@ import AssistantEmptyStateIndex from './assistants/Index.vue';
 import AssistantSettingsIndex from './assistants/settings/Settings.vue';
 import AssistantPromptsIndex from './assistants/prompts/Index.vue';
 import AssistantPlaygroundIndex from './assistants/playground/Index.vue';
-import AssistantGuardrailsIndex from './assistants/guardrails/Index.vue';
 import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
 import DocumentsIndex from './documents/Index.vue';
 import ResponsesIndex from './responses/Index.vue';
@@ -108,10 +107,13 @@ const assistantRoutes = [
     name: 'captain_assistants_access_index',
     meta,
   },
-  // Settings sub-pages (guardrails and guidelines)
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/restrictions'),
-    component: AssistantGuardrailsIndex,
+    redirect: to => ({
+      name: 'captain_assistants_prompts_index',
+      params: to.params,
+      query: to.query,
+    }),
     name: 'captain_assistants_restrictions_index',
     meta: metaV2,
   },
