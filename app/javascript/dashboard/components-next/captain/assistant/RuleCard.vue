@@ -24,6 +24,14 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  isMalformed: {
+    type: Boolean,
+    default: false,
+  },
+  malformedMessage: {
+    type: String,
+    default: '',
+  },
   type: {
     type: String,
     default: '',
@@ -161,10 +169,13 @@ const groupInputValue = computed({
 });
 
 const saveEdit = () => {
-  emit('update', { ...localRule.value });
+  const trimmedContent = localRule.value.content?.toString().trim();
+  if (!trimmedContent) return;
+
+  emit('update', { ...localRule.value, content: trimmedContent });
   emit('edit', {
     id: props.id,
-    content: localRule.value.content,
+    content: trimmedContent,
   });
   stopEdit();
 };
@@ -317,7 +328,15 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
         </template>
 
         <template v-else>
-          <component :is="renderRuleContent(content)" />
+          <div class="flex flex-col gap-2">
+            <p
+              v-if="isMalformed && malformedMessage"
+              class="rounded-lg border border-n-ruby-6/40 bg-n-ruby-2/40 px-3 py-2 text-sm text-n-ruby-11"
+            >
+              {{ malformedMessage }}
+            </p>
+            <component :is="renderRuleContent(content)" />
+          </div>
         </template>
       </div>
     </div>

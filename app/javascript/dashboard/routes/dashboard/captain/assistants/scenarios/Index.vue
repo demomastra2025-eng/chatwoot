@@ -12,10 +12,10 @@ import Input from 'dashboard/components-next/input/Input.vue';
 
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
+import InlineScenarioComposer from 'dashboard/components-next/captain/assistant/InlineScenarioComposer.vue';
 import SuggestedScenarios from 'dashboard/components-next/captain/assistant/SuggestedRules.vue';
 import ScenariosCard from 'dashboard/components-next/captain/assistant/ScenariosCard.vue';
 import BulkSelectBar from 'dashboard/components-next/captain/assistant/BulkSelectBar.vue';
-import AddNewScenariosDialog from 'dashboard/components-next/captain/assistant/AddNewScenariosDialog.vue';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -29,6 +29,7 @@ const isFetching = computed(() => uiFlags.value.fetchingList);
 const scenarios = useMapGetter('captainScenarios/getRecords');
 
 const searchQuery = ref('');
+const isCreatingScenario = ref(false);
 
 const LINK_INSTRUCTION_CLASS =
   '[&_a[href^="tool://"]]:text-n-iris-11 [&_a[href^="field://"]]:text-n-teal-11 [&_a:not([href^="tool://"]):not([href^="field://"])]:text-n-slate-12 [&_a]:pointer-events-none [&_a]:cursor-default';
@@ -201,7 +202,7 @@ const addScenario = async scenario => {
       existing.description === scenario.description
   );
   if (alreadyExists) {
-    return;
+    return false;
   }
 
   try {
@@ -217,7 +218,27 @@ const addScenario = async scenario => {
       t('CAPTAIN.ASSISTANTS.SCENARIOS.API.ADD.ERROR')
     );
     useAlert(errorMessage);
+    return false;
   }
+
+  return true;
+};
+
+const openScenarioComposer = () => {
+  isCreatingScenario.value = true;
+};
+
+const closeScenarioComposer = () => {
+  isCreatingScenario.value = false;
+};
+
+const createScenario = async (scenario, complete) => {
+  const created = await addScenario(scenario);
+  if (created) {
+    closeScenarioComposer();
+  }
+
+  complete?.(created);
 };
 
 const addAllExampleScenarios = async () => {
@@ -344,9 +365,12 @@ onMounted(() => {
             @bulk-delete="bulkDeleteScenarios"
           >
             <template #default-actions>
-              <AddNewScenariosDialog
-                :assistant-id="assistantId"
-                @add="addScenario"
+              <Button
+                v-if="!isCreatingScenario"
+                sm
+                slate
+                :label="$t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.CREATE')"
+                @click="openScenarioComposer"
               />
             </template>
           </BulkSelectBar>
@@ -362,8 +386,14 @@ onMounted(() => {
             />
           </div>
         </div>
+        <InlineScenarioComposer
+          v-if="isCreatingScenario"
+          :assistant-id="assistantId"
+          @add="createScenario"
+          @cancel="closeScenarioComposer"
+        />
         <div
-          v-if="scenarios.length === 0"
+          v-if="scenarios.length === 0 && !isCreatingScenario"
           class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-4 py-5 text-sm text-n-slate-11"
         >
           <span>
@@ -378,10 +408,7 @@ onMounted(() => {
             {{ t('CAPTAIN.ASSISTANTS.SCENARIOS.SEARCH_EMPTY_MESSAGE') }}
           </span>
         </div>
-        <div
-          v-else
-          class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
-        >
+        <div v-else data-testid="scenarios-list" class="flex flex-col gap-3">
           <ScenariosCard
             v-for="scenario in filteredScenarios"
             :id="scenario.id"

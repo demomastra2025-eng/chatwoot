@@ -29,12 +29,12 @@ const updateValue = value => {
     v-bind="$attrs"
     :model-value="modelValue"
     :disabled="props.disabled"
-    class="inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent bg-n-slate-6 p-0.5 shadow-sm transition-colors duration-200 ease-out outline-none focus-visible:ring-1 focus-visible:ring-n-brand focus-visible:ring-offset-2 focus-visible:ring-offset-n-slate-2 data-[state=checked]:bg-n-brand-solid disabled:cursor-not-allowed disabled:opacity-60"
+    class="inline-flex h-[16px] w-8 shrink-0 items-center rounded-full border border-transparent bg-n-slate-6 p-0.5 shadow-sm transition-colors duration-200 ease-out outline-none focus-visible:ring-1 focus-visible:ring-n-brand focus-visible:ring-offset-2 focus-visible:ring-offset-n-slate-2 data-[state=checked]:bg-n-brand-solid disabled:cursor-not-allowed disabled:opacity-60"
     @update:model-value="updateValue"
   >
     <span class="sr-only">{{ t('SWITCH.TOGGLE') }}</span>
     <SwitchThumb
-      class="block size-4 rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
+      class="block size-[12px] rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-[12px] data-[state=unchecked]:translate-x-0"
     />
   </SwitchRoot>
 </template>

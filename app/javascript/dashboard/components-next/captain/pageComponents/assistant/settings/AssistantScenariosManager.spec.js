@@ -141,4 +141,24 @@ describe('AssistantScenariosManager', () => {
     );
     expect(wrapper.text()).not.toContain('@add_private_note');
   });
+
+  it('renders scenarios in a single-column list layout', () => {
+    scenariosRef.value = [
+      {
+        id: 1,
+        title: 'Scenario',
+        description: 'Existing scenario',
+        instruction: 'Do something',
+        tools: [],
+        enabled: true,
+      },
+    ];
+
+    const wrapper = buildWrapper({ assistantId: 42 });
+    const list = wrapper.get('[data-testid="scenarios-list"]');
+
+    expect(list.classes()).toContain('flex');
+    expect(list.classes()).toContain('flex-col');
+    expect(list.classes()).not.toContain('md:grid-cols-2');
+  });
 });

@@ -340,23 +340,23 @@ const openChannelConversation = async channelIdentity => {
             <template #badge>
               <div
                 v-if="hasPrimaryAvatarSourceBadge"
-                class="absolute bottom-0 right-0 z-20 flex size-6 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
+                class="absolute bottom-0 right-0 z-20 flex size-4 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
               >
                 <span
-                  class="size-3.5 shrink-0"
+                  class="size-2.5 shrink-0"
                   :class="primaryAvatarSourceIconClass"
                 />
               </div>
             </template>
           </Avatar>
           <div class="min-w-0 flex-1">
-            <div class="relative inline-block max-w-full pr-7">
+            <div class="relative inline-block max-w-full pr-6">
               <h3 class="mb-0 text-base font-medium text-n-slate-12">
                 {{ contactData?.name }}
               </h3>
               <span
                 v-if="hasPrimaryNameSourceBadge"
-                class="absolute right-0 top-0 z-10 inline-flex size-5 items-center justify-center rounded-full border border-n-slate-3 bg-n-solid-1 text-n-slate-11 shadow-sm"
+                class="absolute right-0 top-0 z-10 inline-flex size-5 items-center justify-center bg-n-solid-1 text-n-slate-11"
               >
                 <span
                   class="size-3 shrink-0"

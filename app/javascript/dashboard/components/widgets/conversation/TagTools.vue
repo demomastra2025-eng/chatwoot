@@ -24,7 +24,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['selectTool']);
+const emit = defineEmits(['close', 'selectTool']);
 
 const { t, te } = useI18n();
 
@@ -98,7 +98,9 @@ watch(filteredTools, newListOfTools => {
   <ToolsDropdown
     v-model:search-value="searchQuery"
     :items="filteredTools"
+    overlay
     :selected-index="selectedIndex"
+    @close="emit('close')"
     @select="onSelect"
   />
 </template>

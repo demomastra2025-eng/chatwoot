@@ -173,9 +173,7 @@ watch(
               v-if="assistantPreview.used_tool_ids?.length"
               class="flex flex-col gap-2"
             >
-              <span
-                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-              >
+              <span class="text-sm font-medium tracking-wide text-n-slate-10">
                 {{
                   t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.USED_TOOLS')
                 }}
@@ -197,9 +195,7 @@ watch(
               v-if="assistantPreview.used_field_ids?.length"
               class="flex flex-col gap-2"
             >
-              <span
-                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-              >
+              <span class="text-sm font-medium tracking-wide text-n-slate-10">
                 {{
                   t(
                     'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.USED_ATTRIBUTES'
@@ -221,9 +217,7 @@ watch(
           </div>
 
           <div class="flex flex-col gap-2">
-            <span
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
+            <span class="text-sm font-medium tracking-wide text-n-slate-10">
               {{
                 t(
                   'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.COMPILED_PROMPT'

@@ -191,7 +191,7 @@ const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
 <template>
   <CardLayout
     selectable
-    class="relative h-full [&>div]:!py-4"
+    class="relative [&>div]:!py-4"
     :class="{
       '[&>div]:ltr:!pr-4 [&>div]:rtl:!pl-4': !isEditing,
       '[&>div]:ltr:!pr-10 [&>div]:rtl:!pl-10': isEditing,

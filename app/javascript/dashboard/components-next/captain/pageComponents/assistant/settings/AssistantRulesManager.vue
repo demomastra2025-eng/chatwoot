@@ -7,8 +7,8 @@ import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import AddNewRulesDialog from 'dashboard/components-next/captain/assistant/AddNewRulesDialog.vue';
 import BulkSelectBar from 'dashboard/components-next/captain/assistant/BulkSelectBar.vue';
+import InlineRuleComposer from 'dashboard/components-next/captain/assistant/InlineRuleComposer.vue';
 import RuleCard from 'dashboard/components-next/captain/assistant/RuleCard.vue';
 import SuggestedRules from 'dashboard/components-next/captain/assistant/SuggestedRules.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -32,6 +32,11 @@ const props = defineProps({
 const RULE_TYPE_SYSTEM = 'system';
 const RULE_TYPE_RESPONSE_GUIDELINE = 'response_guideline';
 const RULE_TYPE_GUARDRAIL = 'guardrail';
+const RULE_TYPES = [
+  RULE_TYPE_SYSTEM,
+  RULE_TYPE_RESPONSE_GUIDELINE,
+  RULE_TYPE_GUARDRAIL,
+];
 
 const { t } = useI18n();
 const store = useStore();
@@ -40,6 +45,7 @@ const { uiSettings, updateUISettings } = useUISettings();
 const searchQuery = ref('');
 const bulkSelectedIds = ref(new Set());
 const orderedRules = ref([]);
+const isCreatingRule = ref(false);
 
 const rules = computed(() => props.assistant?.config?.rules || []);
 const CANONICAL_GROUPS = {
@@ -48,10 +54,46 @@ const CANONICAL_GROUPS = {
   restrictions: 'Restrictions',
 };
 
+const defaultGroups = computed(() => ({
+  [RULE_TYPE_SYSTEM]: CANONICAL_GROUPS.strict,
+  [RULE_TYPE_RESPONSE_GUIDELINE]: CANONICAL_GROUPS.conversation,
+  [RULE_TYPE_GUARDRAIL]: CANONICAL_GROUPS.restrictions,
+}));
+
+const normalizeRuleType = rule => rule?.type?.toString().trim() || '';
+const normalizedRuleContent = rule => rule?.content?.toString() || '';
+const trimmedRuleContent = rule => normalizedRuleContent(rule).trim();
+
+const isMalformedRule = rule => {
+  const type = normalizeRuleType(rule);
+  return !RULE_TYPES.includes(type) || !trimmedRuleContent(rule);
+};
+
+const normalizeRuleForList = (rule, index) => {
+  const type = normalizeRuleType(rule);
+
+  return {
+    ...rule,
+    id: rule?.id || `assistant_rule_malformed_${index}`,
+    type,
+    group: rule?.group?.toString().trim() || defaultGroups.value[type] || '',
+    content: normalizedRuleContent(rule),
+    enabled: rule?.enabled !== false,
+    editable: rule?.editable !== false && type !== RULE_TYPE_SYSTEM,
+    isMalformed: isMalformedRule(rule),
+  };
+};
+
+const syncOrderedRules = list => {
+  orderedRules.value = Array(list).map((rule, index) =>
+    normalizeRuleForList(rule, index)
+  );
+};
+
 watch(
   rules,
   value => {
-    orderedRules.value = Array(value).map(rule => ({ ...rule }));
+    syncOrderedRules(value);
   },
   { immediate: true, deep: true }
 );
@@ -60,15 +102,10 @@ watch(
   () => props.assistantId,
   () => {
     bulkSelectedIds.value = new Set();
+    isCreatingRule.value = false;
     searchQuery.value = '';
   }
 );
-
-const defaultGroups = computed(() => ({
-  [RULE_TYPE_SYSTEM]: CANONICAL_GROUPS.strict,
-  [RULE_TYPE_RESPONSE_GUIDELINE]: CANONICAL_GROUPS.conversation,
-  [RULE_TYPE_GUARDRAIL]: CANONICAL_GROUPS.restrictions,
-}));
 
 const typeOptions = computed(() => [
   {
@@ -147,7 +184,7 @@ const shouldShowSuggestedRules = computed(
 );
 
 const searchableRules = computed(() =>
-  rules.value.map(rule => ({
+  orderedRules.value.map(rule => ({
     ...rule,
     searchableType: typeBadgeMap.value[rule.type]?.label || '',
   }))
@@ -165,8 +202,20 @@ const filteredRules = computed(() => {
 });
 
 const selectableRules = computed(() =>
-  rules.value.filter(rule => rule.editable !== false)
+  orderedRules.value.filter(rule => rule.editable !== false)
 );
+
+const hasCustomRules = computed(() => {
+  return orderedRules.value.some(
+    rule => rule.editable !== false && rule.type !== RULE_TYPE_SYSTEM
+  );
+});
+
+const shouldShowCustomRulesEmptyState = computed(() => {
+  return (
+    !searchQuery.value.trim() && !hasCustomRules.value && !isCreatingRule.value
+  );
+});
 
 const buildSelectedCountLabel = computed(() => {
   const count = selectableRules.value.length || 0;
@@ -188,15 +237,24 @@ const createRuleId = () =>
   `assistant_rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 const serializeRules = list =>
-  list.map(rule => ({
-    id: rule.id,
-    type: rule.type,
-    group: rule.group,
-    content: rule.content,
-    enabled: rule.enabled !== false,
-  }));
+  list
+    .filter(rule => !isMalformedRule(rule))
+    .map(rule => ({
+      id: rule.id,
+      type: normalizeRuleType(rule),
+      group:
+        rule.group?.toString().trim() ||
+        defaultGroups.value[normalizeRuleType(rule)] ||
+        '',
+      content: trimmedRuleContent(rule),
+      enabled: rule.enabled !== false,
+    }));
 
 const persistRules = async nextRules => {
+  if (nextRules.some(isMalformedRule)) {
+    throw new Error(t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULES_ERROR'));
+  }
+
   await store.dispatch('captainAssistants/update', {
     id: props.assistantId,
     config: {
@@ -204,6 +262,8 @@ const persistRules = async nextRules => {
       rules: serializeRules(nextRules),
     },
   });
+  syncOrderedRules(nextRules);
+  await store.dispatch('captainAssistants/show', props.assistantId);
 };
 
 const saveRules = async nextRules => {
@@ -224,11 +284,20 @@ const normalizeIncomingRule = rule => ({
   editable: rule.editable !== false && rule.type !== RULE_TYPE_SYSTEM,
 });
 
+const openRuleComposer = () => {
+  isCreatingRule.value = true;
+};
+
+const closeRuleComposer = () => {
+  isCreatingRule.value = false;
+};
+
 const addRule = async rule => {
-  const nextRules = [...rules.value, normalizeIncomingRule(rule)];
+  const nextRules = [...orderedRules.value, normalizeIncomingRule(rule)];
 
   try {
     await persistRules(nextRules);
+    closeRuleComposer();
     useAlert(t('CAPTAIN.ASSISTANTS.RULES.API.ADD.SUCCESS'));
   } catch (error) {
     useAlert(error?.message || t('CAPTAIN.ASSISTANTS.RULES.API.ADD.ERROR'));
@@ -236,7 +305,7 @@ const addRule = async rule => {
 };
 
 const updateRule = async updatedRule => {
-  const nextRules = rules.value.map(rule =>
+  const nextRules = orderedRules.value.map(rule =>
     rule.id === updatedRule.id ? normalizeIncomingRule(updatedRule) : rule
   );
 
@@ -244,7 +313,7 @@ const updateRule = async updatedRule => {
 };
 
 const deleteRule = async ruleId => {
-  const nextRules = rules.value.filter(rule => rule.id !== ruleId);
+  const nextRules = orderedRules.value.filter(rule => rule.id !== ruleId);
 
   try {
     await persistRules(nextRules);
@@ -258,7 +327,9 @@ const deleteRule = async ruleId => {
 
 const bulkDeleteRules = async () => {
   const selectedIds = new Set(bulkSelectedIds.value);
-  const nextRules = rules.value.filter(rule => !selectedIds.has(rule.id));
+  const nextRules = orderedRules.value.filter(
+    rule => !selectedIds.has(rule.id)
+  );
 
   try {
     await persistRules(nextRules);
@@ -270,7 +341,7 @@ const bulkDeleteRules = async () => {
 };
 
 const addSuggestedRule = async item => {
-  const exists = rules.value.some(
+  const exists = orderedRules.value.some(
     rule =>
       rule.type === item.type &&
       rule.group === item.group &&
@@ -283,7 +354,9 @@ const addSuggestedRule = async item => {
 
 const addAllSuggestedRules = async () => {
   const existingKeys = new Set(
-    rules.value.map(rule => `${rule.type}:${rule.group}:${rule.content}`)
+    orderedRules.value
+      .filter(rule => !isMalformedRule(rule))
+      .map(rule => `${rule.type}:${rule.group}:${trimmedRuleContent(rule)}`)
   );
   const additions = suggestedItems.value
     .filter(
@@ -294,7 +367,7 @@ const addAllSuggestedRules = async () => {
   if (!additions.length) return;
 
   try {
-    await persistRules([...rules.value, ...additions]);
+    await persistRules([...orderedRules.value, ...additions]);
     useAlert(t('CAPTAIN.ASSISTANTS.RULES.API.ADD.SUCCESS'));
   } catch (error) {
     useAlert(error?.message || t('CAPTAIN.ASSISTANTS.RULES.API.ADD.ERROR'));
@@ -376,16 +449,26 @@ const onDragEnd = async () => {
       @bulk-delete="bulkDeleteRules"
     >
       <template #default-actions>
-        <div class="flex w-full items-center justify-between gap-3">
-          <Input
-            v-model="searchQuery"
-            :placeholder="
-              $t('CAPTAIN.ASSISTANTS.RULES.LIST.SEARCH_PLACEHOLDER')
-            "
-            class="min-w-[18rem]"
-          />
-          <AddNewRulesDialog
-            :button-label="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.CREATE')"
+        <div class="flex w-full flex-col gap-3">
+          <div class="flex w-full items-center justify-between gap-3">
+            <Input
+              v-model="searchQuery"
+              :placeholder="
+                $t('CAPTAIN.ASSISTANTS.RULES.LIST.SEARCH_PLACEHOLDER')
+              "
+              class="min-w-[18rem]"
+            />
+            <Button
+              v-if="!isCreatingRule"
+              sm
+              slate
+              :label="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.CREATE')"
+              @click="openRuleComposer"
+            />
+          </div>
+
+          <InlineRuleComposer
+            v-if="isCreatingRule"
             :confirm-label="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.CONFIRM')"
             :cancel-label="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.CANCEL')"
             :type-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.TYPE')"
@@ -403,10 +486,18 @@ const onDragEnd = async () => {
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"
             @add="addRule"
+            @cancel="closeRuleComposer"
           />
         </div>
       </template>
     </BulkSelectBar>
+
+    <p
+      v-if="shouldShowCustomRulesEmptyState"
+      class="rounded-xl border border-dashed border-n-strong px-4 py-6 text-sm text-n-slate-11"
+    >
+      {{ $t('CAPTAIN.ASSISTANTS.RULES.CUSTOM_EMPTY_MESSAGE') }}
+    </p>
 
     <template v-if="!filteredRules.length">
       <p
@@ -435,6 +526,10 @@ const onDragEnd = async () => {
           :content="rule.content"
           :group="rule.group"
           :type="rule.type"
+          :is-malformed="rule.isMalformed"
+          :malformed-message="
+            $t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULE_HINT')
+          "
           :enabled="rule.enabled !== false"
           :editable="rule.editable !== false"
           :selectable="rule.editable !== false"
@@ -479,6 +574,10 @@ const onDragEnd = async () => {
             :content="element.content"
             :group="element.group"
             :type="element.type"
+            :is-malformed="element.isMalformed"
+            :malformed-message="
+              $t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULE_HINT')
+            "
             :enabled="element.enabled !== false"
             :editable="element.editable !== false"
             :selectable="element.editable !== false"

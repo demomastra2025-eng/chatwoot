@@ -20,6 +20,7 @@ import ComposeConversation from 'dashboard/components-next/NewConversation/Compo
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
+import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 
 import {
   isAConversationRoute,
@@ -323,14 +324,17 @@ export default {
         return;
       }
 
-      this.$router.push({
-        name: 'inbox_view_conversation',
-        params: {
-          accountId: this.$route.params.accountId,
-          type: 'conversation',
-          id: targetConversation.id,
-        },
-      });
+      this.$router.push(
+        frontendURL(
+          conversationUrl({
+            accountId: this.$route.params.accountId,
+            activeInbox: Number(
+              targetConversation.inboxId || targetConversation.inbox_id
+            ),
+            id: targetConversation.id,
+          })
+        )
+      );
     },
   },
 };

@@ -407,21 +407,6 @@ const sourceIconClass = source =>
                     }}
                   </span>
                 </span>
-
-                <div class="flex flex-wrap justify-end gap-1">
-                  <span
-                    v-if="source.nameSelected"
-                    class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
-                  >
-                    {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.NAME_IN_USE') }}
-                  </span>
-                  <span
-                    v-if="source.avatarSelected"
-                    class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
-                  >
-                    {{ $t('CONTACT_PANEL.SOURCE_IDENTITIES.PHOTO_IN_USE') }}
-                  </span>
-                </div>
               </div>
 
               <div class="mt-2 flex items-center gap-2">

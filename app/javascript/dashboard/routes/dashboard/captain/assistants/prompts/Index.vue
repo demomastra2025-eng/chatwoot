@@ -32,11 +32,11 @@ const isExternalAgent = computed(() => !isInternalAssistant.value);
 const promptTabs = computed(() => [
   {
     key: 'rules',
-    label: t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_TABS.RULES'),
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
   },
   {
     key: 'scenarios',
-    label: t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_TABS.SCENARIOS'),
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.SCENARIOS'),
   },
 ]);
 const activePromptTab = ref(promptTabs.value[0]?.key || 'rules');

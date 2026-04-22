@@ -89,6 +89,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       create(:installation_config, name: 'CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', value: 'Never expose internal-only notes to end customers.')
     end
 
+    # rubocop:disable RSpec/MultipleExpectations
     it 'returns compiled assistant, copilot, and scenario prompts for settings inspection' do
       scenario
 
@@ -110,6 +111,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       )
     end
+    # rubocop:enable RSpec/MultipleExpectations
   end
 
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants/context_fields' do
@@ -620,6 +622,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       end
 
+      # rubocop:disable RSpec/ExampleLength
       it 'updates structured rules config and syncs legacy rule lists' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: {
@@ -685,6 +688,75 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           )
         )
       end
+      # rubocop:enable RSpec/ExampleLength
+
+      # rubocop:disable RSpec/ExampleLength
+      it 'keeps structured rules when updating them alongside the full config payload' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    rules: [
+                      {
+                        id: 'assistant_rule_inline',
+                        type: 'response_guideline',
+                        group: 'Conversation flow',
+                        content: 'Reply with the short direct answer first.',
+                        enabled: true
+                      }
+                    ],
+                    feature_faq: true,
+                    feature_memory: true,
+                    feature_citation: true,
+                    temperature: 1,
+                    tool_access: {
+                      agent: {
+                        enabled: true,
+                        tool_ids: %w[faq_lookup handoff add_contact_note add_private_note]
+                      }
+                    },
+                    context_access: {},
+                    handoff_message: '',
+                    resolution_message: '',
+                    history_message_limit: 0,
+                    auto_reply_on_last_incoming: false,
+                    message_collapse_window_seconds: 0
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.response_guidelines).to include(
+          'Reply with the short direct answer first.'
+        )
+        expect(assistant.config['rules']).to include(
+          hash_including(
+            'id' => 'assistant_rule_inline',
+            'type' => 'response_guideline',
+            'group' => 'Conversation flow',
+            'content' => 'Reply with the short direct answer first.',
+            'enabled' => true
+          )
+        )
+        expect(assistant.config['tool_access']).to eq(
+          'agent' => {
+            'enabled' => true,
+            'tool_ids' => %w[faq_lookup handoff add_contact_note add_private_note]
+          }
+        )
+        expect(json_response.dig(:config, :rules)).to include(
+          hash_including(
+            id: 'assistant_rule_inline',
+            type: 'response_guideline',
+            group: 'Conversation flow',
+            content: 'Reply with the short direct answer first.',
+            enabled: true
+          )
+        )
+      end
+      # rubocop:enable RSpec/ExampleLength
     end
   end
 

@@ -481,6 +481,11 @@
       "FORM_DESCRIPTION": "Set the name, type, and instruction for the AI agent.",
       "CREATE": {
         "TITLE": "Create an AI agent",
+        "FORM_DESCRIPTION": "Set the name and type for the AI agent. You can finish the rest in the profile right after creation.",
+        "DEFAULT_INSTRUCTION": {
+          "EXTERNAL_AGENT": "Support customers only within your configured business scope and available context. Refine these instructions before going live.",
+          "INTERNAL_ASSISTANT": "Help teammates inside the workspace using the available context and tools. Refine these instructions before broader internal use."
+        },
         "SUCCESS_MESSAGE": "The AI agent has been successfully created",
         "ERROR_MESSAGE": "There was an error creating the AI agent, please try again."
       },
@@ -1215,6 +1220,9 @@
         "LIST": {
           "SEARCH_PLACEHOLDER": "Search..."
         },
+        "CUSTOM_EMPTY_MESSAGE": "No custom rules yet. Create one or start from the examples below.",
+        "MALFORMED_RULE_HINT": "This rule is incomplete. Edit or delete it before saving other changes.",
+        "MALFORMED_RULES_ERROR": "There is an incomplete rule in the list. Edit or delete it before saving other changes.",
         "EMPTY_MESSAGE": "No rules yet. Add examples or create your own.",
         "SEARCH_EMPTY_MESSAGE": "No rules found for this search.",
         "API": {

@@ -769,6 +769,11 @@ const closeFieldsMenu = () => {
   fieldSearchKey.value = '';
 };
 
+const closeToolsMenu = () => {
+  showToolsMenu.value = false;
+  toolSearchKey.value = '';
+};
+
 function handleLineBreakWhenCmdAndEnterToSendEnabled(event) {
   if (
     hasPressedCommandAndEnter(event) &&
@@ -951,6 +956,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :assistant-id="captainContextAssistantId"
       :tool-access="captainToolAccess"
       :tool-scope="captainToolScope"
+      @close="closeToolsMenu"
       @select-tool="content => insertSpecialContent('tool', content)"
     />
     <TagFields

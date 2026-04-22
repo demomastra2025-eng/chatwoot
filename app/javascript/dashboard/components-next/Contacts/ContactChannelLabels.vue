@@ -86,7 +86,7 @@ const handleChannelIdentityClick = async channelLabel => {
 
 <template>
   <div v-show="channelLabels.length" class="flex flex-col w-full gap-2">
-    <span v-if="title" class="text-xs font-medium uppercase text-n-slate-10">
+    <span v-if="title" class="text-sm font-medium text-n-slate-10">
       {{ title }}
     </span>
     <div class="flex flex-wrap gap-2">
@@ -94,7 +94,7 @@ const handleChannelIdentityClick = async channelLabel => {
         v-for="channelLabel in channelLabels"
         :key="channelLabel.id"
         type="button"
-        class="inline-flex max-w-full items-center gap-2 rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-12 shadow-sm transition-colors hover:border-n-slate-4 hover:bg-n-alpha-1"
+        class="inline-flex max-w-full items-center gap-2 rounded-full border border-n-weak bg-n-slate-9/10 px-2.5 py-1 text-xs text-n-slate-12 shadow-sm transition-colors hover:border-n-slate-4 hover:bg-n-alpha-1"
         :class="channelLabel.willCreateNewConversation ? 'border-dashed' : ''"
         :title="
           channelLabel.inboxName
