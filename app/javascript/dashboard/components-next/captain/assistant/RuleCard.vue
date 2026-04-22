@@ -44,6 +44,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  deletable: {
+    type: Boolean,
+    default: true,
+  },
+  ruleSlot: {
+    type: String,
+    default: '',
+  },
   selectable: {
     type: Boolean,
     default: false,
@@ -117,6 +125,8 @@ const localRule = ref({
   type: props.type,
   enabled: props.enabled,
   editable: props.editable,
+  deletable: props.deletable,
+  slot: props.ruleSlot,
 });
 
 watch(
@@ -127,9 +137,20 @@ watch(
     props.type,
     props.enabled,
     props.editable,
+    props.deletable,
+    props.ruleSlot,
   ],
-  ([id, content, group, type, enabled, editable]) => {
-    localRule.value = { id, content, group, type, enabled, editable };
+  ([id, content, group, type, enabled, editable, deletable, slot]) => {
+    localRule.value = {
+      id,
+      content,
+      group,
+      type,
+      enabled,
+      editable,
+      deletable,
+      slot,
+    };
   }
 );
 
@@ -143,6 +164,8 @@ const startEdit = () => {
     type: props.type,
     enabled: props.enabled,
     editable: props.editable,
+    deletable: props.deletable,
+    slot: props.ruleSlot,
   };
   isEditing.value = true;
 };
@@ -190,6 +213,8 @@ const onToggleEnabled = enabled => {
     type: props.type,
     enabled,
     editable: props.editable,
+    deletable: props.deletable,
+    slot: props.ruleSlot,
   });
 };
 
@@ -223,7 +248,7 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
 
     <div class="flex w-full gap-4">
       <div
-        v-if="isStructuredMode"
+        v-if="isStructuredMode && deletable"
         class="captain-rule-handle mt-0.5 flex items-start text-n-slate-10 cursor-grab active:cursor-grabbing"
       >
         <Icon icon="i-lucide-grip-vertical" class="size-4" />
@@ -281,6 +306,7 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
               </template>
               <span class="h-4 w-px bg-n-weak" />
               <Button
+                v-if="deletable"
                 icon="i-lucide-trash"
                 slate
                 xs

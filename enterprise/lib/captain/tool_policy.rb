@@ -19,8 +19,9 @@ class Captain::ToolPolicy
   end
 
   def runtime_allowed?
-    scope_allowed? &&
-      feature_requirements_satisfied? &&
+    return false unless scope_allowed?
+
+    feature_requirements_satisfied? &&
       permission_requirements_satisfied? &&
       agent_risk_requirements_satisfied? &&
       confirmation_requirements_satisfied?

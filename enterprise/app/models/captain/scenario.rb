@@ -53,7 +53,7 @@ class Captain::Scenario < ApplicationRecord
   scope :enabled, -> { where(enabled: true) }
 
   delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, :system_rule_groups,
-           :response_guideline_groups, :guardrail_groups, :system_rule_contents, to: :assistant
+           :response_guideline_groups, :guardrail_groups, to: :assistant
 
   before_save :resolve_tool_references
 
@@ -63,14 +63,35 @@ class Captain::Scenario < ApplicationRecord
 
   def prompt_context
     referenced_field_ids = referenced_field_ids_for_prompt
-    available_runtime_tools = runtime_tools
+    available_prompt_tools = prompt_runtime_tools
 
     {
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
-      runtime_tool_ids: available_runtime_tools.pluck(:id),
-      tools: available_runtime_tools,
+      scenario_system_context_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_CONTEXT
+      ),
+      scenario_role_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_ROLE
+      ),
+      scenario_orchestrator_return_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_RETURN
+      ),
+      scenario_peer_handoffs_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_PEER_HANDOFFS
+      ),
+      scenario_human_handoff_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_HUMAN_HANDOFF
+      ),
+      current_context_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT
+      ),
+      reference_glossary_rule: assistant.enabled_system_template_rule_content(
+        Captain::Assistant::SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY
+      ),
+      runtime_tool_ids: available_prompt_tools.pluck(:id),
+      tools: available_prompt_tools,
       assistant_handoff_tool_name: assistant.handoff_tool_name,
       handoff_scenarios: sibling_handoff_scenarios,
       system_rule_groups: system_rule_groups,
@@ -79,12 +100,34 @@ class Captain::Scenario < ApplicationRecord
       response_guideline_groups: response_guideline_groups,
       guardrail_groups: guardrail_groups,
       context_glossary: assistant.context_glossary_groups(referenced_field_ids),
-      tool_glossary: assistant.tool_glossary_groups(available_runtime_tools)
+      tool_glossary: assistant.tool_glossary_groups(available_prompt_tools)
     }
   end
 
   def runtime_tools
-    resolved_tools
+    resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids).select do |tool_definition|
+      Captain::ToolPolicy.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+    end
+  end
+
+  def prompt_runtime_tools
+    explicit_tool_ids = prompt_referenced_tool_ids
+
+    resolved_tools(referenced_tool_ids: explicit_tool_ids).select do |tool_definition|
+      assistant.prompt_visible_tool?(
+        tool_definition,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT,
+        explicit_tool_ids: explicit_tool_ids
+      )
+    end
+  end
+
+  def prompt_runtime_tool_ids
+    prompt_runtime_tools.pluck(:id)
   end
 
   def runtime_tool_ids
@@ -147,23 +190,15 @@ class Captain::Scenario < ApplicationRecord
     render_tool_references(instruction)
   end
 
-  def resolved_tools
+  def resolved_tools(referenced_tool_ids: prompt_referenced_tool_ids)
     available_tools = assistant.available_agent_tools
-    effective_tool_ids = assistant.scenario_agent_tool_ids(referenced_tool_ids: tools)
+    effective_tool_ids = assistant.scenario_agent_tool_ids(referenced_tool_ids: referenced_tool_ids)
     return [] if effective_tool_ids.empty?
 
-    resolved_tools = effective_tool_ids.filter_map do |tool_id|
+    effective_tool_ids.filter_map do |tool_id|
       next unless effective_tool_ids.include?(tool_id.to_s)
 
       available_tools.find { |tool| tool[:id] == tool_id }
-    end
-
-    resolved_tools.select do |tool_definition|
-      Captain::ToolPolicy.runtime_allowed?(
-        tool_definition,
-        assistant: assistant,
-        scope_name: Captain::ToolAccess::SCOPE_AGENT
-      )
     end
   end
 
@@ -237,9 +272,7 @@ class Captain::Scenario < ApplicationRecord
   end
 
   def referenced_field_ids_for_prompt
-    Captain::ContextFields.extract_field_ids_from_text(
-      [instruction, system_rule_contents, response_guidelines, guardrails].flatten.compact.join("\n")
-    )
+    Captain::ContextFields.extract_field_ids_from_text(prompt_glossary_texts.flatten.compact.join("\n"))
   end
 
   def sibling_handoff_scenarios
@@ -252,5 +285,22 @@ class Captain::Scenario < ApplicationRecord
         description: scenario.description
       }
     end
+  end
+
+  def prompt_glossary_texts
+    [
+      instruction,
+      assistant.system_rule_contents_for_prompt(template_name: :scenario),
+      response_guidelines,
+      guardrails
+    ]
+  end
+
+  def prompt_referenced_tool_ids
+    prompt_glossary_texts
+      .flatten
+      .compact
+      .flat_map { |text| extract_tool_ids_from_text(text) }
+      .uniq
   end
 end

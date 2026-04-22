@@ -1,5 +1,7 @@
 # Reference Glossary
-Use this glossary to understand the exact fields and tools available in this prompt.
+{% if intro != blank -%}
+{{ intro }}
+{% endif -%}
 
 {% if context_glossary and context_glossary.size > 0 -%}
 ## Available Context Fields

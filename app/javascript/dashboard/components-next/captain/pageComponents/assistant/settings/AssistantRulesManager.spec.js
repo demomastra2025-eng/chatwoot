@@ -90,7 +90,8 @@ const systemRules = [
     group: 'Strict rules',
     content: 'Stay within your configured scope and instructions.',
     enabled: true,
-    editable: false,
+    editable: true,
+    deletable: false,
   },
 ];
 
@@ -205,6 +206,56 @@ describe('AssistantRulesManager', () => {
             id: 'stay_within_scope',
             type: 'system',
             content: 'Stay within your configured scope and instructions.',
+            editable: true,
+            deletable: false,
+          }),
+        ],
+      }),
+    });
+  });
+
+  it('preserves template slots when saving template-backed system rules', async () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [
+            {
+              id: 'assistant_system_context',
+              type: 'system',
+              group: 'Assistant structure',
+              content: 'Use the default assistant structure.',
+              slot: 'assistant_system_context',
+              enabled: true,
+              editable: true,
+              deletable: false,
+            },
+          ],
+        },
+      },
+    });
+
+    await wrapper.vm.saveRules([
+      {
+        id: 'assistant_system_context',
+        type: 'system',
+        group: 'Assistant structure',
+        content: 'Use the default assistant structure.',
+        slot: 'assistant_system_context',
+        enabled: true,
+        editable: true,
+        deletable: false,
+      },
+    ]);
+    await flushPromises();
+
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+      id: 42,
+      config: expect.objectContaining({
+        rules: [
+          expect.objectContaining({
+            id: 'assistant_system_context',
+            slot: 'assistant_system_context',
           }),
         ],
       }),

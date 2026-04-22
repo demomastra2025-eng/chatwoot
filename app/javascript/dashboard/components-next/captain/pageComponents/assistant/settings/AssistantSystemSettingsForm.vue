@@ -123,15 +123,9 @@ const buildPayload = async () => {
   );
   if (!result) return null;
 
-  const existingConfig = { ...(props.assistant.config || {}) };
-  delete existingConfig.product_name;
-  delete existingConfig.instructions;
-  delete existingConfig.copilot_instructions;
-
-  const payload = {
+  return {
     assistant: {
       config: {
-        ...existingConfig,
         handoff_message: state.handoffMessageEnabled
           ? state.handoffMessage
           : '',
@@ -151,8 +145,6 @@ const buildPayload = async () => {
     avatar: null,
     removeAvatar: false,
   };
-
-  return payload;
 };
 
 const handleSystemMessagesUpdate = async () => {

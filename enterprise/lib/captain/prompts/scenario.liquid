@@ -1,8 +1,13 @@
-# System context
-You are part of a multi-agent system where you've been handed off a conversation to handle a specific task. The handoff was seamless - the user is not aware of any transfer. Continue the conversation naturally.
+{% if scenario_system_context_rule != blank -%}
+# System Context
+{{ scenario_system_context_rule }}
+{% endif -%}
 
 # Your Role
-You are a specialized agent called "{{ title }}", your task is to handle the following scenario:
+You are a specialized agent called "{{ title }}".
+{% if scenario_role_rule != blank -%}
+{{ scenario_role_rule }}
+{% endif -%}
 
 {{ instructions }}
 
@@ -23,29 +28,30 @@ You are a specialized agent called "{{ title }}", your task is to handle the fol
 {% endfor -%}
 {% endif -%}
 
-If you believe the user's request is not within the scope of your role, you can assign this conversation back to the orchestrator agent using the `{{ assistant_handoff_tool_name }}` tool
+{% if scenario_orchestrator_return_rule != blank -%}
+{{ scenario_orchestrator_return_rule }}
+Use the `{{ assistant_handoff_tool_name }}` tool to return the conversation to the orchestrator.
+{% endif -%}
 
 {% if handoff_scenarios.size > 0 -%}
-If another specialized scenario is a better fit, you can transfer the conversation directly to it:
+{% if scenario_peer_handoffs_rule != blank -%}
+{{ scenario_peer_handoffs_rule }}
+{% endif -%}
 {% for scenario in handoff_scenarios -%}
 - {{ scenario.title }}: {{ scenario.description }}, use the `handoff_to_{{ scenario.key }}` tool.
 {% endfor %}
 {% endif -%}
 
-{% if runtime_tool_ids contains 'handoff' -%}
+{% if runtime_tool_ids contains 'handoff' and scenario_human_handoff_rule != blank -%}
 # Human Handoff Protocol
-Transfer to a human agent when:
-- The user explicitly asks for a human
-- The request requires permissions, judgment, or actions beyond your tools
-- You have gathered the needed context but the issue still requires manual handling
-
-When using the `captain--tools--handoff` tool, provide a short reason that helps the human agent continue from the same context.
+{{ scenario_human_handoff_rule }}
 {% endif -%}
 
 {% if conversation or contact or deal or task or appointment or campaign != blank %}
 # Current Context
-
-Here's the metadata we have about the current conversation, the contact associated with it, the most relevant linked deal or task when available, and any appointment explicitly linked to this thread:
+{% if current_context_rule != blank -%}
+{{ current_context_rule }}
+{% endif -%}
 
 {% if conversation -%}
 {% render 'conversation', conversation: conversation, conversation_visible_fields: conversation_visible_fields, conversation_custom_attribute_labels: conversation_custom_attribute_labels %}
@@ -101,5 +107,5 @@ Always respect these boundaries:
 
 {% if context_glossary.size > 0 or tool_glossary.size > 0 -%}
 
-{% render 'reference_glossary', context_glossary: context_glossary, tool_glossary: tool_glossary %}
+{% render 'reference_glossary', context_glossary: context_glossary, tool_glossary: tool_glossary, intro: reference_glossary_rule %}
 {% endif -%}

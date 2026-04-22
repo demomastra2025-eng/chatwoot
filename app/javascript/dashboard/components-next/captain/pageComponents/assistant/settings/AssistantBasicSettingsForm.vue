@@ -97,15 +97,23 @@ const validationRules = {
 
 const v$ = useVuelidate(validationRules, state);
 
-const getErrorMessage = (field, translationKey) => {
-  return v$.value[field].$error
-    ? t(`CAPTAIN.ASSISTANTS.FORM.${translationKey}.ERROR`)
-    : '';
+const getErrorMessage = field => {
+  if (!v$.value[field].$error) return '';
+
+  if (field === 'name') {
+    return t('CAPTAIN.ASSISTANTS.FORM.NAME.ERROR');
+  }
+
+  if (field === 'description') {
+    return t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.ERROR');
+  }
+
+  return '';
 };
 
 const formErrors = computed(() => ({
-  name: getErrorMessage('name', 'NAME'),
-  description: getErrorMessage('description', 'INSTRUCTION'),
+  name: getErrorMessage('name'),
+  description: getErrorMessage('description'),
 }));
 
 const handleAvatarUpload = ({ file, url }) => {
@@ -218,33 +226,33 @@ const buildPayload = async () => {
   );
   if (!result) return null;
 
-  const existingConfig = { ...(props.assistant.config || {}) };
-  delete existingConfig.product_name;
-  delete existingConfig.instructions;
-  delete existingConfig.copilot_instructions;
-  delete existingConfig.feature_contact_attributes;
-  const payload = {
-    assistant: {
-      name: state.name,
-      description: state.description,
-      usage_mode: state.usageMode,
-      config: {
-        ...existingConfig,
-        feature_faq: state.features.conversationFaqs,
-        feature_memory: state.features.memories,
-        feature_citation: state.features.citations,
-        context_access: {},
-        tool_access: normalizeCapabilityToolAccess(
-          state.toolAccess,
-          state.usageMode
-        ),
-      },
-    },
+  const assistantPayload = {};
+
+  if (props.showIdentityFields && props.showNameField) {
+    assistantPayload.name = state.name;
+  }
+
+  if (props.showIdentityFields && props.showDescriptionField) {
+    assistantPayload.description = state.description;
+  }
+
+  if (props.showIdentityFields && props.showUsageModeField) {
+    assistantPayload.usage_mode = state.usageMode;
+  }
+
+  if (props.showFeatureFlags) {
+    assistantPayload.config = {
+      feature_faq: state.features.conversationFaqs,
+      feature_memory: state.features.memories,
+      feature_citation: state.features.citations,
+    };
+  }
+
+  return {
+    assistant: assistantPayload,
     avatar: state.avatarFile,
     removeAvatar: state.removeAvatar,
   };
-
-  return payload;
 };
 
 const handleBasicInfoUpdate = async () => {

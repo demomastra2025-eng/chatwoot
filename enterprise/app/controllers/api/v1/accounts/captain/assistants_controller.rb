@@ -23,7 +23,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def update
-    @assistant.update!(assistant_params)
+    @assistant.update!(assistant_update_params)
   end
 
   def avatar
@@ -106,6 +106,16 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_config_param!(permitted, :rules)
 
     permitted
+  end
+
+  def assistant_update_params
+    attributes = assistant_params.to_h.deep_symbolize_keys
+    return attributes unless attributes.key?(:config)
+
+    existing_config = @assistant.config.is_a?(Hash) ? @assistant.config.deep_stringify_keys : {}
+    incoming_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
+
+    attributes.merge(config: existing_config.merge(incoming_config))
   end
 
   def merge_optional_array_param!(permitted, field_name)

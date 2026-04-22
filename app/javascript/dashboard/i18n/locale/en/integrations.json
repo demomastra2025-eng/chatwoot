@@ -760,7 +760,7 @@
         "TOOL_ACCESS": {
           "TITLE": "Default tools",
           "DESCRIPTION": "Choose which tools are available by default.",
-          "HINT": "Tools referenced explicitly with tool:// in instructions are added automatically. Runtime policy checks still apply when a tool is called.",
+          "HINT": "Tools referenced explicitly with tool:// in instructions, rules, and scenarios are added automatically and included in the final prompt.",
           "LOADING": "Loading available tools...",
           "ERROR": "The tool catalog could not be loaded. Refresh or retry to get the current configuration.",
           "RETRY": "Retry",
@@ -1185,7 +1185,10 @@
         "GROUPS": {
           "STRICT": "Strict rules",
           "CONVERSATION": "Conversation flow",
-          "RESTRICTIONS": "Restrictions"
+          "RESTRICTIONS": "Restrictions",
+          "ASSISTANT_STRUCTURE": "Assistant structure",
+          "SCENARIO_STRUCTURE": "Scenario structure",
+          "RUNTIME_CONTEXT": "Runtime context"
         },
         "FORM": {
           "TYPE": "Rule type",

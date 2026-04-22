@@ -52,6 +52,9 @@ const CANONICAL_GROUPS = {
   strict: 'Strict rules',
   conversation: 'Conversation flow',
   restrictions: 'Restrictions',
+  assistantStructure: 'Assistant structure',
+  scenarioStructure: 'Scenario structure',
+  runtimeContext: 'Runtime context',
 };
 
 const defaultGroups = computed(() => ({
@@ -79,7 +82,9 @@ const normalizeRuleForList = (rule, index) => {
     group: rule?.group?.toString().trim() || defaultGroups.value[type] || '',
     content: normalizedRuleContent(rule),
     enabled: rule?.enabled !== false,
-    editable: rule?.editable !== false && type !== RULE_TYPE_SYSTEM,
+    editable: rule?.editable !== false,
+    deletable: rule?.deletable !== false,
+    slot: rule?.slot || '',
     isMalformed: isMalformedRule(rule),
   };
 };
@@ -108,6 +113,10 @@ watch(
 );
 
 const typeOptions = computed(() => [
+  {
+    value: RULE_TYPE_SYSTEM,
+    label: t('CAPTAIN.ASSISTANTS.RULES.TYPES.SYSTEM'),
+  },
   {
     value: RULE_TYPE_RESPONSE_GUIDELINE,
     label: t('CAPTAIN.ASSISTANTS.RULES.TYPES.RESPONSE_GUIDELINE'),
@@ -149,6 +158,15 @@ const groupLabels = computed(() => ({
   ),
   [CANONICAL_GROUPS.restrictions]: t(
     'CAPTAIN.ASSISTANTS.RULES.GROUPS.RESTRICTIONS'
+  ),
+  [CANONICAL_GROUPS.assistantStructure]: t(
+    'CAPTAIN.ASSISTANTS.RULES.GROUPS.ASSISTANT_STRUCTURE'
+  ),
+  [CANONICAL_GROUPS.scenarioStructure]: t(
+    'CAPTAIN.ASSISTANTS.RULES.GROUPS.SCENARIO_STRUCTURE'
+  ),
+  [CANONICAL_GROUPS.runtimeContext]: t(
+    'CAPTAIN.ASSISTANTS.RULES.GROUPS.RUNTIME_CONTEXT'
   ),
 }));
 
@@ -202,12 +220,12 @@ const filteredRules = computed(() => {
 });
 
 const selectableRules = computed(() =>
-  orderedRules.value.filter(rule => rule.editable !== false)
+  orderedRules.value.filter(rule => rule.deletable !== false)
 );
 
 const hasCustomRules = computed(() => {
   return orderedRules.value.some(
-    rule => rule.editable !== false && rule.type !== RULE_TYPE_SYSTEM
+    rule => rule.deletable !== false && rule.type !== RULE_TYPE_SYSTEM
   );
 });
 
@@ -247,7 +265,10 @@ const serializeRules = list =>
         defaultGroups.value[normalizeRuleType(rule)] ||
         '',
       content: trimmedRuleContent(rule),
+      slot: rule.slot?.toString().trim() || '',
       enabled: rule.enabled !== false,
+      editable: rule.editable !== false,
+      deletable: rule.deletable !== false,
     }));
 
 const persistRules = async nextRules => {
@@ -280,8 +301,10 @@ const normalizeIncomingRule = rule => ({
   type: rule.type,
   group: rule.group || defaultGroups.value[rule.type] || '',
   content: rule.content,
+  slot: rule.slot || '',
   enabled: rule.enabled !== false,
-  editable: rule.editable !== false && rule.type !== RULE_TYPE_SYSTEM,
+  editable: rule.editable !== false,
+  deletable: rule.deletable !== false,
 });
 
 const openRuleComposer = () => {
@@ -532,7 +555,9 @@ const onDragEnd = async () => {
           "
           :enabled="rule.enabled !== false"
           :editable="rule.editable !== false"
-          :selectable="rule.editable !== false"
+          :deletable="rule.deletable !== false"
+          :rule-slot="rule.slot || ''"
+          :selectable="rule.deletable !== false"
           :is-selected="bulkSelectedIds.has(rule.id)"
           :type-options="typeOptions"
           :type-badge-map="typeBadgeMap"
@@ -580,7 +605,9 @@ const onDragEnd = async () => {
             "
             :enabled="element.enabled !== false"
             :editable="element.editable !== false"
-            :selectable="element.editable !== false"
+            :deletable="element.deletable !== false"
+            :rule-slot="element.slot || ''"
+            :selectable="element.deletable !== false"
             :is-selected="bulkSelectedIds.has(element.id)"
             :type-options="typeOptions"
             :type-badge-map="typeBadgeMap"

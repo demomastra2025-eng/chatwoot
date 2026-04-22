@@ -254,6 +254,31 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(rendered).to include("`handoff_to_#{peer_scenario.handoff_key}`")
       expect(rendered).not_to include("`handoff_to_#{scenario.handoff_key}`")
     end
+
+    it 'renders scenario structure guidance from shared system rules' do
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# System Context')
+      expect(rendered).to include('received this conversation through a seamless internal handoff')
+      expect(rendered).to include('# Your Role')
+      expect(rendered).to include('Handle only the scope of this scenario')
+      expect(rendered).to include('Use the `handoff_to_')
+    end
+
+    it 'keeps scenario-template tool references inside the scenario prompt only' do
+      updated_rules = assistant.rule_entries.map do |entry|
+        next entry unless entry[:id] == 'scenario_role'
+
+        entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside this scenario.')
+      end
+      assistant.update!(config: assistant.config.merge('rules' => updated_rules))
+
+      scenario_rendered = scenario.agent_instructions
+      assistant_rendered = assistant.agent_instructions
+
+      expect(scenario_rendered).to include('Add Private Note (add_private_note)')
+      expect(assistant_rendered).not_to include('Add Private Note (add_private_note)')
+    end
   end
 
   describe 'tool validation and population' do

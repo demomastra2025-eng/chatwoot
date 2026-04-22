@@ -543,6 +543,100 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:config][:feature_citation]).to be(false)
       end
 
+      it 'preserves unrelated config sections when updating only feature flags' do
+        assistant.update!(
+          config: {
+            'feature_faq' => true,
+            'tool_access' => {
+              'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
+            },
+            'context_access' => {
+              'contact' => { 'enabled' => true, 'field_ids' => ['contact.name'] }
+            },
+            'rules' => [
+              {
+                'id' => 'reply_short',
+                'type' => 'response_guideline',
+                'group' => 'Conversation flow',
+                'content' => 'Reply briefly.',
+                'enabled' => true
+              }
+            ]
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { config: { feature_faq: false } } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config).to include(
+          'feature_faq' => false,
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
+          },
+          'context_access' => {
+            'contact' => { 'enabled' => true, 'field_ids' => ['contact.name'] }
+          }
+        )
+        expect(assistant.config['rules']).to include(
+          hash_including(
+            'id' => 'reply_short',
+            'type' => 'response_guideline',
+            'content' => 'Reply briefly.'
+          )
+        )
+      end
+
+      it 'preserves tool and rules config when patching system settings only' do
+        assistant.update!(
+          config: {
+            'temperature' => 1.0,
+            'tool_access' => {
+              'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
+            },
+            'rules' => [
+              {
+                'id' => 'stay_focused',
+                'type' => 'system',
+                'group' => 'Strict rules',
+                'content' => 'Stay focused.',
+                'enabled' => true
+              }
+            ]
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    temperature: 0.4,
+                    handoff_message: 'Escalating now.'
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config).to include(
+          'temperature' => 0.4,
+          'handoff_message' => 'Escalating now.',
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
+          }
+        )
+        expect(assistant.config['rules']).to include(
+          hash_including(
+            'id' => 'stay_focused',
+            'type' => 'system',
+            'content' => 'Stay focused.'
+          )
+        )
+      end
+
       it 'updates usage_mode when the assistant is not connected to inboxes' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
               params: { assistant: { usage_mode: 'internal_assistant' } },
@@ -757,6 +851,55 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       end
       # rubocop:enable RSpec/ExampleLength
+
+      it 'restores default system rules when the full config payload sends an empty rules array' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    rules: [],
+                    feature_faq: false,
+                    feature_memory: false,
+                    feature_citation: false,
+                    temperature: 0.4,
+                    tool_access: {
+                      agent: {
+                        enabled: true,
+                        tool_ids: %w[faq_lookup handoff add_contact_note add_private_note]
+                      }
+                    },
+                    context_access: {},
+                    handoff_message: '',
+                    resolution_message: '',
+                    history_message_limit: 15,
+                    auto_reply_on_last_incoming: true,
+                    message_collapse_window_seconds: 3
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['rules']).to include(
+          hash_including(
+            'id' => 'stay_within_scope',
+            'type' => 'system',
+            'enabled' => true,
+            'editable' => true,
+            'deletable' => false
+          )
+        )
+        expect(json_response.dig(:config, :rules)).to include(
+          hash_including(
+            id: 'stay_within_scope',
+            type: 'system',
+            enabled: true,
+            editable: true,
+            deletable: false
+          )
+        )
+      end
     end
   end
 

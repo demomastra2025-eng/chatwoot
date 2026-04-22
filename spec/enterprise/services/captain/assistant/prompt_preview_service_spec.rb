@@ -14,11 +14,18 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
         include(id: 'instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
       expect(preview.dig(:assistant, :layers)).to include(
+        include(id: 'system_prompt_structure', title: 'System prompt structure', enabled: true)
+      )
+      expect(preview.dig(:assistant, :layers)).to include(
         include(id: 'system_rules', title: 'System rules', enabled: true)
       )
       expect(preview.dig(:assistant, :used_tool_ids)).to eq(%w[faq_lookup handoff])
       expect(preview.dig(:assistant, :compiled_prompt)).to include('FAQ Lookup (faq_lookup)')
       expect(preview.dig(:assistant, :compiled_prompt)).to include('Handoff to Human (handoff)')
+      expect(preview.dig(:assistant, :compiled_prompt)).not_to include('# Specialized Scenarios')
+      expect(preview.dig(:assistant, :compiled_prompt)).to include(
+        'Use only the fields and tools explicitly available in this prompt'
+      )
       expect(preview.dig(:copilot, :layers)).to include(
         include(id: 'assistant_instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
       )
@@ -57,6 +64,43 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
         'contact.name',
         'conversation.display_id'
       )
+    end
+
+    it 'includes explicitly referenced custom tools in the assistant preview metadata' do
+      create(
+        :captain_custom_tool,
+        account: account,
+        slug: 'custom_fetch-order',
+        title: 'Fetch Order',
+        description: 'Gets order details'
+      )
+
+      assistant.update!(description: 'Use [@Fetch Order](tool://custom_fetch-order) when asked.')
+
+      preview = described_class.new(assistant: assistant).preview
+
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff', 'custom_fetch-order')
+      expect(preview.dig(:assistant, :layers)).to include(
+        include(
+          id: 'available_runtime_tools',
+          enabled: true,
+          values: include('custom_fetch-order: Gets order details')
+        )
+      )
+    end
+
+    it 'does not add scenario-template-only tool references to the assistant preview' do
+      updated_rules = assistant.rule_entries.map do |entry|
+        next entry unless entry[:id] == 'scenario_role'
+
+        entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside this scenario.')
+      end
+      assistant.update!(config: assistant.config.merge('rules' => updated_rules))
+
+      preview = described_class.new(assistant: assistant).preview
+
+      expect(preview.dig(:assistant, :used_tool_ids)).to contain_exactly('faq_lookup', 'handoff')
+      expect(preview.dig(:assistant, :compiled_prompt)).not_to include('Add Private Note (add_private_note)')
     end
 
     it 'includes handoff in the assistant preview when the default capability is enabled' do

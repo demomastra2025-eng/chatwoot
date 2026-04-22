@@ -119,6 +119,19 @@ RSpec.describe Captain::ToolPolicy do
       expect(allowed).to be(false)
     end
 
+    it 'does not let explicit prompt references bypass runtime risk and permission gates' do
+      assistant.update!(description: 'Use [Create Deal](tool://create_deal) when asked.')
+      tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h
+
+      allowed = described_class.runtime_allowed?(
+        tool_definition,
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(allowed).to be(false)
+    end
+
     it 'blocks assistant tools when the current user lacks the required permission' do
       custom_role = create(:custom_role, account: account, permissions: ['crm_deal_view'])
       create(:account_user, account: account, user: user, custom_role: custom_role)

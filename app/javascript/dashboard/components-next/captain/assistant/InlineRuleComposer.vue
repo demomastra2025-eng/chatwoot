@@ -132,6 +132,8 @@ const onClickAdd = () => {
     group: state.group.trim() || props.defaultGroups[state.type] || '',
     content,
     enabled: true,
+    editable: true,
+    deletable: true,
   });
 
   resetState();

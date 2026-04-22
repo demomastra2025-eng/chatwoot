@@ -75,6 +75,11 @@ class Captain::Assistant::PromptPreviewService
     [
       text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
       text_layer('instruction', 'System instruction', assistant.system_instruction),
+      list_layer(
+        'system_prompt_structure',
+        'System prompt structure',
+        assistant.template_rule_preview_values(:assistant)
+      ),
       list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
       list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
       list_layer('guardrails', 'Guardrails', assistant.guardrails),
@@ -114,12 +119,7 @@ class Captain::Assistant::PromptPreviewService
 
   def assistant_used_field_ids
     field_ids = referenced_field_ids_for_texts(
-      [
-        assistant.system_instruction,
-        assistant.system_rule_contents,
-        assistant.response_guidelines,
-        assistant.guardrails
-      ]
+      assistant.send(:prompt_glossary_texts_for_template, :assistant)
     )
 
     field_ids & assistant.available_context_field_ids
@@ -134,13 +134,13 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def effective_runtime_tools_note
-    'Effective runtime tools come from tool_access plus explicit tool:// references, ' \
-      'except capability tools which activate only when their checkbox is enabled.'
+    'Prompt-visible tools come from tool_access plus explicit tool:// references ' \
+      'in the rendered assistant instruction and rules.'
   end
 
   def scenario_preview(scenario)
     compiled_prompt = scenario.agent_instructions
-    runtime_tool_ids = scenario.runtime_tool_ids
+    runtime_tool_ids = scenario.prompt_runtime_tool_ids
 
     {
       id: scenario.id,
@@ -156,6 +156,11 @@ class Captain::Assistant::PromptPreviewService
         text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_agent_system_prompt),
         text_layer('description', 'Description', scenario.description),
         text_layer('instructions', 'Scenario instructions', scenario.instruction),
+        list_layer(
+          'system_prompt_structure',
+          'System prompt structure',
+          assistant.template_rule_preview_values(:scenario)
+        ),
         list_layer('system_rules', 'System rules', grouped_rule_values(assistant.system_rule_groups)),
         list_layer('response_guidelines', 'Response guidelines', assistant.response_guidelines),
         list_layer('guardrails', 'Guardrails', assistant.guardrails),
@@ -168,7 +173,7 @@ class Captain::Assistant::PromptPreviewService
     field_ids = referenced_field_ids_for_texts(
       [
         scenario.instruction,
-        assistant.system_rule_contents,
+        assistant.system_rule_contents_for_prompt(template_name: :scenario),
         assistant.response_guidelines,
         assistant.guardrails
       ]

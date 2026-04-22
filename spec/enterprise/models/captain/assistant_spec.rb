@@ -4,23 +4,24 @@ RSpec.describe Captain::Assistant, type: :model do
   describe 'validations' do
     it { is_expected.to validate_length_of(:description).is_at_most(10_000) }
 
-    it 'requires a handoff-safe normalized name' do
-      assistant = build(:captain_assistant, name: '!!!')
+    it 'allows external assistants with names that do not transliterate into ASCII' do
+      assistant = build(:captain_assistant, account: create(:account), name: 'Арманище')
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:name]).to include('must contain letters or numbers that can be used for handoff tools')
+      expect(assistant).to be_valid
+      expect(assistant.handoff_target_name).to match(/\Aassistant_[a-f0-9]{12}\z/)
+      expect(assistant.handoff_tool_name).to match(/\Ahandoff_to_assistant_[a-f0-9]{12}\z/)
     end
 
-    it 'rejects names whose normalized handoff target exceeds the runtime limit' do
+    it 'truncates long external assistant names to stay within the runtime limit' do
       assistant = build(
         :captain_assistant,
-        name: 'a' * (Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH + 1)
+        account: create(:account),
+        name: 'a' * (Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH + 20)
       )
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:name]).to include(
-        "is too long for handoff tools (maximum #{Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH} normalized characters)"
-      )
+      expect(assistant).to be_valid
+      expect(assistant.handoff_target_name.length).to be <= Captain::HandoffNaming::MAX_TARGET_NAME_LENGTH
+      expect(assistant.handoff_tool_name.length).to be <= Captain::HandoffNaming::MAX_TOOL_NAME_LENGTH
     end
 
     it 'allows internal assistants to keep names that are not handoff-safe' do
@@ -152,7 +153,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(glossary_field_ids).to include('contact.email')
     end
 
-    it 'treats unchecked capability tool references as invalid' do
+    it 'adds explicitly referenced capability tools even when their checkbox is off' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) when needed.'
       assistant.config = {
         'context_access' => {},
@@ -164,8 +165,52 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       }
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:description]).to include('contains invalid tools: handoff')
+      expect(assistant).to be_valid
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+    end
+
+    it 'keeps explicitly referenced custom tools in the final runtime tool set' do
+      create(
+        :captain_custom_tool,
+        account: account,
+        slug: 'custom_fetch-order',
+        title: 'Fetch Order',
+        description: 'Gets order details'
+      )
+
+      assistant.update!(
+        description: 'Use [@Fetch Order](tool://custom_fetch-order) when the customer asks.',
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'custom_fetch-order')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'custom_fetch-order')
+    end
+
+    it 'does not expose scenario-only template tool references in the root assistant prompt' do
+      updated_rules = assistant.rule_entries.map do |entry|
+        next entry unless entry[:id] == 'scenario_role'
+
+        entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside the scenario role.')
+      end
+
+      assistant.update!(config: assistant.config.merge('rules' => updated_rules))
+
+      prompt_context = assistant.send(:prompt_context)
+      glossary_tool_ids = prompt_context[:tool_glossary].flat_map do |group|
+        group[:entries].map { |entry| entry[:id] }
+      end
+
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'handoff')
+      expect(glossary_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
   end
 
@@ -198,12 +243,32 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.rule_entries.select { |entry| entry[:type] == 'system' }).not_to be_empty
       expect(assistant.rule_entries).to include(
         include(
+          id: 'stay_within_scope',
+          type: 'system',
+          enabled: true,
+          editable: true,
+          deletable: false
+        )
+      )
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'assistant_system_context',
+          type: 'system',
+          slot: 'assistant_system_context',
+          enabled: true,
+          editable: true,
+          deletable: false
+        )
+      )
+      expect(assistant.rule_entries).to include(
+        include(
           id: 'reply_short',
           type: 'response_guideline',
           group: 'Conversation flow',
           content: 'Reply in one short paragraph.',
           enabled: true,
-          editable: true
+          editable: true,
+          deletable: true
         )
       )
       expect(assistant.rule_entries).to include(
@@ -216,6 +281,32 @@ RSpec.describe Captain::Assistant, type: :model do
       )
       expect(assistant.response_guidelines).to eq(['Reply in one short paragraph.'])
       expect(assistant.guardrails).to eq([])
+    end
+
+    it 'preserves custom system rules that are not part of the default rule set' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => [
+            {
+              'id' => 'custom_system_rule',
+              'type' => 'system',
+              'group' => 'Strict rules',
+              'content' => 'Always confirm the business unit before answering.',
+              'enabled' => true
+            }
+          ]
+        )
+      )
+
+      expect(assistant.rule_entries).to include(
+        include(
+          id: 'custom_system_rule',
+          type: 'system',
+          content: 'Always confirm the business unit before answering.',
+          enabled: true,
+          deletable: true
+        )
+      )
     end
 
     it 'keeps compatibility when legacy array fields are cleared' do
@@ -256,12 +347,65 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Never reveal internal routing.')
     end
 
+    it 'does not render an empty specialized scenario section when none exist' do
+      rendered = assistant.agent_instructions
+
+      expect(rendered).not_to include('# Specialized Scenarios')
+      expect(rendered).not_to include('The following are the scenario agents that are available to you.')
+    end
+
+    it 'renders specialized scenario handoff routes only when scenarios exist' do
+      scenario = create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        title: 'Billing Escalations',
+        description: 'Handle complex billing issues and escalations'
+      )
+
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('# Specialized Scenarios')
+      expect(rendered).to include('Billing Escalations: Handle complex billing issues and escalations')
+      expect(rendered).to include("`handoff_to_#{scenario.handoff_key}`")
+    end
+
     it 'renders system rules from the structured rules config' do
       rendered = assistant.agent_instructions
 
       expect(rendered).to include('# System Rules')
       expect(rendered).to include('Stay within your configured scope and instructions.')
+      expect(rendered).to include('Use only the fields and tools explicitly available in this prompt')
       expect(rendered).to include('Always detect the user')
+    end
+
+    it 'renders assistant prompt structure text from default system rules' do
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('# System Context')
+      expect(rendered).to include('You are part of Captain, a multi-agent AI system')
+      expect(rendered).to include('# Your Identity')
+      expect(rendered).to include("You are #{assistant.name}.")
+      expect(rendered).to include('Act as the main orchestrator for this conversation')
+    end
+
+    it 'lets operators disable template-backed system sections' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => assistant.rule_entries.map do |entry|
+            if entry[:id] == 'assistant_system_context'
+              entry.merge(enabled: false)
+            else
+              entry
+            end
+          end
+        )
+      )
+
+      rendered = assistant.agent_instructions
+
+      expect(rendered).not_to include('# System Context')
+      expect(rendered).to include('# Your Identity')
     end
 
     it 'renders the default runtime tools in the prompt glossary' do
@@ -425,11 +569,11 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'rejects capability tools in instructions when their checkbox is off' do
+    it 'accepts capability tools in instructions even when their checkbox is off' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
-      expect(assistant).not_to be_valid
-      expect(assistant.errors[:description]).to include('contains invalid tools: handoff')
+      expect(assistant).to be_valid
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
     it 'accepts capability tools in instructions when their checkbox is on' do
