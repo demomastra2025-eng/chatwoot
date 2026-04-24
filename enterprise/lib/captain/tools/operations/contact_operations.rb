@@ -57,6 +57,17 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
     current_contact.reload
   end
 
+  def merge_contacts(base_contact_id:, mergee_contact_id:)
+    base_contact = account.contacts.find(base_contact_id)
+    mergee_contact = account.contacts.find(mergee_contact_id)
+
+    ::ContactMergeAction.new(
+      account: account,
+      base_contact: base_contact,
+      mergee_contact: mergee_contact
+    ).perform
+  end
+
   private
 
   def compact_update_attributes(attributes)
