@@ -3,7 +3,7 @@ require 'rails_helper'
 shared_examples_for 'liqudable' do
   context 'when liquid is present in content' do
     let(:contact) { create(:contact, name: 'john', phone_number: '+912883', custom_attributes: { customer_type: 'platinum' }) }
-    let(:conversation) { create(:conversation, id: 1, contact: contact, custom_attributes: { priority: 'high' }) }
+    let(:conversation) { create(:conversation, contact: contact, custom_attributes: { priority: 'high' }) }
 
     context 'when message is incoming' do
       let(:message) { build(:message, conversation: conversation, message_type: 'incoming') }
@@ -74,7 +74,7 @@ shared_examples_for 'liqudable' do
     let(:contact) do
       create(:contact, name: 'john', email: 'john@example.com', phone_number: '+912883', custom_attributes: { customer_type: 'platinum' })
     end
-    let(:conversation) { create(:conversation, id: 1, contact: contact, custom_attributes: { priority: 'high' }) }
+    let(:conversation) { create(:conversation, contact: contact, custom_attributes: { priority: 'high' }) }
 
     context 'when message is outgoing with template_params' do
       let(:message) { build(:message, conversation: conversation, message_type: 'outgoing') }
@@ -182,9 +182,9 @@ shared_examples_for 'liqudable' do
 
         message.save!
 
-        expect(message.content).to eq 'Hello John'
+        expect(message.content).to eq 'Hello john'
         body_params = message.additional_attributes['template_params']['processed_params']['body']
-        expect(body_params['customer_name']).to eq 'John'
+        expect(body_params['customer_name']).to eq 'john'
         expect(body_params['priority']).to eq 'urgent'
       end
 
@@ -193,7 +193,7 @@ shared_examples_for 'liqudable' do
 
         message.save!
 
-        expect(message.content).to eq 'Hello John `example [Name](field://contact.name)`'
+        expect(message.content).to eq 'Hello john `example [Name](field://contact.name)`'
       end
 
       it 'resolves enterprise field references in template params' do

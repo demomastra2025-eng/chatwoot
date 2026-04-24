@@ -6,7 +6,7 @@ FactoryBot.define do
     status { 'sent' }
     message_type { 'incoming' }
     content_type { 'text' }
-    account { create(:account) }
+    account { nil }
 
     trait :instagram_story_mention do
       content_attributes { { image_type: 'story_mention' } }
@@ -35,9 +35,10 @@ FactoryBot.define do
     end
 
     after(:build) do |message|
-      message.sender ||= message.outgoing? ? create(:user, account: message.account) : create(:contact, account: message.account)
+      message.account ||= message.conversation&.account || message.inbox&.account || create(:account)
       message.inbox ||= message.conversation&.inbox || create(:inbox, account: message.account)
       message.conversation ||= create(:conversation, account: message.account, inbox: message.inbox)
+      message.sender ||= message.outgoing? ? create(:user, account: message.account) : create(:contact, account: message.account)
     end
   end
 end

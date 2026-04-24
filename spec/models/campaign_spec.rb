@@ -27,9 +27,9 @@ RSpec.describe Campaign do
   end
 
   context 'when inbox type is unsupported for campaigns' do
-    let(:account) { create(:account) }
-    let!(:api_channel) { create(:channel_api, account: account) }
-    let!(:api_inbox) { create(:inbox, channel: api_channel, account: account) }
+    let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
+    let(:api_channel) { build(:channel_api, account: account) }
+    let(:api_inbox) { create(:inbox, channel: api_channel, account: account) }
     let(:campaign) { build(:campaign, inbox: api_inbox, account: account) }
 
     it 'would not save the campaigns' do

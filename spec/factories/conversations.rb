@@ -7,7 +7,7 @@ FactoryBot.define do
     identifier { SecureRandom.hex }
 
     after(:build) do |conversation|
-      conversation.account ||= create(:account)
+      conversation.account ||= conversation.inbox&.account || conversation.contact&.account || create(:account)
       conversation.inbox ||= create(
         :inbox,
         account: conversation.account,

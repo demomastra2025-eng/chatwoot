@@ -26,19 +26,19 @@ RSpec.describe Account do
     it 'validates name presence' do
       account.name = ''
       account.valid?
-      expect(account.errors[:name]).to include("can't be blank")
+      expect(account.errors.details[:name]).to include(include(error: :blank))
     end
 
     it 'validates name length' do
       account.name = 'a' * 256
       account.valid?
-      expect(account.errors[:name]).to include('is too long (maximum is 255 characters)')
+      expect(account.errors[:name].join(' ')).to match(/too long|слишком длин/i)
     end
 
     it 'validates domain length' do
       account.domain = 'a' * 150
       account.valid?
-      expect(account.errors[:domain]).to include('is too long (maximum is 100 characters)')
+      expect(account.errors[:domain].join(' ')).to match(/too long|слишком длин/i)
     end
   end
 

@@ -30,8 +30,9 @@ RSpec.describe Message do
         message.processed_message_content = 'a' * 150_001
         message.valid?
 
-        expect(message.errors[:processed_message_content]).to include('is too long (maximum is 150000 characters)')
-        expect(message.errors[:content]).to include('is too long (maximum is 150000 characters)')
+        too_long_error = I18n.t('errors.messages.too_long', count: 150_000)
+        expect(message.errors[:processed_message_content]).to include(too_long_error)
+        expect(message.errors[:content]).to include(too_long_error)
       end
 
       it 'adds error in case of message flooding' do
@@ -137,6 +138,8 @@ RSpec.describe Message do
         updated_at: message.updated_at,
         conversation: {
           assignee_id: message.conversation.assignee_id,
+          campaign: message.conversation.campaign,
+          campaign_id: message.conversation.campaign_id,
           contact_inbox: {
             source_id: message.conversation.contact_inbox.source_id
           },
@@ -275,7 +278,7 @@ RSpec.describe Message do
     end
 
     it 'does not reschedule the touch that created the outgoing message itself' do
-      first_outgoing = create(
+      create(
         :message,
         account: conversation.account,
         inbox: conversation.inbox,
@@ -513,8 +516,10 @@ RSpec.describe Message do
     end
 
     it 'includes CSAT survey link in webhook content for input_csat messages' do
-      inbox = create(:inbox, channel: create(:channel_api))
-      conversation = create(:conversation, inbox: inbox)
+      account = create(:account, limits: { non_web_inboxes: 10 })
+      api_channel = build(:channel_api, account: account)
+      inbox = create(:inbox, channel: api_channel, account: account)
+      conversation = create(:conversation, inbox: inbox, account: account)
       message = create(:message, conversation: conversation, content_type: 'input_csat', content: 'Rate your experience')
 
       expect(message.webhook_data[:content]).to include('survey/responses/')
