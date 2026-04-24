@@ -208,8 +208,16 @@ const systemPromptRules = computed(() =>
   orderedRules.value.filter(rule => rule.type === RULE_TYPE_SYSTEM)
 );
 
+const systemPromptRuleIds = computed(
+  () => new Set(systemPromptRules.value.map(rule => rule.id?.toString()))
+);
+
 const customRules = computed(() =>
-  orderedRules.value.filter(rule => rule.type !== RULE_TYPE_SYSTEM)
+  orderedRules.value.filter(
+    rule =>
+      rule.type !== RULE_TYPE_SYSTEM &&
+      !systemPromptRuleIds.value.has(rule.id?.toString())
+  )
 );
 
 const searchableCustomRules = computed(() =>
@@ -261,9 +269,21 @@ const displayGroupName = groupName => groupLabels.value[groupName] || groupName;
 const createRuleId = () =>
   `assistant_rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const serializeRules = list =>
-  list
+const serializeRules = list => {
+  const normalizedList = Array.isArray(list) ? list : [];
+  const reservedSystemRuleIds = new Set(
+    normalizedList
+      .filter(rule => normalizeRuleType(rule) === RULE_TYPE_SYSTEM)
+      .map(rule => rule.id?.toString())
+  );
+
+  return normalizedList
     .filter(rule => !isMalformedRule(rule))
+    .filter(
+      rule =>
+        normalizeRuleType(rule) === RULE_TYPE_SYSTEM ||
+        !reservedSystemRuleIds.has(rule.id?.toString())
+    )
     .map(rule => ({
       id: rule.id,
       type: normalizeRuleType(rule),
@@ -277,6 +297,7 @@ const serializeRules = list =>
       editable: rule.editable !== false,
       deletable: rule.deletable !== false,
     }));
+};
 
 const normalizeIncomingRule = rule => ({
   id: rule.id || createRuleId(),

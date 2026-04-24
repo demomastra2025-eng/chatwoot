@@ -946,9 +946,12 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def ensure_default_system_rules(entries)
-    non_system_entries = entries.reject { |entry| entry[:type] == RULE_TYPE_SYSTEM }
+    installation_system_rules = self.class.installation_system_prompt_entries
+    installation_system_rule_ids = installation_system_rules.map { |rule| rule[:id].to_s }
+    non_system_entries = entries.reject do |entry|
+      entry[:type] == RULE_TYPE_SYSTEM || installation_system_rule_ids.include?(entry[:id].to_s)
+    end
     existing_system_entries = entries.select { |entry| entry[:type] == RULE_TYPE_SYSTEM }.index_by { |entry| entry[:id] }
-    installation_system_rule_ids = self.class.installation_system_prompt_entries.map { |rule| rule[:id].to_s }
     custom_system_entries = entries.filter_map do |entry|
       next unless entry[:type] == RULE_TYPE_SYSTEM
       next if installation_system_rule_ids.include?(entry[:id].to_s)
@@ -956,7 +959,7 @@ class Captain::Assistant < ApplicationRecord
       entry.merge(editable: false, deletable: false)
     end
 
-    default_system_entries = self.class.installation_system_prompt_entries.map.with_index do |rule, index|
+    default_system_entries = installation_system_rules.map.with_index do |rule, index|
       existing_rule = existing_system_entries[rule[:id]]
 
       normalize_rule_entry(

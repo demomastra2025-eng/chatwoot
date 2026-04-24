@@ -327,6 +327,36 @@ describe('AssistantRulesManager', () => {
     });
   });
 
+  it('drops stale custom entries that reuse system prompt ids before rendering or saving', () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [
+            ...systemRules,
+            {
+              id: 'stay_within_scope',
+              type: 'response_guideline',
+              group: 'Strict rules',
+              content: 'Stay within your configured scope and instructions.',
+              enabled: false,
+              editable: true,
+              deletable: true,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(wrapper.vm.customRules).toEqual([]);
+    expect(wrapper.vm.buildPayload().assistant.config.rules).toEqual([
+      expect.objectContaining({
+        id: 'stay_within_scope',
+        type: 'system',
+      }),
+    ]);
+  });
+
   it('keeps malformed rules visible and blocks unrelated saves until they are resolved', async () => {
     const wrapper = buildWrapper({
       assistantId: 42,

@@ -425,6 +425,40 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
+    it 'drops non-system duplicates that reuse installation system prompt ids' do
+      scenario_role = described_class.installation_system_prompt_entries.find do |rule|
+        rule[:id].to_s == 'scenario_role'
+      end
+
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => [
+            {
+              'id' => 'scenario_role',
+              'type' => 'response_guideline',
+              'group' => 'Scenario structure',
+              'content' => scenario_role[:content],
+              'enabled' => false
+            },
+            {
+              'id' => 'reply_short',
+              'type' => 'response_guideline',
+              'group' => 'Conversation flow',
+              'content' => 'Reply in one short paragraph.',
+              'enabled' => true
+            }
+          ]
+        )
+      )
+
+      scenario_role_entries = assistant.reload.rule_entries.select { |entry| entry[:id].to_s == 'scenario_role' }
+
+      expect(scenario_role_entries.size).to eq(1)
+      expect(scenario_role_entries.first[:type]).to eq('system')
+      expect(assistant.rule_entries).to include(include(id: 'reply_short', type: 'response_guideline'))
+      expect(assistant.response_guidelines).to eq(['Reply in one short paragraph.'])
+    end
+
     it 'rejects malformed structured rules instead of silently dropping them' do
       assistant.config = assistant.config.merge(
         'rules' => [
