@@ -50,14 +50,22 @@ describe('ReconnectService', () => {
   beforeEach(() => {
     window.addEventListener = vi.fn();
     window.removeEventListener = vi.fn();
+    document.addEventListener = vi.fn();
+    document.removeEventListener = vi.fn();
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: { reload: vi.fn() },
+    });
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      writable: true,
+      value: false,
     });
     reconnectService = new ReconnectService(storeMock, routerMock);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -68,6 +76,14 @@ describe('ReconnectService', () => {
       expect(window.addEventListener).toHaveBeenCalledWith(
         'online',
         reconnectService.handleOnlineEvent
+      );
+      expect(window.addEventListener).toHaveBeenCalledWith(
+        'focus',
+        reconnectService.handleWindowFocus
+      );
+      expect(document.addEventListener).toHaveBeenCalledWith(
+        'visibilitychange',
+        reconnectService.handleVisibilityChange
       );
       expect(emitter.on).toHaveBeenCalledWith(
         BUS_EVENTS.WEBSOCKET_RECONNECT,
@@ -86,6 +102,14 @@ describe('ReconnectService', () => {
       expect(window.removeEventListener).toHaveBeenCalledWith(
         'online',
         reconnectService.handleOnlineEvent
+      );
+      expect(window.removeEventListener).toHaveBeenCalledWith(
+        'focus',
+        reconnectService.handleWindowFocus
+      );
+      expect(document.removeEventListener).toHaveBeenCalledWith(
+        'visibilitychange',
+        reconnectService.handleVisibilityChange
       );
       expect(emitter.off).toHaveBeenCalledWith(
         BUS_EVENTS.WEBSOCKET_RECONNECT,
@@ -250,6 +274,78 @@ describe('ReconnectService', () => {
         ...filter,
         page: 1,
       });
+    });
+  });
+
+  describe('active conversation visibility sync', () => {
+    it('should sync active conversation messages on focus when on a visible conversation route', async () => {
+      routerMock.currentRoute.value.name = 'conversation_canvas';
+      routerMock.currentRoute.value.params.conversation_id = 42;
+      isAConversationRoute.mockReturnValue(true);
+
+      await reconnectService.handleWindowFocus();
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        { conversationId: 42 }
+      );
+    });
+
+    it('should sync active conversation messages on visibilitychange when tab becomes visible', async () => {
+      routerMock.currentRoute.value.name = 'conversation_canvas';
+      routerMock.currentRoute.value.params.conversation_id = 42;
+      isAConversationRoute.mockReturnValue(true);
+      document.hidden = false;
+
+      await reconnectService.handleVisibilityChange();
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        { conversationId: 42 }
+      );
+    });
+
+    it('should not sync active conversation messages when tab is hidden', async () => {
+      routerMock.currentRoute.value.name = 'conversation_canvas';
+      routerMock.currentRoute.value.params.conversation_id = 42;
+      isAConversationRoute.mockReturnValue(true);
+      document.hidden = true;
+
+      await reconnectService.handleVisibilityChange();
+
+      expect(storeMock.dispatch).not.toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        expect.anything()
+      );
+    });
+
+    it('should not sync active conversation messages outside conversation routes', async () => {
+      routerMock.currentRoute.value.name = 'dashboard_home';
+      routerMock.currentRoute.value.params.conversation_id = 42;
+      isAConversationRoute.mockReturnValue(false);
+
+      await reconnectService.handleWindowFocus();
+
+      expect(storeMock.dispatch).not.toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        expect.anything()
+      );
+    });
+
+    it('should debounce duplicate active conversation sync triggers', async () => {
+      routerMock.currentRoute.value.name = 'conversation_canvas';
+      routerMock.currentRoute.value.params.conversation_id = 42;
+      isAConversationRoute.mockReturnValue(true);
+      document.hidden = false;
+
+      await reconnectService.handleVisibilityChange();
+      await reconnectService.handleWindowFocus();
+
+      expect(storeMock.dispatch).toHaveBeenCalledTimes(1);
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        { conversationId: 42 }
+      );
     });
   });
 
