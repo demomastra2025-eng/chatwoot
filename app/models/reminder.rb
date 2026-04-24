@@ -71,6 +71,8 @@
 #
 # rubocop:disable Metrics/ClassLength
 class Reminder < ApplicationRecord
+  include AccountStorageLimitable
+
   OPEN_STATUSES = %w[draft pending processing].freeze
   CONVERSATION_RELATIVE_ANCHORS = %w[
     conversation.created_at
@@ -103,6 +105,9 @@ class Reminder < ApplicationRecord
   belongs_to :target_conversation, class_name: 'Conversation', optional: true
   belongs_to :reminder_group, optional: true
   belongs_to :remindable, polymorphic: true, optional: true
+
+  has_many_attached :files
+  account_storage_attachments :files
 
   enum :status, {
     draft: 0,
@@ -154,6 +159,7 @@ class Reminder < ApplicationRecord
   before_validation :materialize_schedule
   before_validation :assign_default_status
   before_validation :refresh_fingerprint
+  after_create :retain_attachment_blobs
 
   scope :ordered, -> { order(scheduled_at: :asc, created_at: :asc, id: :asc) }
   scope :open_statuses, -> { where(status: OPEN_STATUSES) }
@@ -262,8 +268,9 @@ class Reminder < ApplicationRecord
     return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
     return false unless send_message?
     return instructions.present? if agent?
+    return template_params.present? if channel_template?
 
-    body.present?
+    body.present? || attachments.present? || files.attached?
   end
 
   def materialize_schedule
@@ -283,6 +290,12 @@ class Reminder < ApplicationRecord
     self.attachments = Array(attachments).compact
     self.template_params = (template_params || {}).to_h
     self.metadata = (metadata || {}).to_h
+  end
+
+  def retain_attachment_blobs
+    return if attachments.blank?
+
+    files.attach(attachments)
   end
 
   def normalize_text_mode
@@ -459,7 +472,9 @@ class Reminder < ApplicationRecord
 
     if agent? && instructions.blank?
       errors.add(:instructions, 'must be present for agent touches')
-    elsif !agent? && body.blank?
+    elsif channel_template? && template_params.blank?
+      errors.add(:template_params, 'must be present for channel template touches')
+    elsif free_text? && !agent? && body.blank? && attachments.blank? && !files.attached?
       errors.add(:body, 'must be present for message touches')
     end
   end

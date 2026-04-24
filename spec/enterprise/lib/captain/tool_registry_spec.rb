@@ -13,6 +13,7 @@ RSpec.describe Captain::ToolRegistry do
         'create_deal',
         'create_appointment',
         'create_touch',
+        'list_channel_templates',
         'list_scheduling_resources',
         'search_scheduling_resources',
         'get_scheduling_resource_schedule',

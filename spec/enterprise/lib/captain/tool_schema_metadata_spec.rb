@@ -8,15 +8,23 @@ RSpec.describe 'Captain tool schema metadata' do
     expected_relative_anchor_description = 'Optional relative anchor: touch.created_at, conversation.created_at, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at'
 
     expect(Captain::Tools::CreateTouchTool.description).to eq(
-      'Create a scheduled outbound touch for the current conversation or linked CRM context'
+      'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template'
     )
     expect(Captain::Tools::Copilot::CreateTouchService.description).to eq(
-      'Create a scheduled outbound touch for the current conversation or linked CRM context'
+      'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template'
     )
     expect(public_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(assistant_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(public_params[:target_inbox_id].description).to include('ID')
     expect(assistant_params[:target_inbox_id].description).to include('ID')
+    expect(public_params[:attachment_ids].type).to eq('array')
+    expect(assistant_params[:attachment_ids].type).to eq(:array)
+    expect(public_params[:artifact_ids].type).to eq('array')
+    expect(assistant_params[:artifact_ids].type).to eq(:array)
+    expect(public_params[:content_kind].required).to be(false)
+    expect(assistant_params[:content_kind].required).to be(false)
+    expect(public_params[:template_params].required).to be(false)
+    expect(assistant_params[:template_params].required).to be(false)
   end
 
   it 'documents explicit enum-like values for high-risk or filter-heavy tools' do

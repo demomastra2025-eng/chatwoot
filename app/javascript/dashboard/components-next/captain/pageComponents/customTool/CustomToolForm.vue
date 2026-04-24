@@ -16,6 +16,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
 import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
@@ -61,6 +62,7 @@ const createInitialState = () => ({
   response_template: '',
   auth_type: 'none',
   auth_config: {},
+  allow_file_artifacts: true,
   param_schema: [],
 });
 
@@ -220,6 +222,7 @@ const applyToolState = tool => {
         tool.auth_type || 'none',
         tool.auth_config
       ),
+      allow_file_artifacts: tool.allow_file_artifacts !== false,
       param_schema: (tool.param_schema || []).map(createParamState),
     });
   });
@@ -411,6 +414,7 @@ const toolDraftForTesting = computed(() => ({
   response_template: state.response_template,
   auth_type: state.auth_type,
   auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
+  allow_file_artifacts: state.allow_file_artifacts,
   param_schema: state.param_schema.map(serializeParamForPayload),
 }));
 
@@ -622,6 +626,20 @@ const handleSubmit = async () => {
     <p class="text-xs text-n-slate-11 -mt-2">
       {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.HELP_TEXT') }}
     </p>
+
+    <label
+      class="flex gap-3 p-3 rounded-lg border border-n-weak bg-n-alpha-1 cursor-pointer"
+    >
+      <Checkbox v-model="state.allow_file_artifacts" class="mt-0.5 shrink-0" />
+      <span class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.ALLOW_FILE_ARTIFACTS.LABEL') }}
+        </span>
+        <span class="text-xs text-n-slate-11">
+          {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.ALLOW_FILE_ARTIFACTS.HELP_TEXT') }}
+        </span>
+      </span>
+    </label>
 
     <ToolTestPanel
       :custom-tool="toolDraftForTesting"

@@ -34,20 +34,21 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   def sync_templates
     # ensuring that channels with wrong provider config wouldn't keep trying to sync templates
     whatsapp_channel.mark_message_templates_updated
-    templates = fetch_whatsapp_templates("#{business_account_path}/message_templates")
+    templates = fetch_templates
     return false if templates.nil?
 
-    whatsapp_channel.update!(
-      message_templates: templates,
-      message_templates_last_updated: Time.current.utc
-    )
+    cache_attributes = { message_templates: templates, message_templates_last_updated: Time.current.utc }
+    whatsapp_channel.update_columns(cache_attributes) # rubocop:disable Rails/SkipsModelValidations
   end
+
+  def fetch_templates = fetch_whatsapp_templates("#{business_account_path}/message_templates")
 
   def create_template(request_body)
     HTTParty.post(
       "#{business_account_path}/message_templates",
       headers: api_headers,
-      body: request_body.to_json
+      body: request_body.to_json,
+      timeout: request_timeout
     )
   end
 
@@ -55,12 +56,13 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     HTTParty.delete(
       "#{business_account_path}/message_templates",
       headers: api_headers,
-      query: { name: template_name }
+      query: { name: template_name },
+      timeout: request_timeout
     )
   end
 
   def fetch_whatsapp_templates(url)
-    response = HTTParty.get(url, headers: api_headers)
+    response = HTTParty.get(url, headers: api_headers, timeout: request_timeout)
     return nil unless response.success?
 
     next_url = next_url(response)
@@ -81,7 +83,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def validate_provider_config?
-    response = HTTParty.get("#{business_account_path}/message_templates", headers: api_headers)
+    response = HTTParty.get("#{business_account_path}/message_templates", headers: api_headers, timeout: request_timeout)
     response.success?
   end
 
@@ -107,6 +109,8 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   private
+
+  def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
 
   def csat_template_service
     @csat_template_service ||= Whatsapp::CsatTemplateService.new(whatsapp_channel)

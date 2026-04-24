@@ -148,5 +148,64 @@ RSpec.describe Reminders::ExecuteService do
       expect(touch.target_conversation.contact).to eq(contact)
       expect(touch.target_conversation.contact_inbox.source_id).to eq('4242')
     end
+
+    it 'fails at execution time when a WhatsApp free_text touch no longer has an open reply window' do
+      account = create(:account)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      touch = create(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        body: 'This should not be sent outside the window'
+      )
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(ArgumentError, /approved channel_template/)
+
+      expect(touch.reload).to be_failed
+      expect(conversation.messages.outgoing.count).to eq(0)
+    end
+
+    it 'executes a WhatsApp channel_template touch and stores template delivery metadata' do
+      account = create(:account)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      template_params = {
+        name: 'sample_shipping_confirmation',
+        language: 'en_US',
+        namespace: '23423423_2342423_324234234_2343224',
+        processed_params: { '1' => '2' }
+      }
+      touch = create(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        content_kind: :channel_template,
+        body: nil,
+        template_params: template_params
+      )
+
+      described_class.new(reminder: touch).perform
+
+      message = conversation.messages.outgoing.last
+      expect(touch.reload).to be_completed
+      expect(message.additional_attributes['template_params']).to include('name' => 'sample_shipping_confirmation')
+      expect(message.additional_attributes['delivery_policy']).to include('delivery_mode' => 'channel_template', 'requires_template' => true)
+    end
   end
 end

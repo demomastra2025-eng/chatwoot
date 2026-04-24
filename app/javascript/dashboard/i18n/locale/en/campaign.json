@@ -887,6 +887,15 @@
         "AUTO_CANCEL": "Cancel on incoming reply",
         "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically."
       },
+      "ATTACHMENTS": {
+        "TITLE": "Attachments",
+        "DESCRIPTION": "Files are uploaded to this account now and sent as native message attachments when the touch runs.",
+        "ADD": "Add file",
+        "UPLOADING": "Uploading...",
+        "REMOVE": "Remove attachment",
+        "FILE_FALLBACK": "Uploaded file",
+        "UPLOAD_ERROR": "Failed to upload attachment."
+      },
       "SUCCESS": {
         "CREATED": "Touch created.",
         "UPDATED": "Touch updated."

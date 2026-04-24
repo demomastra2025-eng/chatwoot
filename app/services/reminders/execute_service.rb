@@ -25,6 +25,8 @@ class Reminders::ExecuteService
 
   def execute_send_message
     conversation = Reminders::ConversationResolver.new(reminder: reminder).perform
+    delivery_policy = ensure_delivery_allowed!(conversation, content_kind: reminder.content_kind, template_params: reminder.template_params,
+                                                             attachments: reminder.attachments)
     generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
     message = materialize_message(
       conversation: conversation,
@@ -33,7 +35,8 @@ class Reminders::ExecuteService
         conversation: conversation,
         sender: reminder.message_sender
       ),
-      captain_trace: generated_payload[:captain_trace]
+      captain_trace: generated_payload[:captain_trace],
+      delivery_policy: delivery_policy
     )
 
     updates = {}
@@ -49,6 +52,8 @@ class Reminders::ExecuteService
     conversation = reminder.target_conversation || reminder.conversation
     raise ArgumentError, 'AI wakeup touches require a conversation target' if conversation.blank?
 
+    delivery_policy = ensure_delivery_allowed!(conversation, content_kind: 'free_text', template_params: {}, attachments: [])
+
     if conversation.respond_to?(:with_captain_activity_context)
       conversation.with_captain_activity_context(reason: 'touch_ai_wakeup', reason_type: :touch) do
         conversation.pending! unless conversation.pending?
@@ -62,7 +67,8 @@ class Reminders::ExecuteService
       conversation: conversation,
       sender: generated_payload[:assistant],
       content: generated_payload[:content],
-      captain_trace: generated_payload[:captain_trace]
+      captain_trace: generated_payload[:captain_trace],
+      delivery_policy: delivery_policy
     )
 
     reminder.update!(target_conversation: conversation) if reminder.target_conversation_id != conversation.id
@@ -79,7 +85,7 @@ class Reminders::ExecuteService
     ).perform
   end
 
-  def materialize_message(conversation:, sender:, content:, captain_trace: nil)
+  def materialize_message(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
     message = Messages::MessageBuilder.new(
       sender,
       conversation,
@@ -91,6 +97,7 @@ class Reminders::ExecuteService
       'touch_source' => 'touch'
     )
     additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
+    additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
 
     message.update!(additional_attributes: additional_attributes)
     message
@@ -113,5 +120,15 @@ class Reminders::ExecuteService
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: reminder.account).capture_exception
     Rails.logger.error("[Touches] Failed to schedule next recurring touch for ##{reminder.id}: #{e.message}")
+  end
+
+  def ensure_delivery_allowed!(conversation, content_kind:, template_params:, attachments:)
+    ::Outbound::DeliveryPolicy.ensure!(
+      conversation: conversation,
+      content_kind: content_kind,
+      template_params: template_params,
+      attachments: attachments,
+      scheduled_at: Time.current
+    )
   end
 end

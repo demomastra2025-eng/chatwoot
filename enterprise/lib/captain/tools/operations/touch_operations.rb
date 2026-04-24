@@ -2,28 +2,45 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   SUPPORTED_REMINDABLE_KINDS = %w[conversation deal task appointment].freeze
 
   def create_touch(
-    body:,
+    body: nil,
+    content_kind: nil,
+    template_params: nil,
     remindable_kind: nil,
     scheduled_at: nil,
     relative_anchor: nil,
     relative_offset_minutes: nil,
     timezone: nil,
     target_inbox_id: nil,
-    auto_cancel_on_incoming: nil
+    auto_cancel_on_incoming: nil,
+    attachment_ids: [],
+    artifact_ids: []
   )
-    raise ArgumentError, 'Touch body is required' if body.to_s.strip.blank?
+    normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
+    normalized_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
+    validate_touch_content!(
+      body: body,
+      content_kind: normalized_kind,
+      template_params: normalized_template_params,
+      attachments_present: Array(attachment_ids).present? || Array(artifact_ids).present?
+    )
 
     remindable = resolve_remindable!(remindable_kind)
     create_params = normalized_touch_params(
       body: body,
+      content_kind: normalized_kind,
+      template_params: normalized_template_params,
       remindable: remindable,
       scheduled_at: scheduled_at,
       relative_anchor: relative_anchor,
       relative_offset_minutes: relative_offset_minutes,
       timezone: timezone,
       target_inbox_id: target_inbox_id,
-      auto_cancel_on_incoming: auto_cancel_on_incoming
+      auto_cancel_on_incoming: auto_cancel_on_incoming,
+      attachment_ids: attachment_ids,
+      artifact_ids: artifact_ids
     )
+    delivery_policy = ensure_delivery_allowed!(create_params)
+    create_params[:metadata] = (create_params[:metadata] || {}).merge('delivery_policy' => delivery_policy.as_json)
 
     with_idempotent_creation('create_touch', create_params.merge(remindable_gid: remindable.to_gid_param)) do
       ::Reminders::CreateService.new(
@@ -39,24 +56,31 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
   def normalized_touch_params(
     body:,
+    content_kind:,
+    template_params:,
     remindable:,
     scheduled_at:,
     relative_anchor:,
     relative_offset_minutes:,
     timezone:,
     target_inbox_id:,
-    auto_cancel_on_incoming:
+    auto_cancel_on_incoming:,
+    attachment_ids:,
+    artifact_ids:
   )
+    selected_attachment_ids = materialized_attachment_ids(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
     params = {
       action_type: 'send_message',
-      content_kind: 'free_text',
+      content_kind: content_kind,
+      template_params: template_params,
       text_mode: Reminders::TextModeResolver.call(
         action_type: 'send_message',
         body: body,
         instructions: nil
       ),
       timezone: timezone.presence || 'UTC',
-      body: body.to_s.strip,
+      body: body.to_s.strip.presence,
+      attachments: selected_attachment_ids,
       auto_cancel_on_incoming: auto_cancel_on_incoming.nil? || auto_cancel_on_incoming,
       target_inbox_id: target_inbox_id,
       metadata: {
@@ -81,6 +105,51 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     end
 
     params.compact
+  end
+
+  def materialized_attachment_ids(attachment_ids:, artifact_ids:)
+    attachment_resolver.resolve(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+  end
+
+  def normalized_content_kind(content_kind, template_params:)
+    normalized = content_kind.to_s.strip
+    return normalized if normalized.present?
+    return 'channel_template' if template_params.present?
+
+    'free_text'
+  end
+
+  def validate_touch_content!(body:, content_kind:, template_params:, attachments_present: false)
+    case content_kind
+    when 'channel_template'
+      raise ArgumentError, 'template_params are required for channel_template touches' if template_params.blank?
+      raise ArgumentError, 'Native attachments cannot be combined with channel_template touches' if attachments_present
+    when 'free_text'
+      raise ArgumentError, 'Touch body or attachment is required for free_text touches' if body.to_s.strip.blank? && !attachments_present
+    else
+      raise ArgumentError, 'content_kind must be one of: free_text, channel_template'
+    end
+  end
+
+  def ensure_delivery_allowed!(params)
+    ::Outbound::DeliveryPolicy.ensure!(
+      conversation: conversation,
+      inbox: target_inbox_for_policy(params[:target_inbox_id]),
+      content_kind: params[:content_kind],
+      template_params: params[:template_params],
+      attachments: params[:attachments],
+      scheduled_at: params[:scheduled_at]
+    )
+  end
+
+  def target_inbox_for_policy(target_inbox_id)
+    return conversation&.inbox if target_inbox_id.blank?
+
+    account.inboxes.find(target_inbox_id)
+  end
+
+  def attachment_resolver
+    @attachment_resolver ||= Captain::Tools::AttachmentResolver.new(account: account, assistant: assistant)
   end
 
   def resolve_remindable!(kind)

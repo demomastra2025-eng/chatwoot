@@ -41,18 +41,50 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     )
   end
 
-  def send_message_to_conversation(conversation_id:, content:, private_note: false, in_reply_to_message_id: nil)
+  def send_message_to_conversation(
+    conversation_id:,
+    content: nil,
+    content_kind: nil,
+    template_params: nil,
+    private_note: false,
+    in_reply_to_message_id: nil,
+    attachment_ids: [],
+    artifact_ids: []
+  )
     target_conversation = find_permissible_conversation!(conversation_id)
     sanitized_content = content.to_s.strip
-    raise ArgumentError, 'Message content is required' if sanitized_content.blank?
+    selected_attachment_ids = materialized_attachment_ids(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+    normalized_template_params = parsed_hash(template_params, field_name: 'template_params')
+    normalized_content_kind = normalized_content_kind(content_kind, template_params: normalized_template_params)
+    private_message = ActiveModel::Type::Boolean.new.cast(private_note)
+
+    validate_message_payload!(
+      content: sanitized_content,
+      content_kind: normalized_content_kind,
+      template_params: normalized_template_params,
+      attachments: selected_attachment_ids,
+      private_note: private_message
+    )
+
+    delivery_policy = ::Outbound::DeliveryPolicy.ensure!(
+      conversation: target_conversation,
+      content_kind: normalized_content_kind,
+      template_params: normalized_template_params,
+      attachments: selected_attachment_ids,
+      private_note: private_message
+    )
 
     params = {
-      content: sanitized_content,
-      private: ActiveModel::Type::Boolean.new.cast(private_note)
+      content: sanitized_content.presence,
+      private: private_message,
+      attachments: selected_attachment_ids
     }
+    params[:template_params] = normalized_template_params if normalized_content_kind == 'channel_template'
     params[:content_attributes] = { in_reply_to: in_reply_to_message_id } if in_reply_to_message_id.present?
 
-    ::Messages::MessageBuilder.new(actor, target_conversation, params).perform
+    message = ::Messages::MessageBuilder.new(actor, target_conversation, params.compact).perform
+    annotate_delivery_policy!(message, delivery_policy)
+    message
   end
 
   def edit_message(message_id:, content:)
@@ -132,6 +164,50 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
 
   def permissible_conversations
     ::Conversations::PermissionFilterService.new(account.conversations, actor, account).perform
+  end
+
+  def materialized_attachment_ids(attachment_ids:, artifact_ids:)
+    attachment_resolver.resolve(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+  end
+
+  def attachment_resolver
+    @attachment_resolver ||= Captain::Tools::AttachmentResolver.new(account: account, assistant: assistant)
+  end
+
+  def normalized_content_kind(content_kind, template_params:)
+    normalized = content_kind.to_s.strip
+    return normalized if normalized.present?
+    return 'channel_template' if template_params.present?
+
+    'free_text'
+  end
+
+  def validate_message_payload!(content:, content_kind:, template_params:, attachments:, private_note:)
+    if private_note
+      raise ArgumentError, 'Private notes cannot use channel templates' if content_kind == 'channel_template' || template_params.present?
+      raise ArgumentError, 'Message content or attachment is required' if content.blank? && attachments.blank?
+
+      return
+    end
+
+    case content_kind
+    when 'channel_template'
+      raise ArgumentError, 'template_params are required for channel_template messages' if template_params.blank?
+    when 'free_text'
+      raise ArgumentError, 'Message content or attachment is required' if content.blank? && attachments.blank?
+    else
+      raise ArgumentError, 'content_kind must be one of: free_text, channel_template'
+    end
+  end
+
+  def annotate_delivery_policy!(message, delivery_policy)
+    return message if message.private?
+
+    message.update!(
+      additional_attributes: (message.additional_attributes || {}).merge(
+        'delivery_policy' => delivery_policy.as_json
+      )
+    )
   end
 
   def find_permissible_conversation!(conversation_id)

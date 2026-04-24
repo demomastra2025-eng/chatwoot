@@ -130,6 +130,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(json_response[:title]).to eq('Fetch Order Status')
         expect(json_response[:description]).to eq('Fetches order status from external API')
         expect(json_response[:enabled]).to be(true)
+        expect(json_response[:allow_file_artifacts]).to be(true)
         expect(json_response[:slug]).to eq('custom_fetch_order_status')
         expect(json_response[:param_schema]).to eq([
                                                      {
@@ -317,7 +318,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
       {
         custom_tool: {
           title: 'Updated Tool Title',
-          enabled: false
+          enabled: false,
+          allow_file_artifacts: false
         }
       }
     end
@@ -349,6 +351,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:title]).to eq('Updated Tool Title')
         expect(json_response[:enabled]).to be(false)
+        expect(json_response[:allow_file_artifacts]).to be(false)
+        expect(custom_tool.reload.allow_file_artifacts).to be(false)
       end
 
       it 'updates parameter sources without dropping context or fixed configuration' do

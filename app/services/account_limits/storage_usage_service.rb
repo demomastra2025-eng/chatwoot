@@ -1,4 +1,6 @@
 class AccountLimits::StorageUsageService
+  LimitExceeded = Class.new(StandardError)
+
   LIMIT_EXCEEDED_MESSAGE = 'Account storage limit exceeded'.freeze
 
   RECORD_TYPE_SCOPES = {
@@ -11,6 +13,7 @@ class AccountLimits::StorageUsageService
     'Inbox' => %w[avatar],
     'Contact' => %w[avatar],
     'Company' => %w[avatar],
+    'Reminder' => %w[files],
     'Captain::Assistant' => %w[avatar],
     'Captain::Document' => %w[pdf_file source_file]
   }.freeze

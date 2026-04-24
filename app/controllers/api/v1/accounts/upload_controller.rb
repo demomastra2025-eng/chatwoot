@@ -15,7 +15,10 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
 
   def create_from_file
     attachment = params[:attachment]
-    return render_error(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE, :payment_required) unless storage_limit_available?(attachment.size)
+    unless storage_limit_available?(attachment.size)
+      return render_error(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE,
+                          :payment_required)
+    end
 
     create_and_save_blob(attachment.tempfile, attachment.original_filename, attachment.content_type)
   end
@@ -58,7 +61,8 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
     ActiveStorage::Blob.create_and_upload!(
       io: io,
       filename: filename,
-      content_type: content_type
+      content_type: content_type,
+      metadata: { 'account_id' => Current.account.id }
     )
   end
 

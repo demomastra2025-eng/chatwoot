@@ -6,6 +6,7 @@ import camelcaseKeys from 'camelcase-keys';
 
 import ContactAPI from 'dashboard/api/contacts';
 import TouchesAPI from 'dashboard/api/touches';
+import { uploadFile } from 'dashboard/helper/uploadHelper';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -119,6 +120,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved', 'update:modelValue']);
 
 const { t } = useI18n();
+const currentAccountId = useMapGetter('getCurrentAccountId');
 const getAllInboxes = useMapGetter('inboxes/getAllInboxes');
 const getFilteredWhatsAppTemplates = useMapGetter(
   'inboxes/getFilteredWhatsAppTemplates'
@@ -133,6 +135,8 @@ const selectedContact = ref(null);
 const showContactsDropdown = ref(false);
 const showInboxesDropdown = ref(false);
 const targetInbox = ref(null);
+const attachmentFileInput = ref(null);
+const touchAttachments = ref([]);
 
 const cloneTemplateParams = value => JSON.parse(JSON.stringify(value || {}));
 const friendlyTemplateName = templateName =>
@@ -167,6 +171,7 @@ const form = reactive({
 
 const ui = reactive({
   isSaving: false,
+  isUploadingAttachment: false,
 });
 
 const drawerCreateLabel = computed(() => {
@@ -520,6 +525,7 @@ const canSave = computed(() => {
     hasEntityContext &&
     hasTargetRoute &&
     hasContent &&
+    !ui.isUploadingAttachment &&
     (form.actionType !== 'ai_agent_wakeup' || canRunAiWakeup.value) &&
     (showAbsoluteTimingEditor.value
       ? !!form.scheduledAt
@@ -570,6 +576,98 @@ const touchEditorClass = isAiAuthoring => {
       ? 'bg-n-violet-3 ring-1 ring-inset ring-n-violet-6/20'
       : 'bg-n-solid-1 outline outline-1 outline-n-weak dark:outline-n-strong',
   ].join(' ');
+};
+
+const normalizeAttachment = attachment => {
+  const blobId =
+    attachment?.blobId ||
+    attachment?.blob_id ||
+    attachment?.signed_id ||
+    attachment?.signedId ||
+    (typeof attachment === 'string' ? attachment : null);
+
+  if (!blobId) return null;
+
+  return {
+    blobId,
+    fileName:
+      attachment?.fileName ||
+      attachment?.filename ||
+      attachment?.name ||
+      t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.FILE_FALLBACK'),
+    fileSize: attachment?.fileSize || attachment?.size || null,
+    contentType: attachment?.contentType || attachment?.content_type || '',
+    fileUrl: attachment?.fileUrl || attachment?.file_url || '',
+  };
+};
+
+const hydrateAttachments = attachments => {
+  touchAttachments.value = Array(attachments || [])
+    .map(normalizeAttachment)
+    .filter(Boolean);
+};
+
+const attachmentIds = computed(() =>
+  touchAttachments.value.map(attachment => attachment.blobId).filter(Boolean)
+);
+
+const formatAttachmentSize = size => {
+  const byteSize = Number(size || 0);
+  if (!Number.isFinite(byteSize) || byteSize <= 0) return '';
+  if (byteSize < 1024 * 1024) return `${Math.ceil(byteSize / 1024)} KB`;
+  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const openAttachmentPicker = () => {
+  attachmentFileInput.value?.click();
+};
+
+const removeAttachment = blobId => {
+  touchAttachments.value = touchAttachments.value.filter(
+    attachment => attachment.blobId !== blobId
+  );
+};
+
+const handleAttachmentUpload = async event => {
+  const files = Array.from(event.target.files || []);
+  event.target.value = '';
+
+  if (files.length === 0) return;
+
+  ui.isUploadingAttachment = true;
+
+  try {
+    const uploadedAttachments = (
+      await Promise.all(
+        files.map(async file => {
+          const result = await uploadFile(file, currentAccountId.value);
+
+          if (!result?.blobId) return null;
+
+          return {
+            blobId: result.blobId,
+            fileName: file.name,
+            fileSize: file.size,
+            contentType: file.type,
+            fileUrl: result.fileUrl,
+          };
+        })
+      )
+    ).filter(Boolean);
+
+    touchAttachments.value = [
+      ...touchAttachments.value,
+      ...uploadedAttachments,
+    ];
+  } catch (error) {
+    useAlert(
+      error?.response?.data?.error ||
+        error?.message ||
+        t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOAD_ERROR')
+    );
+  } finally {
+    ui.isUploadingAttachment = false;
+  }
 };
 
 const setContentKind = kind => {
@@ -828,6 +926,7 @@ const resetForm = () => {
   form.timingMode = 'relative';
   form.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   form.useAiAuthoring = false;
+  hydrateAttachments([]);
   clearTargetSelection();
 };
 
@@ -883,6 +982,7 @@ const hydrateForm = () => {
   form.timingMode = props.touch.timing_mode || 'absolute';
   form.timezone = props.touch.timezone || form.timezone;
   form.useAiAuthoring = props.touch.text_mode === 'agent';
+  hydrateAttachments(props.touch.attachments);
   hydrateTargetSelection();
 };
 
@@ -903,6 +1003,7 @@ const buildPayload = () => {
 
   return {
     action_type: form.actionType,
+    attachments: form.actionType === 'send_message' ? attachmentIds.value : [],
     auto_cancel_on_incoming: form.autoCancelOnIncoming,
     body,
     content_kind: form.contentKind,
@@ -1195,8 +1296,8 @@ watch(
     :title="drawerTitle"
     :description="drawerDescription"
     :confirm-label="touch?.id ? drawerSaveLabel : drawerCreateLabel"
-    :is-loading="ui.isSaving"
-    :disable-confirm="!canSave || ui.isSaving"
+    :is-loading="ui.isSaving || ui.isUploadingAttachment"
+    :disable-confirm="!canSave || ui.isSaving || ui.isUploadingAttachment"
     @update:model-value="emit('update:modelValue', $event)"
     @close="closeDrawer"
     @confirm="saveTouch"
@@ -1430,6 +1531,88 @@ watch(
                 @update:model-value="form.instructions = $event"
               />
             </template>
+
+            <div class="grid gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="mb-1 text-sm font-medium text-n-slate-12">
+                    {{
+                      $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.TITLE')
+                    }}
+                  </p>
+                  <p class="mb-0 text-xs leading-5 text-n-slate-10">
+                    {{
+                      $t(
+                        'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.DESCRIPTION'
+                      )
+                    }}
+                  </p>
+                </div>
+                <Button
+                  icon="i-lucide-paperclip"
+                  size="sm"
+                  color="slate"
+                  variant="faded"
+                  :is-loading="ui.isUploadingAttachment"
+                  :disabled="ui.isUploadingAttachment"
+                  :label="
+                    ui.isUploadingAttachment
+                      ? $t(
+                          'OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOADING'
+                        )
+                      : $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.ADD')
+                  "
+                  @click="openAttachmentPicker"
+                />
+              </div>
+
+              <input
+                ref="attachmentFileInput"
+                type="file"
+                multiple
+                class="hidden"
+                @change="handleAttachmentUpload"
+              />
+
+              <div v-if="touchAttachments.length" class="grid gap-2">
+                <div
+                  v-for="attachment in touchAttachments"
+                  :key="attachment.blobId"
+                  class="flex items-center gap-3 rounded-xl bg-n-solid-1 px-3 py-2 outline outline-1 outline-n-weak"
+                >
+                  <span class="i-lucide-file size-4 shrink-0 text-n-slate-11" />
+                  <div class="min-w-0 flex-1">
+                    <p
+                      class="mb-0 truncate text-sm font-medium text-n-slate-12"
+                    >
+                      {{ attachment.fileName }}
+                    </p>
+                    <p
+                      v-if="
+                        formatAttachmentSize(attachment.fileSize) ||
+                        attachment.contentType
+                      "
+                      class="mb-0 truncate text-xs text-n-slate-10"
+                    >
+                      {{
+                        formatAttachmentSize(attachment.fileSize) ||
+                        attachment.contentType
+                      }}
+                    </p>
+                  </div>
+                  <Button
+                    icon="i-lucide-x"
+                    size="xs"
+                    color="slate"
+                    variant="ghost"
+                    :aria-label="
+                      $t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.REMOVE')
+                    "
+                    @click="removeAttachment(attachment.blobId)"
+                  />
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </SchedulingFormFieldGroup>
@@ -1554,8 +1737,8 @@ watch(
         />
         <Button
           size="sm"
-          :is-loading="ui.isSaving"
-          :disabled="!canSave || ui.isSaving"
+          :is-loading="ui.isSaving || ui.isUploadingAttachment"
+          :disabled="!canSave || ui.isSaving || ui.isUploadingAttachment"
           :label="touch?.id ? drawerSaveLabel : drawerCreateLabel"
           @click="saveTouch"
         />

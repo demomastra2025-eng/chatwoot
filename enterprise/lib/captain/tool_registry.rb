@@ -438,9 +438,21 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'list_channel_templates',
+          title: 'List Channel Templates',
+          description: 'List approved WhatsApp/Twilio channel templates for a conversation or inbox',
+          group_name: 'Outbound',
+          icon: 'template',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::ListChannelTemplatesTool,
+          assistant_tool_class: Captain::Tools::Copilot::ListChannelTemplatesService,
+          required_permissions: %w[outbound_manage],
+          risk_level: 'low'
+        ),
+        definition(
           id: 'create_touch',
           title: 'Create Touch',
-          description: 'Create a scheduled outbound touch for the current conversation or linked CRM context',
+          description: 'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template',
           group_name: 'Outbound',
           icon: 'clock-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -648,7 +660,7 @@ class Captain::ToolRegistry
         definition(
           id: 'send_message_to_conversation',
           title: 'Send Message to Conversation',
-          description: 'Send a public reply or private note to a conversation',
+          description: 'Send a public reply, private note, attachments, or an approved channel template to a conversation',
           group_name: 'Conversations',
           icon: 'send',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],

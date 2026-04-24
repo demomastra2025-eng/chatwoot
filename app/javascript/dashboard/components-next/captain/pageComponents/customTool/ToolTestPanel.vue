@@ -142,6 +142,7 @@ watch(
     responseTemplate: props.customTool.response_template,
     authType: props.customTool.auth_type,
     authConfig: props.customTool.auth_config,
+    allowFileArtifacts: props.customTool.allow_file_artifacts,
     paramSchema: props.customTool.param_schema,
     agentValues: state.agentValues,
     contextValues: state.contextValues,
@@ -391,6 +392,7 @@ const buildRequestPayload = () => ({
     response_template: props.customTool.response_template,
     auth_type: props.customTool.auth_type,
     auth_config: props.customTool.auth_config || {},
+    allow_file_artifacts: props.customTool.allow_file_artifacts !== false,
     param_schema: props.customTool.param_schema || [],
   },
   testPayload: {

@@ -70,6 +70,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
       :response_template,
       :auth_type,
       :enabled,
+      :allow_file_artifacts,
       auth_config: {},
       param_schema: [:name, :type, :description, :required, :source, :context_path, :fixed_value]
     )

@@ -37,7 +37,8 @@ class Captain::Tools::HttpRequestExecutor
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
     response = execute_http_request(execution_url, request_preview[:body])
-    @custom_tool.format_response(response.body)
+    formatted_body = @custom_tool.format_response(response.body)
+    response_with_artifacts(response.body, formatted_body)
   rescue MissingRequiredParametersError => e
     Rails.logger.warn("HttpTool missing parameters for #{@custom_tool.slug}: #{e.message}")
     Captain::ToolResult.failure_output(error: e.message, audit: failure_audit(request_preview, failure_stage: 'validation'))
@@ -363,6 +364,32 @@ class Captain::Tools::HttpRequestExecutor
   def normalize_response_headers(headers)
     headers.to_h.transform_values do |value|
       value.is_a?(Array) && value.one? ? value.first : value
+    end
+  end
+
+  def response_with_artifacts(raw_response_body, formatted_body)
+    return formatted_body unless @custom_tool.allow_file_artifacts?
+
+    artifact_candidates = Captain::Tools::HttpArtifactExtractor.call(
+      raw_response_body: raw_response_body,
+      formatted_response: formatted_body,
+      assistant: @assistant,
+      custom_tool: @custom_tool
+    )
+    return formatted_body if artifact_candidates.blank?
+
+    {
+      content: redacted_artifact_content(formatted_body, artifact_candidates),
+      artifact_candidates: artifact_candidates
+    }.to_json
+  end
+
+  def redacted_artifact_content(content, artifact_candidates)
+    artifact_candidates.each_with_index.reduce(content.to_s.dup) do |redacted_content, (candidate, index)|
+      payload = Captain::Tools::HttpArtifactToken.decode(candidate[:id] || candidate['id'])
+      redacted_content.gsub(payload[:url].to_s, "[artifact_candidate:#{index + 1}]")
+    rescue Captain::Tools::HttpArtifactToken::InvalidToken
+      redacted_content
     end
   end
 

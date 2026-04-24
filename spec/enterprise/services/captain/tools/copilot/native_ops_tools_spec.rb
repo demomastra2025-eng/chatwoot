@@ -7,6 +7,14 @@ RSpec.describe 'Captain native ops tools' do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
+  let(:account_owned_blob) do
+    ActiveStorage::Blob.create_and_upload!(
+      io: File.open('spec/assets/avatar.png', 'rb'),
+      filename: 'avatar.png',
+      content_type: 'image/png',
+      metadata: { 'account_id' => account.id }
+    )
+  end
 
   describe Captain::Tools::Copilot::SendMessageToConversationService do
     it 'sends a message to the target conversation' do
@@ -17,6 +25,50 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload['action']).to eq('send_message_to_conversation')
       expect(payload.dig('message', 'content')).to eq('Hello from captain')
       expect(conversation.reload.messages.outgoing.last.content).to eq('Hello from captain')
+    end
+
+    it 'sends selected attachments through the native message pipeline' do
+      service = described_class.new(assistant, user: user, conversation: conversation)
+      signed_blob_id = account_owned_blob.signed_id
+
+      payload = JSON.parse(service.execute(
+                             conversation_id: conversation.display_id,
+                             content: '',
+                             attachment_ids: [signed_blob_id]
+                           ))
+
+      expect(payload.dig('message', 'attachments', 0, 'file_type')).to eq('image')
+      expect(conversation.reload.messages.outgoing.last.attachments.first.file.blob.signed_id).to eq(signed_blob_id)
+    end
+  end
+
+  describe Captain::Tools::Copilot::ListChannelTemplatesService do
+    it 'lists approved templates for the current WhatsApp conversation inbox' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      whatsapp_contact = create(:contact, account: account)
+      whatsapp_contact_inbox = create(:contact_inbox, contact: whatsapp_contact, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: whatsapp_contact,
+                                                    contact_inbox: whatsapp_contact_inbox)
+      service = described_class.new(assistant, user: user, conversation: whatsapp_conversation)
+
+      payload = JSON.parse(service.execute(name: 'sample_shipping_confirmation', language: 'en_US'))
+
+      expect(payload['action']).to eq('list_channel_templates')
+      expect(payload['supports_channel_templates']).to be(true)
+      expect(payload.dig('templates', 0, 'name')).to eq('sample_shipping_confirmation')
+      expect(payload.dig('templates', 0, 'required_params', 0, 'name')).to eq('1')
+    end
+
+    it 'explains that normal channels do not require templates' do
+      service = described_class.new(assistant, user: user, conversation: conversation)
+
+      payload = JSON.parse(service.execute)
+
+      expect(payload['action']).to eq('list_channel_templates')
+      expect(payload['supports_channel_templates']).to be(false)
+      expect(payload['templates']).to eq([])
+      expect(payload['notes'].first).to include('does not require channel templates')
     end
   end
 

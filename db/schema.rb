@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_13_153000) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_24_113000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -417,6 +417,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_13_153000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "group_name"
+    t.boolean "allow_file_artifacts", default: true, null: false
     t.index ["account_id", "group_name"], name: "index_captain_custom_tools_on_account_id_and_group_name"
     t.index ["account_id", "slug"], name: "index_captain_custom_tools_on_account_id_and_slug", unique: true
     t.index ["account_id"], name: "index_captain_custom_tools_on_account_id"

@@ -5,6 +5,15 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:conversation) { create(:conversation, account: account) }
+  let(:signed_blob_id) { account_owned_blob.signed_id }
+  let(:account_owned_blob) do
+    ActiveStorage::Blob.create_and_upload!(
+      io: File.open('spec/assets/avatar.png', 'rb'),
+      filename: 'avatar.png',
+      content_type: 'image/png',
+      metadata: { 'account_id' => account.id }
+    )
+  end
 
   describe '#create_touch' do
     it 'creates a pending touch for the current conversation by default' do
@@ -59,6 +68,58 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(touch.text_mode).to eq('dynamic')
     end
 
+    it 'stores selected attachment ids on the reminder so execution uses the native message builder pipeline' do
+      touch = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        actor: user
+      ).create_touch(
+        body: 'Follow up with a file',
+        scheduled_at: 1.day.from_now.iso8601,
+        attachment_ids: [signed_blob_id]
+      )
+
+      expect(touch.attachments).to eq([signed_blob_id])
+      expect(touch.files.blobs).to contain_exactly(account_owned_blob)
+    end
+
+    it 'allows attachment-only free_text touches' do
+      touch = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        actor: user
+      ).create_touch(
+        body: nil,
+        scheduled_at: 1.day.from_now.iso8601,
+        attachment_ids: [signed_blob_id]
+      )
+
+      expect(touch.content_kind).to eq('free_text')
+      expect(touch.body).to be_blank
+      expect(touch.attachments).to eq([signed_blob_id])
+    end
+
+    it 'materializes selected artifact ids before storing reminder attachments' do
+      materializer = instance_double(Captain::Tools::HttpArtifactMaterializer)
+      allow(Captain::Tools::HttpArtifactMaterializer).to receive(:new)
+        .with(account: account, assistant: assistant)
+        .and_return(materializer)
+      allow(materializer).to receive(:materialize!).with('opaque-artifact-id').and_return(signed_blob_id)
+
+      touch = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        actor: user
+      ).create_touch(
+        body: 'Follow up with selected artifact',
+        scheduled_at: 1.day.from_now.iso8601,
+        artifact_ids: ['opaque-artifact-id']
+      )
+
+      expect(touch.attachments).to eq([signed_blob_id])
+      expect(materializer).to have_received(:materialize!).with('opaque-artifact-id')
+    end
+
     it 'raises when the selected context is unavailable' do
       operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
 
@@ -69,6 +130,52 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
           scheduled_at: 1.day.from_now.iso8601
         )
       end.to raise_error(ArgumentError, 'Current appointment is not available')
+    end
+
+    it 'creates a channel_template touch without requiring a body' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: conversation.contact,
+                                                    contact_inbox: contact_inbox)
+      template_params = {
+        name: 'sample_shipping_confirmation',
+        language: 'en_US',
+        namespace: '23423423_2342423_324234234_2343224',
+        processed_params: { '1' => '2' }
+      }
+
+      touch = described_class.new(
+        assistant: assistant,
+        conversation: whatsapp_conversation,
+        actor: user
+      ).create_touch(
+        content_kind: 'channel_template',
+        template_params: template_params,
+        scheduled_at: 1.day.from_now.iso8601
+      )
+
+      expect(touch.content_kind).to eq('channel_template')
+      expect(touch.body).to be_blank
+      expect(touch.template_params).to include('name' => 'sample_shipping_confirmation', 'language' => 'en_US')
+      expect(touch.metadata['delivery_policy']).to include('delivery_mode' => 'channel_template', 'requires_template' => true)
+    end
+
+    it 'fails fast for scheduled WhatsApp Business free text when the reply window will be closed' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: conversation.contact,
+                                                    contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: whatsapp_conversation, message_type: 'incoming', created_at: 1.hour.ago)
+      operation = described_class.new(assistant: assistant, conversation: whatsapp_conversation, actor: user)
+
+      expect do
+        operation.create_touch(
+          body: 'Scheduled free text',
+          scheduled_at: 25.hours.from_now.iso8601
+        )
+      end.to raise_error(ArgumentError, /approved channel_template/)
     end
   end
 end

@@ -10,8 +10,13 @@ module Api::V1::Accounts::Concerns::WhatsappHealthManagement
   def sync_templates
     return render status: :unprocessable_entity, json: { error: 'Template sync is only available for WhatsApp channels' } unless whatsapp_channel?
 
-    trigger_template_sync
-    render status: :ok, json: { message: 'Template sync initiated successfully' }
+    sync_result = trigger_template_sync
+    unless sync_result
+      return render status: :unprocessable_entity, json: { error: 'Template sync failed. Please check provider configuration and try again.' }
+    end
+
+    @inbox.reload
+    render 'api/v1/accounts/inboxes/show', status: :ok
   rescue StandardError => e
     render status: :internal_server_error, json: { error: e.message }
   end
@@ -47,9 +52,9 @@ module Api::V1::Accounts::Concerns::WhatsappHealthManagement
 
   def trigger_template_sync
     if @inbox.whatsapp?
-      Channels::Whatsapp::TemplatesSyncJob.perform_later(@inbox.channel)
+      @inbox.channel.sync_templates
     elsif @inbox.twilio? && @inbox.channel.whatsapp?
-      Channels::Twilio::TemplatesSyncJob.perform_later(@inbox.channel)
+      Twilio::TemplateSyncService.new(channel: @inbox.channel).call
     end
   end
 end

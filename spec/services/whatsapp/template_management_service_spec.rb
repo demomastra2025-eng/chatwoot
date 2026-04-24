@@ -50,6 +50,62 @@ RSpec.describe Whatsapp::TemplateManagementService do
       expect(whatsapp_channel.reload.message_templates.first['status']).to eq('PENDING')
       expect(whatsapp_channel.message_templates.first['components'].first['text']).to eq('Order {{1}} updated')
     end
+
+    it 'recovers the local cache when provider reports that the template already exists' do
+      provider_error = {
+        'error' => {
+          'message' => 'Template name already exists for this language',
+          'code' => 100
+        }
+      }
+      response = instance_double(
+        HTTParty::Response,
+        success?: false,
+        body: provider_error.to_json
+      )
+      remote_template = {
+        'id' => 'remote-template-id',
+        'name' => 'order_update',
+        'language' => 'en',
+        'status' => 'APPROVED',
+        'category' => 'UTILITY',
+        'components' => [{ 'type' => 'BODY', 'text' => 'Order {{1}} updated' }]
+      }
+
+      allow(provider_service).to receive(:create_template).with(request_body).and_return(response)
+      allow(provider_service).to receive(:fetch_templates).and_return([remote_template])
+
+      result = nil
+      expect do
+        result = described_class.new(whatsapp_channel: whatsapp_channel).create_template({})
+      end.to have_enqueued_job(Channels::Whatsapp::TemplatesSyncJob).with(whatsapp_channel)
+
+      expect(result[:success]).to be(true)
+      expect(result[:recovered]).to be(true)
+      expect(result[:template]['id']).to eq('remote-template-id')
+      expect(whatsapp_channel.reload.message_templates.first['name']).to eq('order_update')
+      expect(whatsapp_channel.message_templates.first['status']).to eq('APPROVED')
+    end
+
+    it 'recovers the local cache when provider times out after creating the template' do
+      remote_template = {
+        'id' => 'remote-template-id',
+        'name' => 'order_update',
+        'language' => 'en',
+        'status' => 'PENDING',
+        'category' => 'UTILITY',
+        'components' => [{ 'type' => 'BODY', 'text' => 'Order {{1}} updated' }]
+      }
+
+      allow(provider_service).to receive(:create_template).with(request_body).and_raise(Net::ReadTimeout)
+      allow(provider_service).to receive(:fetch_templates).and_return([remote_template])
+
+      result = described_class.new(whatsapp_channel: whatsapp_channel).create_template({})
+
+      expect(result[:success]).to be(true)
+      expect(result[:recovered]).to be(true)
+      expect(whatsapp_channel.reload.message_templates.first['id']).to eq('remote-template-id')
+    end
   end
 
   describe '#delete_template' do
