@@ -34,7 +34,7 @@ const updateValue = value => {
   >
     <span class="sr-only">{{ t('SWITCH.TOGGLE') }}</span>
     <SwitchThumb
-      class="block size-[12px] rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-[12px] data-[state=unchecked]:translate-x-0"
+      class="block size-[12px] rounded-full bg-n-background shadow-sm transition-transform duration-200 ease-out data-[state=checked]:translate-x-[16px] data-[state=unchecked]:translate-x-0"
     />
   </SwitchRoot>
 </template>
