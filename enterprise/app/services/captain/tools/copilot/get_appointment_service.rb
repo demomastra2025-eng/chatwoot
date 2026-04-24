@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::GetAppointmentService < Captain::Tools::Copilot::
     appointment = account.scheduling_appointments.includes(:resource, :service, :company, :contact).find_by(id: appointment_id)
     return 'Appointment not found' if appointment.blank?
 
-    formatted_record(appointment)
+    formatted_payload(appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
   end
 
   def active?

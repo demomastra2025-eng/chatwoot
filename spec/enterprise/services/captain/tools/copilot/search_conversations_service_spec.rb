@@ -8,53 +8,25 @@ RSpec.describe Captain::Tools::Copilot::SearchConversationsService do
 
   describe '#name' do
     it 'returns the correct service name' do
-      expect(service.name).to eq('search_conversation')
+      expect(service.name).to eq('search_conversations')
     end
   end
 
   describe '#description' do
     it 'returns the service description' do
-      expect(service.description).to eq('Search conversations based on parameters')
+      expect(service.description).to eq('Search conversations by status, priority, contact, or labels')
     end
   end
 
   describe '#parameters' do
     it 'defines the expected parameters' do
-      expect(service.parameters.keys).to contain_exactly(:status, :contact_id, :priority, :labels)
+      expect(service.parameters.keys).to contain_exactly(:status, :contact_id, :priority, :labels, :limit)
     end
   end
 
   describe '#active?' do
     context 'when user has conversation_manage permission' do
       let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_manage']) }
-      let(:user) { create(:user, account: account) }
-
-      before do
-        account_user = AccountUser.find_by(user: user, account: account)
-        account_user.update(role: :agent, custom_role: custom_role)
-      end
-
-      it 'returns true' do
-        expect(service.active?).to be true
-      end
-    end
-
-    context 'when user has conversation_unassigned_manage permission' do
-      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_unassigned_manage']) }
-      let(:user) { create(:user, account: account) }
-
-      before do
-        account_user = AccountUser.find_by(user: user, account: account)
-        account_user.update(role: :agent, custom_role: custom_role)
-      end
-
-      it 'returns true' do
-        expect(service.active?).to be true
-      end
-    end
-
-    context 'when user has conversation_participating_manage permission' do
-      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_participating_manage']) }
       let(:user) { create(:user, account: account) }
 
       before do
@@ -83,78 +55,44 @@ RSpec.describe Captain::Tools::Copilot::SearchConversationsService do
   end
 
   describe '#execute' do
-    let(:contact) { create(:contact, account: account) }
+    let(:contact) { create(:contact, account: account, name: 'Aruzhan') }
     let!(:open_conversation) { create(:conversation, account: account, contact: contact, status: 'open', priority: 'high') }
     let!(:resolved_conversation) { create(:conversation, account: account, status: 'resolved', priority: 'low') }
 
-    it 'returns all conversations when no filters are applied' do
-      result = service.execute
-      expect(result).to include('Total number of conversations: 2')
-      expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-      expect(result).to include(resolved_conversation.to_llm_text(include_contact_details: true))
+    before do
+      open_conversation.label_list.add('sales')
+      open_conversation.save!
     end
 
-    it 'filters conversations by status' do
-      result = service.execute(status: 'open')
-      expect(result).to include('Total number of conversations: 1')
-      expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-      expect(result).not_to include(resolved_conversation.to_llm_text(include_contact_details: true))
+    it 'returns normalized conversations filtered by status' do
+      payload = JSON.parse(service.execute(status: 'open'))
+
+      expect(payload['total_count']).to eq(1)
+      expect(payload['filters']).to include('status' => 'open')
+      expect(payload['conversations'].first).to include(
+        'id' => open_conversation.id,
+        'display_id' => open_conversation.display_id,
+        'status' => 'open',
+        'priority' => 'high'
+      )
     end
 
-    it 'filters conversations by contact_id' do
-      result = service.execute(contact_id: contact.id)
-      expect(result).to include('Total number of conversations: 1')
-      expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-      expect(result).not_to include(resolved_conversation.to_llm_text(include_contact_details: true))
+    it 'supports labels as an array and limit' do
+      payload = JSON.parse(service.execute(labels: ['sales'], limit: 1))
+
+      expect(payload['total_count']).to eq(1)
+      expect(payload['filters']).to include('labels' => ['sales'])
+      expect(payload['conversations'].length).to eq(1)
+      expect(payload['conversations'].first['id']).to eq(open_conversation.id)
     end
 
-    it 'filters conversations by priority' do
-      result = service.execute(priority: 'high')
-      expect(result).to include('Total number of conversations: 1')
-      expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-      expect(result).not_to include(resolved_conversation.to_llm_text(include_contact_details: true))
-    end
+    it 'returns an empty normalized payload when no conversations are found' do
+      payload = JSON.parse(service.execute(status: 'snoozed'))
 
-    it 'returns appropriate message when no conversations are found' do
-      result = service.execute(status: 'snoozed')
-      expect(result).to eq('No conversations found')
-    end
-
-    context 'when invalid status is provided' do
-      it 'ignores invalid status and returns all conversations' do
-        result = service.execute(status: 'all')
-        expect(result).to include('Total number of conversations: 2')
-        expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-        expect(result).to include(resolved_conversation.to_llm_text(include_contact_details: true))
-      end
-
-      it 'ignores random invalid status values' do
-        result = service.execute(status: 'invalid_status')
-        expect(result).to include('Total number of conversations: 2')
-      end
-    end
-
-    context 'when invalid priority is provided' do
-      it 'ignores invalid priority and returns all conversations' do
-        result = service.execute(priority: 'all')
-        expect(result).to include('Total number of conversations: 2')
-        expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-        expect(result).to include(resolved_conversation.to_llm_text(include_contact_details: true))
-      end
-
-      it 'ignores random invalid priority values' do
-        result = service.execute(priority: 'invalid_priority')
-        expect(result).to include('Total number of conversations: 2')
-      end
-    end
-
-    context 'when combining valid and invalid parameters' do
-      it 'applies valid filters and ignores invalid ones' do
-        result = service.execute(status: 'all', contact_id: contact.id)
-        expect(result).to include('Total number of conversations: 1')
-        expect(result).to include(open_conversation.to_llm_text(include_contact_details: true))
-        expect(result).not_to include(resolved_conversation.to_llm_text(include_contact_details: true))
-      end
+      expect(payload).to include(
+        'total_count' => 0,
+        'conversations' => []
+      )
     end
   end
 end

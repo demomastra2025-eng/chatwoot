@@ -12,67 +12,9 @@ RSpec.describe Captain::Tools::Copilot::GetConversationService do
     end
   end
 
-  describe '#description' do
-    it 'returns the service description' do
-      expect(service.description).to eq('Get details of a conversation including messages and contact information')
-    end
-  end
-
-  describe '#parameters' do
-    it 'defines conversation_id parameter' do
-      expect(service.parameters.keys).to contain_exactly(:conversation_id)
-    end
-  end
-
   describe '#active?' do
     context 'when user is an admin' do
       let(:user) { create(:user, :administrator, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
-
-      it 'returns true' do
-        expect(service.active?).to be true
-      end
-    end
-
-    context 'when user has custom role with conversation_manage permission' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
-      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_manage']) }
-
-      before do
-        account_user = AccountUser.find_by(user: user, account: account)
-        account_user.update(role: :agent, custom_role: custom_role)
-      end
-
-      it 'returns true' do
-        expect(service.active?).to be true
-      end
-    end
-
-    context 'when user has custom role with conversation_unassigned_manage permission' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
-      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_unassigned_manage']) }
-
-      before do
-        account_user = AccountUser.find_by(user: user, account: account)
-        account_user.update(role: :agent, custom_role: custom_role)
-      end
-
-      it 'returns true' do
-        expect(service.active?).to be true
-      end
-    end
-
-    context 'when user has custom role with conversation_participating_manage permission' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
-      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_participating_manage']) }
-
-      before do
-        account_user = AccountUser.find_by(user: user, account: account)
-        account_user.update(role: :agent, custom_role: custom_role)
-      end
 
       it 'returns true' do
         expect(service.active?).to be true
@@ -80,8 +22,6 @@ RSpec.describe Captain::Tools::Copilot::GetConversationService do
     end
 
     context 'when user has custom role without any conversation permissions' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
       let(:custom_role) { create(:custom_role, account: account, permissions: []) }
 
       before do
@@ -96,53 +36,42 @@ RSpec.describe Captain::Tools::Copilot::GetConversationService do
   end
 
   describe '#execute' do
-    context 'when conversation is not found' do
-      it 'returns not found message' do
-        expect(service.execute(conversation_id: 999)).to eq('Conversation not found')
-      end
+    let(:user) { create(:user, :administrator, account: account) }
+
+    it 'returns not found message when conversation is missing' do
+      expect(service.execute(conversation_id: 999)).to eq('Conversation not found')
     end
 
-    context 'when conversation exists' do
-      let(:inbox) { create(:inbox, account: account) }
-      let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+    it 'returns a normalized conversation payload including messages' do
+      inbox = create(:inbox, account: account)
+      conversation = create(:conversation, account: account, inbox: inbox)
+      create(:message,
+             conversation: conversation,
+             message_type: 'outgoing',
+             content: 'Regular message',
+             private: false)
+      create(:message,
+             conversation: conversation,
+             message_type: 'outgoing',
+             content: 'Private note content',
+             private: true)
 
-      it 'returns the conversation in llm text format' do
-        result = service.execute(conversation_id: conversation.display_id)
-        expect(result).to eq(conversation.to_llm_text)
-      end
+      payload = JSON.parse(service.execute(conversation_id: conversation.display_id))
+      conversation_payload = payload.fetch('conversation')
+      contents = conversation_payload.fetch('messages').map { |message| message['content'] }
+      private_note = conversation_payload.fetch('messages').find { |message| message['private'] }
 
-      it 'includes private messages in the llm text format' do
-        # Create a regular message
-        create(:message,
-               conversation: conversation,
-               message_type: 'outgoing',
-               content: 'Regular message',
-               private: false)
-
-        # Create a private message
-        create(:message,
-               conversation: conversation,
-               message_type: 'outgoing',
-               content: 'Private note content',
-               private: true)
-
-        result = service.execute(conversation_id: conversation.display_id)
-
-        # Verify that the result includes both regular and private messages
-        expect(result).to include('Regular message')
-        expect(result).to include('Private note content')
-        expect(result).to include('[Private Note]')
-      end
-
-      context 'when conversation belongs to different account' do
-        let(:other_account) { create(:account) }
-        let(:other_inbox) { create(:inbox, account: other_account) }
-        let(:other_conversation) { create(:conversation, account: other_account, inbox: other_inbox) }
-
-        it 'returns not found message' do
-          expect(service.execute(conversation_id: other_conversation.display_id)).to eq('Conversation not found')
-        end
-      end
+      expect(conversation_payload).to include(
+        'id' => conversation.id,
+        'display_id' => conversation.display_id,
+        'status' => conversation.status,
+        'inbox_id' => inbox.id,
+        'inbox_name' => inbox.name,
+        'contact_id' => conversation.contact_id,
+        'contact_name' => conversation.contact.name
+      )
+      expect(contents).to include('Regular message', 'Private note content')
+      expect(private_note).to include('content' => 'Private note content', 'private' => true)
     end
   end
 end

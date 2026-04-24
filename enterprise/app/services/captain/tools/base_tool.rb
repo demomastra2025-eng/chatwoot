@@ -70,11 +70,21 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
   def user_has_permission(permission)
     return false if @user.blank?
 
-    account_user = AccountUser.find_by(account_id: @assistant.account_id, user_id: @user.id)
+    account_user = current_account_user
     return false if account_user.blank?
 
     return account_user.custom_role.permissions.include?(permission) if account_user.custom_role.present?
 
     account_user.administrator? || account_user.agent?
+  end
+
+  def current_account_user
+    return nil if @user.blank? || @assistant.blank?
+
+    @current_account_user ||= AccountUser.find_by(account_id: @assistant.account_id, user_id: @user.id)
+  end
+
+  def account_administrator?
+    current_account_user&.administrator?
   end
 end

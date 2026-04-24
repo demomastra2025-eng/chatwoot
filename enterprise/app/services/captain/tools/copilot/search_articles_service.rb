@@ -1,22 +1,28 @@
-class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::BaseTool
+class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::BaseAccountTool
   def self.name
     'search_articles'
   end
-  description 'Search articles based on parameters'
-  param :query, desc: 'Search articles by title or content (partial match)', required: false
+
+  description 'Search knowledge base articles by query, category, or status'
+  param :query, type: :string, desc: 'Search articles by title or content (partial match)', required: false
   param :category_id, type: :number, desc: 'Filter articles by category ID', required: false
-  param :status, type: :string, desc: 'Filter articles by status - MUST BE ONE OF: draft, published, archived', required: false
+  param :status, type: :string, desc: 'Filter articles by status: draft, published, archived', required: false
+  param :limit, type: :number, desc: 'Maximum number of articles to return', required: false
 
-  def execute(query: nil, category_id: nil, status: nil)
+  def execute(query: nil, category_id: nil, status: nil, limit: nil)
     articles = fetch_articles(query: query, category_id: category_id, status: status)
-    return 'No articles found' unless articles.exists?
-
     total_count = articles.count
-    articles = articles.limit(100)
-    <<~RESPONSE
-      #{total_count > 100 ? "Found #{total_count} articles (showing first 100)" : "Total number of articles: #{total_count}"}
-      #{articles.map(&:to_llm_text).join("\n---\n")}
-    RESPONSE
+    records = articles.limit(parse_limit(limit)).map { |article| article_payload(article) }
+
+    formatted_payload(
+      filters: {
+        query: query,
+        category_id: category_id,
+        status: status
+      }.compact,
+      total_count: total_count,
+      articles: records
+    )
   end
 
   def active?
@@ -26,10 +32,29 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::BaseTool
   private
 
   def fetch_articles(query:, category_id:, status:)
-    articles = Article.where(account_id: @assistant.account_id)
-    articles = articles.where('title ILIKE :query OR content ILIKE :query', query: "%#{query}%") if query.present?
-    articles = articles.where(category_id: category_id) if category_id.present?
-    articles = articles.where(status: status) if status.present?
-    articles
+    scope = account.articles.includes(:portal, :author).order(updated_at: :desc, id: :desc)
+    scope = scope.where('title ILIKE :query OR content ILIKE :query', query: "%#{query}%") if query.present?
+    scope = scope.where(category_id: category_id) if category_id.present?
+    scope = scope.where(status: status) if status.present?
+    scope
+  end
+
+  def article_payload(article)
+    {
+      id: article.id,
+      title: article.title,
+      description: article.description,
+      content: article.content,
+      slug: article.slug,
+      locale: article.locale,
+      status: article.status,
+      category_id: article.category_id,
+      portal_id: article.portal_id,
+      portal_name: article.portal&.name,
+      author_id: article.author_id,
+      author_name: article.author&.name,
+      created_at: article.created_at&.iso8601,
+      updated_at: article.updated_at&.iso8601
+    }
   end
 end

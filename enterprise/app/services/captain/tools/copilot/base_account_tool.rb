@@ -90,6 +90,27 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     Array(value.to_s.split(',')).map(&:strip).reject(&:blank?)
   end
 
+  def parse_id_list(value, field_name:)
+    values =
+      case value
+      when nil
+        []
+      when String
+        value.split(',')
+      else
+        Array(value)
+      end
+
+    values.filter_map do |item|
+      text = item.to_s.strip
+      next if text.blank?
+
+      Integer(text)
+    end
+  rescue ArgumentError, TypeError
+    raise ArgumentError, "#{field_name} must contain integer IDs"
+  end
+
   def parse_datetime(value, field_name:, required: false)
     if value.blank?
       raise ArgumentError, "#{field_name} is required" if required
@@ -101,5 +122,35 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     raise ArgumentError, "#{field_name} must be a valid datetime" if parsed.blank?
 
     parsed
+  end
+
+  def parse_limit(value, default: MAX_RESULTS, max: MAX_RESULTS)
+    return default if value.blank?
+
+    numeric = value.to_i
+    return default if numeric <= 0
+
+    [numeric, max].min
+  end
+
+  def permissible_conversations
+    Conversations::PermissionFilterService.new(account.conversations, @user, account).perform
+  end
+
+  def find_permissible_conversation(conversation_id)
+    return nil if conversation_id.blank?
+
+    permissible_conversations.find_by(display_id: conversation_id) ||
+      permissible_conversations.find_by(id: conversation_id)
+  end
+
+  def find_permissible_conversation!(conversation_id)
+    find_permissible_conversation(conversation_id) || raise(ActiveRecord::RecordNotFound, 'Conversation not found')
+  end
+
+  def find_permissible_message!(message_id)
+    Message.joins(:conversation)
+           .where(conversation_id: permissible_conversations.select(:id))
+           .find(message_id)
   end
 end

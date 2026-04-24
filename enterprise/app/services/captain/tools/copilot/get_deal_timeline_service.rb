@@ -18,7 +18,11 @@ class Captain::Tools::Copilot::GetDealTimelineService < Captain::Tools::Copilot:
       params: { limit: limit }.compact
     ).perform
 
-    formatted_payload(timeline)
+    formatted_payload(
+      deal_id: deal.id,
+      items: timeline[:items],
+      meta: timeline[:meta]
+    )
   end
 
   def active?

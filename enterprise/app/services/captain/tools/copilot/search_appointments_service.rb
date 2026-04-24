@@ -5,14 +5,15 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   description 'Search appointments by client, status, payment status, contact, or specialist'
   param :client_name, type: :string, desc: 'Client name query', required: false
-  param :status, type: :string, desc: 'Appointment status', required: false
-  param :payment_status, type: :string, desc: 'Payment status', required: false
+  param :status, type: :string, desc: 'Appointment status: scheduled, confirmed, completed, cancelled, or no_show', required: false
+  param :payment_status, type: :string, desc: 'Payment status: awaiting_payment, prepaid, paid, or cancelled', required: false
   param :contact_id, type: :number, desc: 'Contact ID', required: false
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: false
   param :from, type: :string, desc: 'Start of range datetime', required: false
   param :to, type: :string, desc: 'End of range datetime', required: false
+  param :limit, type: :number, desc: 'Maximum number of appointments to return', required: false
 
-  def execute(client_name: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil)
+  def execute(client_name: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil, limit: nil)
     appointments = account.scheduling_appointments.includes(:resource, :service, :company, :contact)
     appointments = appointments.where(contact_id: contact_id) if contact_id.present?
     appointments = appointments.where(resource_id: resource_id) if resource_id.present?
@@ -25,7 +26,22 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     appointments = appointments.where('starts_at >= ?', range_from) if range_from.present?
     appointments = appointments.where('starts_at < ?', range_to) if range_to.present?
 
-    formatted_collection(appointments.ordered.limit(MAX_RESULTS))
+    total_count = appointments.count
+    records = appointments.ordered.limit(parse_limit(limit)).map { |appointment| Scheduling::PayloadBuilder.appointment(appointment) }
+
+    formatted_payload(
+      filters: {
+        client_name: client_name,
+        status: status,
+        payment_status: payment_status,
+        contact_id: contact_id,
+        resource_id: resource_id,
+        from: from,
+        to: to
+      }.compact,
+      total_count: total_count,
+      appointments: records
+    )
   end
 
   def active?

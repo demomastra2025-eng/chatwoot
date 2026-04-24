@@ -8,21 +8,34 @@ class Captain::Tools::Copilot::SearchTasksService < Captain::Tools::Copilot::Bas
   param :status_name, type: :string, desc: 'Task status name', required: false
   param :assignee_id, type: :number, desc: 'Assignee user ID', required: false
   param :deal_id, type: :number, desc: 'Deal ID', required: false
-  param :priority, type: :string, desc: 'Task priority', required: false
+  param :priority, type: :string, desc: 'Task priority: low, medium, high, or urgent', required: false
   param :archived, type: :boolean, desc: 'Whether to search archived tasks', required: false
+  param :limit, type: :number, desc: 'Maximum number of tasks to return', required: false
 
-  def execute(query: nil, status_name: nil, assignee_id: nil, deal_id: nil, priority: nil, archived: nil)
+  def execute(query: nil, status_name: nil, assignee_id: nil, deal_id: nil, priority: nil, archived: nil, limit: nil)
     tasks = account.crm_tasks.includes(:status, :assignee, :team, :deal)
     tasks = cast_boolean(archived) ? tasks.archived : tasks.kept
     tasks = tasks.where(assignee_id: assignee_id) if assignee_id.present?
     tasks = tasks.where(deal_id: deal_id) if deal_id.present?
     tasks = tasks.where(priority: priority) if priority.present?
     tasks = tasks.joins(:status).where('LOWER(crm_task_statuses.name) = ?', status_name.to_s.downcase) if status_name.present?
-    if query.present?
-      tasks = tasks.where('crm_tasks.title ILIKE :query OR crm_tasks.external_ref ILIKE :query', query: "%#{query.strip}%")
-    end
+    tasks = tasks.where('crm_tasks.title ILIKE :query OR crm_tasks.external_ref ILIKE :query', query: "%#{query.strip}%") if query.present?
 
-    formatted_collection(tasks.ordered.limit(MAX_RESULTS))
+    total_count = tasks.count
+    records = tasks.ordered.limit(parse_limit(limit)).map { |task| Crm::PayloadBuilder.task(task) }
+
+    formatted_payload(
+      filters: {
+        query: query,
+        status_name: status_name,
+        assignee_id: assignee_id,
+        deal_id: deal_id,
+        priority: priority,
+        archived: cast_boolean(archived)
+      }.compact,
+      total_count: total_count,
+      tasks: records
+    )
   end
 
   def active?

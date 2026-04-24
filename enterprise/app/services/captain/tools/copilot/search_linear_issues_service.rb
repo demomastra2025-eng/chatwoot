@@ -1,45 +1,45 @@
-class Captain::Tools::Copilot::SearchLinearIssuesService < Captain::Tools::BaseTool
+class Captain::Tools::Copilot::SearchLinearIssuesService < Captain::Tools::Copilot::BaseAccountTool
   def self.name
     'search_linear_issues'
   end
 
-  description 'Search Linear issues based on a search term'
+  description 'Search Linear issues by a search term'
   param :term, type: :string, desc: 'The search term to find Linear issues', required: true
+  param :limit, type: :number, desc: 'Maximum number of issues to return', required: false
 
-  def execute(term:)
+  def execute(term:, limit: nil)
     return 'Linear integration is not enabled' unless active?
 
-    linear_service = Integrations::Linear::ProcessorService.new(account: @assistant.account)
+    linear_service = Integrations::Linear::ProcessorService.new(account: account)
     result = linear_service.search_issue(term)
-
     return result[:error] if result[:error]
 
-    issues = result[:data]
-    return 'No issues found, I should try another similar search term' if issues.blank?
-
+    issues = Array(result[:data])
     total_count = issues.length
+    records = issues.first(parse_limit(limit)).map { |issue| issue_payload(issue) }
 
-    <<~RESPONSE
-      Total number of issues: #{total_count}
-      #{issues.map { |issue| format_issue(issue) }.join("\n---\n")}
-    RESPONSE
+    formatted_payload(
+      filters: { term: term },
+      total_count: total_count,
+      issues: records
+    )
   end
 
   def active?
-    @user.present? && @assistant.account.hooks.exists?(app_id: 'linear')
+    @user.present? && account.hooks.exists?(app_id: 'linear')
   end
 
   private
 
-  def format_issue(issue)
-    <<~ISSUE
-      Title: #{issue['title']}
-      ID: #{issue['id']}
-      State: #{issue['state']['name']}
-      Priority: #{format_priority(issue['priority'])}
-      #{issue['assignee'] ? "Assignee: #{issue['assignee']['name']}" : 'Assignee: Unassigned'}
-      #{issue['description'].present? ? "\nDescription: #{issue['description']}" : ''}
-    ISSUE
+  def issue_payload(issue)
+    {
+      id: issue['id'],
+      title: issue['title'],
+      description: issue['description'],
+      state: issue.dig('state', 'name'),
+      priority: format_priority(issue['priority']),
+      assignee_name: issue.dig('assignee', 'name')
+    }.compact
   end
 
   def format_priority(priority)

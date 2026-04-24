@@ -18,7 +18,11 @@ class Captain::Tools::Copilot::GetTaskTimelineService < Captain::Tools::Copilot:
       params: { limit: limit }.compact
     ).perform
 
-    formatted_payload(timeline)
+    formatted_payload(
+      task_id: task.id,
+      items: timeline[:items],
+      meta: timeline[:meta]
+    )
   end
 
   def active?

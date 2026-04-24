@@ -14,20 +14,18 @@ RSpec.describe Captain::Tools::Copilot::SearchContactsService do
 
   describe '#description' do
     it 'returns the service description' do
-      expect(service.description).to eq('Search contacts based on query parameters')
+      expect(service.description).to eq('Search contacts by name, email, or phone number')
     end
   end
 
   describe '#parameters' do
-    it 'defines email, phone_number, and name parameters' do
-      expect(service.parameters.keys).to contain_exactly(:email, :phone_number, :name)
+    it 'defines email, phone_number, name, and limit parameters' do
+      expect(service.parameters.keys).to contain_exactly(:email, :phone_number, :name, :limit)
     end
   end
 
   describe '#active?' do
     context 'when user has contact_manage permission' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
       let(:custom_role) { create(:custom_role, account: account, permissions: ['contact_manage']) }
 
       before do
@@ -41,8 +39,6 @@ RSpec.describe Captain::Tools::Copilot::SearchContactsService do
     end
 
     context 'when user does not have contact_manage permission' do
-      let(:user) { create(:user, account: account) }
-      let(:assistant) { create(:captain_assistant, account: account) }
       let(:custom_role) { create(:custom_role, account: account, permissions: []) }
 
       before do
@@ -57,38 +53,27 @@ RSpec.describe Captain::Tools::Copilot::SearchContactsService do
   end
 
   describe '#execute' do
-    context 'when contacts are found' do
-      let(:contact1) { create(:contact, account: account, email: 'test1@example.com', name: 'Test Contact 1', phone_number: '+1234567890') }
-      let(:contact2) { create(:contact, account: account, email: 'test2@example.com', name: 'Test Contact 2', phone_number: '+1234567891') }
+    let!(:contact1) { create(:contact, account: account, email: 'test1@example.com', name: 'Test Contact 1', phone_number: '+1234567890') }
+    let!(:contact2) { create(:contact, account: account, email: 'test2@example.com', name: 'Test Contact 2', phone_number: '+1234567891') }
 
-      before do
-        contact1
-        contact2
-      end
+    it 'returns a normalized payload filtered by email' do
+      payload = JSON.parse(service.execute(email: 'test1@example.com'))
 
-      it 'returns contacts when filtered by email' do
-        result = service.execute(email: 'test1@example.com')
-        expect(result).to include(contact1.to_llm_text)
-        expect(result).not_to include(contact2.to_llm_text)
-      end
+      expect(payload['total_count']).to eq(1)
+      expect(payload['filters']).to include('email' => 'test1@example.com')
+      expect(payload['contacts'].map { |contact| contact['id'] }).to eq([contact1.id])
+    end
 
-      it 'returns contacts when filtered by phone number' do
-        result = service.execute(phone_number: '+1234567890')
-        expect(result).to include(contact1.to_llm_text)
-        expect(result).not_to include(contact2.to_llm_text)
-      end
+    it 'returns a normalized payload filtered by name with limit' do
+      payload = JSON.parse(service.execute(name: 'Contact', limit: 1))
 
-      it 'returns contacts when filtered by name' do
-        result = service.execute(name: 'Contact 1')
-        expect(result).to include(contact1.to_llm_text)
-        expect(result).not_to include(contact2.to_llm_text)
-      end
-
-      it 'returns all matching contacts when no filters are provided' do
-        result = service.execute
-        expect(result).to include(contact1.to_llm_text)
-        expect(result).to include(contact2.to_llm_text)
-      end
+      expect(payload['total_count']).to eq(2)
+      expect(payload['contacts'].length).to eq(1)
+      expect(payload['contacts'].first).to include(
+        'id' => contact1.id,
+        'name' => 'Test Contact 1',
+        'email' => 'test1@example.com'
+      )
     end
   end
 end

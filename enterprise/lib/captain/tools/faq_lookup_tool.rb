@@ -5,44 +5,28 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   def perform(_tool_context, query:)
     log_tool_usage('searching', { query: query })
 
-    # Use existing vector search on approved responses
-    responses = @assistant.responses.approved.search(query).to_a
+    responses = Captain::AssistantResponse.search(query, account_id: account.id)
+                                          .where(assistant_id: assistant.id, status: Captain::AssistantResponse.statuses[:approved])
+                                          .limit(5)
 
-    if responses.empty?
-      log_tool_usage('no_results', { query: query })
-      "No relevant FAQs found for: #{query}"
-    else
-      log_tool_usage('found_results', { query: query, count: responses.size })
-      format_responses(responses)
-    end
+    log_tool_usage('found_results', { query: query, count: responses.size })
+    JSON.pretty_generate(
+      query: query,
+      total_count: responses.size,
+      matches: responses.map { |response| response_payload(response) }
+    )
   end
 
   private
 
-  def format_responses(responses)
-    responses.map { |response| format_response(response) }.join
-  end
-
-  def format_response(response)
-    formatted_response = "
-        Question: #{response.question}
-        Answer: #{response.answer}
-        "
-    if should_show_source?(response)
-      formatted_response += "
-          Source: #{response.documentable.external_link}
-          "
-    end
-
-    formatted_response
-  end
-
-  def should_show_source?(response)
-    return false if response.documentable.blank?
-    return false unless response.documentable.try(:external_link)
-
-    # Don't show source if it's a PDF placeholder
-    external_link = response.documentable.external_link
-    !external_link.start_with?('PDF:')
+  def response_payload(response)
+    {
+      id: response.id,
+      question: response.question,
+      answer: response.answer,
+      source: response.documentable&.try(:external_link),
+      created_at: response.created_at&.iso8601,
+      updated_at: response.updated_at&.iso8601
+    }.compact
   end
 end
