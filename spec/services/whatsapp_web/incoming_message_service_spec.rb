@@ -204,6 +204,42 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(inbox.messages.where(source_id: 'RACE_MESSAGE_1').count).to eq(1)
     end
 
+    it 'creates outgoing echo media messages without retrying when provider media URL is expired' do
+      allow(Down).to receive(:download)
+        .with('https://mmg.whatsapp.net/expired-media')
+        .and_raise(Down::ClientError.new('403 Forbidden'))
+
+      expect do
+        described_class.new(
+          inbox: inbox,
+          params: {
+            key: {
+              id: 'OUTGOING_EXPIRED_MEDIA_1',
+              remoteJid: '15551234567@s.whatsapp.net',
+              fromMe: true
+            },
+            message: {
+              imageMessage: {
+                caption: 'Phone photo with expired provider media',
+                mimetype: 'image/jpeg',
+                fileName: 'expired.jpg',
+                mediaUrl: 'https://mmg.whatsapp.net/expired-media'
+              }
+            }
+          }.with_indifferent_access,
+          outgoing_echo: true
+        ).perform
+      end.not_to raise_error
+
+      outgoing_message = conversation.messages.find_by(source_id: 'OUTGOING_EXPIRED_MEDIA_1')
+      expect(outgoing_message).to be_present
+      expect(outgoing_message.message_type).to eq('outgoing')
+      expect(outgoing_message.status).to eq('delivered')
+      expect(outgoing_message.content).to eq('Phone photo with expired provider media')
+      expect(outgoing_message.content_attributes['external_echo']).to be(true)
+      expect(outgoing_message.attachments).to be_empty
+    end
+
     it 'creates outgoing echo media messages for mobile sends' do
       image_base64 = Base64.strict_encode64(File.binread(Rails.root.join('spec/assets/avatar.png')))
 

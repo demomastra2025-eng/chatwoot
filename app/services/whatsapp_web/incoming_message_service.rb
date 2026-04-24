@@ -223,8 +223,15 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
 
   def download_attachment_file(attachment_payload)
     return file_from_base64(attachment_payload) if attachment_payload[:base64].present?
-    return Down.download(attachment_payload[:mediaUrl]) if attachment_payload[:mediaUrl].present?
+    return download_remote_attachment(attachment_payload) if attachment_payload[:mediaUrl].present?
 
+    nil
+  end
+
+  def download_remote_attachment(attachment_payload)
+    Down.download(attachment_payload[:mediaUrl])
+  rescue Down::ClientError => e
+    Rails.logger.warn("[WHATSAPP WEB] Skipping unavailable media attachment #{messages_data.first[:id]}: #{e.message}")
     nil
   end
 
