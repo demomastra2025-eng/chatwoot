@@ -74,6 +74,7 @@ const isMalformedRule = rule => {
 
 const normalizeRuleForList = (rule, index) => {
   const type = normalizeRuleType(rule);
+  const isSystemRule = type === RULE_TYPE_SYSTEM;
 
   return {
     ...rule,
@@ -82,8 +83,8 @@ const normalizeRuleForList = (rule, index) => {
     group: rule?.group?.toString().trim() || defaultGroups.value[type] || '',
     content: normalizedRuleContent(rule),
     enabled: rule?.enabled !== false,
-    editable: rule?.editable !== false,
-    deletable: rule?.deletable !== false,
+    editable: isSystemRule ? false : rule?.editable !== false,
+    deletable: isSystemRule ? false : rule?.deletable !== false,
     slot: rule?.slot || '',
     isMalformed: isMalformedRule(rule),
   };
@@ -203,18 +204,26 @@ const shouldShowSuggestedRules = computed(
   () => uiSettings.value?.show_assistant_rules_suggestions !== false
 );
 
-const searchableRules = computed(() =>
-  orderedRules.value.map(rule => ({
+const systemPromptRules = computed(() =>
+  orderedRules.value.filter(rule => rule.type === RULE_TYPE_SYSTEM)
+);
+
+const customRules = computed(() =>
+  orderedRules.value.filter(rule => rule.type !== RULE_TYPE_SYSTEM)
+);
+
+const searchableCustomRules = computed(() =>
+  customRules.value.map(rule => ({
     ...rule,
     searchableType: typeBadgeMap.value[rule.type]?.label || '',
   }))
 );
 
-const filteredRules = computed(() => {
+const filteredCustomRules = computed(() => {
   const query = searchQuery.value.trim();
-  if (!query) return searchableRules.value;
+  if (!query) return searchableCustomRules.value;
 
-  return picoSearch(searchableRules.value, query, [
+  return picoSearch(searchableCustomRules.value, query, [
     'content',
     'group',
     'searchableType',
@@ -222,14 +231,10 @@ const filteredRules = computed(() => {
 });
 
 const selectableRules = computed(() =>
-  orderedRules.value.filter(rule => rule.deletable !== false)
+  customRules.value.filter(rule => rule.deletable !== false)
 );
 
-const hasCustomRules = computed(() => {
-  return orderedRules.value.some(
-    rule => rule.deletable !== false && rule.type !== RULE_TYPE_SYSTEM
-  );
-});
+const hasCustomRules = computed(() => customRules.value.length > 0);
 
 const shouldShowCustomRulesEmptyState = computed(() => {
   return (
@@ -273,19 +278,34 @@ const serializeRules = list =>
       deletable: rule.deletable !== false,
     }));
 
+const normalizeIncomingRule = rule => ({
+  id: rule.id || createRuleId(),
+  type: rule.type,
+  group: rule.group || defaultGroups.value[rule.type] || '',
+  content: rule.content,
+  slot: rule.slot || '',
+  enabled: rule.enabled !== false,
+  editable: rule.type === RULE_TYPE_SYSTEM ? false : rule.editable !== false,
+  deletable: rule.type === RULE_TYPE_SYSTEM ? false : rule.deletable !== false,
+});
+
 const persistRules = async nextRules => {
   if (nextRules.some(isMalformedRule)) {
     throw new Error(t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULES_ERROR'));
   }
 
+  const normalizedNextRules = nextRules.map((rule, index) =>
+    normalizeRuleForList(normalizeIncomingRule(rule), index)
+  );
+
   await store.dispatch('captainAssistants/update', {
     id: props.assistantId,
     config: {
       ...(props.assistant?.config || {}),
-      rules: serializeRules(nextRules),
+      rules: serializeRules(normalizedNextRules),
     },
   });
-  syncOrderedRules(nextRules);
+  syncOrderedRules(normalizedNextRules);
   await store.dispatch('captainAssistants/show', props.assistantId);
 };
 
@@ -311,17 +331,6 @@ const buildPayload = () => {
     },
   };
 };
-
-const normalizeIncomingRule = rule => ({
-  id: rule.id || createRuleId(),
-  type: rule.type,
-  group: rule.group || defaultGroups.value[rule.type] || '',
-  content: rule.content,
-  slot: rule.slot || '',
-  enabled: rule.enabled !== false,
-  editable: rule.editable !== false,
-  deletable: rule.deletable !== false,
-});
 
 const openRuleComposer = () => {
   isCreatingRule.value = true;
@@ -426,6 +435,13 @@ const handleRuleSelect = id => {
 const startsGroupAt = (list, index) =>
   index === 0 || list[index - 1]?.group !== list[index]?.group;
 
+const customRulesDraggable = computed({
+  get: () => customRules.value,
+  set: nextCustomRules => {
+    orderedRules.value = [...systemPromptRules.value, ...nextCustomRules];
+  },
+});
+
 const onDragEnd = async () => {
   await saveRules(orderedRules.value);
 };
@@ -481,6 +497,60 @@ defineExpose({
         </template>
       </SuggestedRules>
     </div>
+
+    <details
+      v-if="systemPromptRules.length"
+      data-testid="system-prompts-accordion"
+      class="rounded-xl border border-n-weak bg-n-solid-1"
+    >
+      <summary
+        class="cursor-pointer list-none px-4 py-3 text-sm font-medium text-n-slate-12"
+      >
+        {{
+          $t('CAPTAIN.ASSISTANTS.RULES.SYSTEM_PROMPTS_ACCORDION', {
+            count: systemPromptRules.length,
+          })
+        }}
+      </summary>
+      <div class="flex flex-col gap-3 border-t border-n-weak px-4 py-4">
+        <template v-for="(rule, index) in systemPromptRules" :key="rule.id">
+          <div v-if="startsGroupAt(systemPromptRules, index)" class="pt-1">
+            <h4 class="text-sm font-semibold text-n-slate-12">
+              {{ displayGroupName(rule.group) }}
+            </h4>
+          </div>
+          <RuleCard
+            :id="rule.id"
+            :content="rule.content"
+            :group="rule.group"
+            :type="rule.type"
+            :is-malformed="rule.isMalformed"
+            :malformed-message="
+              $t('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULE_HINT')
+            "
+            :enabled="rule.enabled !== false"
+            :editable="false"
+            :deletable="false"
+            :rule-slot="rule.slot || ''"
+            :selectable="false"
+            :is-selected="false"
+            :type-options="typeOptions"
+            :type-badge-map="typeBadgeMap"
+            :group-labels="groupLabels"
+            :group-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP')"
+            :group-placeholder="
+              $t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP_PLACEHOLDER')
+            "
+            enable-captain-tools
+            enable-captain-fields
+            :captain-context-assistant-id="assistantId"
+            :captain-context-access="assistant?.config?.context_access || {}"
+            :captain-tool-access="assistant?.config?.tool_access || {}"
+            @update="updateRule"
+          />
+        </template>
+      </div>
+    </details>
 
     <BulkSelectBar
       v-model="bulkSelectedIds"
@@ -543,7 +613,7 @@ defineExpose({
       {{ $t('CAPTAIN.ASSISTANTS.RULES.CUSTOM_EMPTY_MESSAGE') }}
     </p>
 
-    <template v-if="!filteredRules.length">
+    <template v-if="!filteredCustomRules.length">
       <p
         v-if="searchQuery"
         class="rounded-xl border border-dashed border-n-strong px-4 py-6 text-sm text-n-slate-11"
@@ -551,7 +621,7 @@ defineExpose({
         {{ $t('CAPTAIN.ASSISTANTS.RULES.SEARCH_EMPTY_MESSAGE') }}
       </p>
       <p
-        v-else
+        v-else-if="!systemPromptRules.length"
         class="rounded-xl border border-dashed border-n-strong px-4 py-6 text-sm text-n-slate-11"
       >
         {{ $t('CAPTAIN.ASSISTANTS.RULES.EMPTY_MESSAGE') }}
@@ -559,8 +629,8 @@ defineExpose({
     </template>
 
     <div v-else-if="searchQuery" class="flex flex-col gap-3">
-      <template v-for="(rule, index) in filteredRules" :key="rule.id">
-        <div v-if="startsGroupAt(filteredRules, index)" class="pt-2">
+      <template v-for="(rule, index) in filteredCustomRules" :key="rule.id">
+        <div v-if="startsGroupAt(filteredCustomRules, index)" class="pt-2">
           <h4 class="text-sm font-semibold text-n-slate-12">
             {{ displayGroupName(rule.group) }}
           </h4>
@@ -601,7 +671,7 @@ defineExpose({
 
     <Draggable
       v-else
-      v-model="orderedRules"
+      v-model="customRulesDraggable"
       item-key="id"
       handle=".captain-rule-handle"
       ghost-class="opacity-60"
@@ -610,7 +680,7 @@ defineExpose({
     >
       <template #item="{ element, index }">
         <div class="flex flex-col gap-3">
-          <div v-if="startsGroupAt(orderedRules, index)" class="pt-2">
+          <div v-if="startsGroupAt(customRulesDraggable, index)" class="pt-2">
             <h4 class="text-sm font-semibold text-n-slate-12">
               {{ displayGroupName(element.group) }}
             </h4>

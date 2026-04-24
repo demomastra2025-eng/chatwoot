@@ -935,9 +935,21 @@
               "TITLE": "Search appointments",
               "DESCRIPTION": "Search appointments by client, status, payment status, or specialist."
             },
+            "list_scheduling_resources": {
+              "TITLE": "List specialists",
+              "DESCRIPTION": "List specialists with optional filters for service coverage and activity state."
+            },
             "search_scheduling_resources": {
               "TITLE": "Search specialists",
               "DESCRIPTION": "Search scheduling specialists by name or specialty."
+            },
+            "get_scheduling_resource_schedule": {
+              "TITLE": "Specialist schedule",
+              "DESCRIPTION": "Open the normalized working schedule of one specialist for a selected date range."
+            },
+            "get_scheduling_resource_availability": {
+              "TITLE": "Specialist availability",
+              "DESCRIPTION": "Get free appointment windows for one specialist in a selected date range, including appointment duration."
             },
             "search_scheduling_services": {
               "TITLE": "Search services",
@@ -945,15 +957,15 @@
             },
             "search_available_slots": {
               "TITLE": "Search available slots",
-              "DESCRIPTION": "Search appointment slots for one or more specialists."
+              "DESCRIPTION": "Search appointment slots for one or more specialists using specialist filters or a scheduling service."
             },
             "create_appointment": {
               "TITLE": "Create appointment",
-              "DESCRIPTION": "Create an appointment for the contact in the current conversation."
+              "DESCRIPTION": "Create an appointment for the contact in the current conversation using a selected specialist and confirmed time details."
             },
             "update_appointment": {
               "TITLE": "Update appointment",
-              "DESCRIPTION": "Update the appointment linked to the current conversation."
+              "DESCRIPTION": "Update the appointment linked to the current conversation with a new specialist, service, or confirmed time details."
             },
             "cancel_appointment": {
               "TITLE": "Cancel appointment",
@@ -1173,6 +1185,7 @@
         "TAB_TITLE": "Rules and scenarios",
         "TAB_DESCRIPTION": "Manage system rules, response rules, restrictions, and handoff scenarios in one place.",
         "DESCRIPTION": "System rules and regular assistant rules. Group them, toggle them, and reorder them to match your workflow.",
+        "SYSTEM_PROMPTS_ACCORDION": "System prompts ({count})",
         "SYSTEM_LOCKED": "System",
         "STATUS": {
           "DISABLED": "Disabled"

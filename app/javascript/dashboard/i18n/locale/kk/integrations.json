@@ -644,6 +644,22 @@
             "handoff": {
               "TITLE": "Адамға беру",
               "DESCRIPTION": "Ағымдағы диалогты тірі операторға береді."
+            },
+            "list_scheduling_resources": {
+              "TITLE": "Мамандар тізімі",
+              "DESCRIPTION": "Қызмет пен белсенділік мәртебесі бойынша қосымша сүзгілері бар мамандар тізімін көрсетеді."
+            },
+            "search_scheduling_resources": {
+              "TITLE": "Мамандарды іздеу",
+              "DESCRIPTION": "Мамандарды аты немесе мамандануы бойынша іздейді."
+            },
+            "get_scheduling_resource_schedule": {
+              "TITLE": "Маман кестесі",
+              "DESCRIPTION": "Бір маманның таңдалған күндер аралығындағы қалыптандырылған жұмыс кестесін ашады."
+            },
+            "get_scheduling_resource_availability": {
+              "TITLE": "Маманның бос терезелері",
+              "DESCRIPTION": "Қабылдау ұзақтығын ескере отырып, таңдалған уақыт аралығындағы бір маманның бос терезелерін көрсетеді."
             }
           }
         },
@@ -814,6 +830,7 @@
         "TAB_TITLE": "Rules and scenarios",
         "TAB_DESCRIPTION": "Manage system rules, response rules, restrictions, and handoff scenarios in one place.",
         "DESCRIPTION": "System rules and regular assistant rules. Group them, toggle them, and reorder them to match your workflow.",
+        "SYSTEM_PROMPTS_ACCORDION": "System prompts ({count})",
         "SYSTEM_LOCKED": "System",
         "STATUS": {
           "DISABLED": "Disabled"

@@ -67,6 +67,33 @@ const buttonStub = {
   `,
 };
 
+const ruleCardStub = {
+  name: 'RuleCard',
+  props: [
+    'id',
+    'content',
+    'editable',
+    'deletable',
+    'enabled',
+    'type',
+    'selectable',
+  ],
+  emits: ['update', 'delete', 'select'],
+  template: `
+    <div
+      class="rule-card-stub"
+      :data-rule-id="id"
+      :data-type="type"
+      :data-editable="String(editable)"
+      :data-deletable="String(deletable)"
+      :data-enabled="String(enabled)"
+      :data-selectable="String(selectable)"
+    >
+      {{ content }}
+    </div>
+  `,
+};
+
 const buildWrapper = props =>
   shallowMount(AssistantRulesManager, {
     props,
@@ -76,7 +103,7 @@ const buildWrapper = props =>
         Button: buttonStub,
         InlineRuleComposer: true,
         Input: true,
-        RuleCard: true,
+        RuleCard: ruleCardStub,
         SettingsHeader: true,
         SuggestedRules: suggestedRulesStub,
       },
@@ -206,12 +233,50 @@ describe('AssistantRulesManager', () => {
             id: 'stay_within_scope',
             type: 'system',
             content: 'Stay within your configured scope and instructions.',
-            editable: true,
+            editable: false,
             deletable: false,
           }),
         ],
       }),
     });
+  });
+
+  it('renders system prompts in a dedicated accordion as readonly toggles', () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [
+            ...systemRules.map(rule => ({ ...rule, editable: false })),
+            {
+              id: 'assistant_rule_guardrail',
+              type: 'guardrail',
+              group: 'Restrictions',
+              content: 'Never expose internal secrets.',
+              enabled: true,
+              editable: true,
+              deletable: true,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(
+      wrapper.find('[data-testid="system-prompts-accordion"]').exists()
+    ).toBe(true);
+    const cards = wrapper.findAll('.rule-card-stub');
+    expect(
+      cards.some(
+        card => card.attributes('data-rule-id') === 'stay_within_scope'
+      )
+    ).toBe(true);
+    const systemCard = cards.find(
+      card => card.attributes('data-rule-id') === 'stay_within_scope'
+    );
+    expect(systemCard.attributes('data-editable')).toBe('false');
+    expect(systemCard.attributes('data-deletable')).toBe('false');
+    expect(systemCard.attributes('data-selectable')).toBe('false');
   });
 
   it('preserves template slots when saving template-backed system rules', async () => {
@@ -227,7 +292,7 @@ describe('AssistantRulesManager', () => {
               content: 'Use the default assistant structure.',
               slot: 'assistant_system_context',
               enabled: true,
-              editable: true,
+              editable: false,
               deletable: false,
             },
           ],
@@ -243,7 +308,7 @@ describe('AssistantRulesManager', () => {
         content: 'Use the default assistant structure.',
         slot: 'assistant_system_context',
         enabled: true,
-        editable: true,
+        editable: false,
         deletable: false,
       },
     ]);
