@@ -254,6 +254,61 @@ class Captain::Assistant < ApplicationRecord
   ].freeze
   DEFAULT_SYSTEM_RULES = (DEFAULT_SYSTEM_BEHAVIOR_RULES + DEFAULT_SYSTEM_TEMPLATE_RULES).freeze
   DEFAULT_SYSTEM_RULE_IDS = DEFAULT_SYSTEM_RULES.map { |rule| rule[:id] }.freeze
+  GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG = 'CAPTAIN_SYSTEM_PROMPTS'
+
+  def self.installation_system_prompt_entries
+    raw_entries = InstallationConfig.find_by(name: GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG)&.value
+    normalized_entries = normalize_installation_system_prompt_entries(raw_entries)
+    return default_installation_system_prompt_entries if normalized_entries.blank?
+
+    normalized_entries
+  end
+
+  def self.normalize_installation_system_prompt_entries(entries)
+    return [] unless entries.is_a?(Array)
+
+    Array(entries).filter_map.with_index do |entry, index|
+      raw_entry = entry.respond_to?(:to_h) ? entry.to_h.stringify_keys : nil
+      next unless raw_entry.is_a?(Hash)
+
+      content = raw_entry['content'].to_s.strip
+      next if content.blank?
+
+      fallback_rule = DEFAULT_SYSTEM_RULES.find { |rule| rule[:id].to_s == raw_entry['id'].to_s }
+      slot = raw_entry['slot'].to_s.strip.presence || fallback_rule&.dig(:slot)
+      group = raw_entry['group'].to_s.strip.presence || fallback_rule&.dig(:group) || DEFAULT_RULE_GROUPS[RULE_TYPE_SYSTEM]
+      id = raw_entry['id'].to_s.strip.presence || installation_system_prompt_id(slot: slot, content: content, index: index)
+
+      {
+        id: id,
+        type: RULE_TYPE_SYSTEM,
+        group: group,
+        content: content,
+        slot: slot,
+        editable: false,
+        deletable: false
+      }
+    end
+  end
+
+  def self.default_installation_system_prompt_entries
+    DEFAULT_SYSTEM_RULES.map do |rule|
+      {
+        id: rule[:id].to_s,
+        type: RULE_TYPE_SYSTEM,
+        group: rule[:group],
+        content: rule[:content],
+        slot: rule[:slot],
+        editable: false,
+        deletable: false
+      }
+    end
+  end
+
+  def self.installation_system_prompt_id(slot:, content:, index:)
+    digest = Digest::SHA1.hexdigest("#{RULE_TYPE_SYSTEM}:#{slot}:#{index}:#{content}")[0, 12]
+    "#{RULE_TYPE_SYSTEM}_#{digest}"
+  end
 
   belongs_to :account
   has_many :documents, class_name: 'Captain::Document', dependent: :destroy_async
@@ -863,23 +918,27 @@ class Captain::Assistant < ApplicationRecord
   def ensure_default_system_rules(entries)
     non_system_entries = entries.reject { |entry| entry[:type] == RULE_TYPE_SYSTEM }
     existing_system_entries = entries.select { |entry| entry[:type] == RULE_TYPE_SYSTEM }.index_by { |entry| entry[:id] }
-    custom_system_entries = entries.select do |entry|
-      entry[:type] == RULE_TYPE_SYSTEM && !DEFAULT_SYSTEM_RULE_IDS.include?(entry[:id].to_s)
+    installation_system_rule_ids = self.class.installation_system_prompt_entries.map { |rule| rule[:id].to_s }
+    custom_system_entries = entries.filter_map do |entry|
+      next unless entry[:type] == RULE_TYPE_SYSTEM
+      next if installation_system_rule_ids.include?(entry[:id].to_s)
+
+      entry.merge(editable: false, deletable: false)
     end
 
-    default_system_entries = DEFAULT_SYSTEM_RULES.map.with_index do |rule, index|
+    default_system_entries = self.class.installation_system_prompt_entries.map.with_index do |rule, index|
       existing_rule = existing_system_entries[rule[:id]]
 
       normalize_rule_entry(
         {
           'id' => rule[:id],
           'type' => RULE_TYPE_SYSTEM,
-          'group' => existing_rule&.dig(:group) || rule[:group],
-          'content' => existing_rule&.dig(:content) || rule[:content],
+          'group' => rule[:group],
+          'content' => rule[:content],
           'enabled' => existing_rule.nil? || existing_rule[:enabled],
           'slot' => rule[:slot],
-          'editable' => rule[:editable],
-          'deletable' => rule[:deletable]
+          'editable' => false,
+          'deletable' => false
         },
         index
       )

@@ -300,7 +300,7 @@ RSpec.describe Captain::Assistant, type: :model do
           id: 'stay_within_scope',
           type: 'system',
           enabled: true,
-          editable: true,
+          editable: false,
           deletable: false
         )
       )
@@ -310,7 +310,7 @@ RSpec.describe Captain::Assistant, type: :model do
           type: 'system',
           slot: 'assistant_system_context',
           enabled: true,
-          editable: true,
+          editable: false,
           deletable: false
         )
       )
@@ -358,7 +358,7 @@ RSpec.describe Captain::Assistant, type: :model do
           type: 'system',
           content: 'Always confirm the business unit before answering.',
           enabled: true,
-          deletable: true
+          deletable: false
         )
       )
     end
@@ -393,7 +393,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.rule_entries).to include(
         include(
           id: 'stay_within_scope',
-          editable: true,
+          editable: false,
           deletable: false
         )
       )
@@ -401,7 +401,7 @@ RSpec.describe Captain::Assistant, type: :model do
         include(
           id: 'assistant_system_context',
           slot: 'assistant_system_context',
-          editable: true,
+          editable: false,
           deletable: false
         )
       )
@@ -492,6 +492,50 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Stay within your configured scope and instructions.')
       expect(rendered).to include('Use only the fields and tools explicitly available in this prompt')
       expect(rendered).to include('Always detect the user')
+    end
+
+    it 'uses installation-wide system prompts as the source of truth while preserving assistant toggles' do
+      upsert_installation_config(
+        'CAPTAIN_SYSTEM_PROMPTS',
+        [
+          {
+            id: 'stay_within_scope',
+            type: 'system',
+            group: 'Strict rules',
+            content: 'Follow the globally configured scope rule.',
+            slot: nil
+          },
+          {
+            id: 'admin_global_rule',
+            type: 'system',
+            group: 'Conversation flow',
+            content: 'Always confirm the ticket priority before answering.',
+            slot: nil
+          }
+        ]
+      )
+
+      assistant.update!(
+        config: assistant.config.merge(
+          'rules' => assistant.rule_entries.map do |entry|
+            next entry unless entry[:id] == 'stay_within_scope'
+
+            entry.merge(content: 'Outdated assistant-local rule', enabled: false)
+          end
+        )
+      )
+
+      scoped_rule = assistant.rule_entries.find { |entry| entry[:id] == 'stay_within_scope' }
+      global_rule = assistant.rule_entries.find { |entry| entry[:id] == 'admin_global_rule' }
+      rendered = assistant.agent_instructions
+
+      expect(scoped_rule[:content]).to eq('Follow the globally configured scope rule.')
+      expect(scoped_rule[:enabled]).to be(false)
+      expect(scoped_rule[:editable]).to be(false)
+      expect(scoped_rule[:deletable]).to be(false)
+      expect(global_rule[:content]).to eq('Always confirm the ticket priority before answering.')
+      expect(rendered).not_to include('Follow the globally configured scope rule.')
+      expect(rendered).to include('Always confirm the ticket priority before answering.')
     end
 
     it 'renders assistant prompt structure text from default system rules' do

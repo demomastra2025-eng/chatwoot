@@ -256,6 +256,11 @@
   description: 'Installation-wide system instructions appended to every internal AI assistant and Copilot prompt.'
   locked: false
   type: code
+- name: CAPTAIN_SYSTEM_PROMPTS
+  display_title: 'AI System Prompts'
+  description: 'Installation-wide system prompts managed centrally. Agents can only enable or disable them in their own settings.'
+  locked: false
+  type: code
 - name: CAPTAIN_CLOUD_PLAN_LIMITS
   display_title: 'AI Agents Cloud Plan Limits'
   description: 'The limits for the AI Agents service for different plans'

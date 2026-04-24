@@ -12,7 +12,13 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
     end
 
     context 'when it is an authenticated super admin' do
-      let!(:config) { create(:installation_config, { name: 'FB_APP_ID', value: 'TESTVALUE' }) }
+      let!(:config) do
+        InstallationConfig.find_or_initialize_by(name: 'FB_APP_ID').tap do |installation_config|
+          installation_config.value = 'TESTVALUE'
+          installation_config.locked = false
+          installation_config.save!
+        end
+      end
 
       it 'shows the app_config page' do
         sign_in(super_admin, scope: :super_admin)
@@ -41,6 +47,37 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
 
         config = GlobalConfig.get('FB_APP_ID')
         expect(config['FB_APP_ID']).to eq('FB_APP_ID')
+      end
+
+      it 'persists captain system prompts from super admin' do
+        sign_in(super_admin, scope: :super_admin)
+        post '/super_admin/app_config?config=captain', params: {
+          app_config: {
+            CAPTAIN_SYSTEM_PROMPTS: [
+              {
+                id: 'stay_within_scope',
+                type: 'system',
+                group: 'Strict rules',
+                content: 'Use the installation-wide scope rule.',
+                slot: nil
+              }
+            ].to_json
+          }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(response).to redirect_to(super_admin_settings_path)
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_SYSTEM_PROMPTS')&.value).to eq(
+          [
+            {
+              'id' => 'stay_within_scope',
+              'type' => 'system',
+              'group' => 'Strict rules',
+              'content' => 'Use the installation-wide scope rule.',
+              'slot' => nil
+            }
+          ]
+        )
       end
     end
   end

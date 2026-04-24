@@ -4,7 +4,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     CAPTAIN_ANTHROPIC_API_KEY CAPTAIN_ANTHROPIC_ENDPOINT
     CAPTAIN_GEMINI_API_KEY CAPTAIN_GEMINI_ENDPOINT
     CAPTAIN_MODERATION_MODEL
-    CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT
+    CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT CAPTAIN_SYSTEM_PROMPTS
     ACCOUNT_CAPTAIN_TOKENS_LIMIT
   ].freeze
   APP_CONFIG_MAPPING = {
@@ -36,6 +36,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
                                     .map { |name, serialized_value| [name, serialized_value['value']] }
                                     .to_h
     # rubocop:enable Style/HashTransformValues
+    @app_config[Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG] ||= Captain::Assistant.installation_system_prompt_entries
     @installation_configs = ConfigLoader.new.general_configs.each_with_object({}) do |config_hash, result|
       result[config_hash['name']] = config_hash.except('name')
     end
@@ -46,8 +47,11 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     params['app_config'].each do |key, value|
       next unless @allowed_configs.include?(key)
 
-      i = InstallationConfig.where(name: key).first_or_create(value: value, locked: false)
-      i.value = value
+      normalized_value = normalize_app_config_value(key, value, errors)
+      next if normalized_value == :invalid
+
+      i = InstallationConfig.where(name: key).first_or_create(value: normalized_value, locked: false)
+      i.value = normalized_value
       errors.concat(i.errors.full_messages) unless i.save
     end
 
@@ -59,6 +63,24 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  def normalize_app_config_value(key, value, errors)
+    return value unless key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+
+    parsed_value = value.present? ? JSON.parse(value) : []
+    Captain::Assistant.normalize_installation_system_prompt_entries(parsed_value).map do |entry|
+      {
+        'id' => entry[:id],
+        'type' => entry[:type],
+        'group' => entry[:group],
+        'content' => entry[:content],
+        'slot' => entry[:slot]
+      }
+    end
+  rescue JSON::ParserError
+    errors << 'Captain system prompts must be valid JSON'
+    :invalid
+  end
 
   def set_config
     @config = params[:config] || 'general'

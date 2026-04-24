@@ -54,6 +54,7 @@ module Enterprise::SuperAdmin::AppConfigsController
       CAPTAIN_FIRECRAWL_API_KEY
       CAPTAIN_AI_AGENT_SYSTEM_PROMPT
       CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT
+      CAPTAIN_SYSTEM_PROMPTS
     ]
   end
 
