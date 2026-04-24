@@ -355,7 +355,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.guardrails).to eq([])
     end
 
-    it 'preserves custom system rules that are not part of the default rule set' do
+    it 'drops assistant-level custom system rules because system prompts are installation-managed' do
       assistant.update!(
         config: assistant.config.merge(
           'rules' => [
@@ -370,14 +370,18 @@ RSpec.describe Captain::Assistant, type: :model do
         )
       )
 
-      expect(assistant.rule_entries).to include(
+      expect(assistant.rule_entries).not_to include(
         include(
           id: 'custom_system_rule',
-          type: 'system',
-          content: 'Always confirm the business unit before answering.',
-          enabled: true,
-          deletable: false
+          type: 'system'
         )
+      )
+      expect(assistant.rule_entries).to all(
+        satisfy { |entry|
+          entry[:type] != 'system' || described_class.installation_system_prompt_entries.any? do |rule|
+            rule[:id].to_s == entry[:id].to_s
+          end
+        }
       )
     end
 

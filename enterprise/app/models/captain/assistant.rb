@@ -952,12 +952,6 @@ class Captain::Assistant < ApplicationRecord
       entry[:type] == RULE_TYPE_SYSTEM || installation_system_rule_ids.include?(entry[:id].to_s)
     end
     existing_system_entries = entries.select { |entry| entry[:type] == RULE_TYPE_SYSTEM }.index_by { |entry| entry[:id] }
-    custom_system_entries = entries.filter_map do |entry|
-      next unless entry[:type] == RULE_TYPE_SYSTEM
-      next if installation_system_rule_ids.include?(entry[:id].to_s)
-
-      entry.merge(editable: false, deletable: false)
-    end
 
     default_system_entries = installation_system_rules.map.with_index do |rule, index|
       existing_rule = existing_system_entries[rule[:id]]
@@ -977,7 +971,7 @@ class Captain::Assistant < ApplicationRecord
       )
     end
 
-    default_system_entries + custom_system_entries + non_system_entries
+    default_system_entries + non_system_entries
   end
 
   def normalize_rule_entries(entries)

@@ -67,6 +67,12 @@ const buttonStub = {
   `,
 };
 
+const inlineRuleComposerStub = {
+  name: 'InlineRuleComposer',
+  props: ['typeOptions'],
+  template: '<div data-testid="inline-rule-composer" />',
+};
+
 const ruleCardStub = {
   name: 'RuleCard',
   props: [
@@ -76,6 +82,7 @@ const ruleCardStub = {
     'deletable',
     'enabled',
     'type',
+    'typeOptions',
     'selectable',
   ],
   emits: ['update', 'delete', 'select'],
@@ -84,6 +91,7 @@ const ruleCardStub = {
       class="rule-card-stub"
       :data-rule-id="id"
       :data-type="type"
+      :data-type-options="JSON.stringify(typeOptions || [])"
       :data-editable="String(editable)"
       :data-deletable="String(deletable)"
       :data-enabled="String(enabled)"
@@ -101,7 +109,7 @@ const buildWrapper = props =>
       stubs: {
         BulkSelectBar: bulkSelectBarStub,
         Button: buttonStub,
-        InlineRuleComposer: true,
+        InlineRuleComposer: inlineRuleComposerStub,
         Input: true,
         RuleCard: ruleCardStub,
         SettingsHeader: true,
@@ -325,6 +333,51 @@ describe('AssistantRulesManager', () => {
         ],
       }),
     });
+  });
+
+  it('does not expose the system type when adding or editing custom rules', async () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: [
+            ...systemRules,
+            {
+              id: 'assistant_rule_guardrail',
+              type: 'guardrail',
+              group: 'Restrictions',
+              content: 'Never expose internal secrets.',
+              enabled: true,
+              editable: true,
+              deletable: true,
+            },
+          ],
+        },
+      },
+    });
+
+    wrapper.vm.searchQuery = 'Never';
+    wrapper.vm.openRuleComposer();
+    await wrapper.vm.$nextTick();
+
+    const composer = wrapper.findComponent({ name: 'InlineRuleComposer' });
+    expect(composer.props('typeOptions').map(option => option.value)).toEqual([
+      'response_guideline',
+      'guardrail',
+    ]);
+
+    const customCard = wrapper
+      .findAll('.rule-card-stub')
+      .find(
+        card => card.attributes('data-rule-id') === 'assistant_rule_guardrail'
+      );
+    const customCardTypeOptions = JSON.parse(
+      customCard.attributes('data-type-options')
+    );
+    expect(customCardTypeOptions.map(option => option.value)).toEqual([
+      'response_guideline',
+      'guardrail',
+    ]);
   });
 
   it('drops stale custom entries that reuse system prompt ids before rendering or saving', () => {

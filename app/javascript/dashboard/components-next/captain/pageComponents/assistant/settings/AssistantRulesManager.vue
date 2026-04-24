@@ -130,6 +130,10 @@ const typeOptions = computed(() => [
   },
 ]);
 
+const customRuleTypeOptions = computed(() =>
+  typeOptions.value.filter(option => option.value !== RULE_TYPE_SYSTEM)
+);
+
 const typeBadgeMap = computed(() => ({
   [RULE_TYPE_SYSTEM]: {
     label: t('CAPTAIN.ASSISTANTS.RULES.TYPES.SYSTEM'),
@@ -612,7 +616,7 @@ defineExpose({
               $t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP_PLACEHOLDER')
             "
             :placeholder="$t('CAPTAIN.ASSISTANTS.RULES.ADD.NEW.PLACEHOLDER')"
-            :type-options="typeOptions"
+            :type-options="customRuleTypeOptions"
             :default-groups="defaultGroups"
             :group-labels="groupLabels"
             enable-captain-tools
@@ -671,7 +675,7 @@ defineExpose({
           :rule-slot="rule.slot || ''"
           :selectable="rule.deletable !== false"
           :is-selected="bulkSelectedIds.has(rule.id)"
-          :type-options="typeOptions"
+          :type-options="customRuleTypeOptions"
           :type-badge-map="typeBadgeMap"
           :group-labels="groupLabels"
           :group-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP')"
@@ -721,7 +725,7 @@ defineExpose({
             :rule-slot="element.slot || ''"
             :selectable="element.deletable !== false"
             :is-selected="bulkSelectedIds.has(element.id)"
-            :type-options="typeOptions"
+            :type-options="customRuleTypeOptions"
             :type-badge-map="typeBadgeMap"
             :group-labels="groupLabels"
             :group-label="$t('CAPTAIN.ASSISTANTS.RULES.FORM.GROUP')"
