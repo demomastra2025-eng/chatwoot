@@ -1,5 +1,5 @@
 class Captain::Tools::AddPrivateNoteTool < Captain::Tools::BasePublicTool
-  description 'Add a private note to a conversation'
+  description 'Add a private note to the current conversation'
   param :note, type: 'string', desc: 'The private note content'
 
   def perform(tool_context, note:)

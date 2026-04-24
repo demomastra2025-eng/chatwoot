@@ -1,5 +1,5 @@
 class Captain::Tools::AddContactNoteTool < Captain::Tools::BasePublicTool
-  description 'Add a note to a contact profile'
+  description 'Add a note to the current conversation contact'
   param :note, type: 'string', desc: 'The note content to add to the contact'
 
   def perform(tool_context, note:)

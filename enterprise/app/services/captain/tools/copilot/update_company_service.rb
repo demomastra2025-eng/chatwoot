@@ -14,7 +14,10 @@ class Captain::Tools::Copilot::UpdateCompanyService < Captain::Tools::Copilot::B
       domain: domain,
       description: description
     )
-    formatted_record(company)
+    formatted_payload(
+      action: 'update_company',
+      company: company_payload(company)
+    )
   rescue StandardError => e
     tool_failure(e)
   end
@@ -31,5 +34,16 @@ class Captain::Tools::Copilot::UpdateCompanyService < Captain::Tools::Copilot::B
       conversation: current_conversation,
       actor: @user
     )
+  end
+
+  def company_payload(company)
+    {
+      id: company.id,
+      name: company.name,
+      domain: company.domain,
+      description: company.description,
+      created_at: company.created_at&.iso8601,
+      updated_at: company.updated_at&.iso8601
+    }
   end
 end

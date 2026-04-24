@@ -6,9 +6,10 @@ class Captain::Tools::CreateDealTool < Captain::Tools::BasePublicTool
   param :currency, type: 'string', desc: 'ISO currency code', required: false
   param :expected_close_on, type: 'string', desc: 'Expected close date in YYYY-MM-DD format', required: false
   param :win_probability, type: 'number', desc: 'Win probability from 0 to 100', required: false
-  param :custom_attributes_json, type: 'string', desc: 'Optional custom attributes as JSON object', required: false
+  param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
-  def perform(tool_context, title:, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil, custom_attributes_json: nil)
+  def perform(tool_context, title:, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil,
+              custom_attributes: nil)
     deal = operations(tool_context.state).create_deal(
       title: title,
       description: description,
@@ -16,10 +17,13 @@ class Captain::Tools::CreateDealTool < Captain::Tools::BasePublicTool
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,
-      custom_attributes: custom_attributes_json
+      custom_attributes: custom_attributes
     )
 
-    "Created deal #{deal.title} (ID: #{deal.id})"
+    JSON.pretty_generate(
+      action: 'create_deal',
+      deal: ::Crm::PayloadBuilder.deal(deal)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

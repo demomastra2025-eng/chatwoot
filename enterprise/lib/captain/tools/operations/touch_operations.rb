@@ -26,14 +26,12 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     )
 
     with_idempotent_creation('create_touch', create_params.merge(remindable_gid: remindable.to_gid_param)) do
-      touch = ::Reminders::CreateService.new(
+      ::Reminders::CreateService.new(
         account: account,
         remindable: remindable,
         attributes: create_params,
         creator: actor
       ).perform
-      touch.update!(status: :draft)
-      touch
     end
   end
 
@@ -59,7 +57,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       ),
       timezone: timezone.presence || 'UTC',
       body: body.to_s.strip,
-      auto_cancel_on_incoming: auto_cancel_on_incoming.nil? ? true : auto_cancel_on_incoming,
+      auto_cancel_on_incoming: auto_cancel_on_incoming.nil? || auto_cancel_on_incoming,
       target_inbox_id: target_inbox_id,
       metadata: {
         'touch_source' => 'captain',
@@ -107,9 +105,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def validate_relative_anchor!(relative_anchor, remindable)
-    unless Reminder::RELATIVE_ANCHORS.include?(relative_anchor.to_s)
-      raise ArgumentError, "Unsupported relative_anchor: #{relative_anchor}"
-    end
+    raise ArgumentError, "Unsupported relative_anchor: #{relative_anchor}" unless Reminder::RELATIVE_ANCHORS.include?(relative_anchor.to_s)
 
     return if relative_anchor.to_s == 'touch.created_at'
 

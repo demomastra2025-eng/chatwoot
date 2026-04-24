@@ -10,9 +10,9 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
   param :currency, type: :string, desc: 'Updated ISO currency code', required: false
   param :expected_close_on, type: :string, desc: 'Updated close date in YYYY-MM-DD format', required: false
   param :win_probability, type: :number, desc: 'Updated win probability from 0 to 100', required: false
-  param :custom_attributes_json, type: :string, desc: 'Optional custom attributes as JSON object', required: false
+  param :custom_attributes, type: :object, desc: 'Optional custom attributes object', required: false
 
-  def execute(title: nil, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil, custom_attributes_json: nil)
+  def execute(title: nil, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil, custom_attributes: nil)
     deal = deal_operations.update_current_deal(
       title: title,
       description: description,
@@ -20,7 +20,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,
-      custom_attributes: custom_attributes_json
+      custom_attributes: custom_attributes
     )
     formatted_record(deal)
   rescue StandardError => e

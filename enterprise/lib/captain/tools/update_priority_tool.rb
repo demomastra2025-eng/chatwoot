@@ -1,5 +1,5 @@
 class Captain::Tools::UpdatePriorityTool < Captain::Tools::BasePublicTool
-  description 'Update the priority of a conversation'
+  description 'Update the priority of the current conversation'
   param :priority, type: 'string', desc: 'The priority level: low, medium, high, urgent, or nil to remove priority'
 
   def perform(tool_context, priority:)

@@ -8,7 +8,14 @@ class Captain::Tools::Copilot::AddContactNoteService < Captain::Tools::Copilot::
 
   def execute(note:)
     created_note = conversation_operations.add_contact_note(note: note)
-    "Added contact note ##{created_note.id} to #{current_contact.name}"
+    formatted_payload(
+      action: 'add_contact_note',
+      contact_id: current_contact.id,
+      contact_name: current_contact.name,
+      note_id: created_note.id,
+      note: created_note.content,
+      created_at: created_note.created_at&.iso8601
+    )
   rescue StandardError => e
     tool_failure(e)
   end

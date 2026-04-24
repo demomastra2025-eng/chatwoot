@@ -8,7 +8,14 @@ class Captain::Tools::Copilot::AddPrivateNoteService < Captain::Tools::Copilot::
 
   def execute(note:)
     message = conversation_operations.add_private_note(note: note)
-    "Added private note message ##{message.id} to conversation ##{current_conversation.display_id}"
+    formatted_payload(
+      action: 'add_private_note',
+      conversation_id: current_conversation.id,
+      conversation_display_id: current_conversation.display_id,
+      message_id: message.id,
+      note: message.content,
+      created_at: message.created_at&.iso8601
+    )
   rescue StandardError => e
     tool_failure(e)
   end

@@ -14,7 +14,10 @@ class Captain::Tools::Copilot::ChangeTaskStatusService < Captain::Tools::Copilot
       status_name: status_name,
       status_code: status_code
     )
-    formatted_record(task)
+    formatted_payload(
+      action: 'change_task_status',
+      task: ::Crm::PayloadBuilder.task(task)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

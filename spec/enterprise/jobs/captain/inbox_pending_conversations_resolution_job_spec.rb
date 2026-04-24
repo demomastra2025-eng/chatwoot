@@ -20,6 +20,11 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
   end
 
   context 'when captain_tasks is disabled' do
+    before do
+      allow(inbox.account).to receive(:feature_enabled?).and_call_original
+      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(false)
+    end
+
     it 'resolves pending conversations inactive for over 1 hour' do
       described_class.perform_now(inbox)
 
@@ -137,7 +142,10 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expect(public_message.content).to eq(I18n.t('conversations.activity.auto_resolution_message'))
+      expected_message = I18n.with_locale(inbox.account.locale) do
+        I18n.t('conversations.activity.auto_resolution_message')
+      end
+      expect(public_message.content).to eq(expected_message)
     end
 
     it 'adds the correct activity message after resolution' do

@@ -1,5 +1,5 @@
 class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
-  description 'Move the current CRM deal to another stage'
+  description 'Move the CRM deal linked to the current conversation to another stage'
   param :stage_id, type: 'number', desc: 'Target stage ID', required: false
   param :stage_name, type: 'string', desc: 'Target stage name', required: false
   param :stage_code, type: 'string', desc: 'Target stage code', required: false
@@ -11,7 +11,10 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
       stage_code: stage_code
     )
 
-    "Moved deal #{deal.title} to stage #{deal.stage&.name}"
+    JSON.pretty_generate(
+      action: 'transition_deal_stage',
+      deal: ::Crm::PayloadBuilder.deal(deal)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

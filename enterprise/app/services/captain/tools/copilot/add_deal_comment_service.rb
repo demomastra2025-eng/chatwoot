@@ -8,7 +8,11 @@ class Captain::Tools::Copilot::AddDealCommentService < Captain::Tools::Copilot::
 
   def execute(body:)
     comment = deal_operations.add_current_deal_comment(body: body)
-    "Added deal comment ##{comment.id}"
+    formatted_payload(
+      action: 'add_deal_comment',
+      deal_id: comment.commentable_id,
+      comment: ::Crm::PayloadBuilder.comment(comment)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

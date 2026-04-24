@@ -7,7 +7,7 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
   let(:conversation) { create(:conversation, account: account) }
 
   describe '#create_touch' do
-    it 'creates a draft touch for the current conversation by default' do
+    it 'creates a pending touch for the current conversation by default' do
       touch = described_class.new(
         assistant: assistant,
         conversation: conversation,
@@ -18,7 +18,7 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       )
 
       expect(touch).to be_persisted
-      expect(touch.status).to eq('draft')
+      expect(touch.status).to eq('pending')
       expect(touch.remindable).to eq(conversation)
       expect(touch.target_inbox).to eq(conversation.inbox)
       expect(touch.metadata['touch_source']).to eq('captain')

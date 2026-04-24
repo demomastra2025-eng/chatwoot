@@ -17,7 +17,7 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
   end
 
   describe 'resolving a conversation' do
-    it 'marks resolved and enqueues an activity message with the reason' do
+    it 'marks resolved and enqueues an activity message with the reason when provided' do
       tool.perform(tool_context, reason: 'Possible spam')
 
       expect(conversation.reload).to be_resolved
@@ -30,6 +30,12 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
           content: "Conversation was marked resolved by #{assistant.name}: Possible spam"
         )
       )
+    end
+
+    it 'marks resolved without requiring a reason' do
+      tool.perform(tool_context)
+
+      expect(conversation.reload).to be_resolved
     end
 
     it 'creates a conversation_resolved reporting event' do

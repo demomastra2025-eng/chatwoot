@@ -8,7 +8,11 @@ class Captain::Tools::Copilot::AddTaskCommentService < Captain::Tools::Copilot::
 
   def execute(body:)
     comment = task_operations.add_current_task_comment(body: body)
-    "Added task comment ##{comment.id}"
+    formatted_payload(
+      action: 'add_task_comment',
+      task_id: comment.commentable_id,
+      comment: ::Crm::PayloadBuilder.comment(comment)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

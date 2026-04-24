@@ -1,8 +1,8 @@
 class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
-  description 'Resolve a conversation when the issue has been addressed or the conversation should be closed'
-  param :reason, type: 'string', desc: 'Brief reason for resolving the conversation', required: true
+  description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
+  param :reason, type: 'string', desc: 'Optional reason for resolving the conversation', required: false
 
-  def perform(tool_context, reason:)
+  def perform(tool_context, reason: nil)
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
     return "Conversation ##{conversation.display_id} is already resolved" if conversation.resolved?

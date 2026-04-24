@@ -4,11 +4,18 @@ class Captain::Tools::Copilot::HandoffService < Captain::Tools::Copilot::BaseAcc
   end
 
   description 'Hand off the current conversation to a human team'
-  param :reason, type: :string, desc: 'Optional handoff reason', required: false
+  param :reason, type: :string, desc: 'Optional handoff reason for the human team', required: false
 
   def execute(reason: nil)
     conversation = conversation_operations.handoff(reason: reason)
-    "Handed off conversation ##{conversation.display_id}"
+    formatted_payload(
+      action: 'handoff',
+      conversation_id: conversation.id,
+      conversation_display_id: conversation.display_id,
+      status: conversation.status,
+      waiting_since: conversation.waiting_since&.iso8601,
+      reason: reason
+    ).presence
   rescue StandardError => e
     tool_failure(e)
   end

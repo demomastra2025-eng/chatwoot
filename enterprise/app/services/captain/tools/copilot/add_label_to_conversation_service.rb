@@ -8,7 +8,13 @@ class Captain::Tools::Copilot::AddLabelToConversationService < Captain::Tools::C
 
   def execute(label_name:)
     conversation = conversation_operations.add_label(label_name: label_name)
-    "Added label to conversation ##{conversation.display_id}"
+    formatted_payload(
+      action: 'add_label_to_conversation',
+      conversation_id: conversation.id,
+      conversation_display_id: conversation.display_id,
+      label_name: label_name.to_s.strip.downcase,
+      labels: conversation.label_list.to_a
+    )
   rescue StandardError => e
     tool_failure(e)
   end
