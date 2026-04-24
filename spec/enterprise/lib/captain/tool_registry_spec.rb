@@ -7,7 +7,38 @@ RSpec.describe Captain::ToolRegistry do
       assistant_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
 
       expect(agent_tool_ids - assistant_tool_ids).to be_empty
-      expect(assistant_tool_ids).to include('search_documentation', 'faq_lookup', 'create_deal', 'create_appointment', 'create_touch')
+      expect(assistant_tool_ids).to include(
+        'search_documentation',
+        'faq_lookup',
+        'create_deal',
+        'create_appointment',
+        'create_touch',
+        'list_scheduling_resources',
+        'search_scheduling_resources',
+        'get_scheduling_resource_schedule',
+        'get_scheduling_resource_availability',
+        'send_message_to_conversation',
+        'assign_conversation',
+        'search_canned_responses',
+        'create_canned_response',
+        'merge_contacts',
+        'add_appointment_payment',
+        'execute_macro',
+        'get_whatsapp_web_diagnostics',
+        'reconnect_whatsapp_web',
+        'retry_failed_message',
+        'edit_message',
+        'translate_message',
+        'create_label',
+        'update_label',
+        'remove_label_from_conversation',
+        'list_campaigns',
+        'preview_campaign',
+        'get_campaign_analytics',
+        'retry_failed_campaign_deliveries',
+        'create_webhook',
+        'update_webhook'
+      )
     end
 
     it 'annotates built-in tools with risk and scope metadata' do
