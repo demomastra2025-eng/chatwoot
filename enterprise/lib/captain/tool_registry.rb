@@ -76,7 +76,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_documentation',
           title: 'Search documentation',
-          description: 'Search and retrieve documentation from the knowledge base',
+          description: 'Search and retrieve documentation from knowledge base',
           group_name: 'Knowledge',
           icon: 'search',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -86,7 +86,7 @@ class Captain::ToolRegistry
         definition(
           id: 'faq_lookup',
           title: 'FAQ Lookup',
-          description: 'Search FAQ responses using semantic similarity',
+          description: 'Search FAQ responses using semantic similarity to find relevant answers',
           group_name: 'Knowledge',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -98,7 +98,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_contact_note',
           title: 'Add Contact Note',
-          description: 'Add a note to a contact profile',
+          description: 'Add a note to the current conversation contact',
           group_name: 'Conversations',
           icon: 'note-add',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -111,7 +111,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_private_note',
           title: 'Add Private Note',
-          description: 'Add a private note to a conversation',
+          description: 'Add a private note to the current conversation',
           group_name: 'Conversations',
           icon: 'eye-off',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -128,7 +128,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_label_to_conversation',
           title: 'Add Label to Conversation',
-          description: 'Add a label to the current conversation',
+          description: 'Add an existing label to the current conversation',
           group_name: 'Conversations',
           icon: 'tag',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -144,7 +144,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_priority',
           title: 'Update Priority',
-          description: 'Update conversation priority level',
+          description: 'Update the priority of the current conversation',
           group_name: 'Conversations',
           icon: 'exclamation-triangle',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -160,7 +160,7 @@ class Captain::ToolRegistry
         definition(
           id: 'resolve_conversation',
           title: 'Resolve Conversation',
-          description: 'Resolve a conversation when the issue has been addressed',
+          description: 'Resolve the current conversation when the issue has been addressed or the conversation should be closed',
           group_name: 'Conversations',
           icon: 'checkmark',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -193,7 +193,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_conversation',
           title: 'Get Conversation',
-          description: 'Open one conversation with its messages and contact context',
+          description: 'Get details of a conversation including messages and contact information',
           group_name: 'Conversations',
           icon: 'chat',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -223,7 +223,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_contact',
           title: 'Get Contact',
-          description: 'Open one contact profile with its details',
+          description: 'Get details of a contact including profile information',
           group_name: 'Contacts',
           icon: 'user',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -257,7 +257,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_company',
           title: 'Get Company',
-          description: 'Open one company with its details',
+          description: 'Get details of a company',
           group_name: 'Companies',
           icon: 'briefcase',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -290,7 +290,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_company',
           title: 'Update Company',
-          description: 'Update the current conversation company',
+          description: 'Update the company linked to the current conversation contact',
           group_name: 'Companies',
           icon: 'briefcase-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -302,7 +302,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_deal',
           title: 'Get Deal',
-          description: 'Open one CRM deal with its details',
+          description: 'Get details of a CRM deal',
           group_name: 'CRM Deals',
           icon: 'money',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -326,7 +326,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_deal_timeline',
           title: 'Get Deal Timeline',
-          description: 'Open the timeline for one CRM deal',
+          description: 'Get the timeline for a CRM deal',
           group_name: 'CRM Deals',
           icon: 'history',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -352,7 +352,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_deal',
           title: 'Update Deal',
-          description: 'Update the current conversation deal',
+          description: 'Update the CRM deal linked to the current conversation',
           group_name: 'CRM Deals',
           icon: 'money-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -365,7 +365,7 @@ class Captain::ToolRegistry
         definition(
           id: 'transition_deal_stage',
           title: 'Transition Deal Stage',
-          description: 'Move the current conversation deal to another stage',
+          description: 'Move the CRM deal linked to the current conversation to another stage',
           group_name: 'CRM Deals',
           icon: 'arrow-right',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -378,7 +378,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_deal_comment',
           title: 'Add Deal Comment',
-          description: 'Add a comment to the current conversation deal',
+          description: 'Add a comment to the CRM deal linked to the current conversation',
           group_name: 'CRM Deals',
           icon: 'comment',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -390,7 +390,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_task',
           title: 'Get Task',
-          description: 'Open one CRM task with its details',
+          description: 'Get details of a CRM task',
           group_name: 'CRM Tasks',
           icon: 'checklist',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -402,7 +402,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_tasks',
           title: 'Search Tasks',
-          description: 'Search CRM tasks by title, status, assignee, or deal',
+          description: 'Search CRM tasks by title, status, assignee, deal, or priority',
           group_name: 'CRM Tasks',
           icon: 'search',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -414,7 +414,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_task_timeline',
           title: 'Get Task Timeline',
-          description: 'Open the timeline for one CRM task',
+          description: 'Get the timeline for a CRM task',
           group_name: 'CRM Tasks',
           icon: 'history',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -453,7 +453,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_task',
           title: 'Update Task',
-          description: 'Update the current conversation task',
+          description: 'Update the CRM task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'checklist-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -466,7 +466,7 @@ class Captain::ToolRegistry
         definition(
           id: 'change_task_status',
           title: 'Change Task Status',
-          description: 'Change the status of the current conversation task',
+          description: 'Change the status of the CRM task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'shuffle',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -479,7 +479,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_task_comment',
           title: 'Add Task Comment',
-          description: 'Add a comment to the current conversation task',
+          description: 'Add a comment to the CRM task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'comment',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -491,7 +491,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_appointment',
           title: 'Get Appointment',
-          description: 'Open one appointment with its details',
+          description: 'Get details of an appointment',
           group_name: 'Scheduling',
           icon: 'calendar',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -502,7 +502,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: 'Search appointments by client, status, payment status, or specialist',
+          description: 'Search appointments by client, status, payment status, contact, or specialist',
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -511,13 +511,46 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'list_scheduling_resources',
+          title: 'List Specialists',
+          description: 'List scheduling specialists, with optional filters for service and activity state',
+          group_name: 'Scheduling',
+          icon: 'users',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListSchedulingResourcesService,
+          required_features: %w[scheduling],
+          risk_level: 'low'
+        ),
+        definition(
           id: 'search_scheduling_resources',
           title: 'Search Specialists',
-          description: 'Search scheduling specialists by name or specialty',
+          description: 'Search scheduling specialists by name or specialty, with optional service filtering',
           group_name: 'Scheduling',
           icon: 'user',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::SearchSchedulingResourcesService,
+          required_features: %w[scheduling],
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_scheduling_resource_schedule',
+          title: 'Get Specialist Schedule',
+          description: 'Get the normalized working schedule of a specialist for a date range, including overrides, breaks, holidays, and time off',
+          group_name: 'Scheduling',
+          icon: 'calendar-clock',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetSchedulingResourceScheduleService,
+          required_features: %w[scheduling],
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_scheduling_resource_availability',
+          title: 'Get Specialist Availability',
+          description: 'Get free specialist appointment windows inside a time range, with service-aware duration when available',
+          group_name: 'Scheduling',
+          icon: 'calendar-search',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService,
           required_features: %w[scheduling],
           risk_level: 'low'
         ),
@@ -535,7 +568,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_available_slots',
           title: 'Search Available Slots',
-          description: 'Search appointment slots for one or more specialists',
+          description: 'Search appointment slots for one or more specialists using explicit specialist filters or a scheduling service',
           group_name: 'Scheduling',
           icon: 'calendar',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -546,7 +579,7 @@ class Captain::ToolRegistry
         definition(
           id: 'create_appointment',
           title: 'Create Appointment',
-          description: 'Create an appointment for the current conversation contact',
+          description: 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details',
           group_name: 'Scheduling',
           icon: 'calendar-plus',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -559,7 +592,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_appointment',
           title: 'Update Appointment',
-          description: 'Update the current conversation appointment',
+          description: 'Update the appointment linked to the current conversation with a new specialist, service, or confirmed time details',
           group_name: 'Scheduling',
           icon: 'calendar-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -571,7 +604,7 @@ class Captain::ToolRegistry
         definition(
           id: 'cancel_appointment',
           title: 'Cancel Appointment',
-          description: 'Cancel the current conversation appointment',
+          description: 'Cancel the appointment linked to the current conversation',
           group_name: 'Scheduling',
           icon: 'calendar-x',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -583,7 +616,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_article',
           title: 'Get Article',
-          description: 'Open one help center article with its content and metadata',
+          description: 'Get details of an article including its content and metadata',
           group_name: 'Help center',
           icon: 'book-open',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -594,7 +627,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_articles',
           title: 'Search Articles',
-          description: 'Search help center articles by query, category, or status',
+          description: 'Search knowledge base articles by query, category, or status',
           group_name: 'Help center',
           icon: 'search',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
@@ -605,12 +638,264 @@ class Captain::ToolRegistry
         definition(
           id: 'search_linear_issues',
           title: 'Search Linear Issues',
-          description: 'Search Linear issues when the integration is enabled',
+          description: 'Search Linear issues by a search term',
           group_name: 'Integrations',
           icon: 'search',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::SearchLinearIssuesService,
           risk_level: 'low'
+        ),
+        definition(
+          id: 'send_message_to_conversation',
+          title: 'Send Message to Conversation',
+          description: 'Send a public reply or private note to a conversation',
+          group_name: 'Conversations',
+          icon: 'send',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SendMessageToConversationService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'assign_conversation',
+          title: 'Assign Conversation',
+          description: 'Assign a conversation to an agent, agent bot, or team',
+          group_name: 'Conversations',
+          icon: 'user-switch',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::AssignConversationService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'retry_failed_message',
+          title: 'Retry Failed Message',
+          description: 'Retry a failed outgoing message in a conversation',
+          group_name: 'Conversations',
+          icon: 'refresh',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RetryFailedMessageService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'edit_message',
+          title: 'Edit Message',
+          description: 'Edit a previously sent outgoing message when the channel supports it',
+          group_name: 'Conversations',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::EditMessageService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'translate_message',
+          title: 'Translate Message',
+          description: 'Translate a conversation message into a target language',
+          group_name: 'Conversations',
+          icon: 'language',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::TranslateMessageService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'search_canned_responses',
+          title: 'Search Canned Responses',
+          description: 'Search canned responses by short code or content',
+          group_name: 'Support content',
+          icon: 'search',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SearchCannedResponsesService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'create_canned_response',
+          title: 'Create Canned Response',
+          description: 'Create a reusable canned response',
+          group_name: 'Support content',
+          icon: 'note-add',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateCannedResponseService,
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'merge_contacts',
+          title: 'Merge Contacts',
+          description: 'Merge one contact into another contact',
+          group_name: 'Contacts',
+          icon: 'users',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::MergeContactsService,
+          required_permissions: %w[contact_manage],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'add_appointment_payment',
+          title: 'Add Appointment Payment',
+          description: 'Add a payment to the appointment linked to the current conversation',
+          group_name: 'Scheduling',
+          icon: 'credit-card',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::AddAppointmentPaymentService,
+          required_features: %w[scheduling scheduling_finance],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'execute_macro',
+          title: 'Execute Macro',
+          description: 'Execute a macro for one or more conversations',
+          group_name: 'Automation',
+          icon: 'bolt',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ExecuteMacroService,
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'get_whatsapp_web_diagnostics',
+          title: 'Get WhatsApp Web Diagnostics',
+          description: 'Get runtime diagnostics for a WhatsApp Web inbox',
+          group_name: 'Operations',
+          icon: 'activity',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetWhatsappWebDiagnosticsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'reconnect_whatsapp_web',
+          title: 'Reconnect WhatsApp Web',
+          description: 'Reconnect a WhatsApp Web inbox',
+          group_name: 'Operations',
+          icon: 'refresh',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ReconnectWhatsappWebService,
+          risk_level: 'medium',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'create_label',
+          title: 'Create Label',
+          description: 'Create a new account label',
+          group_name: 'Conversations',
+          icon: 'tag',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateLabelService,
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'update_label',
+          title: 'Update Label',
+          description: 'Update an existing account label',
+          group_name: 'Conversations',
+          icon: 'tag',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateLabelService,
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'remove_label_from_conversation',
+          title: 'Remove Label from Conversation',
+          description: 'Remove a label from the current conversation',
+          group_name: 'Conversations',
+          icon: 'tag',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RemoveLabelFromConversationService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'list_campaigns',
+          title: 'List Campaigns',
+          description: 'List campaigns for the current account',
+          group_name: 'Outbound',
+          icon: 'megaphone',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListCampaignsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'preview_campaign',
+          title: 'Preview Campaign',
+          description: 'Preview a campaign before sending it',
+          group_name: 'Outbound',
+          icon: 'eye',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::PreviewCampaignService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_campaign_analytics',
+          title: 'Get Campaign Analytics',
+          description: 'Get analytics for a campaign',
+          group_name: 'Outbound',
+          icon: 'chart',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCampaignAnalyticsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'retry_failed_campaign_deliveries',
+          title: 'Retry Failed Campaign Deliveries',
+          description: 'Retry failed deliveries for a campaign',
+          group_name: 'Outbound',
+          icon: 'refresh',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService,
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'create_webhook',
+          title: 'Create Webhook',
+          description: 'Create an account webhook',
+          group_name: 'Integrations',
+          icon: 'link',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateWebhookService,
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'update_webhook',
+          title: 'Update Webhook',
+          description: 'Update an existing account webhook',
+          group_name: 'Integrations',
+          icon: 'link',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateWebhookService,
+          risk_level: 'high',
+          requires_confirmation: true
         )
       ].freeze
     end
