@@ -4,7 +4,10 @@ class Captain::Tools::CancelAppointmentTool < Captain::Tools::BasePublicTool
   def perform(tool_context)
     appointment = operations(tool_context.state).cancel_current_appointment
 
-    "Cancelled appointment ##{appointment.id}"
+    JSON.pretty_generate(
+      action: 'cancel_appointment',
+      appointment: ::Scheduling::PayloadBuilder.appointment(appointment)
+    )
   rescue StandardError => e
     tool_failure(e)
   end

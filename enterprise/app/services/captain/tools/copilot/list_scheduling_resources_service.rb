@@ -1,29 +1,24 @@
-class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::ListSchedulingResourcesService < Captain::Tools::Copilot::BaseAccountTool
   def self.name
-    'search_scheduling_resources'
+    'list_scheduling_resources'
   end
 
-  description 'Search scheduling specialists by name or specialty, with optional service filtering'
-  param :query, type: :string, desc: 'Resource name or specialty query', required: false
-  param :search_by, type: :string, desc: 'Search mode: name, specialty, or all', required: false
+  description 'List scheduling specialists, with optional filters for service and activity state'
   param :service_id, type: :number, desc: 'Optional service ID to keep only specialists who can perform it', required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
 
-  def execute(query: nil, search_by: 'all', service_id: nil, include_inactive: false, limit: nil)
+  def execute(service_id: nil, include_inactive: false, limit: nil)
     result = Scheduling::ResourceSearchService.new(
       account: account,
-      query: query,
-      search_by: search_by,
       service_id: service_id,
       include_inactive: include_inactive,
       limit: parse_limit(limit)
     ).perform
 
     formatted_payload(
-      query: query.to_s.presence,
-      search_by: search_by.to_s.presence || 'all',
       service_id: service_id,
+      include_inactive: cast_boolean(include_inactive),
       total_count: result[:total_count],
       resources: result[:resources]
     )

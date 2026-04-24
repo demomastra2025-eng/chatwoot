@@ -14,7 +14,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ).perform
   end
 
-  def create_appointment(resource_id:, starts_at:, ends_at:, service_id: nil, appointment_type: nil, client_comment: nil, custom_attributes: nil)
+  def create_appointment(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
+                         custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
 
     create_params = {
@@ -22,6 +23,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       service_id: service_id,
       starts_at: starts_at,
       ends_at: ends_at,
+      duration_min: duration_min,
       appointment_type: appointment_type,
       client_comment: client_comment,
       contact_id: current_contact&.id,
@@ -40,17 +42,19 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     end
   end
 
-  def update_current_appointment(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, appointment_type: nil, client_comment: nil, custom_attributes: nil)
+  def update_current_appointment(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
+                                 client_comment: nil, custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
 
     params = {}
-    params[:resource_id] = resource_id if !resource_id.nil?
-    params[:service_id] = service_id if !service_id.nil?
-    params[:starts_at] = starts_at if !starts_at.nil?
-    params[:ends_at] = ends_at if !ends_at.nil?
-    params[:appointment_type] = appointment_type if !appointment_type.nil?
-    params[:client_comment] = client_comment if !client_comment.nil?
+    params[:resource_id] = resource_id unless resource_id.nil?
+    params[:service_id] = service_id unless service_id.nil?
+    params[:starts_at] = starts_at unless starts_at.nil?
+    params[:ends_at] = ends_at unless ends_at.nil?
+    params[:duration_min] = duration_min unless duration_min.nil?
+    params[:appointment_type] = appointment_type unless appointment_type.nil?
+    params[:client_comment] = client_comment unless client_comment.nil?
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
     ::Scheduling::Appointments::UpsertService.new(
@@ -59,5 +63,20 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       appointment: current_appointment,
       actor: actor
     ).perform
+  end
+
+  def add_payment_to_current_appointment(payment_method:, amount: nil)
+    ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
+    ensure_feature_enabled!('scheduling_finance', 'Scheduling finance is not enabled for this account')
+    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
+    raise ArgumentError, 'payment_method is required' if payment_method.blank?
+
+    ::Scheduling::Appointments::FinanceSyncService.new(
+      appointment: current_appointment,
+      actor: actor
+    ).add_payment!(
+      amount: amount,
+      payment_method: payment_method
+    )
   end
 end

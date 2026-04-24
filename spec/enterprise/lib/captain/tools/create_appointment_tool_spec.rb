@@ -1,0 +1,27 @@
+require 'rails_helper'
+
+RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
+  let(:account) { create(:account) }
+  let(:assistant) { create(:captain_assistant, account: account) }
+  let(:tool) { described_class.new(assistant) }
+
+  before do
+    account.enable_features!('scheduling')
+  end
+
+  it 'returns normalized create_appointment payload' do
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    scheduling_service = create(:scheduling_service, account: account, duration_min: 30)
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    create(:scheduling_service_price, account: account, service: scheduling_service, resource: resource, active: true, price: 20_000)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, resource_id: resource.id, service_id: scheduling_service.id,
+                                                    starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601, duration_min: 30))
+
+    expect(payload).to include('action' => 'create_appointment')
+    expect(payload['appointment']).to include('resource_id' => resource.id, 'contact_id' => contact.id, 'service_id' => scheduling_service.id)
+  end
+end

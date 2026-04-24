@@ -3,28 +3,28 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     'search_available_slots'
   end
 
-  description 'Search available appointment slots for one or more specialists'
-  param :from, type: :string, desc: 'Range start datetime', required: true
-  param :to, type: :string, desc: 'Range end datetime', required: true
-  param :resource_ids, type: :string, desc: 'Optional comma-separated specialist resource IDs', required: false
-  param :duration_min, type: :number, desc: 'Optional appointment duration in minutes', required: false
+  description 'Search appointment slots for one or more specialists using explicit specialist filters or a scheduling service'
+  param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
+  param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
+  param :resource_ids, type: :array, desc: 'Optional list of specialist resource IDs', required: false
+  param :service_id, type: :number, desc: 'Optional service ID used to filter specialists and derive slot duration', required: false
+  param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when no service is provided', required: false
+  param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
-  def execute(from:, to:, resource_ids: nil, duration_min: nil)
-    result = Scheduling::CalendarViewService.new(
+  def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
+    payload = Scheduling::AvailableSlotSearchService.new(
       account: account,
-      view: 'week',
       from: parse_datetime(from, field_name: 'from', required: true),
       to: parse_datetime(to, field_name: 'to', required: true),
-      resource_ids: parse_csv_ids(resource_ids),
-      include_slots: true,
-      duration_min: duration_min
+      resource_ids: parse_id_list(resource_ids, field_name: 'resource_ids'),
+      service_id: service_id,
+      duration_min: duration_min,
+      limit: limit
     ).perform
 
-    formatted_payload(
-      range: result[:range],
-      resources: result[:resources].map { |resource| Scheduling::PayloadBuilder.resource(resource) },
-      slots: result[:slots].first(100)
-    )
+    formatted_payload(payload)
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?
