@@ -54,12 +54,13 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_audio_transcriptions(attachments)
+    return '' unless @message.account.audio_transcriptions
+
     audio_attachments = attachments.where(file_type: :audio)
     return '' if audio_attachments.blank?
 
-    audio_attachments.map do |attachment|
-      result = Messages::AudioTranscriptionService.new(attachment).perform
-      result[:success] ? result[:transcriptions] : ''
+    audio_attachments.filter_map do |attachment|
+      attachment.meta.to_h['transcribed_text'].presence
     end.join
   end
 end

@@ -40,9 +40,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       next unless still_resolvable_after_evaluation?(conversation)
 
       if evaluation[:complete]
-        resolve_conversation(conversation, inbox, evaluation[:reason])
+        resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
       else
-        handoff_conversation(conversation, inbox, evaluation[:reason])
+        handoff_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
       end
     end
   end
@@ -80,9 +80,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Time.now.utc - auto_resolve_after.minutes
   end
 
-  def resolve_conversation(conversation, inbox, reason)
+  def resolve_conversation(conversation, inbox, reason, generated_message: nil)
     create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
-    create_resolution_message(conversation, inbox)
+    create_resolution_message(conversation, inbox, generated_message: generated_message)
     conversation.with_captain_activity_context(
       reason: CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON,
       reason_type: :inference
@@ -90,9 +90,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     conversation.dispatch_captain_inference_resolved_event
   end
 
-  def handoff_conversation(conversation, inbox, reason)
+  def handoff_conversation(conversation, inbox, reason, generated_message: nil)
     create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
-    create_handoff_message(conversation, inbox)
+    create_handoff_message(conversation, inbox, generated_message: generated_message)
     conversation.with_captain_activity_context(
       reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON,
       reason_type: :inference
@@ -120,34 +120,52 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     )
   end
 
-  def create_resolution_message(conversation, inbox)
+  def create_resolution_message(conversation, inbox, generated_message: nil)
+    assistant = inbox.captain_assistant
+    return unless assistant&.resolution_message_enabled?
+
     I18n.with_locale(inbox.account.locale) do
-      resolution_message = inbox.captain_assistant.config['resolution_message']
-      content = resolution_message.presence || I18n.t('conversations.activity.auto_resolution_message')
+      content = resolution_message_content(assistant, generated_message: generated_message)
+      return if content.blank?
 
       conversation.messages.create!(
         {
           message_type: :outgoing,
           account_id: conversation.account_id,
           inbox_id: conversation.inbox_id,
-          content: inbox.captain_assistant.render_runtime_text(content, conversation: conversation),
-          sender: inbox.captain_assistant
+          content: assistant.render_runtime_text(content, conversation: conversation),
+          sender: assistant
         }
       )
     end
   end
 
-  def create_handoff_message(conversation, inbox)
-    handoff_message = inbox.captain_assistant.config['handoff_message']
+  def resolution_message_content(assistant, generated_message: nil)
+    return generated_message.presence if assistant.resolution_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+
+    assistant.config['resolution_message'].presence || I18n.t('conversations.activity.auto_resolution_message')
+  end
+
+  def create_handoff_message(conversation, inbox, generated_message: nil)
+    assistant = inbox.captain_assistant
+    return unless assistant&.handoff_message_enabled?
+
+    handoff_message = handoff_message_content(assistant, generated_message: generated_message)
     return if handoff_message.blank?
 
     conversation.messages.create!(
       message_type: :outgoing,
-      sender: inbox.captain_assistant,
+      sender: assistant,
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
-      content: handoff_message,
+      content: assistant.render_runtime_text(handoff_message, conversation: conversation),
       preserve_waiting_since: true
     )
+  end
+
+  def handoff_message_content(assistant, generated_message: nil)
+    return generated_message.presence if assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+
+    assistant.config['handoff_message'].presence
   end
 end

@@ -17,7 +17,7 @@ A conversation is COMPLETE only if ALL of these are true:
 - If the customer sent only one or two short messages (single words, names, phone numbers, or gibberish) with no recognizable question or request across the entire conversation, and the
   assistant has responded asking for clarification, the conversation is COMPLETE.
 
-Analyze the conversation and respond with ONLY a JSON object (no other text):
-{"complete": true, "reason": "brief explanation"}
+Analyze the conversation and respond with ONLY a JSON object (no other text). Include a concise, natural customer-facing "message" in the same language as the conversation. If complete is true, the message should explain that the conversation is being closed because the question was answered. If complete is false, the message should explain that a human specialist will continue with the request.
+{"complete": true, "reason": "brief explanation", "message": "customer-facing closing message"}
 or
-{"complete": false, "reason": "brief explanation"}
+{"complete": false, "reason": "brief explanation", "message": "customer-facing handoff message"}

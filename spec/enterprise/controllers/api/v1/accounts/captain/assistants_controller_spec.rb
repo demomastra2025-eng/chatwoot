@@ -612,7 +612,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
                 assistant: {
                   config: {
                     temperature: 0.4,
-                    handoff_message: 'Escalating now.'
+                    handoff_message_enabled: true,
+                    handoff_message_mode: 'ai',
+                    handoff_message: 'Escalating now.',
+                    resolution_message_enabled: true,
+                    resolution_message_mode: 'static'
                   }
                 }
               },
@@ -622,7 +626,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
         expect(assistant.reload.config).to include(
           'temperature' => 0.4,
+          'handoff_message_enabled' => true,
+          'handoff_message_mode' => 'ai',
           'handoff_message' => 'Escalating now.',
+          'resolution_message_enabled' => true,
+          'resolution_message_mode' => 'static',
           'tool_access' => {
             'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
           }
@@ -885,7 +893,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
             'id' => 'stay_within_scope',
             'type' => 'system',
             'enabled' => true,
-            'editable' => true,
+            'editable' => false,
             'deletable' => false
           )
         )
@@ -894,7 +902,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
             id: 'stay_within_scope',
             type: 'system',
             enabled: true,
-            editable: true,
+            editable: false,
             deletable: false
           )
         )

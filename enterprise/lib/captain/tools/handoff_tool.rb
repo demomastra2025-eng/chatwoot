@@ -1,12 +1,13 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
+  param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
-  def perform(tool_context, reason: nil)
+  def perform(tool_context, reason: nil, message: nil)
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
 
-    request_handoff(tool_context, reason)
+    request_handoff(tool_context, reason, message)
 
     # Log the handoff with reason
     log_tool_usage('tool_handoff', {
@@ -22,11 +23,12 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   private
 
-  def request_handoff(tool_context, reason)
+  def request_handoff(tool_context, reason, message)
     tool_context.context[:pending_human_handoff] = {
       reason: reason.presence,
+      message: message.presence,
       timestamp: Time.current
-    }
+    }.compact
   end
 
   # TODO: Future enhancement - Add team assignment capability

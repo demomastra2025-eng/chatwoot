@@ -212,7 +212,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.waiting_since).to be_nil
       end
 
-      it 'keeps captain trace on the handoff message' do
+      it 'keeps captain trace on the configured static handoff message' do
+        assistant.update!(config: {
+                            'handoff_message_enabled' => true,
+                            'handoff_message_mode' => 'static',
+                            'handoff_message' => 'Connecting you to a human agent.'
+                          })
         trace_payload = Captain::ToolTraceBuilder.payload([
                                                             Captain::ToolTraceBuilder.step(
                                                               tool_name: 'search_documentation',
@@ -230,6 +235,39 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
 
         expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
+      end
+
+      it 'does not create a public handoff message when handoff message is disabled' do
+        assistant.update!(config: {
+                            'handoff_message_enabled' => false,
+                            'handoff_message_mode' => 'static',
+                            'handoff_message' => ''
+                          })
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+
+        expect(conversation.reload.status).to eq('open')
+      end
+
+      it 'uses generated handoff text when AI handoff message mode is enabled' do
+        assistant.update!(config: {
+                            'handoff_message_enabled' => true,
+                            'handoff_message_mode' => 'ai',
+                            'handoff_message' => ''
+                          })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_message' => 'I’ll connect you with a specialist who can continue from here.'
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        public_message = conversation.reload.messages.outgoing.where(private: false).last
+        expect(public_message.content).to eq('I’ll connect you with a specialist who can continue from here.')
       end
 
       it 'creates a private note with the handoff reason when provided by the runtime' do
@@ -309,6 +347,69 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           end).to be(true)
 
           { 'response' => 'I can see the error in your image. It appears to be a database connection issue.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+    end
+
+    context 'when message contains an audio attachment' do
+      let!(:audio_message) do
+        create(
+          :message,
+          conversation: conversation,
+          message_type: :incoming,
+          content: nil
+        )
+      end
+      let!(:audio_attachment) do
+        audio_message.attachments.create!(
+          account: account,
+          file_type: :audio,
+          meta: {}
+        )
+      end
+
+      before do
+        account.update!(audio_transcriptions: true)
+        audio_attachment
+        conversation.messages.where.not(id: audio_message.id).destroy_all
+        stub_const('Captain::Conversation::ResponseBuilderJob::AUDIO_TRANSCRIPTION_WAIT_TIMEOUT', 0.05)
+        stub_const('Captain::Conversation::ResponseBuilderJob::AUDIO_TRANSCRIPTION_WAIT_INTERVAL', 0.01)
+      end
+
+      it 'waits for stored audio transcription before generating a response' do
+        allow_any_instance_of(described_class).to receive(:sleep) do |_job, _duration|
+          audio_attachment.update!(meta: { 'transcribed_text' => 'Audio transcript text' })
+        end
+
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          expect(message_history.last[:content]).to eq('Audio transcript text')
+          { 'response' => 'I understood the voice message.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+
+      it 'continues without audio text after the transcription wait timeout' do
+        expect_any_instance_of(described_class).to receive(:sleep).at_least(:once)
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          expect(message_history.last[:content]).to eq('Message without content')
+          { 'response' => 'Please send the details again.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+
+      it 'does not wait or include transcription when account audio transcription is disabled' do
+        account.update!(audio_transcriptions: false)
+        audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
+
+        expect_any_instance_of(described_class).not_to receive(:sleep)
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          expect(message_history.last[:content]).to eq('Message without content')
+          { 'response' => 'I need more details.' }
         end
 
         described_class.perform_now(conversation, assistant)

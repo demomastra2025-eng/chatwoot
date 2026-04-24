@@ -3,9 +3,8 @@
 # conversations should be resolved or handed off to human agents.
 #
 # NOTE: This service intentionally does NOT count toward Captain usage limits.
-# The response excludes the :message key that Enterprise::Captain::BaseTaskService
-# checks for usage tracking. This is an internal operational evaluation,
-# not a customer-facing value-add, so we don't charge for it.
+# Enterprise::Captain::ConversationCompletionService marks results as non-billable even when
+# they include a customer-facing generated message for auto-resolve/handoff flows.
 class Captain::ConversationCompletionService < Captain::BaseTaskService
   pattr_initialize [:account!, :conversation_display_id!]
 

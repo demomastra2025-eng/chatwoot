@@ -2,6 +2,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   ASSISTANT_CONFIG_FIELDS = [
     :feature_faq, :feature_memory, :feature_citation,
     :welcome_message, :handoff_message, :resolution_message,
+    :handoff_message_enabled, :handoff_message_mode,
+    :resolution_message_enabled, :resolution_message_mode,
     :temperature,
     :auto_reply_on_last_incoming,
     :message_collapse_window_seconds, :history_message_limit

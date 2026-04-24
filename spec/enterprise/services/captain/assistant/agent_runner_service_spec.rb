@@ -227,7 +227,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           output: 'conversation_handoff',
           context: {
             current_agent: 'assistant_agent',
-            pending_human_handoff: { reason: 'Needs manual review' }
+            pending_human_handoff: {
+              reason: 'Needs manual review',
+              message: 'I’m connecting you with a human support specialist.'
+            }
           },
           error: nil
         )
@@ -240,6 +243,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'response' => 'conversation_handoff',
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
+          'handoff_message' => 'I’m connecting you with a human support specialist.',
           'agent_name' => 'assistant_agent'
         }
       )
@@ -664,6 +668,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         create_field_definition(:appointment, 'visit_room', 'Visit Room')
         account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
         assistant.update!(
+          description: <<~TEXT.squish,
+            Use [Deal Stage](field://deal.stage_name), [Sales Region](field://deal.custom_attributes.sales_region),
+            [Task Status](field://task.status_name), [Follow Up Channel](field://task.custom_attributes.follow_up_channel),
+            [Appointment Status](field://appointment.status), and [Visit Room](field://appointment.custom_attributes.visit_room).
+          TEXT
           config: {
             'context_access' => {
               'deal' => {

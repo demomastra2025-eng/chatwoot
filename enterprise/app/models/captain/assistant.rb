@@ -58,6 +58,9 @@ class Captain::Assistant < ApplicationRecord
   SYSTEM_TEMPLATE_SLOT_SCENARIO_HUMAN_HANDOFF = 'scenario_human_handoff'
   SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT = 'current_context_usage'
   SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY = 'reference_glossary_usage'
+  MESSAGE_MODE_STATIC = 'static'
+  MESSAGE_MODE_AI = 'ai'
+  MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   SYSTEM_TEMPLATE_SLOT_LABELS = {
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT => 'Assistant system context',
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY => 'Assistant identity',
@@ -658,6 +661,22 @@ class Captain::Assistant < ApplicationRecord
     config['auto_reply_on_last_incoming'] == true
   end
 
+  def handoff_message_enabled?
+    message_config_enabled?('handoff_message_enabled')
+  end
+
+  def handoff_message_mode_value
+    message_mode_value('handoff_message_mode')
+  end
+
+  def resolution_message_enabled?
+    message_config_enabled?('resolution_message_enabled')
+  end
+
+  def resolution_message_mode_value
+    message_mode_value('resolution_message_mode')
+  end
+
   private
 
   def ensure_usage_mode
@@ -784,6 +803,17 @@ class Captain::Assistant < ApplicationRecord
   def config_integer_value(key)
     value = config[key]
     value.present? ? value.to_i : 0
+  end
+
+  def message_config_enabled?(key)
+    return true unless config.key?(key)
+
+    ActiveModel::Type::Boolean.new.cast(config[key])
+  end
+
+  def message_mode_value(key)
+    mode = config[key].to_s
+    MESSAGE_MODES.include?(mode) ? mode : MESSAGE_MODE_STATIC
   end
 
   def initialize_context_access_config

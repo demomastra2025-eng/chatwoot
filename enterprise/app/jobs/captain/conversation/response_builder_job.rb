@@ -1,5 +1,7 @@
 class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   MAX_MESSAGE_LENGTH = 10_000
+  AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
+  AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   queue_as :captain_runtime
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
@@ -35,6 +37,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   delegate :account, :inbox, to: :@conversation
 
   def generate_and_process_response
+    wait_for_audio_transcriptions
+
     callbacks, tool_trace_steps = build_tool_trace_callbacks
     @response = Captain::Assistant::AgentRunnerService.new(
       assistant: @assistant,
@@ -105,6 +109,36 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     Captain::OpenAiMessageBuilderService.new(message: message).generate_content
   end
 
+  def wait_for_audio_transcriptions
+    return unless account.audio_transcriptions
+    return unless pending_audio_transcription?
+
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f
+
+    while pending_audio_transcription?
+      break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep AUDIO_TRANSCRIPTION_WAIT_INTERVAL.to_f
+    end
+  end
+
+  def pending_audio_transcription?
+    incoming_messages_pending_response.any? do |message|
+      message.attachments.any? do |attachment|
+        attachment.file_type == 'audio' && attachment.meta.to_h['transcribed_text'].blank?
+      end
+    end
+  end
+
+  def incoming_messages_pending_response
+    messages = conversation_messages_scope.includes(:attachments).to_a
+    latest_outgoing_at = messages.select { |message| message.message_type == 'outgoing' }.filter_map(&:created_at).max
+
+    messages.select do |message|
+      message.message_type == 'incoming' && (latest_outgoing_at.blank? || message.created_at > latest_outgoing_at)
+    end
+  end
+
   def handoff_requested?
     ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
   end
@@ -142,11 +176,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_handoff_message
-    handoff_message = @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    return unless @assistant.handoff_message_enabled?
+
+    handoff_message = handoff_message_content
+    return if handoff_message.blank?
 
     create_outgoing_message(
       @assistant.render_runtime_text(handoff_message, conversation: @conversation)
     )
+  end
+
+  def handoff_message_content
+    return @response['handoff_message'].presence if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+
+    @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
   end
 
   def create_handoff_private_note

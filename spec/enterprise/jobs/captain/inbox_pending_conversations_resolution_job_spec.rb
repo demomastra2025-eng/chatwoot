@@ -124,9 +124,13 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(private_note.content).to eq('Auto-resolved: Customer question was answered')
     end
 
-    it 'creates resolution message with configured content' do
+    it 'creates resolution message with configured static content' do
       custom_message = 'This is a custom resolution message.'
-      captain_assistant.update!(config: { 'resolution_message' => custom_message })
+      captain_assistant.update!(config: {
+                                  'resolution_message_enabled' => true,
+                                  'resolution_message_mode' => 'static',
+                                  'resolution_message' => custom_message
+                                })
       inbox.reload
 
       described_class.perform_now(inbox)
@@ -135,17 +139,38 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(public_message.content).to eq(custom_message)
     end
 
-    it 'creates resolution message with default if not configured' do
-      captain_assistant.update!(config: {})
+    it 'does not create resolution message when disabled' do
+      captain_assistant.update!(config: {
+                                  'resolution_message_enabled' => false,
+                                  'resolution_message_mode' => 'static',
+                                  'resolution_message' => ''
+                                })
       inbox.reload
+
+      expect do
+        described_class.perform_now(inbox)
+      end.not_to(change { resolvable_pending_conversation.messages.where(private: false).outgoing.count })
+    end
+
+    it 'uses generated resolution text when AI resolution message mode is enabled' do
+      mock_service = instance_double(Captain::ConversationCompletionService)
+      allow(mock_service).to receive(:perform).and_return(
+        { complete: true, reason: 'Customer question was answered', message: 'I’m closing this because your question has been answered.' }
+      )
+      allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
+      captain_assistant.update!(config: {
+                                  'resolution_message_enabled' => true,
+                                  'resolution_message_mode' => 'ai',
+                                  'resolution_message' => ''
+                                })
+      inbox.reload
+      allow(inbox.account).to receive(:feature_enabled?).and_call_original
+      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
 
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expected_message = I18n.with_locale(inbox.account.locale) do
-        I18n.t('conversations.activity.auto_resolution_message')
-      end
-      expect(public_message.content).to eq(expected_message)
+      expect(public_message.content).to eq('I’m closing this because your question has been answered.')
     end
 
     it 'adds the correct activity message after resolution' do
@@ -205,9 +230,13 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(private_note.content).to eq("Auto-handoff: #{handoff_reason}")
     end
 
-    it 'creates handoff message with configured content' do
+    it 'creates handoff message with configured static content' do
       handoff_message = 'Connecting you to a human agent...'
-      captain_assistant.update!(config: { 'handoff_message' => handoff_message })
+      captain_assistant.update!(config: {
+                                  'handoff_message_enabled' => true,
+                                  'handoff_message_mode' => 'static',
+                                  'handoff_message' => handoff_message
+                                })
       inbox.reload
       allow(inbox.account).to receive(:feature_enabled?).and_call_original
       allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
@@ -219,11 +248,36 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(public_message.additional_attributes['preserve_waiting_since']).to be_nil
     end
 
+    it 'uses generated handoff text when AI handoff message mode is enabled' do
+      mock_service = instance_double(Captain::ConversationCompletionService)
+      allow(mock_service).to receive(:perform).and_return(
+        { complete: false, reason: handoff_reason, message: 'A specialist will continue with your request.' }
+      )
+      allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
+      captain_assistant.update!(config: {
+                                  'handoff_message_enabled' => true,
+                                  'handoff_message_mode' => 'ai',
+                                  'handoff_message' => ''
+                                })
+      inbox.reload
+      allow(inbox.account).to receive(:feature_enabled?).and_call_original
+      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
+
+      described_class.perform_now(inbox)
+
+      public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
+      expect(public_message.content).to eq('A specialist will continue with your request.')
+    end
+
     it 'preserves existing waiting_since when handoff message is configured' do
       handoff_message = 'Connecting you to a human agent...'
       original_waiting_since = 3.hours.ago
 
-      captain_assistant.update!(config: { 'handoff_message' => handoff_message })
+      captain_assistant.update!(config: {
+                                  'handoff_message_enabled' => true,
+                                  'handoff_message_mode' => 'static',
+                                  'handoff_message' => handoff_message
+                                })
       resolvable_pending_conversation.update!(waiting_since: original_waiting_since)
       allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
       inbox.reload

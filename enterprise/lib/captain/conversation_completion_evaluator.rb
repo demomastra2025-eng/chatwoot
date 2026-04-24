@@ -48,10 +48,13 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   def parse_response(message)
     return default_incomplete_response('Invalid response format') unless message.is_a?(Hash)
 
-    {
+    result = {
       complete: message['complete'] == true || message[:complete] == true,
       reason: message['reason'] || message[:reason] || 'No reason provided'
     }
+    generated_message = message['message'] || message[:message]
+    result[:message] = generated_message if generated_message.present?
+    result
   end
 
   def default_incomplete_response(reason)

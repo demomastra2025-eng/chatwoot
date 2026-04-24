@@ -7,12 +7,23 @@ RSpec.describe Captain::ConversationCompletionService do
   let(:service) { described_class.new(account: account, conversation_display_id: conversation.display_id) }
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:mock_context) { instance_double(RubyLLM::Context, chat: mock_chat) }
+  let(:mock_runner) { instance_double(Llm::ChatRequestRunner) }
+  let(:mock_response) do
+    instance_double(
+      RubyLLM::Message,
+      content: { 'complete' => true, 'reason' => 'Done' },
+      input_tokens: 10,
+      output_tokens: 5
+    )
+  end
 
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(Llm::Config).to receive(:with_api_key).and_yield(mock_context)
     allow(mock_chat).to receive(:with_instructions)
     allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
+    allow(Llm::ChatRequestRunner).to receive(:new).and_return(mock_runner)
+    allow(mock_runner).to receive(:call).and_return(mock_response)
     allow(account).to receive(:feature_enabled?).and_call_original
     allow(account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
   end
@@ -39,7 +50,11 @@ RSpec.describe Captain::ConversationCompletionService do
       let(:mock_response) do
         instance_double(
           RubyLLM::Message,
-          content: { 'complete' => true, 'reason' => 'Customer question was fully answered' },
+          content: {
+            'complete' => true,
+            'reason' => 'Customer question was fully answered',
+            'message' => 'I’m closing this conversation because your question has been answered.'
+          },
           input_tokens: 100,
           output_tokens: 20
         )
@@ -59,10 +74,16 @@ RSpec.describe Captain::ConversationCompletionService do
         expect(result[:reason]).to eq('Customer question was fully answered')
       end
 
+      it 'returns generated customer-facing message when provided' do
+        result = service.perform
+
+        expect(result[:message]).to eq('I’m closing this conversation because your question has been answered.')
+      end
+
       it 'uses the account assistant model when configured' do
         account.update!(captain_models: { 'assistant' => 'gpt-5.2' })
 
-        expect(mock_context).to receive(:chat).with(model: 'gpt-5.2').and_return(mock_chat)
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(model: 'gpt-5.2')).and_return(mock_runner)
 
         service.perform
       end
@@ -127,7 +148,7 @@ RSpec.describe Captain::ConversationCompletionService do
     context 'when API call fails' do
       before do
         create(:message, conversation: conversation, message_type: :incoming, content: 'Hello')
-        allow(mock_chat).to receive(:ask).and_raise(StandardError.new('API Error'))
+        allow(mock_runner).to receive(:call).and_raise(StandardError.new('API Error'))
       end
 
       it 'returns incomplete with error message' do
@@ -158,7 +179,7 @@ RSpec.describe Captain::ConversationCompletionService do
       end
 
       it 'uses the system API key instead of the account hook key' do
-        expect(Llm::Config).to receive(:with_api_key).with('test-key', api_base: anything).and_yield(mock_context)
+        expect(Llm::Config).to receive(:context).with(api_key: 'test-key', api_base: anything, model: anything).and_return(mock_context)
         allow(mock_chat).to receive(:ask).and_return(
           instance_double(RubyLLM::Message, content: { 'complete' => true, 'reason' => 'Done' }, input_tokens: 10, output_tokens: 5)
         )
@@ -169,7 +190,7 @@ RSpec.describe Captain::ConversationCompletionService do
       it 'falls back to the account hook key when no system key exists' do
         InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY').update!(value: nil)
 
-        expect(Llm::Config).to receive(:with_api_key).with('customer-own-key', api_base: anything).and_yield(mock_context)
+        expect(Llm::Config).to receive(:context).with(api_key: 'customer-own-key', api_base: anything, model: anything).and_return(mock_context)
         allow(mock_chat).to receive(:ask).and_return(
           instance_double(RubyLLM::Message, content: { 'complete' => true, 'reason' => 'Done' }, input_tokens: 10, output_tokens: 5)
         )

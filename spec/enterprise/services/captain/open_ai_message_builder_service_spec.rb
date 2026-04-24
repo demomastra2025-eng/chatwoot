@@ -75,13 +75,15 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        allow(Messages::AudioTranscriptionService).to receive(:new).with(audio_attachment).and_return(
-          instance_double(Messages::AudioTranscriptionService, perform: { success: true, transcriptions: 'Audio transcription text' })
-        )
+        message.account.update!(audio_transcriptions: true)
       end
 
-      it 'includes transcription text part' do
+      it 'includes stored transcription text part without transcribing synchronously' do
         audio_attachment # trigger creation
+        audio_attachment.update!(meta: { 'transcribed_text' => 'Audio transcription text' })
+
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
+
         result = service.send(:attachment_parts, attachments)
         expect(result).to include({ type: 'text', text: 'Audio transcription text' })
       end
@@ -119,15 +121,16 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        allow(Messages::AudioTranscriptionService).to receive(:new).with(audio_attachment).and_return(
-          instance_double(Messages::AudioTranscriptionService, perform: { success: true, transcriptions: 'Audio text' })
-        )
+        message.account.update!(audio_transcriptions: true)
       end
 
       it 'includes all relevant parts' do
         image_attachment    # trigger creation
         audio_attachment    # trigger creation
         document_attachment # trigger creation
+        audio_attachment.update!(meta: { 'transcribed_text' => 'Audio text' })
+
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         result = service.send(:attachment_parts, attachments)
         expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
@@ -251,17 +254,16 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        allow(Messages::AudioTranscriptionService).to receive(:new).with(audio1).and_return(
-          instance_double(Messages::AudioTranscriptionService, perform: { success: true, transcriptions: 'First audio text. ' })
-        )
-        allow(Messages::AudioTranscriptionService).to receive(:new).with(audio2).and_return(
-          instance_double(Messages::AudioTranscriptionService, perform: { success: true, transcriptions: 'Second audio text.' })
-        )
+        message.account.update!(audio_transcriptions: true)
       end
 
-      it 'concatenates all successful transcriptions' do
+      it 'concatenates all stored transcriptions without transcribing synchronously' do
         audio1 # trigger creation
         audio2 # trigger creation
+        audio1.update!(meta: { 'transcribed_text' => 'First audio text. ' })
+        audio2.update!(meta: { 'transcribed_text' => 'Second audio text.' })
+
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         attachments = message.attachments
         result = service.send(:extract_audio_transcriptions, attachments)
@@ -277,16 +279,37 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        allow(Messages::AudioTranscriptionService).to receive(:new).with(audio_attachment).and_return(
-          instance_double(Messages::AudioTranscriptionService, perform: { success: false, transcriptions: nil })
-        )
+        message.account.update!(audio_transcriptions: true)
       end
 
-      it 'returns empty string for failed transcriptions' do
+      it 'returns empty string when transcription is not stored yet' do
         audio_attachment # trigger creation
+
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         attachments = message.attachments
         result = service.send(:extract_audio_transcriptions, attachments)
+        expect(result).to eq('')
+      end
+    end
+
+    context 'when account audio transcriptions are disabled' do
+      let(:audio_attachment) do
+        attachment = message.attachments.build(account_id: message.account_id, file_type: :audio, meta: { 'transcribed_text' => 'Hidden audio text' })
+        attachment.save!
+        attachment
+      end
+
+      before do
+        message.account.update!(audio_transcriptions: false)
+      end
+
+      it 'does not include stored audio transcription text' do
+        audio_attachment # trigger creation
+
+        expect(Messages::AudioTranscriptionService).not_to receive(:new)
+
+        result = service.send(:extract_audio_transcriptions, message.attachments)
         expect(result).to eq('')
       end
     end

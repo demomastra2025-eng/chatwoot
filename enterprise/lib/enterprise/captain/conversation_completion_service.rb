@@ -9,4 +9,8 @@ module Enterprise::Captain::ConversationCompletionService
   def responses_available?
     true
   end
+
+  def successful_result?(_result)
+    false
+  end
 end
