@@ -117,6 +117,53 @@ RSpec.describe WhatsappWeb::ContactSyncService do
     expect(resolved_contact_inbox.contact.additional_attributes['lid_jid']).to eq('143907392331785@lid')
   end
 
+  it 'retries fresh failed provisional lid messages when the canonical phone jid arrives later' do
+    allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
+
+    provisional_contact_inbox = described_class.new(
+      channel: channel,
+      contact_payload: {
+        remoteJid: '143907392331785@lid',
+        pushName: 'Alice'
+      }
+    ).perform
+
+    conversation = create(
+      :conversation,
+      account: channel.account,
+      inbox: channel.inbox,
+      contact: provisional_contact_inbox.contact,
+      contact_inbox: provisional_contact_inbox
+    )
+    failed_message = create(
+      :message,
+      account: channel.account,
+      inbox: channel.inbox,
+      conversation: conversation,
+      message_type: :outgoing,
+      status: :failed,
+      content_attributes: {
+        external_error: "WhatsApp Web recipient is still a provisional @lid identity for conversation #{conversation.id}"
+      }
+    )
+
+    clear_enqueued_jobs
+
+    expect do
+      described_class.new(
+        channel: channel,
+        contact_payload: {
+          remoteJid: '15551234567@s.whatsapp.net',
+          remoteLid: '143907392331785@lid',
+          pushName: 'Alice'
+        }
+      ).perform
+    end.to have_enqueued_job(SendReplyJob).with(failed_message.id).on_queue('outbound_messages')
+
+    expect(failed_message.reload.status).to eq('sent')
+    expect(failed_message.external_error).to be_nil
+  end
+
   it 'replaces a technical lid-based name with the phone number when the canonical phone jid arrives later' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 

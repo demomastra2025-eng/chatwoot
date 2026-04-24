@@ -19,6 +19,7 @@ class WhatsappWeb::ContactSyncService
     contact_inbox.reload if resolved_contact.present? && resolved_contact.id != contact_inbox.contact_id
     sync_channel_profile(contact_inbox)
     sync_avatar(contact_inbox.contact, contact_inbox: contact_inbox)
+    retry_failed_provisional_messages(contact_inbox.contact)
     contact_inbox
   end
 
@@ -174,6 +175,12 @@ class WhatsappWeb::ContactSyncService
         profile_data: whatsapp_channel_profile(contact_inbox.contact)
       )
     ).perform
+  end
+
+  def retry_failed_provisional_messages(contact)
+    return unless resolved_lid_identity?
+
+    WhatsappWeb::RetryFailedProvisionalMessagesService.new(channel: channel, contact: contact).perform
   end
 
   def merged_additional_attributes(contact, current_attributes)
@@ -478,6 +485,10 @@ class WhatsappWeb::ContactSyncService
 
   def lid_only_identity?
     canonical_remote_jid.end_with?('@lid')
+  end
+
+  def resolved_lid_identity?
+    source_id.present? && lid_jid.present? && !lid_only_identity?
   end
 
   def contact_identifier
