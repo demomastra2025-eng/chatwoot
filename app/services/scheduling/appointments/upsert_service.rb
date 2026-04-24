@@ -38,8 +38,13 @@ class Scheduling::Appointments::UpsertService
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
 
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
-    ends_at = resolve_datetime(:ends_at, current: appointment.ends_at)
-    duration_min = resolve_duration_min(starts_at: starts_at, ends_at: ends_at)
+    duration_min = resolve_duration_min(
+      starts_at: starts_at,
+      resource: resource,
+      services: services,
+      current_duration_min: appointment.duration_min
+    )
+    ends_at = resolve_ends_at(starts_at: starts_at, duration_min: duration_min, current: appointment.ends_at)
 
     service_snapshot = resolve_service_snapshot(resource: resource, services: services)
     service_amount = resolve_service_amount(
@@ -272,10 +277,36 @@ class Scheduling::Appointments::UpsertService
     Time.zone.parse(value.to_s) || raise(ArgumentError, "#{key} must be a valid datetime")
   end
 
-  def resolve_duration_min(starts_at:, ends_at:)
-    return resolve_int(:duration_min, current: appointment.duration_min || 30) if params.key?(:duration_min)
+  def resolve_duration_min(starts_at:, resource:, services:, current_duration_min:)
+    explicit_duration = if params.key?(:duration_min)
+                          resolve_int(:duration_min,
+                                      current: current_duration_min || resource.slot_duration_min || 30)
+                        end
+    explicit_ends_at = params.key?(:ends_at) ? resolve_datetime(:ends_at, current: appointment.ends_at) : nil
 
-    [((ends_at - starts_at) / 60).round, 5].max
+    if explicit_duration.present? && explicit_ends_at.present?
+      expected_ends_at = starts_at + explicit_duration.minutes
+      raise ArgumentError, 'duration_min does not match ends_at' unless expected_ends_at == explicit_ends_at
+    end
+
+    return explicit_duration if explicit_duration.present?
+    return [((explicit_ends_at - starts_at) / 60).round, 5].max if explicit_ends_at.present?
+
+    service_duration = services.sum { |service| service.duration_min.to_i }
+    return service_duration if service_duration.positive?
+    return current_duration_min.to_i if current_duration_min.to_i.positive?
+
+    [resource.slot_duration_min.to_i, 5].max
+  end
+
+  def resolve_ends_at(starts_at:, duration_min:, current:)
+    return current unless starts_at.present?
+
+    explicit_ends_at = params.key?(:ends_at) ? resolve_datetime(:ends_at, current: current) : nil
+    ends_at = explicit_ends_at || (starts_at + duration_min.minutes)
+    raise ArgumentError, 'ends_at must be greater than starts_at' if ends_at <= starts_at
+
+    ends_at
   end
 
   def resolve_int(key, current:)
@@ -358,6 +389,7 @@ class Scheduling::Appointments::UpsertService
   def resolve_service_amount(resource:, services:, resolved_price:)
     return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
     return 0 if services.blank?
+
     pricing_changed = pricing_link_changed?(resource: resource, services: services)
     return resolved_price if resolved_price.present? && pricing_changed
 

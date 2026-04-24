@@ -1,0 +1,100 @@
+class Scheduling::AvailableSlotSearchService
+  MAX_LIMIT = 100
+  MAX_RANGE_DAYS = 31
+
+  def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
+    @account = account
+    @from = from
+    @to = to
+    @resource_ids = Array(resource_ids).compact_blank.map(&:to_i)
+    @service_id = service_id.presence&.to_i
+    @requested_duration_min = duration_min.presence&.to_i
+    @limit = normalize_limit(limit)
+  end
+
+  def perform
+    validate_range!
+
+    {
+      range: {
+        from: @from.iso8601,
+        to: @to.iso8601
+      },
+      service: service.present? ? Scheduling::PayloadBuilder.service(service) : nil,
+      duration_min: top_level_duration_min,
+      resources: resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
+      slots: normalized_slots,
+      total_slots: normalized_slots.length
+    }.compact
+  end
+
+  private
+
+  def service
+    @service ||= @service_id.present? ? @account.scheduling_services.active.find(@service_id) : nil
+  end
+
+  def resources
+    @resources ||= begin
+      scope = @account.scheduling_resources.available_for_scheduling
+      scope = scope.where(id: @resource_ids) if @resource_ids.present?
+      resolved = scope.ordered.to_a
+
+      if @resource_ids.present?
+        missing_ids = @resource_ids - resolved.map(&:id)
+        raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
+      end
+
+      if service.present?
+        eligible_resource_ids = Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: service.id).distinct.pluck(:resource_id)
+
+        if @resource_ids.present?
+          unsupported_ids = resolved.map(&:id) - eligible_resource_ids
+          raise ArgumentError, 'Service is not available for the requested specialists' if unsupported_ids.present?
+        end
+
+        resolved = resolved.select { |resource| eligible_resource_ids.include?(resource.id) }
+      end
+
+      resolved
+    end
+  end
+
+  def normalized_slots
+    @normalized_slots ||= resources.flat_map do |resource|
+      payload = Scheduling::ResourceAvailabilityQueryService.new(
+        resource: resource,
+        from: @from,
+        to: @to,
+        service: service,
+        duration_min: @requested_duration_min,
+        limit: @limit
+      ).perform
+
+      payload.fetch(:slots, []).map do |slot|
+        slot.merge(
+          resource_name: resource.name,
+          timezone: resource.timezone
+        )
+      end
+    end.sort_by { |slot| Time.zone.parse(slot[:starts_at]) }.first(@limit)
+  end
+
+  def top_level_duration_min
+    return service.duration_min if service.present?
+
+    @requested_duration_min.presence
+  end
+
+  def normalize_limit(value)
+    numeric = value.to_i
+    return MAX_LIMIT if numeric <= 0
+
+    [numeric, MAX_LIMIT].min
+  end
+
+  def validate_range!
+    raise ArgumentError, 'to must be greater than from' if @to <= @from
+    raise ArgumentError, "Date range must be #{MAX_RANGE_DAYS} days or less" if (@to.to_date - @from.to_date).to_i > MAX_RANGE_DAYS
+  end
+end
