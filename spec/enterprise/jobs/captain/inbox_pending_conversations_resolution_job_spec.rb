@@ -152,6 +152,19 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       end.not_to(change { resolvable_pending_conversation.messages.where(private: false).outgoing.count })
     end
 
+    it 'does not fall back to default public text when static resolution message is blank' do
+      captain_assistant.update!(config: {
+                                  'resolution_message_enabled' => true,
+                                  'resolution_message_mode' => 'static',
+                                  'resolution_message' => ''
+                                })
+      inbox.reload
+
+      expect do
+        described_class.perform_now(inbox)
+      end.not_to(change { resolvable_pending_conversation.messages.where(private: false).outgoing.count })
+    end
+
     it 'uses generated resolution text when AI resolution message mode is enabled' do
       mock_service = instance_double(Captain::ConversationCompletionService)
       allow(mock_service).to receive(:perform).and_return(

@@ -143,7 +143,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   def resolution_message_content(assistant, generated_message: nil)
     return generated_message.presence if assistant.resolution_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
-    assistant.config['resolution_message'].presence || I18n.t('conversations.activity.auto_resolution_message')
+    assistant.config['resolution_message'].presence
   end
 
   def create_handoff_message(conversation, inbox, generated_message: nil)

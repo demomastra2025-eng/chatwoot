@@ -65,6 +65,40 @@ class Llm::StructuredOutputPolicy
     def validate_schema!(schema)
       schema_instance = schema.is_a?(Class) ? schema.new : schema
       schema_instance.validate! if schema_instance.respond_to?(:validate!)
+      validate_openai_strict_required_properties!(schema)
+    end
+
+    def validate_openai_strict_required_properties!(schema)
+      definition = schema_definition_for(schema)
+      return unless definition.is_a?(Hash) && definition['strict'] == true
+
+      validate_required_properties!(definition, schema_name: schema_name(schema), pointer: '$')
+    end
+
+    def validate_required_properties!(definition, schema_name:, pointer:)
+      return unless definition.is_a?(Hash)
+
+      properties = definition['properties']
+      if properties.is_a?(Hash)
+        required = Array(definition['required']).map(&:to_s)
+        missing = properties.keys.map(&:to_s) - required
+        if missing.any?
+          raise ArgumentError,
+                "Strict structured output schema #{schema_name} must include every property in required at #{pointer}. Missing: #{missing.join(', ')}"
+        end
+
+        properties.each do |property_name, property_schema|
+          validate_required_properties!(property_schema, schema_name: schema_name, pointer: "#{pointer}.#{property_name}")
+        end
+      end
+
+      validate_required_properties!(definition['items'], schema_name: schema_name, pointer: "#{pointer}[]") if definition['items'].is_a?(Hash)
+
+      %w[anyOf oneOf allOf].each do |combiner|
+        Array(definition[combiner]).each_with_index do |child_schema, index|
+          validate_required_properties!(child_schema, schema_name: schema_name, pointer: "#{pointer}.#{combiner}[#{index}]")
+        end
+      end
     end
 
     def normalize_content(content)

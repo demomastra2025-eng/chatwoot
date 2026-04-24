@@ -189,7 +189,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def handoff_message_content
     return @response['handoff_message'].presence if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
-    @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    @assistant.config['handoff_message'].presence
   end
 
   def create_handoff_private_note

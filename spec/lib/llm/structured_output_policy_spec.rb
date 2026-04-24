@@ -73,6 +73,19 @@ RSpec.describe Llm::StructuredOutputPolicy do
       expect(result).to eq(chat)
       expect(described_class.schema_for(chat)).to eq(schema)
     end
+
+    it 'rejects strict schemas whose required list omits a declared property' do
+      invalid_schema = Class.new(RubyLLM::Schema) do
+        string :message
+        string :handoff_message, required: false
+      end
+
+      expect(chat).not_to receive(:with_schema)
+
+      expect do
+        described_class.bind!(chat: chat, schema: invalid_schema)
+      end.to raise_error(ArgumentError, /required.*handoff_message/)
+    end
   end
 
   describe '.normalize_response!' do

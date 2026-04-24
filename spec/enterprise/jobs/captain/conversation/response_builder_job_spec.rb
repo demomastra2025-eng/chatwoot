@@ -251,6 +251,20 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
       end
 
+      it 'does not fall back to default public text when static handoff message is blank' do
+        assistant.update!(config: {
+                            'handoff_message_enabled' => true,
+                            'handoff_message_mode' => 'static',
+                            'handoff_message' => ''
+                          })
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+
+        expect(conversation.reload.status).to eq('open')
+      end
+
       it 'uses generated handoff text when AI handoff message mode is enabled' do
         assistant.update!(config: {
                             'handoff_message_enabled' => true,
