@@ -130,6 +130,24 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_assistant_tool_ids).to eq(['search_documentation'])
     end
 
+    it 'treats an explicit empty agent tool scope as disabled defaults instead of falling back' do
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => []
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to eq([])
+      expect(assistant.direct_agent_tool_ids).to eq([])
+      expect(assistant.scenario_agent_tool_ids).to eq([])
+    end
+
     it 'keeps checked capability tools in the prompt glossary together with referenced fields' do
       assistant.update!(
         description: 'Use [Handoff to Human](tool://handoff) and greet [Email](field://contact.email).',

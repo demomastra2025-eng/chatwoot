@@ -19,7 +19,7 @@ import {
   HANDOFF_TOOL_ID,
   buildDefaultToolAccessForUsageMode,
   isToolEnabled,
-  normalizeCapabilityToolAccess,
+  resolveToolAccessForUsageMode,
   setToolEnabled,
 } from '../toolAccessDefaults';
 
@@ -201,7 +201,7 @@ const updateStateFromAssistant = assistant => {
     citations: config.feature_citation || false,
   };
   state.contextAccess = {};
-  state.toolAccess = normalizeCapabilityToolAccess(
+  state.toolAccess = resolveToolAccessForUsageMode(
     config.tool_access || {},
     state.usageMode
   );
@@ -245,6 +245,7 @@ const buildPayload = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
+      tool_access: state.toolAccess,
     };
   }
 
@@ -273,7 +274,7 @@ watch(
 watch(
   () => state.usageMode,
   newUsageMode => {
-    state.toolAccess = normalizeCapabilityToolAccess(
+    state.toolAccess = resolveToolAccessForUsageMode(
       state.toolAccess,
       newUsageMode
     );

@@ -23,6 +23,7 @@ import {
   buildDefaultToolAccessForUsageMode,
   isToolEnabled,
   normalizeCapabilityToolAccess,
+  resolveToolAccessForUsageMode,
   setToolEnabled,
 } from './toolAccessDefaults';
 
@@ -274,7 +275,7 @@ const updateStateFromAssistant = assistant => {
     ),
     historyMessageLimit: Number(config.history_message_limit || 0),
     contextAccess: {},
-    toolAccess: normalizeCapabilityToolAccess(
+    toolAccess: resolveToolAccessForUsageMode(
       config.tool_access || {},
       usageMode || 'external_agent'
     ),
@@ -308,7 +309,7 @@ watch(
     ) {
       state.toolAccess = buildDefaultToolAccessForUsageMode(usageMode);
     } else {
-      state.toolAccess = normalizeCapabilityToolAccess(
+      state.toolAccess = resolveToolAccessForUsageMode(
         state.toolAccess,
         usageMode
       );

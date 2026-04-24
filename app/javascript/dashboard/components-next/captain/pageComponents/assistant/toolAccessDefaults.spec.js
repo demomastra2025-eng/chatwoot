@@ -73,6 +73,62 @@ describe('toolAccessDefaults', () => {
     });
   });
 
+  it('keeps an explicit empty scope when disabling all default tools', () => {
+    let toolAccess = buildDefaultToolAccessForUsageMode('external_agent');
+
+    toolAccess = setToolEnabled(
+      toolAccess,
+      AGENT_TOOL_SCOPE,
+      FAQ_LOOKUP_TOOL_ID,
+      false,
+      'external_agent'
+    );
+    toolAccess = setToolEnabled(
+      toolAccess,
+      AGENT_TOOL_SCOPE,
+      HANDOFF_TOOL_ID,
+      false,
+      'external_agent'
+    );
+
+    expect(toolAccess).toEqual({
+      agent: {
+        enabled: true,
+        tool_ids: [],
+      },
+    });
+  });
+
+  it('preserves unrelated selected tools and scopes when toggling capability tools', () => {
+    const toolAccess = setToolEnabled(
+      {
+        agent: {
+          enabled: true,
+          tool_ids: [FAQ_LOOKUP_TOOL_ID, 'create_deal'],
+        },
+        assistant: {
+          enabled: true,
+          tool_ids: ['mcp__github__list_issues'],
+        },
+      },
+      AGENT_TOOL_SCOPE,
+      HANDOFF_TOOL_ID,
+      true,
+      'external_agent'
+    );
+
+    expect(toolAccess).toEqual({
+      agent: {
+        enabled: true,
+        tool_ids: [FAQ_LOOKUP_TOOL_ID, 'create_deal', HANDOFF_TOOL_ID],
+      },
+      assistant: {
+        enabled: true,
+        tool_ids: ['mcp__github__list_issues'],
+      },
+    });
+  });
+
   it('detects enabled tools from array-based tool_access payloads', () => {
     const toolAccess = {
       agent: {
