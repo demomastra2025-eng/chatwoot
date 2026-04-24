@@ -19,6 +19,32 @@ describe('useChannelIcon', () => {
     expect(icon).toBe('i-woot-whatsapp');
   });
 
+  describe('WhatsappWeb channel', () => {
+    it('returns green WhatsApp icon only when provider state is connected and open', () => {
+      const inbox = {
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: { status: 'connected', connection_state: 'open' },
+        },
+      };
+
+      const { value: icon } = useChannelIcon(inbox);
+      expect(icon).toBe('i-woot-whatsapp');
+    });
+
+    it('returns neutral WhatsApp icon when provider is not open', () => {
+      const inbox = {
+        channel_type: 'Channel::WhatsappWeb',
+        additional_attributes: {
+          evolution: { status: 'connected', connection_state: 'connecting' },
+        },
+      };
+
+      const { value: icon } = useChannelIcon(inbox);
+      expect(icon).toBe('i-woot-whatsapp channel-icon-neutral');
+    });
+  });
+
   it('returns correct icon for Voice channel', () => {
     const inbox = { channel_type: 'Channel::Voice' };
     const { value: icon } = useChannelIcon(inbox);

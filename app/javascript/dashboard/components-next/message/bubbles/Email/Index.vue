@@ -16,8 +16,14 @@ import { useMessageContext } from '../../provider.js';
 import { MESSAGE_TYPES, SENDER_TYPES } from 'next/message/constants.js';
 import { useTranslations } from 'dashboard/composables/useTranslations';
 
-const { content, contentAttributes, attachments, messageType, sender, senderType } =
-  useMessageContext();
+const {
+  content,
+  contentAttributes,
+  attachments,
+  messageType,
+  sender,
+  senderType,
+} = useMessageContext();
 
 const isExpandable = ref(false);
 const isExpanded = ref(false);
@@ -169,7 +175,7 @@ const handleSeeOriginal = () => {
           <Letter
             v-if="showQuotedMessage"
             :key="`letter-quoted-${translationKeySuffix}`"
-            class-name="prose prose-bubble !max-w-none letter-render"
+            class-name="prose prose-bubble !max-w-none letter-render email-signature-layout"
             :allowed-css-properties="[
               ...allowedCssProperties,
               'transform',
@@ -181,7 +187,7 @@ const handleSeeOriginal = () => {
           <Letter
             v-else
             :key="`letter-unquoted-${translationKeySuffix}`"
-            class-name="prose prose-bubble !max-w-none letter-render"
+            class-name="prose prose-bubble !max-w-none letter-render email-signature-layout"
             :html="unquotedHTML"
             :allowed-css-properties="[
               ...allowedCssProperties,
@@ -230,6 +236,15 @@ const handleSeeOriginal = () => {
 <style lang="scss">
 // Tailwind resets break the rendering of google drive link in Gmail messages
 // This fixes it using https://developer.mozilla.org/en-US/docs/Web/CSS/Attribute_selectors
+
+.email-signature-layout {
+  // Email signatures often place logo images inline with text. Without an
+  // explicit fallback, browser baseline alignment renders the text at the
+  // bottom-right of the logo when the original signature has no reliable CSS.
+  img {
+    vertical-align: middle;
+  }
+}
 
 .letter-render [class*='gmail_drive_chip'] {
   box-sizing: initial;

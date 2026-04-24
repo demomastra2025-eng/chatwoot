@@ -387,6 +387,24 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response.body).not_to include(contact_normal.identifier)
       end
 
+      it 'matches the contact ignoring spaces in phone number' do
+        phone_contact = create(
+          :contact,
+          :with_email,
+          account: account,
+          phone_number: '+77001234567'
+        )
+
+        get "/api/v1/accounts/#{account.id}/contacts/search",
+            params: { q: '+7 700 123 45 67' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include(phone_contact.email)
+        expect(response.body).not_to include(contact1.email)
+      end
+
       it 'returns has_more as false when results fit in one page' do
         get "/api/v1/accounts/#{account.id}/contacts/search",
             params: { q: contact2.email },

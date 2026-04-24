@@ -10,7 +10,11 @@ import { useRoute } from 'vue-router';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import { ACCOUNT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
-import { getInboxIconByType } from 'dashboard/helper/inbox';
+import {
+  getInboxIconByType,
+  INBOX_TYPES,
+  TWILIO_CHANNEL_MEDIUM,
+} from 'dashboard/helper/inbox';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import {
@@ -152,6 +156,44 @@ const {
   isATelegramPersonalChannel,
 } = useInbox(props.inboxId);
 const { replaceInstallationName } = useBranding();
+
+const EXTERNAL_ECHO_PLATFORM_I18N_KEYS = {
+  [INBOX_TYPES.WEB]: 'INBOX_MGMT.CHANNELS.WEB_WIDGET',
+  [INBOX_TYPES.FB]: 'INBOX_MGMT.CHANNELS.MESSENGER',
+  [INBOX_TYPES.TWITTER]: 'INBOX_MGMT.CHANNELS.TWITTER_PROFILE',
+  [INBOX_TYPES.TWILIO]: 'INBOX_MGMT.CHANNELS.TWILIO_SMS',
+  [INBOX_TYPES.WHATSAPP]: 'INBOX_MGMT.CHANNELS.WHATSAPP',
+  [INBOX_TYPES.WHATSAPP_WEB]: 'INBOX_MGMT.CHANNELS.WHATSAPP_WEB',
+  [INBOX_TYPES.API]: 'INBOX_MGMT.CHANNELS.API',
+  [INBOX_TYPES.EMAIL]: 'INBOX_MGMT.CHANNELS.EMAIL',
+  [INBOX_TYPES.TELEGRAM]: 'INBOX_MGMT.CHANNELS.TELEGRAM_BOT',
+  [INBOX_TYPES.TELEGRAM_PERSONAL]: 'INBOX_MGMT.CHANNELS.TELEGRAM_PERSONAL',
+  [INBOX_TYPES.VK]: 'INBOX_MGMT.CHANNELS.VK',
+  [INBOX_TYPES.LINE]: 'INBOX_MGMT.CHANNELS.LINE',
+  [INBOX_TYPES.SMS]: 'INBOX_MGMT.CHANNELS.SMS',
+  [INBOX_TYPES.INSTAGRAM]: 'INBOX_MGMT.CHANNELS.INSTAGRAM',
+  [INBOX_TYPES.TIKTOK]: 'INBOX_MGMT.CHANNELS.TIKTOK',
+  [INBOX_TYPES.VOICE]: 'INBOX_MGMT.CHANNELS.VOICE',
+};
+
+const externalEchoPlatformName = computed(() => {
+  const { channel_type: channelType, medium, name } = inbox.value;
+
+  if (
+    channelType === INBOX_TYPES.TWILIO &&
+    medium === TWILIO_CHANNEL_MEDIUM.WHATSAPP
+  ) {
+    return t('INBOX_MGMT.CHANNELS.WHATSAPP');
+  }
+
+  const i18nKey = EXTERNAL_ECHO_PLATFORM_I18N_KEYS[channelType];
+  if (i18nKey) {
+    // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+    return t(i18nKey);
+  }
+
+  return name || t('CONVERSATION.NATIVE_APP');
+});
 
 /**
  * Computes the message variant based on props
@@ -543,7 +585,11 @@ const avatarInfo = computed(() => {
 
 const avatarTooltip = computed(() => {
   if (props.contentAttributes?.externalEcho) {
-    return replaceInstallationName(t('CONVERSATION.NATIVE_APP_ADVISORY'));
+    return replaceInstallationName(
+      t('CONVERSATION.NATIVE_APP_ADVISORY', {
+        platform: externalEchoPlatformName.value,
+      })
+    );
   }
   if (avatarInfo.value.name === '') return '';
   return `${t('CONVERSATION.SENT_BY')} ${avatarInfo.value.name}`;

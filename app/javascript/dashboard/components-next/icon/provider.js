@@ -1,5 +1,6 @@
 import { computed } from 'vue';
 import { CHANNEL_ICON_NEUTRAL_CLASS } from 'dashboard/helper/inbox';
+import { isWhatsappWebConnected } from 'dashboard/helper/whatsappWeb';
 
 const withNeutralChannelColor = icon => `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
 
@@ -37,6 +38,16 @@ export function useChannelIcon(inbox) {
       if (Object.keys(providerIconMap).includes(inboxDetails.provider)) {
         icon = providerIconMap[inboxDetails.provider];
       }
+    }
+
+    // WhatsApp Web is only rendered as brand-green when the provider reports
+    // a healthy connected/open session. Connecting, QR, reconnecting,
+    // disconnected and pending-deletion sessions stay neutral.
+    if (
+      type === 'Channel::WhatsappWeb' &&
+      !isWhatsappWebConnected(inboxDetails)
+    ) {
+      icon = withNeutralChannelColor('i-woot-whatsapp');
     }
 
     // Special case for Twilio whatsapp

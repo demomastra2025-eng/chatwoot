@@ -353,7 +353,7 @@ const popupCalendarPanelClasses = computed(() => {
 });
 
 const popupTimePanelClasses = computed(() => [
-  'shrink-0 self-start',
+  'shrink-0 self-center',
   props.type === 'datetime'
     ? 'border-l border-n-weak pl-2'
     : 'mt-2 border-t border-n-weak pt-2',

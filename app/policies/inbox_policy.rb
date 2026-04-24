@@ -11,7 +11,7 @@ class InboxPolicy < ApplicationPolicy
     end
 
     def resolve
-      user.assigned_inboxes
+      scope.where(id: user.assigned_inboxes.select(:id))
     end
   end
 

@@ -256,16 +256,35 @@ describe('#actions', () => {
   });
 
   describe('#syncTemplates', () => {
-    it('sends correct API call when sync is successful', async () => {
+    it('updates the inbox when sync returns a refreshed inbox payload', async () => {
+      axios.post.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.syncTemplates({ commit }, 123);
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/sync_templates'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+
+    it('keeps compatibility with legacy sync acknowledgement payloads', async () => {
       axios.post.mockResolvedValue({
         data: { message: 'Template sync initiated successfully' },
       });
 
-      await actions.syncTemplates({ commit }, 123);
+      const response = await actions.syncTemplates({ commit }, 123);
 
+      expect(response).toEqual({
+        message: 'Template sync initiated successfully',
+      });
       expect(axios.post).toHaveBeenCalledWith(
         '/api/v1/inboxes/123/sync_templates'
       );
+      expect(commit).not.toHaveBeenCalled();
     });
 
     it('throws error when API call fails', async () => {

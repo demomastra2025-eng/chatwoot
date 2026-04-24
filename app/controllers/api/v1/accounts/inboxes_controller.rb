@@ -85,7 +85,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def destroy
     if @inbox.deleting?
-      render status: :accepted, json: { message: I18n.t('messages.inbox_deletetion_response') }
+      render status: :accepted, json: pending_deletion_payload(@inbox)
       return
     end
 
@@ -94,7 +94,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       ::DeleteObjectJob.perform_later(@inbox, Current.user, request.ip)
     end
 
-    render status: :accepted, json: { message: I18n.t('messages.inbox_deletetion_response') }
+    render status: :accepted, json: pending_deletion_payload(@inbox)
   end
 
   def refresh_whatsapp_web_qr
@@ -248,6 +248,20 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def render_whatsapp_web_inbox(include_qr_code: true, status: :ok)
     @inbox.reload
     render :show, status: status, locals: { include_whatsapp_web_qr_code: include_qr_code }
+  end
+
+  def pending_deletion_payload(inbox)
+    inbox.reload
+    channel = inbox.channel
+    {
+      message: I18n.t('messages.inbox_deletetion_response'),
+      id: inbox.id,
+      deleting: inbox.deleting?,
+      deleting_at: inbox.deleting_at&.iso8601,
+      channel_type: inbox.display_channel_type,
+      lifecycle_state: channel.try(:lifecycle_state),
+      connection_state: channel.try(:connection_state)
+    }.compact
   end
 
   def render_telephony_error(error)

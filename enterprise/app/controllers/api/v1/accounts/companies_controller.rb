@@ -46,7 +46,7 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
   private
 
   def resolved_companies
-    @resolved_companies ||= Current.account.companies.with_attached_avatar
+    @resolved_companies ||= Current.account.companies.with_effective_contacts_count.with_attached_avatar
   end
 
   def set_current_page
@@ -66,7 +66,7 @@ class Api::V1::Accounts::CompaniesController < Api::V1::Accounts::EnterpriseAcco
   end
 
   def fetch_company
-    company_scope = Current.account.companies.with_attached_avatar
+    company_scope = Current.account.companies.with_effective_contacts_count.with_attached_avatar
     if action_name == 'show'
       company_scope =
         company_scope.includes(contacts: { avatar_attachment: :blob })

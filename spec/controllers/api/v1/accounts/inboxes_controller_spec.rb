@@ -345,7 +345,65 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:accepted)
         expect(json_response['message']).to eq('Your inbox deletion request will be processed in some time.')
+        expect(json_response['id']).to eq(inbox.id)
+        expect(json_response['deleting']).to be(true)
+        expect(json_response['deleting_at']).to be_present
         expect(inbox.reload.deleting?).to be(true)
+      end
+
+      it 'includes channel deletion state for WhatsApp Web inboxes' do
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_inbox = create(:channel_whatsapp_web, account: account).inbox
+          expect(DeleteObjectJob).to receive(:perform_later).with(whatsapp_inbox, admin, anything).once
+
+          delete "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}",
+                 headers: admin.create_new_auth_token,
+                 as: :json
+
+          json_response = response.parsed_body
+
+          expect(response).to have_http_status(:accepted)
+          expect(json_response['id']).to eq(whatsapp_inbox.id)
+          expect(json_response['deleting']).to be(true)
+          expect(json_response['lifecycle_state']).to eq('deleting')
+          expect(json_response['connection_state']).to eq('close')
+        end
+      end
+
+      it 'includes channel deletion state for Telegram Personal inboxes' do
+        telegram_inbox = create(:channel_telegram_personal, account: account).inbox
+        expect(DeleteObjectJob).to receive(:perform_later).with(telegram_inbox, admin, anything).once
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{telegram_inbox.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        json_response = response.parsed_body
+
+        expect(response).to have_http_status(:accepted)
+        expect(json_response['id']).to eq(telegram_inbox.id)
+        expect(json_response['deleting']).to be(true)
+        expect(json_response['channel_type']).to eq('Channel::TelegramPersonal')
+        expect(json_response['lifecycle_state']).to eq('disconnected')
+        expect(json_response['connection_state']).to eq('disconnected')
+      end
+
+      it 'keeps pending deletion inboxes out of the index response' do
+        deleting_inbox = create(:inbox, account: account)
+        deleting_inbox.mark_pending_deletion!
+
+        get "/api/v1/accounts/#{account.id}/inboxes",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        payload_ids = response.parsed_body['payload'].pluck('id')
+
+        expect(response).to have_http_status(:success)
+        expect(payload_ids).not_to include(deleting_inbox.id)
       end
 
       it 'is unable to delete inbox of another account' do
@@ -1603,6 +1661,42 @@ RSpec.describe 'Inboxes API', type: :request do
           expect(response).to have_http_status(:not_found)
         end
       end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/inboxes/{inbox.id}/sync_templates' do
+    let(:whatsapp_channel) do
+      create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+    end
+    let(:whatsapp_inbox) { whatsapp_channel.inbox }
+    let(:remote_template) do
+      {
+        'name' => 'appointment_confirmation',
+        'language' => 'en',
+        'status' => 'APPROVED',
+        'category' => 'UTILITY',
+        'components' => [{ 'type' => 'BODY', 'text' => 'Your appointment is confirmed' }]
+      }
+    end
+
+    it 'syncs templates immediately and returns the refreshed inbox payload' do
+      stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+        .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [remote_template] }.to_json)
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['id']).to eq(whatsapp_inbox.id)
+      expect(response.parsed_body['message_templates'].first['name']).to eq('appointment_confirmation')
+      expect(response.parsed_body['message_templates'].first['status']).to eq('APPROVED')
     end
   end
 end

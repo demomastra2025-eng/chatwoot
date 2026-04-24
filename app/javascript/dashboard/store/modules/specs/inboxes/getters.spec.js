@@ -10,6 +10,29 @@ describe('#getters', () => {
     expect(getters.getInboxes(state)).toEqual(inboxList);
   });
 
+  it('hides inboxes that are pending deletion from visible inbox getters', () => {
+    const activeInbox = { ...inboxList[0], id: 101 };
+    const deletingWhatsappWebInbox = {
+      ...inboxList[1],
+      id: 102,
+      channel_type: 'Channel::WhatsappWeb',
+      deleting: true,
+      lifecycle_state: 'deleting',
+    };
+    const deletingTelegramInbox = {
+      ...inboxList[2],
+      id: 103,
+      channel_type: 'Channel::TelegramPersonal',
+      deleting_at: '2026-04-24T12:00:00Z',
+    };
+    const state = {
+      records: [activeInbox, deletingWhatsappWebInbox, deletingTelegramInbox],
+    };
+
+    expect(getters.getInboxes(state)).toEqual([activeInbox]);
+    expect(getters.getAllInboxes(state).map(inbox => inbox.id)).toEqual([101]);
+  });
+
   it('getWebsiteInboxes', () => {
     const state = { records: inboxList };
     expect(getters.getWebsiteInboxes(state).length).toEqual(3);

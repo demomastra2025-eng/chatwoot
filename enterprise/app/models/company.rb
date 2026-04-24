@@ -42,13 +42,48 @@ class Company < ApplicationRecord
     where('name ILIKE :search OR domain ILIKE :search', search: "%#{query.strip}%")
   }
 
+  scope :with_effective_contacts_count, lambda {
+    select(
+      "#{table_name}.*",
+      "#{effective_contacts_count_sql} AS effective_contacts_count"
+    )
+  }
+
   scope :order_on_contacts_count, lambda { |direction|
     order(
       Arel::Nodes::SqlLiteral.new(
-        sanitize_sql_for_order("\"companies\".\"contacts_count\" #{direction} NULLS LAST")
+        sanitize_sql_for_order("#{effective_contacts_count_sql} #{direction}")
       )
     )
   }
+
+  def self.effective_contacts_count_sql
+    <<~SQL.squish
+      (
+        SELECT COUNT(DISTINCT company_contact_ids.contact_id)
+        FROM (
+          SELECT contacts.id AS contact_id
+          FROM contacts
+          WHERE contacts.company_id = companies.id
+            AND contacts.account_id = companies.account_id
+          UNION
+          SELECT crm_deal_contacts.contact_id AS contact_id
+          FROM crm_deal_contacts
+          INNER JOIN crm_deals ON crm_deals.id = crm_deal_contacts.deal_id
+          WHERE crm_deals.company_id = companies.id
+            AND crm_deal_contacts.account_id = companies.account_id
+            AND crm_deals.account_id = companies.account_id
+        ) company_contact_ids
+      )
+    SQL
+  end
+
+  def effective_contacts_count
+    return self[:effective_contacts_count].to_i if has_attribute?(:effective_contacts_count)
+    return contacts_count.to_i unless persisted?
+
+    self.class.where(id: id).pick(Arel.sql(self.class.effective_contacts_count_sql)).to_i
+  end
 
   private
 

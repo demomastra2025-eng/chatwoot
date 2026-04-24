@@ -24,9 +24,17 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   def search
     render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_content if params[:q].blank? && return
 
+    search_query = params[:q].to_s.strip
     contacts = Current.account.contacts.where(
-      'name ILIKE :search OR email ILIKE :search OR phone_number ILIKE :search OR contacts.identifier LIKE :search',
-      search: "%#{params[:q].strip}%"
+      [
+        'name ILIKE :search',
+        'email ILIKE :search',
+        'phone_number ILIKE :search',
+        'contacts.identifier LIKE :search',
+        "regexp_replace(COALESCE(phone_number, ''), '\\s+', '', 'g') ILIKE :phone_search"
+      ].join(' OR '),
+      search: "%#{search_query}%",
+      phone_search: "%#{search_query.gsub(/\s+/, '')}%"
     )
     @contacts = fetch_contacts_with_has_more(contacts)
   end

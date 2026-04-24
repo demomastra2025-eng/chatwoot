@@ -205,12 +205,15 @@ const mergeWhatsappWebInboxPayload = (
   };
 };
 
+const visibleInboxRecords = records =>
+  records.filter(inbox => !isInboxPendingDeletion(inbox));
+
 export const getters = {
   getInboxes($state) {
-    return $state.records;
+    return visibleInboxRecords($state.records);
   },
   getAllInboxes($state) {
-    return camelcaseKeys($state.records, { deep: true });
+    return camelcaseKeys(visibleInboxRecords($state.records), { deep: true });
   },
   getWhatsAppTemplates: $state => inboxId => {
     const [inbox] = $state.records.filter(
@@ -305,7 +308,7 @@ export const getters = {
     });
   },
   getNewConversationInboxes($state) {
-    return $state.records.filter(inbox => {
+    return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
         inbox;
 
@@ -332,22 +335,24 @@ export const getters = {
     return $state.uiFlags;
   },
   getWebsiteInboxes($state) {
-    return $state.records.filter(item => item.channel_type === INBOX_TYPES.WEB);
+    return visibleInboxRecords($state.records).filter(
+      item => item.channel_type === INBOX_TYPES.WEB
+    );
   },
   getTwilioInboxes($state) {
-    return $state.records.filter(
+    return visibleInboxRecords($state.records).filter(
       item => item.channel_type === INBOX_TYPES.TWILIO
     );
   },
   getSMSInboxes($state) {
-    return $state.records.filter(
+    return visibleInboxRecords($state.records).filter(
       item =>
         item.channel_type === INBOX_TYPES.SMS ||
         (item.channel_type === INBOX_TYPES.TWILIO && item.medium === 'sms')
     );
   },
   getWhatsAppInboxes($state) {
-    return $state.records.filter(
+    return visibleInboxRecords($state.records).filter(
       item => item.channel_type === INBOX_TYPES.WHATSAPP
     );
   },
@@ -368,7 +373,7 @@ export const getters = {
       INBOX_TYPES.TWITTER,
     ];
 
-    return $state.records.filter(item => {
+    return visibleInboxRecords($state.records).filter(item => {
       const capabilities = item.campaign_capabilities;
 
       if (!capabilities) {
@@ -383,7 +388,7 @@ export const getters = {
     });
   },
   dialogFlowEnabledInboxes($state) {
-    return $state.records.filter(
+    return visibleInboxRecords($state.records).filter(
       item => item.channel_type !== INBOX_TYPES.EMAIL
     );
   },
@@ -580,9 +585,13 @@ export const actions = {
       throw new Error(error);
     }
   },
-  syncTemplates: async (_, inboxId) => {
+  syncTemplates: async ({ commit }, inboxId) => {
     try {
-      await InboxesAPI.syncTemplates(inboxId);
+      const response = await InboxesAPI.syncTemplates(inboxId);
+      if (response.data?.id) {
+        commit(types.default.EDIT_INBOXES, response.data);
+      }
+      return response.data;
     } catch (error) {
       throw new Error(error);
     }

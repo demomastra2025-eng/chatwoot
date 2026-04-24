@@ -20,6 +20,8 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include('Super Admin Console')
         expect(response.body).to include('Dashboard')
+        expect(response.body).to include('Agent Dashboard')
+        expect(response.body).to include('href="/app"')
       end
     end
   end

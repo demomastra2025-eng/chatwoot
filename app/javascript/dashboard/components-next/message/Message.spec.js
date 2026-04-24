@@ -29,7 +29,12 @@ vi.mock('shared/helpers/mitt', () => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key => key,
+    t: (key, params = {}) => {
+      if (key === 'CONVERSATION.NATIVE_APP_ADVISORY') {
+        return `This message was sent from the ${params.platform} native app.`;
+      }
+      return key;
+    },
   }),
 }));
 
@@ -78,6 +83,11 @@ const createWrapper = customProps =>
       ...customProps,
     },
     global: {
+      directives: {
+        tooltip: (el, binding) => {
+          el.setAttribute('data-tooltip', binding.value);
+        },
+      },
       stubs: {
         Avatar: true,
         TextBubble: { template: '<div />' },
@@ -109,6 +119,7 @@ describe('Message', () => {
     );
     useInboxMock.mockReturnValue({
       isAWhatsAppWebChannel: ref(false),
+      isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(false),
     });
   });
@@ -116,6 +127,7 @@ describe('Message', () => {
   it('enables edit and delete for Telegram Personal outgoing provider messages', () => {
     useInboxMock.mockReturnValue({
       isAWhatsAppWebChannel: ref(false),
+      isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(true),
     });
 
@@ -129,6 +141,7 @@ describe('Message', () => {
   it('disables edit and delete for Telegram Personal incoming messages', () => {
     useInboxMock.mockReturnValue({
       isAWhatsAppWebChannel: ref(false),
+      isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(true),
     });
 
@@ -144,6 +157,7 @@ describe('Message', () => {
   it('keeps WhatsApp Web edit window restriction intact', () => {
     useInboxMock.mockReturnValue({
       isAWhatsAppWebChannel: ref(true),
+      isATelegramChannel: ref(false),
       isATelegramPersonalChannel: ref(false),
     });
 
@@ -153,5 +167,22 @@ describe('Message', () => {
     const contextMenu = wrapper.findComponent({ name: 'ContextMenu' });
 
     expect(contextMenu.props('enabledOptions').edit).toBe(false);
+  });
+
+  it('adds the platform name to external echo native app advisory', () => {
+    useMapGetterMock.mockReturnValue(
+      ref(() => ({
+        channel_type: 'Channel::WhatsappWeb',
+        medium: null,
+      }))
+    );
+
+    const wrapper = createWrapper({
+      contentAttributes: { externalEcho: true },
+    });
+
+    expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
+      'This message was sent from the INBOX_MGMT.CHANNELS.WHATSAPP_WEB native app.'
+    );
   });
 });

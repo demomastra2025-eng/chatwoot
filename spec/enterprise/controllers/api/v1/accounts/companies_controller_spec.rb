@@ -68,6 +68,25 @@ RSpec.describe 'Companies API', type: :request do
         expect(company_data['contacts_count']).to eq(5)
       end
 
+      it 'returns distinct contacts_count including deal-related contacts' do
+        company_with_contacts = create(:company, name: 'Company With Deal Contacts', account: account)
+        direct_contact = create(:contact, account: account, company: company_with_contacts)
+        deal_related_contact = create(:contact, account: account)
+        deal = create(:crm_deal, account: account, company: company_with_contacts)
+
+        create(:crm_deal_contact, account: account, deal: deal, contact: direct_contact, primary: true)
+        create(:crm_deal_contact, account: account, deal: deal, contact: deal_related_contact)
+
+        get "/api/v1/accounts/#{account.id}/companies",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        response_body = response.parsed_body
+        company_data = response_body['payload'].find { |c| c['id'] == company_with_contacts.id }
+        expect(company_data['contacts_count']).to eq(2)
+      end
+
       it 'does not return companies from other accounts' do
         other_account = create(:account)
         create(:company, name: 'Other Account Company', account: other_account)
@@ -100,6 +119,26 @@ RSpec.describe 'Companies API', type: :request do
 
         expect(company_ids.index(company_with_2.id)).to be < company_ids.index(company_with_5.id)
         expect(company_ids.index(company_with_5.id)).to be < company_ids.index(company_with_10.id)
+      end
+
+      it 'sorts companies by effective contacts_count including deal contacts' do
+        company_with_1 = create(:company, name: 'Company with 1 effective', account: account)
+        company_with_2 = create(:company, name: 'Company with 2 effective', account: account)
+        deal = create(:crm_deal, account: account, company: company_with_2)
+
+        create(:contact, account: account, company: company_with_1)
+        create(:crm_deal_contact, account: account, deal: deal, contact: create(:contact, account: account), primary: true)
+        create(:crm_deal_contact, account: account, deal: deal, contact: create(:contact, account: account))
+
+        get "/api/v1/accounts/#{account.id}/companies",
+            params: { sort: '-contacts_count' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        company_ids = response.parsed_body['payload'].map { |c| c['id'] }
+
+        expect(company_ids.index(company_with_2.id)).to be < company_ids.index(company_with_1.id)
       end
 
       it 'sorts companies by contacts_count in descending order' do

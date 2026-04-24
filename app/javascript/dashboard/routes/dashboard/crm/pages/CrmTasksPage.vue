@@ -70,7 +70,10 @@ import {
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
-import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
+import {
+  createTaskListSortValueResolver,
+  sortListRecords,
+} from 'dashboard/routes/dashboard/crm/listSort';
 import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
 
 const referencesStore = useCrmReferencesStore();
@@ -335,6 +338,13 @@ const priorityMetaByValue = computed(() => ({
   },
 }));
 
+const priorityLabelByValue = computed(() =>
+  Object.entries(priorityMetaByValue.value).reduce((result, [value, meta]) => {
+    result[value] = meta.label;
+    return result;
+  }, {})
+);
+
 const statusMetaById = computed(() =>
   referencesStore.taskStatuses.reduce((result, status) => {
     const categoryMeta =
@@ -437,14 +447,34 @@ const tableColumns = computed(() => [
     sortable: true,
     defaultSortDirection: 'asc',
   },
-  { key: 'title', label: t('CRM.TASKS.TABLE.TITLE'), width: '2.4fr' },
-  { key: 'status', label: t('CRM.TASKS.TABLE.STATUS'), width: '1fr' },
+  {
+    key: 'title',
+    label: t('CRM.TASKS.TABLE.TITLE'),
+    width: '2.4fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
+  {
+    key: 'status',
+    label: t('CRM.TASKS.TABLE.STATUS'),
+    width: '1fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
   {
     key: 'priority',
     label: t('CRM.TASKS.FORM.PRIORITY'),
     width: '0.95fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
   },
-  { key: 'assignee', label: t('CRM.TASKS.TABLE.ASSIGNEE'), width: '1fr' },
+  {
+    key: 'assignee',
+    label: t('CRM.TASKS.TABLE.ASSIGNEE'),
+    width: '1fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
   {
     key: 'dueAt',
     label: t('CRM.TASKS.TABLE.DUE_AT'),
@@ -496,16 +526,13 @@ const filteredListTasks = computed(() => {
   });
 });
 
-const resolveTaskSortValue = (task, key) => {
-  switch (key) {
-    case 'dueAt':
-      return task.dueAt ? new Date(task.dueAt).getTime() : null;
-    case 'id':
-      return Number(task.id);
-    default:
-      return null;
-  }
-};
+const resolveTaskSortValue = computed(() =>
+  createTaskListSortValueResolver({
+    assigneeNameById: assigneeNameById.value,
+    priorityLabelByValue: priorityLabelByValue.value,
+    statusNameById: statusNameById.value,
+  })
+);
 
 const prioritySortRank = {
   none: 0,
@@ -537,7 +564,11 @@ const resolveTaskBoardSortValue = (task, key) => {
 };
 
 const sortedListTasks = computed(() =>
-  sortListRecords(filteredListTasks.value, listSort.value, resolveTaskSortValue)
+  sortListRecords(
+    filteredListTasks.value,
+    listSort.value,
+    resolveTaskSortValue.value
+  )
 );
 
 const defaultTasksPreferences = () => ({

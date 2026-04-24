@@ -137,6 +137,10 @@ const shouldRequestWhatsappWebQr = inbox => {
 };
 
 export const shouldRequestWhatsappWebQrAfterRepair = inbox => {
+  if (isWhatsappWebReconnecting(inbox)) {
+    return false;
+  }
+
   return shouldRequestWhatsappWebQr(inbox);
 };
 

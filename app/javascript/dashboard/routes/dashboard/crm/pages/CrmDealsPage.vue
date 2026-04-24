@@ -69,7 +69,10 @@ import {
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
-import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
+import {
+  createDealListSortValueResolver,
+  sortListRecords,
+} from 'dashboard/routes/dashboard/crm/listSort';
 import {
   DuplicateContactException,
   ExceptionWithMessage,
@@ -404,8 +407,20 @@ const tableColumns = computed(() => [
     sortable: true,
     defaultSortDirection: 'asc',
   },
-  { key: 'title', label: t('CRM.DEALS.TABLE.TITLE'), width: '2.4fr' },
-  { key: 'stage', label: t('CRM.DEALS.TABLE.STAGE'), width: '1fr' },
+  {
+    key: 'title',
+    label: t('CRM.DEALS.TABLE.TITLE'),
+    width: '2.4fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
+  {
+    key: 'stage',
+    label: t('CRM.DEALS.TABLE.STAGE'),
+    width: '1fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
   {
     key: 'amount',
     label: t('CRM.DEALS.TABLE.AMOUNT'),
@@ -416,7 +431,13 @@ const tableColumns = computed(() => [
     headerClass: 'ltr:pr-4 rtl:pl-4',
     cellClass: 'ltr:pr-4 rtl:pl-4',
   },
-  { key: 'owner', label: t('CRM.DEALS.TABLE.OWNER'), width: '1fr' },
+  {
+    key: 'owner',
+    label: t('CRM.DEALS.TABLE.OWNER'),
+    width: '1fr',
+    sortable: true,
+    defaultSortDirection: 'asc',
+  },
   {
     key: 'updatedAt',
     label: t('CRM.DEALS.TABLE.UPDATED'),
@@ -548,18 +569,12 @@ const filteredListDeals = computed(() => {
   });
 });
 
-const resolveDealSortValue = (deal, key) => {
-  switch (key) {
-    case 'amount':
-      return Number(deal.amountMinor ?? 0);
-    case 'id':
-      return Number(deal.id);
-    case 'updatedAt':
-      return deal.updatedAt ? new Date(deal.updatedAt).getTime() : null;
-    default:
-      return null;
-  }
-};
+const resolveDealSortValue = computed(() =>
+  createDealListSortValueResolver({
+    ownerNameById: ownerNameById.value,
+    stageNameById: stageNameById.value,
+  })
+);
 
 const resolveDealBoardSortValue = (deal, key) => {
   switch (key) {
@@ -583,7 +598,11 @@ const resolveDealBoardSortValue = (deal, key) => {
 };
 
 const sortedListDeals = computed(() =>
-  sortListRecords(filteredListDeals.value, listSort.value, resolveDealSortValue)
+  sortListRecords(
+    filteredListDeals.value,
+    listSort.value,
+    resolveDealSortValue.value
+  )
 );
 
 const defaultDealsPreferences = () => ({

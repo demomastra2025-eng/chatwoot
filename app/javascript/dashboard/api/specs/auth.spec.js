@@ -13,6 +13,43 @@ import {
   handleSessionReplaced,
 } from '../../store/utils/api';
 
+describe('#authAPI.profileUpdate', () => {
+  const originalAxios = global.axios;
+  const axiosMock = {
+    put: vi.fn(() => Promise.resolve()),
+  };
+
+  beforeEach(() => {
+    global.axios = axiosMock;
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    global.axios = originalAxios;
+  });
+
+  it('does not clear display name on partial profile updates', () => {
+    authAPI.profileUpdate({ message_signature: 'Regards' });
+
+    const [, payload] = axiosMock.put.mock.calls[0];
+    expect(payload.get('profile[message_signature]')).toBe('Regards');
+    expect(payload.has('profile[display_name]')).toBe(false);
+  });
+
+  it('sends display name when profile details include it', () => {
+    authAPI.profileUpdate({
+      name: 'Jane',
+      email: 'jane@example.com',
+      displayName: 'Support Jane',
+    });
+
+    const [, payload] = axiosMock.put.mock.calls[0];
+    expect(payload.get('profile[name]')).toBe('Jane');
+    expect(payload.get('profile[email]')).toBe('jane@example.com');
+    expect(payload.get('profile[display_name]')).toBe('Support Jane');
+  });
+});
+
 describe('#authAPI.logout', () => {
   const originalAxios = global.axios;
   const axiosMock = {
