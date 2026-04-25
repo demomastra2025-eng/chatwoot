@@ -69,7 +69,7 @@ class Whatsapp::IncomingMessageBaseService
 
   def update_campaign_delivery_with_status(status)
     delivery = CampaignDelivery.find_by(provider_message_id: status[:id], inbox_id: inbox.id)
-    return unless delivery.present?
+    return if delivery.blank?
 
     error_message = if status[:status] == 'failed' && status[:errors].present?
                       error = status[:errors].first
@@ -87,9 +87,9 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def create_contact_messages(message)
-    message['contacts'].each do |contact|
-      # Pass source_id from parent message since contact objects don't have :id
-      create_message(contact, source_id: message[:id])
+    contacts = Array(message['contacts'])
+    contacts.each_with_index do |contact, index|
+      create_message(contact, source_id: contact_message_source_id(message, index, contacts.size))
       attach_contact(contact)
       @message.save!
       after_message_persisted(@message)
@@ -189,6 +189,7 @@ class Whatsapp::IncomingMessageBaseService
   def create_message(message, source_id: nil)
     content_attrs = outgoing_echo ? { external_echo: true } : {}
     content_attrs[:in_reply_to_external_id] = @in_reply_to_external_id if @in_reply_to_external_id.present?
+    content_attrs.merge!(message_content_attributes(message))
 
     @message = @conversation.messages.build(
       content: message_content(message),
@@ -201,6 +202,13 @@ class Whatsapp::IncomingMessageBaseService
       source_id: (source_id || message[:id]).to_s,
       content_attributes: content_attrs
     )
+  end
+
+  def contact_message_source_id(message, index, contacts_count)
+    base_source_id = message[:id].to_s
+    return base_source_id if contacts_count <= 1
+
+    "#{base_source_id}:contact:#{index}"
   end
 
   def attach_contact(contact)

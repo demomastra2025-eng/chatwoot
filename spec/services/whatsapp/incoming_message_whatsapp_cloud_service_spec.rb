@@ -248,9 +248,144 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect(conversation.reload).to be_open
       end
     end
+
+    context 'when incoming WhatsApp replies answer a pending confirmation request' do
+      let(:confirmation_source_id) { '77010000000' }
+      let(:contact) { create(:contact, phone_number: "+#{confirmation_source_id}", account: whatsapp_channel.account) }
+      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: confirmation_source_id) }
+      let(:conversation) do
+        create(
+          :conversation,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: contact,
+          contact_inbox: contact_inbox
+        )
+      end
+      let!(:confirmation_request) do
+        create(
+          :confirmation_request,
+          account: whatsapp_channel.account,
+          conversation: conversation,
+          contact: contact,
+          inbox: whatsapp_channel.inbox
+        )
+      end
+
+      it 'resolves by interactive button reply id and keeps the visible title as message content' do
+        button_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.CONFIRM_INTERACTIVE',
+          message: {
+            type: 'interactive',
+            interactive: {
+              type: 'button_reply',
+              button_reply: {
+                id: "confirmation:#{confirmation_request.token}:confirmed",
+                title: 'Подтвердить'
+              }
+            }
+          }
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: button_params).perform
+
+        reply_message = whatsapp_channel.inbox.messages.last
+        expect(reply_message.content).to eq('Подтвердить')
+        expect(reply_message.content_attributes['interactive_reply_id']).to eq("confirmation:#{confirmation_request.token}:confirmed")
+        expect(confirmation_request.reload).to be_confirmed
+        expect(confirmation_request.resolution_source).to eq('button')
+        expect(confirmation_request.resolved_message).to eq(reply_message)
+      end
+
+      it 'does not fall back to another pending request when a button token is unknown' do
+        button_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.UNKNOWN_CONFIRMATION_TOKEN',
+          message: {
+            type: 'interactive',
+            interactive: {
+              type: 'button_reply',
+              button_reply: {
+                id: 'confirmation:unknown-token:confirmed',
+                title: 'Подтвердить'
+              }
+            }
+          }
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: button_params).perform
+
+        expect(confirmation_request.reload).to be_pending
+        expect(confirmation_request.resolution_source).to be_nil
+      end
+
+      it 'resolves template quick-reply buttons by button text/payload' do
+        button_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.DECLINE_TEMPLATE_BUTTON',
+          message: {
+            type: 'button',
+            button: {
+              payload: 'Отменить',
+              text: 'Отменить'
+            }
+          }
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: button_params).perform
+
+        reply_message = whatsapp_channel.inbox.messages.last
+        expect(reply_message.content).to eq('Отменить')
+        expect(reply_message.content_attributes['button_payload']).to eq('Отменить')
+        expect(confirmation_request.reload).to be_declined
+        expect(confirmation_request.resolution_source).to eq('button')
+        expect(confirmation_request.resolution_metadata).to include('resolver' => 'whatsapp_button')
+      end
+
+      it 'resolves plain text replies automatically after the inbound message is persisted' do
+        text_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.CONFIRM_TEXT',
+          message: {
+            type: 'text',
+            text: { body: 'Да' }
+          }
+        )
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: text_params).perform
+
+        reply_message = whatsapp_channel.inbox.messages.last
+        expect(reply_message.content).to eq('Да')
+        expect(confirmation_request.reload).to be_confirmed
+        expect(confirmation_request.resolution_source).to eq('text')
+        expect(confirmation_request.resolution_metadata).to include('resolver' => 'deterministic_text')
+      end
+    end
   end
 
   # Métodos auxiliares para reduzir o tamanho do exemplo
+
+  def confirmation_reply_params(source_id:, message_id:, message:)
+    message_payload = message.with_indifferent_access.merge(
+      from: source_id,
+      id: message_id,
+      timestamp: Time.current.to_i.to_s
+    )
+
+    {
+      phone_number: whatsapp_channel.phone_number,
+      object: 'whatsapp_business_account',
+      entry: [{
+        changes: [{
+          value: {
+            contacts: [{ profile: { name: 'Confirmation User' }, wa_id: source_id }],
+            messages: [message_payload]
+          }
+        }]
+      }]
+    }.with_indifferent_access
+  end
 
   def stub_media_url_request
     stub_request(

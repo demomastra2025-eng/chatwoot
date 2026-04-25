@@ -4,6 +4,19 @@
 class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageBaseService
   private
 
+  def after_message_persisted(message)
+    super
+    return if outgoing_echo || message.blank? || !message.incoming?
+
+    Confirmations::WhatsappReplyResolver.new(
+      account: inbox.account,
+      conversation: message.conversation,
+      message: message
+    ).perform
+  rescue StandardError => e
+    Rails.logger.warn("[WhatsApp Cloud] Confirmation reply resolution failed: #{e.class}: #{e.message}")
+  end
+
   def processed_params
     @processed_params ||= params[:entry].try(:first).try(:[], 'changes').try(:first).try(:[], 'value')
   end

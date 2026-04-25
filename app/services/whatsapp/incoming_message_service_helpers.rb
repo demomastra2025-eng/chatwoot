@@ -33,6 +33,21 @@ module Whatsapp::IncomingMessageServiceHelpers
       message.dig(:name, :formatted_name)
   end
 
+  def message_content_attributes(message)
+    interactive_button_reply = message.dig(:interactive, :button_reply)
+    interactive_list_reply = message.dig(:interactive, :list_reply)
+    button = message[:button]
+
+    {
+      whatsapp_message_type: message[:type],
+      interactive_reply_type: message.dig(:interactive, :type),
+      interactive_reply_id: interactive_button_reply&.[](:id) || interactive_list_reply&.[](:id),
+      interactive_reply_title: interactive_button_reply&.[](:title) || interactive_list_reply&.[](:title),
+      button_payload: button&.[](:payload),
+      button_text: button&.[](:text)
+    }.compact
+  end
+
   def file_content_type(file_type)
     return :image if %w[image sticker].include?(file_type)
     return :audio if %w[audio voice].include?(file_type)

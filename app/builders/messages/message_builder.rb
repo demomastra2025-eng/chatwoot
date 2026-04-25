@@ -129,11 +129,18 @@ class Messages::MessageBuilder
     JSON.parse(@params[:template_params].to_json)
   end
 
+  def delivery_policy
+    return if @params[:delivery_policy].blank?
+
+    JSON.parse(@params[:delivery_policy].to_json)
+  end
+
   def additional_attributes
     attrs = {}
     attrs[:campaign_id] = campaign_id if campaign_id.present?
     attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
     attrs[:template_params] = template_params if template_params.present?
+    attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
     attrs.presence
   end
 
