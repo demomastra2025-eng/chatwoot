@@ -37,6 +37,7 @@ Rails.application.routes.draw do
 
   get '/legal/:locale/terms', to: 'legal#terms', as: :legal_terms
   get '/legal/:locale/privacy', to: 'legal#privacy', as: :legal_privacy
+  get '/public/confirmation_requests/:token/:decision', to: 'public/confirmation_requests#show', as: :public_confirmation_request
   get '/captain/mcp_oauth/callback', to: 'captain/mcp_oauth#callback', as: :captain_mcp_oauth_callback
 
   get '/health', to: 'health#show'

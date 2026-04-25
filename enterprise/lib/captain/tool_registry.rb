@@ -463,6 +463,29 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'request_confirmation',
+          title: 'Request Confirmation',
+          description: 'Create a universal confirmation request with channel-aware buttons, links, or text fallback',
+          group_name: 'Confirmations',
+          icon: 'check-circle',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::RequestConfirmationTool,
+          assistant_tool_class: Captain::Tools::Copilot::RequestConfirmationService,
+          risk_level: 'high',
+          idempotent: true
+        ),
+        definition(
+          id: 'resolve_confirmation',
+          title: 'Resolve Confirmation',
+          description: 'Resolve a confirmation request as confirmed, declined, or reschedule requested with source audit metadata',
+          group_name: 'Confirmations',
+          icon: 'check',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::ResolveConfirmationTool,
+          assistant_tool_class: Captain::Tools::Copilot::ResolveConfirmationService,
+          risk_level: 'high'
+        ),
+        definition(
           id: 'update_task',
           title: 'Update Task',
           description: 'Update the CRM task linked to the current conversation',

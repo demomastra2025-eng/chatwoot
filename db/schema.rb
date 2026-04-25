@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_24_113000) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_25_153237) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -763,6 +763,45 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_24_113000) do
     t.index ["account_id", "domain"], name: "index_companies_on_account_and_domain", unique: true, where: "(domain IS NOT NULL)"
     t.index ["account_id"], name: "index_companies_on_account_id"
     t.index ["name", "account_id"], name: "index_companies_on_name_and_account_id"
+  end
+
+  create_table "confirmation_requests", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id"
+    t.bigint "contact_id"
+    t.bigint "inbox_id"
+    t.bigint "requested_by_id"
+    t.bigint "resolved_by_id"
+    t.bigint "resolved_message_id"
+    t.bigint "delivery_message_id"
+    t.string "subject_type"
+    t.bigint "subject_id"
+    t.string "status", default: "pending", null: false
+    t.string "token", null: false
+    t.string "delivery_strategy"
+    t.string "title", null: false
+    t.text "body", null: false
+    t.datetime "expires_at"
+    t.datetime "resolved_at"
+    t.string "resolution_source"
+    t.float "resolution_confidence"
+    t.jsonb "metadata", default: {}, null: false
+    t.jsonb "resolution_metadata", default: {}, null: false
+    t.string "idempotency_key"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "index_confirmation_requests_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "status", "conversation_id"], name: "idx_on_account_id_status_conversation_id_2babc633ce"
+    t.index ["account_id", "subject_type", "subject_id"], name: "idx_confirmation_requests_on_account_subject"
+    t.index ["account_id"], name: "index_confirmation_requests_on_account_id"
+    t.index ["contact_id"], name: "index_confirmation_requests_on_contact_id"
+    t.index ["conversation_id"], name: "index_confirmation_requests_on_conversation_id"
+    t.index ["delivery_message_id"], name: "index_confirmation_requests_on_delivery_message_id"
+    t.index ["inbox_id"], name: "index_confirmation_requests_on_inbox_id"
+    t.index ["requested_by_id"], name: "index_confirmation_requests_on_requested_by_id"
+    t.index ["resolved_by_id"], name: "index_confirmation_requests_on_resolved_by_id"
+    t.index ["resolved_message_id"], name: "index_confirmation_requests_on_resolved_message_id"
+    t.index ["token"], name: "index_confirmation_requests_on_token", unique: true
   end
 
   create_table "contact_channel_profiles", force: :cascade do |t|
@@ -2151,6 +2190,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_24_113000) do
   add_foreign_key "campaign_runs", "campaigns"
   add_foreign_key "campaign_runs", "inboxes"
   add_foreign_key "captain_mcp_servers", "accounts"
+  add_foreign_key "confirmation_requests", "accounts"
+  add_foreign_key "confirmation_requests", "contacts"
+  add_foreign_key "confirmation_requests", "conversations"
+  add_foreign_key "confirmation_requests", "inboxes"
+  add_foreign_key "confirmation_requests", "messages", column: "delivery_message_id"
+  add_foreign_key "confirmation_requests", "messages", column: "resolved_message_id"
+  add_foreign_key "confirmation_requests", "users", column: "requested_by_id"
+  add_foreign_key "confirmation_requests", "users", column: "resolved_by_id"
   add_foreign_key "contact_channel_profiles", "accounts"
   add_foreign_key "contact_channel_profiles", "contact_inboxes"
   add_foreign_key "contact_channel_profiles", "contacts"

@@ -5,7 +5,7 @@ FactoryBot.define do
     page_access_token { SecureRandom.uuid }
     user_access_token { SecureRandom.uuid }
     page_id { SecureRandom.uuid }
-    inbox
     account
+    inbox { association :inbox, account: account }
   end
 end

@@ -795,6 +795,7 @@
             "CRM_TASKS": "CRM Tasks",
             "SCHEDULING": "Scheduling",
             "OUTBOUND": "Outbound",
+            "CONFIRMATIONS": "Confirmations",
             "HELP_CENTER": "Help center",
             "INTEGRATIONS": "Integrations"
           },
@@ -914,6 +915,14 @@
             "create_touch": {
               "TITLE": "Create outbound touch",
               "DESCRIPTION": "Create a scheduled outbound touch from the current conversation or linked CRM context."
+            },
+            "request_confirmation": {
+              "TITLE": "Request confirmation",
+              "DESCRIPTION": "Create a universal confirmation request with channel-aware buttons, links, or text fallback."
+            },
+            "resolve_confirmation": {
+              "TITLE": "Resolve confirmation",
+              "DESCRIPTION": "Resolve a confirmation request as confirmed, declined, or reschedule requested with source audit metadata."
             },
             "update_task": {
               "TITLE": "Update task",

@@ -215,6 +215,7 @@ class Account < ApplicationRecord
   has_many :macros, dependent: :destroy_async
   has_many :campaigns, dependent: :destroy_async
   has_many :campaign_deliveries, dependent: :delete_all
+  has_many :confirmation_requests, dependent: :destroy_async
   has_many :reminders, dependent: :destroy_async
   has_many :reminder_groups, dependent: :destroy_async
   has_many :canned_responses, dependent: :destroy_async
