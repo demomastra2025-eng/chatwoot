@@ -1,4 +1,6 @@
 class Scheduling::ResourceScheduleService
+  MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
+
   def initialize(resource:, from:, to:, include_breaks: true, include_holidays: true, include_time_offs: true)
     @resource = resource
     @account = resource.account
@@ -10,6 +12,8 @@ class Scheduling::ResourceScheduleService
   end
 
   def perform
+    validate_range!
+
     {
       resource: Scheduling::PayloadBuilder.resource(@resource),
       timezone: time_zone.tzinfo.name,
@@ -48,8 +52,8 @@ class Scheduling::ResourceScheduleService
       next if payload.nil?
 
       result = {
-        start_at: payload[0].iso8601,
-        end_at: payload[1].iso8601
+        start_at: serialize_time(payload[0]),
+        end_at: serialize_time(payload[1])
       }
       result[:title] = interval[:title] if include_title && interval[:title].present?
       result
@@ -76,8 +80,8 @@ class Scheduling::ResourceScheduleService
       next if interval.nil?
 
       {
-        start_at: interval[0].iso8601,
-        end_at: interval[1].iso8601,
+        start_at: serialize_time(interval[0]),
+        end_at: serialize_time(interval[1]),
         title: time_off.title,
         kind: time_off.kind
       }
@@ -90,6 +94,14 @@ class Scheduling::ResourceScheduleService
     return 'weekly_rules' if working_intervals.any?
 
     'no_rules'
+  end
+
+  def validate_range!
+    Scheduling::RangeValidator.validate!(from: @from, to: @to, max_days: MAX_RANGE_DAYS)
+  end
+
+  def serialize_time(value)
+    value.in_time_zone(time_zone).iso8601
   end
 
   def holidays_for_date(date)

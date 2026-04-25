@@ -1,5 +1,6 @@
 class Scheduling::ResourceAvailabilityQueryService
   MAX_LIMIT = 50
+  MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def initialize(resource:, from:, to:, service: nil, duration_min: nil, limit: nil)
     @resource = resource
@@ -12,6 +13,10 @@ class Scheduling::ResourceAvailabilityQueryService
   end
 
   def perform
+    validate_range!
+
+    slots = available_slots
+
     {
       resource: Scheduling::PayloadBuilder.resource(@resource),
       service: @service.present? ? Scheduling::PayloadBuilder.service(@service) : nil,
@@ -21,15 +26,15 @@ class Scheduling::ResourceAvailabilityQueryService
         to: @to.iso8601
       },
       duration_min: @duration_min,
-      slots: available_slots,
-      total_slots: available_slots.length
+      slots: slots,
+      total_slots: slots.length
     }.compact
   end
 
   private
 
   def available_slots
-    availability_service.slots(duration_min: @duration_min).first(@limit).map do |slot|
+    @available_slots ||= availability_service.slots(duration_min: @duration_min).first(@limit).map do |slot|
       {
         resource_id: slot[:resource_id],
         starts_at: Time.zone.parse(slot[:starts_at]).in_time_zone(time_zone).iso8601,
@@ -60,6 +65,10 @@ class Scheduling::ResourceAvailabilityQueryService
     return @resource.slot_duration_min if numeric <= 0
 
     numeric
+  end
+
+  def validate_range!
+    Scheduling::RangeValidator.validate!(from: @from, to: @to, max_days: MAX_RANGE_DAYS)
   end
 
   def normalize_limit(value)

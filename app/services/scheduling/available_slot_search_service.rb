@@ -1,6 +1,6 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
-  MAX_RANGE_DAYS = 31
+  MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
     @account = account
@@ -94,7 +94,6 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def validate_range!
-    raise ArgumentError, 'to must be greater than from' if @to <= @from
-    raise ArgumentError, "Date range must be #{MAX_RANGE_DAYS} days or less" if (@to.to_date - @from.to_date).to_i > MAX_RANGE_DAYS
+    Scheduling::RangeValidator.validate!(from: @from, to: @to, max_days: MAX_RANGE_DAYS)
   end
 end

@@ -1,5 +1,5 @@
 class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captain::Tools::Copilot::BaseAccountTool
-  MAX_RANGE_DAYS = 31
+  MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
   def self.name
     'get_scheduling_resource_availability'
@@ -59,7 +59,6 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
   end
 
   def validate_range!(range_from, range_to)
-    raise ArgumentError, 'to must be greater than from' if range_to <= range_from
-    raise ArgumentError, "Date range must be #{MAX_RANGE_DAYS} days or less" if (range_to.to_date - range_from.to_date).to_i > MAX_RANGE_DAYS
+    Scheduling::RangeValidator.validate!(from: range_from, to: range_to, max_days: MAX_RANGE_DAYS)
   end
 end
