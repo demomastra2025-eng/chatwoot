@@ -550,6 +550,51 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Always detect the user')
     end
 
+    it 'preserves multiline prompt rules as single markdown list items with stable section spacing' do
+      config_name = described_class::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+      system_prompts_config = InstallationConfig.find_by(name: config_name)
+      previous_system_prompts = system_prompts_config&.value
+
+      begin
+        upsert_installation_config(
+          config_name,
+          described_class.default_installation_system_prompt_entries.map do |entry|
+            next entry unless entry[:id] == 'stay_within_scope'
+
+            entry.merge(content: "System rule line one\nSystem rule line two")
+          end
+        )
+
+        assistant.update!(
+          description: "Instruction line one\nInstruction line two",
+          response_guidelines: ["Guideline line one\nGuideline line two"],
+          guardrails: ["Guardrail line one\nGuardrail line two"]
+        )
+
+        rendered = assistant.agent_instructions
+
+        expect(rendered).to include(
+          "# System Instructions\nInstruction line one\nInstruction line two\n\n# Global System Instructions",
+          "- System rule line one\n  System rule line two",
+          "- Guideline line one\n  Guideline line two",
+          "- Guardrail line one\n  Guardrail line two"
+        )
+        expect(rendered).not_to include(
+          "- System rule line one\nSystem rule line two",
+          "- Guideline line one\nGuideline line two",
+          "- Guardrail line one\nGuardrail line two"
+        )
+        expect(rendered).to match(/# System Context\n.+\n\n# Your Identity/m)
+        expect(rendered).not_to match(/\n{3,}/)
+      ensure
+        if system_prompts_config
+          upsert_installation_config(config_name, previous_system_prompts)
+        else
+          InstallationConfig.find_by(name: config_name)&.destroy!
+        end
+      end
+    end
+
     it 'uses installation-wide system prompts as the source of truth while preserving assistant toggles' do
       upsert_installation_config(
         'CAPTAIN_SYSTEM_PROMPTS',

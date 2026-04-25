@@ -164,6 +164,7 @@ const onClickCancel = () => {
 
       <Editor
         v-model="state.content"
+        override-line-breaks
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"

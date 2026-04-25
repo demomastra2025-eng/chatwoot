@@ -31,6 +31,7 @@ const props = defineProps({
   sendWithSignature: { type: Boolean, default: false },
   channelType: { type: String, default: '' },
   medium: { type: String, default: '' },
+  overrideLineBreaks: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:modelValue', 'executeCopilotAction']);
@@ -122,6 +123,7 @@ watch(
         :send-with-signature="sendWithSignature"
         :channel-type="channelType"
         :medium="medium"
+        :override-line-breaks="overrideLineBreaks"
         @input="handleInput"
         @focus="handleFocus"
         @blur="handleBlur"

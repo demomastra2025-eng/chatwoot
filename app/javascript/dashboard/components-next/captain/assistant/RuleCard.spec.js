@@ -45,7 +45,13 @@ const buildWrapper = props =>
         Button: buttonStub,
         CardLayout: { template: '<div><slot /></div>' },
         Checkbox: true,
-        Editor: true,
+        Editor: {
+          name: 'Editor',
+          props: {
+            overrideLineBreaks: Boolean,
+          },
+          template: '<div data-testid="editor" />',
+        },
         Icon: true,
         Input: true,
         Select: true,
@@ -63,5 +69,15 @@ describe('RuleCard', () => {
 
     const deleteButton = wrapper.find('button[data-icon="i-lucide-trash"]');
     expect(deleteButton.exists()).toBe(true);
+  });
+
+  it('allows normal Enter handling while editing rule content', async () => {
+    const wrapper = buildWrapper({ editable: true });
+
+    await wrapper.find('button[data-icon="i-lucide-pen"]').trigger('click');
+
+    expect(
+      wrapper.findComponent({ name: 'Editor' }).props('overrideLineBreaks')
+    ).toBe(true);
   });
 });

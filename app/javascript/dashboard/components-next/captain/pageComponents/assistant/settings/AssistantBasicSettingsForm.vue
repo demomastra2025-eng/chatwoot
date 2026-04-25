@@ -323,6 +323,7 @@ defineExpose({
       <Editor
         v-if="showDescriptionField"
         v-model="state.description"
+        override-line-breaks
         :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
         :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
         :max-length="descriptionMaxLength"

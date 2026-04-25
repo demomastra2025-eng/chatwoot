@@ -104,6 +104,7 @@ watch(
     />
     <Editor
       v-model="state.answer"
+      override-line-breaks
       :label="t('CAPTAIN.RESPONSES.FORM.ANSWER.LABEL')"
       :placeholder="t('CAPTAIN.RESPONSES.FORM.ANSWER.PLACEHOLDER')"
       :message="formErrors.answer"

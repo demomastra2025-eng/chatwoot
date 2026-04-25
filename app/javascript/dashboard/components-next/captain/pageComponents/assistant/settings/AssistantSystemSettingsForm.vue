@@ -198,6 +198,7 @@ defineExpose({
         <Editor
           v-if="state.handoffMessageEnabled"
           v-model="state.handoffMessage"
+          override-line-breaks
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
           "
@@ -240,6 +241,7 @@ defineExpose({
         <Editor
           v-if="state.resolutionMessageEnabled"
           v-model="state.resolutionMessage"
+          override-line-breaks
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
           "

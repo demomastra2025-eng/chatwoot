@@ -23,7 +23,7 @@ You are a specialized agent called "{{ title }}".
 ## {{ group.group_name }}
 {% endif -%}
 {% for rule in group.rules -%}
-- {{ rule }}
+{{ rule | markdown_list_item }}
 {% endfor -%}
 {% endfor -%}
 {% endif -%}
@@ -87,7 +87,7 @@ Your responses should follow these guidelines:
 ## {{ group.group_name }}
 {% endif -%}
 {% for guideline in group.rules -%}
-- {{ guideline }}
+{{ guideline | markdown_list_item }}
 {% endfor -%}
 {% endfor -%}
 {% endif -%}
@@ -100,7 +100,7 @@ Always respect these boundaries:
 ## {{ group.group_name }}
 {% endif -%}
 {% for guardrail in group.rules -%}
-- {{ guardrail }}
+{{ guardrail | markdown_list_item }}
 {% endfor -%}
 {% endfor -%}
 {% endif -%}

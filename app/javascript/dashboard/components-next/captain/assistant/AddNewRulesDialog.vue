@@ -201,6 +201,7 @@ const onClickCancel = () => {
       <Editor
         v-if="isStructuredMode"
         v-model="state.content"
+        override-line-breaks
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"
@@ -214,6 +215,7 @@ const onClickCancel = () => {
       <Editor
         v-else
         v-model="modelValue"
+        override-line-breaks
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"

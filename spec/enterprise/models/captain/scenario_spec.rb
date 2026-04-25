@@ -195,6 +195,49 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(rendered).to include('Stay within your configured scope and instructions.')
     end
 
+    it 'preserves multiline assistant rules in scenario prompts as markdown list items' do
+      config_name = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+      system_prompts_config = InstallationConfig.find_by(name: config_name)
+      previous_system_prompts = system_prompts_config&.value
+
+      begin
+        upsert_installation_config(
+          config_name,
+          Captain::Assistant.default_installation_system_prompt_entries.map do |entry|
+            next entry unless entry[:id] == 'stay_within_scope'
+
+            entry.merge(content: "System rule line one\nSystem rule line two")
+          end
+        )
+        assistant.update!(
+          response_guidelines: ["Guideline line one\nGuideline line two"],
+          guardrails: ["Guardrail line one\nGuardrail line two"]
+        )
+        scenario.update!(instruction: "Scenario instruction line one\nScenario instruction line two")
+
+        rendered = scenario.agent_instructions
+
+        expect(rendered).to include(
+          "Scenario instruction line one\nScenario instruction line two\n\n# Global System Instructions",
+          "- System rule line one\n  System rule line two",
+          "- Guideline line one\n  Guideline line two",
+          "- Guardrail line one\n  Guardrail line two"
+        )
+        expect(rendered).not_to include(
+          "- System rule line one\nSystem rule line two",
+          "- Guideline line one\nGuideline line two",
+          "- Guardrail line one\nGuardrail line two"
+        )
+        expect(rendered).not_to match(/\n{3,}/)
+      ensure
+        if system_prompts_config
+          upsert_installation_config(config_name, previous_system_prompts)
+        else
+          InstallationConfig.find_by(name: config_name)&.destroy!
+        end
+      end
+    end
+
     it 'uses the assistant handoff tool name from the shared runtime naming contract' do
       assistant.update!(name: 'Sales & Support')
 
@@ -266,18 +309,30 @@ RSpec.describe Captain::Scenario, type: :model do
     end
 
     it 'keeps scenario-template tool references inside the scenario prompt only' do
-      updated_rules = assistant.rule_entries.map do |entry|
-        next entry unless entry[:id] == 'scenario_role'
+      config_name = Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+      system_prompts_config = InstallationConfig.find_by(name: config_name)
+      previous_system_prompts = system_prompts_config&.value
 
-        entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside this scenario.')
+      begin
+        updated_rules = Captain::Assistant.default_installation_system_prompt_entries.map do |entry|
+          next entry unless entry[:id] == 'scenario_role'
+
+          entry.merge(content: 'Use [Add Private Note](tool://add_private_note) only inside this scenario.')
+        end
+        upsert_installation_config(config_name, updated_rules)
+
+        scenario_rendered = scenario.agent_instructions
+        assistant_rendered = assistant.agent_instructions
+
+        expect(scenario_rendered).to include('Add Private Note (add_private_note)')
+        expect(assistant_rendered).not_to include('Add Private Note (add_private_note)')
+      ensure
+        if system_prompts_config
+          upsert_installation_config(config_name, previous_system_prompts)
+        else
+          InstallationConfig.find_by(name: config_name)&.destroy!
+        end
       end
-      assistant.update!(config: assistant.config.merge('rules' => updated_rules))
-
-      scenario_rendered = scenario.agent_instructions
-      assistant_rendered = assistant.agent_instructions
-
-      expect(scenario_rendered).to include('Add Private Note (add_private_note)')
-      expect(assistant_rendered).not_to include('Add Private Note (add_private_note)')
     end
   end
 

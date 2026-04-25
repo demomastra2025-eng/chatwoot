@@ -328,6 +328,7 @@ const humanizeToolId = toolId => toolLabels.value[toolId] || `@${toolId}`;
       />
       <Editor
         v-model="state.instruction"
+        override-line-breaks
         :label="
           t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.FORM.INSTRUCTION.LABEL')
         "

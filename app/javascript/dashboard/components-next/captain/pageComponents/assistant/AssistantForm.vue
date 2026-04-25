@@ -352,6 +352,7 @@ watch(
 
     <Editor
       v-model="state.description"
+      override-line-breaks
       :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
       :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
       :message="formErrors.description"
@@ -392,6 +393,7 @@ watch(
         <Editor
           v-if="state.handoffMessageEnabled"
           v-model="state.handoffMessage"
+          override-line-breaks
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
           "
@@ -436,6 +438,7 @@ watch(
         <Editor
           v-if="state.resolutionMessageEnabled"
           v-model="state.resolutionMessage"
+          override-line-breaks
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
           "

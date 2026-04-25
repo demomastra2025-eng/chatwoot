@@ -60,6 +60,7 @@ const onClickAdd = () => {
 
     <Editor
       v-model="modelValue"
+      override-line-breaks
       :placeholder="placeholder"
       :show-character-count="false"
       :enable-captain-tools="enableCaptainTools"
