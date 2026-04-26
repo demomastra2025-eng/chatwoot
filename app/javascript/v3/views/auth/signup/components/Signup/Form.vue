@@ -177,7 +177,9 @@ const onCaptchaError = () => {
         @challenge-expired="onCaptchaError"
         @closed="onCaptchaError"
       />
-      <div class="space-y-3 rounded-lg border border-n-container bg-n-brand-solid/5 p-4">
+      <div
+        class="space-y-3 rounded-lg border border-n-container bg-n-brand-solid/5 p-4"
+      >
         <label class="flex items-start gap-3 text-sm text-n-slate-12">
           <CheckBox
             :is-checked="consent.terms"
@@ -196,10 +198,7 @@ const onCaptchaError = () => {
             </a>
           </span>
         </label>
-        <p
-          v-if="v$.consent.terms.$error"
-          class="text-sm text-n-ruby-9"
-        >
+        <p v-if="v$.consent.terms.$error" class="text-sm text-n-ruby-9">
           {{ $t('REGISTER.CONSENTS.TERMS_ERROR') }}
         </p>
         <label class="flex items-start gap-3 text-sm text-n-slate-12">
@@ -220,10 +219,7 @@ const onCaptchaError = () => {
             </a>
           </span>
         </label>
-        <p
-          v-if="v$.consent.privacy.$error"
-          class="text-sm text-n-ruby-9"
-        >
+        <p v-if="v$.consent.privacy.$error" class="text-sm text-n-ruby-9">
           {{ $t('REGISTER.CONSENTS.PRIVACY_ERROR') }}
         </p>
       </div>

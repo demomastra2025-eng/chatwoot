@@ -59,5 +59,17 @@
   },
   "CHANNEL_SELECTOR": {
     "COMING_SOON": "Скоро!"
+  },
+  "SLASH_COMMANDS": {
+    "HEADING_1": "Заголовок 1",
+    "HEADING_2": "Заголовок 2",
+    "HEADING_3": "Заголовок 3",
+    "BOLD": "Жирный",
+    "ITALIC": "Курсив",
+    "STRIKETHROUGH": "Зачеркнутый",
+    "CODE": "Код",
+    "BULLET_LIST": "Маркированный список",
+    "ORDERED_LIST": "Нумерованный список",
+    "TABLE": "Таблица"
   }
 }

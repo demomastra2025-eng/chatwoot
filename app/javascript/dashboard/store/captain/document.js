@@ -44,5 +44,11 @@ export default createStore({
         commit(mutationTypes.SET_UI_FLAG, { updatingItem: false });
       }
     },
+    removeBulkRecords({ commit, getters }, ids) {
+      const records = getters.getRecords.filter(
+        record => !ids.includes(record.id)
+      );
+      commit(mutationTypes.SET, records);
+    },
   }),
 });

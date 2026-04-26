@@ -716,6 +716,17 @@
     "DOCUMENTS": {
       "HEADER": "Documents",
       "ADD_NEW": "Create a new document",
+      "SELECTED": "{count} таңдалды",
+      "SELECT_ALL": "Барлығын таңдау ({count})",
+      "UNSELECT_ALL": "Барлығын алып тастау ({count})",
+      "BULK_DELETE_BUTTON": "Жою",
+      "BULK_DELETE": {
+        "TITLE": "Құжаттарды жою керек пе?",
+        "DESCRIPTION": "Таңдалған құжаттарды жойғыңыз келетініне сенімдісіз бе? Бұл әрекетті қайтару мүмкін емес.",
+        "CONFIRM": "Иә, барлығын жою",
+        "SUCCESS_MESSAGE": "Құжаттар сәтті жойылды",
+        "ERROR_MESSAGE": "Құжаттарды жою кезінде қате пайда болды, қайтадан көріңіз."
+      },
       "RELATED_RESPONSES": {
         "TITLE": "Related FAQs",
         "DESCRIPTION": "These FAQs are generated directly from the document."

@@ -109,6 +109,7 @@ const showPagination = computed(() => {
           <ContactsActiveFiltersPreview
             v-if="showActiveFiltersPreview"
             :active-segment="activeSegment"
+            class="mb-1"
             @clear-filters="emit('clearFilters')"
             @open-filter="openFilter"
           />

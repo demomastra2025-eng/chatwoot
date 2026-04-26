@@ -55,6 +55,7 @@ const formState = reactive({
 
 const [showAccessToken, toggleAccessToken] = useToggle();
 const accessToken = ref('');
+const botSecret = ref('');
 
 const validationRules = computed(() => ({
   botName: {
@@ -141,6 +142,16 @@ const showAccessTokenInput = computed(
       props.type === MODAL_TYPES.EDIT ||
       accessToken.value)
 );
+const showEditableSecret = computed(
+  () => isWebhookBot.value && botSecret.value && props.type === MODAL_TYPES.EDIT
+);
+const showCreatedSecret = computed(
+  () =>
+    isWebhookBot.value &&
+    botSecret.value &&
+    showAccessToken.value &&
+    props.type === MODAL_TYPES.CREATE
+);
 
 const resetForm = () => {
   Object.assign(formState, {
@@ -210,15 +221,21 @@ const handleSubmit = async () => {
       : t('AGENT_BOTS.EDIT.API.SUCCESS_MESSAGE');
     useAlert(alertKey);
 
-    // Show access token after creation
+    // Show access token and secret after creation
     if (isCreate) {
-      const { access_token: responseAccessToken, id } = response || {};
+      const {
+        access_token: responseAccessToken,
+        secret: responseSecret,
+        id,
+      } = response || {};
 
       if (id && responseAccessToken && isWebhookBot.value) {
         accessToken.value = responseAccessToken;
+        botSecret.value = responseSecret || '';
         toggleAccessToken(true);
       } else {
         accessToken.value = '';
+        botSecret.value = '';
         dialogRef.value.close();
       }
     } else {
@@ -245,6 +262,7 @@ const initializeForm = () => {
       bot_type: botType,
       bot_config: botConfig,
       access_token: botAccessToken,
+      secret: botSecretValue,
     } = props.selectedBot;
     formState.botName = name || '';
     formState.botDescription = description || '';
@@ -253,8 +271,9 @@ const initializeForm = () => {
     formState.botConfig = cloneFlowConfig(botConfig);
     formState.botAvatarUrl = thumbnail || '';
 
-    if (botAccessToken && props.type === MODAL_TYPES.EDIT) {
-      accessToken.value = botAccessToken;
+    if (props.type === MODAL_TYPES.EDIT && formState.botType === 'webhook') {
+      if (botAccessToken) accessToken.value = botAccessToken;
+      if (botSecretValue) botSecret.value = botSecretValue;
     }
   } else {
     resetForm();
@@ -264,6 +283,24 @@ const initializeForm = () => {
 const onCopyToken = async value => {
   await copyTextToClipboard(value);
   useAlert(t('AGENT_BOTS.ACCESS_TOKEN.COPY_SUCCESSFUL'));
+};
+
+const onCopySecret = async value => {
+  await copyTextToClipboard(value || botSecret.value);
+  useAlert(t('AGENT_BOTS.SECRET.COPY_SUCCESS'));
+};
+
+const onResetSecret = async () => {
+  const response = await store.dispatch(
+    'agentBots/resetSecret',
+    props.selectedBot.id
+  );
+  if (response) {
+    botSecret.value = response.secret;
+    useAlert(t('AGENT_BOTS.SECRET.RESET_SUCCESS'));
+  } else {
+    useAlert(t('AGENT_BOTS.SECRET.RESET_ERROR'));
+  }
 };
 
 const onResetToken = async () => {
@@ -282,6 +319,7 @@ const onResetToken = async () => {
 const closeModal = () => {
   if (!showAccessToken.value) v$.value?.$reset();
   accessToken.value = '';
+  botSecret.value = '';
   toggleAccessToken(false);
 };
 
@@ -399,6 +437,17 @@ defineExpose({ dialogRef });
         </p>
       </div>
 
+      <div v-if="showEditableSecret" class="flex flex-col gap-1">
+        <label class="mb-0.5 text-sm font-medium text-n-slate-12">
+          {{ $t('AGENT_BOTS.SECRET.LABEL') }}
+        </label>
+        <AccessToken
+          :value="botSecret"
+          @on-copy="onCopySecret"
+          @on-reset="onResetSecret"
+        />
+      </div>
+
       <div v-if="showAccessTokenInput" class="flex flex-col gap-1">
         <label
           v-if="type === MODAL_TYPES.EDIT"
@@ -417,6 +466,20 @@ defineExpose({ dialogRef });
           :value="accessToken"
           :show-reset-button="false"
           @on-copy="onCopyToken"
+        />
+      </div>
+
+      <div v-if="showCreatedSecret" class="flex flex-col gap-1">
+        <p class="text-sm text-n-slate-11">
+          {{ $t('AGENT_BOTS.SECRET.CREATED_DESC') }}
+        </p>
+        <label class="mb-0.5 text-sm font-medium text-n-slate-12">
+          {{ $t('AGENT_BOTS.SECRET.LABEL') }}
+        </label>
+        <AccessToken
+          :value="botSecret"
+          :show-reset-button="false"
+          @on-copy="onCopySecret"
         />
       </div>
     </div>

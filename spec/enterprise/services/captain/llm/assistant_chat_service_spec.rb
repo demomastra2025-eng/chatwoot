@@ -188,4 +188,32 @@ RSpec.describe Captain::Llm::AssistantChatService do
       end
     end
   end
+
+  describe 'custom tools' do
+    it 'registers enabled account custom tools with the V1 chat pipeline' do
+      create(:captain_custom_tool, account: account, slug: 'custom_order_status')
+      allow(mock_chat).to receive(:ask).and_return(mock_response)
+
+      expect(mock_chat).to receive(:with_tool)
+        .with(instance_of(Captain::Tools::SearchDocumentationService))
+        .and_return(mock_chat)
+      expect(mock_chat).to receive(:with_tool)
+        .with(instance_of(Captain::Tools::CustomHttpTool))
+        .and_return(mock_chat)
+
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      service.generate_response(message_history: [{ role: 'user', content: 'Check order' }])
+    end
+
+    it 'lists custom tools in the system prompt' do
+      create(:captain_custom_tool, account: account, slug: 'custom_order_status', description: 'Fetch order status')
+      allow(mock_chat).to receive(:ask).and_return(mock_response)
+
+      expect(mock_chat).to receive(:with_instructions)
+        .with(a_string_including('custom_order_status: Fetch order status')) { mock_chat }
+
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      service.generate_response(message_history: [{ role: 'user', content: 'Check order' }])
+    end
+  end
 end

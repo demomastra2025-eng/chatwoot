@@ -177,6 +177,7 @@ export const FORMATTING = {
 export const ARTICLE_EDITOR_MENU_OPTIONS = [
   'strong',
   'em',
+  'strike',
   'link',
   'undo',
   'redo',
@@ -187,6 +188,7 @@ export const ARTICLE_EDITOR_MENU_OPTIONS = [
   'h3',
   'imageUpload',
   'code',
+  'insertTable',
 ];
 
 /**

@@ -830,6 +830,25 @@ RSpec.describe ConversationReplyMailer do
       end
     end
 
+    context 'when support_email is malformed' do
+      let(:account) { create(:account, support_email: 'Smith Smith') }
+      let(:conversation) { create(:conversation, assignee: agent, account: account).reload }
+      let(:message) { create(:message, message_type: :outgoing, conversation: conversation, account: account, inbox: conversation.inbox) }
+      let(:mail) { described_class.reply_with_summary(message.conversation, message.id).deliver_now }
+
+      before do
+        account.enable_features('inbound_emails')
+        account.domain = 'example.com'
+        account.save!(validate: false)
+      end
+
+      it 'falls back to the configured mailer sender address' do
+        with_modified_env MAILER_SENDER_EMAIL: 'Onelink <fallback@example.com>' do
+          expect(mail.from).to eq(['fallback@example.com'])
+        end
+      end
+    end
+
     context 'when inbound email domain is not enabled' do
       let(:new_account) { create(:account, domain: nil) }
       let!(:email_channel) { create(:channel_email, account: new_account) }

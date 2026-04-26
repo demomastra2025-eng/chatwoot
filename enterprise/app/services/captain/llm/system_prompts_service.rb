@@ -152,7 +152,7 @@ class Captain::Llm::SystemPromptsService
     # rubocop:enable Metrics/MethodLength
 
     # rubocop:disable Metrics/MethodLength
-    def assistant_response_generator(assistant_name, product_name, config = {}, contact: nil)
+    def assistant_response_generator(assistant_name, product_name, config = {}, contact: nil, custom_tools: [])
       assistant_citation_guidelines = if config['feature_citation']
                                         <<~CITATION_TEXT
                                           - Always include citations for any information provided, referencing the specific source (document only - skip if it was derived from a conversation).
@@ -203,6 +203,8 @@ class Captain::Llm::SystemPromptsService
         ```
         - If the answer is not provided in context sections, Respond to the customer and ask whether they want to talk to another support agent . If they ask to Chat with another agent, return `conversation_handoff' as the response in JSON response
         #{'- You MUST provide numbered citations at the appropriate places in the text.' if config['feature_citation']}
+
+        #{build_tools_section(custom_tools)}
       SYSTEM_PROMPT_MESSAGE
     end
 
@@ -290,6 +292,15 @@ class Captain::Llm::SystemPromptsService
     # rubocop:enable Metrics/MethodLength
 
     private
+
+    def build_tools_section(custom_tools)
+      tools_list = custom_tools.map { |tool| "- #{tool[:name]}: #{tool[:description]}" }.join("\n")
+      <<~TOOLS.strip
+        [Available Tools]
+        - search_documentation: Search and retrieve documentation from knowledge base
+        #{tools_list}
+      TOOLS
+    end
 
     def build_contact_context(contact)
       return '' if contact.nil?
