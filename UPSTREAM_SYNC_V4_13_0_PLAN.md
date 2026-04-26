@@ -34,6 +34,7 @@ Carry rule:
 - `97dae52841` uses committed RubyLLM model registry.
 - `3f9f054c43` drops WhatsApp incoming messages from blocked contacts.
 - `04acc16609` skips invoice pay call if already paid after finalize.
+- `e4c3f0ac2f` falls back to phone number when updating leads.
 - `2b296c06fb` CVE ignore for upstream storage defaults.
 - `8e5d4f4d23` Axios security bump to `1.15.0`.
 
@@ -50,6 +51,7 @@ Carry rule:
 - `48533e2a5d` strips markdown hard-break backslashes from webhook payloads.
 - `871f2f4d56` upload fetching hardening is already covered in the branch.
 - `722e68eecb` validates `support_email` and handles mailer parse errors.
+- `288c1cb757` respects app direction for incoming email content.
 
 ### Help Center / Editor / Docs UX
 
@@ -70,6 +72,7 @@ Carry rule:
 - `64f6bfc811` inline edit support for contact info.
 - `98cf1ce9f6` bulk select all limited to visible items plus secondary slot.
 - `b96bf41234` enables Participating conversations tab.
+- `b3d0af84c4` queues SDK-set conversation attributes and labels for the first widget message.
 - `d9e732c005` priority icon refresh.
 - `5de7ae492c` and `b9b5a18767` appearance background pair applied with upstream revert semantics.
 
