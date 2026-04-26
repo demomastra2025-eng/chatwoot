@@ -69,6 +69,7 @@ class Captain::Scenario < ApplicationRecord
       title: title,
       global_system_instruction: Llm::Config.global_agent_system_prompt,
       instructions: resolved_instructions,
+      assistant_instruction: assistant.system_instruction,
       scenario_system_context_rule: assistant.enabled_system_template_rule_content(
         Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_CONTEXT
       ),
@@ -283,6 +284,7 @@ class Captain::Scenario < ApplicationRecord
   def prompt_glossary_texts
     [
       instruction,
+      assistant.system_instruction,
       assistant.system_rule_contents_for_prompt(template_name: :scenario),
       response_guidelines,
       guardrails

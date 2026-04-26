@@ -165,12 +165,13 @@ RSpec.describe Captain::Scenario, type: :model do
       expect(rendered.scan('## Available Tools').size).to eq(1)
     end
 
-    it 'renders context glossary entries only for fields referenced in scenario prompt text' do
+    it 'renders context glossary entries for fields referenced in scenario prompt text, shared assistant context, and rules' do
       scenario.update!(
         instruction: 'Ask for [Name](field://contact.name) before proceeding.',
         assistant: assistant
       )
       assistant.update!(
+        description: 'Use [Email](field://contact.email) from the shared assistant context.',
         guardrails: ['Do not expose [Conversation ID](field://conversation.display_id) unless required.']
       )
 
@@ -178,7 +179,21 @@ RSpec.describe Captain::Scenario, type: :model do
 
       expect(rendered).to include('# Reference Glossary')
       expect(rendered).to include('Name (contact.name)')
+      expect(rendered).to include('Email (contact.email)')
       expect(rendered).to include('Conversation ID (conversation.display_id)')
+    end
+
+    it 'renders the assistant instructions as shared scenario context' do
+      assistant.update!(description: 'Business Breakfast format: men and women investors participate together.')
+      scenario.update!(instruction: 'Collect reservation details for the business breakfast.')
+
+      rendered = scenario.agent_instructions
+
+      expect(rendered).to include('# Scenario Instructions')
+      expect(rendered).to include('Collect reservation details for the business breakfast.')
+      expect(rendered).to include('# Shared Assistant Context')
+      expect(rendered).to include('Business Breakfast format: men and women investors participate together.')
+      expect(rendered.index('# Scenario Instructions')).to be < rendered.index('# Shared Assistant Context')
     end
 
     it 'renders the installation-wide global system prompt in scenario prompts' do
@@ -218,7 +233,9 @@ RSpec.describe Captain::Scenario, type: :model do
         rendered = scenario.agent_instructions
 
         expect(rendered).to include(
-          "Scenario instruction line one\nScenario instruction line two\n\n# Global System Instructions",
+          "# Scenario Instructions\nScenario instruction line one\nScenario instruction line two",
+          "# Shared Assistant Context\nTest description",
+          '# Global System Instructions',
           "- System rule line one\n  System rule line two",
           "- Guideline line one\n  Guideline line two",
           "- Guardrail line one\n  Guardrail line two"

@@ -97,13 +97,29 @@ if [[ "${DEV_HYBRID_PRESERVE_DEBUG}" != "1" ]]; then
   unset DEBUG
 fi
 
+configure_test_environment() {
+  export RAILS_ENV=test
+  export NODE_ENV=test
+  export POSTGRES_DATABASE="${POSTGRES_TEST_DATABASE:-chatwoot_test}"
+
+  if [[ "${POSTGRES_DATABASE}" == "chatwoot_dev" || "${POSTGRES_DATABASE}" == "chatwoot_production" ]]; then
+    printf 'Refusing to run tests against non-test database: %s\n' "${POSTGRES_DATABASE}" >&2
+    exit 1
+  fi
+
+  if [[ -n "${TEST_REDIS_URL:-}" ]]; then
+    export REDIS_URL="${TEST_REDIS_URL}"
+  elif [[ -n "${REDIS_URL:-}" ]]; then
+    export REDIS_URL="$(ruby -ruri -e 'uri = URI(ENV.fetch("REDIS_URL")); uri.path = "/#{ENV.fetch("TEST_REDIS_DB", "4")}"; puts uri')"
+  fi
+}
+
 case "${COMMAND}" in
   prepare)
     exec bundle exec rails db:prepare
     ;;
   prepare-test)
-    export RAILS_ENV=test
-    export POSTGRES_DATABASE="${POSTGRES_DATABASE:-chatwoot_test}"
+    configure_test_environment
     exec bundle exec rails db:prepare
     ;;
   start)
@@ -122,8 +138,7 @@ case "${COMMAND}" in
     ;;
   rspec)
     shift
-    export RAILS_ENV=test
-    export POSTGRES_DATABASE="${POSTGRES_DATABASE:-chatwoot_test}"
+    configure_test_environment
     exec bundle exec rspec "$@"
     ;;
   vite)

@@ -9,7 +9,15 @@ You are a specialized agent called "{{ title }}".
 {{ scenario_role_rule }}
 {% endif -%}
 
+{% if instructions != blank -%}
+# Scenario Instructions
 {{ instructions }}
+{% endif -%}
+
+{% if assistant_instruction != blank -%}
+# Shared Assistant Context
+{{ assistant_instruction }}
+{% endif -%}
 
 {% if global_system_instruction != blank -%}
 # Global System Instructions
