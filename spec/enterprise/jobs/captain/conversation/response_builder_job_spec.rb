@@ -329,6 +329,30 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
     end
 
+    context 'when agent runtime returns a blank public response' do
+      before do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => '',
+            'handoff_message' => '',
+            'agent_name' => 'booking_scenario'
+          }
+        )
+      end
+
+      it 'opens the conversation with a private fallback note instead of creating a blank public message' do
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+
+        expect(conversation.reload.status).to eq('open')
+        private_note = conversation.messages.where(private: true).last
+        expect(private_note.content).to eq(
+          'AI runtime fallback: Captain::Assistant::AgentRunnerService::BlankResponseError: Assistant runtime returned a blank response'
+        )
+      end
+    end
+
     context 'when message contains an image' do
       let!(:message_with_image) do
         create(
@@ -361,6 +385,87 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           end).to be(true)
 
           { 'response' => 'I can see the error in your image. It appears to be a database connection issue.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+
+      it 'marks an image sent after a receipt request as payment proof context' do
+        assistant.update!(config: assistant.config.merge('history_message_limit' => 10))
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          inbox: inbox,
+          message_type: :outgoing,
+          sender: assistant,
+          content: 'Пришлите, пожалуйста, фото чека после оплаты.',
+          created_at: 2.minutes.ago
+        )
+        message_with_image.update!(content: nil, created_at: 1.minute.ago)
+
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          last_entry = message_history.last
+          expect(last_entry[:role]).to eq('user')
+          expect(last_entry[:content]).to be_an(Array)
+          expect(last_entry[:content].any? do |part|
+            part[:type] == 'text' && part[:text].include?('Treat the image as the requested receipt/payment confirmation')
+          end).to be(true)
+          expect(last_entry[:content].any? do |part|
+            part[:type] == 'image_url' && part[:image_url][:url] == 'https://example.com/error.jpg'
+          end).to be(true)
+
+          { 'response' => 'Спасибо, чек получил. Подтверждаю бронь.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+      end
+
+      it 'marks payment screenshots as receipt context without treating ordinary screenshots as receipts' do
+        assistant.update!(config: assistant.config.merge('history_message_limit' => 10))
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          inbox: inbox,
+          message_type: :outgoing,
+          sender: assistant,
+          content: 'Скиньте, пожалуйста, скрин оплаты.',
+          created_at: 2.minutes.ago
+        )
+        message_with_image.update!(content: nil, created_at: 1.minute.ago)
+
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          last_entry = message_history.last
+          expect(last_entry[:content].any? do |part|
+            part[:type] == 'text' && part[:text].include?('Treat the image as the requested receipt/payment confirmation')
+          end).to be(true)
+
+          { 'response' => 'Спасибо, оплату вижу.' }
+        end
+
+        described_class.perform_now(conversation, assistant)
+
+        conversation.messages.where.not(id: message_with_image.id).destroy_all
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          inbox: inbox,
+          message_type: :outgoing,
+          sender: assistant,
+          content: 'Пришлите, пожалуйста, скрин ошибки.',
+          created_at: 2.minutes.ago
+        )
+        message_with_image.update!(content: nil, created_at: 1.minute.ago)
+
+        expect(agent_runner_service).to receive(:generate_response) do |message_history:|
+          last_entry = message_history.last
+          expect(last_entry[:content].any? do |part|
+            part[:type] == 'text' && part[:text].include?('Treat the image as the requested receipt/payment confirmation')
+          end).to be(false)
+
+          { 'response' => 'Посмотрел скрин ошибки.' }
         end
 
         described_class.perform_now(conversation, assistant)

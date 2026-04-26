@@ -355,7 +355,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.guardrails).to eq([])
     end
 
-    it 'drops assistant-level custom system rules because system prompts are installation-managed' do
+    it 'preserves assistant-level custom system rules after installation-managed defaults' do
       assistant.update!(
         config: assistant.config.merge(
           'rules' => [
@@ -370,19 +370,17 @@ RSpec.describe Captain::Assistant, type: :model do
         )
       )
 
-      expect(assistant.rule_entries).not_to include(
+      expect(assistant.rule_entries).to include(
         include(
           id: 'custom_system_rule',
-          type: 'system'
+          type: 'system',
+          group: 'Strict rules',
+          content: 'Always confirm the business unit before answering.',
+          enabled: true
         )
       )
-      expect(assistant.rule_entries).to all(
-        satisfy { |entry|
-          entry[:type] != 'system' || described_class.installation_system_prompt_entries.any? do |rule|
-            rule[:id].to_s == entry[:id].to_s
-          end
-        }
-      )
+      expect(assistant.rule_entries.index { |entry| entry[:id] == 'custom_system_rule' }).to be >=
+                                                                                             described_class.installation_system_prompt_entries.length
     end
 
     it 'restores canonical metadata for built-in default system rules even when stored config drifted' do
@@ -547,7 +545,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('# System Rules')
       expect(rendered).to include('Stay within your configured scope and instructions.')
       expect(rendered).to include('Use only the fields and tools explicitly available in this prompt')
-      expect(rendered).to include('Always detect the user')
+      expect(rendered).to include('Mirror the user language exactly')
     end
 
     it 'preserves multiline prompt rules as single markdown list items with stable section spacing' do
@@ -647,6 +645,15 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('# Your Identity')
       expect(rendered).to include("You are #{assistant.name}.")
       expect(rendered).to include('Act as the main orchestrator for this conversation')
+    end
+
+    it 'prioritizes explicit context, language mirroring, and single-question flow in default rules' do
+      rendered = assistant.agent_instructions
+
+      expect(rendered).to include('If the current prompt, scenario, conversation context, or visible fields already contain the answer')
+      expect(rendered).to include('Do not call FAQ or knowledge tools when explicit prompt/context facts are enough')
+      expect(rendered).to include('Mirror the user language exactly')
+      expect(rendered).to include('Do not ask A/B questions or bundle two alternatives')
     end
 
     it 'lets operators disable template-backed system sections' do

@@ -12,6 +12,8 @@ class Captain::Assistant::AgentRunnerService
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
 
+  class BlankResponseError < StandardError; end
+
   def initialize(assistant:, conversation: nil, callbacks: {}, source: nil)
     @assistant = assistant
     @conversation = conversation
@@ -61,6 +63,8 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
+    return provider_error_response(blank_response_error) if blank_public_response?(response)
+
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -87,6 +91,17 @@ class Captain::Assistant::AgentRunnerService
       'error_class' => error.class.name,
       'error_message' => error.message
     }
+  end
+
+  def blank_public_response?(response)
+    return false if response['response'] == 'conversation_handoff'
+    return false if response['response'] == PROVIDER_ERROR_RESPONSE
+
+    response['response'].blank?
+  end
+
+  def blank_response_error
+    BlankResponseError.new('Assistant runtime returned a blank response')
   end
 
   def build_state

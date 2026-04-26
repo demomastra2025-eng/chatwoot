@@ -5,6 +5,7 @@ class Captain::Runtime::Runner
 
   class MaxTurnsExceeded < StandardError; end
   class AgentNotFoundError < StandardError; end
+  class SelfHandoffError < StandardError; end
 
   def self.with_agents(*agents)
     Captain::Runtime::AgentRunner.new(agents)
@@ -113,6 +114,7 @@ class Captain::Runtime::Runner
 
   def handle_handoff(session)
     next_agent = handoff_target(session)
+    return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
     return missing_agent_result(session, next_agent) unless session[:registry][next_agent.name]
 
     persist_handoff_state(session, next_agent)
@@ -126,6 +128,16 @@ class Captain::Runtime::Runner
 
   def missing_agent_result(session, next_agent)
     error = AgentNotFoundError.new("Handoff failed: Agent '#{next_agent.name}' not found in registry")
+    finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
+  end
+
+  def self_handoff?(session, next_agent)
+    current_agent = session[:current_agent]
+    next_agent.equal?(current_agent) || next_agent.name == current_agent.name
+  end
+
+  def self_handoff_result(session, next_agent)
+    error = SelfHandoffError.new("Agent #{next_agent.name} attempted to hand off to itself")
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
   end
 

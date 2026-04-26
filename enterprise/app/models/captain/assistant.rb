@@ -102,7 +102,9 @@ class Captain::Assistant < ApplicationRecord
     {
       id: 'approved_sources_only',
       group: RULE_GROUP_STRICT,
-      content: 'Use only approved context, tools, and FAQs when available. Never rely on your own training data.',
+      content: 'Use only approved context, tools, and FAQs when available. If the current prompt, scenario, conversation context, ' \
+               'or visible fields already contain the answer, answer from those explicit facts before using optional knowledge tools. ' \
+               'Never rely on your own training data.',
       editable: true,
       deletable: false
     },
@@ -132,14 +134,16 @@ class Captain::Assistant < ApplicationRecord
     {
       id: 'use_available_knowledge_tools',
       group: RULE_GROUP_CONVERSATION,
-      content: 'If a factual answer is not already established by the prompt context and a knowledge tool is available, use it before answering.',
+      content: 'Only use FAQ or knowledge tools when the answer is not already established by explicit prompt/context facts. ' \
+               'Do not call FAQ or knowledge tools when explicit prompt/context facts are enough.',
       editable: true,
       deletable: false
     },
     {
       id: 'mirror_user_language',
       group: RULE_GROUP_CONVERSATION,
-      content: "Always detect the user's language and reply in the same language.",
+      content: 'Mirror the user language exactly. If the user writes in Russian, answer in Russian; ' \
+               'do not switch to English or mix languages unless the user does.',
       editable: true,
       deletable: false
     },
@@ -154,6 +158,14 @@ class Captain::Assistant < ApplicationRecord
       id: 'clarify_instead_of_guessing',
       group: RULE_GROUP_CONVERSATION,
       content: 'When the request is ambiguous, ask clarifying questions instead of making assumptions.',
+      editable: true,
+      deletable: false
+    },
+    {
+      id: 'avoid_ab_questions',
+      group: RULE_GROUP_CONVERSATION,
+      content: 'Do not ask A/B questions or bundle two alternatives in one turn unless the user explicitly asks for options. ' \
+               'Ask one clear next-step question at a time.',
       editable: true,
       deletable: false
     },
@@ -948,10 +960,12 @@ class Captain::Assistant < ApplicationRecord
   def ensure_default_system_rules(entries)
     installation_system_rules = self.class.installation_system_prompt_entries
     installation_system_rule_ids = installation_system_rules.map { |rule| rule[:id].to_s }
-    non_system_entries = entries.reject do |entry|
-      entry[:type] == RULE_TYPE_SYSTEM || installation_system_rule_ids.include?(entry[:id].to_s)
+    custom_entries = entries.reject do |entry|
+      installation_system_rule_ids.include?(entry[:id].to_s)
     end
-    existing_system_entries = entries.select { |entry| entry[:type] == RULE_TYPE_SYSTEM }.index_by { |entry| entry[:id] }
+    existing_system_entries = entries.select do |entry|
+      entry[:type] == RULE_TYPE_SYSTEM && installation_system_rule_ids.include?(entry[:id].to_s)
+    end.index_by { |entry| entry[:id] }
 
     default_system_entries = installation_system_rules.map.with_index do |rule, index|
       existing_rule = existing_system_entries[rule[:id]]
@@ -971,7 +985,7 @@ class Captain::Assistant < ApplicationRecord
       )
     end
 
-    default_system_entries + non_system_entries
+    default_system_entries + custom_entries
   end
 
   def normalize_rule_entries(entries)

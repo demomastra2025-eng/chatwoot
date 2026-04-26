@@ -32,6 +32,8 @@ class Llm::StructuredOutputPolicy
         prepare_retry!(chat: chat, response: response, error: e, attempt: attempts)
         retry
       end
+
+      response
     end
 
     def normalize_response!(chat:, response:)

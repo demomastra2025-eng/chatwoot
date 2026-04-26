@@ -21,7 +21,7 @@ class Captain::Runtime::Agent
 
   def register_handoffs(*agents)
     @mutex.synchronize do
-      @handoff_agents.concat(agents)
+      @handoff_agents.concat(agents.flatten.compact.reject { |agent| agent.equal?(self) || agent.name == name })
       @handoff_agents.uniq!
     end
     self

@@ -220,6 +220,28 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil })
     end
 
+    it 'converts blank structured agent output into a provider-error handoff payload' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'handoff_message' => '' },
+          context: { current_agent: 'scenario_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to eq(
+        {
+          'response' => described_class::PROVIDER_ERROR_RESPONSE,
+          'reasoning' => 'Provider error occurred: Assistant runtime returned a blank response',
+          'error_class' => 'Captain::Assistant::AgentRunnerService::BlankResponseError',
+          'error_message' => 'Assistant runtime returned a blank response'
+        }
+      )
+    end
+
     it 'returns a standardized handoff payload when the runtime requests a human handoff' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(

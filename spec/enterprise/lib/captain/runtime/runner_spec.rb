@@ -192,6 +192,27 @@ RSpec.describe Captain::Runtime::Runner do
       expect(second_chat.schema).to be_nil
     end
 
+    it 'blocks self-handoff instead of rebuilding the same agent again' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
+      self_handoff_response = RubyLLM::Tool::Halt.new('Transferred to assistant')
+      chat = RuntimeRunnerSpecChat.new(ask_response: self_handoff_response)
+
+      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+
+      result = runner.run(
+        agent,
+        'handoff to yourself',
+        context: { pending_handoff: { target_agent: agent } },
+        registry: { agent.name => agent },
+        llm_context: llm_context
+      )
+
+      expect(result.output).to be_nil
+      expect(result.error).to be_a(described_class::SelfHandoffError)
+      expect(result.error.message).to eq('Agent assistant_agent attempted to hand off to itself')
+      expect(result.context[:current_agent]).to eq('assistant_agent')
+    end
+
     it 'normalizes structured output when the runtime continues with complete' do
       agent = Captain::Runtime::Agent.new(
         name: 'assistant_agent',
@@ -202,7 +223,7 @@ RSpec.describe Captain::Runtime::Runner do
       )
       response = instance_double(
         RubyLLM::Message,
-        content: { complete: true, reason: 'done' },
+        content: { complete: true, reason: 'done', message: '' },
         tool_call?: false,
         input_tokens: nil,
         output_tokens: nil

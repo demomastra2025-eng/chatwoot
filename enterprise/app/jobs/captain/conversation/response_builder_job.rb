@@ -3,6 +3,27 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+  RECEIPT_ATTACHMENT_CONTEXT = 'The user sent an image after being asked to share a payment receipt/proof. ' \
+                               'Treat the image as the requested receipt/payment confirmation unless it clearly shows otherwise; ' \
+                               'acknowledge the receipt and continue the active booking/confirmation flow.'.freeze
+  RECEIPT_REQUEST_ACTION = '(пришл|отправ|загруз|прикреп|скин|send|share|upload|attach)'.freeze
+  RECEIPT_CONTEXT_TERMS = [
+    'чек',
+    'квитанц',
+    'receipt',
+    'payment\s+proof',
+    'proof\s+of\s+payment',
+    'подтвержден\w*\s+оплат\w*',
+    'оплат\w*.{0,30}(скрин|фото|proof)',
+    'скрин.{0,30}оплат\w*',
+    'фото.{0,30}оплат\w*'
+  ].freeze
+  RECEIPT_CONTEXT_TERM = RECEIPT_CONTEXT_TERMS.join('|').freeze
+  RECEIPT_REQUEST_PATTERN = Regexp.new(
+    "((#{RECEIPT_REQUEST_ACTION}).{0,80}(#{RECEIPT_CONTEXT_TERM}))|" \
+    "((#{RECEIPT_CONTEXT_TERM}).{0,80}(#{RECEIPT_REQUEST_ACTION}))",
+    Regexp::IGNORECASE
+  )
   queue_as :captain_runtime
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
@@ -55,6 +76,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless current_buffer_state_valid?
     return unless conversation_pending?
 
+    normalize_blank_public_response!
+
     if handoff_requested?
       process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens'))
@@ -77,9 +100,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
                  conversation_messages_scope.to_a
                end
 
-    messages.map do |message|
+    messages.each_with_index.map do |message, index|
+      previous_assistant_message = previous_assistant_message_for(messages, index)
       message_hash = {
-        content: prepare_multimodal_message_content(message),
+        content: prepare_multimodal_message_content(message, previous_assistant_message: previous_assistant_message),
         role: determine_role(message)
       }
 
@@ -105,8 +129,29 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     message.message_type == 'incoming' ? 'user' : 'assistant'
   end
 
-  def prepare_multimodal_message_content(message)
-    Captain::OpenAiMessageBuilderService.new(message: message).generate_content
+  def prepare_multimodal_message_content(message, previous_assistant_message: nil)
+    content = Captain::OpenAiMessageBuilderService.new(message: message).generate_content
+    return content unless receipt_image_after_request?(message, previous_assistant_message)
+
+    append_receipt_attachment_context(content)
+  end
+
+  def previous_assistant_message_for(messages, index)
+    messages.first(index).reverse.find { |message| message.message_type == 'outgoing' }
+  end
+
+  def receipt_image_after_request?(message, previous_assistant_message)
+    return false unless message.message_type == 'incoming'
+    return false unless previous_assistant_message&.content.to_s.match?(RECEIPT_REQUEST_PATTERN)
+
+    message.attachments.exists?(file_type: :image)
+  end
+
+  def append_receipt_attachment_context(content)
+    context_part = { type: 'text', text: RECEIPT_ATTACHMENT_CONTEXT }
+    return [context_part, *content] if content.is_a?(Array)
+
+    [context_part, { type: 'text', text: content.to_s }]
   end
 
   def wait_for_audio_transcriptions
@@ -149,6 +194,24 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def provider_error_handoff_requested?
     @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
+  end
+
+  def normalize_blank_public_response!
+    return unless blank_public_response?
+
+    @response = @response.merge(
+      'response' => PROVIDER_ERROR_HANDOFF_RESPONSE,
+      'reasoning' => 'Provider error occurred: Assistant runtime returned a blank response',
+      'error_class' => Captain::Assistant::AgentRunnerService::BlankResponseError.name,
+      'error_message' => 'Assistant runtime returned a blank response'
+    )
+  end
+
+  def blank_public_response?
+    return false if @response.blank?
+    return false if handoff_requested?
+
+    @response['response'].blank?
   end
 
   def process_action(action)
