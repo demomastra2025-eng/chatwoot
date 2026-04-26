@@ -43,5 +43,23 @@ RSpec.describe Conversations::PermissionFilterService do
         expect(result.count).to eq(2)
       end
     end
+
+    context 'when actor is a Captain assistant' do
+      let(:assistant) { create(:captain_assistant, account: account) }
+      let(:other_inbox) { create(:inbox, account: account) }
+      let!(:other_conversation) { create(:conversation, account: account, inbox: other_inbox) }
+
+      before do
+        create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      end
+
+      it 'returns conversations from the assistant connected inboxes only' do
+        result = described_class.new(account.conversations, assistant, account).perform
+
+        expect(result).to include(conversation)
+        expect(result).to include(another_conversation)
+        expect(result).not_to include(other_conversation)
+      end
+    end
   end
 end

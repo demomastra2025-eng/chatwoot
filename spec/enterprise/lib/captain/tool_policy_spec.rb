@@ -65,8 +65,8 @@ RSpec.describe Captain::ToolPolicy do
       expect(allowed).to be(true)
     end
 
-    it 'still blocks tools outside the allowed scope' do
-      tool_definition = Captain::ToolRegistry.definition_for('search_documentation').to_h
+    it 'still blocks assistant-only tools outside the allowed scope' do
+      tool_definition = Captain::ToolRegistry.definition_for('create_webhook').to_h
 
       allowed = described_class.runtime_allowed?(
         tool_definition,

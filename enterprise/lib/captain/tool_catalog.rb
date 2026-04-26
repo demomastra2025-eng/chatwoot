@@ -38,11 +38,11 @@ class Captain::ToolCatalog
       return if tool_id.blank?
 
       if ActiveModel::Type::Boolean.new.cast(tool_definition[:custom])
-        build_custom_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+        build_custom_tool(tool_id, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation)
       elsif tool_definition[:provider].to_s == 'mcp'
-        build_mcp_tool(tool_definition, assistant:, scope_name:, user:, conversation:)
+        build_mcp_tool(tool_definition, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation)
       else
-        build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:)
+        build_registered_tool(tool_id, assistant: assistant, scope_name: scope_name, user: user, conversation: conversation)
       end
     end
 
@@ -79,6 +79,8 @@ class Captain::ToolCatalog
 
       if scope_name.to_s == Captain::ToolAccess::SCOPE_ASSISTANT
         tool_class.new(assistant, user: user, conversation: conversation)
+      elsif tool_class <= Captain::Tools::Agent::AccountToolAdapter
+        tool_class.new(assistant, tool_id: tool_id)
       else
         tool_class.new(assistant)
       end

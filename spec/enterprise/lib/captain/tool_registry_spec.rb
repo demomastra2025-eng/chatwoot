@@ -42,6 +42,22 @@ RSpec.describe Captain::ToolRegistry do
       )
     end
 
+    it 'opens non-admin business tools to the customer-facing agent scope' do
+      agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+
+      expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
+      expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
+      expect(agent_tool_ids.size).to eq(61)
+    end
+
+    it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
+      agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+      assistant_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+
+      expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
+      expect(assistant_tool_ids).to include(*assistant_only_admin_tool_ids)
+    end
+
     it 'annotates built-in tools with risk and scope metadata' do
       definition = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'create_deal' }
 
@@ -91,5 +107,27 @@ RSpec.describe Captain::ToolRegistry do
         end
       end
     end
+  end
+
+  def expected_agent_business_tool_ids
+    all_tool_ids - assistant_only_admin_tool_ids
+  end
+
+  def all_tool_ids
+    described_class.definitions.map(&:id)
+  end
+
+  def assistant_only_admin_tool_ids
+    %w[
+      add_appointment_payment
+      execute_macro
+      get_whatsapp_web_diagnostics
+      reconnect_whatsapp_web
+      create_label
+      update_label
+      retry_failed_campaign_deliveries
+      create_webhook
+      update_webhook
+    ]
   end
 end

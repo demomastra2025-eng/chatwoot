@@ -83,6 +83,38 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool).to be_a(Captain::Tools::SearchDocumentationService)
     end
 
+    it 'builds delegated account tools for the customer-facing agent scope' do
+      tool = described_class.build_tool(
+        { id: 'search_available_slots', custom: false },
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(tool).to be_a(Captain::Tools::Agent::AccountToolAdapter)
+      expect(tool.name).to eq('search_available_slots')
+      expect(tool.description).to include('Search appointment slots')
+      expect(tool.parameters.keys.map(&:to_s)).to include('from', 'to')
+    end
+
+    it 'builds every built-in customer-facing agent tool with runnable metadata' do
+      Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).each do |tool_definition|
+        tool = described_class.build_tool(
+          tool_definition,
+          assistant: assistant,
+          scope_name: Captain::ToolAccess::SCOPE_AGENT
+        )
+
+        aggregate_failures(tool_definition[:id]) do
+          expect(tool).to be_present
+          expect(tool.name).to eq(tool_definition[:id])
+          expect(tool.description).to be_present
+          expect(tool.parameters).to be_a(Hash)
+          expect(tool.params_schema).to be_present if tool.parameters.present?
+          expect(tool).to be_active
+        end
+      end
+    end
+
     it 'builds a custom assistant tool via the custom tool record' do
       custom_tool = create(:captain_custom_tool, account: account)
 

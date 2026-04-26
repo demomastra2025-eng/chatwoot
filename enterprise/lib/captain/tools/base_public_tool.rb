@@ -6,6 +6,10 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
     super()
   end
 
+  def name
+    @name ||= Captain::ToolRegistry.definition_for_class(self.class, scope_name: tool_scope_name)&.id || super
+  end
+
   def active?
     true
   end
