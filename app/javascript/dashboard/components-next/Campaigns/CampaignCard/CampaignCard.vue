@@ -51,6 +51,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  aiSender: {
+    type: Object,
+    default: null,
+  },
   inbox: {
     type: Object,
     default: null,
@@ -407,6 +411,8 @@ const canResumeCampaign = computed(
         />
         <SMSCampaignDetails
           v-else
+          :sender="sender"
+          :ai-sender="aiSender"
           :inbox-name="inboxName"
           :inbox-icon="inboxIcon"
           :scheduled-at="scheduledAt"

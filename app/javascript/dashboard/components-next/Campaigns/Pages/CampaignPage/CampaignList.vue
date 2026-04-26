@@ -61,6 +61,7 @@ const handleResume = campaign => emit('resume', campaign);
       :is-enabled="campaign.enabled"
       :status="campaign.campaign_status"
       :sender="campaign.sender"
+      :ai-sender="campaign.ai_sender"
       :inbox="campaign.inbox"
       :scheduled-at="campaign.scheduled_at"
       :latest-run="campaign.latest_run"
