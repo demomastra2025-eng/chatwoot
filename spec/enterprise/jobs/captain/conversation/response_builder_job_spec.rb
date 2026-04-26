@@ -12,6 +12,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     let(:mock_agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
 
     before do
+      captain_inbox_association
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
 
       allow(inbox).to receive(:captain_active?).and_return(true)
@@ -98,6 +99,20 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
         account.reload
         expect(account.usage_limits[:captain][:responses][:consumed]).to eq(1)
+      end
+
+      it 'creates the public handoff message when the V2 handoff tool already opened the conversation' do
+        allow(mock_agent_runner_service).to receive(:generate_response) do
+          conversation.bot_handoff!
+          { 'response' => '', 'handoff_tool_called' => true }
+        end
+
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.status).to eq('open')
+        expect(conversation.messages.outgoing.last.content).to eq(I18n.t('conversations.captain.handoff'))
+        expect(conversation.waiting_since).to be_present
       end
     end
 

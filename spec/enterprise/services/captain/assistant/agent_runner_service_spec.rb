@@ -31,6 +31,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(scenario).to receive(:agent).and_return(mock_scenario_agent)
     allow(Agents::Runner).to receive(:with_agents).and_return(mock_runner)
     allow(mock_runner).to receive(:run).and_return(mock_result)
+    allow(mock_runner).to receive(:on_tool_complete).and_return(mock_runner)
     allow(mock_agent).to receive(:register_handoffs)
     allow(mock_scenario_agent).to receive(:register_handoffs)
   end
@@ -165,7 +166,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'processes and formats agent result' do
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil })
+      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
+    end
+
+    it 'surfaces the V2 handoff tool flag from the runner context' do
+      result_context = { captain_v2_handoff_tool_called: true }
+      result = instance_double(Agents::RunResult, output: { 'response' => '' }, context: result_context)
+      allow(mock_runner).to receive(:run).and_return(result)
+
+      response = service.generate_response(message_history: message_history)
+
+      expect(response['handoff_tool_called']).to be true
     end
 
     context 'when no scenarios are enabled' do
@@ -192,7 +203,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(result).to eq({
                                'response' => 'Simple string response',
                                'reasoning' => 'Processed by agent',
-                               'agent_name' => nil
+                               'agent_name' => nil,
+                               'handoff_tool_called' => false
                              })
       end
     end
@@ -214,7 +226,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
         expect(result).to eq({
                                'response' => 'conversation_handoff',
-                               'reasoning' => 'Error occurred: Test error'
+                               'reasoning' => 'Error occurred: Test error',
+                               'handoff_tool_called' => false
                              })
       end
 
@@ -235,7 +248,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
           expect(result).to eq({
                                  'response' => 'conversation_handoff',
-                                 'reasoning' => 'Error occurred: Test error'
+                                 'reasoning' => 'Error occurred: Test error',
+                                 'handoff_tool_called' => false
                                })
         end
       end
