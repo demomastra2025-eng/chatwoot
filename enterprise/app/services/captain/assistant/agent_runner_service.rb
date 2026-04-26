@@ -59,7 +59,8 @@ class Captain::Assistant::AgentRunnerService
 
     if result.context&.dig(:pending_human_handoff).present?
       return human_handoff_response(result.context[:pending_human_handoff],
-                                    result.context[:current_agent])
+                                    result.context[:current_agent],
+                                    handoff_tool_called: handoff_tool_called)
     end
 
     output = result.output
@@ -301,16 +302,18 @@ class Captain::Assistant::AgentRunnerService
     }
   end
 
-  def human_handoff_response(handoff_payload, agent_name)
+  def human_handoff_response(handoff_payload, agent_name, handoff_tool_called: false)
     reason = handoff_payload[:reason].presence || handoff_payload['reason'].presence
     message = handoff_payload[:message].presence || handoff_payload['message'].presence
 
-    {
+    response = {
       'response' => 'conversation_handoff',
       'reasoning' => reason.present? ? "Human handoff requested: #{reason}" : 'Human handoff requested',
       'handoff_reason' => reason,
       'handoff_message' => message,
       'agent_name' => agent_name
-    }.compact
+    }
+    response['handoff_tool_called'] = true if handoff_tool_called
+    response.compact
   end
 end

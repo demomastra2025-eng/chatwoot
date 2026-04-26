@@ -259,6 +259,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           output: 'conversation_handoff',
           context: {
             current_agent: 'assistant_agent',
+            captain_v2_handoff_tool_called: true,
             pending_human_handoff: {
               reason: 'Needs manual review',
               message: 'I’m connecting you with a human support specialist.'
@@ -276,7 +277,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
           'handoff_message' => 'I’m connecting you with a human support specialist.',
-          'agent_name' => 'assistant_agent'
+          'agent_name' => 'assistant_agent',
+          'handoff_tool_called' => true
         }
       )
     end
