@@ -15,6 +15,17 @@ Carry rule:
 - Do not apply when the upstream change changes Onelink product semantics, replaces local architecture, or creates integration risk.
 - Ask for a product decision only on true dilemmas.
 
+## Accepted Decisions
+
+These decisions were accepted on 2026-04-26 and close the previous open product questions:
+
+- Voice calls: keep `Telephony::CallSession` as the canonical Onelink call entity. Do not add upstream `Call` / `calls`; only borrow lifecycle, status normalization, message-linking, and analytics ideas into the existing telephony model when useful.
+- Captain custom tools: keep current Onelink runtime and access model. Do not carry upstream `response_bot -> custom_tools` entitlement migration, paywall semantics, or plan exposure changes in this branch.
+- Assignment: keep `assignment_v2` disabled by default for new accounts. Carry bugfixes and capacity fixes only where they do not change default account behavior.
+- Signup enrichment: defer Context.dev / Firecrawl account enrichment. Basic deterministic brand/social parsing can be reconsidered later as a separate onboarding feature.
+- Signup verification: do not enforce a strict verify-before-dashboard policy in this carry. Keep signup flows compatible with current Onelink self-serve, API-only, and partner onboarding behavior.
+- Versioning: do not bump Onelink to plain `4.13.0`. This is a selective carry branch, not full upstream compatibility.
+
 ## Applied
 
 ### Safe / Direct Or Near-Direct
@@ -87,7 +98,6 @@ Carry rule:
 
 ### Auth / Signup / Security
 
-- `4f94ad4a75` signup verification flow applied with Onelink adaptations.
 - `211fb1102d` rotates OAuth password if user is unconfirmed.
 - `699b12b1d3` blocks inline images in message signatures.
 - `f13f3ba446` logs only system API key LLM failures to exception tracker.
@@ -104,7 +114,6 @@ Carry rule:
 
 ## Applied With Onelink Adaptation
 
-- Signup verification preserves Onelink legal consent, business-email validation, RU/KK locale keys, and API-only signup response behavior.
 - Auto-assignment cron removal preserves Onelink `ENABLE_SIDEKIQ_CRON` and `Integrations::Medelement::CronScheduleService.sync_all!`.
 - Custom tools runtime keeps Onelink feature/gating behavior and does not apply upstream `response_bot -> custom_tools` paywall semantics.
 - Document auto-sync does not add upstream `captain_documents.sync_status` columns because Onelink already uses Firecrawl metadata-backed sync state.
@@ -148,10 +157,21 @@ Carry rule:
   - Reason: non-functional repo maintenance.
 - `42163946eb` and `3190b29fe9` NewRelic ignore + immediate revert.
   - Reason: upstream net no-op.
+- `4f94ad4a75` signup verification flow.
+  - Reason: accepted decision is to avoid strict verify-before-dashboard behavior in this carry and preserve current Onelink self-serve, API-only, and partner onboarding flows.
 - `e123a4e500` version bump to `4.13.0`.
-  - Reason: only after final acceptance of the carry branch.
+  - Reason: this is a selective carry branch, not full upstream `4.13.0` compatibility.
 - `5264de24b0` document DB sync columns.
   - Reason: conflicts with Onelink Firecrawl metadata sync model.
+
+## Decision Audit Status
+
+- Upstream `Call` / `calls` is not present; Onelink keeps `Telephony::CallSession`.
+- Upstream `response_bot -> custom_tools` entitlement migration and Custom Tools paywall are not present.
+- `assignment_v2` remains disabled by default in `config/features.yml`.
+- Context.dev / Firecrawl account enrichment is not present.
+- Strict signup verification was removed after the accepted decision; current signup flow keeps auth headers and dashboard redirect behavior.
+- Version files remain Onelink-specific and are not bumped to plain `4.13.0`.
 
 ## Verification Notes
 
@@ -170,10 +190,8 @@ Blocked:
 - Targeted RSpec does not start because local PostgreSQL is not running on `127.0.0.1:5432`.
 - The failure occurs before examples: `ActiveRecord::ConnectionNotEstablished` / `PG::ConnectionBad`.
 
-## Current Open Questions
+## Remaining Acceptance Work
 
-1. Do we keep `Telephony::CallSession` as canonical and skip upstream `Call`, or design a compatibility layer?
-2. Do we want upstream custom tools paywall/feature flag semantics, or keep current Onelink Captain access?
-3. Should new accounts get `assignment_v2` enabled by default?
-4. Do we want account enrichment through Context.dev/Firecrawl during signup?
-5. Should the branch version be bumped to `4.13.0` after QA, or keep Onelink-specific versioning?
+1. Re-run targeted specs after local PostgreSQL is available.
+2. Re-check final branch diff before merge into `onelink-main`.
+3. After merge into `onelink-main`, reconcile the active `feature/workspace-20260327` branch separately because it contains newer telephony work.
