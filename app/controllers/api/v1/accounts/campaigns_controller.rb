@@ -3,7 +3,7 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
   before_action :check_authorization
 
   def index
-    @campaigns = Current.account.campaigns.includes(:sender, :inbox, :campaign_runs)
+    @campaigns = Current.account.campaigns.includes(:sender, :captain_assistant, :inbox, :campaign_runs)
   end
 
   def show; end
@@ -73,12 +73,23 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
 
   def permitted_campaign_params
     params.fetch(:campaign, params).permit(
-      :title, :description, :message, :instructions, :text_mode, :enabled, :trigger_only_during_business_hours, :inbox_id, :sender_id, :scheduled_at,
+      :title, :description, :message, :instructions, :text_mode, :enabled, :trigger_only_during_business_hours, :inbox_id, :sender_id,
+      :captain_assistant_id, :scheduled_at,
       audience: [:type, :id], trigger_rules: {}, template_params: {}
     )
   end
 
   def campaign_params
-    permitted_campaign_params
+    permitted_campaign_params.tap do |campaign_attributes|
+      assign_default_sender_for_create(campaign_attributes)
+    end
+  end
+
+  def assign_default_sender_for_create(campaign_attributes)
+    return unless action_name == 'create'
+    return if Current.user.blank?
+    return if campaign_attributes.key?(:sender_id) || campaign_attributes.key?('sender_id')
+
+    campaign_attributes[:sender_id] = Current.user.id
   end
 end

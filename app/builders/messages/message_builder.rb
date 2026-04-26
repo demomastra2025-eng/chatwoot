@@ -22,6 +22,7 @@ class Messages::MessageBuilder
 
   def perform
     @message = @conversation.messages.build(message_params)
+    @message.preserve_waiting_since = preserve_waiting_since?
     process_attachments
     process_emails
     # When the message has no quoted content, it will just be rendered as a regular message
@@ -133,6 +134,10 @@ class Messages::MessageBuilder
     return if @params[:delivery_policy].blank?
 
     JSON.parse(@params[:delivery_policy].to_json)
+  end
+
+  def preserve_waiting_since?
+    ActiveModel::Type::Boolean.new.cast(@params[:preserve_waiting_since])
   end
 
   def additional_attributes

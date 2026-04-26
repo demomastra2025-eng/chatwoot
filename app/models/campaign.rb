@@ -19,6 +19,7 @@
 #  created_at                         :datetime         not null
 #  updated_at                         :datetime         not null
 #  account_id                         :bigint           not null
+#  captain_assistant_id                :bigint
 #  display_id                         :integer          not null
 #  inbox_id                           :bigint           not null
 #  sender_id                          :integer
@@ -28,6 +29,7 @@
 #  index_campaigns_on_account_id       (account_id)
 #  index_campaigns_on_campaign_status  (campaign_status)
 #  index_campaigns_on_campaign_type    (campaign_type)
+#  index_campaigns_on_captain_assistant_id  (captain_assistant_id)
 #  index_campaigns_on_inbox_id         (inbox_id)
 #  index_campaigns_on_scheduled_at     (scheduled_at)
 #
@@ -46,12 +48,15 @@ class Campaign < ApplicationRecord
   validate :validate_url
   validate :prevent_terminal_campaign_from_update, on: :update
   validate :sender_must_belong_to_account
+  validate :captain_assistant_must_belong_to_account
+  validate :captain_assistant_must_be_connected_to_inbox
   validate :inbox_must_belong_to_account
   validate :validate_ai_authoring_availability
 
   belongs_to :account
   belongs_to :inbox
   belongs_to :sender, class_name: 'User', optional: true
+  belongs_to :captain_assistant, class_name: 'Captain::Assistant', optional: true
 
   enum campaign_type: { ongoing: 0, one_off: 1 }
   # TODO : enabled attribute is unneccessary . lets move that to the campaign status with additional statuses like draft, disabled etc.
@@ -73,6 +78,7 @@ class Campaign < ApplicationRecord
   end
 
   before_validation :normalize_text_mode
+  before_validation :assign_captain_assistant_from_inbox
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?
 
@@ -196,6 +202,22 @@ class Campaign < ApplicationRecord
     errors.add(:sender_id, 'must belong to the same account as the campaign')
   end
 
+  def captain_assistant_must_belong_to_account
+    return unless captain_assistant
+
+    return if captain_assistant.account_id == account_id
+
+    errors.add(:captain_assistant_id, 'must belong to the same account as the campaign')
+  end
+
+  def captain_assistant_must_be_connected_to_inbox
+    return unless agent?
+    return if captain_assistant.blank? || inbox.blank?
+    return if captain_assistant.inboxes.exists?(id: inbox_id)
+
+    errors.add(:captain_assistant_id, 'must be configured for the campaign inbox')
+  end
+
   def validate_ai_authoring_availability
     return unless agent?
 
@@ -204,10 +226,17 @@ class Campaign < ApplicationRecord
       return
     end
 
-    return unless inbox.respond_to?(:captain_assistant)
-    return if inbox.captain_assistant.present?
+    return if captain_assistant.present?
 
     errors.add(:inbox_id, 'must have a configured AI assistant')
+  end
+
+  def assign_captain_assistant_from_inbox
+    return unless agent?
+    return if captain_assistant.present?
+    return unless inbox.respond_to?(:captain_assistant)
+
+    self.captain_assistant = inbox.captain_assistant
   end
 
   def prevent_terminal_campaign_from_update

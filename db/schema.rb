@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_25_153237) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_26_065856) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -354,9 +354,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_25_153237) do
     t.jsonb "template_params"
     t.integer "text_mode", default: 0, null: false
     t.text "instructions"
+    t.bigint "captain_assistant_id"
     t.index ["account_id"], name: "index_campaigns_on_account_id"
     t.index ["campaign_status"], name: "index_campaigns_on_campaign_status"
     t.index ["campaign_type"], name: "index_campaigns_on_campaign_type"
+    t.index ["captain_assistant_id"], name: "index_campaigns_on_captain_assistant_id"
     t.index ["inbox_id"], name: "index_campaigns_on_inbox_id"
     t.index ["scheduled_at"], name: "index_campaigns_on_scheduled_at"
   end
@@ -2189,6 +2191,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_25_153237) do
   add_foreign_key "campaign_runs", "accounts"
   add_foreign_key "campaign_runs", "campaigns"
   add_foreign_key "campaign_runs", "inboxes"
+  add_foreign_key "campaigns", "captain_assistants"
   add_foreign_key "captain_mcp_servers", "accounts"
   add_foreign_key "confirmation_requests", "accounts"
   add_foreign_key "confirmation_requests", "contacts"

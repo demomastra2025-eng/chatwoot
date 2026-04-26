@@ -15,7 +15,8 @@ class Campaigns::CaptainGeneratedMessageService
   def perform
     raise ArgumentError, 'Captain runtime is not available' unless defined?(Captain::Assistant::AgentRunnerService)
 
-    assistant = generation_assistant(resolve_base_assistant!)
+    base_assistant = resolve_base_assistant!
+    assistant = generation_assistant(base_assistant)
     response = with_executor(assistant) do
       Captain::Assistant::AgentRunnerService.new(
         assistant: assistant,
@@ -29,7 +30,7 @@ class Campaigns::CaptainGeneratedMessageService
     raise ArgumentError, 'Captain generated blank campaign content' if content.blank?
 
     {
-      assistant: assistant,
+      assistant: base_assistant,
       content: content,
       captain_trace: response[:captain_trace]
     }.compact
@@ -38,7 +39,7 @@ class Campaigns::CaptainGeneratedMessageService
   private
 
   def resolve_base_assistant!
-    assistant = conversation.inbox&.captain_assistant
+    assistant = campaign.captain_assistant || conversation.inbox&.captain_assistant
     raise ArgumentError, 'Captain assistant is not configured for this campaign' if assistant.blank?
 
     assistant

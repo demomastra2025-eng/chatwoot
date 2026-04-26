@@ -310,6 +310,138 @@ RSpec.describe 'Campaigns API', type: :request do
         expect(JSON.parse(response.body, symbolize_names: true)[:title]).to eq('test')
       end
 
+      it 'defaults the campaign sender to the authenticated creator when sender_id is omitted' do
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: { inbox_id: inbox.id, title: 'test', message: 'test message' },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        campaign = Campaign.find_by!(display_id: response_data[:id])
+
+        expect(campaign.sender).to eq(administrator)
+        expect(response_data.dig(:sender, :id)).to eq(administrator.id)
+      end
+
+      it 'preserves an explicitly selected campaign sender' do
+        selected_sender = create(:user, account: account, role: :agent)
+
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: { inbox_id: inbox.id, title: 'test', message: 'test message', sender_id: selected_sender.id },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        campaign = Campaign.find_by!(display_id: response_data[:id])
+
+        expect(campaign.sender).to eq(selected_sender)
+        expect(response_data.dig(:sender, :id)).to eq(selected_sender.id)
+      end
+
+      it 'preserves an explicitly blank campaign sender for bot-authored campaigns' do
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: { inbox_id: inbox.id, title: 'test', message: 'test message', sender_id: nil },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        campaign = Campaign.find_by!(display_id: response_data[:id])
+
+        expect(campaign.sender).to be_nil
+        expect(response_data[:sender]).to be_blank
+      end
+
+      it 'rejects a campaign sender from another account' do
+        external_sender = create(:user, account: create(:account), role: :agent)
+
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: { inbox_id: inbox.id, title: 'test', message: 'test message', sender_id: external_sender.id },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Campaign.where(account: account, title: 'test')).to be_empty
+      end
+
+      it 'serializes the configured AI agent for AI-authored scheduled campaigns' do
+        email_channel = create(:channel_email, account: account)
+        assistant = create(:captain_assistant, account: account, name: 'Sales AI')
+        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: assistant)
+
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: {
+               inbox_id: email_channel.inbox.id,
+               title: 'AI follow-up',
+               message: '',
+               instructions: 'Write a short follow-up',
+               text_mode: 'agent',
+               scheduled_at: 1.day.from_now
+             },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+
+        response_data = JSON.parse(response.body, symbolize_names: true)
+        campaign = Campaign.find_by!(display_id: response_data[:id])
+
+        expect(campaign.captain_assistant).to eq(assistant)
+        expect(response_data[:text_mode]).to eq('agent')
+        expect(response_data.dig(:ai_sender, :type)).to eq('captain_assistant')
+        expect(response_data.dig(:ai_sender, :id)).to eq(assistant.id)
+        expect(response_data.dig(:ai_sender, :name)).to eq('Sales AI')
+      end
+
+      it 'rejects an explicitly provided AI agent from another account' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: create(:captain_assistant, account: account))
+        external_assistant = create(:captain_assistant, account: create(:account), name: 'External AI')
+
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: {
+               inbox_id: email_channel.inbox.id,
+               title: 'AI follow-up',
+               message: '',
+               instructions: 'Write a short follow-up',
+               text_mode: 'agent',
+               captain_assistant_id: external_assistant.id,
+               scheduled_at: 1.day.from_now
+             },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Campaign.where(account: account, title: 'AI follow-up')).to be_empty
+      end
+
+      it 'rejects an explicitly provided AI agent that is not configured for the selected inbox' do
+        email_channel = create(:channel_email, account: account)
+        create(:captain_inbox, inbox: email_channel.inbox, captain_assistant: create(:captain_assistant, account: account))
+        other_assistant = create(:captain_assistant, account: account, name: 'Other AI')
+
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: {
+               inbox_id: email_channel.inbox.id,
+               title: 'AI follow-up',
+               message: '',
+               instructions: 'Write a short follow-up',
+               text_mode: 'agent',
+               captain_assistant_id: other_assistant.id,
+               scheduled_at: 1.day.from_now
+             },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Campaign.where(account: account, title: 'AI follow-up')).to be_empty
+      end
+
       it 'creates a new ongoing campaign' do
         post "/api/v1/accounts/#{account.id}/campaigns",
              params: { inbox_id: inbox.id, title: 'test', message: 'test message', trigger_rules: { url: 'https://test.com' } },
@@ -432,6 +564,19 @@ RSpec.describe 'Campaigns API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(JSON.parse(response.body, symbolize_names: true)[:title]).to eq('test')
+      end
+
+      it 'does not overwrite the existing sender when update omits sender_id' do
+        selected_sender = create(:user, account: account, role: :agent)
+        campaign.update!(sender: selected_sender)
+
+        patch "/api/v1/accounts/#{account.id}/campaigns/#{campaign.display_id}",
+              params: { inbox_id: inbox.id, title: 'updated', message: 'updated message' },
+              headers: administrator.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(campaign.reload.sender).to eq(selected_sender)
       end
     end
   end

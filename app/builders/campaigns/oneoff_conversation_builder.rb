@@ -56,24 +56,33 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def generated_campaign_content
+    return generated_campaign_payload[:content] if campaign_agent?
     return @generated_campaign_content if defined?(@generated_campaign_content)
 
-    @generated_campaign_content =
-      if campaign_agent?
-        Campaigns::CaptainGeneratedMessageService.new(
-          campaign: campaign,
-          conversation: @conversation
-        ).perform[:content]
-      else
-        Outbound::RenderedTextService.new(
-          content: campaign.message,
-          conversation: @conversation,
-          contact: contact,
-          inbox: campaign_inbox,
-          account: campaign_account,
-          sender: campaign_sender
-        ).render
-      end
+    @generated_campaign_content = Outbound::RenderedTextService.new(
+      content: campaign.message,
+      conversation: @conversation,
+      contact: contact,
+      inbox: campaign_inbox,
+      account: campaign_account,
+      sender: campaign_sender
+    ).render
+  end
+
+  def generated_campaign_payload
+    return {} unless campaign_agent?
+    return @generated_campaign_payload if defined?(@generated_campaign_payload)
+
+    @generated_campaign_payload = Campaigns::CaptainGeneratedMessageService.new(
+      campaign: campaign,
+      conversation: @conversation
+    ).perform.with_indifferent_access
+  end
+
+  def campaign_sender
+    return generated_campaign_payload[:assistant] if campaign_agent?
+
+    campaign.sender
   end
 
   def message_params
@@ -81,6 +90,7 @@ class Campaigns::OneoffConversationBuilder
                                        content: generated_campaign_content,
                                        campaign_id: campaign.id,
                                        campaign_run_id: campaign_run&.id,
+                                       preserve_waiting_since: true,
                                        template_params: campaign_template_params
                                      })
   end
@@ -116,9 +126,11 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def base_conversation_additional_attributes
-    return {} unless campaign_inbox.email?
+    attributes = { outbound_campaign_id: campaign.id }
+    attributes[:outbound_campaign_run_id] = campaign_run.id if campaign_run.present?
+    attributes[:mail_subject] = campaign.title if campaign_inbox.email?
 
-    { mail_subject: campaign.title }
+    attributes
   end
 
   def existing_campaign_conversation

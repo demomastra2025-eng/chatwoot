@@ -44,6 +44,91 @@ describe Campaigns::OneoffConversationBuilder do
         expect(message.conversation.contact_inbox.source_id).to eq(contact.phone_number.delete('+'))
       end
 
+      it 'sends the campaign message from the selected campaign sender without treating it as a human reply' do
+        sender = create(:user, account: account, role: :agent)
+        campaign.update!(sender: sender)
+
+        message = builder.perform
+
+        expect(message.sender).to eq(sender)
+        expect(message.sender_type).to eq('User')
+        expect(message.send(:human_response?)).to be(false)
+        expect(message.additional_attributes['campaign_id']).to eq(campaign.id)
+      end
+
+      it 'keeps a new outbound campaign conversation resolved even when the inbox has an active Captain bot' do
+        account.update!(limits: account.limits.merge('captain_tokens' => 100, 'captain_responses' => 100))
+        create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+
+        expect(inbox.reload).to be_active_bot
+
+        message = builder.perform
+
+        expect(message.conversation).to be_resolved
+        expect(message.conversation.waiting_since).to be_nil
+        expect(message.conversation.additional_attributes['outbound_campaign_id']).to eq(campaign.id)
+      end
+
+      it 'preserves the status of reused single conversations instead of opening or closing them' do
+        sender = create(:user, account: account, role: :agent)
+        campaign.update!(sender: sender)
+        existing_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '77001234567')
+
+        {
+          pending: 'pending',
+          open: 'open',
+          resolved: 'resolved'
+        }.each do |status_name, status|
+          existing_conversation = create(
+            :conversation,
+            account: account,
+            inbox: inbox,
+            contact: contact,
+            contact_inbox: existing_contact_inbox,
+            status: status,
+            created_at: Time.current + Conversation.count.seconds
+          )
+          waiting_since = status_name == :pending ? 30.minutes.ago : nil
+          existing_conversation.update!(waiting_since: waiting_since)
+
+          message = described_class.new(campaign: campaign, contact: contact).perform
+
+          expect(message.conversation_id).to eq(existing_conversation.id)
+          expect(message.conversation.reload.status).to eq(status)
+          expect(message.conversation.waiting_since.to_i).to eq(waiting_since.to_i) if waiting_since.present?
+        end
+      end
+
+      it 'preserves waiting_since on reused pending conversations for AI-authored campaign messages' do
+        assistant = create(:captain_assistant, account: account, name: 'Sales AI')
+        create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+        campaign.update!(message: '', instructions: 'Write a short follow-up', text_mode: :agent)
+        existing_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '77001234567')
+        existing_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          contact: contact,
+          contact_inbox: existing_contact_inbox,
+          status: 'pending'
+        )
+        waiting_since = 30.minutes.ago
+        existing_conversation.update!(waiting_since: waiting_since)
+        generator = instance_double(
+          Campaigns::CaptainGeneratedMessageService,
+          perform: { content: 'Hello from AI', assistant: assistant }
+        )
+
+        allow(Campaigns::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+
+        message = described_class.new(campaign: campaign, contact: contact).perform
+
+        expect(message.sender).to eq(assistant)
+        expect(message.conversation_id).to eq(existing_conversation.id)
+        expect(message.conversation.reload.status).to eq('pending')
+        expect(message.conversation.waiting_since.to_i).to eq(waiting_since.to_i)
+      end
+
       it 'reuses the same conversation and message on repeated runs' do
         first_message = builder.perform
         second_message = builder.perform
@@ -106,7 +191,14 @@ describe Campaigns::OneoffConversationBuilder do
       end
 
       it 'creates a contact inbox with the provided source id when one does not exist' do
-        whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+        whatsapp_web_channel = nil
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          whatsapp_web_channel = create(:channel_whatsapp_web, account: account)
+        end
         whatsapp_web_inbox = whatsapp_web_channel.inbox
         whatsapp_web_campaign = create(:campaign, inbox: whatsapp_web_inbox, account: account)
 
@@ -177,16 +269,17 @@ describe Campaigns::OneoffConversationBuilder do
         expect(message.conversation.contact_inbox.source_id).to eq('buyer@example.com')
       end
 
-      it 'generates message content with the AI agent when the campaign uses agent mode' do
+      it 'generates and sends message content as the configured AI agent when the campaign uses agent mode' do
+        assistant = create(:captain_assistant, account: account, name: 'Sales AI')
         create(
           :captain_inbox,
           inbox: email_channel.inbox,
-          captain_assistant: create(:captain_assistant, account: account)
+          captain_assistant: assistant
         )
         campaign.update!(message: '', instructions: 'Write a short follow-up', text_mode: :agent)
         generator = instance_double(
           Campaigns::CaptainGeneratedMessageService,
-          perform: { content: 'Hello from AI' }
+          perform: { content: 'Hello from AI', assistant: assistant }
         )
 
         allow(Campaigns::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
@@ -194,10 +287,13 @@ describe Campaigns::OneoffConversationBuilder do
         message = described_class.new(
           campaign: campaign,
           contact: email_contact,
-          source_id: email_contact.email
+          source_id: email_contact.email,
+          conversation_attributes: { additional_attributes: { mail_subject: campaign.title } }
         ).perform
 
         expect(message.content).to eq('Hello from AI')
+        expect(message.sender).to eq(assistant)
+        expect(message.sender_type).to eq('Captain::Assistant')
         expect(Campaigns::CaptainGeneratedMessageService).to have_received(:new).with(
           campaign: campaign,
           conversation: message.conversation
