@@ -305,14 +305,10 @@ Passed in this worktree:
 - JSON parse checks for touched signup locale files.
 - YAML parse check for `config/schedule.yml`.
 - Conflict-marker scans for touched batches.
-
-Blocked:
-
-- Targeted RSpec does not start because local PostgreSQL is not running on `127.0.0.1:5432`.
-- The failure occurs before examples: `ActiveRecord::ConnectionNotEstablished` / `PG::ConnectionBad`.
+- `POSTGRES_PASSWORD=postgres bundle exec rspec spec/controllers/api/v1/accounts_controller_spec.rb` passed after Docker Compose `postgres` / `redis` services were running.
+  - Result: `20 examples, 0 failures`.
 
 ## Remaining Acceptance Work
 
-1. Re-run targeted specs after local PostgreSQL is available.
-2. Re-check final branch diff before merge into `onelink-main`.
-3. After merge into `onelink-main`, reconcile the active `feature/workspace-20260327` branch separately because it contains newer telephony work.
+1. Re-check final branch diff before merge into `onelink-main`.
+2. After merge into `onelink-main`, reconcile the active `feature/workspace-20260327` branch separately because it contains newer telephony work.
