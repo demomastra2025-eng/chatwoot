@@ -71,6 +71,25 @@ EOF
 }
 
 load_env
+
+guard_dev_environment() {
+  if [[ "${RAILS_ENV:-development}" == "production" || "${NODE_ENV:-development}" == "production" ]]; then
+    printf 'Refusing to start dev-hybrid with production environment variables.\n' >&2
+    exit 1
+  fi
+
+  if [[ "${POSTGRES_DATABASE:-chatwoot_dev}" != "chatwoot_dev" ]]; then
+    printf 'Refusing to start dev-hybrid with non-dev database: %s\n' "${POSTGRES_DATABASE:-unset}" >&2
+    exit 1
+  fi
+
+  if [[ "${REDIS_URL:-}" =~ /0($|[?]) ]]; then
+    printf 'Refusing to start dev-hybrid with Redis DB 0. Use a dev Redis DB such as /3.\n' >&2
+    exit 1
+  fi
+}
+
+guard_dev_environment
 setup_dev_hybrid_logging
 cd "${APP_DIR}"
 
