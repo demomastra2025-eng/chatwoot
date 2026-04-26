@@ -37,6 +37,8 @@ class Captain::CustomTool < ApplicationRecord
   # LLM function/tool names are constrained to 64 characters.
   MAX_SLUG_LENGTH = 64
   COLLISION_SUFFIX_LENGTH = 7 # "_" + 6 random alphanumeric chars
+  NAME_SEPARATOR_RUN_REGEX = /#{Regexp.escape(NAME_SEPARATOR)}{2,}/o
+  NAME_SEPARATOR_BOUNDARY_REGEX = /\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/o
   CYRILLIC_TRANSLITERATION_MAP = {
     'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e',
     'ё' => 'yo', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', 'к' => 'k',
@@ -110,8 +112,8 @@ class Captain::CustomTool < ApplicationRecord
     slug_body = transliterated_title
                 .downcase
                 .gsub(/[^a-z0-9]+/, NAME_SEPARATOR)
-                .gsub(/#{Regexp.escape(NAME_SEPARATOR)}{2,}/, NAME_SEPARATOR)
-                .gsub(/\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/, '')
+                .gsub(NAME_SEPARATOR_RUN_REGEX, NAME_SEPARATOR)
+                .gsub(NAME_SEPARATOR_BOUNDARY_REGEX, '')
 
     slug_body.presence || DEFAULT_SLUG_BODY
   end
