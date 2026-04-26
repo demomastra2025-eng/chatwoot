@@ -173,6 +173,127 @@ These decisions were accepted on 2026-04-26 and close the previous open product 
 - Strict signup verification was removed after the accepted decision; current signup flow keeps auth headers and dashboard redirect behavior.
 - Version files remain Onelink-specific and are not bumped to plain `4.13.0`.
 
+## Finalization Record
+
+This branch intentionally carries the useful Chatwoot `v4.13.0` fixes and selected feature improvements without claiming full upstream `4.13.0` compatibility.
+
+Important final commit before this runbook was added:
+
+- `44fdd93403` records the accepted product decisions and removes the strict signup verification flow that had been carried earlier.
+
+Final branch policy:
+
+- publish the sync branch to `origin`;
+- merge into `onelink-main` only after acceptance checks;
+- reconcile `feature/workspace-20260327` after `onelink-main`, because that active branch contains newer telephony/Fonoster work;
+- do not merge this carry straight into the active feature branch as the first integration step.
+
+## Reusable Runbook For `v4.14+`
+
+Use this process for the next Chatwoot release carry, for example `v4.14.0`.
+
+### 1. Create A Dedicated Sync Worktree
+
+- Start from `onelink-main`, not from `develop` and not from an active feature branch.
+- Fetch upstream tags first.
+- Use a dedicated branch and worktree, for example:
+  - `sync/chatwoot-v4.14.0-carry`
+  - `../onelink-sync-v4.14.0-carry`
+
+### 2. Measure Before Carrying
+
+Before cherry-picking or manually porting code, produce the same inventory:
+
+- upstream commit list between the previous accepted upstream tag and the target tag;
+- upstream changed files;
+- local fork changed files from the previous upstream base to `onelink-main`;
+- overlapping files between upstream and local fork changes;
+- hotspot directories, especially `app/javascript/dashboard`, `enterprise`, `app/services`, `config`, `db/migrate`, and provider integrations.
+
+Do not use the overlap count as an automatic yes/no decision. Use it to choose wave size and risk level.
+
+### 3. Classify Every Upstream Commit
+
+Every upstream commit should land in one of these buckets:
+
+- Safe direct or near-direct carry: narrow bugfix, low product coupling, low local overlap.
+- Carry with Onelink adaptation: useful behavior, but local UX/runtime/data model differs.
+- Already covered or no-op: current Onelink code already has equivalent behavior.
+- Needs product decision: changes product semantics, monetization, onboarding, defaults, external dependencies, or core architecture.
+- Intentionally skipped: noisy translation dumps, version bumps, maintenance-only updates, or upstream assumptions that do not fit Onelink.
+
+Keep this classification in the plan file before or while carrying, not only in chat.
+
+### 4. Default Product Decisions Unless Reopened
+
+These defaults should carry forward to `v4.14+` unless there is an explicit new product decision:
+
+- Voice: `Telephony::CallSession` remains canonical. Do not add a parallel upstream `Call` model unless Onelink intentionally designs a compatibility layer.
+- Captain custom tools: keep Onelink runtime and access semantics. Do not adopt upstream paywall or `response_bot -> custom_tools` entitlement migration by default.
+- Assignment: keep `assignment_v2` default behavior conservative. Carry assignment bugfixes separately from new-account default enablement.
+- Signup enrichment: do not add Context.dev, Firecrawl, or similar external enrichment during signup without a separate onboarding decision.
+- Signup verification: do not enforce strict verify-before-dashboard behavior unless current Onelink onboarding policy changes.
+- Versioning: do not bump to a plain upstream version string unless the branch is accepted as full upstream-compatible, which selective carry branches normally are not.
+
+### 5. Carry In Waves
+
+Recommended wave order:
+
+1. Backend safety fixes and provider hardening.
+2. API, webhook, and integration parity fixes.
+3. Help center/editor/dashboard UX fixes, split by subsystem.
+4. Assignment and automation fixes, separated from default-enable or plan semantics.
+5. Captain runtime fixes, separated from paywall, entitlement, and data-model changes.
+6. Product-decision packages only after explicit acceptance.
+7. Version bump and translation dumps last, usually skipped for selective carries.
+
+Commit after coherent batches. Keep commits small enough to revert without losing unrelated carried behavior.
+
+### 6. Stop And Ask
+
+Stop carrying and ask for direction when upstream changes any of these:
+
+- voice/call source of truth;
+- Captain tool access, monetization, or feature flags;
+- assignment defaults for new accounts;
+- signup/onboarding access rules;
+- external enrichment or data-sharing during signup;
+- webhook signing or external integration contracts;
+- account billing/plan semantics;
+- database model replacement rather than additive bugfixes.
+
+### 7. Final Audit Checklist
+
+Before publishing a carry branch, explicitly verify:
+
+- no upstream `Call` / `calls` model was introduced unless intentionally accepted;
+- `config/features.yml` did not flip sensitive defaults such as `assignment_v2`;
+- no upstream custom-tools paywall or entitlement migration slipped in;
+- no external signup enrichment was added;
+- no strict signup verification flow was added unintentionally;
+- version files were not bumped to a plain upstream version by inertia;
+- migrations match accepted behavior and do not introduce skipped product packages;
+- the plan file has `Applied`, `Applied With Onelink Adaptation`, `Already Covered / No-Op`, `Not Applied`, `Decision Audit Status`, and `Verification Notes` sections.
+
+### 8. Verification And Publication
+
+Minimum verification before pushing:
+
+- `git diff --check`;
+- Ruby syntax checks for touched backend/config files;
+- JSON/YAML parse checks for touched locale/config files;
+- ESLint for touched frontend clusters;
+- targeted RSpec for touched backend behavior when PostgreSQL is available.
+
+If PostgreSQL is unavailable, record the exact blocker and do not describe RSpec as passed.
+
+Publication order:
+
+1. push `sync/chatwoot-vX.Y.Z-carry` to `origin`;
+2. review/merge into `onelink-main`;
+3. only then reconcile active feature branches such as `feature/workspace-20260327`;
+4. avoid direct sync-branch merges into unrelated feature branches before `onelink-main` accepts the carry.
+
 ## Verification Notes
 
 Passed in this worktree:
