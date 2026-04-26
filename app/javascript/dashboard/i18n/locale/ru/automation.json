@@ -128,6 +128,7 @@
       "ATLEAST_ONE_ACTION_REQUIRED": "Требуется хотя бы одно действие"
     },
     "NONE_OPTION": "Ничего",
+    "LAST_RESPONDING_AGENT": "Последний ответивший сотрудник",
     "EVENTS": {
       "CONVERSATION_CREATED": "Диалог создан",
       "CONVERSATION_UPDATED": "Диалог обновлён",
@@ -138,6 +139,7 @@
     "ACTIONS": {
       "ASSIGN_AGENT": "Назначить сотрудника",
       "ASSIGN_TEAM": "Назначить команду",
+      "REMOVE_ASSIGNED_AGENT": "Снять назначенного сотрудника",
       "ADD_LABEL": "Добавить метку",
       "REMOVE_LABEL": "Удалить метку",
       "SEND_EMAIL_TO_TEAM": "Отправить Email команде",
@@ -167,6 +169,7 @@
     },
     "ATTRIBUTES": {
       "MESSAGE_TYPE": "Тип сообщения",
+      "PRIVATE_NOTE": "Личная заметка",
       "MESSAGE_CONTAINS": "Сообщение содержит",
       "EMAIL": "Эл. почта",
       "INBOX": "Каналы",

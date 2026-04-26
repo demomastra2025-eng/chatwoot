@@ -47,6 +47,17 @@ RSpec.describe AutoAssignment::AssignmentService do
         expect(conv.reload.assignee).to eq(agent)
       end
 
+      it 'assigns conversations when no assignment policy is linked' do
+        InboxAssignmentPolicy.where(inbox: inbox).destroy_all
+        conv = create(:conversation, inbox: inbox, status: 'open')
+        conv.update!(assignee_id: nil)
+
+        assigned_count = service.perform_bulk_assignment(limit: 1)
+
+        expect(assigned_count).to eq(1)
+        expect(conv.reload.assignee).to eq(agent)
+      end
+
       it 'returns 0 when no agents are online' do
         allow(OnlineStatusTracker).to receive(:get_available_users).and_return({})
 

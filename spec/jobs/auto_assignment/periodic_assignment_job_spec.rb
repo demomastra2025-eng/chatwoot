@@ -19,16 +19,16 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
         allow(Account).to receive(:find_in_batches).and_yield([account])
       end
 
-      context 'when inbox has assignment policy or auto assignment enabled' do
-        before do
-          inbox_relation = instance_double(ActiveRecord::Relation)
-          allow(account).to receive(:inboxes).and_return(inbox_relation)
-          allow(inbox_relation).to receive(:joins).with(:assignment_policy).and_return(inbox_relation)
-          allow(inbox_relation).to receive(:find_in_batches).and_yield([inbox])
-        end
-
+      context 'when auto assignment is enabled' do
         it 'queues assignment job for eligible inboxes' do
           inbox_assignment_policy # ensure it exists
+          expect(AutoAssignment::AssignmentJob).to receive(:perform_later).with(inbox_id: inbox.id)
+
+          described_class.new.perform
+        end
+
+        it 'queues assignment job even when the inbox has no assignment policy' do
+          InboxAssignmentPolicy.where(inbox: inbox).destroy_all
           expect(AutoAssignment::AssignmentJob).to receive(:perform_later).with(inbox_id: inbox.id)
 
           described_class.new.perform
@@ -44,11 +44,6 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
           account2.enable_features('assignment_v2')
           account2.save!
 
-          inbox_relation2 = instance_double(ActiveRecord::Relation)
-          allow(account2).to receive(:inboxes).and_return(inbox_relation2)
-          allow(inbox_relation2).to receive(:joins).with(:assignment_policy).and_return(inbox_relation2)
-          allow(inbox_relation2).to receive(:find_in_batches).and_yield([inbox2])
-
           allow(Account).to receive(:find_in_batches).and_yield([account]).and_yield([account2])
 
           expect(AutoAssignment::AssignmentJob).to receive(:perform_later).with(inbox_id: inbox.id)
@@ -56,9 +51,21 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
 
           described_class.new.perform
         end
+
+        it 'skips auto assignment when account is on the default cloud plan' do
+          account.update!(custom_attributes: {})
+          create(:installation_config, name: 'CHATWOOT_CLOUD_PLANS', value: [{ 'name' => 'default' }])
+          allow(ChatwootApp).to receive(:chatwoot_cloud?).and_return(true)
+          allow(Rails.logger).to receive(:info)
+
+          expect(Rails.logger).to receive(:info).with("Skipping auto assignment for account #{account.id}")
+          expect(AutoAssignment::AssignmentJob).not_to receive(:perform_later)
+
+          described_class.new.perform
+        end
       end
 
-      context 'when inbox does not have assignment policy or auto assignment enabled' do
+      context 'when auto assignment is disabled' do
         before do
           inbox.update!(enable_auto_assignment: false)
           InboxAssignmentPolicy.where(inbox: inbox).destroy_all
@@ -92,14 +99,9 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
           acc = create(:account)
           acc.enable_features('assignment_v2')
           acc.save!
-          inb = create(:inbox, account: acc, enable_auto_assignment: true)
+          create(:inbox, account: acc, enable_auto_assignment: true)
           policy = create(:assignment_policy, account: acc)
-          create(:inbox_assignment_policy, inbox: inb, assignment_policy: policy)
-
-          inbox_relation = instance_double(ActiveRecord::Relation)
-          allow(acc).to receive(:inboxes).and_return(inbox_relation)
-          allow(inbox_relation).to receive(:joins).with(:assignment_policy).and_return(inbox_relation)
-          allow(inbox_relation).to receive(:find_in_batches).and_yield([inb])
+          create(:inbox_assignment_policy, inbox: acc.inboxes.first, assignment_policy: policy)
 
           accounts << acc
         end
@@ -108,7 +110,7 @@ RSpec.describe AutoAssignment::PeriodicAssignmentJob, type: :job do
           accounts.each { |acc| block.call([acc]) }
         end
 
-        expect(Account).to receive(:find_in_batches).and_call_original
+        expect(AutoAssignment::AssignmentJob).to receive(:perform_later).exactly(5).times
 
         described_class.new.perform
       end
