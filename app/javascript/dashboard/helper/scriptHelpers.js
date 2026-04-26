@@ -3,14 +3,38 @@ import {
   CHATWOOT_RESET,
   CHATWOOT_SET_USER,
 } from '../constants/appEvents';
-import AnalyticsHelper from './AnalyticsHelper';
-import DashboardAudioNotificationHelper from './AudioAlerts/DashboardAudioNotificationHelper';
 import { emitter } from 'shared/helpers/mitt';
 
+let analyticsHelperPromise;
+let audioNotificationHelperPromise;
+
+const getAnalyticsHelper = () => {
+  analyticsHelperPromise ||= import('./AnalyticsHelper').then(
+    ({ default: AnalyticsHelper }) => AnalyticsHelper
+  );
+  return analyticsHelperPromise;
+};
+
+const getAudioNotificationHelper = () => {
+  audioNotificationHelperPromise ||= import(
+    './AudioAlerts/DashboardAudioNotificationHelper'
+  ).then(
+    ({ default: DashboardAudioNotificationHelper }) =>
+      DashboardAudioNotificationHelper
+  );
+  return audioNotificationHelperPromise;
+};
+
+const runAnalytics = callback => {
+  getAnalyticsHelper()
+    .then(callback)
+    .catch(() => {});
+};
+
 export const initializeAnalyticsEvents = () => {
-  AnalyticsHelper.init();
+  runAnalytics(AnalyticsHelper => AnalyticsHelper.init());
   emitter.on(ANALYTICS_IDENTITY, ({ user }) => {
-    AnalyticsHelper.identify(user);
+    runAnalytics(AnalyticsHelper => AnalyticsHelper.identify(user));
   });
 };
 
@@ -25,13 +49,17 @@ export const initializeAudioAlerts = user => {
     // entire payload for the user during the signup process.
   } = uiSettings || {};
 
-  DashboardAudioNotificationHelper.set({
-    currentUser: user,
-    audioAlertType: audioAlertType || 'none',
-    audioAlertTone: audioAlertTone || 'ding',
-    alwaysPlayAudioAlert: alwaysPlayAudioAlert || false,
-    alertIfUnreadConversationExist: alertIfUnreadConversationExist || false,
-  });
+  getAudioNotificationHelper()
+    .then(DashboardAudioNotificationHelper => {
+      DashboardAudioNotificationHelper.set({
+        currentUser: user,
+        audioAlertType: audioAlertType || 'none',
+        audioAlertTone: audioAlertTone || 'ding',
+        alwaysPlayAudioAlert: alwaysPlayAudioAlert || false,
+        alertIfUnreadConversationExist: alertIfUnreadConversationExist || false,
+      });
+    })
+    .catch(() => {});
 };
 
 export const initializeChatwootEvents = () => {

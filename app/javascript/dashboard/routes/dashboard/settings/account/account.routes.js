@@ -1,9 +1,8 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import Index from './Index.vue';
-import Scheduling from './Scheduling.vue';
-import SettingsWrapper from '../SettingsWrapper.vue';
-
+const Index = () => import('./Index.vue');
+const Scheduling = () => import('./Scheduling.vue');
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
 export default {
   routes: [
     {

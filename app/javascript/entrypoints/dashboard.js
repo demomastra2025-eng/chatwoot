@@ -10,7 +10,10 @@ import WootWizard from 'components/ui/Wizard.vue';
 import FloatingVue from 'floating-vue';
 import WootUiKit from 'dashboard/components';
 import App from 'dashboard/App.vue';
-import i18nMessages from 'dashboard/i18n';
+import i18nMessages, {
+  registerDashboardI18n,
+  setDashboardLocale,
+} from 'dashboard/i18n';
 import createAxios from 'dashboard/helper/APIHelper';
 
 import commonHelpers, { isJSONValid } from 'dashboard/helper/commons';
@@ -42,6 +45,8 @@ const i18n = createI18n({
   fallbackLocale: 'en',
   messages: i18nMessages,
 });
+
+registerDashboardI18n(i18n.global);
 
 sync(store, router);
 
@@ -116,6 +121,7 @@ initializeChatwootEvents();
 initializeAnalyticsEvents();
 initalizeRouter();
 
-window.onload = () => {
+window.onload = async () => {
+  await setDashboardLocale(window.chatwootConfig?.selectedLocale);
   app.mount('#app');
 };

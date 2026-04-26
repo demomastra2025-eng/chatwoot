@@ -5,11 +5,10 @@ import {
   ROLES,
   CONVERSATION_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
-import SettingsContent from '../Wrapper.vue';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import Macros from './Index.vue';
-import MacroEditor from './MacroEditor.vue';
-
+const SettingsContent = () => import('../Wrapper.vue');
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const Macros = () => import('./Index.vue');
+const MacroEditor = () => import('./MacroEditor.vue');
 export default {
   routes: [
     {

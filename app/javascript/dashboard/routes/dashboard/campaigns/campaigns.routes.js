@@ -4,10 +4,11 @@ import {
   CONVERSATION_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
 
-import OutboundPageRouteView from './pages/OutboundPageRouteView.vue';
-import OutboundCampaignsPage from './pages/OutboundCampaignsPage.vue';
-import OutboundTouchPlansPage from './pages/OutboundTouchPlansPage.vue';
-import OutboundTemplatesPage from './pages/OutboundTemplatesPage.vue';
+const OutboundPageRouteView = () => import('./pages/OutboundPageRouteView.vue');
+const OutboundCampaignsPage = () => import('./pages/OutboundCampaignsPage.vue');
+const OutboundTouchPlansPage = () =>
+  import('./pages/OutboundTouchPlansPage.vue');
+const OutboundTemplatesPage = () => import('./pages/OutboundTemplatesPage.vue');
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
 const campaignsMeta = {

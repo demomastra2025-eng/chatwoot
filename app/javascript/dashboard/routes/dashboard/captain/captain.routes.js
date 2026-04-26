@@ -2,20 +2,20 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../helper/URLHelper';
 
-import CaptainPageRouteView from './pages/CaptainPageRouteView.vue';
-import AssistantsIndexPage from './pages/AssistantsIndexPage.vue';
-import AssistantEmptyStateIndex from './assistants/Index.vue';
-
-import AssistantSettingsIndex from './assistants/settings/Settings.vue';
-import AssistantPromptsIndex from './assistants/prompts/Index.vue';
-import AssistantPlaygroundIndex from './assistants/playground/Index.vue';
-import AssistantInboxesIndex from './assistants/inboxes/Index.vue';
-import DocumentsIndex from './documents/Index.vue';
-import ResponsesIndex from './responses/Index.vue';
-import ResponsesPendingIndex from './responses/Pending.vue';
-import CustomToolsIndex from './tools/Index.vue';
-import ObservabilityIndex from './observability/Index.vue';
-
+const CaptainPageRouteView = () => import('./pages/CaptainPageRouteView.vue');
+const AssistantsIndexPage = () => import('./pages/AssistantsIndexPage.vue');
+const AssistantEmptyStateIndex = () => import('./assistants/Index.vue');
+const AssistantSettingsIndex = () =>
+  import('./assistants/settings/Settings.vue');
+const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
+const AssistantPlaygroundIndex = () =>
+  import('./assistants/playground/Index.vue');
+const AssistantInboxesIndex = () => import('./assistants/inboxes/Index.vue');
+const DocumentsIndex = () => import('./documents/Index.vue');
+const ResponsesIndex = () => import('./responses/Index.vue');
+const ResponsesPendingIndex = () => import('./responses/Pending.vue');
+const CustomToolsIndex = () => import('./tools/Index.vue');
+const ObservabilityIndex = () => import('./observability/Index.vue');
 const meta = {
   permissions: ['administrator', 'agent'],
   featureFlag: FEATURE_FLAGS.CAPTAIN,

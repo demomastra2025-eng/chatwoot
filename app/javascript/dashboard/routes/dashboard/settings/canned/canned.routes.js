@@ -4,8 +4,7 @@ import {
   ROLES,
   CONVERSATION_PERMISSIONS,
 } from 'dashboard/constants/permissions.js';
-import SettingsWrapper from '../SettingsWrapper.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
 export default {
   routes: [
     {

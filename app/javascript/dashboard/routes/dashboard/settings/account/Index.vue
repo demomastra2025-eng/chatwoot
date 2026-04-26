@@ -24,6 +24,7 @@ import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
 import SamlSettings from '../security/components/SamlSettings.vue';
 import SamlPaywall from '../security/components/SamlPaywall.vue';
+import { setDashboardLocale } from 'dashboard/i18n';
 
 export default {
   components: {
@@ -139,13 +140,13 @@ export default {
   watch: {
     accountRecord: {
       immediate: true,
-      handler() {
-        this.hydrateAccountForm();
+      async handler() {
+        await this.hydrateAccountForm();
       },
     },
   },
-  mounted() {
-    this.hydrateAccountForm();
+  async mounted() {
+    await this.hydrateAccountForm();
   },
   methods: {
     normalizeTextField(value) {
@@ -161,11 +162,18 @@ export default {
         logo: this.logoFile,
       };
     },
-    applyAccountToForm(account) {
+    async applySelectedLocale(locale) {
+      const selectedLocale = await setDashboardLocale(locale);
+      document.documentElement.lang = selectedLocale;
+      if (window.chatwootConfig) {
+        window.chatwootConfig.selectedLocale = selectedLocale;
+      }
+    },
+    async applyAccountToForm(account) {
       const { name, locale, id, domain, support_email, features, logo_url } =
         account;
 
-      this.$root.$i18n.locale = this.uiSettings?.locale || locale;
+      await this.applySelectedLocale(this.uiSettings?.locale || locale);
       this.name = name || '';
       this.locale = locale;
       this.id = id;
@@ -176,7 +184,7 @@ export default {
       this.logoUrl = logo_url || '';
     },
 
-    hydrateAccountForm() {
+    async hydrateAccountForm() {
       const account = this.accountRecord;
       if (!account?.id) {
         return;
@@ -187,7 +195,7 @@ export default {
         !this.id || !isSameAccount || !this.v$?.$anyDirty || this.isUpdating;
 
       if (shouldHydrate) {
-        this.applyAccountToForm(account);
+        await this.applyAccountToForm(account);
       }
     },
 
@@ -210,14 +218,9 @@ export default {
         await this.$store.dispatch('accounts/update', payload);
         this.logoFile = null;
         this.logoUrl = this.getAccount(this.id)?.logo_url || this.logoUrl;
-        // If user locale is set, update the locale with user locale
-        if (this.uiSettings?.locale) {
-          this.$root.$i18n.locale = this.uiSettings?.locale;
-        } else {
-          // If user locale is not set, update the locale with account locale
-          this.$root.$i18n.locale = this.locale;
-        }
-        this.hydrateAccountForm();
+        const selectedLocale = this.uiSettings?.locale || this.locale;
+        await this.applySelectedLocale(selectedLocale);
+        await this.hydrateAccountForm();
         useAlert(this.$t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
       } catch (error) {
         const errorMessage = parseAPIErrorResponse(error);

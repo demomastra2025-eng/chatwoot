@@ -1,15 +1,16 @@
 <script>
 import SnackbarContainer from './components/SnackBar/Container.vue';
+import { setDashboardLocale } from 'dashboard/i18n';
 
 export default {
   components: { SnackbarContainer },
   data() {
     return { theme: 'light' };
   },
-  mounted() {
+  async mounted() {
     this.setColorTheme();
     this.listenToThemeChanges();
-    this.setLocale(window.chatwootConfig.selectedLocale);
+    await this.setLocale(window.chatwootConfig.selectedLocale);
   },
   methods: {
     setColorTheme() {
@@ -34,8 +35,8 @@ export default {
         }
       };
     },
-    setLocale(locale) {
-      this.$root.$i18n.locale = locale;
+    async setLocale(locale) {
+      await setDashboardLocale(locale);
     },
   },
 };

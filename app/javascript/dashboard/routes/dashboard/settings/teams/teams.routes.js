@@ -1,17 +1,16 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 
-import TeamsIndex from './Index.vue';
-import CreateStepWrap from './Create/Index.vue';
-import EditStepWrap from './Edit/Index.vue';
-import CreateTeam from './Create/CreateTeam.vue';
-import EditTeam from './Edit/EditTeam.vue';
-import AddAgents from './Create/AddAgents.vue';
-import EditAgents from './Edit/EditAgents.vue';
-import FinishSetup from './FinishSetup.vue';
-import SettingsContent from '../Wrapper.vue';
-import SettingsWrapper from '../SettingsWrapper.vue';
-
+const TeamsIndex = () => import('./Index.vue');
+const CreateStepWrap = () => import('./Create/Index.vue');
+const EditStepWrap = () => import('./Edit/Index.vue');
+const CreateTeam = () => import('./Create/CreateTeam.vue');
+const EditTeam = () => import('./Edit/EditTeam.vue');
+const AddAgents = () => import('./Create/AddAgents.vue');
+const EditAgents = () => import('./Edit/EditAgents.vue');
+const FinishSetup = () => import('./FinishSetup.vue');
+const SettingsContent = () => import('../Wrapper.vue');
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
 export default {
   routes: [
     {

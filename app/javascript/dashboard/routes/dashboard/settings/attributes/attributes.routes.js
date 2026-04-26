@@ -2,9 +2,8 @@ import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
 import { getUserPermissions } from '../../../../helper/permissionsHelper';
 import store from '../../../../store';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import AttributesHome from './Index.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const AttributesHome = () => import('./Index.vue');
 const hasLegacyAttributesAccess = accountId => {
   const permissions = getUserPermissions(
     store.getters.getCurrentUser,

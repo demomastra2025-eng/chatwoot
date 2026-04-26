@@ -1,15 +1,14 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import IntegrationHooks from './IntegrationHooks.vue';
-import Index from './Index.vue';
-import Webhook from './Webhooks/Index.vue';
-import DashboardApps from './DashboardApps/Index.vue';
-import Slack from './Slack.vue';
-import Linear from './Linear.vue';
-import Notion from './Notion.vue';
-import Shopify from './Shopify.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const IntegrationHooks = () => import('./IntegrationHooks.vue');
+const Index = () => import('./Index.vue');
+const Webhook = () => import('./Webhooks/Index.vue');
+const DashboardApps = () => import('./DashboardApps/Index.vue');
+const Slack = () => import('./Slack.vue');
+const Linear = () => import('./Linear.vue');
+const Notion = () => import('./Notion.vue');
+const Shopify = () => import('./Shopify.vue');
 export default {
   routes: [
     {

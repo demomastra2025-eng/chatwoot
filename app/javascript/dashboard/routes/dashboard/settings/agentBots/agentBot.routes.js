@@ -1,10 +1,9 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
-import Bot from './Index.vue';
-import BotBuilder from './BotBuilder.vue';
+const Bot = () => import('./Index.vue');
+const BotBuilder = () => import('./BotBuilder.vue');
 import { frontendURL } from '../../../../helper/URLHelper';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import SettingsContent from '../Wrapper.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const SettingsContent = () => import('../Wrapper.vue');
 export default {
   routes: [
     {

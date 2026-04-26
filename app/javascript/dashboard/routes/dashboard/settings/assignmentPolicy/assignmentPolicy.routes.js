@@ -1,14 +1,15 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import AssignmentPolicyIndex from './Index.vue';
-import AgentAssignmentIndex from './pages/AgentAssignmentIndexPage.vue';
-import AgentAssignmentCreate from './pages/AgentAssignmentCreatePage.vue';
-import AgentAssignmentEdit from './pages/AgentAssignmentEditPage.vue';
-import AgentCapacityIndex from './pages/AgentCapacityIndexPage.vue';
-import AgentCapacityCreate from './pages/AgentCapacityCreatePage.vue';
-import AgentCapacityEdit from './pages/AgentCapacityEditPage.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const AssignmentPolicyIndex = () => import('./Index.vue');
+const AgentAssignmentIndex = () =>
+  import('./pages/AgentAssignmentIndexPage.vue');
+const AgentAssignmentCreate = () =>
+  import('./pages/AgentAssignmentCreatePage.vue');
+const AgentAssignmentEdit = () => import('./pages/AgentAssignmentEditPage.vue');
+const AgentCapacityIndex = () => import('./pages/AgentCapacityIndexPage.vue');
+const AgentCapacityCreate = () => import('./pages/AgentCapacityCreatePage.vue');
+const AgentCapacityEdit = () => import('./pages/AgentCapacityEditPage.vue');
 export default {
   routes: [
     {

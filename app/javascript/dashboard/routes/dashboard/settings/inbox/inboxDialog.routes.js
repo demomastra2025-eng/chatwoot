@@ -1,13 +1,12 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import ChannelFactory from './ChannelFactory.vue';
-
-import SettingsContent from '../SettingsWrapper.vue';
-import Settings from './Settings.vue';
-import InboxChannel from './InboxChannels.vue';
-import ChannelList from './ChannelList.vue';
-import AddAgents from './AddAgents.vue';
-import FinishSetup from './FinishSetup.vue';
+const ChannelFactory = () => import('./ChannelFactory.vue');
+const SettingsContent = () => import('../SettingsWrapper.vue');
+const Settings = () => import('./Settings.vue');
+const InboxChannel = () => import('./InboxChannels.vue');
+const ChannelList = () => import('./ChannelList.vue');
+const AddAgents = () => import('./AddAgents.vue');
+const FinishSetup = () => import('./FinishSetup.vue');
 import { INBOX_FLOW_ROUTE_NAMES } from './helpers/inboxFlowRoutes';
 
 export default {

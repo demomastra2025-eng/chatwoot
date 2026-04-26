@@ -1,8 +1,7 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import AgentHome from './Index.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const AgentHome = () => import('./Index.vue');
 export default {
   routes: [
     {

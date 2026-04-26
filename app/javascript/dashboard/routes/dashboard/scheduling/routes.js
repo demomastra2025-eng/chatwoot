@@ -1,12 +1,15 @@
 import { frontendURL } from '../../../helper/URLHelper';
 import { FEATURE_FLAGS } from '../../../featureFlags';
 
-import SchedulingCalendarPage from './pages/SchedulingCalendarPage.vue';
-import SchedulingExceptionsPage from './pages/SchedulingExceptionsPage.vue';
-import SchedulingKassaPage from './pages/SchedulingKassaPage.vue';
-import SchedulingResourcesPage from './pages/SchedulingResourcesPage.vue';
-import SchedulingServicesPage from './pages/SchedulingServicesPage.vue';
-
+const SchedulingCalendarPage = () =>
+  import('./pages/SchedulingCalendarPage.vue');
+const SchedulingExceptionsPage = () =>
+  import('./pages/SchedulingExceptionsPage.vue');
+const SchedulingKassaPage = () => import('./pages/SchedulingKassaPage.vue');
+const SchedulingResourcesPage = () =>
+  import('./pages/SchedulingResourcesPage.vue');
+const SchedulingServicesPage = () =>
+  import('./pages/SchedulingServicesPage.vue');
 const schedulingMeta = {
   featureFlag: FEATURE_FLAGS.SCHEDULING,
   permissions: ['administrator', 'agent', 'custom_role'],

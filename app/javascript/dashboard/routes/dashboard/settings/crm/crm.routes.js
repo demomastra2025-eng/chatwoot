@@ -1,10 +1,9 @@
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { frontendURL } from '../../../../helper/URLHelper';
 import store from '../../../../store';
-import SettingsWrapper from '../SettingsWrapper.vue';
-import Index from './Index.vue';
-import TaskSettings from './TaskSettings.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const Index = () => import('./Index.vue');
+const TaskSettings = () => import('./TaskSettings.vue');
 const hasCrmDealsEnabled = accountId =>
   store.getters['accounts/isFeatureEnabledonAccount'](
     accountId,

@@ -19,6 +19,7 @@ import {
 } from './helper/pushHelper';
 import ReconnectService from 'dashboard/helper/ReconnectService';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { setDashboardLocale } from 'dashboard/i18n';
 
 export default {
   name: 'App',
@@ -75,11 +76,11 @@ export default {
       },
     },
   },
-  mounted() {
+  async mounted() {
     this.initializeColorTheme();
     this.listenToThemeChanges();
     // If user locale is set, use it; otherwise use account locale
-    this.setLocale(
+    await this.setLocale(
       this.uiSettings?.locale || window.chatwootConfig.selectedLocale
     );
   },
@@ -96,11 +97,11 @@ export default {
       const mql = window.matchMedia('(prefers-color-scheme: dark)');
       mql.onchange = e => setColorTheme(e.matches);
     },
-    setLocale(locale) {
-      this.$root.$i18n.locale = locale;
-      document.documentElement.lang = locale;
+    async setLocale(locale) {
+      const selectedLocale = await setDashboardLocale(locale);
+      document.documentElement.lang = selectedLocale;
       if (window.chatwootConfig) {
-        window.chatwootConfig.selectedLocale = locale;
+        window.chatwootConfig.selectedLocale = selectedLocale;
       }
     },
     async initializeAccount() {
@@ -113,7 +114,7 @@ export default {
       const { pubsub_token: pubsubToken } = this.currentUser || {};
       const authClientId = AuthAPI.getAuthData()?.client;
       // If user locale is set, use it; otherwise use account locale
-      this.setLocale(this.uiSettings?.locale || locale);
+      await this.setLocale(this.uiSettings?.locale || locale);
       this.latestChatwootVersion = latestChatwootVersion;
       vueActionCable.init(this.store, pubsubToken, authClientId);
       this.reconnectService = new ReconnectService(this.store, this.router);

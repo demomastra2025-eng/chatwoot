@@ -1,6 +1,6 @@
 /* eslint arrow-body-style: 0 */
 import { frontendURL } from '../../../helper/URLHelper';
-import ConversationView from './ConversationView.vue';
+const ConversationView = () => import('./ConversationView.vue');
 import inboxDialogRoutes from '../settings/inbox/inboxDialog.routes';
 
 const CONVERSATION_PERMISSIONS = [

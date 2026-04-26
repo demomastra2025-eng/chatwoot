@@ -1,10 +1,29 @@
 import AuthAPI from '../api/auth';
 import BaseActionCableConnector from '../../shared/helpers/BaseActionCableConnector';
-import DashboardAudioNotificationHelper from './AudioAlerts/DashboardAudioNotificationHelper';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { useImpersonation } from 'dashboard/composables/useImpersonation';
 import { handleSessionReplaced } from '../store/utils/api';
+
+let audioNotificationHelperPromise;
+
+const getAudioNotificationHelper = () => {
+  audioNotificationHelperPromise ||= import(
+    './AudioAlerts/DashboardAudioNotificationHelper'
+  ).then(
+    ({ default: DashboardAudioNotificationHelper }) =>
+      DashboardAudioNotificationHelper
+  );
+  return audioNotificationHelperPromise;
+};
+
+const notifyAudioOnNewMessage = data => {
+  getAudioNotificationHelper()
+    .then(DashboardAudioNotificationHelper => {
+      DashboardAudioNotificationHelper.onNewMessage(data);
+    })
+    .catch(() => {});
+};
 
 const { isImpersonating } = useImpersonation();
 
@@ -109,7 +128,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       conversation: { last_activity_at: lastActivityAt },
       conversation_id: conversationId,
     } = data;
-    DashboardAudioNotificationHelper.onNewMessage(data);
+    notifyAudioOnNewMessage(data);
     this.app.$store.dispatch('addMessage', data);
     this.app.$store.dispatch('updateConversationLastActivity', {
       lastActivityAt,

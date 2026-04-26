@@ -12,9 +12,8 @@ import {
 } from '../../../helper/permissionsHelper';
 import store from '../../../store';
 
-import CrmDealsPage from './pages/CrmDealsPage.vue';
-import CrmTasksPage from './pages/CrmTasksPage.vue';
-
+const CrmDealsPage = () => import('./pages/CrmDealsPage.vue');
+const CrmTasksPage = () => import('./pages/CrmTasksPage.vue');
 const dealsMeta = {
   featureFlag: FEATURE_FLAGS.CRM_DEALS,
   permissions: [

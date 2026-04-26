@@ -1,7 +1,10 @@
 import { createApp } from 'vue';
 import { createI18n } from 'vue-i18n';
 
-import i18nMessages from 'dashboard/i18n';
+import i18nMessages, {
+  registerDashboardI18n,
+  setDashboardLocale,
+} from 'dashboard/i18n';
 import * as Sentry from '@sentry/vue';
 import {
   initializeAnalyticsEvents,
@@ -26,6 +29,8 @@ const i18n = createI18n({
   fallbackLocale: 'en',
   messages: i18nMessages,
 });
+
+registerDashboardI18n(i18n.global);
 
 const app = createApp(App);
 app.use(i18n);
@@ -69,6 +74,7 @@ initializeChatwootEvents();
 initializeAnalyticsEvents();
 initalizeRouter();
 
-window.onload = () => {
+window.onload = async () => {
+  await setDashboardLocale(window.chatwootConfig?.selectedLocale);
   app.mount('#app');
 };

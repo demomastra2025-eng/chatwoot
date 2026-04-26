@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia';
-import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
 
 const buildCallState = (callData, existingCall = null) => ({
@@ -11,6 +10,22 @@ const buildCallState = (callData, existingCall = null) => ({
     existingCall?.browserJoinSupported ??
     null,
 });
+
+const loadWebphoneClient = async () => {
+  const { default: WebphoneClient } = await import(
+    'dashboard/api/channel/voice/webphoneClient'
+  );
+  return WebphoneClient;
+};
+
+const endClientCall = async provider => {
+  try {
+    const WebphoneClient = await loadWebphoneClient();
+    await WebphoneClient.endClientCall(provider);
+  } catch {
+    // Browser-side cleanup is best effort; call state is already removed.
+  }
+};
 
 export const useCallsStore = defineStore('calls', {
   state: () => ({
@@ -62,12 +77,13 @@ export const useCallsStore = defineStore('calls', {
       );
     },
 
-    removeCall(callSid) {
+    async removeCall(callSid) {
       const callToRemove = this.calls.find(c => c.callSid === callSid);
-      if (callToRemove?.isActive) {
-        WebphoneClient.endClientCall(callToRemove.provider);
-      }
       this.calls = this.calls.filter(c => c.callSid !== callSid);
+
+      if (callToRemove?.isActive) {
+        await endClientCall(callToRemove.provider);
+      }
     },
 
     setCallActive(callSid) {
@@ -77,9 +93,13 @@ export const useCallsStore = defineStore('calls', {
       }));
     },
 
-    clearActiveCall() {
-      WebphoneClient.endClientCall(this.activeCall?.provider);
+    async clearActiveCall() {
+      const activeCall = this.activeCall;
       this.calls = this.calls.filter(call => !call.isActive);
+
+      if (activeCall) {
+        await endClientCall(activeCall.provider);
+      }
     },
 
     dismissCall(callSid) {

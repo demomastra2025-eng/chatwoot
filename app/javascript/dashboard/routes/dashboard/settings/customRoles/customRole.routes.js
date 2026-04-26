@@ -2,9 +2,8 @@ import { FEATURE_FLAGS } from '../../../../featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from 'dashboard/helper/URLHelper';
 
-import SettingsWrapper from '../SettingsWrapper.vue';
-import CustomRolesHome from './Index.vue';
-
+const SettingsWrapper = () => import('../SettingsWrapper.vue');
+const CustomRolesHome = () => import('./Index.vue');
 export default {
   routes: [
     {
