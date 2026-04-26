@@ -34,6 +34,9 @@ class Captain::CustomTool < ApplicationRecord
   NAME_PREFIX = 'custom'.freeze
   NAME_SEPARATOR = '_'.freeze
   DEFAULT_SLUG_BODY = 'tool'.freeze
+  # LLM function/tool names are constrained to 64 characters.
+  MAX_SLUG_LENGTH = 64
+  COLLISION_SUFFIX_LENGTH = 7 # "_" + 6 random alphanumeric chars
   CYRILLIC_TRANSLITERATION_MAP = {
     'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e',
     'ё' => 'yo', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', 'к' => 'k',
@@ -67,7 +70,7 @@ class Captain::CustomTool < ApplicationRecord
   before_validation :normalize_group_name
   before_validation :generate_slug
 
-  validates :slug, presence: true, uniqueness: { scope: :account_id }
+  validates :slug, presence: true, uniqueness: { scope: :account_id }, length: { maximum: MAX_SLUG_LENGTH }
   validates :title, presence: true
   validates :endpoint_url, presence: true
   validates :group_name, length: { maximum: 100 }, allow_blank: true
@@ -97,7 +100,7 @@ class Captain::CustomTool < ApplicationRecord
     return if slug.present?
     return if title.blank?
 
-    base_slug = "#{NAME_PREFIX}#{NAME_SEPARATOR}#{normalized_title_slug}"
+    base_slug = "#{NAME_PREFIX}#{NAME_SEPARATOR}#{normalized_title_slug}".truncate(MAX_SLUG_LENGTH, omission: '')
     self.slug = find_unique_slug(base_slug)
   end
 
@@ -124,8 +127,9 @@ class Captain::CustomTool < ApplicationRecord
   def find_unique_slug(base_slug)
     return base_slug unless slug_exists?(base_slug)
 
+    truncated = base_slug.truncate(MAX_SLUG_LENGTH - COLLISION_SUFFIX_LENGTH, omission: '')
     5.times do
-      slug_candidate = "#{base_slug}#{NAME_SEPARATOR}#{SecureRandom.alphanumeric(6).downcase}"
+      slug_candidate = "#{truncated}#{NAME_SEPARATOR}#{SecureRandom.alphanumeric(6).downcase}"
       return slug_candidate unless slug_exists?(slug_candidate)
     end
 
