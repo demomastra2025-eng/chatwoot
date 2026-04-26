@@ -1,5 +1,6 @@
+<% auth_page_scrollable = @application_pack == 'v3app' %>
 <!DOCTYPE html>
-<html class="w-full h-full overflow-hidden">
+<html class="w-full <%= auth_page_scrollable ? 'auth-page-scrollable' : 'h-full overflow-hidden' %>">
   <head>
     <title>OneLink</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=0"/>
@@ -67,7 +68,7 @@
     <%= vite_client_tag %>
     <%= vite_javascript_tag @application_pack %>
   </head>
-  <body class="w-full h-full overflow-hidden text-slate-600">
+  <body class="w-full <%= auth_page_scrollable ? 'auth-page-scrollable' : 'h-full overflow-hidden' %> text-slate-600">
     <div id="app"></div>
     <noscript id="noscript">This app works best with JavaScript enabled.</noscript>
     <%= yield %>

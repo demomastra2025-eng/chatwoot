@@ -6,14 +6,42 @@ describe '/app/login', type: :request do
       get '/app/login'
       expect(response).to have_http_status(:success)
     end
+
+    it 'uses a scrollable document layout for auth pages' do
+      ['/app/login', '/app/auth/signup'].each do |path|
+        get path
+
+        document = Nokogiri::HTML(response.body)
+        html_class = document.at_css('html')['class']
+        body_class = document.at_css('body')['class']
+
+        expect(html_class).to include('auth-page-scrollable')
+        expect(body_class).to include('auth-page-scrollable')
+        expect(html_class.split).not_to include('overflow-hidden')
+        expect(body_class.split).not_to include('overflow-hidden')
+      end
+    end
+
+    it 'keeps the dashboard shell locked to the viewport' do
+      get '/app'
+
+      document = Nokogiri::HTML(response.body)
+      html_class = document.at_css('html')['class']
+      body_class = document.at_css('body')['class']
+
+      expect(html_class.split).to include('h-full', 'overflow-hidden')
+      expect(body_class.split).to include('h-full', 'overflow-hidden')
+      expect(html_class).not_to include('auth-page-scrollable')
+      expect(body_class).not_to include('auth-page-scrollable')
+    end
   end
 
   context 'with DEFAULT_LOCALE' do
     it 'renders the dashboard' do
-      with_modified_env DEFAULT_LOCALE: 'pt_BR' do
+      with_modified_env DEFAULT_LOCALE: 'en_US' do
         get '/app/login'
         expect(response).to have_http_status(:success)
-        expect(response.body).to include "selectedLocale: 'pt_BR'"
+        expect(response.body).to include "selectedLocale: 'en'"
       end
     end
   end

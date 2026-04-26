@@ -78,6 +78,14 @@ body {
   }
 }
 
+html.auth-page-scrollable,
+body.auth-page-scrollable {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .text-link {
   @apply text-n-brand font-medium hover:text-n-brand;
 }
