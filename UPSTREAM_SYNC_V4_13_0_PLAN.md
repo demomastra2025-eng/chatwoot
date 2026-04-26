@@ -10,6 +10,7 @@ Onelink is the source of truth. Chatwoot `v4.13.0` is used as a fix and idea sou
 
 Carry rule:
 
+- If upstream and Onelink disagree on product logic, runtime architecture, or data ownership, keep the Onelink implementation as canonical.
 - Apply directly when the upstream code matches Onelink architecture and cases.
 - Apply with adaptation when the fix is correct but Onelink has local UX/runtime/product differences.
 - Do not apply when the upstream change changes Onelink product semantics, replaces local architecture, or creates integration risk.
@@ -21,7 +22,7 @@ These decisions were accepted on 2026-04-26 and close the previous open product 
 
 - Voice calls: keep `Telephony::CallSession` as the canonical Onelink call entity. Do not add upstream `Call` / `calls`; only borrow lifecycle, status normalization, message-linking, and analytics ideas into the existing telephony model when useful.
 - Captain custom tools: keep current Onelink runtime and access model. Do not carry upstream `response_bot -> custom_tools` entitlement migration, paywall semantics, or plan exposure changes in this branch.
-- Assignment: keep `assignment_v2` disabled by default for new accounts. Carry bugfixes and capacity fixes only where they do not change default account behavior.
+- Assignment: keep `assignment_v2` disabled by default for new accounts. Preserve Onelink auto-assignment behavior for existing enabled inboxes, including inboxes without `assignment_policy`; carry upstream capacity/policy fixes only where they do not replace that behavior.
 - Signup enrichment: defer Context.dev / Firecrawl account enrichment. Basic deterministic brand/social parsing can be reconsidered later as a separate onboarding feature.
 - Signup verification: do not enforce a strict verify-before-dashboard policy in this carry. Keep signup flows compatible with current Onelink self-serve, API-only, and partner onboarding behavior.
 - Versioning: do not bump Onelink to plain `4.13.0`. This is a selective carry branch, not full upstream compatibility.
@@ -114,7 +115,7 @@ These decisions were accepted on 2026-04-26 and close the previous open product 
 
 ## Applied With Onelink Adaptation
 
-- Auto-assignment cron removal preserves Onelink `ENABLE_SIDEKIQ_CRON` and `Integrations::Medelement::CronScheduleService.sync_all!`.
+- Auto-assignment cron/job changes are adapted after the feature-branch audit: remove the stale upstream-style `bulk_auto_assignment_job` Sidekiq cron entry to avoid duplicate jobs, but keep Onelink's no-policy auto-assignment sweep by having `AutoAssignment::PeriodicAssignmentJob` process `enable_auto_assignment` inboxes without requiring `assignment_policy`.
 - Custom tools runtime keeps Onelink feature/gating behavior and does not apply upstream `response_bot -> custom_tools` paywall semantics.
 - Document auto-sync does not add upstream `captain_documents.sync_status` columns because Onelink already uses Firecrawl metadata-backed sync state.
 - Resizable editor keeps local editor sizing and reply-box behavior.
@@ -169,6 +170,7 @@ These decisions were accepted on 2026-04-26 and close the previous open product 
 - Upstream `Call` / `calls` is not present; Onelink keeps `Telephony::CallSession`.
 - Upstream `response_bot -> custom_tools` entitlement migration and Custom Tools paywall are not present.
 - `assignment_v2` remains disabled by default in `config/features.yml`.
+- `AutoAssignment::PeriodicAssignmentJob` preserves Onelink's sweep for `enable_auto_assignment` inboxes without requiring `assignment_policy`.
 - Context.dev / Firecrawl account enrichment is not present.
 - Strict signup verification was removed after the accepted decision; current signup flow keeps auth headers and dashboard redirect behavior.
 - Version files remain Onelink-specific and are not bumped to plain `4.13.0`.
@@ -228,9 +230,10 @@ Keep this classification in the plan file before or while carrying, not only in 
 
 These defaults should carry forward to `v4.14+` unless there is an explicit new product decision:
 
+- General: in any conflict between upstream and Onelink behavior, treat Onelink as canonical and adapt only the useful fix idea.
 - Voice: `Telephony::CallSession` remains canonical. Do not add a parallel upstream `Call` model unless Onelink intentionally designs a compatibility layer.
 - Captain custom tools: keep Onelink runtime and access semantics. Do not adopt upstream paywall or `response_bot -> custom_tools` entitlement migration by default.
-- Assignment: keep `assignment_v2` default behavior conservative. Carry assignment bugfixes separately from new-account default enablement.
+- Assignment: keep `assignment_v2` default behavior conservative and preserve existing Onelink auto-assignment behavior for enabled inboxes, including the no-policy path. Carry assignment bugfixes separately from new-account default enablement.
 - Signup enrichment: do not add Context.dev, Firecrawl, or similar external enrichment during signup without a separate onboarding decision.
 - Signup verification: do not enforce strict verify-before-dashboard behavior unless current Onelink onboarding policy changes.
 - Versioning: do not bump to a plain upstream version string unless the branch is accepted as full upstream-compatible, which selective carry branches normally are not.
