@@ -453,6 +453,60 @@ RSpec.describe WhatsappWeb::HistoryImportService do
     expect(imported_message.content_attributes['history_attachment']).to be_nil
   end
 
+  it 'imports documentWithCaption history messages as document attachments' do
+    expect(Down).not_to receive(:download)
+    provider_service = instance_double(
+      WhatsappWeb::Providers::EvolutionService,
+      prefer_provider_media_for_history?: true
+    )
+    expect(provider_service).to receive(:fetch_message_media).with(
+      record: hash_including(key: hash_including(id: 'history-msg-document-caption-provider'))
+    ).and_return(
+      {
+        base64: Base64.strict_encode64('pdf-bytes'),
+        fileName: 'contract.pdf',
+        mimetype: 'application/pdf'
+      }
+    )
+    allow(channel).to receive(:provider_service).and_return(provider_service)
+
+    result = described_class.new(
+      channel: channel,
+      records: [
+        {
+          key: {
+            id: 'history-msg-document-caption-provider',
+            remoteJid: '15551234567@s.whatsapp.net',
+            fromMe: true
+          },
+          pushName: 'Alice',
+          messageTimestamp: 1.hour.ago.to_i,
+          message: {
+            documentWithCaptionMessage: {
+              message: {
+                documentMessage: {
+                  caption: 'Signed contract',
+                  mimetype: 'application/pdf',
+                  fileName: 'original-contract.pdf'
+                }
+              }
+            }
+          }
+        }
+      ]
+    ).perform
+
+    imported_message = channel.inbox.messages.find_by(source_id: 'history-msg-document-caption-provider')
+
+    expect(result).to eq(messages_imported: 1, contacts_touched: 1)
+    expect(imported_message).to be_present
+    expect(imported_message.content).to eq('Signed contract')
+    expect(imported_message.attachments.count).to eq(1)
+    expect(imported_message.attachments.first.file_type).to eq('file')
+    expect(imported_message.attachments.first.file.attached?).to be(true)
+    expect(imported_message.content_attributes['history_attachment']).to be_nil
+  end
+
   it 'keeps a placeholder when the provider reports historical media as unavailable' do
     expect(Down).not_to receive(:download)
     provider_service = instance_double(

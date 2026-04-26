@@ -10,9 +10,8 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
       inbox_id: inbox.id,
       source_id: message.source_id
     ).consume
-    return if pending_status.blank?
-
-    WhatsappWeb::ProviderPayloadNormalizer.apply_message_status!(message, pending_status)
+    WhatsappWeb::ProviderPayloadNormalizer.apply_message_status!(message, pending_status) if pending_status.present?
+    enqueue_media_attachment_backfill(message)
   end
 
   def conversation_params
@@ -222,28 +221,26 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
   end
 
   def download_attachment_file(attachment_payload)
-    return file_from_base64(attachment_payload) if attachment_payload[:base64].present?
-    return download_remote_attachment(attachment_payload) if attachment_payload[:mediaUrl].present?
+    @pending_media_attachment_backfill = false
+    result = WhatsappWeb::MediaAttachmentResolver.new(
+      channel: inbox.channel,
+      record: params,
+      source_id: messages_data.first[:id]
+    ).resolve(attachment_payload)
 
-    nil
+    @pending_media_attachment_backfill = result.pending_backfill
+    result.file
   end
 
-  def download_remote_attachment(attachment_payload)
-    Down.download(attachment_payload[:mediaUrl])
-  rescue Down::ClientError => e
-    Rails.logger.warn("[WHATSAPP WEB] Skipping unavailable media attachment #{messages_data.first[:id]}: #{e.message}")
-    nil
-  end
+  def enqueue_media_attachment_backfill(message)
+    return unless @pending_media_attachment_backfill
+    return if message.attachments.any?
 
-  def file_from_base64(attachment_payload)
-    content_type = attachment_payload[:mimetype].presence || 'application/octet-stream'
-    filename = attachment_payload[:fileName].presence || "whatsapp-web-#{SecureRandom.hex(8)}"
-    tempfile = Tempfile.new(['whatsapp-web', File.extname(filename)])
-    tempfile.binmode
-    tempfile.write(Base64.decode64(attachment_payload[:base64]))
-    tempfile.rewind
-    tempfile.define_singleton_method(:original_filename) { filename }
-    tempfile.define_singleton_method(:content_type) { content_type }
-    tempfile
+    Channels::WhatsappWeb::MediaAttachmentBackfillJob.set(wait: 5.seconds).perform_later(
+      inbox.channel.id,
+      message.source_id,
+      params.to_h.deep_stringify_keys,
+      1
+    )
   end
 end

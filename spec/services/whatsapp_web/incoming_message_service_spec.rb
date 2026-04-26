@@ -208,6 +208,7 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       allow(Down).to receive(:download)
         .with('https://mmg.whatsapp.net/expired-media')
         .and_raise(Down::ClientError.new('403 Forbidden'))
+      allow_any_instance_of(WhatsappWeb::Providers::EvolutionService).to receive(:fetch_message_media).and_return({ unavailable: true })
 
       expect do
         described_class.new(
@@ -238,6 +239,84 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(outgoing_message.content).to eq('Phone photo with expired provider media')
       expect(outgoing_message.content_attributes['external_echo']).to be(true)
       expect(outgoing_message.attachments).to be_empty
+    end
+
+    it 'uses provider media fallback when live media arrives without webhook base64 or a durable media URL' do
+      expect(Down).not_to receive(:download)
+      provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+      allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
+      expect(provider_service).to receive(:fetch_message_media).with(
+        record: hash_including(key: hash_including(id: 'INCOMING_PROVIDER_MEDIA_1'))
+      ).and_return(
+        {
+          base64: Base64.strict_encode64('provider-image-bytes'),
+          fileName: 'provider-image.png',
+          mimetype: 'image/png'
+        }
+      )
+      allow_any_instance_of(Channel::WhatsappWeb).to receive(:provider_service).and_return(provider_service)
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: {
+            id: 'INCOMING_PROVIDER_MEDIA_1',
+            remoteJid: '15551234567@s.whatsapp.net'
+          },
+          pushName: 'Alice',
+          message: {
+            imageMessage: {
+              caption: 'Provider fallback photo',
+              mimetype: 'image/png',
+              fileName: 'original-name.png'
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      incoming_message = conversation.messages.find_by(source_id: 'INCOMING_PROVIDER_MEDIA_1')
+      expect(incoming_message).to be_present
+      expect(incoming_message.content).to eq('Provider fallback photo')
+      expect(incoming_message.attachments.size).to eq(1)
+      expect(incoming_message.attachments.first.file_type).to eq('image')
+      expect(incoming_message.attachments.first.file.attached?).to be(true)
+    end
+
+    it 'keeps the live message and enqueues media backfill when provider media is temporarily unavailable' do
+      provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+      allow(provider_service).to receive(:fetch_message_media).and_raise(StandardError, 'provider timeout')
+      allow(provider_service).to receive(:fetch_message_by_source_id).and_return(nil)
+      allow_any_instance_of(Channel::WhatsappWeb).to receive(:provider_service).and_return(provider_service)
+
+      expect do
+        described_class.new(
+          inbox: inbox,
+          params: {
+            key: {
+              id: 'INCOMING_PROVIDER_MEDIA_RETRY_1',
+              remoteJid: '15551234567@s.whatsapp.net'
+            },
+            pushName: 'Alice',
+            message: {
+              videoMessage: {
+                caption: 'Video that needs async media retry',
+                mimetype: 'video/mp4',
+                fileName: 'clip.mp4'
+              }
+            }
+          }.with_indifferent_access
+        ).perform
+      end.to have_enqueued_job(Channels::WhatsappWeb::MediaAttachmentBackfillJob).with(
+        channel.id,
+        'INCOMING_PROVIDER_MEDIA_RETRY_1',
+        hash_including('key' => hash_including('id' => 'INCOMING_PROVIDER_MEDIA_RETRY_1')),
+        1
+      )
+
+      incoming_message = conversation.messages.find_by(source_id: 'INCOMING_PROVIDER_MEDIA_RETRY_1')
+      expect(incoming_message).to be_present
+      expect(incoming_message.content).to eq('Video that needs async media retry')
+      expect(incoming_message.attachments).to be_empty
     end
 
     it 'creates outgoing echo media messages for mobile sends' do

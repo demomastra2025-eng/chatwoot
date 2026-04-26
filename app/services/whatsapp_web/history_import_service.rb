@@ -202,7 +202,7 @@ class WhatsappWeb::HistoryImportService
       documentMessage: :file,
       stickerMessage: :image
     }.each do |key, file_type|
-      payload = message[key]
+      payload = media_message_payload(message, key)
       next if payload.blank?
 
       attachment = payload.to_h.deep_symbolize_keys
@@ -217,6 +217,14 @@ class WhatsappWeb::HistoryImportService
     end
 
     {}
+  end
+
+  def media_message_payload(message, key)
+    direct_payload = message[key]
+    return direct_payload if direct_payload.present?
+    return unless key == :documentMessage
+
+    message.dig(:documentWithCaptionMessage, :message, :documentMessage)
   end
 
   def prepare_attachment_file(attachment_payload, source_id:, record:)
