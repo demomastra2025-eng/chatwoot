@@ -233,8 +233,19 @@ export default function useAutomationValues() {
    * @returns {Array} An array of action dropdown values.
    */
   const getActionDropdownValues = (type, eventName = null) => {
+    const agentsList =
+      type === 'assign_agent'
+        ? [
+            {
+              id: 'last_responding_agent',
+              name: t('AUTOMATION.LAST_RESPONDING_AGENT'),
+            },
+            ...agents.value,
+          ]
+        : agents.value;
+
     return getActionOptions({
-      agents: agents.value,
+      agents: agentsList,
       appointmentStatusOptions: appointmentStatusOptions.value,
       crmDealOwnerOptions: agents.value,
       crmStageOptions: crmStageOptions.value,

@@ -83,6 +83,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     head :ok
   end
 
+  def reset_secret
+    return head :not_found unless @inbox.api?
+
+    @inbox.channel.reset_secret!
+  end
+
   def destroy
     if @inbox.deleting?
       render status: :accepted, json: pending_deletion_payload(@inbox)

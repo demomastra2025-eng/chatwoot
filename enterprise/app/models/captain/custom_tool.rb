@@ -34,6 +34,11 @@ class Captain::CustomTool < ApplicationRecord
   NAME_PREFIX = 'custom'.freeze
   NAME_SEPARATOR = '_'.freeze
   DEFAULT_SLUG_BODY = 'tool'.freeze
+  # LLM function/tool names are constrained to 64 characters.
+  MAX_SLUG_LENGTH = 64
+  COLLISION_SUFFIX_LENGTH = 7 # "_" + 6 random alphanumeric chars
+  NAME_SEPARATOR_RUN_REGEX = /#{Regexp.escape(NAME_SEPARATOR)}{2,}/o
+  NAME_SEPARATOR_BOUNDARY_REGEX = /\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/o
   PARAM_SOURCE_AGENT = 'agent'.freeze
   PARAM_SOURCE_CONTEXT = 'context'.freeze
   PARAM_SOURCE_FIXED = 'fixed'.freeze
@@ -96,7 +101,7 @@ class Captain::CustomTool < ApplicationRecord
   before_validation :normalize_auth_config
   before_validation :normalize_param_schema
 
-  validates :slug, presence: true, uniqueness: { scope: :account_id }
+  validates :slug, presence: true, uniqueness: { scope: :account_id }, length: { maximum: MAX_SLUG_LENGTH }
   validates :title, presence: true
   validates :endpoint_url, presence: true
   validates :group_name, length: { maximum: 100 }, allow_blank: true
@@ -256,7 +261,7 @@ class Captain::CustomTool < ApplicationRecord
     return if slug.present?
     return if title.blank?
 
-    base_slug = "#{NAME_PREFIX}#{NAME_SEPARATOR}#{normalized_title_slug}"
+    base_slug = "#{NAME_PREFIX}#{NAME_SEPARATOR}#{normalized_title_slug}".truncate(MAX_SLUG_LENGTH, omission: '')
     self.slug = find_unique_slug(base_slug)
   end
 
@@ -266,8 +271,8 @@ class Captain::CustomTool < ApplicationRecord
     slug_body = transliterated_title
                 .downcase
                 .gsub(/[^a-z0-9]+/, NAME_SEPARATOR)
-                .gsub(/#{Regexp.escape(NAME_SEPARATOR)}{2,}/o, NAME_SEPARATOR)
-                .gsub(/\A#{Regexp.escape(NAME_SEPARATOR)}+|#{Regexp.escape(NAME_SEPARATOR)}+\z/o, '')
+                .gsub(NAME_SEPARATOR_RUN_REGEX, NAME_SEPARATOR)
+                .gsub(NAME_SEPARATOR_BOUNDARY_REGEX, '')
 
     slug_body.presence || DEFAULT_SLUG_BODY
   end
@@ -283,8 +288,9 @@ class Captain::CustomTool < ApplicationRecord
   def find_unique_slug(base_slug)
     return base_slug unless slug_exists?(base_slug)
 
+    truncated = base_slug.truncate(MAX_SLUG_LENGTH - COLLISION_SUFFIX_LENGTH, omission: '')
     5.times do
-      slug_candidate = "#{base_slug}#{NAME_SEPARATOR}#{SecureRandom.alphanumeric(6).downcase}"
+      slug_candidate = "#{truncated}#{NAME_SEPARATOR}#{SecureRandom.alphanumeric(6).downcase}"
       return slug_candidate unless slug_exists?(slug_candidate)
     end
 

@@ -120,6 +120,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def update_last_seen
+    Notification::MarkConversationReadService.new(user: Current.user, account: Current.account, conversation: @conversation).perform
     Conversations::MarkReadService.new(
       conversation: @conversation,
       user: Current.user

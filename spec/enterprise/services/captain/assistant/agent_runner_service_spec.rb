@@ -217,7 +217,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     it 'processes and formats agent result' do
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil })
+      expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
+    end
+
+    it 'surfaces the V2 handoff tool flag from the runner context' do
+      result_context = { captain_v2_handoff_tool_called: true }
+      result = instance_double(Captain::Runtime::Result, output: { 'response' => '' }, context: result_context, error: nil)
+      allow(mock_runner).to receive(:run).and_return(result)
+
+      response = service.generate_response(message_history: message_history)
+
+      expect(response['handoff_tool_called']).to be true
     end
 
     it 'converts blank structured agent output into a provider-error handoff payload' do
@@ -347,7 +357,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(result).to eq({
                                'response' => 'Simple string response',
                                'reasoning' => 'Processed by agent',
-                               'agent_name' => nil
+                               'agent_name' => nil,
+                               'handoff_tool_called' => false
                              })
       end
     end

@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   MAX_MESSAGE_LENGTH = 10_000
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
@@ -35,9 +36,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id
 
-    return unless current_buffer_state_valid?
-
-    return unless conversation_pending?
+    return unless current_buffer_state_valid? && conversation_pending?
 
     Current.executed_by = @assistant
 
@@ -74,23 +73,26 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_response
     return unless current_buffer_state_valid?
-    return unless conversation_pending?
 
     normalize_blank_public_response!
 
-    if handoff_requested?
+    processed_response = if handoff_requested?
       process_action(handoff_action_name)
       account.increment_token_usage(@response.dig('usage', 'total_tokens'))
-    else
+      true
+    elsif conversation_pending?
       ActiveRecord::Base.transaction do
         create_messages
         Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
         account.increment_response_usage
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
       end
+      true
+    else
+      false
     end
 
-    clear_buffer_state_if_current
+    clear_buffer_state_if_current if processed_response
   end
 
   def collect_previous_messages
@@ -185,10 +187,11 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
-    ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
+    v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
   end
 
   def handoff_action_name
+    return 'v2_handoff' if v2_handoff_tool_fired?
     provider_error_handoff_requested? ? 'provider_error_handoff' : 'handoff'
   end
 
@@ -214,6 +217,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @response['response'].blank?
   end
 
+  def v2_handoff_tool_fired?
+    @response&.[]('handoff_tool_called')
+  end
+
   def process_action(action)
     case action
     when 'handoff'
@@ -227,6 +234,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       create_provider_error_private_note
       @conversation.bot_handoff!
       send_out_of_office_message_if_applicable
+    when 'v2_handoff'
+      if conversation_pending?
+        I18n.with_locale(@assistant.account.locale) do
+          create_handoff_private_note
+          create_handoff_message
+          @conversation.bot_handoff!
+          send_out_of_office_message_if_applicable
+        end
+      else
+        create_handoff_message(preserve_waiting_since: true)
+      end
     end
   end
 
@@ -238,15 +256,18 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(@conversation)
   end
 
-  def create_handoff_message
+  def create_handoff_message(preserve_waiting_since: false)
     return unless @assistant.handoff_message_enabled?
 
     handoff_message = handoff_message_content
     return if handoff_message.blank?
 
-    create_outgoing_message(
-      @assistant.render_runtime_text(handoff_message, conversation: @conversation)
-    )
+    I18n.with_locale(@assistant.account.locale) do
+      create_outgoing_message(
+        @assistant.render_runtime_text(handoff_message, conversation: @conversation),
+        preserve_waiting_since: preserve_waiting_since
+      )
+    end
   end
 
   def handoff_message_content
@@ -287,7 +308,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     raise ArgumentError, 'Message content cannot be blank' if content.blank?
   end
 
-  def create_outgoing_message(message_content, agent_name: nil)
+  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false)
     additional_attrs = {}
     additional_attrs[:agent_name] = agent_name if agent_name.present?
     additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
@@ -298,7 +319,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       inbox_id: inbox.id,
       sender: @assistant,
       content: message_content,
-      additional_attributes: additional_attrs
+      additional_attributes: additional_attrs,
+      preserve_waiting_since: preserve_waiting_since
     )
   end
 
@@ -428,13 +450,18 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return false unless conversation_eligible_for_response?
 
     current_last_incoming_message_id = @conversation.reload.messages.incoming.last&.id
+    return bufferless_state_valid?(current_last_incoming_message_id) if @buffer_token.blank?
 
-    if @buffer_token.blank?
-      return true if @expected_last_message_id.blank?
+    buffered_state_valid?(current_last_incoming_message_id)
+  end
 
-      return current_last_incoming_message_id.to_i == @expected_last_message_id.to_i
-    end
+  def bufferless_state_valid?(current_last_incoming_message_id)
+    return true if @expected_last_message_id.blank?
 
+    current_last_incoming_message_id.to_i == @expected_last_message_id.to_i
+  end
+
+  def buffered_state_valid?(current_last_incoming_message_id)
     state = current_buffer_state
     return false if state.blank?
 
@@ -466,6 +493,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_eligible_for_response?
-    conversation_pending? && @conversation.inbox.captain_assistant&.id == @assistant.id
+    (conversation_pending? || v2_handoff_tool_fired?) && @conversation.inbox.captain_assistant&.id == @assistant.id
   end
 end
+# rubocop:enable Metrics/ClassLength

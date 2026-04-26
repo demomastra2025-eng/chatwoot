@@ -3,6 +3,7 @@ require 'securerandom'
 class Captain::BaseTaskService
   include Integrations::LlmInstrumentation
   include Captain::ToolInstrumentation
+  include Llm::ExceptionTrackable
 
   # gpt-4o-mini supports 128,000 tokens
   # 1 token is approx 4 characters
@@ -63,6 +64,7 @@ class Captain::BaseTaskService
   end
 
   def execute_ruby_llm_request(model:, messages:, schema: nil, tools: [])
+    credential = llm_credential
     response = Llm::ChatRequestRunner.new(
       context: llm_context_for(model),
       model: model,
@@ -77,7 +79,7 @@ class Captain::BaseTaskService
 
     build_ruby_llm_response(response, messages)
   rescue StandardError => e
-    ChatwootExceptionTracker.new(e, account: account).capture_exception
+    capture_llm_exception(e, credential: credential)
     { error: e.message, request_messages: messages }
   end
 
@@ -234,13 +236,27 @@ class Captain::BaseTaskService
   end
 
   def api_key_configured?
-    api_key.present?
+    api_key(model_provider(task_model)).present?
   end
 
   def api_key(provider_name = model_provider)
     return openai_hook&.settings&.dig('api_key').presence || Llm::Config.api_key('openai') if provider_name.to_s == 'openai'
 
     Llm::Config.api_key(provider_name)
+  end
+
+  def llm_credential
+    @llm_credential ||= hook_llm_credential || system_llm_credential
+  end
+
+  def hook_llm_credential
+    key = openai_hook&.settings&.dig('api_key').presence
+    { api_key: key, source: :hook } if key
+  end
+
+  def system_llm_credential(provider_name = model_provider(task_model))
+    key = provider_name.to_s == 'openai' ? system_api_key.presence : Llm::Config.api_key(provider_name)
+    { api_key: key, source: :system, provider: provider_name } if key.present?
   end
 
   def openai_hook
@@ -261,6 +277,10 @@ class Captain::BaseTaskService
 
   def llm_feature_key
     'editor'
+  end
+
+  def exception_tracking_account
+    account
   end
 
   def prompt_from_file(file_name)

@@ -180,6 +180,25 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
+    it 'creates the configured public handoff message when the V2 handoff tool already opened the conversation' do
+      assistant.update!(config: {
+                          'handoff_message_enabled' => true,
+                          'handoff_message_mode' => 'static',
+                          'handoff_message' => 'Connecting you to a human agent.'
+                        })
+      allow(agent_runner_service).to receive(:generate_response) do
+        conversation.bot_handoff!
+        { 'response' => '', 'handoff_tool_called' => true }
+      end
+
+      described_class.perform_now(conversation, assistant)
+
+      conversation.reload
+      expect(conversation.status).to eq('open')
+      expect(conversation.messages.outgoing.last.content).to eq('Connecting you to a human agent.')
+      expect(conversation.waiting_since).to be_present
+    end
+
     # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
     # same transaction defers the message's after_create_commit until commit, at which
     # point it clears waiting_since (bot_response). The handoff path must stay outside

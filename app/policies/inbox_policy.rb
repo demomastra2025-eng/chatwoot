@@ -70,6 +70,10 @@ class InboxPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def reset_secret?
+    @account_user.administrator?
+  end
+
   def refresh_whatsapp_web_qr?
     @account_user.administrator?
   end

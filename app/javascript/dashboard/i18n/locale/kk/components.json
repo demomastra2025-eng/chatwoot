@@ -52,5 +52,17 @@
   },
   "CHANNEL_SELECTOR": {
     "COMING_SOON": "Coming Soon!"
+  },
+  "SLASH_COMMANDS": {
+    "HEADING_1": "Тақырып 1",
+    "HEADING_2": "Тақырып 2",
+    "HEADING_3": "Тақырып 3",
+    "BOLD": "Қалың",
+    "ITALIC": "Курсив",
+    "STRIKETHROUGH": "Сызылған",
+    "CODE": "Код",
+    "BULLET_LIST": "Маркерленген тізім",
+    "ORDERED_LIST": "Нөмірленген тізім",
+    "TABLE": "Кесте"
   }
 }

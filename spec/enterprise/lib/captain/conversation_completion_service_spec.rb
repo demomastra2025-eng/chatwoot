@@ -195,7 +195,10 @@ RSpec.describe Captain::ConversationCompletionService do
           instance_double(RubyLLM::Message, content: { 'complete' => true, 'reason' => 'Done' }, input_tokens: 10, output_tokens: 5)
         )
 
-        service.perform
+        result = service.perform
+
+        expect(result[:complete]).to be true
+        expect(result[:reason]).to eq('Done')
       end
     end
 

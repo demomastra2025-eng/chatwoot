@@ -110,6 +110,7 @@ module Llm::Config
 
     def configure_ruby_llm
       Llm::ApiClient.configure do |config|
+        config.model_registry_file = Rails.root.join('config/llm_models.json').to_s if config.respond_to?(:model_registry_file=)
         config.logger = Rails.logger
         config.default_moderation_model = moderation_model
         apply_provider_overrides(config, default_provider_overrides)

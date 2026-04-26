@@ -91,6 +91,14 @@
           "PLACEHOLDER": "Please enter your Webhook URL",
           "ERROR": "Please enter a valid URL"
         },
+        "CHANNEL_WEBHOOK_SECRET": {
+          "LABEL": "Вебхук құпиясы",
+          "COPY": "Құпияны алмасу буферіне көшіру",
+          "COPY_SUCCESS": "Құпия алмасу буферіне көшірілді",
+          "TOGGLE": "Құпияны көрсету немесе жасыру",
+          "RESET_SUCCESS": "Вебхук құпиясы сәтті қайта жасалды",
+          "RESET_ERROR": "Вебхук құпиясын қайта жасау мүмкін болмады. Қайталап көріңіз"
+        },
         "CHANNEL_DOMAIN": {
           "LABEL": "Website Domain",
           "PLACEHOLDER": "Enter your website domain (eg: acme.com)"

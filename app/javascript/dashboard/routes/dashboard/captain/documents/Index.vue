@@ -7,9 +7,13 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import DocumentCard from 'dashboard/components-next/captain/assistant/DocumentCard.vue';
+import BulkSelectBar from 'dashboard/components-next/captain/assistant/BulkSelectBar.vue';
+import BulkDeleteDialog from 'dashboard/components-next/captain/pageComponents/BulkDeleteDialog.vue';
+import Policy from 'dashboard/components/policy.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
 import RelatedResponses from 'dashboard/components-next/captain/pageComponents/document/RelatedResponses.vue';
@@ -21,6 +25,7 @@ import LimitBanner from 'dashboard/components-next/captain/pageComponents/docume
 const route = useRoute();
 const store = useStore();
 const { t } = useI18n();
+const { checkPermissions } = usePolicy();
 
 const { isOnChatwootCloud } = useAccount();
 const uiFlags = useMapGetter('captainDocuments/getUIFlags');
@@ -29,9 +34,13 @@ const isFetching = computed(() => uiFlags.value.fetchingList);
 const documentsMeta = useMapGetter('captainDocuments/getMeta');
 
 const selectedAssistantId = computed(() => Number(route.params.assistantId));
+const canManageDocuments = computed(() => checkPermissions(['administrator']));
 
 const selectedDocument = ref(null);
 const deleteDocumentDialog = ref(null);
+const bulkDeleteDialog = ref(null);
+const bulkSelectedIds = ref(new Set());
+const hoveredCard = ref(null);
 
 const handleDelete = () => {
   deleteDocumentDialog.value.dialogRef.open();
@@ -127,12 +136,71 @@ const handleAction = ({ action, id }) => {
   });
 };
 
-const onPageChange = page => fetchDocuments(page);
+const onPageChange = page => {
+  const hadSelection = bulkSelectedIds.value.size > 0;
+  fetchDocuments(page);
+
+  if (hadSelection) {
+    bulkSelectedIds.value = new Set();
+  }
+};
 
 const onDeleteSuccess = () => {
   if (documents.value?.length === 0 && documentsMeta.value?.page > 1) {
     onPageChange(documentsMeta.value.page - 1);
   }
+};
+
+const buildSelectedCountLabel = computed(() => {
+  const count = documents.value?.length || 0;
+  const isAllSelected = bulkSelectedIds.value.size === count && count > 0;
+  return isAllSelected
+    ? t('CAPTAIN.DOCUMENTS.UNSELECT_ALL', { count })
+    : t('CAPTAIN.DOCUMENTS.SELECT_ALL', { count });
+});
+
+const selectedCountLabel = computed(() => {
+  return t('CAPTAIN.DOCUMENTS.SELECTED', {
+    count: bulkSelectedIds.value.size,
+  });
+});
+
+const hasBulkSelection = computed(() => bulkSelectedIds.value.size > 0);
+
+const shouldShowSelectionControl = docId => {
+  return (
+    canManageDocuments.value &&
+    (hoveredCard.value === docId || hasBulkSelection.value)
+  );
+};
+
+const handleCardHover = (isHovered, id) => {
+  hoveredCard.value = isHovered ? id : null;
+};
+
+const handleCardSelect = id => {
+  if (!canManageDocuments.value) return;
+  const selected = new Set(bulkSelectedIds.value);
+  selected[selected.has(id) ? 'delete' : 'add'](id);
+  bulkSelectedIds.value = selected;
+};
+
+const fetchDocumentsAfterBulkAction = () => {
+  const hasNoDocumentsLeft = documents.value?.length === 0;
+  const currentPage = documentsMeta.value?.page;
+
+  if (hasNoDocumentsLeft) {
+    const pageToFetch = currentPage > 1 ? currentPage - 1 : currentPage;
+    fetchDocuments(pageToFetch);
+  } else {
+    fetchDocuments(currentPage);
+  }
+
+  bulkSelectedIds.value = new Set();
+};
+
+const onBulkDeleteSuccess = () => {
+  fetchDocumentsAfterBulkAction();
 };
 
 watch(
@@ -142,6 +210,7 @@ watch(
       return;
     }
 
+    bulkSelectedIds.value = new Set();
     fetchDocuments();
   },
   { immediate: true }
@@ -163,6 +232,21 @@ watch(
     @update:current-page="onPageChange"
     @click="handleCreateDocument"
   >
+    <template #subHeader>
+      <Policy :permissions="['administrator']">
+        <BulkSelectBar
+          v-model="bulkSelectedIds"
+          :all-items="documents"
+          :select-all-label="buildSelectedCountLabel"
+          :selected-count-label="selectedCountLabel"
+          :delete-label="$t('CAPTAIN.DOCUMENTS.BULK_DELETE_BUTTON')"
+          class="w-fit"
+          :class="{ 'mb-2': bulkSelectedIds.size > 0 }"
+          @bulk-delete="bulkDeleteDialog.dialogRef.open()"
+        />
+      </Policy>
+    </template>
+
     <template #knowMore>
       <FeatureSpotlightPopover
         :button-label="$t('CAPTAIN.HEADER_KNOW_MORE')"
@@ -171,6 +255,7 @@ watch(
         :hide-actions="!isOnChatwootCloud"
         fallback-thumbnail="/assets/images/dashboard/captain/document-popover-light.svg"
         fallback-thumbnail-dark="/assets/images/dashboard/captain/document-popover-dark.svg"
+        learn-more-url="https://chwt.app/captain-document"
       />
     </template>
 
@@ -203,7 +288,13 @@ watch(
           :last-error="doc.last_error"
           :last-synced-at="doc.last_synced_at"
           :created-at="doc.created_at"
+          :is-selected="canManageDocuments && bulkSelectedIds.has(doc.id)"
+          :selectable="canManageDocuments"
+          :show-selection-control="shouldShowSelectionControl(doc.id)"
+          :show-menu="!bulkSelectedIds.has(doc.id)"
           @action="handleAction"
+          @select="handleCardSelect"
+          @hover="isHovered => handleCardHover(isHovered, doc.id)"
         />
       </div>
     </template>
@@ -226,6 +317,13 @@ watch(
       :entity="selectedDocument"
       type="Documents"
       @delete-success="onDeleteSuccess"
+    />
+    <BulkDeleteDialog
+      v-if="bulkSelectedIds"
+      ref="bulkDeleteDialog"
+      :bulk-ids="bulkSelectedIds"
+      type="AssistantDocument"
+      @delete-success="onBulkDeleteSuccess"
     />
   </PageLayout>
 </template>

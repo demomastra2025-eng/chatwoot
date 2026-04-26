@@ -52,7 +52,7 @@ module Enterprise::Channelable
     end
 
     def filtered_audited_changes
-      changes = saved_changes.except('updated_at')
+      changes = saved_changes.except('updated_at', 'secret')
       return changes unless is_a?(::Channel::WhatsappWeb)
 
       changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS)

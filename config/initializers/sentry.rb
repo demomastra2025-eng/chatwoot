@@ -11,7 +11,7 @@ if ENV['SENTRY_DSN'].present?
     # We recommend adjusting the value in production:
     config.traces_sample_rate = ENV.fetch('SENTRY_TRACES_SAMPLE_RATE', 0.1).to_f if enable_transactions
 
-    config.excluded_exceptions += ['Rack::Timeout::RequestTimeoutException']
+    config.excluded_exceptions += ['Rack::Timeout::RequestTimeoutException', 'MutexApplicationJob::LockAcquisitionError']
 
     # to track post data in sentry
     config.send_default_pii = true unless disable_pii

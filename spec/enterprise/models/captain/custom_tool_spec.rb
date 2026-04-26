@@ -396,6 +396,16 @@ RSpec.describe Captain::CustomTool, type: :model do
       expect(tool3.slug).not_to eq('custom_test_tool_abc123')
     end
 
+    it 'limits generated slugs to the LLM tool name limit' do
+      tool = create(
+        :captain_custom_tool,
+        account: account,
+        title: 'Fetch Order Status With Very Long Descriptive Name For Enterprise Integrations'
+      )
+
+      expect(tool.slug.length).to be <= described_class::MAX_SLUG_LENGTH
+    end
+
     it 'does not generate slug when title is blank' do
       tool = build(:captain_custom_tool, account: account, title: nil)
 
@@ -917,6 +927,25 @@ RSpec.describe Captain::CustomTool, type: :model do
 
         tool_instance = tool.tool(assistant)
         expect(tool_instance.description).to eq('Fetches order data')
+      end
+
+      it 'uses the configured slug as the LLM tool name' do
+        tool = create(:captain_custom_tool, account: account, slug: 'custom_fetch_order')
+
+        tool_instance = tool.tool(assistant)
+        expect(tool_instance.name).to eq('custom_fetch_order')
+      end
+
+      it 'supports the V1-compatible custom HTTP wrapper' do
+        tool = create(:captain_custom_tool, account: account)
+        conversation = create(:conversation, account: account)
+
+        tool_instance = tool.tool(
+          assistant,
+          base_class: Captain::Tools::CustomHttpTool,
+          conversation: conversation
+        )
+        expect(tool_instance).to be_a(Captain::Tools::CustomHttpTool)
       end
 
       it 'sets parameters on the tool class' do

@@ -21,6 +21,13 @@ const getConditionDropdownValues = vi.fn((type, eventName) => {
     return [{ id: 21, name: 'Todo' }];
   }
 
+  if (type === 'private_note') {
+    return [
+      { id: true, name: 'True' },
+      { id: false, name: 'False' },
+    ];
+  }
+
   return [];
 });
 
@@ -35,6 +42,17 @@ const getActionDropdownValues = vi.fn(type => {
 
   if (type === 'change_task_status') {
     return [{ id: 21, name: 'Todo' }];
+  }
+
+  if (type === 'assign_agent') {
+    return [
+      { id: 'nil', name: 'None' },
+      {
+        id: 'last_responding_agent',
+        name: 'Last Responding Agent',
+      },
+      { id: 1, name: 'Agent 1' },
+    ];
   }
 
   return [];
@@ -235,6 +253,70 @@ describe('useEditableAutomation', () => {
     ]);
     expect(formatted.actions[0].action_params).toEqual([
       { id: 11, name: 'Sales / Qualified' },
+    ]);
+  });
+
+  it('rehydrates boolean conditions as a single selected option', () => {
+    const { formatAutomation } = useEditableAutomation();
+
+    const automation = {
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'private_note',
+          filter_operator: 'equal_to',
+          values: [false],
+          query_operator: null,
+        },
+      ],
+      actions: [],
+    };
+    const automationTypes = {
+      message_created: {
+        conditions: [{ key: 'private_note', inputType: 'search_select' }],
+      },
+    };
+
+    const formatted = formatAutomation(automation, [], automationTypes, []);
+
+    expect(formatted.conditions).toEqual([
+      {
+        attribute_key: 'private_note',
+        filter_operator: 'equal_to',
+        values: { id: false, name: 'False' },
+        query_operator: 'and',
+      },
+    ]);
+  });
+
+  it('rehydrates last responding agent as a selected action option', () => {
+    const { formatAutomation } = useEditableAutomation();
+
+    const automation = {
+      event_name: 'conversation_created',
+      conditions: [],
+      actions: [
+        {
+          action_name: 'assign_agent',
+          action_params: ['last_responding_agent'],
+        },
+      ],
+    };
+
+    const formatted = formatAutomation(automation, [], {}, [
+      { key: 'assign_agent', inputType: 'search_select' },
+    ]);
+
+    expect(formatted.actions).toEqual([
+      {
+        action_name: 'assign_agent',
+        action_params: [
+          {
+            id: 'last_responding_agent',
+            name: 'Last Responding Agent',
+          },
+        ],
+      },
     ]);
   });
 });

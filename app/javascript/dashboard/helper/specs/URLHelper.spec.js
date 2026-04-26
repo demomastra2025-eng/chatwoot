@@ -50,6 +50,15 @@ describe('#URL Helpers', () => {
         })
       ).toBe('/app/accounts/1/inbox/1?status=pending');
     });
+
+    it('should return url to participating conversations', () => {
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          conversationType: 'participating',
+        })
+      ).toBe('/app/accounts/1/participating/conversations');
+    });
   });
   describe('conversationUrl', () => {
     afterEach(() => {

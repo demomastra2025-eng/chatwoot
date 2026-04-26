@@ -8,6 +8,7 @@
 #  description  :string
 #  name         :string
 #  outgoing_url :string
+#  secret       :string
 #  created_at   :datetime         not null
 #  updated_at   :datetime         not null
 #  account_id   :bigint
@@ -20,6 +21,8 @@
 class AgentBot < ApplicationRecord
   include AccessTokenable
   include Avatarable
+
+  include WebhookSecretable
 
   scope :accessible_to, lambda { |account|
     account_id = account&.id
@@ -90,3 +93,5 @@ class AgentBot < ApplicationRecord
     validator.errors.each { |message| errors.add(:bot_config, message) }
   end
 end
+
+AgentBot.include_mod_with('Audit::AgentBot')

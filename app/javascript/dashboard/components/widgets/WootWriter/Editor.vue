@@ -381,7 +381,12 @@ const plugins = computed(() => {
 const sendWithSignature = computed(() => {
   // this is considered the source of truth, we watch this property
   // on change, we toggle the signature in the editor
-  if (props.allowSignature && !props.isPrivate && props.channelType) {
+  if (
+    props.allowSignature &&
+    !props.isPrivate &&
+    props.channelType &&
+    !props.disabled
+  ) {
     return fetchSignatureFlagFromUISettings(props.channelType);
   }
 
@@ -504,6 +509,7 @@ function reloadState(content = props.modelValue) {
 }
 
 function addSignature() {
+  if (props.disabled) return;
   let content = props.modelValue;
   // see if the content is empty, if it is before appending the signature
   // we need to add a paragraph node and move the cursor at the start of the editor
@@ -522,6 +528,7 @@ function addSignature() {
 }
 
 function removeSignature() {
+  if (props.disabled) return;
   if (!props.signature) return;
   let content = props.modelValue;
   content = removeSignatureHelper(
@@ -889,7 +896,7 @@ watch(
 
 watch(sendWithSignature, newValue => {
   // see if the allowSignature flag is true
-  if (props.allowSignature) {
+  if (props.allowSignature && !props.disabled) {
     toggleSignatureInEditor(newValue);
   }
 });
@@ -1074,7 +1081,32 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
 }
 
 .ProseMirror-woot-style {
-  @apply overflow-auto min-h-[4.5rem] max-h-[7.5rem];
+  @apply overflow-auto;
+}
+
+.ProseMirror-woot-style:not(
+    :where(.resizable-editor-wrapper .ProseMirror-woot-style)
+  ) {
+  @apply min-h-[4.5rem] max-h-[7.5rem];
+}
+
+// Resizable editor wrapper styles
+.resizable-editor-wrapper {
+  .ProseMirror-woot-style {
+    min-height: clamp(
+      var(--editor-min-allowed, var(--editor-min-height, 4.5rem)),
+      var(--editor-height, var(--editor-min-height, 4.5rem)),
+      var(--editor-max-allowed, var(--editor-max-height, 7.5rem))
+    );
+    max-height: clamp(
+      var(--editor-min-allowed, var(--editor-min-height, 4.5rem)),
+      var(--editor-height, var(--editor-min-height, 4.5rem)),
+      var(--editor-max-allowed, var(--editor-max-height, 7.5rem))
+    );
+    transition:
+      min-height var(--editor-height-transition, 180ms ease),
+      max-height var(--editor-height-transition, 180ms ease);
+  }
 }
 
 .ProseMirror-prompt-backdrop::backdrop {

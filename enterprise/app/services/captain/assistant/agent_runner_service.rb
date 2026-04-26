@@ -19,6 +19,7 @@ class Captain::Assistant::AgentRunnerService
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @handoff_tool_called = false
   end
 
   def generate_response(message_history: [])
@@ -53,7 +54,8 @@ class Captain::Assistant::AgentRunnerService
 
   def process_agent_result(result)
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
-    return provider_error_response(result.error) if result.respond_to?(:error) && result.error.present?
+    handoff_tool_called = handoff_tool_called_from_context(result.context)
+    return provider_error_response(result.error, handoff_tool_called: handoff_tool_called) if result.respond_to?(:error) && result.error.present?
 
     if result.context&.dig(:pending_human_handoff).present?
       return human_handoff_response(result.context[:pending_human_handoff],
@@ -63,7 +65,8 @@ class Captain::Assistant::AgentRunnerService
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
-    return provider_error_response(blank_response_error) if blank_public_response?(response)
+    response['handoff_tool_called'] = handoff_tool_called
+    return provider_error_response(blank_response_error, handoff_tool_called: handoff_tool_called) if blank_public_response?(response)
 
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
@@ -84,13 +87,19 @@ class Captain::Assistant::AgentRunnerService
     }
   end
 
-  def provider_error_response(error)
-    {
+  def provider_error_response(error, handoff_tool_called: false)
+    response = {
       'response' => PROVIDER_ERROR_RESPONSE,
       'reasoning' => "Provider error occurred: #{error.message}",
       'error_class' => error.class.name,
       'error_message' => error.message
     }
+    response['handoff_tool_called'] = true if handoff_tool_called
+    response
+  end
+
+  def handoff_tool_called_from_context(context)
+    context&.dig(:captain_v2_handoff_tool_called) || false
   end
 
   def blank_public_response?(response)
@@ -215,16 +224,17 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def add_usage_metadata_callback(runner)
-    return runner unless ChatwootApp.otel_enabled?
-
     handoff_tool_name = Captain::Tools::HandoffTool.new(@assistant).name
 
+    # This callback feeds ResponseBuilderJob even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, _tool_result, context_wrapper|
       track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
     end
 
-    runner.on_run_complete do |_agent_name, _result, context_wrapper|
-      write_credits_used_metadata(context_wrapper)
+    if ChatwootApp.otel_enabled?
+      runner.on_run_complete do |_agent_name, _result, context_wrapper|
+        write_credits_used_metadata(context_wrapper)
+      end
     end
     runner
   end
@@ -234,14 +244,14 @@ class Captain::Assistant::AgentRunnerService
     return unless tool_name.to_s == handoff_tool_name
 
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
+    @handoff_tool_called = true
   end
 
   def write_credits_used_metadata(context_wrapper)
     root_span = context_wrapper&.context&.dig(:__otel_tracing, :root_span)
     return unless root_span
 
-    credit_used = !context_wrapper.context[:captain_v2_handoff_tool_called]
-    root_span.set_attribute(format(ATTR_LANGFUSE_METADATA, 'credit_used'), credit_used.to_s)
+    root_span.set_attribute(format(ATTR_LANGFUSE_METADATA, 'credit_used'), @handoff_tool_called ? 'false' : 'true')
   end
 
   def runner

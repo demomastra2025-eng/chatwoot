@@ -5,13 +5,21 @@ class Captain::SummaryService < Captain::BaseTaskService
     make_api_call(
       model: task_model,
       messages: [
-        { role: 'system', content: render_task_prompt('summary') },
+        { role: 'system', content: system_prompt },
         { role: 'user', content: conversation.to_llm_text(include_contact_details: false) }
       ]
     )
   end
 
   private
+
+  def system_prompt
+    <<~PROMPT
+      #{prompt_from_file('summary')}
+
+      Reply in #{account.locale_english_name}.
+    PROMPT
+  end
 
   def event_name
     'summarize'
