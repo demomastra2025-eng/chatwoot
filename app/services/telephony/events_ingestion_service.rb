@@ -38,9 +38,20 @@ class Telephony::EventsIngestionService
     end
 
     call_session
-  rescue StandardError => e
+  rescue Telephony::Error => e
     event&.update(status: 'failed', error_message: e.message) if defined?(event) && event.present? && event.persisted?
     raise
+  rescue StandardError => e
+    unless defined?(event) && event.present? && event.persisted?
+      raise
+    end
+
+    event.update(status: 'failed', error_message: e.message)
+    Rails.logger.error(
+      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "event_type=#{event.event_type} call_ref=#{call_ref} error_class=#{e.class.name} message=#{e.message}"
+    )
+    event.call_session
   end
 
   private
@@ -103,7 +114,7 @@ class Telephony::EventsIngestionService
     contact = resolve_contact(account, conversation)
     agent_binding = resolve_agent_binding(account)
 
-    attributes = {
+    {
       account: account,
       conversation: conversation || call_session.conversation,
       contact: contact || call_session.contact,
@@ -111,7 +122,8 @@ class Telephony::EventsIngestionService
       number_binding: number_binding || call_session.number_binding,
       agent_binding: agent_binding || call_session.agent_binding,
       provider: payload_value('provider') || call_session.provider || 'fonoster',
-      provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id', 'providerCallId') || call_session.provider_call_sid,
+      provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
+                                       'providerCallId') || call_session.provider_call_sid,
       status: resolved_status || call_session.status,
       direction: resolved_direction || call_session.direction || 'inbound',
       from_number: resolved_from_number || call_session.from_number,
@@ -132,7 +144,10 @@ class Telephony::EventsIngestionService
     return unless call_session.direction == 'inbound'
 
     inbox = call_session.inbox || resolve_inbox(account)
-    raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_FOUND', message: 'Unable to resolve voice inbox for inbound call', status: :not_found) if inbox.blank?
+    if inbox.blank?
+      raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_FOUND', message: 'Unable to resolve voice inbox for inbound call',
+                                 status: :not_found)
+    end
 
     conversation = Voice::InboundCallBuilder.perform!(
       account: account,
@@ -215,6 +230,7 @@ class Telephony::EventsIngestionService
 
   def resolve_contact(account, conversation)
     return conversation.contact if conversation&.contact.present?
+
     contact_id = payload_value('contact_id', 'contactId') || metadata_value('chatwoot_contact_id', 'contact_id', 'contactId')
     return account.contacts.find_by(id: contact_id) if contact_id.present?
 
@@ -235,13 +251,11 @@ class Telephony::EventsIngestionService
   end
 
   def resolve_number_binding
-    @resolve_number_binding ||= begin
-      if (number_ref = payload_value('number_ref', 'numberRef')).present?
-        Telephony::NumberBinding.find_by(number_ref: number_ref)
-      elsif inbound_number.present?
-        Telephony::NumberBinding.find_by(phone_number: inbound_number)
-      end
-    end
+    @resolve_number_binding ||= if (number_ref = payload_value('number_ref', 'numberRef')).present?
+                                  Telephony::NumberBinding.find_by(number_ref: number_ref)
+                                elsif inbound_number.present?
+                                  Telephony::NumberBinding.find_by(phone_number: inbound_number)
+                                end
   end
 
   def resolve_agent_binding(account)

@@ -31,6 +31,9 @@
 class Telephony::RoutingPolicy < ApplicationRecord
   self.table_name = 'telephony_routing_policies'
 
+  CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
+  STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
+
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze
   VALID_FALLBACK_MODES = %w[reject operator app ai voicemail].freeze
   BRIDGE_SUPPORTED_MODES = %w[operator app ai reject].freeze
@@ -117,6 +120,15 @@ class Telephony::RoutingPolicy < ApplicationRecord
     self.mode = mode.to_s.strip.downcase.presence || 'operator'
     self.fallback_mode = fallback_mode.to_s.strip.downcase.presence || 'reject'
     self.ai_enabled = ai_mode?
+    self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
+  end
+
+  def normalize_operator_agent_aor(value)
+    candidate = value.to_s.strip.presence
+    return if candidate.blank?
+    return CURRENT_FONOSTER_OPERATOR_AGENT_AOR if STALE_FONOSTER_OPERATOR_AGENT_AORS.include?(candidate)
+
+    candidate
   end
 
   def validate_ai_app_ref

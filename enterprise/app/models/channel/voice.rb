@@ -21,6 +21,9 @@ class Channel::Voice < ApplicationRecord
 
   self.table_name = 'channel_voice'
 
+  CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
+  STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
+
   PROVIDERS = %w[twilio fonoster].freeze
 
   validates :phone_number, presence: true, uniqueness: true
@@ -108,6 +111,9 @@ class Channel::Voice < ApplicationRecord
   def validate_fonoster_config
     config = provider_config.with_indifferent_access
     routing_mode = config[:routing_mode].to_s.presence || 'operator'
+    operator_agent_aor = normalized_fonoster_operator_agent_aor(config[:operator_agent_aor])
+    config[:operator_agent_aor] = operator_agent_aor if operator_agent_aor.present?
+    self.provider_config = config
 
     errors.add(:provider_config, 'number_ref is required for Fonoster provider') if config[:number_ref].blank? && config[:fonoster_number_ref].blank?
     errors.add(:provider_config, 'routing_mode must be one of operator, app, ai, reject') unless routing_mode.in?(%w[operator app ai reject])
@@ -116,13 +122,11 @@ class Channel::Voice < ApplicationRecord
       errors.add(:provider_config, 'ai_app_ref is required for AI routing or fallback')
     end
 
-    if routing_mode == 'app' && config[:app_ref].blank?
-      errors.add(:provider_config, 'app_ref is required when routing_mode is app')
-    end
+    errors.add(:provider_config, 'app_ref is required when routing_mode is app') if routing_mode == 'app' && config[:app_ref].blank?
 
-    if routing_mode == 'operator' && config[:operator_agent_aor].blank? && config[:operator_agent_ref].blank?
-      errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when routing_mode is operator')
-    end
+    return unless routing_mode == 'operator' && config[:operator_agent_aor].blank? && config[:operator_agent_ref].blank?
+
+    errors.add(:provider_config, 'operator_agent_aor or operator_agent_ref is required when routing_mode is operator')
   end
 
   def provider_config_hash
@@ -131,6 +135,14 @@ class Channel::Voice < ApplicationRecord
     else
       JSON.parse(provider_config.to_s)
     end
+  end
+
+  def normalized_fonoster_operator_agent_aor(value)
+    candidate = value.to_s.strip.presence
+    return if candidate.blank?
+    return CURRENT_FONOSTER_OPERATOR_AGENT_AOR if STALE_FONOSTER_OPERATOR_AGENT_AORS.include?(candidate)
+
+    candidate
   end
 
   def provision_twilio_on_create
