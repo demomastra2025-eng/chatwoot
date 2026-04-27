@@ -46,8 +46,8 @@ class Telephony::NumberBinding < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   belongs_to :inbox, class_name: '::Inbox'
 
-  has_one :routing_policy, class_name: '::Telephony::RoutingPolicy', foreign_key: :number_binding_id, dependent: :destroy
-  has_many :call_sessions, class_name: '::Telephony::CallSession', foreign_key: :number_binding_id, dependent: :nullify
+  has_one :routing_policy, class_name: '::Telephony::RoutingPolicy', dependent: :destroy
+  has_many :call_sessions, class_name: '::Telephony::CallSession', dependent: :nullify
 
   validates :provider, presence: true
   validates :number_ref, presence: true, uniqueness: { scope: :account_id }
@@ -108,7 +108,7 @@ class Telephony::NumberBinding < ApplicationRecord
     mode = policy&.mode.to_s
     operator_agent_aor = policy&.resolved_operator_agent_aor
 
-    if mode == 'operator' && operator_agent_aor.present?
+    if mode == 'operator' && sip_target?(operator_agent_aor)
       operator_fallback_payload(operator_agent_aor)
     elsif configured_app_ref.present?
       {
@@ -123,13 +123,13 @@ class Telephony::NumberBinding < ApplicationRecord
   end
 
   def operator_fallback_payload(operator_target)
-    payload = { fallback_mode: 'operator' }
-    if operator_target.to_s.downcase.start_with?('sip:')
-      payload[:fallback_agent_aor] = operator_target
-    else
-      payload[:fallback_destination] = operator_target
-    end
-    payload
+    return { fallback_mode: 'clear' } unless sip_target?(operator_target)
+
+    { fallback_mode: 'operator', fallback_agent_aor: operator_target }
+  end
+
+  def sip_target?(target)
+    target.to_s.downcase.start_with?('sip:')
   end
 
   def app_ref_for_policy(policy = routing_policy)

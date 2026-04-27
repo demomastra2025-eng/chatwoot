@@ -81,6 +81,7 @@ class Voice::OutboundCallBuilder
       'telephony_provider' => inbox.channel.provider,
       'meta' => { 'initiated_at' => timestamp }
     }
+    attrs['fonoster_call_ref'] = call_sid if inbox.channel.provider == 'fonoster'
 
     conversation.update!(
       identifier: call_sid,

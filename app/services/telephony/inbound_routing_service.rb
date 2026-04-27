@@ -96,7 +96,7 @@ class Telephony::InboundRoutingService
   end
 
   def operator_available?
-    return false if resolved_operator_aor.blank?
+    return false unless sip_operator_aor?(resolved_operator_aor)
 
     return true if operator_binding.blank?
 
@@ -105,6 +105,10 @@ class Telephony::InboundRoutingService
 
   def resolved_operator_aor
     operator_binding&.agent_aor.presence || routing_policy.operator_agent_aor
+  end
+
+  def sip_operator_aor?(value)
+    value.to_s.downcase.start_with?('sip:')
   end
 
   def operator_binding

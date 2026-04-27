@@ -195,7 +195,7 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(response.parsed_body.dig('payload', 'routing_policy', 'mode')).to eq('operator')
   end
 
-  it 'syncs local operator targets as bridge destinations' do
+  it 'syncs SIP operator targets as bridge agent AORs' do
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -206,9 +206,9 @@ RSpec.describe 'Telephony Routing API', type: :request do
           body = JSON.parse(request.body)
           expect(body).to include(
             'mode' => 'operator',
-            'destination' => 'operator1'
+            'agent_aor' => 'sip:operator1@example.test'
           )
-          expect(body).not_to have_key('agent_aor')
+          expect(body).not_to have_key('destination')
           true
         end
         .to_return(
@@ -223,14 +223,14 @@ RSpec.describe 'Telephony Routing API', type: :request do
       post update_path,
            params: {
              mode: 'operator',
-             operator_agent_aor: 'operator1'
+             operator_agent_aor: 'sip:operator1@example.test'
            },
            headers: headers,
            as: :json
     end
 
     expect(response).to have_http_status(:ok)
-    expect(number_binding.reload.routing_policy.operator_agent_aor).to eq('operator1')
+    expect(number_binding.reload.routing_policy.operator_agent_aor).to eq('sip:operator1@example.test')
   end
 
   it 'updates the primary app ref through the number route endpoint' do

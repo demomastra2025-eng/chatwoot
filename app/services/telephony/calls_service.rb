@@ -26,7 +26,10 @@ class Telephony::CallsService
 
     response = bridge_client.post('/telephony/calls/outbound', outbound_payload(number_binding, inbox, contact, user, conversation, agent_binding))
     call_ref = extract_call_ref(response)
-    raise Telephony::Error.new(code: 'INVALID_BRIDGE_RESPONSE', message: 'Telephony bridge did not return call_ref', status: :bad_gateway) if call_ref.blank?
+    if call_ref.blank?
+      raise Telephony::Error.new(code: 'INVALID_BRIDGE_RESPONSE', message: 'Telephony bridge did not return call_ref',
+                                 status: :bad_gateway)
+    end
 
     call_session = account.telephony_call_sessions.find_or_initialize_by(external_call_ref: call_ref)
     call_session.assign_attributes(
@@ -41,7 +44,10 @@ class Telephony::CallsService
       from_number: number_binding.phone_number || inbox.channel&.phone_number,
       to_number: contact.phone_number,
       last_event_at: Time.current,
-      metadata: (call_session.metadata || {}).merge('bridge_response' => response)
+      metadata: (call_session.metadata || {}).merge(
+        'bridge_response' => response,
+        'fonoster_call_ref' => call_ref
+      )
     )
     call_session.save!
 

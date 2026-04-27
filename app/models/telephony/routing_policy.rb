@@ -47,6 +47,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   validate :validate_app_mode_configuration
   validate :validate_operator_mode_configuration
   validate :validate_ai_fallback_configuration
+  validate :validate_operator_agent_aor
 
   before_validation :normalize_values
 
@@ -80,9 +81,9 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def operator_target_payload
     target = resolved_operator_agent_aor
-    return {} if target.blank?
+    return {} if target.blank? || !sip_target?(target)
 
-    sip_target?(target) ? { agent_aor: target } : { destination: target }
+    { agent_aor: target }
   end
 
   def to_telephony_h
@@ -146,9 +147,15 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def validate_operator_mode_configuration
     return unless operator_mode?
-    return if resolved_operator_agent_aor.present?
+    return if sip_target?(resolved_operator_agent_aor)
 
     errors.add(:mode, 'operator routing requires a configured operator agent')
+  end
+
+  def validate_operator_agent_aor
+    return if operator_agent_aor.blank? || sip_target?(operator_agent_aor)
+
+    errors.add(:operator_agent_aor, 'must be a SIP AOR')
   end
 
   def validate_ai_fallback_configuration

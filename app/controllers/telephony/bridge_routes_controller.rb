@@ -13,10 +13,34 @@ class Telephony::BridgeRoutesController < Telephony::BridgeBaseController
 
     render json: decision
   rescue Telephony::Error => e
-    log_telephony_debug(event: 'telephony_inbound_route_error', payload: payload || request_payload, status: e.status, error: e)
-    raise
+    error_decision = reject_decision(reason: e.code.presence || 'route_error', message: e.message)
+    log_telephony_debug(
+      event: 'telephony_inbound_route_error',
+      payload: payload || request_payload,
+      response_payload: error_decision,
+      status: :ok,
+      error: e
+    )
+    render json: error_decision
   rescue StandardError => e
-    log_telephony_debug(event: 'telephony_inbound_route_error', payload: payload || request_payload, status: :internal_server_error, error: e)
-    raise
+    error_decision = reject_decision(reason: 'route_error')
+    log_telephony_debug(
+      event: 'telephony_inbound_route_error',
+      payload: payload || request_payload,
+      response_payload: error_decision,
+      status: :ok,
+      error: e
+    )
+    render json: error_decision
+  end
+
+  private
+
+  def reject_decision(reason:, message: nil)
+    {
+      action: 'reject',
+      message: message.presence || Telephony::InboundRoutingService::DEFAULT_REJECT_MESSAGE,
+      reason: reason
+    }
   end
 end

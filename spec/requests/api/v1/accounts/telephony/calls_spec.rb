@@ -63,5 +63,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(call_session.status).to eq('ringing')
     expect(call_session.direction).to eq('outbound')
     expect(call_session.conversation.identifier).to eq('call-123')
+    expect(call_session.metadata['fonoster_call_ref']).to eq('call-123')
+    expect(call_session.conversation.additional_attributes['fonoster_call_ref']).to eq('call-123')
   end
 end

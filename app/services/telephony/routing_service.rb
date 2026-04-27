@@ -173,6 +173,6 @@ class Telephony::RoutingService
   end
 
   def operator_route_configured?(policy)
-    policy.resolved_operator_agent_aor.present?
+    policy.resolved_operator_agent_aor.to_s.downcase.start_with?('sip:')
   end
 end

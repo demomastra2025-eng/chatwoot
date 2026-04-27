@@ -70,6 +70,12 @@ class Telephony::EventsIngestionService
     call_session = nil
 
     ActiveRecord::Base.transaction do
+      event.lock!
+      if event.processed? && event.call_session.present?
+        call_session = event.call_session
+        next
+      end
+
       call_session = resolve_call_session!(account)
       call_session.with_lock do
         call_session = upsert_call_session!(call_session, account)

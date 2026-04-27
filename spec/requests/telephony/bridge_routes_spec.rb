@@ -52,8 +52,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'returns a destination operator route for local operator targets' do
-    number_binding.routing_policy.update!(
+  it 'rejects non-SIP operator targets instead of returning a non-executable operator route' do
+    number_binding.routing_policy.update_columns(
       mode: 'operator',
       operator_agent_aor: 'operator1',
       fallback_mode: 'reject'
@@ -74,11 +74,11 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'operator',
-      'destination' => 'operator1',
-      'reason' => 'operator_route'
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
     )
     expect(response.parsed_body).not_to have_key('agent_aor')
+    expect(response.parsed_body).not_to have_key('destination')
   end
 
   it 'accepts bearer token authentication for inbound route lookups' do
@@ -105,6 +105,31 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'action' => 'reject',
       'reason' => 'reject_route',
       'message' => 'Rejected by bearer auth'
+    )
+  end
+
+  it 'fails closed with an executable reject decision when routing raises after authentication' do
+    allow(Telephony::InboundRoutingService).to receive(:new)
+      .and_raise(Telephony::Error.new(code: 'ROUTE_LOOKUP_FAILED', message: 'Route lookup failed', status: :bad_gateway))
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-error',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15551230002'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'ROUTE_LOOKUP_FAILED',
+      'message' => 'Route lookup failed'
     )
   end
 

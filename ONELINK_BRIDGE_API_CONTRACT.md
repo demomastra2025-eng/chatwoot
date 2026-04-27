@@ -53,21 +53,26 @@ TELEPHONY_BRIDGE_SHARED_SECRET=<same value as Fonoster TELEPHONY_BRIDGE_SHARED_S
 Do not expose this bridge broadly to the public Internet without an allowlist,
 VPN, private network, reverse-proxy authentication, or equivalent protection.
 
-## Current Onelink Dev URL
+## Current Onelink URL
 
-Current Onelink URL used for testing:
+Current Onelink URL used by the live Fonoster bridge:
 
 ```text
-https://work.one-link.kz
+https://app.one-link.kz
 ```
 
 Latest probe result on 2026-04-27:
 
 - Bridge `/healthz` is OK.
 - Phone number `+18623964686` still reaches the runtime app.
-- Internal route probe returns `action: "operator"` from Onelink.
-- Onelink still returns stale placeholder AOR `sip:1001@company.example`; replace it with `sip:1001@operator.cloud.vconsult.kz`.
-- `POST /internal/voice/inbound/event` still needs repair. It previously returned HTTP `500`, but this is not a blocker for choosing the `operator` route.
+- Internal route probe returns `action: "operator"` from Onelink with the
+  current executable AOR `sip:1001@operator.cloud.vconsult.kz`.
+- `POST /internal/voice/inbound/event` on Onelink returns HTTP `200`; the
+  bridge accepts runtime events with HTTP `202` and forwards them to Onelink
+  asynchronously.
+- The remote bridge proxy still exposes only `/healthz` and `/telephony/*`.
+  `/internal/voice/inbound/*` remains internal-only and returns `404` through
+  the public bridge proxy.
 
 Expected current operator route response:
 
@@ -84,13 +89,14 @@ Production rule: do not enable broad real Fonoster traffic until the Onelink
 route endpoint returns an executable route with current production values.
 
 Temporary status: this URL is enabled in the Fonoster bridge `.env` on
-2026-04-27 for controlled smoke testing while OneLink finishes the browser
-operator registration and event callback fix.
+2026-04-27 for controlled smoke testing. Browser operator registration is still
+treated as a test-grade flow until Onelink serves the operator credentials
+through an authenticated backend session and completes production hardening.
 
 Current bridge configuration:
 
 ```env
-TELEPHONY_BRIDGE_ONELINK_BASE_URL=https://work.one-link.kz
+TELEPHONY_BRIDGE_ONELINK_BASE_URL=https://app.one-link.kz
 TELEPHONY_BRIDGE_ONELINK_ACCOUNT_ID=1
 TELEPHONY_BRIDGE_ONELINK_ROUTE_PATH=/internal/voice/inbound/route
 TELEPHONY_BRIDGE_ONELINK_EVENT_PATH=/internal/voice/inbound/event
@@ -223,11 +229,11 @@ Optional query parameters: none.
 ```json
 {
   "counts": {
-    "applications": 2,
+    "applications": 3,
     "numbers": 1,
     "trunks": 1,
-    "agents": 0,
-    "domains": 0
+    "agents": 1,
+    "domains": 1
   },
   "firsts": {
     "application": {
@@ -259,8 +265,22 @@ Optional query parameters: none.
         }
       ]
     },
-    "agent": null,
-    "domain": null
+    "agent": {
+      "ref": "68525ad0-1dbb-4a2e-92ef-431c3c7dafc0",
+      "name": "OneLink Operator 1001",
+      "username": "1001",
+      "enabled": true,
+      "domain": {
+        "ref": "8e4cf72b-b82d-4a23-b139-d0b16016d643",
+        "name": "OneLink Operators",
+        "domainUri": "operator.cloud.vconsult.kz"
+      }
+    },
+    "domain": {
+      "ref": "8e4cf72b-b82d-4a23-b139-d0b16016d643",
+      "name": "OneLink Operators",
+      "domainUri": "operator.cloud.vconsult.kz"
+    }
   }
 }
 ```
@@ -747,7 +767,7 @@ They are separate from the `Onelink -> Fonoster bridge` command endpoints above.
 Current Fonoster bridge config:
 
 ```env
-TELEPHONY_BRIDGE_ONELINK_BASE_URL=https://akilah-deuteranomalous-blythe.ngrok-free.dev
+TELEPHONY_BRIDGE_ONELINK_BASE_URL=https://app.one-link.kz
 TELEPHONY_BRIDGE_ONELINK_ACCOUNT_ID=1
 TELEPHONY_BRIDGE_ONELINK_ROUTE_PATH=/internal/voice/inbound/route
 TELEPHONY_BRIDGE_ONELINK_EVENT_PATH=/internal/voice/inbound/event
@@ -1150,14 +1170,16 @@ For the current test channel, store these values in Onelink:
   "app_ref": "96fc259c-6bcd-4cbf-bb7d-d2c51f248934",
   "trunk_ref": "a299c0e0-150b-4fc9-9a58-f44bb3634324",
   "ai_app_ref": null,
-  "operator_agent_aor": null,
+  "operator_agent_aor": "sip:1001@operator.cloud.vconsult.kz",
   "routing_policy": {
-    "mode": "app"
+    "mode": "operator"
   }
 }
 ```
 
-Use `operator_agent_aor` only after Fonoster agents/domains are created.
+The smoke-test operator agent/domain now exists in Fonoster. Use
+`operator_agent_aor` for the current operator route while this test operator is
+the selected human handoff target.
 Use `ai_app_ref` only after a real Fonoster AI or AI-compatible application is
 created or intentionally selected.
 Use `app_ref` to bind the number to the current Fonoster runtime application.
