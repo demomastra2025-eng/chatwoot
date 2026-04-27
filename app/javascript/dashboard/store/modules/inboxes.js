@@ -10,11 +10,7 @@ import { throwErrorMessage } from '../utils/api';
 import AnalyticsHelper from '../../helper/AnalyticsHelper';
 import camelcaseKeys from 'camelcase-keys';
 import { ACCOUNT_EVENTS } from '../../helper/AnalyticsHelper/events';
-import {
-  isInboxPendingDeletion,
-  shouldRequestWhatsappWebQrAfterReconnect,
-  shouldRequestWhatsappWebQrAfterRepair,
-} from 'dashboard/helper/whatsappWeb';
+import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 import { channelActions, buildInboxData } from './inboxes/channelActions';
 import {
   COMPONENT_TYPES,
@@ -604,18 +600,20 @@ export const actions = {
     const artifactType =
       typeof payload === 'object' && payload?.artifactType
         ? payload.artifactType
-        : 'both';
+        : null;
     const requestPayload =
       typeof payload === 'object' && payload !== null
         ? {
             status_only: isStatusOnly,
             include_qr_code: includeQrCode,
-            artifact_type: artifactType,
+            ...(artifactType && !isStatusOnly
+              ? { artifact_type: artifactType }
+              : {}),
           }
         : {};
     const requestKey = isStatusOnly
       ? `${inboxId}:status:${includeQrCode ? 'with_qr' : 'state_only'}`
-      : `${inboxId}:refresh:${artifactType}`;
+      : `${inboxId}:refresh:${artifactType || 'qr'}`;
     const currentInbox = inboxGetters?.getInbox
       ? inboxGetters.getInbox(inboxId)
       : null;
@@ -659,33 +657,12 @@ export const actions = {
     whatsappWebRefreshRequests.set(requestKey, request);
     return request;
   },
-  reconnectWhatsappWeb: async (
-    { commit, dispatch, getters: inboxGetters },
-    inboxId
-  ) => {
+  reconnectWhatsappWeb: async ({ commit }, inboxId) => {
     try {
       const response = await InboxesAPI.reconnectWhatsappWeb(inboxId);
       const reconnectedInbox = response.data;
 
       commit(types.default.EDIT_INBOXES, reconnectedInbox);
-
-      if (shouldRequestWhatsappWebQrAfterReconnect(reconnectedInbox)) {
-        if (typeof dispatch === 'function') {
-          return dispatch('refreshWhatsappWebQr', {
-            inboxId,
-            statusOnly: false,
-          });
-        }
-
-        return actions.refreshWhatsappWebQr(
-          { commit, getters: inboxGetters },
-          {
-            inboxId,
-            statusOnly: false,
-          }
-        );
-      }
-
       return reconnectedInbox;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
@@ -700,33 +677,12 @@ export const actions = {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  repairWhatsappWeb: async (
-    { commit, dispatch, getters: inboxGetters },
-    inboxId
-  ) => {
+  repairWhatsappWeb: async ({ commit }, inboxId) => {
     try {
       const response = await InboxesAPI.repairWhatsappWeb(inboxId);
       const repairedInbox = response.data;
 
       commit(types.default.EDIT_INBOXES, repairedInbox);
-
-      if (shouldRequestWhatsappWebQrAfterRepair(repairedInbox)) {
-        if (typeof dispatch === 'function') {
-          return dispatch('refreshWhatsappWebQr', {
-            inboxId,
-            statusOnly: false,
-          });
-        }
-
-        return actions.refreshWhatsappWebQr(
-          { commit, getters: inboxGetters },
-          {
-            inboxId,
-            statusOnly: false,
-          }
-        );
-      }
-
       return repairedInbox;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);

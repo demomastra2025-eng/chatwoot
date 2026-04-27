@@ -14,6 +14,74 @@ describe WhatsappWeb::Providers::EvolutionService do
   let(:channel) { create(:channel_whatsapp_web) }
 
   describe '#refresh_qr!' do
+    it 'returns a saved fresh QR artifact without calling Evolution again' do
+      service = described_class.new(channel: channel)
+      generated_at = Time.current
+      expires_at = generated_at + Channel::WhatsappWeb::AUTH_ARTIFACT_TTL
+      channel.update!(
+        connection_state: 'connecting',
+        lifecycle_state: 'qr_ready',
+        qr_code: {
+          'artifact_type' => 'qr',
+          'base64' => 'saved-qr',
+          'code' => 'saved-code',
+          'generated_at' => generated_at.iso8601,
+          'expires_at' => expires_at.iso8601
+        },
+        sync_state: channel.sync_state_payload.merge(
+          'qr_generated_at' => generated_at.iso8601,
+          'auth_artifact_type' => 'qr',
+          'auth_artifact_expires_at' => expires_at.iso8601
+        )
+      )
+
+      expect(service).not_to receive(:request)
+
+      expect(service.refresh_qr!(artifact_type: 'qr')).to eq(channel)
+      expect(channel.reload.qr_code).to include('base64' => 'saved-qr', 'code' => 'saved-code')
+    end
+
+    it 'requests a QR artifact without pairing number and stores only QR data' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connect/#{channel.instance_name}")
+        .and_return(
+          'instance' => { 'state' => 'connecting', 'status' => 'qr_ready' },
+          'qrcode' => {
+            'base64' => 'fresh-qr',
+            'code' => 'qr-code-value',
+            'pairingCode' => 'ABCD1234'
+          }
+        )
+
+      expect(service.refresh_qr!(artifact_type: 'qr')).to eq(channel)
+      expect(channel.reload.qr_code).to include('artifact_type' => 'qr', 'base64' => 'fresh-qr', 'code' => 'qr-code-value')
+      expect(channel.qr_code).not_to include('pairingCode')
+      expect(channel.auth_artifact_valid?).to be true
+    end
+
+    it 'requests a pairing-code artifact with pairing number and stores only pairing data' do
+      service = described_class.new(channel: channel)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
+        .and_return(
+          'instance' => { 'state' => 'connecting', 'status' => 'qr_ready' },
+          'qrcode' => {
+            'base64' => 'fresh-qr',
+            'code' => 'qr-code-value',
+            'pairingCode' => 'ABCD1234'
+          }
+        )
+
+      expect(service.refresh_qr!(artifact_type: 'code')).to eq(channel)
+      expect(channel.reload.qr_code).to include('artifact_type' => 'pairing_code', 'pairingCode' => 'ABCD1234')
+      expect(channel.qr_code).not_to include('base64')
+      expect(channel.qr_code).not_to include('code')
+      expect(channel.auth_artifact_valid?).to be true
+    end
+
     it 'provisions the instance when Evolution reports it missing' do
       service = described_class.new(channel: channel)
       missing_instance_error = described_class::RequestError.new(
@@ -23,7 +91,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       )
 
       allow(service).to receive(:request)
-        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
+        .with(:get, "/instance/connect/#{channel.instance_name}")
         .and_raise(missing_instance_error)
       allow(service).to receive(:provision!).and_return(channel)
 
@@ -35,7 +103,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       service = described_class.new(channel: channel)
 
       allow(service).to receive(:request)
-        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
+        .with(:get, "/instance/connect/#{channel.instance_name}")
         .and_return(
           'message' => 'QR code limit reached, please login again',
           'statusCode' => 500
@@ -51,7 +119,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       service = described_class.new(channel: channel)
 
       allow(service).to receive(:request)
-        .with(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
+        .with(:get, "/instance/connect/#{channel.instance_name}")
         .and_return(
           'instance' => { 'state' => 'connecting', 'status' => 'reauth_required' },
           'status' => 'reauth_required',
@@ -125,7 +193,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service).to have_received(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything)
     end
 
-    it 'requests fresh auth artifacts when repair leaves the session disconnected' do
+    it 'does not request fresh auth artifacts when repair leaves the session disconnected' do
       service = described_class.new(channel: channel)
 
       allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
@@ -137,7 +205,7 @@ describe WhatsappWeb::Providers::EvolutionService do
 
       service.repair!
 
-      expect(service).to have_received(:refresh_qr!)
+      expect(service).not_to have_received(:refresh_qr!)
     end
 
     it 'does not force a fresh qr while Evolution is already reconnecting automatically' do
@@ -157,25 +225,20 @@ describe WhatsappWeb::Providers::EvolutionService do
   end
 
   describe '#reconnect!' do
-    it 'pulls both qr and pairing code from Evolution before forcing a restart' do
+    it 'does not request fresh auth artifacts when reconnect leaves the session disconnected' do
       service = described_class.new(channel: channel)
       allow(service).to receive(:sync_connection_state!) do
-        channel.update!(connection_state: 'reconnecting', lifecycle_state: 'reconnecting', qr_code: {})
-      end
-      allow(service).to receive(:refresh_qr!) do
-        channel.update!(
-          connection_state: 'connecting',
-          lifecycle_state: 'qr_ready',
-          qr_code: { 'base64' => 'fresh-qr', 'pairingCode' => 'ABCD1234' }
-        )
+        channel.update!(connection_state: 'close', lifecycle_state: 'disconnected', qr_code: {})
       end
       allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:refresh_qr!).and_return(channel)
 
       expect(service).not_to receive(:request).with(:post, "/instance/restart/#{channel.instance_name}", body: {})
 
       expect(service.reconnect!).to eq(channel)
-      expect(channel.reload.qr_code).to include('base64' => 'fresh-qr', 'pairingCode' => 'ABCD1234')
+      expect(channel.reload.qr_code).to eq({})
+      expect(service).not_to have_received(:refresh_qr!)
     end
 
     it 'restarts an open session and skips qr refresh when the session comes back open' do

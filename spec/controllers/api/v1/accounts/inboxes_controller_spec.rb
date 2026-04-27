@@ -654,6 +654,7 @@ RSpec.describe 'Inboxes API', type: :request do
             last_synced_at: Time.current
           )
         end
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:refresh_qr!)
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
              headers: admin.create_new_auth_token,
@@ -682,6 +683,48 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('large-qr-payload')
+      end
+
+      it 'passes explicit QR artifact type to the provider' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!)
+          .with(artifact_type: 'qr') do |instance|
+            instance.update!(
+              lifecycle_state: 'qr_ready',
+              connection_state: 'connecting',
+              qr_code: { 'artifact_type' => 'qr', 'base64' => 'fresh-qr', 'code' => 'qr-code-value' },
+              last_synced_at: Time.current
+            )
+          end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { artifact_type: 'qr' },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'artifact_type')).to eq('qr')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'pairingCode')).to be_nil
+      end
+
+      it 'passes explicit pairing-code artifact type to the provider' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!)
+          .with(artifact_type: 'code') do |instance|
+            instance.update!(
+              lifecycle_state: 'qr_ready',
+              connection_state: 'connecting',
+              qr_code: { 'artifact_type' => 'pairing_code', 'pairingCode' => 'ABCD1234' },
+              last_synced_at: Time.current
+            )
+          end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { artifact_type: 'code' },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'artifact_type')).to eq('pairing_code')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to be_nil
       end
 
       it 'returns the degraded inbox state when status polling fails' do
@@ -1159,6 +1202,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
     context 'when handling CSAT configuration' do
       let(:admin) { create(:user, account: account, role: :administrator) }
+      let(:admin_headers) { admin.create_new_auth_token }
       let(:inbox) { create(:inbox, account: account) }
       let(:csat_config) do
         {
@@ -1177,7 +1221,7 @@ RSpec.describe 'Inboxes API', type: :request do
                 csat_survey_enabled: true,
                 csat_config: csat_config
               },
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
         expect(response).to have_http_status(:success)
@@ -1190,13 +1234,13 @@ RSpec.describe 'Inboxes API', type: :request do
                   csat_survey_enabled: true,
                   csat_config: csat_config
                 },
-                headers: admin.create_new_auth_token,
+                headers: admin_headers,
                 as: :json
         end
 
         it 'returns configured CSAT settings in inbox details' do
           get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
           expect(response).to have_http_status(:success)
@@ -1210,7 +1254,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
         it 'returns configured CSAT message' do
           get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
           json_response = response.parsed_body
@@ -1220,7 +1264,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
         it 'returns configured CSAT survey rules' do
           get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
           json_response = response.parsed_body
@@ -1231,7 +1275,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
         it 'includes CSAT configuration in inbox list' do
           get "/api/v1/accounts/#{account.id}/inboxes",
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
           expect(response).to have_http_status(:success)
@@ -1259,7 +1303,7 @@ RSpec.describe 'Inboxes API', type: :request do
                 csat_survey_enabled: true,
                 csat_config: csat_config_with_template
               },
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
         expect(response).to have_http_status(:success)
@@ -1287,11 +1331,11 @@ RSpec.describe 'Inboxes API', type: :request do
                 csat_survey_enabled: true,
                 csat_config: csat_config_with_template
               },
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
         get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
-            headers: admin.create_new_auth_token,
+            headers: admin_headers,
             as: :json
 
         expect(response).to have_http_status(:success)
@@ -1319,7 +1363,7 @@ RSpec.describe 'Inboxes API', type: :request do
                 csat_survey_enabled: true,
                 csat_config: csat_config_with_template
               },
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
         # Then update without template
@@ -1328,7 +1372,7 @@ RSpec.describe 'Inboxes API', type: :request do
                 csat_survey_enabled: true,
                 csat_config: csat_config.merge({ 'message' => 'Updated message' })
               },
-              headers: admin.create_new_auth_token,
+              headers: admin_headers,
               as: :json
 
         expect(response).to have_http_status(:success)
@@ -1466,20 +1510,20 @@ RSpec.describe 'Inboxes API', type: :request do
 
     context 'when it is an authenticated administrator' do
       context 'with WhatsApp inbox' do
-        it 'successfully initiates template sync' do
-          expect(Channels::Whatsapp::TemplatesSyncJob).to receive(:perform_later).with(whatsapp_channel)
+        it 'syncs templates immediately and returns the refreshed inbox payload' do
+          stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+            .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [] }.to_json)
 
           post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
                headers: admin.create_new_auth_token,
                as: :json
 
           expect(response).to have_http_status(:success)
-          json_response = response.parsed_body
-          expect(json_response['message']).to eq('Template sync initiated successfully')
+          expect(response.parsed_body['id']).to eq(whatsapp_inbox.id)
         end
 
-        it 'handles job errors gracefully' do
-          allow(Channels::Whatsapp::TemplatesSyncJob).to receive(:perform_later).and_raise(StandardError, 'Job failed')
+        it 'handles template sync errors gracefully' do
+          allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_raise(StandardError, 'Job failed')
 
           post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
                headers: admin.create_new_auth_token,

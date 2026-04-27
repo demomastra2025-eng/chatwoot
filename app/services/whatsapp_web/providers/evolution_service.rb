@@ -63,10 +63,21 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     raise
   end
 
-  def refresh_qr!
-    response = request(:get, "/instance/connect/#{channel.instance_name}?number=#{channel.pairing_number}")
-    sync_from_runtime_response!(response)
-    channel
+  def refresh_qr!(artifact_type: 'qr')
+    normalized_artifact_type = Channel::WhatsappWeb.normalize_auth_artifact_type(artifact_type)
+
+    channel.with_lock do
+      channel.reload
+      return channel if channel.auth_artifact_valid?(artifact_type: normalized_artifact_type)
+
+      if channel.auth_artifact_valid? && channel.auth_artifact_type != normalized_artifact_type
+        raise ArgumentError, 'Another WhatsApp Web authorization artifact is still active. Wait until it expires before switching methods.'
+      end
+
+      response = request(:get, connect_instance_path(normalized_artifact_type))
+      sync_from_runtime_response!(response, artifact_type: normalized_artifact_type)
+      channel
+    end
   rescue RequestError => e
     raise unless e.status == 404
 
@@ -76,11 +87,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def reconnect!
     sync_connection_state!
 
-    if restart_runtime_session_after_reconnect?
-      restart_runtime_session!(force_refresh: true)
-    else
-      refresh_qr!
-    end
+    restart_runtime_session! if restart_runtime_session_after_reconnect?
 
     apply_runtime_configuration!
     channel
@@ -94,7 +101,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       qr_code: {},
       last_error: nil,
       last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: channel.cleared_auth_artifact_sync_state
     )
   rescue RequestError => e
     raise unless e.status == 400
@@ -104,14 +111,13 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
       connection_state: 'close',
       qr_code: {},
       last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: channel.cleared_auth_artifact_sync_state
     )
   end
 
   def repair!
     apply_runtime_configuration!
     sync_connection_state!
-    refresh_qr! if qr_refresh_required_after_repair?
     channel
   rescue RequestError => e
     raise unless e.status == 404
@@ -134,7 +140,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     }
     if clear_auth_artifacts
       attributes[:qr_code] = {}
-      attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
+      attributes[:sync_state] = channel.cleared_auth_artifact_sync_state
     end
 
     channel.update!(attributes)
@@ -325,8 +331,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     raise
   end
 
-  def sync_from_runtime_response!(response)
-    qr_payload = normalized_qr_payload(response)
+  def sync_from_runtime_response!(response, artifact_type: 'qr')
+    qr_payload = normalized_qr_payload(response, artifact_type: artifact_type)
     runtime_status = response.dig('instance', 'status') || response['status']
     runtime_state = response.dig('instance', 'state') || runtime_status
     runtime_error = runtime_error_message(response)
@@ -340,7 +346,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
         qr_code: {},
         last_error: runtime_error,
         last_synced_at: Time.current,
-        sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+        sync_state: channel.cleared_auth_artifact_sync_state
       )
       return
     end
@@ -357,16 +363,25 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
     if qr_payload.present?
       attributes[:qr_code] = qr_payload
-      attributes[:sync_state] = channel.sync_state_payload.merge(
-        'qr_generated_at' => Time.current.iso8601
+      attributes[:sync_state] = channel.auth_artifact_sync_state(
+        type: qr_payload['artifact_type'],
+        generated_at: Time.zone.parse(qr_payload['generated_at']),
+        expires_at: Time.zone.parse(qr_payload['expires_at'])
       )
     elsif %w[open reconnecting close refused].include?(attributes[:connection_state])
       attributes[:qr_code] = {}
-      attributes[:sync_state] = channel.sync_state_payload.merge('qr_generated_at' => nil)
+      attributes[:sync_state] = channel.cleared_auth_artifact_sync_state
     end
 
     channel.update!(attributes)
     request_history_sync_if_provider_ready if attributes[:connection_state] == 'open'
+  end
+
+  def connect_instance_path(artifact_type)
+    path = "/instance/connect/#{channel.instance_name}"
+    return path unless artifact_type == 'pairing_code'
+
+    "#{path}?number=#{channel.pairing_number}"
   end
 
   def create_remote_instance!
@@ -397,12 +412,36 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     )
   end
 
-  def normalized_qr_payload(response)
+  def normalized_qr_payload(response, artifact_type: 'qr')
     payload = response['qrcode'] || response
     return {} unless payload.is_a?(Hash)
 
-    qr_code = payload.slice('instance', 'pairingCode', 'pairing_code', 'code', 'base64').compact
-    qr_code.presence || {}
+    normalized_artifact_type = Channel::WhatsappWeb.normalize_auth_artifact_type(artifact_type)
+    generated_at = Time.current
+    expires_at = generated_at + Channel::WhatsappWeb::AUTH_ARTIFACT_TTL
+
+    case normalized_artifact_type
+    when 'pairing_code'
+      pairing_code = payload['pairingCode'].presence || payload['pairing_code'].presence
+      return {} if pairing_code.blank?
+
+      {
+        'artifact_type' => 'pairing_code',
+        'pairingCode' => pairing_code,
+        'pairing_code' => pairing_code,
+        'generated_at' => generated_at.iso8601,
+        'expires_at' => expires_at.iso8601
+      }
+    else
+      qr_code = payload.slice('instance', 'code', 'base64').compact
+      return {} if qr_code['code'].blank? && qr_code['base64'].blank?
+
+      qr_code.merge(
+        'artifact_type' => 'qr',
+        'generated_at' => generated_at.iso8601,
+        'expires_at' => expires_at.iso8601
+      )
+    end
   end
 
   def lifecycle_state_for(state, qr_present)
@@ -502,33 +541,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     channel.connection_state.in?(%w[open connecting unknown])
   end
 
-  def restart_runtime_session!(force_refresh: false)
+  def restart_runtime_session!
     response = request(:post, "/instance/restart/#{channel.instance_name}", body: {})
     sync_from_runtime_response!(response)
-    if force_refresh
-      refresh_qr! if channel.connection_state != 'open'
-    elsif qr_refresh_required_after_reconnect?
-      refresh_qr!
-    end
     channel
-  end
-
-  def authentication_artifacts_present?
-    channel.qr_code.present?
-  end
-
-  def qr_refresh_required_after_repair?
-    return false if channel.connection_state == 'open'
-    return false if channel.connection_state == 'reconnecting'
-    return true if channel.connection_state.blank?
-
-    channel.connection_state.in?(%w[close refused unknown]) || channel.qr_code.blank?
-  end
-
-  def qr_refresh_required_after_reconnect?
-    return false if channel.connection_state == 'open'
-
-    channel.qr_code.blank?
   end
 
   def merged_runtime_message(*messages)

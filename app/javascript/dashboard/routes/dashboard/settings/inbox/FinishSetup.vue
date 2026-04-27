@@ -814,6 +814,7 @@ async function refreshWhatsappWebQr({
     await store.dispatch('inboxes/refreshWhatsappWebQr', {
       inboxId: currentInbox.value.id,
       statusOnly: false,
+      artifactType,
     });
     if (!silent) {
       let successMessage = t('INBOX_MGMT.FINISH.WHATSAPP_WEB.REFRESH_SUCCESS');
@@ -878,7 +879,7 @@ async function renderWhatsappWebQrForTheme() {
       whatsappWebQrValue.value,
       {
         margin: 0,
-        width: 672,
+        width: 1008,
         color: {
           dark: isDashboardDarkTheme.value ? '#FFFFFF' : '#000000',
           light: '#0000',
@@ -1241,12 +1242,14 @@ onBeforeUnmount(() => {
             <img
               :src="qrCodes.whatsapp"
               :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_QR_ALT')"
-              class="rounded-lg size-48 dark:invert"
+              class="rounded-lg size-72 dark:invert"
             />
           </div>
         </div>
         <div v-if="isWhatsappWebSetupFlow" class="mt-8 w-full">
-          <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 text-left">
+          <div
+            class="mx-auto flex w-full max-w-[76rem] flex-col gap-6 text-left"
+          >
             <div
               class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)] lg:items-start"
             >

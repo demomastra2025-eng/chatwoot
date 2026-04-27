@@ -40,6 +40,12 @@ class Channel::WhatsappWeb < ApplicationRecord
   DEFAULT_IGNORE_REMOTE_JIDS = %w[status@broadcast].freeze
   LIFECYCLE_STATES = %w[creating waiting_for_qr qr_ready reconnecting connected disconnected failed deleting].freeze
   CONNECTION_STATES = %w[open connecting reconnecting close refused unknown].freeze
+  AUTH_ARTIFACT_TTL = 60.seconds
+  AUTH_ARTIFACT_TYPES = {
+    'qr' => 'qr',
+    'code' => 'pairing_code',
+    'pairing_code' => 'pairing_code'
+  }.freeze
   DEFAULT_SYNC_STATE = {
     'history_synced_at' => nil,
     'history_sync_requested_at' => nil,
@@ -59,6 +65,8 @@ class Channel::WhatsappWeb < ApplicationRecord
     'last_echo_status_miss_at' => nil,
     'last_echo_status_miss_source_id' => nil,
     'qr_generated_at' => nil,
+    'auth_artifact_type' => nil,
+    'auth_artifact_expires_at' => nil,
     'label_map' => {}
   }.freeze
   HISTORY_SYNC_REQUEST_STALE_AFTER = 30.minutes
@@ -121,6 +129,10 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   def pairing_number
     phone_number.delete_prefix('+')
+  end
+
+  def self.normalize_auth_artifact_type(value)
+    AUTH_ARTIFACT_TYPES[value.to_s.presence || 'qr'] || 'qr'
   end
 
   def webhook_callback_url
@@ -224,6 +236,50 @@ class Channel::WhatsappWeb < ApplicationRecord
     nil
   end
 
+  def auth_artifact_type
+    qr_code['artifact_type'].presence || sync_state_payload['auth_artifact_type'].presence || inferred_auth_artifact_type
+  end
+
+  def auth_artifact_generated_at
+    parse_auth_artifact_time(qr_code['generated_at']) || qr_generated_at
+  end
+
+  def auth_artifact_expires_at
+    parse_auth_artifact_time(qr_code['expires_at']) || parse_auth_artifact_time(sync_state_payload['auth_artifact_expires_at']) ||
+      auth_artifact_generated_at&.+(AUTH_ARTIFACT_TTL)
+  end
+
+  def auth_artifact_valid?(artifact_type: nil, at: Time.current)
+    return false unless auth_artifact_payload_present?
+
+    expected_type = self.class.normalize_auth_artifact_type(artifact_type) if artifact_type.present?
+    return false if expected_type.present? && auth_artifact_type != expected_type
+
+    expires_at = auth_artifact_expires_at
+    expires_at.present? && expires_at > at
+  end
+
+  def auth_artifact_expired?(at: Time.current)
+    expires_at = auth_artifact_expires_at
+    expires_at.present? && expires_at <= at
+  end
+
+  def auth_artifact_sync_state(type:, generated_at:, expires_at:)
+    sync_state_payload.merge(
+      'qr_generated_at' => generated_at.iso8601,
+      'auth_artifact_type' => self.class.normalize_auth_artifact_type(type),
+      'auth_artifact_expires_at' => expires_at.iso8601
+    )
+  end
+
+  def cleared_auth_artifact_sync_state
+    sync_state_payload.merge(
+      'qr_generated_at' => nil,
+      'auth_artifact_type' => nil,
+      'auth_artifact_expires_at' => nil
+    )
+  end
+
   def label_map
     sync_state_payload['label_map'].is_a?(Hash) ? sync_state_payload['label_map'] : {}
   end
@@ -242,7 +298,7 @@ class Channel::WhatsappWeb < ApplicationRecord
       qr_code: {},
       last_error: nil,
       last_synced_at: timestamp,
-      sync_state: sync_state_payload.merge('qr_generated_at' => nil)
+      sync_state: cleared_auth_artifact_sync_state
     )
   end
 
@@ -439,7 +495,10 @@ class Channel::WhatsappWeb < ApplicationRecord
       'echo_status_miss_count' => sync_state_payload['echo_status_miss_count'],
       'last_echo_status_miss_at' => sync_state_payload['last_echo_status_miss_at'],
       'last_echo_status_miss_source_id' => sync_state_payload['last_echo_status_miss_source_id'],
-      'qr_generated_at' => sync_state_payload['qr_generated_at']
+      'qr_generated_at' => sync_state_payload['qr_generated_at'],
+      'auth_artifact_type' => auth_artifact_type,
+      'auth_artifact_expires_at' => auth_artifact_expires_at&.iso8601,
+      'auth_artifact_expired' => auth_artifact_expired?
     }
 
     payload['qrcode'] = qr_code if include_qr_code && qr_code.present?
@@ -456,6 +515,30 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   private
+
+  def auth_artifact_payload_present?
+    case auth_artifact_type
+    when 'pairing_code'
+      qr_code['pairingCode'].present? || qr_code['pairing_code'].present?
+    when 'qr'
+      qr_code['code'].present? || qr_code['base64'].present?
+    else
+      false
+    end
+  end
+
+  def inferred_auth_artifact_type
+    return 'pairing_code' if qr_code['pairingCode'].present? || qr_code['pairing_code'].present?
+    return 'qr' if qr_code['code'].present? || qr_code['base64'].present?
+
+    nil
+  end
+
+  def parse_auth_artifact_time(value)
+    value.present? ? Time.zone.parse(value.to_s) : nil
+  rescue ArgumentError
+    nil
+  end
 
   def record_sync_result!(mode:, message_count:, contact_count:, error:, fulfilled_provider_history_synced_at:, sync_context:)
     timestamp = Time.current

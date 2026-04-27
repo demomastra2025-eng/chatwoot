@@ -106,9 +106,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def refresh_whatsapp_web_qr
     if truthy_param?(:status_only)
       @inbox.channel.sync_connection_state!
-      render_whatsapp_web_inbox(include_qr_code: truthy_param?(:include_qr_code))
+      render_whatsapp_web_inbox(include_qr_code: truthy_param?(:include_qr_code) == true)
     else
-      @inbox.channel.refresh_qr!
+      @inbox.channel.refresh_qr!(artifact_type: params[:artifact_type].presence || 'qr')
       render_whatsapp_web_inbox
     end
   rescue StandardError => e
