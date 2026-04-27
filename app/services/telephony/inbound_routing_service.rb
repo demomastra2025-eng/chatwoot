@@ -9,6 +9,9 @@ class Telephony::InboundRoutingService
     return reject_decision(reason: 'number_not_bound') if number_binding.blank?
     return reject_decision(reason: 'routing_policy_missing') if routing_policy.blank?
 
+    status_decision = status_aware_conversation_decision
+    return status_decision if status_decision.present?
+
     return fallback_decision(reason: 'out_of_office', prefer_out_of_office_message: true) if inbox&.out_of_office?
 
     primary_decision
@@ -37,6 +40,31 @@ class Telephony::InboundRoutingService
     else
       fallback_decision(reason: 'unsupported_mode')
     end
+  end
+
+  def status_aware_conversation_decision
+    return unless ai_routing_enabled?
+    return if existing_voice_conversation.blank?
+
+    return pending_conversation_ai_decision if existing_voice_conversation.pending?
+
+    non_pending_conversation_operator_decision
+  end
+
+  def pending_conversation_ai_decision
+    return ai_decision(reason: 'pending_conversation_ai_route') if resolved_ai_app_ref.present?
+
+    fallback_decision(reason: ai_app_failure_reason)
+  end
+
+  def non_pending_conversation_operator_decision
+    return operator_decision(reason: 'non_pending_conversation_operator_route') if operator_available?
+
+    fallback_decision(reason: 'operator_unavailable')
+  end
+
+  def ai_routing_enabled?
+    routing_policy.ai_enabled? || routing_policy.ai_mode?
   end
 
   def fallback_decision(reason:, prefer_out_of_office_message: false)
@@ -172,6 +200,55 @@ class Telephony::InboundRoutingService
 
   def inbox
     @inbox ||= number_binding&.inbox
+  end
+
+  def existing_voice_conversation
+    @existing_voice_conversation ||= conversation_from_call_ref || conversation_from_caller_number
+  end
+
+  def conversation_from_call_ref
+    return if call_ref.blank?
+
+    conversation_scope.find_by(identifier: call_ref)
+  end
+
+  def conversation_from_caller_number
+    return if caller_number.blank?
+
+    source_values = [caller_number, normalized_caller_number].compact.uniq
+    return if source_values.blank?
+
+    conditions = []
+    bind_values = []
+    if normalized_caller_number.present?
+      conditions << 'contacts.phone_number = ?'
+      bind_values << normalized_caller_number
+    end
+    conditions << 'contact_inboxes.source_id IN (?)'
+    bind_values << source_values
+
+    conversation_scope
+      .joins(:contact, :contact_inbox)
+      .where(conditions.join(' OR '), *bind_values)
+      .first
+  end
+
+  def conversation_scope
+    number_binding.account.conversations
+                  .where(inbox_id: number_binding.inbox_id)
+                  .order(updated_at: :desc, id: :desc)
+  end
+
+  def normalized_caller_number
+    @normalized_caller_number ||= Contacts::PhoneNumberNormalizer.normalize(caller_number)
+  end
+
+  def call_ref
+    payload_value('call_ref', 'callRef', 'call_sid', 'callSid')
+  end
+
+  def caller_number
+    payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
   end
 
   def number_binding

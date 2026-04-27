@@ -1,6 +1,8 @@
 require 'digest'
 
 class Telephony::EventsIngestionService
+  CALL_SESSION_CONFLICT_RETRIES = 2
+
   EVENT_STATUS_MAP = {
     'session_started' => 'ringing',
     'decision_received' => 'ringing',
@@ -27,17 +29,7 @@ class Telephony::EventsIngestionService
     event = persist_event!(account)
     return event.call_session if event.processed? && event.call_session.present?
 
-    call_session = nil
-
-    ActiveRecord::Base.transaction do
-      call_session = upsert_call_session!(resolve_call_session!(account), account)
-      ensure_conversation!(call_session, account)
-      apply_call_status!(call_session)
-      sync_voice_message!(call_session)
-      event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
-    end
-
-    call_session
+    process_event_with_retry!(account, event)
   rescue Telephony::Error => e
     event&.update(status: 'failed', error_message: e.message) if defined?(event) && event.present? && event.persisted?
     raise
@@ -57,6 +49,39 @@ class Telephony::EventsIngestionService
   private
 
   attr_reader :payload
+
+  def process_event_with_retry!(account, event)
+    retries = 0
+
+    begin
+      process_event!(account, event)
+    rescue ActiveRecord::RecordNotUnique
+      raise if retries >= CALL_SESSION_CONFLICT_RETRIES
+
+      retries += 1
+      event.reload
+      return event.call_session if event.processed? && event.call_session.present?
+
+      retry
+    end
+  end
+
+  def process_event!(account, event)
+    call_session = nil
+
+    ActiveRecord::Base.transaction do
+      call_session = resolve_call_session!(account)
+      call_session.with_lock do
+        call_session = upsert_call_session!(call_session, account)
+        ensure_conversation!(call_session, account)
+        apply_call_status!(call_session)
+        sync_voice_message!(call_session)
+        event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
+      end
+    end
+
+    call_session
+  end
 
   def persist_event!(account)
     event = find_or_create_event!(account)
@@ -98,7 +123,11 @@ class Telephony::EventsIngestionService
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
     account.telephony_call_sessions.find_by(external_call_ref: call_ref) ||
-      account.telephony_call_sessions.build(external_call_ref: call_ref)
+      account.telephony_call_sessions.create_or_find_by!(external_call_ref: call_ref)
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless uniqueness_conflict?(e.record, :external_call_ref)
+
+    account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   end
 
   def upsert_call_session!(call_session, account)
@@ -124,7 +153,7 @@ class Telephony::EventsIngestionService
       provider: payload_value('provider') || call_session.provider || 'fonoster',
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
                                        'providerCallId') || call_session.provider_call_sid,
-      status: resolved_status || call_session.status,
+      status: next_status_for(call_session),
       direction: resolved_direction || call_session.direction || 'inbound',
       from_number: resolved_from_number || call_session.from_number,
       to_number: resolved_to_number || call_session.to_number,
@@ -134,9 +163,35 @@ class Telephony::EventsIngestionService
       duration_seconds: resolved_duration || call_session.duration_seconds,
       started_at: resolved_started_at || call_session.started_at,
       ended_at: resolved_ended_at || call_session.ended_at,
-      last_event_at: resolved_occurred_at || Time.current,
+      last_event_at: next_last_event_at(call_session),
       metadata: merged_metadata(call_session)
     }
+  end
+
+  def next_status_for(call_session)
+    status = resolved_status
+    return call_session.status if status.blank?
+    return call_session.status if stale_event?(call_session)
+    return call_session.status if call_session.terminal? && !terminal_status?(status)
+
+    status
+  end
+
+  def next_last_event_at(call_session)
+    occurred_at = resolved_occurred_at
+    return call_session.last_event_at if stale_event?(call_session)
+    return [call_session.last_event_at, occurred_at].compact.max if occurred_at.present?
+
+    Time.current
+  end
+
+  def stale_event?(call_session)
+    occurred_at = resolved_occurred_at
+    occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def terminal_status?(status)
+    Telephony::CallSession::TERMINAL_STATUSES.include?(status)
   end
 
   def ensure_conversation!(call_session, account)
@@ -295,9 +350,6 @@ class Telephony::EventsIngestionService
 
   def persist_call_session!(account, call_session)
     save_call_session!(call_session, yield(call_session))
-  rescue ActiveRecord::RecordNotUnique
-    existing_call_session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
-    save_call_session!(existing_call_session, yield(existing_call_session))
   rescue ActiveRecord::RecordInvalid => e
     raise unless uniqueness_conflict?(e.record, :external_call_ref)
 

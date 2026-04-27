@@ -179,6 +179,92 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'routes an existing pending voice conversation to AI when AI routing is enabled' do
+    caller_number = '+15551230001'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_app_ref: 'ai-status-aware-app-ref',
+      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      fallback_mode: 'operator'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-status-pending',
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'ai-status-aware-app-ref',
+      'reason' => 'pending_conversation_ai_route'
+    )
+  end
+
+  it 'routes every existing non-pending voice conversation status to the operator when AI routing is enabled' do
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_app_ref: 'ai-status-aware-app-ref',
+      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      fallback_mode: 'operator'
+    )
+
+    %w[open resolved snoozed].each_with_index do |status, index|
+      caller_number = "+1555123001#{index}"
+      contact = create(:contact, account: account, phone_number: caller_number)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+      create(
+        :conversation,
+        account: account,
+        inbox: voice_inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        status: status
+      )
+
+      with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+        post path,
+             params: {
+               call_ref: "inbound-route-status-#{status}",
+               ingress_number: voice_channel.phone_number,
+               caller_number: caller_number
+             },
+             headers: {
+               'X-Bridge-Secret' => 'bridge-secret'
+             },
+             as: :json
+      end
+
+      aggregate_failures(status) do
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include(
+          'action' => 'operator',
+          'agent_aor' => 'sip:status-aware-operator@example.test',
+          'reason' => 'non_pending_conversation_operator_route'
+        )
+      end
+    end
+  end
+
   it 'returns the out of office reject message when the inbox is closed' do
     number_binding.routing_policy.update!(
       mode: 'operator',

@@ -798,15 +798,36 @@ internal canonical format.
 #### Request Fields Onelink Should Use
 
 - `call_ref` / `callRef`: unique call/session reference. Store it and use it to
-  correlate all later events.
+  correlate all later events. Onelink also uses it to find an existing voice
+  conversation before applying the static number routing policy.
 - `ingress_number` / `ingressNumber`: DID that was called. Use it to find the
   Onelink telephony channel.
 - `caller_number` / `callerNumber`: customer phone number. Use it to find or
-  create the contact/conversation.
+  create the contact/conversation. Onelink also uses the caller phone/source id
+  to find an existing voice conversation when `call_ref` is new or absent.
 - `direction`: expected value for inbound PSTN is `FROM_PSTN`.
 - `appRef`: the Fonoster app currently handling the call. For the current
   channel this is the runtime app, not the target AI app.
 - `metadata`: optional pass-through data.
+
+#### Status-Aware AI Routing Overlay
+
+When AI routing is enabled for the number and Onelink finds an existing voice
+conversation for the same inbox by `call_ref` or caller phone/source id,
+conversation status overrides the static number route:
+
+- `pending` -> return `action: "ai"` with reason
+  `pending_conversation_ai_route`.
+- Any existing non-pending status (`open`, `resolved`, `snoozed`) -> return
+  `action: "operator"` with reason `non_pending_conversation_operator_route`.
+- If no existing conversation is found, Onelink falls back to the normal static
+  number routing policy (`ai`, `app`, `operator`, `reject`) and fallback rules.
+- If the selected AI app/operator target is unavailable, Onelink still applies
+  the normal fallback decision rules.
+
+This mirrors the text-channel ownership model: waiting/pending conversations can
+stay with AI, while conversations already opened or otherwise moved out of
+pending go back to the human operator path.
 
 #### Response 200: Reject
 
@@ -1071,8 +1092,20 @@ Session failed:
 - Treat events as at-least-once delivery. Deduplicate by
   `X-Idempotency-Key` when present, otherwise by `call_ref`, `eventType`, and
   timestamp/sequence if available.
+- Treat `call_ref` / `callRef` as the call-session idempotency key. Onelink
+  must create-or-find exactly one call session per `account_id + call_ref` and
+  must update the existing session when another event for the same call arrives.
+- A new `event_key` for an existing `call_ref` is valid. `event_key` deduplicates
+  one delivery attempt; `call_ref` groups all events that belong to the same
+  call.
 - Create or find the Onelink conversation on `session_started`.
 - Append all later events to the same conversation using `call_ref`.
+- Duplicate or concurrent events for the same `call_ref` must return 2xx and
+  must not fail the call flow because of database uniqueness conflicts.
+- Terminal call states (`completed`, `no-answer`, `failed`) must not be
+  downgraded by late non-terminal events such as `session_started`,
+  `decision_received`, or `answered`. If event timestamp/sequence data is
+  available, older events must not overwrite newer call state.
 - Do not fail the call flow because CRM side effects are slow. Return 2xx
   quickly and process heavy work asynchronously.
 - Store unknown event fields instead of rejecting the event. The runtime may add
