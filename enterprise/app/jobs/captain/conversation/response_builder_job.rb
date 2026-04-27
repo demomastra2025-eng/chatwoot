@@ -1,6 +1,9 @@
 # rubocop:disable Metrics/ClassLength
 class Captain::Conversation::ResponseBuilderJob < ApplicationJob
+  include FileTypeHelper
+
   MAX_MESSAGE_LENGTH = 10_000
+  MAX_RESPONSE_ARTIFACT_ATTACHMENTS = 10
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
@@ -76,23 +79,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     normalize_blank_public_response!
 
-    processed_response = if handoff_requested?
-      process_action(handoff_action_name)
-      account.increment_token_usage(@response.dig('usage', 'total_tokens'))
-      true
-    elsif conversation_pending?
-      ActiveRecord::Base.transaction do
-        create_messages
-        Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
-        account.increment_response_usage
+    processed_response =
+      if handoff_requested?
+        process_action(handoff_action_name)
         account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+        true
+      elsif conversation_pending?
+        process_pending_response
+      else
+        false
       end
-      true
-    else
-      false
-    end
 
     clear_buffer_state_if_current if processed_response
+  end
+
+  def process_pending_response
+    attachment_ids = response_attachment_ids
+
+    ActiveRecord::Base.transaction do
+      create_messages(attachment_ids: attachment_ids)
+      Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
+      account.increment_response_usage
+      account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+    end
+    true
   end
 
   def collect_previous_messages
@@ -192,6 +202,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def handoff_action_name
     return 'v2_handoff' if v2_handoff_tool_fired?
+
     provider_error_handoff_requested? ? 'provider_error_handoff' : 'handoff'
   end
 
@@ -213,6 +224,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def blank_public_response?
     return false if @response.blank?
     return false if handoff_requested?
+    return false if response_artifact_ids.present?
 
     @response['response'].blank?
   end
@@ -283,11 +295,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     create_private_note(reason)
   end
 
-  def create_messages
-    validate_message_content!(@response['response'])
+  def create_messages(attachment_ids: [])
+    validate_message_content!(@response['response'], attachment_ids: attachment_ids)
     create_outgoing_message(
       @response['response'],
-      agent_name: @response['agent_name']
+      agent_name: @response['agent_name'],
+      attachment_ids: attachment_ids
     )
   end
 
@@ -304,16 +317,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     note
   end
 
-  def validate_message_content!(content)
-    raise ArgumentError, 'Message content cannot be blank' if content.blank?
+  def validate_message_content!(content, attachment_ids: [])
+    raise ArgumentError, 'Message content cannot be blank' if content.blank? && attachment_ids.blank?
   end
 
-  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false)
+  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false, attachment_ids: [])
     additional_attrs = {}
     additional_attrs[:agent_name] = agent_name if agent_name.present?
     additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
 
-    @conversation.messages.create!(
+    message = @conversation.messages.build(
       message_type: :outgoing,
       account_id: account.id,
       inbox_id: inbox.id,
@@ -322,6 +335,58 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       additional_attributes: additional_attrs,
       preserve_waiting_since: preserve_waiting_since
     )
+
+    Array(attachment_ids).each do |attachment_id|
+      build_message_attachment(message, attachment_id)
+    end
+
+    message.save!
+    message
+  end
+
+  def build_message_attachment(message, attachment_id)
+    attachment = message.attachments.build(
+      account_id: message.account_id,
+      file: attachment_id
+    )
+    attachment.file_type = file_type_by_signed_id(attachment_id)
+  end
+
+  def response_attachment_ids
+    artifact_ids = response_artifact_ids
+    return [] if artifact_ids.blank?
+
+    attachment_resolver.resolve(artifact_ids: artifact_ids)
+  end
+
+  def response_artifact_ids
+    raw_artifact_ids = @response&.dig('artifact_ids')
+    ids = case raw_artifact_ids
+          when Array
+            raw_artifact_ids
+          when String
+            parse_artifact_ids_string(raw_artifact_ids)
+          else
+            []
+          end
+
+    ids.filter_map { |artifact_id| artifact_id.to_s.strip.presence }.uniq.first(MAX_RESPONSE_ARTIFACT_ATTACHMENTS)
+  end
+
+  def parse_artifact_ids_string(raw_artifact_ids)
+    artifact_ids = raw_artifact_ids.to_s.strip
+    return [] if artifact_ids.blank?
+
+    parsed_artifact_ids = JSON.parse(artifact_ids)
+    return parsed_artifact_ids if parsed_artifact_ids.is_a?(Array)
+
+    [artifact_ids]
+  rescue JSON::ParserError
+    artifact_ids.split(/[,\s]+/)
+  end
+
+  def attachment_resolver
+    @attachment_resolver ||= Captain::Tools::AttachmentResolver.new(account: account, assistant: @assistant)
   end
 
   def create_private_note(message_content)

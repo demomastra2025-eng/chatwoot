@@ -72,6 +72,9 @@ Always respect these boundaries:
 {{ assistant_human_handoff_rule }}
 {% endif -%}
 
+# Tool Artifacts And Attachments
+Some tools may return JSON with `content` and `artifact_candidates`. When the customer asks for a file, image, document, brochure, plan, layout, or other downloadable media, select the relevant `artifact_candidates[].id` values in the final `artifact_ids` field. Do not say that a file was sent unless you include the matching `artifact_ids`. Keep the visible response natural and do not copy raw URLs or `[artifact_candidate:N]` placeholders into it.
+
 {% if conversation or contact or deal or task or appointment or campaign != blank -%}
 # Current Context
 {% if current_context_rule != blank -%}
