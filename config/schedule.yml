@@ -20,6 +20,12 @@ trigger_imap_email_inboxes_job:
   class: 'Inboxes::FetchImapEmailInboxesJob'
   queue: scheduled_jobs
 
+# cleanup stale whatsapp calls and reconcile stuck ringing/in-progress calls
+whatsapp_call_cleanup_job:
+  cron: '*/5 * * * *'
+  class: 'Whatsapp::CallCleanupJob'
+  queue: low
+
 # executed daily at 2230 UTC
 # which is our lowest traffic time
 remove_stale_contact_inboxes_job.rb:

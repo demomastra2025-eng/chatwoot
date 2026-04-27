@@ -5,6 +5,7 @@ module Enterprise::Concerns::Conversation
     belongs_to :sla_policy, optional: true
     has_one :applied_sla, dependent: :destroy_async
     has_many :sla_events, dependent: :destroy_async
+    has_many :calls, dependent: :destroy_async
     has_many :captain_responses, class_name: 'Captain::AssistantResponse', dependent: :nullify, as: :documentable
     validate :ensure_within_conversation_limit, on: :create
     before_validation :validate_sla_policy, if: -> { sla_policy_id_changed? }

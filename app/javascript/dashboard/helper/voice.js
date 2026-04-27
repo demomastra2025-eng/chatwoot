@@ -18,6 +18,10 @@ const isVoiceCallMessage = message => {
   return CONTENT_TYPES.VOICE_CALL === message?.content_type;
 };
 
+const isWhatsappCall = message => {
+  return message?.content_attributes?.data?.call_source === 'whatsapp';
+};
+
 const shouldSkipCall = (callDirection, senderId, currentUserId) => {
   return callDirection === 'outbound' && senderId !== currentUserId;
 };
@@ -55,6 +59,10 @@ function extractCallData(message) {
 export function handleVoiceCallCreated(message, currentUserId) {
   if (!isVoiceCallMessage(message)) return;
 
+  // WhatsApp calls are managed by their own store (whatsappCalls),
+  // don't add them to the Twilio/Fonoster calls store.
+  if (isWhatsappCall(message)) return;
+
   const {
     callSid,
     callDirection,
@@ -90,13 +98,17 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     senderId,
   } = extractCallData(message);
 
-  const callsStore = useCallsStore();
-
-  callsStore.handleCallStatusChanged({ callSid, status, conversationId });
-
+  // Vuex message/conversation status updates apply to all call sources.
   const callInfo = { conversationId, callStatus: status };
   commit(types.UPDATE_CONVERSATION_CALL_STATUS, callInfo);
   commit(types.UPDATE_MESSAGE_CALL_STATUS, callInfo);
+
+  // Twilio/Fonoster store interactions are not used for WhatsApp Cloud calls.
+  if (isWhatsappCall(message)) return;
+
+  const callsStore = useCallsStore();
+
+  callsStore.handleCallStatusChanged({ callSid, status, conversationId });
 
   const isNewCall =
     status === 'ringing' &&

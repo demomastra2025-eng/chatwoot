@@ -1,0 +1,85 @@
+require 'rails_helper'
+
+RSpec.describe Whatsapp::CallService do
+  describe '#terminate' do
+    let(:account) { create(:account) }
+    let(:agent) { create(:user, account: account) }
+    let(:call) { create(:call, account: account, status: 'in_progress', media_session_id: 'session-1') }
+    let(:provider) { double('provider', terminate_call: true) }
+    let(:media_client) { instance_double(Whatsapp::MediaServerClient) }
+
+    before do
+      Current.suppress_runtime_events = true
+      Conversation.skip_callback(:create, :before, :determine_conversation_status)
+      Conversation.skip_callback(:commit, :after, :notify_conversation_creation)
+      allow_any_instance_of(Channel::Whatsapp).to receive(:provider_service).and_return(provider)
+      allow(Whatsapp::CallMessageBuilder).to receive(:update_status!)
+      allow(ActionCable.server).to receive(:broadcast)
+      allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
+    end
+
+    after do
+      Conversation.set_callback(:commit, :after, :notify_conversation_creation, on: :create)
+      Conversation.set_callback(:create, :before, :determine_conversation_status)
+      Current.suppress_runtime_events = nil
+    end
+
+    it 'marks the call terminal before calling the media server to avoid callback lock deadlocks' do
+      expect(media_client).to receive(:terminate_session).with('session-1') do
+        expect(call.reload.status).to eq('completed')
+        expect(call.end_reason).to eq('agent_terminated')
+      end
+      expect(provider).to receive(:terminate_call).with(call.provider_call_id).and_return(true)
+
+      described_class.new(call: call, agent: agent).terminate
+
+      expect(call.reload.status).to eq('completed')
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.ended', data: hash_including(account_id: account.id, call_id: call.provider_call_id))
+      )
+    end
+
+    it 'is idempotent for already terminal calls' do
+      call.update!(status: 'completed')
+
+      expect(media_client).not_to receive(:terminate_session)
+      expect(provider).not_to receive(:terminate_call)
+
+      described_class.new(call: call, agent: agent).terminate
+    end
+
+    it 'releases agent reservation and terminates orphan media session when provider pre-accept fails' do
+      call.update!(status: 'ringing', accepted_by_agent_id: nil, meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
+
+      expect(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-1', 'meta_sdp_answer' => 'answer' })
+      expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'answer').and_return(false)
+      expect(provider).not_to receive(:accept_call)
+      expect(provider).not_to receive(:terminate_call)
+      expect(media_client).to receive(:terminate_session).with('media-1')
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        expect { described_class.new(call: call, agent: agent).accept }.to raise_error(Whatsapp::CallErrors::NotRinging)
+      end
+
+      expect(call.reload.status).to eq('ringing')
+      expect(call.accepted_by_agent_id).to be_nil
+    end
+
+    it 'does not let another agent steal a reserved media-server call' do
+      other_agent = create(:user, account: account)
+      call.update!(status: 'ringing', accepted_by_agent_id: other_agent.id, meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
+
+      expect(media_client).not_to receive(:create_session)
+      expect(provider).not_to receive(:pre_accept_call)
+      expect(provider).not_to receive(:accept_call)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        expect { described_class.new(call: call, agent: agent).accept }.to raise_error(Whatsapp::CallErrors::AlreadyAccepted)
+      end
+
+      expect(call.reload.accepted_by_agent_id).to eq(other_agent.id)
+      expect(call.status).to eq('ringing')
+    end
+  end
+end

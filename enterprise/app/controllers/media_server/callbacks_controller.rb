@@ -1,0 +1,178 @@
+require 'digest'
+
+class MediaServer::CallbacksController < ApplicationController
+  before_action :validate_media_server_token
+  before_action :ensure_account_id!
+
+  def agent_disconnected
+    call = find_call_by_session
+    return head :not_found unless call
+    return head :ok if call.terminal?
+
+    broadcast_agent_disconnected(call)
+    head :ok
+  end
+
+  def recording_ready
+    call = find_call_by_session
+    return head :not_found unless call
+
+    Whatsapp::CallRecordingFetchJob.perform_later(call.id) if mark_recording_ready!(call)
+    head :ok
+  end
+
+  def session_terminated
+    call = find_call_by_session
+    return head :not_found unless call
+
+    final_status = nil
+    duration_seconds = normalized_duration_seconds
+    transitioned = false
+    reason = params[:reason].presence || 'media_server'
+
+    call.with_lock do
+      call.reload
+      unless call.terminal?
+        was_answered = call.in_progress? || call.accepted_by_agent_id.present? || duration_seconds.to_i.positive?
+        final_status = was_answered ? 'completed' : 'failed'
+        attrs = { status: final_status, end_reason: reason }
+        attrs[:duration_seconds] = duration_seconds if duration_seconds
+        call.update!(attrs)
+        transitioned = true
+      end
+    end
+
+    if transitioned
+      agent = call.accepted_by_agent if call.accepted_by_agent_id.present?
+      Whatsapp::CallMessageBuilder.update_status!(call: call, status: final_status, agent: agent, duration_seconds: duration_seconds)
+      mapped = Whatsapp::CallMessageBuilder::CALL_TO_VOICE_STATUS[final_status] || final_status
+      update_conversation_call_status(call, mapped)
+      broadcast_call_ended(call, final_status)
+      terminate_on_provider(call)
+    end
+
+    head :ok
+  rescue StandardError => e
+    Rails.logger.error "[MEDIA SERVER] Failed to process session_terminated callback: #{e.message}"
+    head :ok unless performed?
+  end
+
+  def error
+    call = find_call_by_session
+    return head :not_found unless call
+
+    error_code = params[:code].to_s
+    error_message = params[:error].to_s
+    error_reason = [error_code.presence, error_message.presence].compact.join(': ')
+    error_reason = 'media_server_error' if error_reason.blank?
+
+    begin
+      call.update!(end_reason: error_reason) unless call.terminal?
+    rescue StandardError => e
+      Rails.logger.error "[MEDIA SERVER] Failed to record error reason for call #{call.provider_call_id}: #{e.message}"
+    end
+
+    Rails.logger.error "[MEDIA SERVER] callback error for call #{call.provider_call_id}: #{error_reason}"
+    head :ok
+  end
+
+  private
+
+  def validate_media_server_token
+    expected = ENV.fetch('MEDIA_SERVER_AUTH_TOKEN', '').to_s
+    token = request.authorization.to_s[/\ABearer\s+(.+)\z/i, 1].to_s
+
+    return head :unauthorized if expected.blank? || token.blank?
+
+    expected_digest = Digest::SHA256.hexdigest(expected)
+    token_digest = Digest::SHA256.hexdigest(token)
+    head :unauthorized unless ActiveSupport::SecurityUtils.secure_compare(token_digest, expected_digest)
+  end
+
+  def ensure_account_id!
+    head :bad_request if params[:account_id].blank?
+  end
+
+  def find_call_by_session
+    Call.find_by(media_session_id: params[:session_id], account_id: params[:account_id])
+  end
+
+  def mark_recording_ready!(call)
+    enqueue_fetch = false
+
+    call.with_lock do
+      call.reload
+      unless call.recording.attached? || media_server_callback_marked?(call, 'recording_ready_at')
+        call.update!(meta: with_media_server_callback_mark(call, 'recording_ready_at'))
+        enqueue_fetch = true
+      end
+    end
+
+    enqueue_fetch
+  end
+
+  def media_server_callback_marked?(call, key)
+    (call.meta || {}).dig('media_server', 'callbacks', key).present?
+  end
+
+  def with_media_server_callback_mark(call, key)
+    meta = (call.meta || {}).deep_dup
+    meta['media_server'] ||= {}
+    meta['media_server']['callbacks'] ||= {}
+    meta['media_server']['callbacks'][key] = Time.current.iso8601
+    meta['media_server']['callbacks']['recording_file_size_bytes'] = params[:file_size_bytes].to_i if params[:file_size_bytes].present?
+    meta
+  end
+
+  def normalized_duration_seconds
+    return if params[:duration_seconds].blank?
+
+    seconds = params[:duration_seconds].to_i
+    seconds.negative? ? 0 : seconds
+  end
+
+  def terminate_on_provider(call)
+    call.inbox.channel.provider_service.terminate_call(call.provider_call_id)
+  rescue StandardError => e
+    Rails.logger.error "[MEDIA SERVER] Failed to terminate provider call #{call.provider_call_id}: #{e.message}"
+  end
+
+  def update_conversation_call_status(call, mapped_status)
+    conversation = call.conversation
+    attrs = (conversation.additional_attributes || {}).merge('call_status' => mapped_status)
+    conversation.update!(additional_attributes: attrs)
+  end
+
+  def broadcast_agent_disconnected(call)
+    ActionCable.server.broadcast(
+      "account_#{call.account_id}",
+      {
+        event: 'whatsapp_call.agent_disconnected',
+        data: {
+          account_id: call.account_id,
+          id: call.id,
+          call_id: call.provider_call_id,
+          conversation_id: call.conversation_id,
+          reason: params[:reason]
+        }
+      }
+    )
+  end
+
+  def broadcast_call_ended(call, final_status)
+    ActionCable.server.broadcast(
+      "account_#{call.account_id}",
+      {
+        event: 'whatsapp_call.ended',
+        data: {
+          account_id: call.account_id,
+          id: call.id,
+          call_id: call.provider_call_id,
+          status: final_status,
+          duration_seconds: call.duration_seconds,
+          conversation_id: call.conversation_id
+        }
+      }
+    )
+  end
+end

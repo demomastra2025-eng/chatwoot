@@ -13,6 +13,14 @@ import { conversationListPageURL } from 'dashboard/helper/URLHelper';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useI18n } from 'vue-i18n';
+import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import { emitter } from 'shared/helpers/mitt';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import {
+  useWhatsappCallsStore,
+  setOutboundCallProperty,
+} from 'dashboard/stores/whatsappCalls';
+import { startCallRecording } from 'dashboard/composables/useWhatsappCallSession';
 
 const props = defineProps({
   chat: {
@@ -30,7 +38,9 @@ const store = useStore();
 const route = useRoute();
 const conversationHeader = ref(null);
 const { width } = useElementSize(conversationHeader);
-const { isAWebWidgetInbox } = useInbox();
+const { isAWebWidgetInbox, isAWhatsAppCloudChannel } = useInbox();
+const whatsappCallsStore = useWhatsappCallsStore();
+const isInitiatingCall = ref(false);
 
 const currentChat = computed(() => store.getters.getSelectedChat);
 const accountId = computed(() => store.getters.getCurrentAccountId);
@@ -124,6 +134,211 @@ const statusMeta = computed(() => {
       };
   }
 });
+
+const canInitiateWhatsappCall = computed(() => {
+  if (!isAWhatsAppCloudChannel.value) return false;
+  if (!inbox.value?.calling_enabled) return false;
+  if (whatsappCallsStore.hasWhatsappCall) return false;
+  return true;
+});
+
+// Detect if the media server is enabled for this inbox.
+// When enabled, the browser should NOT create its own WebRTC offer.
+const isMediaServerEnabled = computed(
+  () => !!inbox.value?.media_server_enabled
+);
+
+const waitForOutboundIceGathering = pc =>
+  new Promise((resolve, reject) => {
+    if (pc.iceGatheringState === 'complete') {
+      resolve();
+      return;
+    }
+
+    let timeout = null;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      pc.onicegatheringstatechange = null;
+      pc.oniceconnectionstatechange = null;
+    };
+
+    timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, 10000);
+
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === 'complete') {
+        cleanup();
+        resolve();
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        cleanup();
+        reject(new Error('ICE connection failed'));
+      }
+    };
+  });
+
+/**
+ * Server-relay mode: POST /initiate without SDP. The media server creates
+ * Peer A (Meta-side) and later sends the agent Peer B offer via ActionCable
+ * (whatsapp_call.outbound_connected with sdp_offer).
+ */
+const initiateServerRelayCall = async () => {
+  if (isInitiatingCall.value || !currentChat.value?.id) return;
+  isInitiatingCall.value = true;
+
+  try {
+    const response = await WhatsappCallsAPI.initiate(currentChat.value.id);
+
+    const callStatus = response.data?.status;
+    if (
+      callStatus === 'permission_requested' ||
+      callStatus === 'permission_pending'
+    ) {
+      const message =
+        callStatus === 'permission_requested'
+          ? t('WHATSAPP_CALL.PERMISSION_REQUESTED')
+          : t('WHATSAPP_CALL.PERMISSION_PENDING');
+      emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
+      return;
+    }
+
+    emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+      message: t('WHATSAPP_CALL.CALLING'),
+      type: 'success',
+    });
+
+    const outboundCallId = response.data?.call_id;
+
+    // Set active call — WebRTC setup happens when ActionCable delivers agent_offer
+    whatsappCallsStore.setActiveCall({
+      id: response.data?.id,
+      callId: outboundCallId,
+      direction: 'outbound',
+      status: 'ringing',
+      serverRelay: true,
+      conversationId: currentChat.value.id,
+      caller: {
+        name: currentContact.value?.name,
+        phone: currentContact.value?.phone_number,
+        avatar: currentContact.value?.thumbnail,
+      },
+    });
+  } catch (err) {
+    const errorMessage =
+      err.response?.data?.error || t('WHATSAPP_CALL.CALL_FAILED');
+    emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+      message: errorMessage,
+      type: 'error',
+    });
+  } finally {
+    isInitiatingCall.value = false;
+  }
+};
+
+/**
+ * Legacy mode: Browser creates RTCPeerConnection, generates SDP offer,
+ * sends it to backend which forwards to Meta.
+ */
+const initiateLegacyCall = async () => {
+  if (isInitiatingCall.value || !currentChat.value?.id) return;
+  isInitiatingCall.value = true;
+  let pc = null;
+  let localStream = null;
+  let recordCallId = null;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+    pc.ontrack = event => {
+      const [stream] = event.streams;
+      if (!stream) return;
+      const audio = document.createElement('audio');
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+      setOutboundCallProperty('audio', audio);
+      whatsappCallsStore.markActiveCallConnected();
+      if (recordCallId) startCallRecording(pc, localStream, recordCallId);
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    await waitForOutboundIceGathering(pc);
+    const completeSdp = pc.localDescription.sdp;
+
+    const response = await WhatsappCallsAPI.initiate(
+      currentChat.value.id,
+      completeSdp
+    );
+
+    const callStatus = response.data?.status;
+    if (
+      callStatus === 'permission_requested' ||
+      callStatus === 'permission_pending'
+    ) {
+      pc.close();
+      localStream.getTracks().forEach(track => track.stop());
+      const message =
+        callStatus === 'permission_requested'
+          ? t('WHATSAPP_CALL.PERMISSION_REQUESTED')
+          : t('WHATSAPP_CALL.PERMISSION_PENDING');
+      emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
+      return;
+    }
+
+    emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+      message: t('WHATSAPP_CALL.CALLING'),
+      type: 'success',
+    });
+
+    const outboundCallId = response.data?.call_id;
+    recordCallId = response.data?.id;
+    setOutboundCallProperty('pc', pc);
+    setOutboundCallProperty('stream', localStream);
+    setOutboundCallProperty('callId', outboundCallId);
+
+    whatsappCallsStore.setActiveCall({
+      id: response.data?.id,
+      callId: outboundCallId,
+      direction: 'outbound',
+      status: 'ringing',
+      serverRelay: false,
+      conversationId: currentChat.value.id,
+      caller: {
+        name: currentContact.value?.name,
+        phone: currentContact.value?.phone_number,
+        avatar: currentContact.value?.thumbnail,
+      },
+    });
+  } catch (err) {
+    if (pc) pc.close();
+    if (localStream) localStream.getTracks().forEach(track => track.stop());
+    const errorMessage =
+      err.response?.data?.error || t('WHATSAPP_CALL.CALL_FAILED');
+    emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+      message: errorMessage,
+      type: 'error',
+    });
+  } finally {
+    isInitiatingCall.value = false;
+  }
+};
+
+const initiateWhatsappCall = () => {
+  if (isMediaServerEnabled.value) {
+    return initiateServerRelayCall();
+  }
+  return initiateLegacyCall();
+};
 </script>
 
 <template>
@@ -191,6 +406,19 @@ const statusMeta = computed(() => {
         :parent-width="width"
         class="hidden md:flex"
       />
+      <button
+        v-if="canInitiateWhatsappCall"
+        v-tooltip="$t('WHATSAPP_CALL.INITIATE_CALL')"
+        class="flex items-center justify-center w-8 h-8 rounded-lg text-n-slate-11 hover:text-n-slate-12 hover:bg-n-slate-3 transition-colors"
+        :disabled="isInitiatingCall"
+        @click="initiateWhatsappCall"
+      >
+        <i
+          v-if="isInitiatingCall"
+          class="text-base i-ph-circle-notch animate-spin"
+        />
+        <i v-else class="text-base i-ph-phone-bold" />
+      </button>
       <MoreActions :conversation-id="currentChat.id" />
     </div>
   </div>

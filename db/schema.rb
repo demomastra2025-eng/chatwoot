@@ -287,6 +287,33 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_26_065856) do
     t.index ["user_id"], name: "index_bulk_action_runs_on_user_id"
   end
 
+  create_table "calls", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "contact_id", null: false
+    t.bigint "message_id"
+    t.bigint "accepted_by_agent_id"
+    t.string "provider_call_id", null: false
+    t.integer "provider", default: 0, null: false
+    t.integer "direction", null: false
+    t.string "status", default: "ringing", null: false
+    t.datetime "started_at"
+    t.integer "duration_seconds"
+    t.string "end_reason"
+    t.jsonb "meta", default: {}
+    t.text "transcript"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "media_session_id"
+    t.index ["accepted_by_agent_id", "status"], name: "index_calls_on_accepted_by_agent_id_and_status"
+    t.index ["account_id", "contact_id"], name: "index_calls_on_account_id_and_contact_id"
+    t.index ["account_id", "conversation_id"], name: "index_calls_on_account_id_and_conversation_id"
+    t.index ["media_session_id"], name: "index_calls_on_media_session_id", unique: true
+    t.index ["message_id"], name: "index_calls_on_message_id"
+    t.index ["provider", "provider_call_id"], name: "index_calls_on_provider_and_provider_call_id", unique: true
+  end
+
   create_table "campaign_deliveries", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "campaign_id", null: false

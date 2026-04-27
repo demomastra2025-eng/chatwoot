@@ -39,6 +39,7 @@ export const FEATURE_FLAGS = {
   CHANNEL_INSTAGRAM: 'channel_instagram',
   CHANNEL_TIKTOK: 'channel_tiktok',
   CONTACT_CHATWOOT_SUPPORT_TEAM: 'contact_chatwoot_support_team',
+  CAPTAIN_CUSTOM_TOOLS: 'custom_tools',
   CAPTAIN_V2: 'captain_integration_v2',
   CAPTAIN_TASKS: 'captain_tasks',
   SAML: 'saml',
@@ -48,15 +49,18 @@ export const FEATURE_FLAGS = {
   CONVERSATION_REQUIRED_ATTRIBUTES: 'conversation_required_attributes',
   SCHEDULING: 'scheduling',
   SCHEDULING_FINANCE: 'scheduling_finance',
+  WHATSAPP_CALL: 'whatsapp_call',
 };
 
 export const PREMIUM_FEATURES = [
   FEATURE_FLAGS.SLA,
   FEATURE_FLAGS.CAPTAIN,
+  FEATURE_FLAGS.CAPTAIN_CUSTOM_TOOLS,
   FEATURE_FLAGS.CUSTOM_ROLES,
   FEATURE_FLAGS.AUDIT_LOGS,
   FEATURE_FLAGS.HELP_CENTER,
   FEATURE_FLAGS.SAML,
   FEATURE_FLAGS.CONVERSATION_REQUIRED_ATTRIBUTES,
   FEATURE_FLAGS.ADVANCED_ASSIGNMENT,
+  FEATURE_FLAGS.WHATSAPP_CALL,
 ];

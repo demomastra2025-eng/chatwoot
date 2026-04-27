@@ -103,7 +103,7 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
 
   def log_webhook_dispatch(channel, params)
     Rails.logger.info(
-      "[WHATSAPP_WEBHOOK] dispatch " \
+      '[WHATSAPP_WEBHOOK] dispatch ' \
       "phone_number=#{channel&.phone_number || params[:phone_number] || params['phone_number']} " \
       "channel_id=#{channel&.id || 'none'} " \
       "account_id=#{channel&.account_id || 'none'} " \
@@ -122,3 +122,5 @@ class Webhooks::WhatsappEventsJob < ApplicationJob
     end.uniq
   end
 end
+
+Webhooks::WhatsappEventsJob.prepend_mod_with('Webhooks::WhatsappEventsJob')

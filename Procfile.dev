@@ -10,3 +10,4 @@ telegram_personal_history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIV
 history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml
 echo_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_whatsappweb_echo.yml
 vite: VITE_RUBY_HOST=127.0.0.1 bin/vite dev
+media_server: cd enterprise/media-server && MEDIA_SERVER_AUTH_TOKEN=${MEDIA_SERVER_AUTH_TOKEN:-dev_media_server_token} RAILS_CALLBACK_URL=http://localhost:3000 PUBLIC_IP=${MEDIA_SERVER_PUBLIC_IP:-127.0.0.1} RECORDINGS_DIR=/tmp/chatwoot-recordings HTTP_PORT=4000 go run ./cmd/server

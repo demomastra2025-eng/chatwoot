@@ -459,6 +459,23 @@ Rails.application.routes.draw do
             resource :authorization, only: [:create]
           end
 
+          resources :whatsapp_calls, only: [:show] do
+            collection do
+              get :active
+              post :initiate
+            end
+            member do
+              post :accept
+              post :reject
+              post :terminate
+              post :agent_answer
+              post :reconnect
+              post :join
+              post :play_audio
+              post :upload_recording
+            end
+          end
+
           resources :webhooks, only: [:index, :create, :update, :destroy]
           namespace :integrations do
             resources :apps, only: [:index, :show]
@@ -771,6 +788,18 @@ Rails.application.routes.draw do
   get 'instagram/callback', to: 'instagram/callbacks#show'
   get 'tiktok/callback', to: 'tiktok/callbacks#show'
   get 'notion/callback', to: 'notion/callbacks#show'
+
+  # Media server callbacks — authenticated by shared MEDIA_SERVER_AUTH_TOKEN,
+  # not a user session. Intentionally top-level and not account-scoped.
+  namespace :callbacks do
+    namespace :media_server do
+      post :agent_disconnected, to: '/media_server/callbacks#agent_disconnected'
+      post :recording_ready, to: '/media_server/callbacks#recording_ready'
+      post :session_terminated, to: '/media_server/callbacks#session_terminated'
+      post :error, to: '/media_server/callbacks#error'
+    end
+  end
+
   # ----------------------------------------------------------------------
   # Routes for external service verifications
   get '.well-known/assetlinks.json' => 'android_app#assetlinks'

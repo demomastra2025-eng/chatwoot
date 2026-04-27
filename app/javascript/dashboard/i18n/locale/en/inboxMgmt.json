@@ -1206,6 +1206,9 @@
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Templates sync initiated successfully. It may take a couple of minutes to update.",
+      "WHATSAPP_CALLING_TITLE": "WhatsApp Calling",
+      "WHATSAPP_CALLING_SUBHEADER": "Allow agents to make and receive WhatsApp Cloud calls from this inbox.",
+      "WHATSAPP_CALLING_LABEL": "Enable WhatsApp Calling",
       "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
       "ALLOW_MOBILE_WEBVIEW": {
         "LABEL": "Enable widget in mobile apps",

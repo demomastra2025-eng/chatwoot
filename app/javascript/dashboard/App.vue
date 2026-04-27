@@ -20,6 +20,7 @@ import {
 import ReconnectService from 'dashboard/helper/ReconnectService';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { setDashboardLocale } from 'dashboard/i18n';
+import { useCallReconnection } from 'dashboard/composables/useCallReconnection';
 
 export default {
   name: 'App',
@@ -38,6 +39,7 @@ export default {
     // Use the font size composable (it automatically sets up the watcher)
     const { currentFontSize } = useFontSize();
     const { uiSettings } = useUISettings();
+    useCallReconnection();
 
     return {
       router,

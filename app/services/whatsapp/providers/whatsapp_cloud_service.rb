@@ -120,7 +120,6 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     ENV.fetch('WHATSAPP_CLOUD_BASE_URL', 'https://graph.facebook.com')
   end
 
-  # TODO: See if we can unify the API versions and for both paths and make it consistent with out facebook app API versions
   def phone_id_path
     "#{api_base_path}/#{api_version}/#{whatsapp_channel.provider_config['phone_number_id']}"
   end
@@ -240,3 +239,5 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     process_response(response, message)
   end
 end
+
+Whatsapp::Providers::WhatsappCloudService.include_mod_with('Whatsapp::Providers::WhatsappCloudService')
