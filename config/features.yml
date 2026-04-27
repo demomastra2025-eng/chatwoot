@@ -253,3 +253,11 @@
 - name: crm_tasks
   display_name: CRM Tasks
   enabled: false
+- name: whatsapp_call
+  display_name: WhatsApp Calling
+  enabled: false
+  premium: true
+- name: custom_tools
+  display_name: Custom Tools
+  enabled: false
+  premium: true

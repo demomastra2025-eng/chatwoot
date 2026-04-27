@@ -11,7 +11,7 @@ RSpec.describe Captain::Scenario, type: :model do
     it { is_expected.to validate_presence_of(:description) }
     it { is_expected.to validate_presence_of(:instruction) }
     it { is_expected.to validate_length_of(:description).is_at_most(2000) }
-    it { is_expected.to validate_length_of(:instruction).is_at_most(10_000) }
+    it { is_expected.to validate_length_of(:instruction).is_at_most(20_000) }
     it { is_expected.to validate_presence_of(:assistant_id) }
     it { is_expected.to validate_presence_of(:account_id) }
   end

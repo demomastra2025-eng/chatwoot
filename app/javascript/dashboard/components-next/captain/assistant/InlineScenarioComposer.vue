@@ -21,7 +21,7 @@ const emit = defineEmits(['add', 'cancel']);
 
 const { t } = useI18n();
 const SCENARIO_DESCRIPTION_MAX_LENGTH = 2000;
-const SCENARIO_INSTRUCTION_MAX_LENGTH = 10_000;
+const SCENARIO_INSTRUCTION_MAX_LENGTH = 20_000;
 
 const state = reactive({
   title: '',

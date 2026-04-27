@@ -44,7 +44,7 @@ class Captain::Scenario < ApplicationRecord
 
   validates :title, presence: true
   validates :description, presence: true, length: { maximum: 2000 }
-  validates :instruction, presence: true, length: { maximum: 10_000 }
+  validates :instruction, presence: true, length: { maximum: 20_000 }
   validates :assistant_id, presence: true
   validates :account_id, presence: true
   validate :validate_instruction_tools

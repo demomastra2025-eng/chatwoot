@@ -58,7 +58,7 @@ const emit = defineEmits(['select', 'hover', 'delete', 'update']);
 const { t } = useI18n();
 const { formatMessage } = useMessageFormatter();
 const SCENARIO_DESCRIPTION_MAX_LENGTH = 2000;
-const SCENARIO_INSTRUCTION_MAX_LENGTH = 10000;
+const SCENARIO_INSTRUCTION_MAX_LENGTH = 20_000;
 
 const modelValue = computed({
   get: () => props.isSelected,

@@ -19,19 +19,23 @@
 #  created_at                         :datetime         not null
 #  updated_at                         :datetime         not null
 #  account_id                         :bigint           not null
-#  captain_assistant_id                :bigint
+#  captain_assistant_id               :bigint
 #  display_id                         :integer          not null
 #  inbox_id                           :bigint           not null
 #  sender_id                          :integer
 #
 # Indexes
 #
-#  index_campaigns_on_account_id       (account_id)
-#  index_campaigns_on_campaign_status  (campaign_status)
-#  index_campaigns_on_campaign_type    (campaign_type)
+#  index_campaigns_on_account_id            (account_id)
+#  index_campaigns_on_campaign_status       (campaign_status)
+#  index_campaigns_on_campaign_type         (campaign_type)
 #  index_campaigns_on_captain_assistant_id  (captain_assistant_id)
-#  index_campaigns_on_inbox_id         (inbox_id)
-#  index_campaigns_on_scheduled_at     (scheduled_at)
+#  index_campaigns_on_inbox_id              (inbox_id)
+#  index_campaigns_on_scheduled_at          (scheduled_at)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (captain_assistant_id => captain_assistants.id)
 #
 class Campaign < ApplicationRecord
   include UrlHelper

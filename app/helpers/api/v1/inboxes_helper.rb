@@ -95,6 +95,7 @@ module Api::V1::InboxesHelper
     openssl_verify_mode = "OpenSSL::SSL::VERIFY_#{smtp_openssl_verify_mode.upcase}".constantize if smtp_openssl_verify_mode.is_a?(String)
     context = Net::SMTP.default_ssl_context
     context.verify_mode = openssl_verify_mode
+    context.verify_hostname = false if openssl_verify_mode == OpenSSL::SSL::VERIFY_NONE && context.respond_to?(:verify_hostname=)
     context
   end
 

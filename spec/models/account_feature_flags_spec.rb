@@ -45,5 +45,22 @@ RSpec.describe Account, type: :model do
 
       expect(account.reload.feature_enabled?('advanced_assignment')).to be(true)
     end
+
+    it 'ignores stale unknown account-level defaults without breaking account creation' do
+      InstallationConfig.where(name: 'ACCOUNT_LEVEL_FEATURE_DEFAULTS').delete_all
+      create(
+        :installation_config,
+        name: 'ACCOUNT_LEVEL_FEATURE_DEFAULTS',
+        value: [
+          { 'name' => 'removed_feature', 'enabled' => true },
+          { 'name' => 'scheduling', 'enabled' => true }
+        ]
+      )
+
+      created_account = nil
+      expect { created_account = create(:account) }.not_to raise_error
+      expect(created_account.feature_enabled?('removed_feature')).to be(false)
+      expect(created_account.feature_enabled?('scheduling')).to be(true)
+    end
   end
 end

@@ -137,9 +137,10 @@ module Featurable
 
   def feature_enabled?(name)
     normalized_name = normalize_feature_name(name)
+    return false unless FEATURE_NAMES.include?(normalized_name)
     return overflow_feature_enabled?(normalized_name) if overflow_feature?(normalized_name)
 
-    send("feature_#{normalized_name}?")
+    public_send("feature_#{normalized_name}?")
   end
 
   def all_features
@@ -173,7 +174,10 @@ module Featurable
     config = InstallationConfig.find_by(name: 'ACCOUNT_LEVEL_FEATURE_DEFAULTS')
     return true if config.blank?
 
-    features_to_enabled = config.value.select { |f| f[:enabled] }.pluck(:name)
+    features_to_enabled = Array(config.value).filter_map do |feature|
+      feature = feature.with_indifferent_access
+      feature[:name] if feature[:enabled]
+    end
     enable_features(*features_to_enabled)
   end
 
@@ -197,11 +201,12 @@ module Featurable
 
   def set_feature_state(name, enabled)
     normalized_name = normalize_feature_name(name)
+    return unless FEATURE_NAMES.include?(normalized_name)
 
     if overflow_feature?(normalized_name)
       set_overflow_feature(normalized_name, enabled)
     else
-      send("feature_#{normalized_name}=", ActiveModel::Type::Boolean.new.cast(enabled))
+      public_send("feature_#{normalized_name}=", ActiveModel::Type::Boolean.new.cast(enabled))
     end
   end
 

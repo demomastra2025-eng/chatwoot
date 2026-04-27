@@ -1,5 +1,61 @@
 # frozen_string_literal: true
 
+# == Schema Information
+#
+# Table name: confirmation_requests
+#
+#  id                    :bigint           not null, primary key
+#  body                  :text             not null
+#  delivery_strategy     :string
+#  expires_at            :datetime
+#  idempotency_key       :string
+#  metadata              :jsonb            not null
+#  resolution_confidence :float
+#  resolution_metadata   :jsonb            not null
+#  resolution_source     :string
+#  resolved_at           :datetime
+#  status                :string           default("pending"), not null
+#  subject_type          :string
+#  title                 :string           not null
+#  token                 :string           not null
+#  created_at            :datetime         not null
+#  updated_at            :datetime         not null
+#  account_id            :bigint           not null
+#  contact_id            :bigint
+#  conversation_id       :bigint
+#  delivery_message_id   :bigint
+#  inbox_id              :bigint
+#  requested_by_id       :bigint
+#  resolved_by_id        :bigint
+#  resolved_message_id   :bigint
+#  subject_id            :bigint
+#
+# Indexes
+#
+#  idx_confirmation_requests_on_account_subject                   (account_id,subject_type,subject_id)
+#  idx_on_account_id_status_conversation_id_2babc633ce            (account_id,status,conversation_id)
+#  index_confirmation_requests_on_account_id                      (account_id)
+#  index_confirmation_requests_on_account_id_and_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  index_confirmation_requests_on_contact_id                      (contact_id)
+#  index_confirmation_requests_on_conversation_id                 (conversation_id)
+#  index_confirmation_requests_on_delivery_message_id             (delivery_message_id)
+#  index_confirmation_requests_on_inbox_id                        (inbox_id)
+#  index_confirmation_requests_on_requested_by_id                 (requested_by_id)
+#  index_confirmation_requests_on_resolved_by_id                  (resolved_by_id)
+#  index_confirmation_requests_on_resolved_message_id             (resolved_message_id)
+#  index_confirmation_requests_on_token                           (token) UNIQUE
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (contact_id => contacts.id)
+#  fk_rails_...  (conversation_id => conversations.id)
+#  fk_rails_...  (delivery_message_id => messages.id)
+#  fk_rails_...  (inbox_id => inboxes.id)
+#  fk_rails_...  (requested_by_id => users.id)
+#  fk_rails_...  (resolved_by_id => users.id)
+#  fk_rails_...  (resolved_message_id => messages.id)
+#
 class ConfirmationRequest < ApplicationRecord
   STATUSES = %w[pending confirmed declined reschedule_requested expired].freeze
   RESOLUTION_SOURCES = %w[button link text ai manual system].freeze
