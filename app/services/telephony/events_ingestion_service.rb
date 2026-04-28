@@ -4,20 +4,44 @@ class Telephony::EventsIngestionService
   CALL_SESSION_CONFLICT_RETRIES = 2
 
   EVENT_STATUS_MAP = {
+    'created' => 'created',
+    'queued' => 'created',
+    'initiated' => 'created',
     'session_started' => 'ringing',
     'decision_received' => 'ringing',
+    'ai_ringing' => 'ringing',
     'dial_status' => nil,
-    'session_completed' => 'completed',
-    'session_failed' => 'failed',
-    'unsupported_action' => 'failed',
+    'connecting' => 'connecting',
+    'transfer_started' => 'in_progress',
+    'tool_started' => nil,
+    'tool_completed' => nil,
+    'tool_failed' => nil,
+    'ai_speaking' => nil,
+    'caller_interrupted' => nil,
     'ringing' => 'ringing',
-    'answered' => 'in-progress',
-    'in-progress' => 'in-progress',
+    'answered' => 'in_progress',
+    'ai_answered' => 'in_progress',
+    'transfer_answered' => 'in_progress',
+    'in-progress' => 'in_progress',
+    'in_progress' => 'in_progress',
+    'inprogress' => 'in_progress',
+    'session_completed' => 'completed',
+    'transfer_completed' => 'completed',
+    'close' => 'completed',
     'completed' => 'completed',
-    'failed' => 'failed',
-    'busy' => 'no-answer',
-    'no-answer' => 'no-answer',
-    'rejected' => 'failed'
+    'missed' => 'missed',
+    'no-answer' => 'no_answer',
+    'no_answer' => 'no_answer',
+    'noanswer' => 'no_answer',
+    'busy' => 'busy',
+    'cancelled' => 'cancelled',
+    'canceled' => 'cancelled',
+    'rejected' => 'rejected',
+    'declined' => 'rejected',
+    'session_failed' => 'failed',
+    'transfer_failed' => 'failed',
+    'unsupported_action' => 'failed',
+    'failed' => 'failed'
   }.freeze
 
   def initialize(payload:)
@@ -79,13 +103,24 @@ class Telephony::EventsIngestionService
       call_session = resolve_call_session!(account)
       call_session.with_lock do
         call_session = upsert_call_session!(call_session, account)
-        ensure_conversation!(call_session, account)
-        apply_call_status!(call_session)
-        sync_voice_message!(call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
 
+    run_side_effects!(call_session, account, event) if call_session.present?
+    call_session
+  end
+
+  def run_side_effects!(call_session, account, event)
+    ensure_conversation!(call_session, account)
+    apply_call_status!(call_session)
+    sync_voice_message!(call_session)
+  rescue StandardError => e
+    event.update(status: 'failed', error_message: e.message)
+    Rails.logger.error(
+      "FONOSTER_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
+      "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
+    )
     call_session
   end
 
@@ -112,9 +147,6 @@ class Telephony::EventsIngestionService
 
     contact = resolve_metadata_contact
     return contact.account if contact.present?
-
-    session = Telephony::CallSession.find_by(external_call_ref: call_ref)
-    return session.account if session.present?
 
     binding = resolve_number_binding
     return binding.account if binding.present?
@@ -145,9 +177,13 @@ class Telephony::EventsIngestionService
   def call_session_attributes(account, call_session)
     conversation = resolve_existing_conversation(account, call_session)
     inbox = resolve_inbox(account)
-    number_binding = resolve_number_binding || inbox&.telephony_number_binding
+    number_binding = resolve_number_binding(account) || inbox&.telephony_number_binding
     contact = resolve_contact(account, conversation)
     agent_binding = resolve_agent_binding(account)
+    status = next_status_for(call_session)
+    started_at = next_started_at(call_session, status)
+    answered_at = next_answered_at(call_session, status)
+    ended_at = next_ended_at(call_session, status)
 
     {
       account: account,
@@ -159,17 +195,22 @@ class Telephony::EventsIngestionService
       provider: payload_value('provider') || call_session.provider || 'fonoster',
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
                                        'providerCallId') || call_session.provider_call_sid,
-      status: next_status_for(call_session),
+      status: status,
       direction: resolved_direction || call_session.direction || 'inbound',
       from_number: resolved_from_number || call_session.from_number,
       to_number: resolved_to_number || call_session.to_number,
       recording_ref: payload_value('recording_ref', 'recordingRef') || call_session.recording_ref,
       transcript_ref: payload_value('transcript_ref', 'transcriptRef') || call_session.transcript_ref,
       summary: payload_value('summary') || call_session.summary,
-      duration_seconds: resolved_duration || call_session.duration_seconds,
-      started_at: resolved_started_at || call_session.started_at,
-      ended_at: resolved_ended_at || call_session.ended_at,
+      duration_seconds: next_duration_seconds(call_session, status, started_at, answered_at, ended_at),
+      started_at: started_at,
+      answered_at: answered_at,
+      answered_by: next_answered_by(call_session, status),
+      ended_at: ended_at,
+      ended_by: next_ended_by(call_session, status),
+      end_reason: next_end_reason(call_session, status),
       last_event_at: next_last_event_at(call_session),
+      legs: next_legs(call_session, status),
       metadata: merged_metadata(call_session)
     }
   end
@@ -183,6 +224,64 @@ class Telephony::EventsIngestionService
     status
   end
 
+  def next_started_at(call_session, status)
+    return call_session.started_at if stale_event?(call_session)
+
+    resolved_started_at || call_session.started_at || default_started_at(status)
+  end
+
+  def next_answered_at(call_session, status)
+    return call_session.answered_at if stale_event?(call_session)
+
+    resolved_answered_at || call_session.answered_at || (event_time if status == 'in_progress')
+  end
+
+  def next_answered_by(call_session, status)
+    return call_session.answered_by if stale_event?(call_session)
+
+    resolved_answered_by || call_session.answered_by || resolved_agent_actor(status)
+  end
+
+  def next_ended_at(call_session, status)
+    return call_session.ended_at if stale_event?(call_session)
+
+    resolved_ended_at || call_session.ended_at || (event_time if terminal_status?(status))
+  end
+
+  def next_ended_by(call_session, status)
+    return call_session.ended_by if stale_event?(call_session)
+    return call_session.ended_by unless terminal_status?(status)
+
+    resolved_ended_by || call_session.ended_by
+  end
+
+  def next_end_reason(call_session, status)
+    return call_session.end_reason if stale_event?(call_session)
+    return call_session.end_reason unless terminal_status?(status)
+
+    resolved_end_reason || call_session.end_reason || status
+  end
+
+  def next_duration_seconds(call_session, status, started_at, answered_at, ended_at)
+    return call_session.duration_seconds if stale_event?(call_session)
+
+    explicit_duration = resolved_duration
+    return explicit_duration if explicit_duration.present?
+    return call_session.duration_seconds if call_session.duration_seconds.present? || !terminal_status?(status)
+
+    duration_start = answered_at || started_at
+    return if duration_start.blank? || ended_at.blank?
+
+    [ended_at.to_i - duration_start.to_i, 0].max
+  end
+
+  def next_legs(call_session, status)
+    legs = Array.wrap(call_session.legs).map { |leg| leg.is_a?(Hash) ? leg.deep_stringify_keys : leg }
+    return legs if legs.any? { |leg| leg.is_a?(Hash) && leg['event_key'] == event_key }
+
+    legs + [leg_snapshot(status)]
+  end
+
   def next_last_event_at(call_session)
     occurred_at = resolved_occurred_at
     return call_session.last_event_at if stale_event?(call_session)
@@ -193,6 +292,8 @@ class Telephony::EventsIngestionService
 
   def stale_event?(call_session)
     occurred_at = resolved_occurred_at
+    return false if occurred_at.present? && terminal_status?(resolved_status) && !call_session.terminal?
+
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
   end
 
@@ -305,18 +406,48 @@ class Telephony::EventsIngestionService
   def resolve_inbox(account)
     inbox_id = payload_value('inbox_id', 'inboxId') || metadata_value('chatwoot_inbox_id', 'inbox_id', 'inboxId')
     return account.inboxes.find_by(id: inbox_id) if inbox_id.present?
-    return resolve_number_binding&.inbox if resolve_number_binding.present?
 
-    channel = Channel::Voice.find_by(phone_number: inbound_number)
+    binding = resolve_number_binding(account)
+    return binding.inbox if binding&.inbox.present?
+
+    channel = Channel::Voice.find_by(phone_number: inbound_number, account_id: account.id)
     channel&.inbox
   end
 
-  def resolve_number_binding
-    @resolve_number_binding ||= if (number_ref = payload_value('number_ref', 'numberRef')).present?
-                                  Telephony::NumberBinding.find_by(number_ref: number_ref)
-                                elsif inbound_number.present?
-                                  Telephony::NumberBinding.find_by(phone_number: inbound_number)
-                                end
+  def resolve_number_binding(account = nil)
+    @resolve_number_binding_by_account ||= {}
+    cache_key = account&.id || :global
+    return @resolve_number_binding_by_account[cache_key] if @resolve_number_binding_by_account.key?(cache_key)
+
+    scope = Telephony::NumberBinding.includes(:inbox, :account)
+    scope = scope.where(account_id: account.id) if account.present?
+    binding = if number_ref.present?
+                scope.find_by(number_ref: number_ref)
+              elsif inbound_number.present?
+                scope.find_by(phone_number: inbound_number)
+              end
+
+    raise_number_binding_mismatch! if account.present? && binding.blank? && number_binding_exists?
+
+    @resolve_number_binding_by_account[cache_key] = binding
+  end
+
+  def number_binding_exists?
+    if number_ref.present?
+      Telephony::NumberBinding.exists?(number_ref: number_ref)
+    elsif inbound_number.present?
+      Telephony::NumberBinding.exists?(phone_number: inbound_number)
+    else
+      false
+    end
+  end
+
+  def raise_number_binding_mismatch!
+    raise Telephony::Error.new(
+      code: 'NUMBER_BINDING_ACCOUNT_MISMATCH',
+      message: 'number_ref does not belong to the resolved account',
+      status: :unprocessable_content
+    )
   end
 
   def resolve_agent_binding(account)
@@ -327,6 +458,35 @@ class Telephony::EventsIngestionService
     return if metadata_user_id.blank?
 
     account.telephony_agent_bindings.find_by(user_id: metadata_user_id)
+  end
+
+  def leg_snapshot(status)
+    {
+      event_key: event_key,
+      event_type: resolved_event_type,
+      status: leg_status_for(status),
+      leg: leg_name,
+      direction: resolved_direction,
+      occurred_at: resolved_occurred_at&.iso8601,
+      provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id', 'providerCallId'),
+      answered_by: resolved_answered_by || resolved_agent_actor(status),
+      ended_by: resolved_ended_by,
+      end_reason: resolved_end_reason
+    }.compact.deep_stringify_keys
+  end
+
+  def leg_status_for(status)
+    return 'connecting' if resolved_event_type.to_s == 'transfer_started'
+
+    status
+  end
+
+  def leg_name
+    event_name = resolved_event_type.to_s
+    return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name == 'caller_interrupted'
+    return 'operator' if event_name.start_with?('transfer_')
+
+    nil
   end
 
   def merged_metadata(call_session)
@@ -387,16 +547,23 @@ class Telephony::EventsIngestionService
   end
 
   def resolved_status
-    explicit = payload_value('status').to_s.strip.downcase
-    return EVENT_STATUS_MAP[explicit] || explicit if explicit.present?
-
     event_name = payload_value('event', 'event_type', 'eventType').to_s.strip.downcase
     if event_name == 'dial_status'
       dial_status = nested_payload_value('status', 'callStatus').to_s.strip.downcase
-      return EVENT_STATUS_MAP[dial_status] || dial_status if dial_status.present?
+      return normalize_status(dial_status) if dial_status.present?
+    elsif EVENT_STATUS_MAP.key?(event_name) && EVENT_STATUS_MAP[event_name].present?
+      return normalize_status(event_name)
     end
 
-    EVENT_STATUS_MAP[event_name]
+    explicit = payload_value('status').to_s.strip.downcase
+    return normalize_status(explicit) if explicit.present?
+
+    normalize_status(event_name)
+  end
+
+  def normalize_status(raw_status)
+    mapped = EVENT_STATUS_MAP[raw_status]
+    Telephony::CallSession.normalize_status(mapped || raw_status)
   end
 
   def resolved_direction
@@ -415,12 +582,24 @@ class Telephony::EventsIngestionService
     payload_value('callee_number', 'calleeNumber', 'to_number', 'toNumber', 'to') || inbound_number
   end
 
+  def number_ref
+    payload_value('number_ref', 'numberRef')
+  end
+
   def inbound_number
     payload_value('ingress_number', 'ingressNumber', 'to_number', 'toNumber', 'to')
   end
 
   def caller_number
     payload_value('caller_number', 'callerNumber', 'from_number', 'fromNumber', 'from')
+  end
+
+  def event_time
+    resolved_occurred_at || Time.current
+  end
+
+  def default_started_at(status)
+    event_time if %w[created ringing connecting in_progress].include?(status)
   end
 
   def resolved_duration
@@ -433,9 +612,41 @@ class Telephony::EventsIngestionService
       parse_time(nested_payload_value('started_at', 'startedAt'))
   end
 
+  def resolved_answered_at
+    parse_time(payload_value('answered_at', 'answeredAt')) ||
+      parse_time(nested_payload_value('answered_at', 'answeredAt'))
+  end
+
+  def resolved_answered_by
+    payload_value('answered_by', 'answeredBy') ||
+      nested_payload_value('answered_by', 'answeredBy') ||
+      metadata_value('answered_by', 'answeredBy', 'agent_ref', 'agentRef', 'chatwoot_user_id')
+  end
+
+  def resolved_agent_actor(status)
+    return unless status == 'in_progress'
+    return 'ai_agent' if resolved_event_type.to_s == 'ai_answered'
+
+    agent_ref = payload_value('agent_ref', 'agentRef') || metadata_value('agent_ref', 'agentRef')
+    user_id = metadata_value('chatwoot_user_id', 'user_id', 'userId')
+    agent_ref.presence || ("user:#{user_id}" if user_id.present?)
+  end
+
   def resolved_ended_at
     parse_time(payload_value('ended_at', 'endedAt')) ||
       parse_time(nested_payload_value('ended_at', 'endedAt'))
+  end
+
+  def resolved_ended_by
+    payload_value('ended_by', 'endedBy') ||
+      nested_payload_value('ended_by', 'endedBy') ||
+      metadata_value('ended_by', 'endedBy')
+  end
+
+  def resolved_end_reason
+    payload_value('end_reason', 'endReason', 'hangup_reason', 'hangupReason', 'reason') ||
+      nested_payload_value('end_reason', 'endReason', 'hangup_reason', 'hangupReason', 'reason') ||
+      metadata_value('end_reason', 'endReason', 'hangup_reason', 'hangupReason', 'reason')
   end
 
   def resolved_occurred_at

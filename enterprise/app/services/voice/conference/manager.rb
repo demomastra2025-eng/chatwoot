@@ -39,26 +39,30 @@ class Voice::Conference::Manager
   end
 
   def mark_in_progress!
-    status_manager.process_status_update('in-progress', timestamp: current_timestamp)
+    status_manager.process_status_update('in_progress', timestamp: current_timestamp)
   end
 
   def handle_leave!
-    case current_status
-    when 'ringing'
-      status_manager.process_status_update('no-answer', timestamp: current_timestamp)
-    when 'in-progress'
+    case normalized_current_status
+    when 'ringing', 'created', 'connecting'
+      status_manager.process_status_update('no_answer', timestamp: current_timestamp)
+    when 'in_progress'
       status_manager.process_status_update('completed', timestamp: current_timestamp)
     end
   end
 
   def finalize_conference!
-    return if %w[completed no-answer failed].include?(current_status)
+    return if Telephony::CallSession::TERMINAL_STATUSES.include?(normalized_current_status)
 
     status_manager.process_status_update('completed', timestamp: current_timestamp)
   end
 
   def current_status
     conversation.additional_attributes&.dig('call_status')
+  end
+
+  def normalized_current_status
+    Telephony::CallSession.normalize_status(current_status)
   end
 
   def agent_participant?

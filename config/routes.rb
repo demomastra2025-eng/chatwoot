@@ -354,6 +354,10 @@ Rails.application.routes.draw do
             post :telegram_personal_contacts_sync, on: :member, to: 'telegram_personal_channels#contacts_sync'
             post :telegram_personal_disconnect, on: :member, to: 'telegram_personal_channels#disconnect'
             get :telegram_personal_diagnostics, on: :member, to: 'telegram_personal_channels#diagnostics'
+            post :weixin_request_qr, on: :member, to: 'weixin_channels#request_qr'
+            post :weixin_reconnect, on: :member, to: 'weixin_channels#reconnect'
+            post :weixin_disconnect, on: :member, to: 'weixin_channels#disconnect'
+            get :weixin_diagnostics, on: :member, to: 'weixin_channels#diagnostics'
             if ChatwootApp.enterprise?
               resource :conference, only: %i[create destroy], controller: 'conference' do
                 get :token, on: :member
@@ -745,6 +749,7 @@ Rails.application.routes.draw do
   post 'webhooks/line/:line_channel_id', to: 'webhooks/line#process_payload'
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
   post 'webhooks/telegram_personal/:webhook_identifier', to: 'webhooks/telegram_personal#process_payload'
+  post 'webhooks/weixin/:webhook_identifier', to: 'webhooks/weixin#process_payload'
   post 'webhooks/vk/:callback_id', to: 'webhooks/vk#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
@@ -782,6 +787,10 @@ Rails.application.routes.draw do
   post 'telephony/internal/events', to: 'telephony/bridge_events#create'
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
+  get 'internal/voice/ai/context', to: 'internal/voice/ai/context#show'
+  post 'internal/voice/ai/transcript', to: 'internal/voice/ai/transcripts#create'
+  post 'internal/voice/ai/tools/:name', to: 'internal/voice/ai/tools#create'
+  post 'internal/voice/ai/control', to: 'internal/voice/ai/control#create'
 
   get 'microsoft/callback', to: 'microsoft/callbacks#show'
   get 'google/callback', to: 'google/callbacks#show'

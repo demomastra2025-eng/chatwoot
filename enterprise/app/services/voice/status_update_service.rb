@@ -2,17 +2,24 @@ class Voice::StatusUpdateService
   pattr_initialize [:account!, :call_sid!, :call_status, { payload: {} }]
 
   TWILIO_STATUS_MAP = {
-    'queued' => 'ringing',
-    'initiated' => 'ringing',
+    'queued' => 'created',
+    'initiated' => 'created',
     'ringing' => 'ringing',
-    'in-progress' => 'in-progress',
-    'inprogress' => 'in-progress',
-    'answered' => 'in-progress',
+    'connecting' => 'connecting',
+    'in-progress' => 'in_progress',
+    'in_progress' => 'in_progress',
+    'inprogress' => 'in_progress',
+    'answered' => 'in_progress',
     'completed' => 'completed',
-    'busy' => 'no-answer',
-    'no-answer' => 'no-answer',
+    'busy' => 'busy',
+    'missed' => 'missed',
+    'no-answer' => 'no_answer',
+    'no_answer' => 'no_answer',
     'failed' => 'failed',
-    'canceled' => 'failed'
+    'rejected' => 'rejected',
+    'declined' => 'rejected',
+    'cancelled' => 'cancelled',
+    'canceled' => 'cancelled'
   }.freeze
 
   def perform

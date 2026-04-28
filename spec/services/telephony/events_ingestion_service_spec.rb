@@ -49,12 +49,71 @@ RSpec.describe Telephony::EventsIngestionService do
         contact_id: expected_contact_id,
         inbox_id: expected_inbox_id,
         number_binding_id: expected_number_binding_id,
-        status: 'in-progress'
+        status: 'in_progress'
       )
       expect(existing_call_session.metadata).to include(
         'existing' => true,
         'last_payload' => payload.deep_stringify_keys
       )
+    end
+
+    it 'stores native answered audit fields using canonical lifecycle status' do
+      occurred_at = Time.zone.parse(1.minute.ago.iso8601)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-answered-1',
+          event: 'answered',
+          status: 'answered',
+          occurred_at: occurred_at.iso8601,
+          answered_by: 'agent:42'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'in_progress',
+        answered_at: occurred_at,
+        answered_by: 'agent:42'
+      )
+      expect(result.legs).to include(
+        hash_including(
+          'event_key' => 'evt-native-answered-1',
+          'event_type' => 'answered',
+          'status' => 'in_progress',
+          'answered_by' => 'agent:42'
+        )
+      )
+    end
+
+    it 'preserves distinct native terminal reasons instead of collapsing them to failed or no-answer' do
+      answered_at = Time.zone.parse(2.minutes.ago.iso8601)
+      ended_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(status: 'in_progress', answered_at: answered_at, last_event_at: answered_at)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-busy-1',
+          event: 'dial_status',
+          status: 'busy',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          answered_by: 'agent:42',
+          ended_by: 'callee',
+          end_reason: 'callee_busy',
+          duration: 90
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'busy',
+        answered_at: answered_at,
+        answered_by: 'agent:42',
+        ended_at: ended_at,
+        ended_by: 'callee',
+        end_reason: 'callee_busy',
+        duration_seconds: 90
+      )
+      expect(account.telephony_events.find_by!(event_key: 'evt-native-busy-1')).to be_processed
     end
 
     it 'does not downgrade a terminal call session when a late non-terminal event arrives' do
@@ -74,7 +133,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'ignores older event state when a timestamp shows the session already moved forward' do
       last_event_at = Time.zone.parse(2.minutes.ago.iso8601)
-      existing_call_session.update!(status: 'in-progress', last_event_at: last_event_at)
+      existing_call_session.update!(status: 'in_progress', last_event_at: last_event_at)
 
       result = described_class.new(
         payload: payload.merge(
@@ -86,10 +145,157 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       expect(result.reload).to have_attributes(
-        status: 'in-progress',
+        status: 'in_progress',
         last_event_at: last_event_at
       )
       expect(account.telephony_events.find_by!(event_key: 'evt-stale-ringing-1')).to be_processed
+    end
+
+    it 'maps AI voice lifecycle events to native call status and AI leg audit' do
+      occurred_at = Time.zone.parse(30.seconds.ago.iso8601)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-ai-answered-1',
+          event: 'ai_answered',
+          occurred_at: occurred_at.iso8601,
+          metadata: { provider: 'gemini-live' }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'in_progress',
+        answered_at: occurred_at,
+        answered_by: 'ai_agent'
+      )
+      expect(result.legs).to include(
+        hash_including(
+          'event_key' => 'evt-ai-answered-1',
+          'event_type' => 'ai_answered',
+          'status' => 'in_progress',
+          'leg' => 'ai',
+          'answered_by' => 'ai_agent'
+        )
+      )
+    end
+
+    it 'keeps caller interruptions and tool events non-terminal while preserving audit legs' do
+      existing_call_session.update!(status: 'in_progress')
+
+      %w[caller_interrupted tool_started tool_completed tool_failed ai_speaking].each do |event_name|
+        result = described_class.new(
+          payload: payload.merge(
+            event_key: "evt-#{event_name}",
+            event: event_name,
+            occurred_at: Time.current.iso8601
+          )
+        ).perform
+
+        expect(result.reload.status).to eq('in_progress')
+        expect(result.legs.last['event_type']).to eq(event_name)
+      end
+    end
+
+    it 'maps transfer lifecycle events without losing the AI call session' do
+      existing_call_session.update!(status: 'in_progress')
+
+      started = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-transfer-started-1',
+          event: 'transfer_started',
+          occurred_at: Time.current.iso8601
+        )
+      ).perform
+      expect(started.reload.status).to eq('in_progress')
+      expect(started.legs.last).to include('leg' => 'operator', 'status' => 'connecting')
+
+      answered = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-transfer-answered-1',
+          event: 'transfer_answered',
+          occurred_at: Time.current.iso8601,
+          answered_by: 'operator:42'
+        )
+      ).perform
+      expect(answered.reload).to have_attributes(status: 'in_progress', answered_by: 'operator:42')
+
+      completed = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-transfer-completed-1',
+          event: 'transfer_completed',
+          occurred_at: Time.current.iso8601,
+          ended_by: 'operator:42',
+          end_reason: 'operator_completed'
+        )
+      ).perform
+      expect(completed.reload).to have_attributes(status: 'completed', ended_by: 'operator:42', end_reason: 'operator_completed')
+    end
+
+    it 'resolves bridge event ownership from number binding before unscoped call_ref lookup' do
+      other_account = create(:account)
+      other_session = create(:telephony_call_session, account: other_account, external_call_ref: 'shared-bridge-call-ref', status: 'ringing')
+      target_voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+1555889010')
+      Telephony::NumberBinding.sync_from_voice_channel!(target_voice_channel)
+      target_binding = target_voice_channel.inbox.telephony_number_binding
+      target_session = create(
+        :telephony_call_session,
+        account: account,
+        inbox: target_voice_channel.inbox,
+        number_binding: target_binding,
+        external_call_ref: 'shared-bridge-call-ref',
+        status: 'ringing'
+      )
+
+      result = described_class.new(
+        payload: {
+          event_key: 'evt-shared-bridge-call-ref',
+          call_ref: 'shared-bridge-call-ref',
+          number_ref: target_binding.number_ref,
+          event: 'answered'
+        }
+      ).perform
+
+      expect(result).to eq(target_session)
+      expect(account.telephony_events.find_by!(event_key: 'evt-shared-bridge-call-ref').call_session).to eq(target_session)
+      expect(other_account.telephony_events.find_by(event_key: 'evt-shared-bridge-call-ref')).to be_nil
+      expect(other_session.reload.status).to eq('ringing')
+    end
+
+    it 'does not resolve bridge event ownership from call_ref alone' do
+      other_account = create(:account)
+      create(:telephony_call_session, account: other_account, external_call_ref: 'unscoped-bridge-call-ref', status: 'ringing')
+
+      expect do
+        described_class.new(
+          payload: {
+            event_key: 'evt-unscoped-bridge-call-ref',
+            call_ref: 'unscoped-bridge-call-ref',
+            event: 'answered'
+          }
+        ).perform
+      end.to raise_error(Telephony::Error, /Unable to resolve account/)
+    end
+
+    it 'rejects an explicit account_id paired with another account number_ref' do
+      other_account = create(:account)
+      other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889030')
+      Telephony::NumberBinding.sync_from_voice_channel!(other_voice_channel)
+
+      expect do
+        described_class.new(
+          payload: {
+            event_key: 'evt-mismatched-number-ref',
+            account_id: account.id,
+            call_ref: 'mismatched-number-call',
+            number_ref: other_voice_channel.inbox.telephony_number_binding.number_ref,
+            event: 'answered'
+          }
+        ).perform
+      end.to raise_error(Telephony::Error, /number_ref/)
+
+      event = account.telephony_events.find_by!(event_key: 'evt-mismatched-number-ref')
+      expect(event).to be_failed
+      expect(account.telephony_call_sessions.find_by(external_call_ref: 'mismatched-number-call')).to be_nil
     end
   end
 end

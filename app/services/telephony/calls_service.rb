@@ -1,16 +1,22 @@
 class Telephony::CallsService
   BRIDGE_STATUS_MAP = {
-    'queued' => 'ringing',
-    'initiated' => 'ringing',
+    'queued' => 'created',
+    'initiated' => 'created',
     'ringing' => 'ringing',
-    'answered' => 'in-progress',
-    'in-progress' => 'in-progress',
-    'inprogress' => 'in-progress',
+    'connecting' => 'connecting',
+    'answered' => 'in_progress',
+    'in-progress' => 'in_progress',
+    'in_progress' => 'in_progress',
+    'inprogress' => 'in_progress',
     'completed' => 'completed',
-    'busy' => 'no-answer',
-    'no-answer' => 'no-answer',
-    'failed' => 'failed',
-    'rejected' => 'failed'
+    'missed' => 'missed',
+    'busy' => 'busy',
+    'no-answer' => 'no_answer',
+    'no_answer' => 'no_answer',
+    'cancelled' => 'cancelled',
+    'canceled' => 'cancelled',
+    'rejected' => 'rejected',
+    'failed' => 'failed'
   }.freeze
 
   def initialize(account:, bridge_client: nil)
@@ -110,6 +116,7 @@ class Telephony::CallsService
   end
 
   def normalize_status(status)
-    BRIDGE_STATUS_MAP[status.to_s.downcase] || 'ringing'
+    mapped = BRIDGE_STATUS_MAP[status.to_s.downcase]
+    Telephony::CallSession.normalize_status(mapped || status) || 'ringing'
   end
 end

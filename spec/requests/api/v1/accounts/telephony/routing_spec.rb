@@ -233,6 +233,89 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(number_binding.reload.routing_policy.operator_agent_aor).to eq('sip:operator1@example.test')
   end
 
+  it 'syncs OneLink-managed AI voice app ref to the bridge while preserving legacy Fonoster fallback' do
+    assistant = create(:captain_assistant, account: account)
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      stub_request(:post, "https://bridge.example/telephony/numbers/#{number_binding.number_ref}/route")
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
+        .with do |request|
+          body = JSON.parse(request.body)
+          expect(body).to include(
+            'mode' => 'ai',
+            'app_ref' => 'onelink-ai-voice-app'
+          )
+          true
+        end
+        .to_return(
+          status: 200,
+          body: {
+            ref: number_binding.number_ref,
+            mode: 'ai',
+            appRef: 'onelink-ai-voice-app'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post update_path,
+           params: {
+             mode: 'ai',
+             ai_deployment_mode: 'onelink_managed',
+             ai_app_ref: 'legacy-fonoster-ai-app',
+             fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+             onelink_ai_app_ref: 'onelink-ai-voice-app',
+             fallback_ai_app_ref: 'fallback-ai-app',
+             captain_assistant_id: assistant.id,
+             ai_voice_settings: {
+               provider: 'gemini-live',
+               language: 'ru-KZ',
+               interruptions_enabled: true
+             }
+           },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    policy_payload = response.parsed_body.dig('payload', 'routing_policy')
+    expect(policy_payload).to include(
+      'mode' => 'ai',
+      'ai_deployment_mode' => 'onelink_managed',
+      'ai_app_ref' => 'legacy-fonoster-ai-app',
+      'fonoster_ai_app_ref' => 'legacy-fonoster-ai-app',
+      'onelink_ai_app_ref' => 'onelink-ai-voice-app',
+      'effective_ai_app_ref' => 'onelink-ai-voice-app',
+      'captain_assistant_id' => assistant.id
+    )
+    expect(policy_payload.dig('ai_voice_settings', 'language')).to eq('ru-KZ')
+    expect(number_binding.reload.app_ref).to eq('onelink-ai-voice-app')
+  end
+
+  it 'rejects a captain assistant from another account' do
+    other_assistant = create(:captain_assistant)
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      post update_path,
+           params: {
+             mode: 'ai',
+             ai_deployment_mode: 'onelink_managed',
+             onelink_ai_app_ref: 'onelink-ai-voice-app',
+             captain_assistant_id: other_assistant.id
+           },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(number_binding.reload.routing_policy.captain_assistant_id).to be_nil
+  end
+
   it 'updates the primary app ref through the number route endpoint' do
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',

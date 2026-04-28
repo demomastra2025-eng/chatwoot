@@ -37,17 +37,23 @@ class Telephony::RoutingPolicy < ApplicationRecord
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze
   VALID_FALLBACK_MODES = %w[reject operator app ai voicemail].freeze
   BRIDGE_SUPPORTED_MODES = %w[operator app ai reject].freeze
+  AI_DEPLOYMENT_FONOSTER_MANAGED = 'fonoster_managed'.freeze
+  AI_DEPLOYMENT_ONELINK_MANAGED = 'onelink_managed'.freeze
+  AI_DEPLOYMENT_MODES = [AI_DEPLOYMENT_FONOSTER_MANAGED, AI_DEPLOYMENT_ONELINK_MANAGED].freeze
 
   belongs_to :account, class_name: '::Account'
   belongs_to :number_binding, class_name: '::Telephony::NumberBinding'
+  belongs_to :captain_assistant, class_name: '::Captain::Assistant', optional: true
 
   validates :mode, presence: true, inclusion: { in: VALID_MODES }
   validates :fallback_mode, presence: true, inclusion: { in: VALID_FALLBACK_MODES }
+  validates :ai_deployment_mode, presence: true, inclusion: { in: AI_DEPLOYMENT_MODES }
   validate :validate_ai_app_ref
   validate :validate_app_mode_configuration
   validate :validate_operator_mode_configuration
   validate :validate_ai_fallback_configuration
   validate :validate_operator_agent_aor
+  validate :validate_captain_assistant_account
 
   before_validation :normalize_values
 
@@ -86,11 +92,26 @@ class Telephony::RoutingPolicy < ApplicationRecord
     { agent_aor: target }
   end
 
+  def effective_ai_app_ref
+    if ai_deployment_mode == AI_DEPLOYMENT_ONELINK_MANAGED
+      onelink_ai_app_ref.presence || ai_app_ref.presence || fonoster_ai_app_ref.presence || fallback_ai_app_ref.presence
+    else
+      fonoster_ai_app_ref.presence || ai_app_ref.presence || fallback_ai_app_ref.presence
+    end
+  end
+
   def to_telephony_h
     {
       mode: mode,
       ai_enabled: ai_enabled,
       ai_app_ref: ai_app_ref,
+      ai_deployment_mode: ai_deployment_mode,
+      fonoster_ai_app_ref: fonoster_ai_app_ref,
+      onelink_ai_app_ref: onelink_ai_app_ref,
+      fallback_ai_app_ref: fallback_ai_app_ref,
+      effective_ai_app_ref: effective_ai_app_ref,
+      captain_assistant_id: captain_assistant_id,
+      ai_voice_settings: ai_voice_settings,
       operator_agent_ref: operator_agent_ref,
       operator_agent_aor: operator_agent_aor,
       fallback_mode: fallback_mode,
@@ -105,7 +126,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   def bridge_payload_options
     case bridge_mode
     when 'ai'
-      { app_ref: ai_app_ref }
+      { app_ref: effective_ai_app_ref }
     when 'app'
       { app_ref: number_binding&.configured_app_ref }
     when 'operator'
@@ -120,8 +141,10 @@ class Telephony::RoutingPolicy < ApplicationRecord
   def normalize_values
     self.mode = mode.to_s.strip.downcase.presence || 'operator'
     self.fallback_mode = fallback_mode.to_s.strip.downcase.presence || 'reject'
+    self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_FONOSTER_MANAGED
     self.ai_enabled = ai_mode?
     self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
+    self.ai_voice_settings = (ai_voice_settings || {}).deep_stringify_keys
   end
 
   def normalize_operator_agent_aor(value)
@@ -133,7 +156,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def validate_ai_app_ref
-    return unless ai_mode? && ai_app_ref.blank?
+    return unless ai_mode? && effective_ai_app_ref.blank?
 
     errors.add(:ai_app_ref, 'is required when mode is ai')
   end
@@ -160,9 +183,16 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def validate_ai_fallback_configuration
     return unless fallback_mode == 'ai'
-    return if ai_app_ref.present?
+    return if effective_ai_app_ref.present?
 
     errors.add(:fallback_mode, 'ai fallback requires ai_app_ref')
+  end
+
+  def validate_captain_assistant_account
+    return if captain_assistant_id.blank?
+    return if captain_assistant&.account_id == account_id
+
+    errors.add(:captain_assistant_id, 'must belong to the routing policy account')
   end
 
   def resolved_operator_binding

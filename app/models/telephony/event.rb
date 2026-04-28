@@ -43,4 +43,8 @@ class Telephony::Event < ApplicationRecord
   def processed?
     status == 'processed'
   end
+
+  def failed?
+    status == 'failed'
+  end
 end

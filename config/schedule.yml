@@ -26,6 +26,12 @@ whatsapp_call_cleanup_job:
   class: 'Whatsapp::CallCleanupJob'
   queue: low
 
+# reconcile Fonoster bridge call state for active native telephony sessions
+telephony_call_reconciliation_job:
+  cron: '*/5 * * * *'
+  class: 'Telephony::ReconcileCallSessionsJob'
+  queue: low
+
 # executed daily at 2230 UTC
 # which is our lowest traffic time
 remove_stale_contact_inboxes_job.rb:

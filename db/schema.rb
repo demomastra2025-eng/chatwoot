@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_27_090000) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_28_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -742,6 +742,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_27_090000) do
     t.text "allowed_domains", default: ""
     t.index ["hmac_token"], name: "index_channel_web_widgets_on_hmac_token", unique: true
     t.index ["website_token"], name: "index_channel_web_widgets_on_website_token", unique: true
+  end
+
+  create_table "channel_weixins", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.text "ilink_token"
+    t.string "token_fingerprint", null: false
+    t.string "provider_account_id"
+    t.string "display_name"
+    t.text "context_token"
+    t.string "connection_state", default: "disconnected", null: false
+    t.string "lifecycle_state", default: "pending_auth", null: false
+    t.text "last_error"
+    t.datetime "last_synced_at"
+    t.jsonb "runtime_state", default: {}, null: false
+    t.string "webhook_identifier", null: false
+    t.string "webhook_secret", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "provider_account_id"], name: "index_channel_weixins_on_account_id_and_provider_account_id", unique: true, where: "(provider_account_id IS NOT NULL)"
+    t.index ["account_id", "token_fingerprint"], name: "index_channel_weixins_on_account_id_and_token_fingerprint", unique: true
+    t.index ["account_id"], name: "index_channel_weixins_on_account_id"
+    t.index ["webhook_identifier"], name: "index_channel_weixins_on_webhook_identifier", unique: true
   end
 
   create_table "channel_whatsapp", force: :cascade do |t|
@@ -2071,6 +2093,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_27_090000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "answered_at"
+    t.string "answered_by"
+    t.string "ended_by"
+    t.string "end_reason"
+    t.jsonb "legs", default: [], null: false
     t.index ["account_id", "conversation_id"], name: "index_telephony_call_sessions_on_account_conversation"
     t.index ["account_id", "created_at"], name: "index_telephony_call_sessions_on_account_created_at"
     t.index ["account_id", "external_call_ref"], name: "index_telephony_call_sessions_on_account_call_ref", unique: true
@@ -2133,8 +2160,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_27_090000) do
     t.jsonb "settings", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "ai_deployment_mode", default: "fonoster_managed", null: false
+    t.string "fonoster_ai_app_ref"
+    t.string "onelink_ai_app_ref"
+    t.string "fallback_ai_app_ref"
+    t.bigint "captain_assistant_id"
+    t.jsonb "ai_voice_settings", default: {}, null: false
+    t.index ["account_id", "ai_deployment_mode"], name: "index_telephony_routing_policies_on_account_ai_deployment"
     t.index ["account_id", "mode"], name: "index_telephony_routing_policies_on_account_mode"
     t.index ["account_id"], name: "index_telephony_routing_policies_on_account_id"
+    t.index ["captain_assistant_id"], name: "index_telephony_routing_policies_on_captain_assistant_id"
     t.index ["number_binding_id"], name: "index_telephony_routing_policies_on_number_binding_id", unique: true
   end
 
@@ -2319,6 +2354,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_27_090000) do
   add_foreign_key "telephony_number_bindings", "accounts"
   add_foreign_key "telephony_number_bindings", "inboxes"
   add_foreign_key "telephony_routing_policies", "accounts"
+  add_foreign_key "telephony_routing_policies", "captain_assistants"
   add_foreign_key "telephony_routing_policies", "telephony_number_bindings", column: "number_binding_id"
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)

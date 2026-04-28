@@ -290,6 +290,69 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     end
   end
 
+  it 'routes AI calls to the OneLink-managed realtime voice app when that deployment mode is enabled' do
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_deployment_mode: 'onelink_managed',
+      ai_app_ref: 'legacy-fonoster-ai-app',
+      fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+      onelink_ai_app_ref: 'onelink-ai-voice-app',
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-onelink-ai',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****7777'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'onelink-ai-voice-app',
+      'reason' => 'ai_route',
+      'number_ref' => number_binding.number_ref
+    )
+  end
+
+  it 'keeps legacy Fonoster AI app ref as fallback when OneLink app ref is not configured' do
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_deployment_mode: 'onelink_managed',
+      ai_app_ref: 'legacy-fonoster-ai-app',
+      fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+      onelink_ai_app_ref: nil,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-onelink-ai-fallback',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****7778'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'legacy-fonoster-ai-app',
+      'reason' => 'ai_route'
+    )
+  end
+
   it 'returns the out of office reject message when the inbox is closed' do
     number_binding.routing_policy.update!(
       mode: 'operator',

@@ -3,6 +3,12 @@ class Telephony::RoutingService
     mode: :routing_mode,
     app_ref: :app_ref,
     ai_app_ref: :ai_app_ref,
+    ai_deployment_mode: :ai_deployment_mode,
+    fonoster_ai_app_ref: :fonoster_ai_app_ref,
+    onelink_ai_app_ref: :onelink_ai_app_ref,
+    fallback_ai_app_ref: :fallback_ai_app_ref,
+    captain_assistant_id: :captain_assistant_id,
+    ai_voice_settings: :ai_voice_settings,
     operator_agent_ref: :operator_agent_ref,
     operator_agent_aor: :operator_agent_aor,
     fallback_mode: :fallback_mode,
@@ -113,6 +119,8 @@ class Telephony::RoutingService
   end
 
   def route_config_value(attribute_key, value)
+    return value.to_h.deep_stringify_keys if attribute_key == :ai_voice_settings && value.respond_to?(:to_h)
+
     normalized_value = value.to_s.strip.presence
     return normalized_value unless attribute_key == :mode && normalized_value.present?
 
@@ -123,7 +131,7 @@ class Telephony::RoutingService
     payload = {
       number_ref: number_binding.number_ref,
       enabled: enabled,
-      ai_app_ref: policy.ai_app_ref
+      ai_app_ref: policy.effective_ai_app_ref
     }.compact
 
     return payload if enabled

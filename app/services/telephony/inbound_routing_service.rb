@@ -180,7 +180,7 @@ class Telephony::InboundRoutingService
   end
 
   def resolved_ai_app_ref
-    @resolved_ai_app_ref ||= routable_app_ref(routing_policy&.ai_app_ref)
+    @resolved_ai_app_ref ||= routable_app_ref(routing_policy&.effective_ai_app_ref)
   end
 
   def primary_app_failure_reason
@@ -188,7 +188,7 @@ class Telephony::InboundRoutingService
   end
 
   def ai_app_failure_reason
-    routing_policy&.ai_app_ref.present? ? 'recursive_runtime_app_ref' : 'ai_app_ref_missing'
+    routing_policy&.effective_ai_app_ref.present? ? 'recursive_runtime_app_ref' : 'ai_app_ref_missing'
   end
 
   def routable_app_ref(candidate_app_ref)

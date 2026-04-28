@@ -53,8 +53,28 @@
 class Telephony::CallSession < ApplicationRecord
   self.table_name = 'telephony_call_sessions'
 
-  ALLOWED_STATUSES = %w[ringing in-progress completed no-answer failed queued].freeze
-  TERMINAL_STATUSES = %w[completed no-answer failed].freeze
+  CANONICAL_STATUSES = %w[created ringing connecting in_progress completed missed no_answer busy cancelled rejected failed].freeze
+  STATUS_ALIASES = {
+    'queued' => 'created',
+    'initiated' => 'created',
+    'answered' => 'in_progress',
+    'in-progress' => 'in_progress',
+    'inprogress' => 'in_progress',
+    'no-answer' => 'no_answer',
+    'noanswer' => 'no_answer',
+    'canceled' => 'cancelled',
+    'declined' => 'rejected',
+    'ended' => 'completed',
+    'hangup' => 'completed',
+    'session_started' => 'ringing',
+    'decision_received' => 'ringing',
+    'session_completed' => 'completed',
+    'session_failed' => 'failed',
+    'unsupported_action' => 'failed'
+  }.freeze
+  ALLOWED_STATUSES = (CANONICAL_STATUSES + STATUS_ALIASES.keys).uniq.freeze
+  TERMINAL_STATUSES = %w[completed missed no_answer busy cancelled rejected failed].freeze
+  TERMINAL_STATUS_VALUES = (TERMINAL_STATUSES + STATUS_ALIASES.select { |_key, value| TERMINAL_STATUSES.include?(value) }.keys).uniq.freeze
   ALLOWED_DIRECTIONS = %w[inbound outbound].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -64,7 +84,9 @@ class Telephony::CallSession < ApplicationRecord
   belongs_to :number_binding, class_name: '::Telephony::NumberBinding', optional: true
   belongs_to :agent_binding, class_name: '::Telephony::AgentBinding', optional: true
 
-  has_many :events, class_name: '::Telephony::Event', foreign_key: :call_session_id, dependent: :destroy
+  has_many :events, class_name: '::Telephony::Event', dependent: :destroy
+
+  before_validation :normalize_status_value
 
   validates :provider, presence: true
   validates :external_call_ref, presence: true, uniqueness: { scope: :account_id }
@@ -72,10 +94,21 @@ class Telephony::CallSession < ApplicationRecord
   validates :direction, presence: true, inclusion: { in: ALLOWED_DIRECTIONS }, allow_blank: false
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
-  scope :active, -> { where.not(status: TERMINAL_STATUSES) }
+  scope :active, -> { where.not(status: TERMINAL_STATUS_VALUES) }
+
+  def self.normalize_status(value)
+    normalized = value.to_s.strip.downcase.tr(' ', '_')
+    return if normalized.blank?
+
+    STATUS_ALIASES[normalized] || (normalized if CANONICAL_STATUSES.include?(normalized))
+  end
+
+  def canonical_status
+    self.class.normalize_status(status) || status
+  end
 
   def terminal?
-    TERMINAL_STATUSES.include?(status)
+    TERMINAL_STATUSES.include?(canonical_status)
   end
 
   def latest_voice_message
@@ -88,13 +121,19 @@ class Telephony::CallSession < ApplicationRecord
       call_ref: external_call_ref,
       provider_call_sid: provider_call_sid,
       provider: provider,
-      status: status,
+      status: canonical_status,
+      legacy_status: status == canonical_status ? nil : status,
       direction: direction,
       from_number: from_number,
       to_number: to_number,
       duration_seconds: duration_seconds,
+      duration_sec: duration_seconds,
       started_at: started_at,
+      answered_at: answered_at,
+      answered_by: answered_by,
       ended_at: ended_at,
+      ended_by: ended_by,
+      end_reason: end_reason,
       recording_ref: recording_ref,
       transcript_ref: transcript_ref,
       summary: summary,
@@ -107,7 +146,14 @@ class Telephony::CallSession < ApplicationRecord
       number_ref: number_binding&.number_ref,
       agent_ref: agent_binding&.agent_ref,
       last_event_at: last_event_at,
+      legs: legs || [],
       metadata: metadata
     }.compact
+  end
+
+  private
+
+  def normalize_status_value
+    self.status = self.class.normalize_status(status) || status
   end
 end

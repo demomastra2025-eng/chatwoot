@@ -37,6 +37,12 @@ class Telephony::NumberBinding < ApplicationRecord
     trunk_ref
     routing_mode
     ai_app_ref
+    ai_deployment_mode
+    fonoster_ai_app_ref
+    onelink_ai_app_ref
+    fallback_ai_app_ref
+    captain_assistant_id
+    ai_voice_settings
     operator_agent_ref
     operator_agent_aor
     fallback_mode
@@ -77,6 +83,12 @@ class Telephony::NumberBinding < ApplicationRecord
       policy.assign_attributes(
         mode: config[:routing_mode].presence || policy.mode || 'operator',
         ai_app_ref: config[:ai_app_ref],
+        ai_deployment_mode: config[:ai_deployment_mode].presence || policy.ai_deployment_mode,
+        fonoster_ai_app_ref: config[:fonoster_ai_app_ref],
+        onelink_ai_app_ref: config[:onelink_ai_app_ref],
+        fallback_ai_app_ref: config[:fallback_ai_app_ref],
+        captain_assistant_id: config[:captain_assistant_id],
+        ai_voice_settings: config[:ai_voice_settings].presence || policy.ai_voice_settings || {},
         operator_agent_ref: config[:operator_agent_ref],
         operator_agent_aor: config[:operator_agent_aor],
         fallback_mode: config[:fallback_mode].presence || policy.fallback_mode || 'reject',
@@ -101,7 +113,7 @@ class Telephony::NumberBinding < ApplicationRecord
   def effective_app_ref(policy = routing_policy)
     return configured_app_ref unless policy&.mode.to_s == 'ai'
 
-    policy.ai_app_ref.presence || configured_app_ref
+    policy.effective_ai_app_ref.presence || configured_app_ref
   end
 
   def bridge_fallback_route(policy = routing_policy)

@@ -1,13 +1,14 @@
 class Voice::CallStatus::Manager
   pattr_initialize [:conversation!, :call_sid]
 
-  ALLOWED_STATUSES = %w[ringing in-progress completed no-answer failed].freeze
-  TERMINAL_STATUSES = %w[completed no-answer failed].freeze
+  ALLOWED_STATUSES = Telephony::CallSession::ALLOWED_STATUSES.freeze
+  TERMINAL_STATUSES = Telephony::CallSession::TERMINAL_STATUSES.freeze
 
-  def process_status_update(status, duration: nil, timestamp: nil)
-    return unless ALLOWED_STATUSES.include?(status)
+  def process_status_update(raw_status, duration: nil, timestamp: nil)
+    status = Telephony::CallSession.normalize_status(raw_status)
+    return unless status
 
-    current_status = conversation.additional_attributes&.dig('call_status')
+    current_status = Telephony::CallSession.normalize_status(conversation.additional_attributes&.dig('call_status'))
     return if current_status == status
 
     apply_status(status, duration: duration, timestamp: timestamp)
@@ -20,7 +21,7 @@ class Voice::CallStatus::Manager
     attrs = (conversation.additional_attributes || {}).dup
     attrs['call_status'] = status
 
-    if status == 'in-progress'
+    if status == 'in_progress'
       attrs['call_started_at'] ||= timestamp || now_seconds
     elsif TERMINAL_STATUSES.include?(status)
       attrs['call_ended_at'] = timestamp || now_seconds

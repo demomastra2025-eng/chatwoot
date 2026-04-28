@@ -110,6 +110,40 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(account.telephony_call_sessions.find_by!(external_call_ref: 'call-in-compat')).to be_present
   end
 
+  it 'acks and stores raw events even when CRM conversation side effects fail' do
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post compatibility_path,
+           params: {
+             event_key: 'evt-side-effect-failure-1',
+             call_ref: 'call-side-effect-failure-1',
+             event: 'session_started',
+             status: 'ringing',
+             direction: 'FROM_PSTN',
+             ingress_number: '+199****9999',
+             caller_number: '+155****0002'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-Account-Id' => account.id.to_s
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'status' => 'ok',
+      'call_ref' => 'call-side-effect-failure-1'
+    )
+
+    event = account.telephony_events.find_by!(event_key: 'evt-side-effect-failure-1')
+    expect(event).to be_failed
+    expect(event.error_message).to include('Unable to resolve voice inbox')
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-side-effect-failure-1')
+    expect(call_session).to have_attributes(status: 'ringing', direction: 'inbound')
+    expect(call_session.conversation).to be_nil
+  end
+
   it 'uses the idempotency header as the event key when the payload omits one' do
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
       post compatibility_path,
@@ -173,7 +207,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(response).to have_http_status(:ok)
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-outbound-meta')
-    expect(call_session.status).to eq('in-progress')
+    expect(call_session.status).to eq('in_progress')
     expect(call_session.direction).to eq('outbound')
     expect(call_session.conversation_id).to eq(conversation.id)
     expect(call_session.contact_id).to eq(contact.id)
@@ -206,7 +240,7 @@ RSpec.describe 'Telephony Bridge Events', type: :request do
     expect(response).to have_http_status(:ok)
 
     call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'call-outbound-blank-account')
-    expect(call_session.status).to eq('in-progress')
+    expect(call_session.status).to eq('in_progress')
     expect(call_session.direction).to eq('outbound')
     expect(account.telephony_events.find_by!(event_key: 'evt-blank-account-1')).to be_processed
   end

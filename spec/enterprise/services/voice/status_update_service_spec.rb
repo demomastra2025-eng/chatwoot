@@ -55,7 +55,7 @@ RSpec.describe Voice::StatusUpdateService do
     expect(message.content_attributes.dig('data', 'status')).to eq('completed')
   end
 
-  it 'normalizes busy to no-answer' do
+  it 'preserves busy as the native terminal status' do
     conversation
     message
 
@@ -68,8 +68,8 @@ RSpec.describe Voice::StatusUpdateService do
     conversation.reload
     message.reload
 
-    expect(conversation.additional_attributes['call_status']).to eq('no-answer')
-    expect(message.content_attributes.dig('data', 'status')).to eq('no-answer')
+    expect(conversation.additional_attributes['call_status']).to eq('busy')
+    expect(message.content_attributes.dig('data', 'status')).to eq('busy')
   end
 
   it 'no-ops when conversation not found' do
