@@ -1,12 +1,13 @@
 const { normalizeTranscriptItem, transcriptKey } = require('../sessions/session-registry');
 
 class TranscriptBuffer {
-  constructor({ client, callRef, flushSize = 10 } = {}) {
+  constructor({ client, callRef, flushSize = 10, scopeProvider = () => ({}) } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;
     this.callRef = callRef;
     this.flushSize = flushSize;
+    this.scopeProvider = scopeProvider;
     this.pending = [];
     this.seen = new Set();
   }
@@ -38,10 +39,15 @@ class TranscriptBuffer {
     const items = this.pending.splice(0, this.pending.length);
     return this.client.sendTranscript({
       call_ref: this.callRef,
+      ...compactPayload(this.scopeProvider()),
       final: Boolean(final || items.some((item) => item.final)),
       items
     });
   }
+}
+
+function compactPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 module.exports = { TranscriptBuffer };

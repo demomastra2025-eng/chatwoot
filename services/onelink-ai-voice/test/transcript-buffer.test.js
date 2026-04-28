@@ -5,7 +5,12 @@ const { TranscriptBuffer } = require('../src/transcripts/transcript-buffer');
 test('TranscriptBuffer batches, deduplicates and flushes partial/final items to Rails', async () => {
   const calls = [];
   const client = { sendTranscript: async (payload) => { calls.push(payload); return { status: 'ok', accepted: payload.items.length }; } };
-  const buffer = new TranscriptBuffer({ client, callRef: 'call-1', flushSize: 3 });
+  const buffer = new TranscriptBuffer({
+    client,
+    callRef: 'call-1',
+    flushSize: 3,
+    scopeProvider: () => ({ account_id: 42, number_ref: 'num-1' })
+  });
 
   buffer.add({ speaker: 'caller', text: 'hello', final: false, at: 't1' });
   buffer.add({ speaker: 'caller', text: 'hello', final: false, at: 't1' });
@@ -17,6 +22,8 @@ test('TranscriptBuffer batches, deduplicates and flushes partial/final items to 
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
     call_ref: 'call-1',
+    account_id: 42,
+    number_ref: 'num-1',
     final: true,
     items: [
       { speaker: 'caller', text: 'hello', final: false, at: 't1' },

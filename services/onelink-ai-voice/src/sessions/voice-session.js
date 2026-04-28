@@ -14,8 +14,8 @@ class VoiceSession {
     this.accountId = accountId;
     this.context = null;
     this.state = 'new';
-    this.transcripts = new TranscriptBuffer({ client, callRef });
-    this.tools = new ToolExecutor({ client, callRef, timeoutMs: toolTimeoutMs });
+    this.transcripts = new TranscriptBuffer({ client, callRef, scopeProvider: () => this.scopePayload() });
+    this.tools = new ToolExecutor({ client, callRef, timeoutMs: toolTimeoutMs, scopeProvider: () => this.scopePayload() });
   }
 
   async bootstrap() {
@@ -27,6 +27,8 @@ class VoiceSession {
         number_ref: this.numberRef,
         account_id: this.accountId
       });
+      this.accountId = this.context.account_id || this.context.accountId || this.accountId;
+      this.numberRef = this.context.number_ref || this.context.numberRef || this.numberRef;
       this.state = 'active';
       await this.safeControl('ai_ringing', { provider: this.context.ai?.provider, model: this.context.ai?.model });
       await this.safeControl('ai_answered', { provider: this.context.ai?.provider, model: this.context.ai?.model });
@@ -64,11 +66,32 @@ class VoiceSession {
 
   async safeControl(action, metadata = {}) {
     try {
-      await this.client.sendControl({ call_ref: this.callRef, action, metadata });
+      await this.client.sendControl(this.scopedPayload({ action, metadata }));
     } catch (_error) {
       // Realtime path remains live even if Rails control acknowledgement is temporarily unavailable.
     }
   }
+
+  scopedPayload(extra = {}) {
+    return {
+      call_ref: this.callRef,
+      ...compactPayload(this.scopePayload()),
+      ...extra
+    };
+  }
+
+  scopePayload() {
+    return {
+      account_id: this.accountId,
+      number_ref: this.numberRef,
+      ingress_number: this.ingressNumber,
+      caller_number: this.callerNumber
+    };
+  }
+}
+
+function compactPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 function buildFallbackContext(callRef, reason) {

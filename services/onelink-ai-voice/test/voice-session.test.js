@@ -7,13 +7,15 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
   const client = {
     getContext: async () => ({
       call_ref: 'call-1',
+      account_id: 42,
+      number_ref: 'num-1',
       ai: { provider: 'gemini-live', model: 'gemini-2.0-flash-live-001', first_message: 'Здравствуйте' },
       transfer: { enabled: true, operator_agent_aor: 'sip:1001@example.test' },
       tools: [{ name: 'request_transfer', enabled: true }]
     }),
     sendControl: async (payload) => { calls.push(['control', payload]); return { status: 'ok' }; },
     sendTranscript: async (payload) => { calls.push(['transcript', payload]); return { status: 'ok' }; },
-    callTool: async (name) => ({ action: name === 'request_transfer' ? 'transfer' : 'noop', operator_agent_aor: 'sip:1001@example.test' })
+    callTool: async (name, payload) => { calls.push(['tool', name, payload]); return { action: name === 'request_transfer' ? 'transfer' : 'noop', operator_agent_aor: 'sip:1001@example.test' }; }
   };
 
   const session = new VoiceSession({ client, callRef: 'call-1', ingressNumber: '+7000', callerNumber: '+7999' });
@@ -29,7 +31,13 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
     ['ai_ringing', 'ai_answered', 'tool_started', 'tool_completed', 'session_completed']
   );
   const transcriptCall = calls.find(([kind]) => kind === 'transcript');
+  assert.equal(transcriptCall[1].account_id, 42);
+  assert.equal(transcriptCall[1].number_ref, 'num-1');
   assert.equal(transcriptCall[1].items[0].text, 'Мне нужен оператор');
+  const toolCall = calls.find(([kind]) => kind === 'tool');
+  assert.equal(toolCall[2].account_id, 42);
+  assert.equal(toolCall[2].number_ref, 'num-1');
+  assert.ok(calls.filter(([kind]) => kind === 'control').every(([, payload]) => payload.account_id === 42));
 });
 
 test('VoiceSession enters safe fallback when context is unavailable', async () => {
