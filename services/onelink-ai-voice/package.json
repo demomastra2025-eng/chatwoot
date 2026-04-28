@@ -1,0 +1,16 @@
+{
+  "name": "@onelink/ai-voice-service",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@fonoster/common": "^0.18.2",
+    "@fonoster/voice": "^0.18.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {}
+}
