@@ -602,23 +602,13 @@
       },
       "WEIXIN_CHANNEL": {
         "TITLE": "WeChat / Weixin Channel",
-        "DESC": "Connect a personal WeChat account through the iLink gateway and route messages into OneLink.",
-        "ILINK_TOKEN": {
-          "LABEL": "iLink token",
-          "PLACEHOLDER": "WeChat iLink token",
-          "SUBTITLE": "Token issued by the WeChat personal gateway for this account."
-        },
-        "PROVIDER_ACCOUNT_ID": {
-          "LABEL": "Provider account ID",
-          "PLACEHOLDER": "WeChat account ID",
-          "SUBTITLE": "Optional. Use it to bind this inbox to a known WeChat account in the gateway."
-        },
+        "DESC": "Create the channel and connect a personal WeChat account by scanning a QR code.",
         "DISPLAY_NAME": {
-          "LABEL": "Display name",
-          "PLACEHOLDER": "WeChat support",
-          "SUBTITLE": "Optional name shown in OneLink for this WeChat inbox."
+          "LABEL": "Channel name (optional)",
+          "PLACEHOLDER": "WeChat / Main WeChat",
+          "SUBTITLE": "You can leave this empty. After QR login, you can rename the channel in settings."
         },
-        "SUBMIT_BUTTON": "Create WeChat channel",
+        "SUBMIT_BUTTON": "Create and show QR",
         "API": {
           "ERROR_MESSAGE": "We were not able to save the WeChat channel"
         }

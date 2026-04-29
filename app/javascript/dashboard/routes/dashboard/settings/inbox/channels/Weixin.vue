@@ -1,6 +1,5 @@
 <script>
 import { mapGetters } from 'vuex';
-import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import router from '../../../../index';
 import PageHeader from '../../SettingsSubPageHeader.vue';
@@ -12,13 +11,8 @@ export default {
     PageHeader,
     NextButton,
   },
-  setup() {
-    return { v$: useVuelidate() };
-  },
   data() {
     return {
-      ilinkToken: '',
-      providerAccountId: '',
       displayName: '',
     };
   },
@@ -29,12 +23,23 @@ export default {
   },
   methods: {
     normalizedChannelPayload() {
-      return {
-        type: 'weixin',
-        ilink_token: this.ilinkToken.trim() || undefined,
-        provider_account_id: this.providerAccountId.trim() || undefined,
-        display_name: this.displayName.trim() || undefined,
-      };
+      const displayName = this.displayName.trim();
+      const payload = { type: 'weixin' };
+
+      if (displayName) {
+        payload.display_name = displayName;
+      }
+
+      return payload;
+    },
+    async requestInitialQr(inboxId) {
+      try {
+        await this.$store.dispatch('inboxes/requestWeixinQr', inboxId);
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_ERROR')
+        );
+      }
     },
     async createChannel() {
       try {
@@ -42,8 +47,10 @@ export default {
           channel: this.normalizedChannelPayload(),
         });
 
+        await this.requestInitialQr(channel.id);
+
         router.replace({
-          name: getInboxFlowRouteName(this.$route, 'agents'),
+          name: getInboxFlowRouteName(this.$route, 'finish'),
           params: {
             inbox_id: channel.id,
           },
@@ -72,42 +79,6 @@ export default {
       class="flex flex-wrap flex-col mx-0"
       @submit.prevent="createChannel()"
     >
-      <div class="flex-shrink-0 flex-grow-0">
-        <label>
-          {{ $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.ILINK_TOKEN.LABEL') }}
-          <input
-            v-model="ilinkToken"
-            type="password"
-            autocomplete="off"
-            :placeholder="
-              $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.ILINK_TOKEN.PLACEHOLDER')
-            "
-          />
-        </label>
-        <p class="help-text">
-          {{ $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.ILINK_TOKEN.SUBTITLE') }}
-        </p>
-      </div>
-
-      <div class="flex-shrink-0 flex-grow-0">
-        <label>
-          {{ $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.PROVIDER_ACCOUNT_ID.LABEL') }}
-          <input
-            v-model="providerAccountId"
-            type="text"
-            autocomplete="off"
-            :placeholder="
-              $t(
-                'INBOX_MGMT.ADD.WEIXIN_CHANNEL.PROVIDER_ACCOUNT_ID.PLACEHOLDER'
-              )
-            "
-          />
-        </label>
-        <p class="help-text">
-          {{ $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.PROVIDER_ACCOUNT_ID.SUBTITLE') }}
-        </p>
-      </div>
-
       <div class="flex-shrink-0 flex-grow-0">
         <label>
           {{ $t('INBOX_MGMT.ADD.WEIXIN_CHANNEL.DISPLAY_NAME.LABEL') }}

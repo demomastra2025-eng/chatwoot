@@ -602,23 +602,13 @@
       },
       "WEIXIN_CHANNEL": {
         "TITLE": "WeChat / Weixin арнасы",
-        "DESC": "Жеке WeChat аккаунтын iLink gateway арқылы қосып, хабарламаларды OneLink-ке бағыттаңыз.",
-        "ILINK_TOKEN": {
-          "LABEL": "iLink токені",
-          "PLACEHOLDER": "WeChat iLink токені",
-          "SUBTITLE": "Осы аккаунт үшін WeChat personal gateway берген токен."
-        },
-        "PROVIDER_ACCOUNT_ID": {
-          "LABEL": "Провайдер аккаунтының ID-і",
-          "PLACEHOLDER": "WeChat аккаунтының ID-і",
-          "SUBTITLE": "Міндетті емес. Бұл inbox-ты gateway ішіндегі белгілі WeChat аккаунтына байлау үшін пайдаланыңыз."
-        },
+        "DESC": "Арнаны жасап, жеке WeChat аккаунтын QR-код арқылы қосыңыз.",
         "DISPLAY_NAME": {
-          "LABEL": "Көрсетілетін атау",
-          "PLACEHOLDER": "WeChat қолдау",
-          "SUBTITLE": "OneLink ішінде осы WeChat inbox үшін көрсетілетін қосымша атау."
+          "LABEL": "Арна атауы (міндетті емес)",
+          "PLACEHOLDER": "WeChat / Негізгі WeChat",
+          "SUBTITLE": "Бос қалдыруға болады. QR арқылы кіргеннен кейін арнаның атын баптауларда өзгертуге болады."
         },
-        "SUBMIT_BUTTON": "WeChat арнасын жасау",
+        "SUBMIT_BUTTON": "Жасау және QR көрсету",
         "API": {
           "ERROR_MESSAGE": "WeChat арнасын сақтау мүмкін болмады"
         }
