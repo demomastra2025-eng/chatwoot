@@ -33,7 +33,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-1',
              ingress_number: voice_channel.phone_number,
-             caller_number: '+15551239999'
+             caller_number: '+15559999999'
            },
            headers: {
              'X-Bridge-Secret' => 'bridge-secret'
@@ -50,6 +50,49 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'inbox_id' => voice_inbox.id,
       'account_id' => account.id
     )
+  end
+
+  it 'creates an idempotent native call lifecycle during route lookup' do
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: 'sip:1001@example.test',
+      fallback_mode: 'reject'
+    )
+
+    route_request = lambda do
+      post path,
+           params: {
+             call_ref: 'inbound-route-lifecycle',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15551239998'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      expect do
+        2.times { route_request.call }
+      end.to change(Telephony::CallSession, :count).by(1)
+                                                   .and change(Conversation, :count).by(1)
+                                                                                    .and change(Message, :count).by(1)
+    end
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'inbound-route-lifecycle')
+    expect(call_session).to have_attributes(
+      status: 'ringing',
+      direction: 'inbound',
+      inbox_id: voice_inbox.id,
+      number_binding_id: number_binding.id,
+      from_number: '+15551239998',
+      to_number: voice_channel.phone_number
+    )
+    expect(call_session.conversation).to be_present
+    expect(call_session.conversation.identifier).to eq('inbound-route-lifecycle')
+    expect(call_session.conversation.messages.where(content_type: 'voice_call').count).to eq(1)
   end
 
   it 'rejects non-SIP operator targets instead of returning a non-executable operator route' do
@@ -245,6 +288,47 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'routes a pending conversation to AI even when the primary routing mode remains operator' do
+    caller_number = '+15551230003'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      ai_app_ref: 'ai-status-aware-app-ref',
+      fallback_mode: 'ai'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-operator-primary-pending',
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'ai-status-aware-app-ref',
+      'reason' => 'pending_conversation_ai_route'
+    )
+  end
+
   it 'routes every existing non-pending voice conversation status to the operator when AI routing is enabled' do
     number_binding.routing_policy.update!(
       mode: 'ai',
@@ -305,7 +389,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-onelink-ai',
              ingress_number: voice_channel.phone_number,
-             caller_number: '+155****7777'
+             caller_number: '+15557777777'
            },
            headers: {
              'X-Bridge-Secret' => 'bridge-secret'
@@ -337,7 +421,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-onelink-ai-fallback',
              ingress_number: voice_channel.phone_number,
-             caller_number: '+155****7778'
+             caller_number: '+15557777778'
            },
            headers: {
              'X-Bridge-Secret' => 'bridge-secret'

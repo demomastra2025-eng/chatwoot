@@ -519,6 +519,64 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
+      it 'persists top-level Fonoster voice channel parameters for native voice inbox creation' do
+        account.enable_features!('channel_voice')
+        allow_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!).and_wrap_original do |_method, number_binding:, attributes:|
+          number_binding.update!(metadata: number_binding.metadata.merge('last_route_attributes' => attributes.deep_stringify_keys))
+        end
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: {
+                 name: 'Fonoster Voice Inbox',
+                 phone_number: '+15551234568',
+                 provider: 'fonoster',
+                 provider_config: {
+                   number_ref: 'number-ref-top-level',
+                   app_ref: 'runtime-app-ref-top-level',
+                   trunk_ref: 'trunk-ref-top-level',
+                   routing_mode: 'operator',
+                   operator_agent_aor: 'sip:1001@example.test',
+                   fallback_mode: 'ai',
+                   ai_app_ref: 'ai-fallback-app-ref'
+                 },
+                 channel: { type: 'voice' }
+               },
+               as: :json
+        end.to change(Inbox, :count).by(1)
+                                    .and change(Channel::Voice, :count).by(1)
+                                                                       .and change(Telephony::NumberBinding, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        voice_channel = Channel::Voice.find_by!(phone_number: '+15551234568')
+        expect(voice_channel).to have_attributes(provider: 'fonoster')
+        expect(voice_channel.provider_config).to include(
+          'number_ref' => 'number-ref-top-level',
+          'app_ref' => 'runtime-app-ref-top-level',
+          'trunk_ref' => 'trunk-ref-top-level',
+          'routing_mode' => 'operator',
+          'operator_agent_aor' => 'sip:1001@example.test',
+          'fallback_mode' => 'ai',
+          'ai_app_ref' => 'ai-fallback-app-ref'
+        )
+
+        number_binding = voice_channel.inbox.telephony_number_binding
+        expect(number_binding).to have_attributes(
+          number_ref: 'number-ref-top-level',
+          phone_number: '+15551234568',
+          app_ref: 'runtime-app-ref-top-level',
+          trunk_ref: 'trunk-ref-top-level'
+        )
+        expect(number_binding.routing_policy).to have_attributes(
+          mode: 'operator',
+          operator_agent_aor: 'sip:1001@example.test',
+          fallback_mode: 'ai',
+          ai_app_ref: 'ai-fallback-app-ref',
+          ai_enabled: true
+        )
+      end
+
       it 'does not create a main channel inbox when the account main channel limit is reached' do
         account.update!(limits: { non_web_inboxes: 1 })
         create(:channel_api, account: account)

@@ -111,7 +111,9 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(response.parsed_body.dig('payload', 'routing_policy', 'mode')).to eq('app')
   end
 
-  it 'maps unsupported voicemail routing to a safe bridge reject without changing the stored policy mode' do
+  it 'stores unsupported voicemail routing while syncing the DID through the runtime app' do
+    runtime_app_ref = number_binding.runtime_app_ref
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -121,16 +123,18 @@ RSpec.describe 'Telephony Routing API', type: :request do
         .with do |request|
           body = JSON.parse(request.body)
           expect(body).to include(
-            'mode' => 'reject',
-            'message' => 'Leave a voicemail and we will call back'
+            'mode' => 'app',
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           true
         end
         .to_return(
           status: 200,
           body: {
             ref: number_binding.number_ref,
-            mode: 'reject'
+            mode: 'app',
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -147,16 +151,17 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(number_binding.reload.routing_policy.mode).to eq('voicemail')
     expect(response.parsed_body.dig('payload', 'routing_policy', 'mode')).to eq('voicemail')
-    expect(response.parsed_body.dig('meta', 'bridge', 'mode')).to eq('reject')
+    expect(response.parsed_body.dig('meta', 'bridge', 'mode')).to eq('app')
   end
 
-  it 'resolves operator agent aor from agent_ref when syncing route updates to the bridge' do
+  it 'preserves operator agent ref while syncing the Fonoster number through the runtime app' do
     agent_binding = create(
       :telephony_agent_binding,
       account: account,
       agent_ref: 'fonoster-agent-1',
       agent_aor: 'sip:1004@example.test'
     )
+    runtime_app_ref = number_binding.runtime_app_ref
 
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
@@ -167,16 +172,18 @@ RSpec.describe 'Telephony Routing API', type: :request do
         .with do |request|
           body = JSON.parse(request.body)
           expect(body).to include(
-            'mode' => 'operator',
-            'agent_aor' => 'sip:1004@example.test'
+            'mode' => 'app',
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           true
         end
         .to_return(
           status: 200,
           body: {
             ref: number_binding.number_ref,
-            mode: 'operator'
+            mode: 'app',
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -192,10 +199,13 @@ RSpec.describe 'Telephony Routing API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(number_binding.reload.routing_policy.operator_agent_ref).to eq('fonoster-agent-1')
+    expect(number_binding.app_ref).to eq(runtime_app_ref)
     expect(response.parsed_body.dig('payload', 'routing_policy', 'mode')).to eq('operator')
   end
 
-  it 'syncs SIP operator targets as bridge agent AORs' do
+  it 'preserves SIP operator target in policy while syncing the number through the runtime app' do
+    runtime_app_ref = number_binding.runtime_app_ref
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -205,9 +215,10 @@ RSpec.describe 'Telephony Routing API', type: :request do
         .with do |request|
           body = JSON.parse(request.body)
           expect(body).to include(
-            'mode' => 'operator',
-            'agent_aor' => 'sip:operator1@example.test'
+            'mode' => 'app',
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           expect(body).not_to have_key('destination')
           true
         end
@@ -215,7 +226,8 @@ RSpec.describe 'Telephony Routing API', type: :request do
           status: 200,
           body: {
             ref: number_binding.number_ref,
-            mode: 'operator'
+            mode: 'app',
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -231,10 +243,12 @@ RSpec.describe 'Telephony Routing API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(number_binding.reload.routing_policy.operator_agent_aor).to eq('sip:operator1@example.test')
+    expect(number_binding.app_ref).to eq(runtime_app_ref)
   end
 
-  it 'syncs OneLink-managed AI voice app ref to the bridge while preserving legacy Fonoster fallback' do
+  it 'syncs OneLink-managed AI voice app ref as a policy target while keeping the DID on the runtime app' do
     assistant = create(:captain_assistant, account: account)
+    runtime_app_ref = number_binding.runtime_app_ref
 
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
@@ -245,17 +259,18 @@ RSpec.describe 'Telephony Routing API', type: :request do
         .with do |request|
           body = JSON.parse(request.body)
           expect(body).to include(
-            'mode' => 'ai',
-            'app_ref' => 'onelink-ai-voice-app'
+            'mode' => 'app',
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           true
         end
         .to_return(
           status: 200,
           body: {
             ref: number_binding.number_ref,
-            mode: 'ai',
-            appRef: 'onelink-ai-voice-app'
+            mode: 'app',
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -291,7 +306,7 @@ RSpec.describe 'Telephony Routing API', type: :request do
       'captain_assistant_id' => assistant.id
     )
     expect(policy_payload.dig('ai_voice_settings', 'language')).to eq('ru-KZ')
-    expect(number_binding.reload.app_ref).to eq('onelink-ai-voice-app')
+    expect(number_binding.reload.app_ref).to eq(runtime_app_ref)
   end
 
   it 'rejects a captain assistant from another account' do
@@ -316,7 +331,9 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(number_binding.reload.routing_policy.captain_assistant_id).to be_nil
   end
 
-  it 'updates the primary app ref through the number route endpoint' do
+  it 'updates the primary app target while keeping the Fonoster number on the runtime app' do
+    runtime_app_ref = number_binding.runtime_app_ref
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -327,8 +344,9 @@ RSpec.describe 'Telephony Routing API', type: :request do
           body = JSON.parse(request.body)
           expect(body).to include(
             'mode' => 'app',
-            'app_ref' => 'business-app-ref'
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           true
         end
         .to_return(
@@ -336,7 +354,7 @@ RSpec.describe 'Telephony Routing API', type: :request do
           body: {
             ref: number_binding.number_ref,
             mode: 'app',
-            appRef: 'business-app-ref'
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -353,7 +371,9 @@ RSpec.describe 'Telephony Routing API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(number_binding.reload.configured_app_ref).to eq('business-app-ref')
-    expect(voice_channel.reload.provider_config['app_ref']).to eq('business-app-ref')
+    expect(number_binding.app_ref).to eq(runtime_app_ref)
+    expect(voice_channel.reload.provider_config['app_route_app_ref']).to eq('business-app-ref')
+    expect(voice_channel.provider_config['app_ref']).to eq(runtime_app_ref)
     expect(response.parsed_body.dig('payload', 'app_ref')).to eq('business-app-ref')
   end
 
@@ -364,6 +384,7 @@ RSpec.describe 'Telephony Routing API', type: :request do
       agent_ref: 'fonoster-agent-ai-fallback',
       agent_aor: 'sip:1006@example.test'
     )
+    runtime_app_ref = number_binding.runtime_app_ref
 
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
@@ -374,16 +395,18 @@ RSpec.describe 'Telephony Routing API', type: :request do
         .with do |request|
           body = JSON.parse(request.body)
           expect(body).to include(
-            'mode' => 'operator',
-            'agent_aor' => 'sip:1006@example.test'
+            'mode' => 'app',
+            'app_ref' => runtime_app_ref
           )
+          expect(body).not_to have_key('agent_aor')
           true
         end
         .to_return(
           status: 200,
           body: {
             ref: number_binding.number_ref,
-            mode: 'operator'
+            mode: 'app',
+            routeState: { aor_link: 'sip:voice@default' }
           }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
@@ -404,6 +427,8 @@ RSpec.describe 'Telephony Routing API', type: :request do
     expect(policy.mode).to eq('operator')
     expect(policy.fallback_mode).to eq('ai')
     expect(policy.ai_app_ref).to eq('ai-fallback-app-ref')
+    expect(policy.ai_enabled).to be true
+    expect(response.parsed_body.dig('payload', 'routing_policy', 'ai_enabled')).to be true
     expect(voice_channel.reload.provider_config['fallback_mode']).to eq('ai')
     expect(voice_channel.provider_config['ai_app_ref']).to eq('ai-fallback-app-ref')
   end

@@ -2,6 +2,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
   rescue_from Telephony::Error, with: :render_telephony_error
 
+  VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
+
   before_action :fetch_inbox, except: [:index, :create]
   before_action :fetch_agent_bot, only: [:set_agent_bot]
   before_action :validate_limit, only: [:create]
@@ -288,7 +290,24 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def permitted_params(channel_attributes = [])
     # We will remove this line after fixing https://linear.app/chatwoot/issue/CW-1567/null-value-passed-as-null-string-to-backend
     params.each { |k, v| params[k] = params[k] == 'null' ? nil : v }
+    normalize_voice_channel_params!
     params.permit(*inbox_attributes, channel: [:type, *channel_attributes])
+  end
+
+  def normalize_voice_channel_params!
+    channel = params[:channel]
+    return unless channel.respond_to?(:[])
+    return unless channel[:type].to_s == 'voice'
+
+    VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES.each do |attribute|
+      value = params[attribute]
+      next if value.nil?
+      next if channel.key?(attribute) || channel.key?(attribute.to_s)
+
+      channel[attribute] = value
+      params.delete(attribute)
+      params.delete(attribute.to_s)
+    end
   end
 
   def channel_type_from_params

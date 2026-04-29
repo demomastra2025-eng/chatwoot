@@ -1,7 +1,7 @@
 class Telephony::RoutingService
   ROUTE_CONFIG_KEYS = {
     mode: :routing_mode,
-    app_ref: :app_ref,
+    app_ref: :app_route_app_ref,
     ai_app_ref: :ai_app_ref,
     ai_deployment_mode: :ai_deployment_mode,
     fonoster_ai_app_ref: :fonoster_ai_app_ref,
@@ -56,9 +56,9 @@ class Telephony::RoutingService
     policy.assign_attributes(policy_attributes(attributes))
     policy.save!
 
-    response = bridge_client.post("/telephony/numbers/#{number_binding.number_ref}/route", policy.bridge_payload)
+    response = bridge_client.post("/telephony/numbers/#{number_binding.number_ref}/route", number_binding.bridge_route_payload)
     number_binding.update!(
-      app_ref: number_binding.app_ref_for_policy(policy),
+      app_ref: number_binding.runtime_app_ref,
       last_synced_at: Time.current
     )
 
@@ -80,7 +80,7 @@ class Telephony::RoutingService
     response = bridge_client.post('/telephony/ai/toggle', toggle_ai_payload(number_binding, policy, enabled: enabled))
 
     number_binding.update!(
-      app_ref: number_binding.app_ref_for_policy(policy),
+      app_ref: number_binding.runtime_app_ref,
       last_synced_at: Time.current
     )
 

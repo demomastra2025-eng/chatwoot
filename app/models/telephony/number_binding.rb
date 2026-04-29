@@ -35,6 +35,9 @@ class Telephony::NumberBinding < ApplicationRecord
     fonoster_number_ref
     app_ref
     trunk_ref
+    runtime_app_ref
+    app_route_app_ref
+    target_app_ref
     routing_mode
     ai_app_ref
     ai_deployment_mode
@@ -105,7 +108,15 @@ class Telephony::NumberBinding < ApplicationRecord
   end
 
   def configured_app_ref
-    voice_channel&.provider_config_hash&.with_indifferent_access&.dig(:app_ref).presence || self[:app_ref]
+    config = voice_channel&.provider_config_hash&.with_indifferent_access
+    config&.dig(:app_route_app_ref).presence || config&.dig(:target_app_ref).presence || config&.dig(:app_ref).presence || self[:app_ref]
+  rescue JSON::ParserError, TypeError
+    self[:app_ref]
+  end
+
+  def runtime_app_ref
+    config = voice_channel&.provider_config_hash&.with_indifferent_access
+    config&.dig(:runtime_app_ref).presence || self[:app_ref].presence || config&.dig(:app_ref).presence
   rescue JSON::ParserError, TypeError
     self[:app_ref]
   end
@@ -153,6 +164,9 @@ class Telephony::NumberBinding < ApplicationRecord
   end
 
   def bridge_route_payload
+    runtime_ref = runtime_app_ref
+    return { mode: 'app', app_ref: runtime_ref } if runtime_ref.present?
+
     routing_policy&.bridge_payload || { mode: 'operator' }
   end
 

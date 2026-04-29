@@ -6,9 +6,23 @@ class Telephony::InboundRoutingService
   end
 
   def perform
-    return reject_decision(reason: 'number_not_bound') if number_binding.blank?
-    return reject_decision(reason: 'routing_policy_missing') if routing_policy.blank?
+    decision = if number_binding.blank?
+                 reject_decision(reason: 'number_not_bound')
+               elsif routing_policy.blank?
+                 reject_decision(reason: 'routing_policy_missing')
+               else
+                 routed_decision
+               end
 
+    ensure_route_lifecycle!(decision)
+    decision
+  end
+
+  private
+
+  attr_reader :payload
+
+  def routed_decision
     status_decision = status_aware_conversation_decision
     return status_decision if status_decision.present?
 
@@ -16,10 +30,6 @@ class Telephony::InboundRoutingService
 
     primary_decision
   end
-
-  private
-
-  attr_reader :payload
 
   def primary_decision
     case routing_policy.mode
@@ -64,7 +74,44 @@ class Telephony::InboundRoutingService
   end
 
   def ai_routing_enabled?
-    routing_policy.ai_enabled? || routing_policy.ai_mode?
+    routing_policy.ai_enabled? || routing_policy.ai_mode? || routing_policy.fallback_mode == 'ai'
+  end
+
+  def ensure_route_lifecycle!(decision)
+    return if number_binding.blank?
+    return if call_ref.blank? || caller_number.blank?
+
+    Telephony::EventsIngestionService.new(payload: route_lifecycle_payload(decision)).perform
+  end
+
+  def route_lifecycle_payload(decision)
+    metadata = {
+      route_action: decision[:action] || decision['action'],
+      route_reason: decision[:reason] || decision['reason']
+    }
+
+    if existing_voice_conversation.present?
+      metadata[:chatwoot_conversation_id] = existing_voice_conversation.id
+      metadata[:chatwoot_conversation_status] = existing_voice_conversation.status
+    end
+
+    {
+      event_key: route_lifecycle_event_key,
+      event: 'session_started',
+      call_ref: call_ref,
+      account_id: number_binding.account_id,
+      inbox_id: number_binding.inbox_id,
+      number_ref: number_binding.number_ref,
+      provider: number_binding.provider,
+      direction: 'inbound',
+      ingress_number: inbound_number || number_binding.phone_number,
+      caller_number: caller_number,
+      metadata: metadata.compact
+    }.compact
+  end
+
+  def route_lifecycle_event_key
+    "route_lookup:#{call_ref}:session_started"
   end
 
   def fallback_decision(reason:, prefer_out_of_office_message: false)

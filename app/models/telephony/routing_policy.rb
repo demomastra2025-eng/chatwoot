@@ -142,7 +142,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
     self.mode = mode.to_s.strip.downcase.presence || 'operator'
     self.fallback_mode = fallback_mode.to_s.strip.downcase.presence || 'reject'
     self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_FONOSTER_MANAGED
-    self.ai_enabled = ai_mode?
+    self.ai_enabled = ai_mode? || fallback_mode == 'ai'
     self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
     self.ai_voice_settings = (ai_voice_settings || {}).deep_stringify_keys
   end
