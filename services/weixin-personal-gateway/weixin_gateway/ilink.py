@@ -99,7 +99,7 @@ class IlinkClient:
 
         return self._post(EP_SEND_MESSAGE, {"msg": message}, token=token, timeout_ms=API_TIMEOUT_MS)
 
-    def get_bot_qr_request(self, *, bot_type: int = 2) -> IlinkRequest:
+    def get_bot_qr_request(self, *, bot_type: int = 3) -> IlinkRequest:
         return self._get(f"{EP_GET_BOT_QR}?bot_type={quote(str(bot_type), safe='')}", timeout_ms=QR_TIMEOUT_MS)
 
     def get_qr_status_request(self, *, qrcode: str, base_url: str | None = None) -> IlinkRequest:
