@@ -153,6 +153,40 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
     end
 
+    it 'sends the text response without attachment when an artifact id expired' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Here is the apartment photo.',
+          'artifact_ids' => ['expired-artifact-id']
+        }
+      )
+      expect(ChatwootExceptionTracker).not_to receive(:new)
+
+      described_class.perform_now(conversation, assistant)
+
+      public_message = conversation.reload.messages.outgoing.where(private: false).last
+      expect(public_message.content).to eq('Here is the apartment photo.')
+      expect(public_message.attachments).to be_empty
+      expect(conversation.status).to eq('pending')
+    end
+
+    it 'creates a fallback text response when an artifact-only response cannot be materialized' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => '',
+          'artifact_ids' => ['expired-artifact-id']
+        }
+      )
+      expect(ChatwootExceptionTracker).not_to receive(:new)
+
+      described_class.perform_now(conversation, assistant)
+
+      public_message = conversation.reload.messages.outgoing.where(private: false).last
+      expect(public_message.content).to eq('The requested file is no longer available. Please ask me to fetch it again.')
+      expect(public_message.attachments).to be_empty
+      expect(conversation.status).to eq('pending')
+    end
+
     it 'builds tool execution trace from runner callbacks' do
       job = described_class.new
       callbacks, tool_trace_steps = job.send(:build_tool_trace_callbacks)

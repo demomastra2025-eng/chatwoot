@@ -108,6 +108,45 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
     expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
 
+  it 'returns upstream validation details for non-retryable 422 failures' do
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 422, body: '{"error":"invalid flat id"}')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: HTTP request failed with status 422: {"error":"invalid flat id"}')
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
+  end
+
+  it 'sanitizes upstream validation details before logging or returning them' do
+    remove_request_stub(lead_request_stub)
+    allow(Rails.logger).to receive(:error)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 422, body: '{"error":"phone +770****4567 is invalid","phone":"+770****4567","token":"secret-value"}')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: HTTP request failed with status 422: {"error":"phone [REDACTED_PHONE] is invalid"}')
+    expect(Rails.logger).to have_received(:error).with(/\[REDACTED_PHONE\]/)
+    expect(Rails.logger).not_to have_received(:error).with(/\+770\*\*\*\*4567|secret-value|"phone"|"token"/)
+  end
+
+  it 'ignores top-level upstream JSON strings and arrays in validation failures' do
+    remove_request_stub(lead_request_stub)
+    allow(Rails.logger).to receive(:error)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 422, body: '["customer Alice +770****4567"]')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: HTTP request failed with status 422')
+    expect(Rails.logger).not_to have_received(:error).with(/Alice|\+770\*\*\*\*4567|customer/)
+  end
+
   it 'does not retry non-post tools that only share the search apartments slug' do
     custom_tool.update!(slug: 'custom_search_apartments', http_method: 'PUT')
     remove_request_stub(lead_request_stub)

@@ -7,6 +7,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+  ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   RECEIPT_ATTACHMENT_CONTEXT = 'The user sent an image after being asked to share a payment receipt/proof. ' \
                                'Treat the image as the requested receipt/payment confirmation unless it clearly shows otherwise; ' \
                                'acknowledge the receipt and continue the active booking/confirmation flow.'.freeze
@@ -95,6 +96,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_pending_response
     attachment_ids = response_attachment_ids
+    ensure_response_content_for_artifact_failure!(attachment_ids)
 
     ActiveRecord::Base.transaction do
       create_messages(attachment_ids: attachment_ids)
@@ -357,6 +359,28 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return [] if artifact_ids.blank?
 
     attachment_resolver.resolve(artifact_ids: artifact_ids)
+  rescue Captain::Tools::HttpArtifactToken::InvalidToken,
+         Captain::Tools::HttpArtifactMaterializer::DownloadError,
+         AccountLimits::StorageUsageService::LimitExceeded,
+         ArgumentError => e
+    remember_artifact_resolution_error(e)
+    []
+  end
+
+  def ensure_response_content_for_artifact_failure!(attachment_ids)
+    return if attachment_ids.present?
+    return if @artifact_resolution_error.blank?
+    return if @response['response'].present?
+
+    @response['response'] = ARTIFACT_UNAVAILABLE_RESPONSE
+  end
+
+  def remember_artifact_resolution_error(error)
+    @artifact_resolution_error ||= error
+    Rails.logger.warn(
+      "[CAPTAIN][ARTIFACT] Skipping unavailable response artifact: #{error.class} #{error.message} " \
+      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} account_id=#{account.id}"
+    )
   end
 
   def response_artifact_ids

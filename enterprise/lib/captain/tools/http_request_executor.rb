@@ -3,11 +3,85 @@ class Captain::Tools::HttpRequestExecutor
   class ToolConfigurationError < StandardError; end
 
   class HttpRequestFailedError < StandardError
+    MAX_ERROR_BODY_LENGTH = 500
+    SAFE_ERROR_DETAIL_KEYS = %w[code detail error message reason title].freeze
+    SENSITIVE_KEY_PATTERN = /(api[_-]?key|authorization|email|name|password|phone|secret|token)/i
+    SENSITIVE_VALUE_PATTERNS = [
+      [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i, '[REDACTED_EMAIL]'],
+      [/\+?\d[\d\s\-()]*\*+[\d\s\-()*]*\d/, '[REDACTED_PHONE]'],
+      [/(?<!\d)\+?\d[\d\s\-()]{6,}\d(?!\d)/, '[REDACTED_PHONE]'],
+      [/(bearer|token|secret|password|api[_-]?key)\s*[:=]\s*\S+/i, '\\1=[REDACTED]']
+    ].freeze
+
     attr_reader :status
 
-    def initialize(status)
+    def initialize(status, body: nil)
       @status = status.to_i
-      super("HTTP request failed with status #{@status}")
+      super(error_message(body))
+    end
+
+    private
+
+    def error_message(body)
+      message = "HTTP request failed with status #{@status}"
+      details = response_body_details(body)
+      return message if details.blank? || @status >= 500
+
+      "#{message}: #{details}"
+    end
+
+    def response_body_details(body)
+      parsed_body = parse_json_body(body)
+      return unless parsed_body.is_a?(Hash)
+
+      sanitized_body = sanitize_error_hash(parsed_body)
+      return if sanitized_body.blank?
+
+      JSON.generate(sanitized_body).squish.first(MAX_ERROR_BODY_LENGTH).presence
+    end
+
+    def parse_json_body(body)
+      JSON.parse(body.to_s)
+    rescue JSON::ParserError, TypeError
+      nil
+    end
+
+    def sanitize_error_details(value)
+      case value
+      when Hash
+        sanitize_error_hash(value)
+      when Array
+        value.filter_map { |item| sanitize_error_details(item) }
+      when String
+        redact_sensitive_value(value)
+      else
+        value
+      end
+    end
+
+    def sanitize_error_hash(value)
+      value.each_with_object({}) do |(key, item), memo|
+        key = key.to_s
+        next if sensitive_error_key?(key)
+        next unless safe_error_detail_key?(key)
+
+        sanitized_item = sanitize_error_details(item)
+        memo[key] = sanitized_item if sanitized_item.present?
+      end
+    end
+
+    def safe_error_detail_key?(key)
+      SAFE_ERROR_DETAIL_KEYS.include?(key.to_s)
+    end
+
+    def sensitive_error_key?(key)
+      key.to_s.match?(SENSITIVE_KEY_PATTERN)
+    end
+
+    def redact_sensitive_value(value)
+      SENSITIVE_VALUE_PATTERNS.reduce(value.to_s) do |text, (pattern, replacement)|
+        text.gsub(pattern, replacement)
+      end
     end
   end
 
@@ -300,7 +374,7 @@ class Captain::Tools::HttpRequestExecutor
         next
       end
 
-      raise HttpRequestFailedError, response.code if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
+      raise HttpRequestFailedError.new(response.code, body: response.body) if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
 
       return response
     rescue StandardError => e
