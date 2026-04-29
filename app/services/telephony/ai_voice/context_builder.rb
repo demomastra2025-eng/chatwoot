@@ -1,7 +1,7 @@
 class Telephony::AiVoice::ContextBuilder
   DEFAULT_PROVIDER = 'gemini-live'.freeze
-  DEFAULT_MODEL = 'gemini-2.0-flash-live-001'.freeze
-  DEFAULT_VOICE = 'Puck'.freeze
+  DEFAULT_MODEL = 'gemini-3.1-flash-live-preview'.freeze
+  DEFAULT_VOICE = 'sulafat'.freeze
   DEFAULT_LANGUAGE = 'ru-KZ'.freeze
   DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze
   DEFAULT_MAX_DURATION_SEC = 900
@@ -27,7 +27,7 @@ class Telephony::AiVoice::ContextBuilder
       ai: ai_payload,
       captain: captain_payload,
       transfer: transfer_payload,
-      tools: Telephony::AiVoice::ToolDispatchService.catalog(policy: routing_policy)
+      tools: Telephony::AiVoice::ToolDispatchService.catalog(policy: routing_policy, captain_assistant: captain_assistant)
     }.compact
   end
 
@@ -134,7 +134,14 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def ai_settings
-    @ai_settings ||= (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
+    @ai_settings ||= begin
+      legacy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
+      legacy_settings.merge(captain_voice_settings)
+    end
+  end
+
+  def captain_voice_settings
+    @captain_voice_settings ||= (captain_assistant&.config&.dig('voice_settings') || {}).deep_stringify_keys
   end
 
   def call_session
@@ -168,9 +175,15 @@ class Telephony::AiVoice::ContextBuilder
 
   def captain_assistant
     @captain_assistant ||= begin
-      assistant = routing_policy&.captain_assistant
+      assistant = inbox_captain_assistant || routing_policy&.captain_assistant
       assistant if assistant&.account_id == account.id
     end
+  end
+
+  def inbox_captain_assistant
+    return unless inbox.respond_to?(:captain_assistant)
+
+    inbox.captain_assistant
   end
 
   def number_binding

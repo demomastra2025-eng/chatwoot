@@ -1,18 +1,152 @@
 class Telephony::AiVoice::ToolDispatchService
   class UnknownToolError < StandardError; end
 
-  TOOL_CATALOG = [
-    { name: 'find_contact', timeout_ms: 500, realtime_safe: true },
-    { name: 'create_contact', timeout_ms: 800, realtime_safe: true },
-    { name: 'create_note', timeout_ms: 800, realtime_safe: true },
-    { name: 'update_conversation', timeout_ms: 800, realtime_safe: true },
-    { name: 'request_transfer', timeout_ms: 300, realtime_safe: true },
-    { name: 'end_call', timeout_ms: 300, realtime_safe: true }
+  VOICE_TOOL_CATALOG = [
+    {
+      name: 'find_contact',
+      description: 'Find contacts in the current account by phone number, contact id, or text query.',
+      timeout_ms: 500,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          phone_number: { type: 'string', description: 'Caller or customer phone number' },
+          contact_id: { type: 'string', description: 'Existing Chatwoot contact id' },
+          query: { type: 'string', description: 'Free-form contact search query' }
+        }
+      }
+    },
+    {
+      name: 'create_contact',
+      description: 'Create or update the caller contact in the current account.',
+      timeout_ms: 800,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          phone_number: { type: 'string', description: 'Customer phone number' },
+          name: { type: 'string', description: 'Customer name' },
+          email: { type: 'string', description: 'Customer email' }
+        }
+      }
+    },
+    {
+      name: 'create_note',
+      description: 'Create a private note on the current conversation. The caller does not hear this note.',
+      timeout_ms: 800,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: { content: { type: 'string', description: 'Private note content' } },
+        required: ['content']
+      }
+    },
+    {
+      name: 'update_conversation',
+      description: 'Update the current Chatwoot conversation status or additional attributes.',
+      timeout_ms: 800,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', description: 'Conversation status' },
+          additional_attributes: { type: 'object', description: 'Additional conversation attributes' }
+        }
+      }
+    },
+    {
+      name: 'request_transfer',
+      description: 'Ask the voice runtime to transfer this call to the configured human operator.',
+      timeout_ms: 300,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: { reason: { type: 'string', description: 'Reason for transferring to a human operator' } }
+      }
+    },
+    {
+      name: 'end_call',
+      description: 'End the current voice call when the conversation is complete.',
+      timeout_ms: 300,
+      realtime_safe: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'Reason for ending the call' },
+          ended_by: { type: 'string', description: 'Actor ending the call' }
+        }
+      }
+    }
   ].freeze
 
-  def self.catalog(policy: nil)
-    TOOL_CATALOG.map do |tool|
-      tool.merge(enabled: tool[:name] != 'request_transfer' || policy&.resolved_operator_agent_aor.present?).stringify_keys
+  TOOL_CATALOG = VOICE_TOOL_CATALOG.freeze
+
+  def self.catalog(policy: nil, captain_assistant: nil)
+    voice_tools = VOICE_TOOL_CATALOG.map do |tool|
+      tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
+    end
+
+    (voice_tools + captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
+  end
+
+  def self.captain_tool_catalog(captain_assistant)
+    return [] if captain_assistant.blank?
+
+    Array(captain_assistant.direct_agent_tools).filter_map do |tool_definition|
+      tool = tool_definition.with_indifferent_access
+      tool_id = tool[:id].to_s
+      next if tool_id.blank?
+
+      {
+        name: tool_id,
+        title: tool[:title].presence || tool_id.humanize,
+        description: tool[:description].to_s,
+        source: 'captain',
+        scope: Captain::ToolAccess::SCOPE_AGENT,
+        enabled: true,
+        realtime_safe: true,
+        timeout_ms: 1_000,
+        risk_level: tool[:risk_level],
+        parameters: captain_tool_parameters(captain_assistant, tool)
+      }.compact.deep_stringify_keys
+    end
+  end
+
+  def self.captain_tool_parameters(captain_assistant, tool)
+    parameter_definitions = captain_parameter_definitions(captain_assistant, tool)
+    properties = {}
+    required = []
+
+    parameter_definitions.each do |definition|
+      definition = definition.deep_stringify_keys
+      name = definition['name'].to_s
+      next if name.blank?
+
+      properties[name] = {
+        type: json_schema_type(definition['type']),
+        description: definition['description'].to_s
+      }.compact
+      required << name if ActiveModel::Type::Boolean.new.cast(definition['required'])
+    end
+
+    { type: 'object', properties: properties, required: required.presence }.compact
+  end
+
+  def self.captain_parameter_definitions(captain_assistant, tool)
+    if ActiveModel::Type::Boolean.new.cast(tool[:custom])
+      custom_tool = captain_assistant.account.captain_custom_tools.enabled.find_by(slug: tool[:id].to_s)
+      return custom_tool.runtime_parameter_definitions(Captain::ToolAccess::SCOPE_AGENT) if custom_tool
+    end
+
+    []
+  end
+
+  def self.json_schema_type(type)
+    case type.to_s
+    when 'number', 'boolean', 'array', 'object'
+      type.to_s
+    else
+      'string'
     end
   end
 
@@ -22,10 +156,11 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform
-    raise UnknownToolError, "Unknown voice AI tool: #{tool_name}" unless allowed_tool?
-
     ensure_call_session!
-    send("perform_#{tool_name}")
+    return send("perform_#{tool_name}") if voice_tool?
+    return perform_captain_tool if captain_tool_definition.present?
+
+    raise UnknownToolError, "Unknown voice AI tool: #{tool_name}"
   end
 
   private
@@ -122,8 +257,77 @@ class Telephony::AiVoice::ToolDispatchService
     { action: 'end_call', status: call_session.status }
   end
 
+  def perform_captain_tool
+    tool = Captain::ToolCatalog.build_tool(
+      captain_tool_definition,
+      assistant: captain_assistant,
+      scope_name: Captain::ToolAccess::SCOPE_AGENT,
+      conversation: conversation
+    )
+    raise UnknownToolError, "Unknown voice AI tool: #{tool_name}" unless tool
+
+    {
+      action: 'captain_tool',
+      tool_name: tool_name,
+      result: tool.execute(captain_tool_context, **captain_tool_arguments)
+    }
+  end
+
   def allowed_tool?
-    TOOL_CATALOG.any? { |tool| tool[:name] == tool_name }
+    voice_tool? || captain_tool_definition.present?
+  end
+
+  def voice_tool?
+    VOICE_TOOL_CATALOG.any? { |tool| tool[:name] == tool_name }
+  end
+
+  def captain_tool_definition
+    @captain_tool_definition ||= begin
+      definition = captain_assistant&.direct_agent_tools&.find do |tool_definition|
+        tool_definition.with_indifferent_access[:id].to_s == tool_name
+      end
+      definition&.with_indifferent_access
+    end
+  end
+
+  def captain_tool_context
+    run_context = Captain::Runtime::RunContext.new(
+      {
+        state: captain_runtime_state,
+        current_agent: 'voice_ai'
+      }
+    )
+    Captain::Runtime::ToolContext.new(run_context: run_context)
+  end
+
+  def captain_runtime_state
+    @captain_runtime_state ||= begin
+      state = captain_assistant.runtime_state_for(conversation) || {}
+      state.merge(
+        account_id: account.id,
+        assistant_id: captain_assistant.id,
+        source: 'voice_ai',
+        call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }
+      )
+    end
+  end
+
+  def captain_tool_arguments
+    arguments.to_h.transform_keys(&:to_sym)
+  end
+
+  def captain_assistant
+    @captain_assistant ||= begin
+      assistant = inbox_captain_assistant || routing_policy&.captain_assistant
+      assistant if assistant&.account_id == account.id
+    end
+  end
+
+  def inbox_captain_assistant
+    inbox = call_session&.inbox || conversation&.inbox
+    return unless inbox&.respond_to?(:captain_assistant)
+
+    inbox.captain_assistant
   end
 
   def contact_payload(contact)

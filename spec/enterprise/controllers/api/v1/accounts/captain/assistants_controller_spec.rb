@@ -450,6 +450,44 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           }
         )
       end
+
+      it 'stores voice settings when provided on create' do
+        attributes_with_voice_settings = valid_attributes.deep_dup
+        attributes_with_voice_settings[:assistant][:config][:voice_settings] = {
+          provider: 'gemini-live',
+          model: 'gemini-3.1-flash-live-preview',
+          voice: 'sulafat',
+          language: 'ru-KZ',
+          first_message: 'Сәлеметсіз бе!',
+          max_duration_sec: 450,
+          interruptions_enabled: false,
+          transfer_message: 'Қазір операторға қосамын.'
+        }
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants",
+               params: attributes_with_voice_settings,
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::Assistant, :count).by(1)
+
+        created_assistant = Captain::Assistant.order(:id).last
+
+        expect(created_assistant.config['voice_settings']).to include(
+          'provider' => 'gemini-live',
+          'model' => 'gemini-3.1-flash-live-preview',
+          'voice' => 'sulafat',
+          'language' => 'ru-KZ',
+          'first_message' => 'Сәлеметсіз бе!',
+          'interruptions_enabled' => false,
+          'transfer_message' => 'Қазір операторға қосамын.'
+        )
+        expect(json_response.dig(:config, :voice_settings)).to include(
+          provider: 'gemini-live',
+          model: 'gemini-3.1-flash-live-preview',
+          voice: 'sulafat'
+        )
+      end
     end
   end
 
@@ -540,6 +578,59 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:config][:feature_citation]).to be(false)
+      end
+
+      it 'updates voice settings without replacing unrelated config sections' do
+        assistant.update!(
+          config: {
+            'feature_faq' => true,
+            'tool_access' => {
+              'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+            },
+            'voice_settings' => {
+              'voice' => 'legacy-voice',
+              'model' => 'legacy-model'
+            }
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    voice_settings: {
+                      provider: 'gemini-live',
+                      model: 'gemini-3.1-flash-live-preview',
+                      voice: 'sulafat',
+                      language: 'ru-KZ',
+                      first_message: 'Сәлеметсіз бе!',
+                      max_duration_sec: 450,
+                      interruptions_enabled: false,
+                      transfer_message: 'Қазір операторға қосамын.'
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config).to include(
+          'feature_faq' => true,
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+          }
+        )
+        expect(assistant.config['voice_settings']).to include(
+          'provider' => 'gemini-live',
+          'model' => 'gemini-3.1-flash-live-preview',
+          'voice' => 'sulafat',
+          'language' => 'ru-KZ',
+          'first_message' => 'Сәлеметсіз бе!',
+          'interruptions_enabled' => false,
+          'transfer_message' => 'Қазір операторға қосамын.'
+        )
+        expect(json_response.dig(:config, :voice_settings, :voice)).to eq('sulafat')
       end
 
       it 'preserves unrelated config sections when updating only feature flags' do

@@ -96,6 +96,85 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
   end
 
+  it 'uses the inbox Captain assistant as the voice brain and preserves voice default tools' do
+    captain_tool = create(
+      :captain_custom_tool,
+      account: account,
+      title: 'Lookup booking',
+      description: 'Find a booking by booking code',
+      param_schema: [
+        { 'name' => 'booking_code', 'type' => 'string', 'description' => 'Booking code', 'required' => true }
+      ]
+    )
+    inbox_assistant = create(
+      :captain_assistant,
+      account: account,
+      name: 'Inbox Voice Captain',
+      description: "Speak as the connected inbox Captain. Use [Lookup booking](tool://#{captain_tool.slug}) when needed.",
+      response_guidelines: ['Voice answers must be short.'],
+      config: {
+        voice_settings: {
+          provider: 'gemini-live',
+          model: 'gemini-3.1-flash-live-preview',
+          voice: 'sulafat',
+          language: 'ru-KZ',
+          first_message: 'Сәлеметсіз бе! Қалай көмектесемін?',
+          max_duration_sec: 450,
+          interruptions_enabled: false,
+          transfer_message: 'Қазір операторға қосамын.'
+        },
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: [captain_tool.slug]
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: inbox_assistant, inbox: voice_inbox)
+    number_binding.routing_policy.update!(
+      captain_assistant: nil,
+      ai_voice_settings: {
+        provider: 'legacy-provider',
+        model: 'legacy-model',
+        voice: 'legacy-voice',
+        first_message: 'Legacy greeting',
+        transfer_message: 'Legacy transfer'
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    expect(body.dig('captain', 'assistant_id')).to eq(inbox_assistant.id)
+    expect(body.dig('captain', 'system_prompt')).to include('connected inbox Captain')
+    expect(body['ai']).to include(
+      'provider' => 'gemini-live',
+      'model' => 'gemini-3.1-flash-live-preview',
+      'voice' => 'sulafat',
+      'first_message' => 'Сәлеметсіз бе! Қалай көмектесемін?',
+      'interruptions_enabled' => false,
+      'max_duration_sec' => 450
+    )
+    expect(body.dig('transfer', 'message')).to eq('Қазір операторға қосамын.')
+
+    tool_names = body['tools'].pluck('name')
+    expect(tool_names).to include('end_call', 'request_transfer', captain_tool.slug)
+    booking_tool = body['tools'].find { |tool| tool['name'] == captain_tool.slug }
+    expect(booking_tool).to include(
+      'source' => 'captain',
+      'scope' => 'agent',
+      'description' => 'Find a booking by booking code'
+    )
+    expect(booking_tool.dig('parameters', 'properties', 'booking_code', 'type')).to eq('string')
+  end
+
   it 'does not resolve context from an unscoped call_ref even when it is globally unique' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       get '/internal/voice/ai/context',

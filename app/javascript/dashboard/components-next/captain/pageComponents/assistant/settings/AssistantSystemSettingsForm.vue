@@ -37,6 +37,17 @@ const emit = defineEmits(['submit']);
 
 const { t } = useI18n();
 
+const DEFAULT_VOICE_SETTINGS = {
+  provider: 'gemini-live',
+  model: 'gemini-3.1-flash-live-preview',
+  voice: 'sulafat',
+  language: 'ru-KZ',
+  firstMessage: '',
+  transferMessage: '',
+  maxDurationSec: 0,
+  interruptionsEnabled: true,
+};
+
 const initialState = {
   handoffMessageEnabled: false,
   resolutionMessageEnabled: false,
@@ -46,6 +57,7 @@ const initialState = {
   autoReplyOnLastIncoming: false,
   messageCollapseWindowSeconds: 0,
   historyMessageLimit: 0,
+  voiceSettings: { ...DEFAULT_VOICE_SETTINGS },
 };
 
 const state = reactive({ ...initialState });
@@ -101,6 +113,24 @@ const updateStateFromAssistant = assistant => {
     config.message_collapse_window_seconds || 0
   );
   state.historyMessageLimit = Number(config.history_message_limit || 0);
+
+  const voiceSettings = config.voice_settings || {};
+  state.voiceSettings = {
+    provider: voiceSettings.provider || DEFAULT_VOICE_SETTINGS.provider,
+    model: voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
+    voice: voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
+    language: voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
+    firstMessage:
+      voiceSettings.first_message ?? DEFAULT_VOICE_SETTINGS.firstMessage,
+    transferMessage:
+      voiceSettings.transfer_message ?? DEFAULT_VOICE_SETTINGS.transferMessage,
+    maxDurationSec: Number(
+      voiceSettings.max_duration_sec || DEFAULT_VOICE_SETTINGS.maxDurationSec
+    ),
+    interruptionsEnabled:
+      voiceSettings.interruptions_enabled ??
+      DEFAULT_VOICE_SETTINGS.interruptionsEnabled,
+  };
 };
 
 const normalizeNonNegativeInteger = value => {
@@ -140,6 +170,22 @@ const buildPayload = async () => {
         history_message_limit: normalizeNonNegativeInteger(
           state.historyMessageLimit
         ),
+        voice_settings: {
+          provider:
+            state.voiceSettings.provider || DEFAULT_VOICE_SETTINGS.provider,
+          model: state.voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
+          voice: state.voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
+          language:
+            state.voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
+          first_message: state.voiceSettings.firstMessage || '',
+          transfer_message: state.voiceSettings.transferMessage || '',
+          max_duration_sec: normalizeNonNegativeInteger(
+            state.voiceSettings.maxDurationSec
+          ),
+          interruptions_enabled: Boolean(
+            state.voiceSettings.interruptionsEnabled
+          ),
+        },
       },
     },
     avatar: null,
@@ -376,6 +422,96 @@ defineExpose({
         />
       </div>
     </template>
+
+    <details
+      open
+      data-test-id="assistant-voice-settings"
+      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+    >
+      <summary class="cursor-pointer list-none">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h4 class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TITLE') }}
+            </h4>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.DESCRIPTION') }}
+            </p>
+          </div>
+          <span class="text-xs font-medium text-n-slate-10">
+            {{ state.voiceSettings.model }} / {{ state.voiceSettings.voice }}
+          </span>
+        </div>
+      </summary>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Input
+          v-model="state.voiceSettings.provider"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.PROVIDER')"
+          placeholder="gemini-live"
+        />
+        <Input
+          v-model="state.voiceSettings.model"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MODEL')"
+          placeholder="gemini-3.1-flash-live-preview"
+        />
+        <Input
+          v-model="state.voiceSettings.voice"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE')"
+          placeholder="sulafat"
+        />
+        <Input
+          v-model="state.voiceSettings.language"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE')"
+          placeholder="ru-KZ"
+        />
+        <Input
+          v-model="state.voiceSettings.firstMessage"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FIRST_MESSAGE')"
+          :placeholder="
+            t(
+              'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FIRST_MESSAGE_PLACEHOLDER'
+            )
+          "
+        />
+        <Input
+          v-model="state.voiceSettings.transferMessage"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE')"
+          :placeholder="
+            t(
+              'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE_PLACEHOLDER'
+            )
+          "
+        />
+        <Input
+          v-model="state.voiceSettings.maxDurationSec"
+          type="number"
+          min="0"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MAX_DURATION_SEC')"
+          placeholder="900"
+        />
+        <div
+          class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+        >
+          <div class="min-w-0">
+            <h5 class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.INTERRUPTIONS') }}
+            </h5>
+            <p class="text-sm text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.INTERRUPTIONS_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <Switch
+            v-model="state.voiceSettings.interruptionsEnabled"
+            class="data-[state=checked]:!bg-n-violet-9"
+          />
+        </div>
+      </div>
+    </details>
 
     <div v-if="showSubmitButton">
       <Button

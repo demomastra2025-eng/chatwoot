@@ -526,6 +526,21 @@
           "PLACEHOLDER": "Введите количество сообщений",
           "DESCRIPTION": "Сколько публичных сообщений диалога AI-агент может читать перед генерацией ответа. 0 = вся история."
         },
+        "VOICE_SETTINGS": {
+          "TITLE": "Настройки голоса",
+          "DESCRIPTION": "Настройте realtime voice transport для звонков, которые обрабатывает этот Captain. Секреты остаются только в переменных окружения runtime.",
+          "PROVIDER": "Realtime provider",
+          "MODEL": "Realtime model",
+          "VOICE": "Голос",
+          "LANGUAGE": "Язык",
+          "FIRST_MESSAGE": "Первое сообщение",
+          "FIRST_MESSAGE_PLACEHOLDER": "Приветствие в начале звонка",
+          "TRANSFER_MESSAGE": "Сообщение перед переводом",
+          "TRANSFER_MESSAGE_PLACEHOLDER": "Фраза перед переводом на оператора",
+          "MAX_DURATION_SEC": "Максимальная длительность, сек.",
+          "INTERRUPTIONS": "Разрешить перебивания",
+          "INTERRUPTIONS_DESCRIPTION": "Позволяет клиенту перебивать AI, пока он говорит."
+        },
         "DESCRIPTION": {
           "LABEL": "Описание",
           "PLACEHOLDER": "Введите описание AI-агента",

@@ -526,6 +526,21 @@
           "PLACEHOLDER": "Enter message count",
           "DESCRIPTION": "How many public conversation messages the AI agent can read before generating a reply. Use 0 for the full history."
         },
+        "VOICE_SETTINGS": {
+          "TITLE": "Voice settings",
+          "DESCRIPTION": "Configure the realtime voice transport used when this Captain handles phone calls. Secrets stay in runtime environment variables.",
+          "PROVIDER": "Realtime provider",
+          "MODEL": "Realtime model",
+          "VOICE": "Voice",
+          "LANGUAGE": "Language",
+          "FIRST_MESSAGE": "First message",
+          "FIRST_MESSAGE_PLACEHOLDER": "Greeting spoken at the start of the call",
+          "TRANSFER_MESSAGE": "Transfer message",
+          "TRANSFER_MESSAGE_PLACEHOLDER": "Message spoken before transferring to an operator",
+          "MAX_DURATION_SEC": "Max call duration, seconds",
+          "INTERRUPTIONS": "Allow interruptions",
+          "INTERRUPTIONS_DESCRIPTION": "Let the caller interrupt the AI while it is speaking."
+        },
         "DESCRIPTION": {
           "LABEL": "Description",
           "PLACEHOLDER": "Enter AI agent description",
