@@ -33,7 +33,7 @@ class Telephony::AgentBinding < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   belongs_to :user, class_name: '::User'
 
-  has_many :call_sessions, class_name: '::Telephony::CallSession', foreign_key: :agent_binding_id, dependent: :nullify
+  has_many :call_sessions, class_name: '::Telephony::CallSession', dependent: :nullify, inverse_of: :agent_binding
 
   validates :provider, presence: true
   validates :agent_ref, presence: true, uniqueness: { scope: :account_id }
@@ -55,5 +55,25 @@ class Telephony::AgentBinding < ApplicationRecord
       enabled: enabled,
       last_synced_at: last_synced_at
     }.compact
+  end
+
+  def registered_for_routing?
+    return false unless enabled?
+
+    registration_state = metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
+    return truthy_metadata?('registered', 'online', 'available') if registration_state.blank?
+
+    %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
+  end
+
+  private
+
+  def metadata_value(*keys)
+    source = metadata || {}
+    keys.lazy.map { |key| source[key.to_s] || source[key.to_sym] }.find(&:present?)
+  end
+
+  def truthy_metadata?(*keys)
+    keys.any? { |key| ActiveModel::Type::Boolean.new.cast(metadata_value(key)) }
   end
 end

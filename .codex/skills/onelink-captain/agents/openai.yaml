@@ -1,4 +1,0 @@
-interface:
-  display_name: "One Link Captain"
-  short_description: "Captain and AI flows in One Link"
-  default_prompt: "Use $onelink-captain to work on Captain, copilot, documents, custom tools, and AI flows in One Link."

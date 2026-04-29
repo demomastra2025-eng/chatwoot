@@ -153,6 +153,162 @@ test('VoiceApplication asks Rails for a route first and dials operator without A
   assert.equal(routeCalls[0].app_ref, 'runtime-app-1');
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing']);
   assert.equal(dialCalls[0].agent_aor, 'sip:1001@example.test');
+  await result.completion;
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing']);
+});
+
+test('VoiceApplication falls back to an app when the operator leg reports no answer', async () => {
+  const bridgeEvents = [];
+  const handoffs = [];
+  const dialLeg = new EventEmitter();
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      fallback_mode: 'app',
+      fallback_app_ref: 'fallback-app-1',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    async dial() { return dialLeg; },
+    async transferToApp(target) { handoffs.push(target); return true; }
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-no-answer' });
+  dialLeg.emit('no_answer');
+  await result.completion;
+
+  assert.equal(result.mode, 'operator');
+  assert.equal(call.answerCount, 1);
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_no_answer', 'app_routing']);
+  assert.equal(handoffs[0].app_ref, 'fallback-app-1');
+  assert.equal(bridgeEvents.at(-1).metadata.operator_failure_event, 'operator_no_answer');
+});
+
+test('VoiceApplication emits caller_hangup when the caller disconnects before operator answer', async () => {
+  const bridgeEvents = [];
+  const dialLeg = new EventEmitter();
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async dial() { return dialLeg; }
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-caller-hangup' });
+  call.emit('end');
+  await result.completion;
+
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'caller_hangup']);
+});
+
+test('VoiceApplication falls back when the operator dial leg ends before answer', async () => {
+  const bridgeEvents = [];
+  const handoffs = [];
+  const dialLeg = new EventEmitter();
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      fallback_mode: 'app',
+      fallback_app_ref: 'fallback-app-1',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async dial() { return dialLeg; },
+    async transferToApp(target) { handoffs.push(target); return true; }
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-leg-ended-before-answer' });
+  dialLeg.emit('end');
+  await result.completion;
+
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_no_answer', 'app_routing']);
+  assert.equal(handoffs[0].app_ref, 'fallback-app-1');
+  assert.equal(bridgeEvents.at(2).metadata.reason, 'end');
+});
+
+test('VoiceApplication records terminal failure when operator fallback transfer fails', async () => {
+  const bridgeEvents = [];
+  const dialLeg = new EventEmitter();
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      fallback_mode: 'app',
+      fallback_app_ref: 'fallback-app-1',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async dial() { return dialLeg; },
+    async transferToApp() { throw new Error('fallback token=[REDACTED] failed'); },
+    async reject() {}
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-fallback-transfer-failed' });
+  dialLeg.emit('no_answer');
+  await result.completion;
+
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_no_answer', 'app_routing', 'session_failed']);
+  assert.match(bridgeEvents.at(-1).metadata.reason, /token=\[REDACTED\]/);
+});
+
+test('VoiceApplication emits a terminal event when the operator leg ends', async () => {
+  const bridgeEvents = [];
+  const dialLeg = new EventEmitter();
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      agent_aor: 'sip:1001@example.test',
+      operator_timeout_ms: 1000,
+      reason: 'operator_route'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    async dial() { return dialLeg; }
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-ended' });
+  dialLeg.emit('answered');
+  await new Promise(resolve => setImmediate(resolve));
+  call.emit('end');
+  await result.completion;
+
+  assert.equal(result.mode, 'operator');
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_answered', 'session_completed']);
 });
 
 test('VoiceApplication hands app route decisions to the target app without AI bootstrap', async () => {

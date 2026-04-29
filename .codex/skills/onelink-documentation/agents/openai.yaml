@@ -1,4 +1,0 @@
-interface:
-  display_name: "One Link Documentation"
-  short_description: "Public and internal docs for One Link"
-  default_prompt: "Use $onelink-documentation to update One Link docs, public or internal doc structure, docs.json navigation, or OpenAPI docs sync."

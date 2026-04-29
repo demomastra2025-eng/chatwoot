@@ -9,6 +9,11 @@ class Telephony::EventsIngestionService
     'initiated' => 'created',
     'session_started' => 'ringing',
     'decision_received' => 'ringing',
+    'operator_ringing' => 'ringing',
+    'operator_answered' => 'in_progress',
+    'operator_no_answer' => nil,
+    'operator_failed' => nil,
+    'caller_hangup' => 'cancelled',
     'ai_ringing' => 'ringing',
     'dial_status' => nil,
     'connecting' => 'connecting',
@@ -484,7 +489,7 @@ class Telephony::EventsIngestionService
   def leg_name
     event_name = resolved_event_type.to_s
     return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name == 'caller_interrupted'
-    return 'operator' if event_name.start_with?('transfer_')
+    return 'operator' if event_name.start_with?('transfer_', 'operator_')
 
     nil
   end

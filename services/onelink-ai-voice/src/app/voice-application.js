@@ -33,9 +33,28 @@ class VoiceApplication {
     if (routeAction === 'operator') {
       await answerCall(call);
       await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
-      await dialOperator(call, routeDecision);
-      this.registry?.update?.(callRef, { routeDecision, state: 'operator' });
-      return { session, decision: routeDecision, mode: 'operator', completion: Promise.resolve() };
+      try {
+        const dialResult = await dialOperator(call, routeDecision);
+        if (dialResult === false) {
+          const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, 'operator_dial_unavailable');
+          return { session, decision: routeDecision, mode: 'operator', completion };
+        }
+        this.registry?.update?.(callRef, { routeDecision, state: 'operator' });
+        const completion = buildOperatorCompletion({
+          call,
+          dialResult,
+          session,
+          requestPayload,
+          routeDecision,
+          app: this,
+          registry: this.registry
+        });
+        return { session, decision: routeDecision, mode: 'operator', completion };
+      } catch (error) {
+        const reason = sanitizeReason(error?.message || 'operator_dial_failed');
+        const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, reason);
+        return { session, decision: routeDecision, mode: 'operator', completion, reason };
+      }
     }
 
     if (routeAction === 'reject') {
@@ -100,6 +119,39 @@ class VoiceApplication {
     } catch (_error) {
       // Telephony execution must not be interrupted by transient lifecycle persistence errors.
     }
+  }
+
+  async handleOperatorFailure(call, session, requestPayload, routeDecision = {}, reason = 'operator_dial_failed', event = 'operator_failed') {
+    await this.safeBridgeEvent(event, session, requestPayload, routeDecision, { reason });
+
+    let finalReason = reason;
+    const fallbackDecision = operatorFallbackDecision(routeDecision, reason);
+    if (fallbackDecision) {
+      await this.safeBridgeEvent('app_routing', session, requestPayload, fallbackDecision, {
+        reason,
+        operator_failure_event: event
+      });
+      try {
+        const fallbackStarted = await handoffToApp(call, fallbackDecision);
+        if (fallbackStarted !== false) {
+          this.registry?.update?.(session.callRef, { routeDecision: fallbackDecision, state: 'app' });
+          return;
+        }
+      } catch (error) {
+        finalReason = sanitizeReason(error?.message || `${reason}_fallback_failed`);
+      }
+    }
+
+    await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, {
+      reason: finalReason,
+      original_reason: reason
+    });
+    try {
+      await rejectCall(call, { reason: finalReason });
+    } catch (_error) {
+      // Best-effort terminal persistence is more important than propagating provider reject errors.
+    }
+    this.registry?.update?.(session.callRef, { routeDecision, state: 'failed' });
   }
 
   async startRealtimeBridge(call, session, context, requestPayload = {}) {
@@ -194,6 +246,132 @@ function wireMediaInput(mediaStream, handler) {
     mediaStream.on('payload', handler);
     mediaStream.on('payloadOut', handler);
   }
+}
+
+function buildOperatorCompletion({ call, dialResult, session, requestPayload, routeDecision, app, registry }) {
+  return new Promise(resolve => {
+    let completed = false;
+    let connected = false;
+
+    const finish = async (event, metadata = {}) => {
+      if (completed) return;
+      completed = true;
+      clearTimer(timeout);
+      await app.safeBridgeEvent(event, session, requestPayload, routeDecision, metadata);
+      registry?.update?.(session.callRef, { state: terminalOperatorState(event), routeDecision });
+      resolve();
+    };
+
+    const failOrFallback = async (event, reason) => {
+      if (completed) return;
+      completed = true;
+      clearTimer(timeout);
+      try {
+        await app.handleOperatorFailure(call, session, requestPayload, routeDecision, reason, event);
+      } finally {
+        resolve();
+      }
+    };
+
+    const sources = operatorEventSources(call, dialResult);
+    if (sources.length === 0) {
+      resolve();
+      return;
+    }
+
+    for (const { source, leg } of sources) {
+      for (const eventName of operatorAnswerEvents()) {
+        registerOnce(source, eventName, () => {
+          if (completed || connected) return;
+          connected = true;
+          clearTimer(timeout);
+          void app.safeBridgeEvent('operator_answered', session, requestPayload, routeDecision, { provider_event: eventName });
+          registry?.update?.(session.callRef, { state: 'operator_connected', routeDecision });
+        });
+      }
+      for (const eventName of operatorNoAnswerEvents()) {
+        registerOnce(source, eventName, () => { void failOrFallback('operator_no_answer', normalizeOperatorFailureReason(eventName)); });
+      }
+      for (const eventName of callErrorEvents()) {
+        registerOnce(source, eventName, () => { void failOrFallback('operator_failed', normalizeOperatorFailureReason(eventName)); });
+      }
+      for (const eventName of callEndEvents()) {
+        registerOnce(source, eventName, () => {
+          if (connected) {
+            void finish('session_completed', { provider_event: eventName, provider_leg: leg });
+            return;
+          }
+
+          if (leg === 'operator') {
+            void failOrFallback('operator_no_answer', normalizeOperatorFailureReason(eventName));
+            return;
+          }
+
+          void finish('caller_hangup', { provider_event: eventName, provider_leg: leg });
+        });
+      }
+    }
+
+    const timeout = setTimer(() => {
+      void failOrFallback('operator_no_answer', 'operator_timeout');
+    }, operatorTimeoutMs(routeDecision));
+  });
+}
+
+function operatorEventSources(call, dialResult) {
+  return [
+    { source: dialResult, leg: 'operator' },
+    { source: call, leg: 'caller' },
+    { source: call?.voice, leg: 'caller' }
+  ].filter(({ source }) => source && (typeof source.on === 'function' || typeof source.once === 'function'));
+}
+
+function operatorAnswerEvents() {
+  return ['answer', 'answered', 'connect', 'connected', 'accepted', 'ANSWER', 'ANSWERED', 'CONNECT', 'CONNECTED', 'ACCEPTED'];
+}
+
+function operatorNoAnswerEvents() {
+  return ['no_answer', 'no-answer', 'noanswer', 'timeout', 'busy', 'rejected', 'declined', 'cancelled', 'canceled', 'NO_ANSWER', 'TIMEOUT', 'BUSY', 'REJECTED', 'DECLINED', 'CANCELLED'];
+}
+
+function operatorTimeoutMs(routeDecision = {}) {
+  const raw = routeDecision.operator_timeout_ms || routeDecision.operatorTimeoutMs || routeDecision.timeout_ms || routeDecision.timeoutMs;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
+}
+
+function setTimer(handler, timeoutMs) {
+  const timer = setTimeout(handler, timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
+}
+
+function clearTimer(timer) {
+  if (timer) clearTimeout(timer);
+}
+
+function normalizeOperatorFailureReason(eventName) {
+  return String(eventName || 'operator_failed').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'operator_failed';
+}
+
+function terminalOperatorState(event) {
+  return event === 'session_completed' ? 'completed' : 'failed';
+}
+
+function operatorFallbackDecision(routeDecision = {}, reason = 'operator_failed') {
+  const appRef = routeDecision.fallback_app_ref || routeDecision.fallbackAppRef;
+  if (!appRef) return null;
+
+  const fallbackMode = String(routeDecision.fallback_mode || routeDecision.fallbackMode || 'app').toLowerCase();
+  if (!['app', 'ai'].includes(fallbackMode)) return null;
+
+  return {
+    ...routeDecision,
+    action: fallbackMode === 'ai' ? 'ai' : 'app',
+    app_ref: appRef,
+    appRef,
+    reason: `${reason}_fallback`
+  };
 }
 
 function buildCompletion({ call, mediaStream, realtime, session, registry }) {

@@ -9,5 +9,15 @@ FactoryBot.define do
     credentials_ref { SecureRandom.uuid }
     enabled { true }
     metadata { {} }
+
+    trait :registered do
+      last_synced_at { Time.current }
+      metadata do
+        {
+          registration_state: 'registered',
+          presence: 'online'
+        }
+      end
+    end
   end
 end

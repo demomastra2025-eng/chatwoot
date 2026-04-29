@@ -17,6 +17,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   it 'returns an operator route when the configured operator is available' do
     agent_binding = create(
       :telephony_agent_binding,
+      :registered,
       account: account,
       agent_aor: 'sip:1001@example.test',
       enabled: true
@@ -49,6 +50,34 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'number_ref' => number_binding.number_ref,
       'inbox_id' => voice_inbox.id,
       'account_id' => account.id
+    )
+  end
+
+  it 'falls back to the primary app when an operator AOR is configured but no registration binding exists' do
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_aor: 'sip:unregistered@example.test',
+      fallback_mode: 'app'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-no-operator-registration',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15550000101'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'app',
+      'app_ref' => number_binding.configured_app_ref,
+      'reason' => 'operator_unavailable'
     )
   end
 
@@ -329,7 +358,57 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'routes pending conversations to AI when the AI side is enabled and app remains the operator fallback' do
+    caller_number = '+15550000004'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      ai_enabled: true,
+      ai_deployment_mode: 'onelink_managed',
+      onelink_ai_app_ref: 'onelink-ai-status-aware-app-ref',
+      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      fallback_mode: 'app'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-ai-enabled-operator-primary-pending',
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(number_binding.routing_policy.reload.ai_enabled).to be(true)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'onelink-ai-status-aware-app-ref',
+      'reason' => 'pending_conversation_ai_route'
+    )
+  end
+
   it 'routes every existing non-pending voice conversation status to the operator when AI routing is enabled' do
+    create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      agent_aor: 'sip:status-aware-operator@example.test'
+    )
     number_binding.routing_policy.update!(
       mode: 'ai',
       ai_app_ref: 'ai-status-aware-app-ref',

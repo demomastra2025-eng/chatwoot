@@ -73,6 +73,9 @@ class Telephony::CallSession < ApplicationRecord
     'hangup' => 'completed',
     'session_started' => 'ringing',
     'decision_received' => 'ringing',
+    'operator_ringing' => 'ringing',
+    'operator_answered' => 'in_progress',
+    'caller_hangup' => 'cancelled',
     'session_completed' => 'completed',
     'session_failed' => 'failed',
     'unsupported_action' => 'failed'

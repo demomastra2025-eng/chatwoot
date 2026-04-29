@@ -1,4 +1,0 @@
-interface:
-  display_name: "One Link API"
-  short_description: "API contracts and OpenAPI sync"
-  default_prompt: "Use $onelink-api to change API contracts, request specs, Swagger, or OpenAPI documentation in One Link."

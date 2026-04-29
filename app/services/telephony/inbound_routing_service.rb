@@ -144,10 +144,9 @@ class Telephony::InboundRoutingService
 
   def operator_available?
     return false unless sip_operator_aor?(resolved_operator_aor)
+    return false if operator_binding.blank?
 
-    return true if operator_binding.blank?
-
-    operator_binding.enabled?
+    operator_binding.registered_for_routing?
   end
 
   def resolved_operator_aor
@@ -173,7 +172,29 @@ class Telephony::InboundRoutingService
     {
       action: 'operator',
       reason: reason
-    }.merge(routing_policy.operator_target_payload).merge(shared_context)
+    }.merge(routing_policy.operator_target_payload).merge(operator_runtime_fallback_payload).merge(shared_context)
+  end
+
+  def operator_runtime_fallback_payload
+    case fallback_order.find { |mode| mode != 'operator' && fallback_target_available?(mode) }
+    when 'ai'
+      { fallback_mode: 'ai', fallback_app_ref: resolved_ai_app_ref }
+    when 'app'
+      { fallback_mode: 'app', fallback_app_ref: resolved_primary_app_ref }
+    else
+      {}
+    end
+  end
+
+  def fallback_target_available?(mode)
+    case mode
+    when 'ai'
+      resolved_ai_app_ref.present?
+    when 'app'
+      resolved_primary_app_ref.present?
+    else
+      false
+    end
   end
 
   def app_decision(reason:)

@@ -14,6 +14,10 @@ const props = defineProps({
     type: [Number, String],
     default: '',
   },
+  conversationDisplayId: {
+    type: [Number, String],
+    default: '',
+  },
   visible: {
     type: Boolean,
     default: false,
@@ -33,20 +37,50 @@ const ui = reactive({
 });
 const activationRequestId = ref(0);
 
-const normalizedConversationId = computed(() => {
-  const conversationId = Number(props.conversationId);
-  return Number.isFinite(conversationId) && conversationId > 0
-    ? conversationId
+const normalizePositiveNumber = value => {
+  const normalizedValue = Number(value);
+  return Number.isFinite(normalizedValue) && normalizedValue > 0
+    ? normalizedValue
     : 0;
+};
+
+const normalizedConversationId = computed(() =>
+  normalizePositiveNumber(props.conversationId)
+);
+const normalizedConversationDisplayId = computed(() =>
+  normalizePositiveNumber(props.conversationDisplayId)
+);
+const conversationApiId = computed(
+  () => normalizedConversationDisplayId.value || normalizedConversationId.value
+);
+const conversationLabelId = computed(
+  () => normalizedConversationDisplayId.value || normalizedConversationId.value
+);
+
+const activeConversation = computed(() => {
+  if (!normalizedConversationId.value) return null;
+
+  return getConversationById.value(normalizedConversationId.value) || null;
 });
 
-const activeConversation = computed(
-  () => getConversationById.value(normalizedConversationId.value) || null
-);
+const isConversationReady = computed(() => {
+  const currentChatId = normalizePositiveNumber(currentChat.value?.id);
+  const currentChatDisplayId = normalizePositiveNumber(
+    currentChat.value?.display_id || currentChat.value?.displayId
+  );
 
-const isConversationReady = computed(
-  () => Number(currentChat.value?.id) === normalizedConversationId.value
-);
+  if (
+    normalizedConversationId.value &&
+    currentChatId === normalizedConversationId.value
+  ) {
+    return true;
+  }
+
+  return (
+    normalizedConversationDisplayId.value &&
+    currentChatDisplayId === normalizedConversationDisplayId.value
+  );
+});
 
 const clearConversationState = () => {
   store.dispatch('clearSelectedState');
@@ -64,7 +98,7 @@ const resetPanelState = () => {
 };
 
 const activateConversation = async () => {
-  if (!props.visible || !normalizedConversationId.value) {
+  if (!props.visible || !conversationApiId.value) {
     return;
   }
 
@@ -75,19 +109,18 @@ const activateConversation = async () => {
 
   try {
     if (!activeConversation.value) {
-      await store.dispatch('getConversation', normalizedConversationId.value);
+      await store.dispatch('getConversation', conversationApiId.value);
     }
 
     if (
       requestId !== activationRequestId.value ||
       !props.visible ||
-      !normalizedConversationId.value
+      !conversationApiId.value
     ) {
       return;
     }
 
-    const conversation =
-      getConversationById.value(normalizedConversationId.value) || null;
+    const conversation = activeConversation.value;
 
     if (!conversation) {
       throw new Error(t('CRM.ERRORS.LOAD_TITLE'));
@@ -113,9 +146,9 @@ const handleAfterLeave = () => {
 };
 
 watch(
-  [() => props.visible, normalizedConversationId],
-  ([isVisible, conversationId]) => {
-    if (!isVisible || !conversationId) {
+  [() => props.visible, conversationApiId],
+  ([isVisible, apiId]) => {
+    if (!isVisible || !apiId) {
       invalidateActivation();
       resetPanelState();
       return;
@@ -149,7 +182,7 @@ onBeforeUnmount(() => {
     @after-leave="handleAfterLeave"
   >
     <div
-      v-if="visible && normalizedConversationId"
+      v-if="visible && conversationApiId"
       class="fixed inset-0 z-[120] bg-black/35 backdrop-blur-[4px] md:absolute md:inset-y-0 md:left-auto md:right-[22rem] md:z-30 md:bg-transparent md:backdrop-blur-0 xl:right-[28rem]"
     >
       <div class="flex h-full w-full justify-end md:pointer-events-none">
@@ -166,7 +199,7 @@ onBeforeUnmount(() => {
               <p class="mb-0 text-sm text-n-slate-11">
                 {{
                   $t('CRM.TIMELINE.CONVERSATION', {
-                    id: normalizedConversationId,
+                    id: conversationLabelId,
                   })
                 }}
               </p>
@@ -180,20 +213,20 @@ onBeforeUnmount(() => {
             />
           </header>
 
-          <div
-            v-if="ui.isLoading || !isConversationReady"
-            class="flex flex-1 items-center justify-center"
-          >
-            <Spinner class="!h-8 !w-8" />
-          </div>
-
           <SchedulingErrorState
-            v-else-if="ui.error"
+            v-if="ui.error"
             class="m-4"
             :title="$t('CRM.ERRORS.LOAD_TITLE')"
             :description="ui.error?.message || $t('CRM.ERRORS.LOAD_TITLE')"
             @retry="activateConversation"
           />
+
+          <div
+            v-else-if="ui.isLoading || !isConversationReady"
+            class="flex flex-1 items-center justify-center"
+          >
+            <Spinner class="!h-8 !w-8" />
+          </div>
 
           <div v-else class="flex min-h-0 flex-1">
             <ConversationBox

@@ -139,11 +139,19 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def normalize_values
+    normalize_mode_fields
+    normalize_ai_configuration
+    self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
+  end
+
+  def normalize_mode_fields
     self.mode = mode.to_s.strip.downcase.presence || 'operator'
     self.fallback_mode = fallback_mode.to_s.strip.downcase.presence || 'reject'
+  end
+
+  def normalize_ai_configuration
     self.ai_deployment_mode = ai_deployment_mode.to_s.strip.downcase.presence || AI_DEPLOYMENT_FONOSTER_MANAGED
-    self.ai_enabled = ai_mode? || fallback_mode == 'ai'
-    self.operator_agent_aor = normalize_operator_agent_aor(operator_agent_aor)
+    self.ai_enabled = explicit_ai_enabled? || ai_mode? || fallback_mode == 'ai'
     self.ai_voice_settings = (ai_voice_settings || {}).deep_stringify_keys
   end
 
@@ -208,5 +216,9 @@ class Telephony::RoutingPolicy < ApplicationRecord
 
   def sip_target?(target)
     target.to_s.downcase.start_with?('sip:')
+  end
+
+  def explicit_ai_enabled?
+    ActiveModel::Type::Boolean.new.cast(ai_enabled)
   end
 end

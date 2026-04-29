@@ -1371,7 +1371,7 @@ Rules:
 - Browser operator registration must use WSS
   `wss://sip.75.119.131.165.sslip.io`, username `1001`, and the password from
   the backend-authenticated session.
-- The current runtime extracts and dials the user part of `sip:user@domain`.
+- The current runtime dials the full operator SIP AOR `sip:user@domain`.
 
 Bridge-accepted but not current Onelink output:
 

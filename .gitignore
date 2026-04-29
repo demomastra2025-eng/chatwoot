@@ -95,10 +95,6 @@ yarn-debug.log*
 .vscode
 .cursor
 .codex/*
-!.codex/skills/
-!.codex/skills/**
-!.codex/scripts/
-!.codex/scripts/**
 .claude/*
 !.claude/skills/
 !.claude/skills/**

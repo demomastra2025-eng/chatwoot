@@ -60,13 +60,13 @@ Repo paths below are relative to the One Link application repository root unless
   - `docs/` is a git submodule for `demomastra2025-eng/onelink-docs`
   - docs content commits belong in `docs/` first
   - the parent repo stores only the updated submodule pointer afterward
-- Local skill family:
-  - versioned project skills live in `.codex/skills`
-  - installed Codex runtime skills live in `$CODEX_HOME/skills` or `~/.codex/skills`
-  - after changing project skills, sync with `./.codex/scripts/sync-skills.sh to-codex-home`
+- Hermes skill family:
+  - shared OneLink Hermes domain skills live in `/root/.hermes/shared-skills/onelink` and are loaded via `skills.external_dirs` from `/root/.hermes/shared-skills`
+  - active Hermes profiles expected to see these shared skills: `default`, `tg-codex55`, `cli-spark`, `cto`
+  - do not recreate repo-local `.codex/skills`; Codex skill sync was retired in favor of Hermes shared external skills
   - internal build-and-maintain skills: `onelink-builder`, `onelink-backend`, `onelink-frontend`, `onelink-api`, `onelink-integrations`, `onelink-captain`, `onelink-documentation`, `onelink-deployment`, `onelink-gitops`
-  - external API-consumer skill: `onelink-integrator`
-  - external consumer bundles are maintained in both `.codex/skills/onelink-integrator` and `.claude/skills/onelink-integrator`
+  - internal Hermes operations skills include `onelink-hermes-skill-architecture`, `onelink-prod-rca`, `onelink-testing-matrix`, `onelink-notion-kanban`, `onelink-captain-runtime-deep`, and `onelink-crm-outbound-ai`
+  - external API-consumer skill: `onelink-integrator`; the Claude Code bundle remains in `.claude/skills/onelink-integrator`
 - Upstream sync:
   - fetch tags with `git fetch upstream --tags`
   - branch from `onelink-main`
