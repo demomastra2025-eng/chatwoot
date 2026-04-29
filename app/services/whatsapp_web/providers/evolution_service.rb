@@ -26,12 +26,39 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   ].freeze
 
   class RequestError < StandardError
+    TRANSIENT_STATUSES = [408, 429, 500, 502, 503, 504].freeze
+    PERMANENT_STATUSES = [400, 401, 403, 404, 409, 422].freeze
+    PROVIDER_VALIDATION_PATTERNS = [
+      'PrismaClientValidationError',
+      'Invalid `prisma',
+      'Argument `where`'
+    ].freeze
+
     attr_reader :status, :body
 
     def initialize(message, status:, body:)
       super(message)
-      @status = status
+      @status = status.to_i
       @body = body
+    end
+
+    def retryable?
+      return false if provider_validation_error?
+      return true if TRANSIENT_STATUSES.include?(status)
+
+      false
+    end
+
+    def permanent?
+      PERMANENT_STATUSES.include?(status) || provider_validation_error? || !retryable?
+    end
+
+    def provider_validation_error?
+      PROVIDER_VALIDATION_PATTERNS.any? { |pattern| error_details.include?(pattern) }
+    end
+
+    def error_details
+      [message, body.to_json].compact.join(' ')
     end
   end
 
@@ -679,7 +706,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def recipient_for(message)
     source_id = message.conversation.contact_inbox.source_id.to_s.strip
-    return source_id if source_id.present? && !source_id.include?('@')
+    return source_id if source_id.present? && source_id.exclude?('@')
     return source_id if source_id.include?('@') && !source_id.end_with?('@lid')
 
     remote_jid = resolved_remote_jid_for(message)

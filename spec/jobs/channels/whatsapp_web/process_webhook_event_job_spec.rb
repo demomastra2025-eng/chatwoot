@@ -66,4 +66,76 @@ RSpec.describe Channels::WhatsappWeb::ProcessWebhookEventJob do
 
     described_class.perform_now(channel.id, { 'event' => 'connection.update', 'data' => { 'state' => 'open' } })
   end
+
+  it 'drops duplicate message webhooks that are already in flight' do
+    channel = create(:channel_whatsapp_web)
+    allow(Redis::Alfred).to receive(:set).and_return(false)
+
+    expect(WhatsappWeb::IncomingEventService).not_to receive(:new)
+
+    described_class.perform_now(
+      channel.id,
+      {
+        'event' => 'messages.update',
+        'data' => [{
+          'keyId' => 'WA_DUPLICATE_1',
+          'remoteJid' => '15551234567@s.whatsapp.net',
+          'fromMe' => true,
+          'status' => 'READ'
+        }]
+      }
+    )
+  end
+
+  it 'releases the in-flight duplicate guard after processing' do
+    channel = create(:channel_whatsapp_web)
+    service = instance_double(WhatsappWeb::IncomingEventService, perform: true)
+    allow(Redis::Alfred).to receive(:set).and_return(true)
+    allow(Redis::Alfred).to receive(:delete)
+    allow(WhatsappWeb::IncomingEventService).to receive(:new).and_return(service)
+
+    described_class.perform_now(
+      channel.id,
+      {
+        'event' => 'messages.update',
+        'data' => [{
+          'keyId' => 'WA_DEDUPE_RELEASE_1',
+          'remoteJid' => '15551234567@s.whatsapp.net',
+          'fromMe' => true,
+          'status' => 'DELIVERY_ACK'
+        }]
+      }
+    )
+
+    expect(Redis::Alfred).to have_received(:delete).with(a_string_matching(/WHATSAPP_WEB_EVENT_IN_FLIGHT/))
+    expect(service).to have_received(:perform)
+  end
+
+  it 'does not log lock contention as a processing error on every retry' do
+    channel = create(:channel_whatsapp_web)
+    job = described_class.new
+    allow(Redis::Alfred).to receive(:set).and_return(true)
+    allow(Redis::Alfred).to receive(:delete)
+    allow(job).to receive(:with_lock).and_raise(MutexApplicationJob::LockAcquisitionError, 'busy')
+    allow(Rails.logger).to receive(:info)
+
+    expect(Rails.logger).not_to receive(:error).with(/Async webhook processing failed/)
+
+    expect do
+      job.perform(
+        channel.id,
+        {
+          'event' => 'messages.upsert',
+          'data' => {
+            'key' => {
+              'id' => 'WA_LOCK_BUSY_1',
+              'remoteJid' => '15551234567@s.whatsapp.net',
+              'fromMe' => false
+            },
+            'message' => { 'conversation' => 'Hello' }
+          }
+        }
+      )
+    end.to raise_error(MutexApplicationJob::LockAcquisitionError)
+  end
 end

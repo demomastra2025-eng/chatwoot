@@ -1,3 +1,5 @@
+require 'digest'
+
 class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
   MESSAGE_EVENT_NAMES = %w[
     call
@@ -9,6 +11,7 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
     send.message.update
   ].freeze
   LOCK_TIMEOUT = 30.seconds
+  IN_FLIGHT_DEDUP_TTL = 2.minutes.to_i
 
   queue_as :whatsappweb_inbound
 
@@ -17,30 +20,86 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
   retry_on ActiveRecord::Deadlocked, wait: 2.seconds, attempts: 8
 
   def perform(channel_id, payload)
-    channel = Channel::WhatsappWeb.find_by(id: channel_id)
+    channel = processable_channel(channel_id)
     return if channel.blank?
-    return if channel.inbox&.deleting?
 
     normalized_payload = payload.deep_symbolize_keys
-    lock_key = message_lock_key(channel_id, normalized_payload)
+    dedup_key = in_flight_dedup_key(channel_id, normalized_payload)
+    dedup_claimed = claim_event_in_flight!(dedup_key)
+    return if duplicate_in_flight_event?(dedup_key, dedup_claimed)
 
-    if lock_key.present?
-      with_lock(lock_key, LOCK_TIMEOUT) { process_payload(channel, normalized_payload) }
-    else
-      process_payload(channel, normalized_payload)
-    end
+    process_with_lock(channel, normalized_payload)
+  rescue LockAcquisitionError => e
+    Rails.logger.info("[WHATSAPP WEB] Webhook processing deferred for channel #{channel_id}: #{e.message}")
+    raise
   rescue StandardError => e
     Rails.logger.error("[WHATSAPP WEB] Async webhook processing failed for channel #{channel_id}: #{e.message}")
     raise
+  ensure
+    release_event_in_flight!(dedup_key) if dedup_claimed
   end
 
   private
+
+  def processable_channel(channel_id)
+    channel = Channel::WhatsappWeb.find_by(id: channel_id)
+    return if channel.blank? || channel.inbox&.deleting?
+
+    channel
+  end
+
+  def process_with_lock(channel, payload)
+    lock_key = message_lock_key(channel.id, payload)
+
+    if lock_key.present?
+      with_lock(lock_key, LOCK_TIMEOUT) { process_payload(channel, payload) }
+    else
+      process_payload(channel, payload)
+    end
+  end
 
   def process_payload(channel, payload)
     WhatsappWeb::IncomingEventService.new(
       channel: channel,
       payload: payload
     ).perform
+  end
+
+  def claim_event_in_flight!(dedup_key)
+    return false if dedup_key.blank?
+
+    claimed = Redis::Alfred.set(dedup_key, true, nx: true, ex: IN_FLIGHT_DEDUP_TTL)
+    return true if claimed.present?
+
+    Rails.logger.info("[WHATSAPP WEB] Skipping duplicate in-flight webhook event #{dedup_key}")
+    false
+  end
+
+  def duplicate_in_flight_event?(dedup_key, dedup_claimed)
+    dedup_key.present? && !dedup_claimed
+  end
+
+  def release_event_in_flight!(dedup_key)
+    Redis::Alfred.delete(dedup_key) if dedup_key.present?
+  end
+
+  def in_flight_dedup_key(channel_id, payload)
+    return if payload.blank?
+    return unless MESSAGE_EVENT_NAMES.include?(payload[:event].to_s)
+
+    fingerprint = Digest::SHA256.hexdigest(JSON.generate(canonical_json_value(payload)))
+    format(::Redis::Alfred::WHATSAPP_WEB_EVENT_IN_FLIGHT, channel_id: channel_id, fingerprint: fingerprint)
+  end
+
+  def canonical_json_value(value)
+    case value
+    when Hash
+      value.deep_stringify_keys.sort.to_h.transform_values { |nested_value| canonical_json_value(nested_value) }
+    when Array
+      value.map { |nested_value| canonical_json_value(nested_value) }
+    else
+      value
+    end
   end
 
   def message_lock_key(channel_id, payload)
@@ -135,5 +194,10 @@ class Channels::WhatsappWeb::ProcessWebhookEventJob < MutexApplicationJob
     key = data.to_h[:key].to_h.deep_symbolize_keys
 
     [key[:id].presence].compact
+  end
+
+  def handle_failed_lock_acquisition(lock_key)
+    Rails.logger.info "[#{self.class.name}] Lock busy on attempt #{executions}: #{lock_key}"
+    raise LockAcquisitionError, "Failed to acquire lock for key: #{lock_key}"
   end
 end

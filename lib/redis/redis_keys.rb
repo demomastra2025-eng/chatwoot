@@ -48,6 +48,7 @@ module Redis::RedisKeys
   WHATSAPP_WEB_HISTORY_SYNC_MUTEX = 'WHATSAPP_WEB_HISTORY_SYNC_LOCK::%<channel_id>s'.freeze
   WHATSAPP_WEB_MESSAGE_EVENT_MUTEX = 'WHATSAPP_WEB_MESSAGE_EVENT_LOCK::%<channel_id>s::%<source_id>s'.freeze
   WHATSAPP_WEB_EVENT_MUTEX = 'WHATSAPP_WEB_EVENT_LOCK::%<channel_id>s::%<remote_jid>s'.freeze
+  WHATSAPP_WEB_EVENT_IN_FLIGHT = 'WHATSAPP_WEB_EVENT_IN_FLIGHT::%<channel_id>s::%<fingerprint>s'.freeze
   WHATSAPP_WEB_PENDING_MESSAGE_STATUS = 'WHATSAPP_WEB_PENDING_MESSAGE_STATUS::%<inbox_id>s::%<source_id>s'.freeze
   CRM_PROCESS_MUTEX = 'CRM_PROCESS_MUTEX::%<hook_id>s'.freeze
   MACROCRM_SYNC_MUTEX = 'MACROCRM_SYNC_MUTEX::%<hook_id>s::%<conversation_id>s'.freeze
