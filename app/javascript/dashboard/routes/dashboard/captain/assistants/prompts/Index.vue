@@ -20,6 +20,7 @@ const store = useStore();
 
 const promptDescriptionFormRef = ref(null);
 const promptRulesManagerRef = ref(null);
+const PROMPT_INSTRUCTION_MAX_LENGTH = 20_000;
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetching = computed(() => uiFlags.value.fetchingItem);
 const assistantId = computed(() => Number(route.params.assistantId));
@@ -154,6 +155,7 @@ const onPromptTabChanged = tab => {
                 :show-usage-mode-field="false"
                 :show-feature-flags="false"
                 :show-submit-button="false"
+                :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"
               />
             </div>
           </div>

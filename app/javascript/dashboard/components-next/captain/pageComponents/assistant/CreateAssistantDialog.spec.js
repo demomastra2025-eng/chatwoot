@@ -94,6 +94,26 @@ describe('CreateAssistantDialog', () => {
     );
   });
 
+  it('uses the wider create dialog width for agent and assistant creation', () => {
+    const wrapper = shallowMount(CreateAssistantDialog, {
+      props: {
+        type: 'create',
+      },
+      global: {
+        stubs: {
+          Dialog: dialogStub,
+          Input: inputStub,
+          AssistantForm: true,
+          AssistantUsageModeSelector: usageModeSelectorStub,
+        },
+      },
+    });
+
+    expect(wrapper.findComponent({ name: 'Dialog' }).props('width')).toBe(
+      'lg-plus'
+    );
+  });
+
   it('creates an assistant from name and type with default settings', async () => {
     dispatchMock.mockResolvedValueOnce({ id: 77, name: 'Ops Copilot' });
 

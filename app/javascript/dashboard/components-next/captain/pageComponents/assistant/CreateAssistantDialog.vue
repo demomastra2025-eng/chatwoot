@@ -61,7 +61,7 @@ const dialogDescription = computed(() =>
     ? t('CAPTAIN.ASSISTANTS.CREATE.FORM_DESCRIPTION')
     : t('CAPTAIN.ASSISTANTS.FORM_DESCRIPTION')
 );
-const dialogWidth = computed(() => (isCreateMode.value ? 'lg' : '2xl'));
+const dialogWidth = computed(() => (isCreateMode.value ? 'lg-plus' : '2xl'));
 const createNameError = computed(() =>
   createFormState.attemptedSubmit && !createFormState.name.trim()
     ? t('CAPTAIN.ASSISTANTS.FORM.NAME.ERROR')

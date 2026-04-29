@@ -44,14 +44,21 @@ const PageLayoutStub = defineComponent({
 
 const AssistantBasicSettingsFormStub = defineComponent({
   name: 'AssistantBasicSettingsForm',
-  setup(_props, { expose }) {
+  props: {
+    descriptionMaxLength: {
+      type: Number,
+      default: undefined,
+    },
+  },
+  setup(props, { expose }) {
     expose({
       buildPayload: vi.fn(async () => ({
         assistant: { description: 'Updated instruction' },
       })),
     });
 
-    return () => h('div', 'basic-form');
+    return () =>
+      h('div', { 'data-max-length': props.descriptionMaxLength }, 'basic-form');
   },
 });
 
@@ -204,6 +211,16 @@ describe('Captain prompts page', () => {
         ],
       },
     });
+  });
+
+  it('allows prompt instructions up to 20000 characters', () => {
+    const wrapper = buildWrapper();
+
+    expect(
+      wrapper
+        .findComponent({ name: 'AssistantBasicSettingsForm' })
+        .props('descriptionMaxLength')
+    ).toBe(20000);
   });
 
   it('shows the rules validation error and skips update when page-level save cannot build the rules payload', async () => {
