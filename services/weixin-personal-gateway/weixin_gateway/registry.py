@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import threading
 import time
 import re
@@ -10,6 +12,8 @@ from .ilink import IlinkClient, IlinkRequest, HttpIlinkTransport, split_text_for
 from .models import ChannelConfig
 
 CallbackSender = Callable[[CallbackRequest], Any]
+LOGGER = logging.getLogger(__name__)
+QR_RESPONSE_SHAPE_MAX_DEPTH = 4
 SENSITIVE_ERROR_PATTERN = re.compile(
     r"(authorization|bearer|token|secret|password|api[_-]?key|connection[_-]?string)([\"'\s:=]+)([^\"'\s,}]+)",
     re.IGNORECASE,
@@ -97,6 +101,11 @@ class ChannelRegistry:
         else:
             response = self._execute(self._client.get_bot_qr_request())
             qr_state = self._qr_state_from_response(response)
+            if not _has_renderable_qr_payload(qr_state):
+                error_message = "iLink QR response did not include a renderable QR payload"
+                self._mark_qr_request_error(channel, error_message)
+                _log_qr_response_shape(channel_id, response)
+                raise ValueError(error_message)
 
         channel.connection_state = "connecting"
         channel.lifecycle_state = "qr_ready"
@@ -280,9 +289,47 @@ class ChannelRegistry:
         channel.last_error = _redact_error_message(str(error))
         channel.runtime_state = {**channel.runtime_state, "poller_state": "failed"}
 
+    def _mark_qr_request_error(self, channel: ChannelConfig, error_message: str) -> None:
+        now = _now_epoch()
+        channel.connection_state = "failed"
+        channel.lifecycle_state = "failed"
+        channel.last_error = _redact_error_message(error_message)
+        channel.runtime_state = {
+            **channel.runtime_state,
+            "qr_login_state": "failed",
+            "qr_login_requested_at": now,
+            "qr_login_failed_at": now,
+        }
+
     def _qr_state_from_response(self, response: dict[str, Any]) -> dict[str, Any]:
-        qrcode = _find_first(response, "qrcode", "qr_code", "qrCode", "ticket")
-        qr_url = _find_first(response, "qr_login_url", "qrcode_url", "qrcodeUrl", "qr_url", "qrUrl", "login_url", "url")
+        qrcode = _find_first(
+            response,
+            "qrcode",
+            "qr_code",
+            "qrCode",
+            "qr",
+            "qr_string",
+            "qrString",
+            "qr_ticket",
+            "qrTicket",
+            "ticket",
+        )
+        qr_url = _find_first(
+            response,
+            "qr_login_url",
+            "qrcode_url",
+            "qrcodeUrl",
+            "qrCodeUrl",
+            "QRCodeUrl",
+            "qr_url",
+            "qrUrl",
+            "qr_link",
+            "qrLink",
+            "login_url",
+            "loginUrl",
+            "url",
+            "link",
+        )
         expires_in = _find_first(response, "expires_in", "expire_seconds", "expires")
         state = {"qr_login_state": "ready"}
         if qrcode:
@@ -333,6 +380,37 @@ def _find_first(payload: Any, *keys: str) -> Any:
             if found not in (None, ""):
                 return found
     return None
+
+
+def _has_renderable_qr_payload(qr_state: dict[str, Any]) -> bool:
+    return bool(qr_state.get("qr_login_url") or qr_state.get("qr_login_ticket") or qr_state.get("qrcode"))
+
+
+def _log_qr_response_shape(channel_id: int, response: dict[str, Any]) -> None:
+    shape = _payload_shape(response)
+    LOGGER.warning(
+        "Weixin iLink QR response missing renderable payload channel_id=%s response_shape=%s",
+        channel_id,
+        json.dumps(shape, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+    )
+
+
+def _payload_shape(payload: Any, depth: int = 0) -> Any:
+    if depth >= QR_RESPONSE_SHAPE_MAX_DEPTH:
+        return type(payload).__name__
+    if isinstance(payload, dict):
+        return {
+            str(key): _payload_shape(value, depth + 1)
+            for key, value in sorted(payload.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(payload, list):
+        if not payload:
+            return []
+        first = _payload_shape(payload[0], depth + 1)
+        if len(payload) == 1:
+            return [first]
+        return [first, f"+{len(payload) - 1} more"]
+    return type(payload).__name__
 
 
 def _extract_messages(payload: dict[str, Any]) -> list[dict[str, Any]]:

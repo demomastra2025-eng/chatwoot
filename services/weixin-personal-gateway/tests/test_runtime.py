@@ -68,6 +68,38 @@ class RuntimeIntegrationTest(unittest.TestCase):
         self.assertEqual(channel["runtime_state"]["qr_login_state"], "ready")
         self.assertNotIn("ilink_token", str(channel))
 
+    def test_request_qr_fails_and_logs_safe_shape_when_ilink_response_has_no_renderable_qr(self):
+        transport = FakeTransport(
+            [
+                {
+                    "ok": True,
+                    "data": {"status": "ready", "nested": {"value": "not-a-qr"}},
+                    "token": "raw-secret-token",
+                }
+            ]
+        )
+        registry = ChannelRegistry(transport=transport, auto_start=False)
+        registry.sync(
+            42,
+            {
+                "callback_url": "https://app.example.com/webhooks/weixin/abc",
+                "webhook_secret": "secret",
+            },
+        )
+
+        with self.assertLogs("weixin_gateway.registry", level="WARNING") as logs:
+            with self.assertRaisesRegex(ValueError, "iLink QR response did not include a renderable QR payload"):
+                registry.request_qr(42)
+
+        channel = registry.diagnostics(42)["channel"]
+        self.assertEqual(channel["connection_state"], "failed")
+        self.assertEqual(channel["lifecycle_state"], "failed")
+        self.assertEqual(channel["runtime_state"]["qr_login_state"], "failed")
+        self.assertIn("data", logs.output[0])
+        self.assertIn("nested", logs.output[0])
+        self.assertNotIn("raw-secret-token", logs.output[0])
+        self.assertNotIn("secret", str(channel))
+
     def test_send_message_posts_native_ilink_payload_with_context_token(self):
         transport = FakeTransport([{"message_id": "provider-msg-1"}])
         registry = ChannelRegistry(transport=transport, auto_start=False)
