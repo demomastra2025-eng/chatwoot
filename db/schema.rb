@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_29_102000) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_29_114500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2208,6 +2208,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_29_102000) do
     t.text "otp_backup_codes"
     t.string "active_auth_client_id"
     t.datetime "active_auth_client_set_at"
+    t.string "active_web_desktop_auth_client_id"
+    t.datetime "active_web_desktop_auth_client_set_at"
+    t.string "active_web_mobile_auth_client_id"
+    t.datetime "active_web_mobile_auth_client_set_at"
     t.index ["email"], name: "index_users_on_email"
     t.index ["otp_required_for_login"], name: "index_users_on_otp_required_for_login"
     t.index ["otp_secret"], name: "index_users_on_otp_secret", unique: true

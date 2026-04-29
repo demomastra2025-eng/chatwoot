@@ -35,8 +35,15 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
   private
 
   def finalize_authenticated_session!
-    previous_client_id = @resource.activate_auth_client!(@token.client)
+    previous_client_id = @resource.activate_auth_client!(
+      @token.client,
+      device_type: current_auth_device_type
+    )
     @resource.broadcast_session_replaced!(previous_client_id)
+  end
+
+  def current_auth_device_type
+    Auth::SessionDeviceClassifier.call(request.user_agent)
   end
 
   def find_user_for_authentication

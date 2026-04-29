@@ -111,6 +111,57 @@ RSpec.describe User do
     end
   end
 
+  describe 'auth sessions' do
+    before { user.reload }
+
+    it 'keeps one desktop and one mobile auth client active' do
+      expect(user.activate_auth_client!('desktop-client', device_type: 'web_desktop')).to be_nil
+      expect(user.activate_auth_client!('mobile-client', device_type: 'web_mobile')).to be_nil
+
+      expect(user).to be_active_auth_client('desktop-client')
+      expect(user).to be_active_auth_client('mobile-client')
+    end
+
+    it 'replaces only the previous auth client from the same device type' do
+      user.activate_auth_client!('desktop-client', device_type: 'web_desktop')
+      user.activate_auth_client!('mobile-client-1', device_type: 'web_mobile')
+
+      previous_client_id = user.activate_auth_client!('mobile-client-2', device_type: 'web_mobile')
+
+      expect(previous_client_id).to eq('mobile-client-1')
+      expect(user).to be_active_auth_client('desktop-client')
+      expect(user).not_to be_active_auth_client('mobile-client-1')
+      expect(user).to be_active_auth_client('mobile-client-2')
+    end
+
+    it 'uses legacy active client only before device slots are populated' do
+      user.update!(active_auth_client_id: 'legacy-client', active_auth_client_set_at: Time.current)
+
+      expect(user).to be_active_auth_client('legacy-client')
+
+      user.activate_auth_client!('desktop-client', device_type: 'web_desktop')
+      user.update!(active_auth_client_id: 'stale-legacy-client', active_auth_client_set_at: Time.current)
+
+      expect(user).to be_active_auth_client('desktop-client')
+      expect(user).not_to be_active_auth_client('stale-legacy-client')
+    end
+
+    it 'clears only the requested auth client and keeps the other device session' do
+      desktop_token = user.create_token
+      mobile_token = user.create_token
+      user.save!
+      user.activate_auth_client!(desktop_token.client, device_type: 'web_desktop')
+      user.activate_auth_client!(mobile_token.client, device_type: 'web_mobile')
+
+      user.clear_active_auth_client!(mobile_token.client)
+
+      expect(user).to be_active_auth_client(desktop_token.client)
+      expect(user).not_to be_active_auth_client(mobile_token.client)
+      expect(user.tokens).to include(desktop_token.client)
+      expect(user.tokens).not_to include(mobile_token.client)
+    end
+  end
+
   describe '2FA/MFA functionality' do
     before do
       skip('Skipping since MFA is not configured in this environment') unless Chatwoot.encryption_configured?

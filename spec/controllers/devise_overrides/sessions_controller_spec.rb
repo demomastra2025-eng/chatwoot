@@ -24,7 +24,8 @@ RSpec.describe DeviseOverrides::SessionsController, type: :controller do
         expect(user.reload.active_auth_client_set_at).to be_present
       end
 
-      it 'broadcasts session replacement to the previously active client' do
+      it 'broadcasts session replacement to the previously active client in the same device type' do
+        request.headers['HTTP_USER_AGENT'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
         post :create, params: { email: user.email, password: 'Test@123456' }
         previous_client_id = response.headers['client']
 
@@ -33,9 +34,28 @@ RSpec.describe DeviseOverrides::SessionsController, type: :controller do
           hash_including(event: 'auth.session_replaced')
         )
 
+        request.headers['HTTP_USER_AGENT'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
         post :create, params: { email: user.email, password: 'Test@123456' }
 
         expect(user.reload.active_auth_client_id).to eq(response.headers['client'])
+      end
+
+      it 'keeps desktop and mobile web sessions active at the same time' do
+        request.headers['HTTP_USER_AGENT'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+        post :create, params: { email: user.email, password: 'Test@123456' }
+        desktop_client_id = response.headers['client']
+
+        expect(ActionCable.server).not_to receive(:broadcast).with(
+          user.auth_session_stream_name(desktop_client_id),
+          anything
+        )
+
+        request.headers['HTTP_USER_AGENT'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148'
+        post :create, params: { email: user.email, password: 'Test@123456' }
+        mobile_client_id = response.headers['client']
+
+        expect(user.reload).to be_active_auth_client(desktop_client_id)
+        expect(user).to be_active_auth_client(mobile_client_id)
       end
 
       it 'rejects invalid credentials' do
