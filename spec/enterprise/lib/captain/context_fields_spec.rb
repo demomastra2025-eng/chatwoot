@@ -329,6 +329,48 @@ RSpec.describe Captain::ContextFields do
     end
   end
 
+  describe '.runtime_state_for' do
+    let(:conversation_record) { create(:conversation, account: account) }
+
+    it 'builds reusable Captain runtime state from a conversation' do
+      state = described_class.runtime_state_for(
+        account: account,
+        conversation: conversation_record,
+        channel_type: conversation_record.inbox.channel_type
+      )
+
+      expect(state[:conversation]).to include(
+        id: conversation_record.id,
+        display_id: conversation_record.display_id,
+        inbox_id: conversation_record.inbox_id,
+        contact_id: conversation_record.contact_id,
+        status: conversation_record.status
+      )
+      expect(state[:contact]).to include(
+        id: conversation_record.contact.id,
+        name: conversation_record.contact.name,
+        email: conversation_record.contact.email
+      )
+      expect(state[:channel_type]).to eq(conversation_record.inbox.channel_type)
+    end
+
+    it 'returns an empty state without a conversation' do
+      expect(described_class.runtime_state_for(account: account, conversation: nil)).to eq({})
+    end
+
+    it 'preserves related state only when related records are present' do
+      allow(described_class).to receive(:deal_state_for).and_return({ id: 10 })
+      allow(described_class).to receive(:task_state_for).and_return({})
+      allow(described_class).to receive(:appointment_state_for).and_return(nil)
+
+      state = described_class.runtime_state_for(account: account, conversation: conversation_record)
+
+      expect(state[:deal]).to eq({ id: 10 })
+      expect(state).not_to have_key(:task)
+      expect(state).not_to have_key(:appointment)
+    end
+  end
+
   describe '.effective_definitions_for' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }

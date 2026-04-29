@@ -302,7 +302,11 @@ class Telephony::AiVoice::ToolDispatchService
 
   def captain_runtime_state
     @captain_runtime_state ||= begin
-      state = captain_assistant.runtime_state_for(conversation) || {}
+      state = Captain::ContextFields.runtime_state_for(
+        account: account,
+        conversation: conversation,
+        channel_type: conversation&.inbox&.channel_type
+      )
       state.merge(
         account_id: account.id,
         assistant_id: captain_assistant.id,

@@ -55,6 +55,24 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  describe '#runtime_state_for' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:conversation) { create(:conversation, account: account) }
+
+    it 'keeps the assistant runtime-state path compatible while delegating to ContextFields' do
+      state = assistant.send(:runtime_state_for, conversation)
+
+      expect(state[:conversation]).to include(
+        id: conversation.id,
+        display_id: conversation.display_id,
+        inbox_id: conversation.inbox_id
+      )
+      expect(state[:contact]).to include(id: conversation.contact_id)
+      expect(state).not_to have_key(:channel_type)
+    end
+  end
+
   describe 'tool access' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }

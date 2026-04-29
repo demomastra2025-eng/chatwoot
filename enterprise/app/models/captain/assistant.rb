@@ -794,22 +794,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def runtime_state_for(conversation)
-    return {} unless conversation
-
-    runtime_state = {
-      conversation: conversation.attributes.symbolize_keys.slice(*Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
-      contact: conversation.contact&.attributes&.symbolize_keys&.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES)
-    }.compact
-
-    deal_state = Captain::ContextFields.deal_state_for(account: account, conversation: conversation)
-    runtime_state[:deal] = deal_state if deal_state.present?
-
-    task_state = Captain::ContextFields.task_state_for(account: account, conversation: conversation)
-    runtime_state[:task] = task_state if task_state.present?
-
-    appointment_state = Captain::ContextFields.appointment_state_for(account: account, conversation: conversation)
-    runtime_state[:appointment] = appointment_state if appointment_state.present?
-    runtime_state
+    Captain::ContextFields.runtime_state_for(account: account, conversation: conversation)
   end
 
   def config_integer_value(key)

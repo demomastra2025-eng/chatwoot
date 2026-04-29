@@ -87,6 +87,82 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body['error']).to eq('tool_not_found')
   end
 
+  it 'executes Captain custom tools exposed by the connected inbox assistant' do
+    custom_tool = create(
+      :captain_custom_tool,
+      :with_post,
+      account: account,
+      title: 'Lookup booking',
+      description: 'Find a booking by booking code',
+      endpoint_url: 'https://example.com/bookings',
+      request_template: '{ "booking_code": "{{ booking_code }}" }',
+      response_template: 'Booking status: {{ response.status }}',
+      param_schema: [
+        { 'name' => 'booking_code', 'type' => 'string', 'description' => 'Booking code', 'required' => true }
+      ]
+    )
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: [custom_tool.slug]
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    stub_request(:post, 'https://example.com/bookings')
+      .to_return(status: 200, body: { status: 'confirmed' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post "/internal/voice/ai/tools/#{custom_tool.slug}",
+           params: { call_ref: call_session.external_call_ref, account_id: account.id, arguments: { booking_code: 'B-42' } },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('result', 'action')).to eq('captain_tool')
+    expect(response.parsed_body.dig('result', 'tool_name')).to eq(custom_tool.slug)
+    expect(response.parsed_body.dig('result', 'result')).to eq('Booking status: confirmed')
+    expect(WebMock).to have_requested(:post, 'https://example.com/bookings').once
+  end
+
+  it 'executes built-in Captain agent tools with adapter-specific execute signatures' do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['get_conversation']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/get_conversation',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             arguments: { conversation_id: conversation.display_id }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('result', 'action')).to eq('captain_tool')
+    expect(response.parsed_body.dig('result', 'tool_name')).to eq('get_conversation')
+    expect(response.parsed_body.dig('result', 'result')).to include("\"display_id\": #{conversation.display_id}")
+  end
+
   it 'scopes tool writes by account_id when call_ref collides across accounts' do
     other_account = create(:account)
     other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889003')

@@ -258,6 +258,26 @@ class Captain::ContextFields
         tasks.order(updated_at: :desc, id: :desc).first
     end
 
+    def runtime_state_for(account:, conversation:, channel_type: nil)
+      return {} if conversation.blank?
+
+      runtime_state = {
+        conversation: slice_record_attributes(conversation, CONVERSATION_STATE_ATTRIBUTES),
+        contact: slice_record_attributes(conversation.contact, CONTACT_STATE_ATTRIBUTES),
+        channel_type: channel_type
+      }.compact
+
+      deal_state = deal_state_for(account: account, conversation: conversation)
+      runtime_state[:deal] = deal_state if deal_state.present?
+
+      task_state = task_state_for(account: account, conversation: conversation)
+      runtime_state[:task] = task_state if task_state.present?
+
+      appointment_state = appointment_state_for(account: account, conversation: conversation)
+      runtime_state[:appointment] = appointment_state if appointment_state.present?
+      runtime_state
+    end
+
     def allowed_definitions_for(assistant)
       definitions = definitions_for(assistant.account)
       access = normalized_access_for(assistant, definitions)
@@ -399,6 +419,12 @@ class Captain::ContextFields
       Array(field_ids).map { |field_id| normalize_field_id(field_id) }
                       .uniq
                       .select { |field_id| available_field_ids.include?(field_id) }
+    end
+
+    def slice_record_attributes(record, keys)
+      return if record.blank?
+
+      record.attributes.symbolize_keys.slice(*keys)
     end
 
     def always_visible_prompt_field_ids(definitions, scope)
