@@ -18,7 +18,7 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
     @portal = Current.account.portals.build(portal_params.merge(live_chat_widget_params))
     @portal.custom_domain = parsed_custom_domain
     @portal.save!
-    process_attached_logo
+    process_attached_logo if params[:blob_id].present?
   end
 
   def update
@@ -64,7 +64,8 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
     blob_id = params[:blob_id]
     blob = ActiveStorage::Blob.find_signed(blob_id)
     released_bytes = @portal.logo.attached? ? @portal.logo.blob.byte_size : 0
-    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?(blob.byte_size, released_bytes)
+    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?(blob.byte_size,
+                                                                                                                               released_bytes)
 
     @portal.logo.attach(blob)
   end
