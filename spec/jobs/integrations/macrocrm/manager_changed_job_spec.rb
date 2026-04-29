@@ -63,4 +63,24 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedJob do
       expect(Time.zone.at(enqueued_jobs.last[:at])).to be_within(1.second).of(5.seconds.from_now)
     end
   end
+
+  it 'discards permanent MacroCRM errors without logging raw webhook payload' do
+    sensitive_payload = payload.deep_dup
+    sensitive_payload['data']['object']['client_phones'] = '+77001234567'
+    error = Integrations::Macrocrm::Client::PermanentError.new(
+      'upstream body contains sensitive customer data',
+      endpoint: '/estateBuy/list',
+      status: 422
+    )
+    warnings = []
+
+    allow(processor_service).to receive(:perform).and_raise(error)
+    allow(Rails.logger).to receive(:warn) { |message| warnings << message }
+
+    described_class.perform_now(hook.id, sensitive_payload)
+
+    log_output = warnings.join("\n")
+    expect(log_output).to include("hook_id=#{hook.id}", 'estate_id=12345', 'endpoint=/estateBuy/list', 'status=422')
+    expect(log_output).not_to include('client_phones', '+77001234567', 'sensitive customer data', 'job_arguments')
+  end
 end

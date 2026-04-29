@@ -4,9 +4,18 @@ class Integrations::Macrocrm::ManagerChangedJob < MutexApplicationJob
   queue_as :medium
   LOCK_TIMEOUT = 30.seconds
 
-  retry_on StandardError, wait: 10.seconds, attempts: 3
+  retry_on Integrations::Macrocrm::Client::TransientError, wait: 1.minute, attempts: 5
   retry_on LockAcquisitionError, wait: 5.seconds, attempts: 12
   discard_on ActiveRecord::RecordNotFound
+  discard_on Integrations::Macrocrm::Client::PermanentError do |job, error|
+    payload = job.arguments[1].to_h
+
+    Rails.logger.warn(
+      '[MACROCRM][MANAGER_CHANGED] Dropping non-retryable MacroCRM failure: ' \
+      "error_class=#{error.class} endpoint=#{error.try(:endpoint)} status=#{error.try(:status)} " \
+      "hook_id=#{job.arguments[0]} estate_id=#{payload.dig('data', 'object', 'estate_id').presence || 'unknown'}"
+    )
+  end
 
   def perform(hook_id, payload)
     normalized_payload = payload.deep_stringify_keys

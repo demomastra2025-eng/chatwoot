@@ -51,4 +51,22 @@ RSpec.describe Integrations::Macrocrm::SyncJob do
       expect(Time.zone.at(enqueued_jobs.last[:at])).to be_within(1.second).of(5.seconds.from_now)
     end
   end
+
+  it 'discards permanent MacroCRM errors without logging raw arguments or upstream body' do
+    error = Integrations::Macrocrm::Client::PermanentError.new(
+      'upstream body contains sensitive customer data',
+      endpoint: '/estateBuy/create',
+      status: 502
+    )
+    warnings = []
+
+    allow(processor_service).to receive(:perform).and_raise(error)
+    allow(Rails.logger).to receive(:warn) { |message| warnings << message }
+
+    described_class.perform_now(hook.id, 'message.created', message.id)
+
+    log_output = warnings.join("\n")
+    expect(log_output).to include("hook_id=#{hook.id}", "message_id=#{message.id}", 'endpoint=/estateBuy/create', 'status=502')
+    expect(log_output).not_to include('sensitive customer data', 'job_arguments')
+  end
 end

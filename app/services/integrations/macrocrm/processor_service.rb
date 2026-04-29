@@ -60,7 +60,7 @@ class Integrations::Macrocrm::ProcessorService
     return nil if contact_not_found_response?(response)
     return nil if response['contact'].blank? && response['error'] != true
 
-    raise Integrations::Macrocrm::Client::ApiError, "Unexpected MacroCRM contact response: #{response}"
+    raise Integrations::Macrocrm::Client::PermanentError, 'Unexpected MacroCRM contact response'
   end
 
   def contact_not_found_response?(response)
@@ -68,17 +68,17 @@ class Integrations::Macrocrm::ProcessorService
   end
 
   def find_last_estate(contact)
-    return nil unless contact&.dig('id').present?
+    return nil if contact&.dig('id').blank?
 
     buys_response = client.find_estate_buy(contact_id: contact['id'])
-    Array(buys_response['buys']).select { |buy| active_estate?(buy) }.last
+    Array(buys_response['buys']).reverse.find { |buy| active_estate?(buy) }
   end
 
   def active_estate?(buy)
     return false unless buy.is_a?(Hash)
     return false if buy['id'].blank? && buy[:id].blank?
 
-    !INACTIVE_ESTATE_STATUSES.include?(estate_status(buy).to_i)
+    INACTIVE_ESTATE_STATUSES.exclude?(estate_status(buy).to_i)
   end
 
   def estate_status(buy)
@@ -95,7 +95,8 @@ class Integrations::Macrocrm::ProcessorService
     }
 
     response = client.create_estate_buy(**payload)
-    response.dig('estate', 'id').presence || raise(Integrations::Macrocrm::Client::ApiError, 'MacroCRM estate id missing in create response')
+    response.dig('estate', 'id').presence ||
+      raise(Integrations::Macrocrm::Client::PermanentError, 'MacroCRM estate id missing in create response')
   end
 
   def note

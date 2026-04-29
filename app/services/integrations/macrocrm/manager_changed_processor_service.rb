@@ -12,11 +12,16 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
     return if estate_id.blank?
 
     estate = estate_from_list || estate_from_fallback
+    raise transient_lookup_error if estate.blank? && transient_lookup_error.present?
     return log_warn('Estate not found', estate_id: estate_id) if estate.blank?
 
     conversation = find_target_conversation(resolved_phone(estate))
     return log_warn('Target conversation not found', estate_id: estate_id, phone: resolved_phone(estate)) if conversation.blank?
-    return log_info('Ignored stale webhook', estate_id: estate_id, conversation_id: conversation.id, updated_at: updated_at_raw) if stale_webhook?(conversation)
+
+    if stale_webhook?(conversation)
+      return log_info('Ignored stale webhook', estate_id: estate_id, conversation_id: conversation.id,
+                                               updated_at: updated_at_raw)
+    end
 
     if estate[:manager_id].to_i.positive?
       assign_manager(conversation, estate[:manager_id])
@@ -29,8 +34,14 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
 
   private
 
+  attr_reader :transient_lookup_error
+
   def client
     @client ||= Integrations::Macrocrm::Client.new(hook: hook)
+  end
+
+  def remember_transient_lookup_error(error)
+    @transient_lookup_error = error if @transient_lookup_error.blank?
   end
 
   def manager_changed_event?
@@ -79,8 +90,12 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
       manager_id: buy.dig('manager', 'id'),
       phones: Array(buy.dig('contact', 'phones')).filter_map { |phone| normalize_phone(phone) }
     }
+  rescue Integrations::Macrocrm::Client::TransientError => e
+    remember_transient_lookup_error(e)
+    log_warn('estateBuy/list transient failure', estate_id: estate_id, **macrocrm_error_details(e))
+    nil
   rescue Integrations::Macrocrm::Client::ApiError => e
-    log_error('estateBuy/list failed', estate_id: estate_id, error: e.message)
+    log_error('estateBuy/list failed', estate_id: estate_id, **macrocrm_error_details(e))
     nil
   end
 
@@ -99,8 +114,12 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
       manager_id: buy['manager_id'],
       phones: [webhook_phone]
     }
+  rescue Integrations::Macrocrm::Client::TransientError => e
+    remember_transient_lookup_error(e)
+    log_warn('Fallback estate lookup transient failure', estate_id: estate_id, **macrocrm_error_details(e))
+    nil
   rescue Integrations::Macrocrm::Client::ApiError => e
-    log_error('Fallback estate lookup failed', estate_id: estate_id, phone: webhook_phone, error: e.message)
+    log_error('Fallback estate lookup failed', estate_id: estate_id, **macrocrm_error_details(e))
     nil
   end
 
@@ -110,7 +129,15 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
     return nil if contact_not_found_response?(response)
     return nil if response['contact'].blank? && response['error'] != true
 
-    raise Integrations::Macrocrm::Client::ApiError, "Unexpected MacroCRM contact response: #{response}"
+    raise Integrations::Macrocrm::Client::PermanentError, 'Unexpected MacroCRM contact response'
+  end
+
+  def macrocrm_error_details(error)
+    {
+      error_class: error.class.name,
+      endpoint: error.try(:endpoint),
+      status: error.try(:status)
+    }.compact
   end
 
   def contact_not_found_response?(response)
@@ -164,9 +191,9 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
     @whatsapp_inbox_ids ||= begin
       native_whatsapp_ids = hook.account.inboxes.where(channel_type: 'Channel::Whatsapp').pluck(:id)
       twilio_whatsapp_ids = hook.account.inboxes.where(channel_type: 'Channel::TwilioSms')
-                                    .includes(:channel)
-                                    .select { |inbox| inbox.channel.medium == 'whatsapp' }
-                                    .map(&:id)
+                                .includes(:channel)
+                                .select { |inbox| inbox.channel.medium == 'whatsapp' }
+                                .map(&:id)
       native_whatsapp_ids + twilio_whatsapp_ids
     end
   end
@@ -189,7 +216,10 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
 
   def assign_manager(conversation, macro_manager_id)
     user = local_user_for_macro_manager(macro_manager_id, conversation)
-    return log_warn('Local assignable manager not found', estate_id: estate_id, macro_manager_id: macro_manager_id, conversation_id: conversation.id) if user.blank?
+    if user.blank?
+      return log_warn('Local assignable manager not found', estate_id: estate_id, macro_manager_id: macro_manager_id,
+                                                            conversation_id: conversation.id)
+    end
     return if conversation.assignee_id == user.id
 
     assign_conversation_to(conversation, user.id)
