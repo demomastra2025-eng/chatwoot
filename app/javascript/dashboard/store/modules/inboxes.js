@@ -35,6 +35,20 @@ const whatsappWebRefreshRequests = new Map();
 const telegramPersonalDiagnosticsRequests = new Map();
 const telegramPersonalDiagnosticsCache = new Map();
 const TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
+const weixinDiagnosticsRequests = new Map();
+const weixinDiagnosticsCache = new Map();
+const WEIXIN_DIAGNOSTICS_COOLDOWN_MS = 3000;
+const hasOwn = (object, key) =>
+  Object.prototype.hasOwnProperty.call(object || {}, key);
+const pickRuntimeValue = (runtimeState, diagnostics, channelState, key) => {
+  if (hasOwn(channelState, key)) {
+    return channelState[key];
+  }
+  if (hasOwn(diagnostics, key)) {
+    return diagnostics[key];
+  }
+  return runtimeState[key];
+};
 
 const mergeTelegramPersonalDiagnostics = (inbox, diagnostics) => {
   if (!inbox || !diagnostics) {
@@ -134,9 +148,151 @@ const cacheTelegramPersonalDiagnostics = (inboxId, diagnostics) => {
   });
 };
 
+const mergeWeixinDiagnostics = (inbox, diagnostics) => {
+  if (!inbox || !diagnostics) {
+    return diagnostics || inbox;
+  }
+
+  if (diagnostics.id) {
+    return {
+      ...inbox,
+      ...diagnostics,
+      runtime_state: {
+        ...(inbox.runtime_state || {}),
+        ...(diagnostics.runtime_state || {}),
+      },
+    };
+  }
+
+  const channelState = diagnostics.channel || {};
+  const runtimeState = {
+    ...(inbox.runtime_state || {}),
+    ...(channelState.runtime_state || {}),
+  };
+
+  [
+    'qr_login_state',
+    'qr_login_url',
+    'qr_login_expires_at',
+    'status',
+    'connected',
+    'authorized',
+    'last_inbound_at',
+    'last_outbound_at',
+    'last_error_at',
+    'runtime_status',
+  ].forEach(key => {
+    const value = pickRuntimeValue(
+      runtimeState,
+      diagnostics,
+      channelState,
+      key
+    );
+    if (value !== undefined) {
+      runtimeState[key] = value;
+    }
+  });
+
+  if (diagnostics.connection_state !== undefined) {
+    runtimeState.connection_state = diagnostics.connection_state;
+  }
+
+  if (diagnostics.lifecycle_state !== undefined) {
+    runtimeState.lifecycle_state = diagnostics.lifecycle_state;
+  }
+
+  return {
+    ...inbox,
+    provider_account_id:
+      channelState.provider_account_id ||
+      diagnostics.provider_account_id ||
+      inbox.provider_account_id,
+    display_name:
+      channelState.display_name ||
+      diagnostics.display_name ||
+      inbox.display_name,
+    connection_state:
+      channelState.connection_state ||
+      diagnostics.connection_state ||
+      inbox.connection_state,
+    lifecycle_state:
+      channelState.lifecycle_state ||
+      diagnostics.lifecycle_state ||
+      inbox.lifecycle_state,
+    last_error:
+      channelState.last_error ?? diagnostics.last_error ?? inbox.last_error,
+    last_synced_at:
+      channelState.last_synced_at ||
+      diagnostics.last_synced_at ||
+      inbox.last_synced_at,
+    runtime_state: runtimeState,
+  };
+};
+
+const normalizeWeixinDiagnosticsPayload = payload => {
+  if (typeof payload === 'object' && payload !== null) {
+    return {
+      inboxId: payload.inboxId,
+      force: payload.force === true,
+    };
+  }
+
+  return {
+    inboxId: payload,
+    force: false,
+  };
+};
+
+const clearWeixinDiagnosticsCache = inboxId => {
+  weixinDiagnosticsCache.delete(String(inboxId));
+};
+
+const getCachedWeixinDiagnostics = inboxId => {
+  const cachedDiagnostics = weixinDiagnosticsCache.get(String(inboxId));
+
+  if (!cachedDiagnostics) {
+    return null;
+  }
+
+  if (
+    Date.now() - cachedDiagnostics.fetchedAt >
+    WEIXIN_DIAGNOSTICS_COOLDOWN_MS
+  ) {
+    clearWeixinDiagnosticsCache(inboxId);
+    return null;
+  }
+
+  return cachedDiagnostics.data;
+};
+
+const cacheWeixinDiagnostics = (inboxId, diagnostics) => {
+  weixinDiagnosticsCache.set(String(inboxId), {
+    data: diagnostics,
+    fetchedAt: Date.now(),
+  });
+};
+
+const commitWeixinDiagnostics = (
+  commit,
+  inboxGetters,
+  inboxId,
+  diagnostics
+) => {
+  const currentInbox = inboxGetters?.getInbox
+    ? inboxGetters.getInbox(inboxId)
+    : null;
+  const mergedInbox = mergeWeixinDiagnostics(currentInbox, diagnostics);
+
+  if (mergedInbox) {
+    commit(types.default.EDIT_INBOXES, mergedInbox);
+  }
+};
+
 const removeInboxFromClientState = (commit, inboxId) => {
   clearTelegramPersonalDiagnosticsCache(inboxId);
+  clearWeixinDiagnosticsCache(inboxId);
   telegramPersonalDiagnosticsRequests.delete(String(inboxId));
+  weixinDiagnosticsRequests.delete(String(inboxId));
   commit(types.default.DELETE_INBOXES, inboxId);
 };
 
@@ -849,6 +1005,84 @@ export const actions = {
       });
 
     telegramPersonalDiagnosticsRequests.set(requestKey, request);
+    return request;
+  },
+  requestWeixinQr: async ({ commit }, inboxId) => {
+    try {
+      clearWeixinDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.requestWeixinQr(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  reconnectWeixin: async ({ commit }, inboxId) => {
+    try {
+      clearWeixinDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.reconnectWeixin(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  disconnectWeixin: async ({ commit }, inboxId) => {
+    try {
+      clearWeixinDiagnosticsCache(inboxId);
+      const response = await InboxesAPI.disconnectWeixin(inboxId);
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  getWeixinDiagnostics: async ({ commit, getters: inboxGetters }, payload) => {
+    const { inboxId, force } = normalizeWeixinDiagnosticsPayload(payload);
+
+    if (!inboxId) {
+      return null;
+    }
+
+    const requestKey = String(inboxId);
+
+    if (!force) {
+      const cachedDiagnostics = getCachedWeixinDiagnostics(inboxId);
+
+      if (cachedDiagnostics) {
+        commitWeixinDiagnostics(
+          commit,
+          inboxGetters,
+          inboxId,
+          cachedDiagnostics
+        );
+        return cachedDiagnostics;
+      }
+
+      if (weixinDiagnosticsRequests.has(requestKey)) {
+        return weixinDiagnosticsRequests.get(requestKey);
+      }
+    }
+
+    const request = InboxesAPI.getWeixinDiagnostics(inboxId)
+      .then(response => {
+        cacheWeixinDiagnostics(inboxId, response.data);
+        commitWeixinDiagnostics(commit, inboxGetters, inboxId, response.data);
+        return response.data;
+      })
+      .catch(error => {
+        if ([404, 410].includes(error?.response?.status)) {
+          removeInboxFromClientState(commit, inboxId);
+          return null;
+        }
+
+        throw new Error(error?.response?.data?.error || error.message);
+      })
+      .finally(() => {
+        weixinDiagnosticsRequests.delete(requestKey);
+      });
+
+    weixinDiagnosticsRequests.set(requestKey, request);
     return request;
   },
   createCSATTemplate: async (_, { inboxId, template }) => {

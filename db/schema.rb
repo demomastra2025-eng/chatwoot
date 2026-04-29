@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_28_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_29_102000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -747,7 +747,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_28_150000) do
   create_table "channel_weixins", force: :cascade do |t|
     t.integer "account_id", null: false
     t.text "ilink_token"
-    t.string "token_fingerprint", null: false
+    t.string "token_fingerprint"
     t.string "provider_account_id"
     t.string "display_name"
     t.text "context_token"
@@ -760,6 +760,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_28_150000) do
     t.string "webhook_secret", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "context_tokens", default: {}, null: false
     t.index ["account_id", "provider_account_id"], name: "index_channel_weixins_on_account_id_and_provider_account_id", unique: true, where: "(provider_account_id IS NOT NULL)"
     t.index ["account_id", "token_fingerprint"], name: "index_channel_weixins_on_account_id_and_token_fingerprint", unique: true
     t.index ["account_id"], name: "index_channel_weixins_on_account_id"

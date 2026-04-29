@@ -793,4 +793,103 @@ describe('#actions', () => {
       );
     });
   });
+
+  describe('#getWeixinDiagnostics', () => {
+    it('merges iLink runtime diagnostics back into the Weixin inbox store', async () => {
+      commit.mockClear();
+      const currentInbox = {
+        id: 654,
+        channel_type: 'Channel::Weixin',
+        connection_state: 'disconnected',
+        lifecycle_state: 'pending_auth',
+        runtime_state: { qr_login_state: 'requested' },
+      };
+      const diagnostics = {
+        channel: {
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: {
+            qr_login_state: 'confirmed',
+            qr_login_url: 'https://login.weixin.qq.com/qrcode/abc',
+          },
+          last_error: null,
+        },
+      };
+      const getters = {
+        getInbox: id => (id === 654 ? currentInbox : null),
+      };
+
+      axios.get.mockResolvedValue({ data: diagnostics });
+
+      const response = await actions.getWeixinDiagnostics(
+        { commit, getters },
+        654
+      );
+
+      expect(response).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/654/weixin_diagnostics'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        expect.objectContaining({
+          id: 654,
+          connection_state: 'connected',
+          lifecycle_state: 'connected',
+          runtime_state: expect.objectContaining({
+            qr_login_state: 'confirmed',
+            qr_login_url: 'https://login.weixin.qq.com/qrcode/abc',
+          }),
+        })
+      );
+    });
+
+    it('coalesces concurrent iLink diagnostics requests for the same Weixin inbox', async () => {
+      commit.mockClear();
+      const currentInbox = {
+        id: 655,
+        channel_type: 'Channel::Weixin',
+        runtime_state: {},
+      };
+      const diagnostics = {
+        channel: {
+          connection_state: 'connecting',
+          lifecycle_state: 'qr_ready',
+          runtime_state: { qr_login_state: 'waiting_scan' },
+        },
+      };
+      const getters = {
+        getInbox: id => (id === 655 ? currentInbox : null),
+      };
+
+      let resolveRequest;
+      const pendingRequest = new Promise(resolve => {
+        resolveRequest = resolve;
+      });
+      axios.get.mockReturnValue(pendingRequest);
+
+      const firstRequest = actions.getWeixinDiagnostics(
+        { commit, getters },
+        655
+      );
+      const secondRequest = actions.getWeixinDiagnostics(
+        { commit, getters },
+        655
+      );
+
+      resolveRequest({ data: diagnostics });
+
+      const [firstResponse, secondResponse] = await Promise.all([
+        firstRequest,
+        secondRequest,
+      ]);
+
+      expect(firstResponse).toEqual(diagnostics);
+      expect(secondResponse).toEqual(diagnostics);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledWith(
+        '/api/v1/inboxes/655/weixin_diagnostics'
+      );
+    });
+  });
 });

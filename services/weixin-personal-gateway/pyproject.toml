@@ -1,0 +1,10 @@
+[project]
+name = "onelink-weixin-personal-gateway"
+version = "0.1.0"
+description = "Native OneLink Weixin Personal gateway boundary for Tencent iLink Bot API"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

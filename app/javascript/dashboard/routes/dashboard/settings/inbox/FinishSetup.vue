@@ -28,6 +28,8 @@ const router = useRouter();
 const store = useStore();
 const TELEGRAM_PERSONAL_REDIRECT_DELAY_MS = 1500;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
+const WEIXIN_REDIRECT_DELAY_MS = 1500;
+const WEIXIN_POLL_INTERVAL_MS = 5000;
 
 const isRefreshingWhatsappWebQr = ref(false);
 const hasScheduledWhatsappWebCompletion = ref(false);
@@ -59,6 +61,10 @@ const isVerifyingTelegramPersonalPassword = ref(false);
 const isSchedulingTelegramPersonalFullHistory = ref(false);
 const hasHandledTelegramPersonalSetupFullHistory = ref(false);
 const telegramPersonalQrCode = ref('');
+const weixinRedirectTimeout = ref(null);
+const weixinPollingInterval = ref(null);
+const isRequestingWeixinQr = ref(false);
+const weixinQrCode = ref('');
 
 const qrCodes = reactive({
   whatsapp: '',
@@ -86,6 +92,7 @@ const {
   isAFacebookInbox,
   isATelegramChannel,
   isATelegramPersonalChannel,
+  isAWeixinChannel,
   isATwilioWhatsAppChannel,
 } = useInbox(currentInboxId.value);
 
@@ -100,6 +107,99 @@ const isTelegramPersonalSetupFlow = computed(() => {
     isATelegramPersonalChannel.value ||
     route.query.channel_type === 'telegram_personal'
   );
+});
+
+const isWeixinSetupFlow = computed(() => {
+  return isAWeixinChannel.value || route.query.channel_type === 'weixin';
+});
+
+const weixinRuntimeState = computed(() => {
+  return currentInbox.value?.runtime_state || {};
+});
+
+const weixinLifecycleState = computed(() => {
+  return (
+    currentInbox.value?.lifecycle_state ||
+    weixinRuntimeState.value.lifecycle_state ||
+    'pending_auth'
+  );
+});
+
+const weixinConnectionState = computed(() => {
+  return (
+    currentInbox.value?.connection_state ||
+    weixinRuntimeState.value.connection_state ||
+    'disconnected'
+  );
+});
+
+const weixinLastError = computed(() => {
+  return (
+    currentInbox.value?.last_error || weixinRuntimeState.value.last_error || ''
+  );
+});
+
+const isWeixinConnected = computed(() => {
+  return (
+    weixinLifecycleState.value === 'connected' ||
+    weixinConnectionState.value === 'connected' ||
+    weixinRuntimeState.value.connected === true ||
+    weixinRuntimeState.value.authorized === true
+  );
+});
+
+const weixinQrUrl = computed(() => {
+  return weixinRuntimeState.value.qr_login_url || '';
+});
+
+const weixinQrExpiresAt = computed(() => {
+  return weixinRuntimeState.value.qr_login_expires_at || '';
+});
+
+const hasWeixinQrStep = computed(() => {
+  return (
+    ['qr_ready', 'qr_scanned', 'qr_expired'].includes(
+      weixinLifecycleState.value
+    ) || Boolean(weixinQrUrl.value)
+  );
+});
+
+const weixinQrButtonLabel = computed(() => {
+  return hasWeixinQrStep.value
+    ? t('INBOX_MGMT.FINISH.WEIXIN.REFRESH_QR')
+    : t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR');
+});
+
+const weixinStatusMessage = computed(() => {
+  if (!isWeixinSetupFlow.value) {
+    return '';
+  }
+
+  if (!currentInbox.value?.id) {
+    return t('INBOX_MGMT.FINISH.WEIXIN.LOADING');
+  }
+
+  if (isRequestingWeixinQr.value) {
+    return t('INBOX_MGMT.FINISH.WEIXIN.REQUESTING_QR');
+  }
+
+  if (isWeixinConnected.value) {
+    return t('INBOX_MGMT.FINISH.WEIXIN.CONNECTED');
+  }
+
+  switch (weixinLifecycleState.value) {
+    case 'qr_ready':
+    case 'qr_scanned':
+      return t('INBOX_MGMT.FINISH.WEIXIN.QR_READY');
+    case 'qr_expired':
+      return t('INBOX_MGMT.FINISH.WEIXIN.QR_EXPIRED');
+    case 'failed':
+      return weixinLastError.value
+        ? `${t('INBOX_MGMT.FINISH.WEIXIN.FAILED')} ${weixinLastError.value}`
+        : t('INBOX_MGMT.FINISH.WEIXIN.FAILED');
+    default:
+      return t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_HINT');
+  }
 });
 
 const telegramPersonalRuntimeState = computed(() => {
@@ -423,7 +523,11 @@ const isWhatsAppEmbeddedSignup = computed(() => {
 });
 
 const finishTitle = computed(() => {
-  if (isWhatsappWebSetupFlow.value || isTelegramPersonalSetupFlow.value) {
+  if (
+    isWhatsappWebSetupFlow.value ||
+    isTelegramPersonalSetupFlow.value ||
+    isWeixinSetupFlow.value
+  ) {
     return '';
   }
 
@@ -431,7 +535,11 @@ const finishTitle = computed(() => {
 });
 
 const message = computed(() => {
-  if (isWhatsappWebSetupFlow.value || isTelegramPersonalSetupFlow.value) {
+  if (
+    isWhatsappWebSetupFlow.value ||
+    isTelegramPersonalSetupFlow.value ||
+    isWeixinSetupFlow.value
+  ) {
     return '';
   }
 
@@ -480,6 +588,10 @@ const shouldShowFinishActions = computed(() => {
     return isTelegramPersonalConnected.value;
   }
 
+  if (isWeixinSetupFlow.value) {
+    return isWeixinConnected.value;
+  }
+
   if (!isWhatsappWebSetupFlow.value) {
     return true;
   }
@@ -491,6 +603,13 @@ function clearTelegramPersonalRedirectTimeout() {
   if (telegramPersonalRedirectTimeout.value) {
     window.clearTimeout(telegramPersonalRedirectTimeout.value);
     telegramPersonalRedirectTimeout.value = null;
+  }
+}
+
+function clearWeixinRedirectTimeout() {
+  if (weixinRedirectTimeout.value) {
+    window.clearTimeout(weixinRedirectTimeout.value);
+    weixinRedirectTimeout.value = null;
   }
 }
 
@@ -549,6 +668,13 @@ function stopTelegramPersonalPolling() {
   }
 }
 
+function stopWeixinPolling() {
+  if (weixinPollingInterval.value) {
+    window.clearInterval(weixinPollingInterval.value);
+    weixinPollingInterval.value = null;
+  }
+}
+
 async function fetchTelegramPersonalDiagnostics() {
   if (!isTelegramPersonalSetupFlow.value || !currentInbox.value?.id) {
     return;
@@ -559,6 +685,18 @@ async function fetchTelegramPersonalDiagnostics() {
       'inboxes/getTelegramPersonalDiagnostics',
       currentInbox.value.id
     );
+  } catch (error) {
+    // Diagnostics stay best-effort during setup.
+  }
+}
+
+async function fetchWeixinDiagnostics() {
+  if (!isWeixinSetupFlow.value || !currentInbox.value?.id) {
+    return;
+  }
+
+  try {
+    await store.dispatch('inboxes/getWeixinDiagnostics', currentInbox.value.id);
   } catch (error) {
     // Diagnostics stay best-effort during setup.
   }
@@ -585,6 +723,27 @@ function syncTelegramPersonalPolling() {
   }, TELEGRAM_PERSONAL_POLL_INTERVAL_MS);
 }
 
+function shouldPollWeixinStatus() {
+  return (
+    isWeixinSetupFlow.value &&
+    isDocumentVisible.value &&
+    currentInbox.value?.id &&
+    !isWeixinConnected.value
+  );
+}
+
+function syncWeixinPolling() {
+  stopWeixinPolling();
+
+  if (!shouldPollWeixinStatus()) {
+    return;
+  }
+
+  weixinPollingInterval.value = window.setInterval(() => {
+    fetchWeixinDiagnostics();
+  }, WEIXIN_POLL_INTERVAL_MS);
+}
+
 async function renderTelegramPersonalQrCode() {
   if (!telegramPersonalQrUrl.value) {
     telegramPersonalQrCode.value = '';
@@ -601,6 +760,42 @@ async function renderTelegramPersonalQrCode() {
     );
   } catch (error) {
     telegramPersonalQrCode.value = '';
+  }
+}
+
+async function renderWeixinQrCode() {
+  if (!weixinQrUrl.value) {
+    weixinQrCode.value = '';
+    return;
+  }
+
+  try {
+    weixinQrCode.value = await QRCode.toDataURL(weixinQrUrl.value, {
+      margin: 0,
+      width: 512,
+    });
+  } catch (error) {
+    weixinQrCode.value = '';
+  }
+}
+
+async function requestWeixinQr({ silent = false } = {}) {
+  if (!currentInbox.value?.id || isRequestingWeixinQr.value) {
+    return;
+  }
+
+  try {
+    isRequestingWeixinQr.value = true;
+    await store.dispatch('inboxes/requestWeixinQr', currentInbox.value.id);
+    if (!silent) {
+      useAlert(t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_SUCCESS'));
+    }
+  } catch (error) {
+    if (!silent) {
+      useAlert(error.message || t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_ERROR'));
+    }
+  } finally {
+    isRequestingWeixinQr.value = false;
   }
 }
 
@@ -967,8 +1162,10 @@ async function redirectToInboxListIfMissing() {
 
   stopWhatsappWebPolling();
   stopTelegramPersonalPolling();
+  stopWeixinPolling();
   clearWhatsappWebRedirectTimeout();
   clearTelegramPersonalRedirectTimeout();
+  clearWeixinRedirectTimeout();
 
   router.replace({
     name: getInboxFlowRouteName(route, 'list'),
@@ -1042,6 +1239,28 @@ function maybeCompleteTelegramPersonalSetup() {
   }, TELEGRAM_PERSONAL_REDIRECT_DELAY_MS);
 }
 
+function maybeCompleteWeixinSetup() {
+  clearWeixinRedirectTimeout();
+
+  if (
+    !isWeixinSetupFlow.value ||
+    !isWeixinConnected.value ||
+    !currentInboxId.value
+  ) {
+    return;
+  }
+
+  weixinRedirectTimeout.value = window.setTimeout(() => {
+    router.replace({
+      name: getInboxFlowRouteName(route, 'show'),
+      params: {
+        accountId: route.params.accountId,
+        inboxId: currentInboxId.value,
+      },
+    });
+  }, WEIXIN_REDIRECT_DELAY_MS);
+}
+
 function handleVisibilityChange() {
   if (typeof document === 'undefined') {
     return;
@@ -1051,9 +1270,11 @@ function handleVisibilityChange() {
   if (isDocumentVisible.value) {
     fetchWhatsappWebStatus();
     fetchTelegramPersonalDiagnostics();
+    fetchWeixinDiagnostics();
   }
   syncWhatsappWebPolling();
   syncTelegramPersonalPolling();
+  syncWeixinPolling();
 }
 
 // Watch for currentInbox changes and regenerate QR codes when available
@@ -1068,6 +1289,7 @@ watch(
     if (newInbox) {
       generateQRCodes();
       renderTelegramPersonalQrCode();
+      renderWeixinQrCode();
     }
   },
   { immediate: true }
@@ -1080,6 +1302,7 @@ watch(currentInboxId, async () => {
   telegramPersonalQrCode.value = '';
   telegramPersonalImportFullHistory.value = false;
   hasHandledTelegramPersonalSetupFullHistory.value = false;
+  weixinQrCode.value = '';
 });
 
 watch(
@@ -1107,6 +1330,10 @@ watch(telegramPersonalQrUrl, () => {
   renderTelegramPersonalQrCode();
 });
 
+watch(weixinQrUrl, () => {
+  renderWeixinQrCode();
+});
+
 watch(
   [isWhatsappWebSetupFlow, isWhatsappWebConnected, currentInboxId],
   () => {
@@ -1129,17 +1356,30 @@ watch(
   { immediate: true }
 );
 
+watch(
+  [isWeixinSetupFlow, weixinLifecycleState, isWeixinConnected, currentInboxId],
+  () => {
+    maybeCompleteWeixinSetup();
+    syncWeixinPolling();
+  },
+  { immediate: true }
+);
+
 onMounted(() => {
   ensureInboxLoaded().then(() => {
     fetchWhatsappWebStatus();
+    fetchWeixinDiagnostics();
   });
   generateQRCodes();
   renderTelegramPersonalQrCode();
+  renderWeixinQrCode();
   syncDashboardThemeState();
   maybeCompleteWhatsappWebSetup();
   maybeCompleteTelegramPersonalSetup();
+  maybeCompleteWeixinSetup();
   syncWhatsappWebPolling();
   syncTelegramPersonalPolling();
+  syncWeixinPolling();
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     if (document.body) {
@@ -1157,8 +1397,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopWhatsappWebPolling();
   stopTelegramPersonalPolling();
+  stopWeixinPolling();
   clearWhatsappWebRedirectTimeout();
   clearTelegramPersonalRedirectTimeout();
+  clearWeixinRedirectTimeout();
   whatsappWebThemeObserver.value?.disconnect();
   whatsappWebThemeObserver.value = null;
   if (typeof document !== 'undefined') {
@@ -1404,6 +1646,156 @@ onBeforeUnmount(() => {
                       : $t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_DESCRIPTION')
                   }}
                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="isWeixinSetupFlow" class="mt-8 w-full">
+          <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 text-left">
+            <div
+              class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,20rem)] lg:items-start"
+            >
+              <div class="flex min-h-full flex-col gap-5">
+                <div class="flex items-center gap-4">
+                  <div
+                    class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-[#07C160]/10 text-[#07C160]"
+                  >
+                    <i class="i-ri-wechat-line text-[1.75rem]" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-lg font-semibold text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.TITLE') }}
+                    </p>
+                    <p class="mt-1 text-sm leading-6 text-n-slate-10">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.DESCRIPTION') }}
+                    </p>
+                  </div>
+                </div>
+
+                <p
+                  v-if="weixinStatusMessage"
+                  class="text-sm leading-6 text-n-slate-10"
+                >
+                  {{ weixinStatusMessage }}
+                </p>
+
+                <div
+                  v-if="isWeixinConnected"
+                  class="flex w-full flex-col items-start gap-2 rounded-2xl border border-[#07C160]/30 bg-[#07C160]/5 px-6 py-5"
+                >
+                  <div
+                    class="flex size-10 items-center justify-center rounded-full bg-[#07C160] text-white"
+                  >
+                    <i class="i-ri-check-line text-xl" />
+                  </div>
+                  <p class="text-sm font-semibold text-n-slate-12">
+                    {{ $t('INBOX_MGMT.FINISH.WEIXIN.CONNECTED_SUCCESS') }}
+                  </p>
+                  <p class="text-sm leading-6 text-n-slate-10">
+                    {{ $t('INBOX_MGMT.FINISH.WEIXIN.CONNECTED_REDIRECT') }}
+                  </p>
+                </div>
+              </div>
+
+              <div
+                v-if="currentInbox?.id"
+                class="rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+              >
+                <div class="space-y-2 text-sm text-n-slate-11">
+                  <p>
+                    <span class="font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.DISPLAY_NAME') }}
+                    </span>
+                    {{ currentInbox?.display_name || '—' }}
+                  </p>
+                  <p>
+                    <span class="font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.PROVIDER_ACCOUNT_ID') }}
+                    </span>
+                    {{ currentInbox?.provider_account_id || '—' }}
+                  </p>
+                  <p>
+                    <span class="font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.STATUS') }}
+                    </span>
+                    {{ weixinLifecycleState }}
+                  </p>
+                  <p>
+                    <span class="font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.CONNECTION') }}
+                    </span>
+                    {{ weixinConnectionState }}
+                  </p>
+                  <p v-if="weixinLastError" class="text-rose-600">
+                    <span class="font-medium">
+                      {{ $t('INBOX_MGMT.FINISH.WEIXIN.LAST_ERROR') }}
+                    </span>
+                    {{ weixinLastError }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex w-full flex-col gap-4">
+              <div
+                v-if="!currentInbox?.id"
+                class="flex min-h-[22rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-n-strong px-6 py-8"
+              >
+                <Spinner class="text-[#07C160]" :size="28" />
+                <p class="text-sm font-medium text-n-slate-11">
+                  {{ $t('INBOX_MGMT.FINISH.WEIXIN.LOADING') }}
+                </p>
+              </div>
+
+              <div
+                v-else-if="!isWeixinConnected"
+                class="max-w-[28rem] rounded-2xl border border-n-weak bg-n-surface-1 p-5"
+              >
+                <p class="text-sm font-medium text-n-slate-12">
+                  {{ $t('INBOX_MGMT.FINISH.WEIXIN.QR_LOGIN') }}
+                </p>
+                <p class="mt-2 text-sm leading-6 text-n-slate-10">
+                  {{ $t('INBOX_MGMT.FINISH.WEIXIN.QR_HINT') }}
+                </p>
+
+                <div
+                  v-if="weixinQrCode"
+                  class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                >
+                  <img
+                    :src="weixinQrCode"
+                    :alt="$t('INBOX_MGMT.FINISH.WEIXIN.QR_IMAGE_ALT')"
+                    class="h-auto w-full max-w-[15rem]"
+                  />
+                </div>
+                <div
+                  v-else
+                  class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                >
+                  {{ $t('INBOX_MGMT.FINISH.WEIXIN.QR_EMPTY') }}
+                </div>
+
+                <p
+                  v-if="weixinQrExpiresAt"
+                  class="mt-3 text-xs text-n-slate-10"
+                >
+                  {{
+                    $t('INBOX_MGMT.FINISH.WEIXIN.QR_EXPIRES_AT', {
+                      value: weixinQrExpiresAt,
+                    })
+                  }}
+                </p>
+
+                <NextButton
+                  class="mt-4 w-full"
+                  type="button"
+                  outline
+                  slate
+                  icon="i-lucide-qr-code"
+                  :is-loading="isRequestingWeixinQr"
+                  :label="weixinQrButtonLabel"
+                  @click="requestWeixinQr()"
+                />
               </div>
             </div>
           </div>

@@ -375,15 +375,15 @@
             "REQUIRED": "Ссылка на AI-приложение обязательна при выборе AI-маршрутизации"
           },
           "OPERATOR_AGENT_AOR": {
-            "LABEL": "Цель оператора",
-            "PLACEHOLDER": "Введите sip:agent{'@'}domain или локальное имя пользователя",
-            "REQUIRED": "Цель оператора обязательна при выборе маршрутизации на оператора"
+            "LABEL": "SIP-адрес оператора",
+            "PLACEHOLDER": "Введите SIP AOR, например sip:1001{'@'}domain, или локальное имя пользователя",
+            "REQUIRED": "SIP-адрес оператора обязателен при маршрутизации на оператора"
           },
           "OPERATOR_AGENT_REF": {
-            "LABEL": "Идентификатор оператора",
-            "PLACEHOLDER": "Необязательный Fonoster agent ref"
+            "LABEL": "Fonoster agent ref оператора",
+            "PLACEHOLDER": "Необязательный идентификатор агента Fonoster"
           },
-          "OPERATOR_TARGET_REQUIRED": "Для маршрута на оператора нужен идентификатор оператора или AOR",
+          "OPERATOR_TARGET_REQUIRED": "Для маршрута на оператора укажите Fonoster agent ref или SIP AOR",
           "FALLBACK_MESSAGE": {
             "LABEL": "Сообщение при отклонении",
             "PLACEHOLDER": "Необязательное сообщение, которое проигрывается при отклонении звонка"
@@ -426,7 +426,7 @@
           "FALLBACK_MODE": "Fallback-режим",
           "PRIMARY_APP_REF": "Ссылка на основное приложение",
           "AI_APP_REF": "Ссылка на AI-приложение",
-          "OPERATOR_AGENT_AOR": "Цель оператора",
+          "OPERATOR_AGENT_AOR": "SIP-адрес оператора",
           "UPDATE_ROUTE": "Обновить маршрут",
           "ROUTE_UPDATE_SUCCESS": "Маршрутизация звонков обновлена",
           "ROUTE_UPDATE_ERROR": "Не удалось обновить маршрутизацию звонков",
@@ -600,6 +600,29 @@
           "ERROR_MESSAGE": "Не удалось сохранить канал VK"
         }
       },
+      "WEIXIN_CHANNEL": {
+        "TITLE": "Канал WeChat / Weixin",
+        "DESC": "Подключите личный аккаунт WeChat через iLink gateway и направляйте сообщения в OneLink.",
+        "ILINK_TOKEN": {
+          "LABEL": "iLink токен",
+          "PLACEHOLDER": "WeChat iLink токен",
+          "SUBTITLE": "Токен, выданный WeChat personal gateway для этого аккаунта."
+        },
+        "PROVIDER_ACCOUNT_ID": {
+          "LABEL": "ID аккаунта провайдера",
+          "PLACEHOLDER": "ID аккаунта WeChat",
+          "SUBTITLE": "Необязательно. Используйте, чтобы привязать этот inbox к известному WeChat-аккаунту в gateway."
+        },
+        "DISPLAY_NAME": {
+          "LABEL": "Отображаемое имя",
+          "PLACEHOLDER": "Поддержка WeChat",
+          "SUBTITLE": "Необязательное имя, которое будет показываться в OneLink для этого WeChat inbox."
+        },
+        "SUBMIT_BUTTON": "Создать канал WeChat",
+        "API": {
+          "ERROR_MESSAGE": "Не удалось сохранить канал WeChat"
+        }
+      },
       "AUTH": {
         "TITLE": "Выберите канал",
         "DESC": "OneLink поддерживает виджет чата, страницу Facebook, профиль Twitter, Whatsapp, Email и т. д., как канал связи с пользователями. Если вы хотите настроить пользовательский канал, вы можете создать его с помощью канала API. Выберите один канал из списка ниже, чтобы продолжить.",
@@ -653,6 +676,10 @@
           "VK": {
             "TITLE": "VK",
             "DESCRIPTION": "Подключить личные сообщения сообщества VK"
+          },
+          "WEIXIN": {
+            "TITLE": "WeChat / Weixin",
+            "DESCRIPTION": "Подключить личный WeChat-аккаунт через iLink"
           },
           "LINE": {
             "TITLE": "Line",
@@ -815,6 +842,33 @@
         "CONNECTED_REDIRECT": "Авторизация завершена. Переходим в настройки inbox...",
         "FAILED": "Авторизация Telegram Personal завершилась ошибкой.",
         "PHONE_NUMBER": "Номер телефона:",
+        "STATUS": "Статус:",
+        "CONNECTION": "Соединение:",
+        "LAST_ERROR": "Последняя ошибка:"
+      },
+      "WEIXIN": {
+        "TITLE": "Подключение WeChat / Weixin",
+        "DESCRIPTION": "Авторизуйте личный аккаунт WeChat через iLink gateway. OneLink привязывает этот inbox к одной приватной WeChat-сессии.",
+        "LOADING": "Подготавливаем авторизацию WeChat.",
+        "REQUESTING_QR": "Подготавливаем QR-вход WeChat.",
+        "REQUEST_QR_HINT": "Сгенерируйте QR-код и отсканируйте его в мобильном приложении WeChat, чтобы подключить этот inbox.",
+        "REQUEST_QR": "Сгенерировать QR",
+        "REFRESH_QR": "Обновить QR",
+        "REQUEST_QR_SUCCESS": "QR-вход WeChat готов",
+        "REQUEST_QR_ERROR": "Не удалось подготовить QR-вход WeChat",
+        "QR_LOGIN": "Войти по QR-коду",
+        "QR_HINT": "Откройте WeChat на телефоне и отсканируйте этот QR-код, чтобы авторизовать iLink-сессию.",
+        "QR_EMPTY": "Сгенерируйте QR-код WeChat, чтобы начать QR-вход.",
+        "QR_IMAGE_ALT": "QR-код WeChat / Weixin",
+        "QR_EXPIRES_AT": "QR истекает: {value}",
+        "QR_READY": "Отсканируйте QR-код в WeChat и подтвердите вход на телефоне.",
+        "QR_EXPIRED": "QR-код WeChat устарел. Сгенерируйте новый, чтобы продолжить.",
+        "CONNECTED": "WeChat / Weixin подключен.",
+        "CONNECTED_SUCCESS": "WeChat / Weixin успешно подключен.",
+        "CONNECTED_REDIRECT": "Авторизация завершена. Переходим в настройки inbox...",
+        "FAILED": "Авторизация WeChat / Weixin завершилась ошибкой.",
+        "DISPLAY_NAME": "Имя:",
+        "PROVIDER_ACCOUNT_ID": "Аккаунт WeChat:",
         "STATUS": "Статус:",
         "CONNECTION": "Соединение:",
         "LAST_ERROR": "Последняя ошибка:"
@@ -1036,6 +1090,65 @@
       },
       "ENABLE_HMAC": {
         "LABEL": "Включить"
+      },
+      "WEIXIN": {
+        "TITLE": "WeChat / Weixin",
+        "SUBTITLE": "Управление подключением и диагностикой личного WeChat inbox.",
+        "OVERVIEW": "Обзор",
+        "OVERVIEW_SUBTITLE": "Текущий канал, QR-авторизация и состояние iLink runtime в одном месте.",
+        "CONNECTION_STATE": "Состояние подключения",
+        "DISPLAY_NAME": "Имя:",
+        "PROVIDER_ACCOUNT_ID": "Аккаунт WeChat:",
+        "STATUS": "Статус:",
+        "CONNECTION": "Соединение:",
+        "LAST_SYNCED": "Последняя синхронизация:",
+        "LAST_ERROR": "Последняя ошибка:",
+        "SERVICE_CONTROLS": "Сервисные действия",
+        "SERVICE_CONTROLS_SUBTITLE": "Перезапустите iLink runtime или отключите канал без лишних шагов в основном сценарии.",
+        "ACCESS_SECTION": "Вход в аккаунт",
+        "ACCESS_SECTION_SUBTITLE": "Используйте QR-вход, когда iLink-сессии нужна авторизация.",
+        "DIAGNOSTICS_SECTION": "Служебная диагностика",
+        "DIAGNOSTICS_SECTION_SUBTITLE": "Короткий набор технических сигналов для быстрой проверки.",
+        "RAW_DIAGNOSTICS": "Raw diagnostics JSON",
+        "RAW_DIAGNOSTICS_TOGGLE": "Показать или скрыть raw diagnostics JSON",
+        "REFRESH_DIAGNOSTICS": "Обновить диагностику",
+        "REQUEST_QR": "Сгенерировать QR",
+        "REFRESH_QR": "Обновить QR",
+        "REQUEST_QR_SUCCESS": "QR-вход WeChat готов",
+        "REQUEST_QR_ERROR": "Не удалось подготовить QR-вход WeChat",
+        "RECONNECT": "Переподключить",
+        "RECONNECT_SUCCESS": "Переподключение WeChat / Weixin запущено",
+        "RECONNECT_ERROR": "Не удалось переподключить WeChat / Weixin",
+        "DISCONNECT": "Отключить",
+        "DISCONNECT_SUCCESS": "WeChat / Weixin отключен",
+        "DISCONNECT_ERROR": "Не удалось отключить WeChat / Weixin",
+        "AUTO_SYNC_HINT": "Статус и диагностические сигналы обновляются автоматически при открытии этой страницы.",
+        "QR_LOGIN": "Войти по QR-коду",
+        "QR_HINT": "Откройте WeChat на телефоне и отсканируйте этот QR-код, чтобы авторизовать iLink-сессию.",
+        "QR_EMPTY": "Сгенерируйте QR-код WeChat, чтобы начать QR-вход.",
+        "QR_IMAGE_ALT": "QR-код WeChat / Weixin",
+        "QR_EXPIRES_AT": "QR истекает: {value}",
+        "DIAGNOSTICS": "Диагностика",
+        "REFRESHING": "Обновляем...",
+        "AUTH_STATE": "Состояние авторизации",
+        "QR_LOGIN_STATE": "Состояние QR-входа",
+        "LAST_INBOUND_AT": "Последний входящий",
+        "LAST_OUTBOUND_AT": "Последний исходящий",
+        "NOT_AVAILABLE": "Недоступно",
+        "STATE_LABELS": {
+          "AUTHORIZED": "Авторизовано",
+          "CONNECTED": "Подключено",
+          "DISCONNECTED": "Отключено",
+          "PENDING_AUTH": "Ожидает авторизации",
+          "QR_READY": "QR готов",
+          "QR_EXPIRED": "QR устарел",
+          "READY": "Готово",
+          "WAITING_SCAN": "Ждет сканирования",
+          "SCANNED": "Отсканировано",
+          "CONFIRMED": "Подтверждено",
+          "CONNECTING": "Подключение",
+          "FAILED": "Ошибка"
+        }
       }
     },
     "DELETE": {

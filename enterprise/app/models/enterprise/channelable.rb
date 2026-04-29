@@ -10,6 +10,15 @@ module Enterprise::Channelable
     sync_state
   ].freeze
 
+  WEIXIN_SENSITIVE_AUDIT_FIELDS = %w[
+    context_token
+    context_tokens
+    ilink_token
+    last_error
+    token_fingerprint
+    webhook_secret
+  ].freeze
+
   # Active support concern has `included` which changes the order of the method lookup chain
   # https://stackoverflow.com/q/40061982/3824876
   # manually prepend the instance methods to combat this
@@ -53,9 +62,10 @@ module Enterprise::Channelable
 
     def filtered_audited_changes
       changes = saved_changes.except('updated_at', 'secret')
-      return changes unless is_a?(::Channel::WhatsappWeb)
+      return changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS) if is_a?(::Channel::WhatsappWeb)
+      return changes.except(*WEIXIN_SENSITIVE_AUDIT_FIELDS) if is_a?(::Channel::Weixin)
 
-      changes.except(*WHATSAPP_WEB_RUNTIME_AUDIT_FIELDS)
+      changes
     end
   end
 end

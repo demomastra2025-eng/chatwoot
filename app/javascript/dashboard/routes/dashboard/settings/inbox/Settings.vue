@@ -51,6 +51,26 @@ const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
   '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
 const WHATSAPP_WEB_POLL_INTERVAL_MS = 5000;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
+const WEIXIN_POLL_INTERVAL_MS = 5000;
+const WEIXIN_SENSITIVE_FIELD_PATTERN =
+  /(?:token|secret|password|api[_-]?key|private[_-]?key|connection[_-]?string|authorization|cookie)/i;
+
+const sanitizeWeixinDiagnostics = value => {
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeWeixinDiagnostics(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, childValue]) => {
+      acc[key] = WEIXIN_SENSITIVE_FIELD_PATTERN.test(key)
+        ? '[REDACTED]'
+        : sanitizeWeixinDiagnostics(childValue);
+      return acc;
+    }, {});
+  }
+
+  return value;
+};
 
 export default {
   components: {
@@ -139,10 +159,18 @@ export default {
       telegramPersonalCode: '',
       telegramPersonalPassword: '',
       telegramPersonalQrCode: '',
+      weixinDiagnostics: null,
+      isLoadingWeixinDiagnostics: false,
+      isRunningWeixinRequestQr: false,
+      isRunningWeixinReconnect: false,
+      isRunningWeixinDisconnect: false,
+      weixinQrCode: '',
       whatsappWebRenderedQrCode: '',
       whatsappWebPollingInterval: null,
       telegramPersonalPollingInterval: null,
+      weixinPollingInterval: null,
       isTelegramPersonalRawDiagnosticsVisible: false,
+      isWeixinRawDiagnosticsVisible: false,
       isRedirectingMissingInbox: false,
       whatsappWebConversationPending: false,
       whatsappWebHistoryLookbackDays: 0,
@@ -225,6 +253,12 @@ export default {
     },
     shouldShowTelegramPersonalLifecycleSection() {
       return this.isATelegramPersonalChannel;
+    },
+    isAWeixinChannel() {
+      return this.inbox?.channel_type === INBOX_TYPES.WEIXIN;
+    },
+    shouldShowWeixinLifecycleSection() {
+      return this.isAWeixinChannel;
     },
     shouldShowVkCommunityDetailsSection() {
       return this.isAVkCommunityChannel;
@@ -374,6 +408,111 @@ export default {
       }
 
       return 'en';
+    },
+    weixinRuntimeState() {
+      return this.inbox?.runtime_state || {};
+    },
+    weixinLifecycleState() {
+      return (
+        this.inbox?.lifecycle_state ||
+        this.weixinDiagnostics?.lifecycle_state ||
+        this.weixinRuntimeState.lifecycle_state ||
+        'pending_auth'
+      );
+    },
+    weixinConnectionState() {
+      return (
+        this.inbox?.connection_state ||
+        this.weixinDiagnostics?.connection_state ||
+        this.weixinRuntimeState.connection_state ||
+        'disconnected'
+      );
+    },
+    weixinLastError() {
+      return (
+        this.inbox?.last_error ||
+        this.weixinDiagnostics?.last_error ||
+        this.weixinRuntimeState.last_error ||
+        ''
+      );
+    },
+    isWeixinConnected() {
+      return (
+        ['connected', 'open', 'ready'].includes(this.weixinLifecycleState) ||
+        ['connected', 'open', 'ready'].includes(this.weixinConnectionState) ||
+        this.weixinDiagnostics?.authorized === true ||
+        this.weixinDiagnostics?.connected === true ||
+        this.weixinRuntimeState.authorized === true ||
+        this.weixinRuntimeState.connected === true
+      );
+    },
+    weixinQrUrl() {
+      return (
+        this.weixinRuntimeState.qr_login_url ||
+        this.weixinDiagnostics?.qr_login_url ||
+        ''
+      );
+    },
+    weixinQrExpiresAt() {
+      return (
+        this.weixinRuntimeState.qr_login_expires_at ||
+        this.weixinDiagnostics?.qr_login_expires_at ||
+        ''
+      );
+    },
+    hasWeixinQrStep() {
+      return (
+        ['qr_ready', 'qr_scanned', 'qr_expired', 'waiting_scan'].includes(
+          this.weixinLifecycleState
+        ) || Boolean(this.weixinQrUrl)
+      );
+    },
+    weixinQrButtonLabel() {
+      return this.hasWeixinQrStep
+        ? this.$t('INBOX_MGMT.EDIT.WEIXIN.REFRESH_QR')
+        : this.$t('INBOX_MGMT.EDIT.WEIXIN.REQUEST_QR');
+    },
+    weixinAuthState() {
+      return (
+        this.weixinDiagnostics?.auth_state ||
+        this.weixinRuntimeState.auth_state ||
+        this.weixinLifecycleState
+      );
+    },
+    weixinQrLoginState() {
+      return (
+        this.weixinDiagnostics?.qr_login_state ||
+        this.weixinRuntimeState.qr_login_state ||
+        this.weixinLifecycleState
+      );
+    },
+    weixinLastInboundAt() {
+      return (
+        this.weixinDiagnostics?.last_inbound_at ||
+        this.weixinRuntimeState.last_inbound_at ||
+        ''
+      );
+    },
+    weixinLastOutboundAt() {
+      return (
+        this.weixinDiagnostics?.last_outbound_at ||
+        this.weixinRuntimeState.last_outbound_at ||
+        ''
+      );
+    },
+    weixinDiagnosticsJson() {
+      if (!this.weixinDiagnostics) {
+        return '';
+      }
+
+      return JSON.stringify(
+        sanitizeWeixinDiagnostics(this.weixinDiagnostics),
+        null,
+        2
+      );
+    },
+    weixinIntlLocale() {
+      return this.telegramPersonalIntlLocale;
     },
     whatsAppAPIProviderName() {
       if (this.isAWhatsAppCloudChannel) {
@@ -630,6 +769,9 @@ export default {
           if (this.isATelegramPersonalChannel) {
             this.fetchTelegramPersonalDiagnostics();
           }
+          if (this.isAWeixinChannel) {
+            this.fetchWeixinDiagnostics();
+          }
         }
       }
     },
@@ -652,11 +794,17 @@ export default {
             if (this.isATelegramPersonalChannel) {
               this.fetchTelegramPersonalDiagnostics();
             }
+            if (this.isAWeixinChannel) {
+              this.fetchWeixinDiagnostics();
+            }
           });
         } else {
           this.selectedFeatureFlags = newInbox?.selected_feature_flags || [];
           if (this.isAWhatsAppWebInbox) {
             this.syncWhatsappWebPolling();
+          }
+          if (this.isAWeixinChannel) {
+            this.syncWeixinPolling();
           }
         }
       },
@@ -681,11 +829,24 @@ export default {
       },
       immediate: true,
     },
+    weixinQrUrl: {
+      handler() {
+        this.renderWeixinQrCode();
+      },
+      immediate: true,
+    },
+    isWeixinConnected: {
+      handler() {
+        this.syncWeixinPolling();
+      },
+      immediate: true,
+    },
   },
   mounted() {
     this.fetchSharedData();
     this.syncWhatsappWebPolling();
     this.syncTelegramPersonalPolling();
+    this.syncWeixinPolling();
     if (typeof document !== 'undefined') {
       document.addEventListener(
         'visibilitychange',
@@ -696,6 +857,7 @@ export default {
   beforeUnmount() {
     this.stopWhatsappWebPolling();
     this.stopTelegramPersonalPolling();
+    this.stopWeixinPolling();
     if (typeof document !== 'undefined') {
       document.removeEventListener(
         'visibilitychange',
@@ -896,9 +1058,11 @@ export default {
         this.syncWhatsappWebStatus();
         this.fetchWhatsappWebDiagnostics();
         this.fetchTelegramPersonalDiagnostics();
+        this.fetchWeixinDiagnostics();
       }
       this.syncWhatsappWebPolling();
       this.syncTelegramPersonalPolling();
+      this.syncWeixinPolling();
     },
     updateRouteWithoutRefresh(selectedTabIndex) {
       const tab = this.tabs[selectedTabIndex];
@@ -933,6 +1097,7 @@ export default {
     handleVisibilityChange() {
       this.syncWhatsappWebPolling();
       this.syncTelegramPersonalPolling();
+      this.syncWeixinPolling();
 
       if (
         typeof document === 'undefined' ||
@@ -944,6 +1109,7 @@ export default {
       this.syncWhatsappWebStatus();
       this.fetchWhatsappWebDiagnostics();
       this.fetchTelegramPersonalDiagnostics();
+      this.fetchWeixinDiagnostics();
     },
     async syncWhatsappWebStatus() {
       if (
@@ -1344,6 +1510,7 @@ export default {
         .replace(/[\s-]+/g, '_')
         .toUpperCase();
       const translationKey = `INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.STATE_LABELS.${normalizedKey}`;
+      // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
       const translatedValue = this.$t(translationKey);
 
       if (translatedValue !== translationKey) {
@@ -1396,6 +1563,215 @@ export default {
       return 'bg-n-alpha-2 text-n-slate-11';
     },
     telegramPersonalMetricValueClass(value) {
+      if (value) {
+        return 'text-n-slate-12';
+      }
+
+      return 'text-n-slate-10';
+    },
+    async fetchWeixinDiagnostics({ force = false } = {}) {
+      if (!this.isAWeixinChannel || !this.currentInboxId) {
+        this.weixinDiagnostics = null;
+        return;
+      }
+
+      try {
+        this.isLoadingWeixinDiagnostics = true;
+        this.weixinDiagnostics = await this.$store.dispatch(
+          'inboxes/getWeixinDiagnostics',
+          { inboxId: this.currentInboxId, force }
+        );
+      } catch (error) {
+        this.weixinDiagnostics = null;
+      } finally {
+        this.isLoadingWeixinDiagnostics = false;
+      }
+    },
+    refreshWeixinDiagnostics() {
+      return this.fetchWeixinDiagnostics({ force: true });
+    },
+    stopWeixinPolling() {
+      if (this.weixinPollingInterval) {
+        window.clearInterval(this.weixinPollingInterval);
+        this.weixinPollingInterval = null;
+      }
+    },
+    syncWeixinPolling() {
+      this.stopWeixinPolling();
+
+      if (
+        !this.isAWeixinChannel ||
+        !this.currentInboxId ||
+        this.isWeixinConnected ||
+        this.selectedTabKey !== 'inbox-settings'
+      ) {
+        return;
+      }
+
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
+
+      this.weixinPollingInterval = window.setInterval(() => {
+        this.fetchWeixinDiagnostics();
+      }, WEIXIN_POLL_INTERVAL_MS);
+    },
+    async renderWeixinQrCode() {
+      if (!this.weixinQrUrl) {
+        this.weixinQrCode = '';
+        return;
+      }
+
+      try {
+        this.weixinQrCode = await QRCode.toDataURL(this.weixinQrUrl, {
+          margin: 0,
+          width: 384,
+        });
+      } catch (error) {
+        this.weixinQrCode = '';
+      }
+    },
+    async requestWeixinQr() {
+      try {
+        this.isRunningWeixinRequestQr = true;
+        await this.$store.dispatch(
+          'inboxes/requestWeixinQr',
+          this.currentInboxId
+        );
+        await this.fetchWeixinDiagnostics({ force: true });
+        useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.REQUEST_QR_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WEIXIN.REQUEST_QR_ERROR')
+        );
+      } finally {
+        this.isRunningWeixinRequestQr = false;
+      }
+    },
+    async reconnectWeixin() {
+      try {
+        this.isRunningWeixinReconnect = true;
+        await this.$store.dispatch(
+          'inboxes/reconnectWeixin',
+          this.currentInboxId
+        );
+        await this.fetchWeixinDiagnostics({ force: true });
+        useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.RECONNECT_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WEIXIN.RECONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningWeixinReconnect = false;
+      }
+    },
+    async disconnectWeixin() {
+      try {
+        this.isRunningWeixinDisconnect = true;
+        await this.$store.dispatch(
+          'inboxes/disconnectWeixin',
+          this.currentInboxId
+        );
+        await this.fetchWeixinDiagnostics({ force: true });
+        useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.DISCONNECT_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message || this.$t('INBOX_MGMT.EDIT.WEIXIN.DISCONNECT_ERROR')
+        );
+      } finally {
+        this.isRunningWeixinDisconnect = false;
+      }
+    },
+    formatWeixinValue(value) {
+      return value || this.$t('INBOX_MGMT.EDIT.WEIXIN.NOT_AVAILABLE');
+    },
+    formatWeixinDate(value) {
+      if (!value) {
+        return this.$t('INBOX_MGMT.EDIT.WEIXIN.NOT_AVAILABLE');
+      }
+
+      const parsedValue = new Date(value);
+      if (Number.isNaN(parsedValue.getTime())) {
+        return value;
+      }
+
+      try {
+        return new Intl.DateTimeFormat(this.weixinIntlLocale, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          hour12: false,
+        }).format(parsedValue);
+      } catch {
+        return value;
+      }
+    },
+    humanizeWeixinState(value) {
+      if (!value) {
+        return this.$t('INBOX_MGMT.EDIT.WEIXIN.NOT_AVAILABLE');
+      }
+
+      const normalizedKey = String(value)
+        .trim()
+        .replace(/[\s-]+/g, '_')
+        .toUpperCase();
+      const translationKey = `INBOX_MGMT.EDIT.WEIXIN.STATE_LABELS.${normalizedKey}`;
+      // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+      const translatedValue = this.$t(translationKey);
+
+      if (translatedValue !== translationKey) {
+        return translatedValue;
+      }
+
+      const normalizedValue = String(value).replace(/_/g, ' ');
+      return normalizedValue.charAt(0).toUpperCase() + normalizedValue.slice(1);
+    },
+    weixinStateBadgeClass(value) {
+      const normalizedValue = String(value || '').toLowerCase();
+
+      if (
+        ['authorized', 'connected', 'confirmed', 'open', 'ready'].includes(
+          normalizedValue
+        )
+      ) {
+        return 'bg-n-teal-9/10 text-n-teal-11';
+      }
+
+      if (
+        [
+          'pending auth',
+          'pending_auth',
+          'qr ready',
+          'qr_ready',
+          'qr scanned',
+          'qr_scanned',
+          'waiting scan',
+          'waiting_scan',
+          'scanned',
+          'connecting',
+        ].includes(normalizedValue)
+      ) {
+        return 'bg-n-amber-9/10 text-n-slate-12';
+      }
+
+      if (
+        [
+          'failed',
+          'disconnected',
+          'qr expired',
+          'qr_expired',
+          'expired',
+          'cancelled',
+        ].includes(normalizedValue)
+      ) {
+        return 'bg-n-ruby-9/10 text-n-ruby-11';
+      }
+
+      return 'bg-n-alpha-2 text-n-slate-11';
+    },
+    weixinMetricValueClass(value) {
       if (value) {
         return 'text-n-slate-12';
       }
@@ -2979,6 +3355,392 @@ export default {
                       {{
                         $t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.NOT_AVAILABLE')
                       }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </SettingsAccordion>
+
+            <SettingsAccordion
+              v-if="shouldShowWeixinLifecycleSection"
+              :title="$t('INBOX_MGMT.EDIT.WEIXIN.TITLE')"
+              class="mt-6"
+            >
+              <div class="space-y-4">
+                <p class="text-body-main text-n-slate-11">
+                  {{ $t('INBOX_MGMT.EDIT.WEIXIN.SUBTITLE') }}
+                </p>
+
+                <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div
+                    class="rounded-2xl border border-n-strong bg-gradient-to-br from-n-alpha-2 via-transparent to-transparent p-5 xl:col-span-2"
+                  >
+                    <div
+                      class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
+                    >
+                      <div>
+                        <p class="text-sm font-medium text-n-slate-12">
+                          {{ $t('INBOX_MGMT.EDIT.WEIXIN.OVERVIEW') }}
+                        </p>
+                        <p class="mt-1 text-sm text-n-slate-10">
+                          {{ $t('INBOX_MGMT.EDIT.WEIXIN.OVERVIEW_SUBTITLE') }}
+                        </p>
+                      </div>
+                      <span
+                        class="inline-flex items-center self-start rounded-full px-3 py-1 text-xs font-medium"
+                        :class="weixinStateBadgeClass(weixinLifecycleState)"
+                      >
+                        {{ humanizeWeixinState(weixinLifecycleState) }}
+                      </span>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{ $t('INBOX_MGMT.EDIT.WEIXIN.DISPLAY_NAME') }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold"
+                              :class="
+                                weixinMetricValueClass(inbox.display_name)
+                              "
+                            >
+                              {{ formatWeixinValue(inbox.display_name) }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-user-round" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{
+                                $t('INBOX_MGMT.EDIT.WEIXIN.PROVIDER_ACCOUNT_ID')
+                              }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold"
+                              :class="
+                                weixinMetricValueClass(
+                                  inbox.provider_account_id
+                                )
+                              "
+                            >
+                              {{ formatWeixinValue(inbox.provider_account_id) }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-ri-wechat-fill" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{ $t('INBOX_MGMT.EDIT.WEIXIN.CONNECTION') }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold text-n-slate-12"
+                            >
+                              {{ humanizeWeixinState(weixinConnectionState) }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-plug" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p
+                              class="text-xs uppercase tracking-wide text-n-slate-10"
+                            >
+                              {{ $t('INBOX_MGMT.EDIT.WEIXIN.LAST_SYNCED') }}
+                            </p>
+                            <p
+                              class="mt-2 text-sm font-semibold text-n-slate-12"
+                            >
+                              {{ formatWeixinDate(inbox.last_synced_at) }}
+                            </p>
+                          </div>
+                          <span
+                            class="rounded-full bg-n-surface-2 p-2 text-n-slate-10"
+                          >
+                            <Icon icon="i-lucide-clock-3" class="size-4" />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="weixinLastError"
+                      class="mt-4 rounded-xl border border-n-ruby-8 bg-n-ruby-9/10 p-4"
+                    >
+                      <p class="text-sm font-medium text-n-ruby-11">
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.LAST_ERROR') }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-ruby-11">
+                        {{ weixinLastError }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl border border-n-strong p-5">
+                    <p class="text-sm font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.SERVICE_CONTROLS') }}
+                    </p>
+                    <p class="mt-1 text-sm text-n-slate-10">
+                      {{
+                        $t('INBOX_MGMT.EDIT.WEIXIN.SERVICE_CONTROLS_SUBTITLE')
+                      }}
+                    </p>
+
+                    <div class="mt-4 space-y-2">
+                      <NextButton
+                        class="w-full"
+                        outline
+                        slate
+                        start
+                        icon="i-lucide-refresh-cw"
+                        :label="$t('INBOX_MGMT.EDIT.WEIXIN.RECONNECT')"
+                        :is-loading="isRunningWeixinReconnect"
+                        @click="reconnectWeixin"
+                      />
+                      <NextButton
+                        class="w-full"
+                        outline
+                        ruby
+                        start
+                        icon="i-lucide-power"
+                        :label="$t('INBOX_MGMT.EDIT.WEIXIN.DISCONNECT')"
+                        :is-loading="isRunningWeixinDisconnect"
+                        @click="disconnectWeixin"
+                      />
+                    </div>
+
+                    <div class="mt-4 rounded-xl bg-n-alpha-2 p-4">
+                      <p class="text-sm text-n-slate-10">
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.AUTO_SYNC_HINT') }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="!isWeixinConnected"
+                  class="rounded-2xl border border-n-strong p-5"
+                >
+                  <div
+                    class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                  >
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.ACCESS_SECTION') }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t('INBOX_MGMT.EDIT.WEIXIN.ACCESS_SECTION_SUBTITLE')
+                        }}
+                      </p>
+                    </div>
+                    <span
+                      class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                      :class="weixinStateBadgeClass(weixinLifecycleState)"
+                    >
+                      {{ humanizeWeixinState(weixinLifecycleState) }}
+                    </span>
+                  </div>
+
+                  <div
+                    class="mt-5 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                  >
+                    <p class="text-sm font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_LOGIN') }}
+                    </p>
+                    <p class="mt-2 text-sm text-n-slate-10">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_HINT') }}
+                    </p>
+                    <div
+                      v-if="weixinQrCode"
+                      class="mt-4 flex items-center justify-center rounded-2xl bg-white p-4"
+                    >
+                      <img
+                        :src="weixinQrCode"
+                        :alt="$t('INBOX_MGMT.EDIT.WEIXIN.QR_IMAGE_ALT')"
+                        class="h-auto w-full max-w-[14rem]"
+                      />
+                    </div>
+                    <div
+                      v-else
+                      class="mt-4 rounded-2xl border border-dashed border-n-strong px-4 py-8 text-center text-sm text-n-slate-10"
+                    >
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_EMPTY') }}
+                    </div>
+                    <p
+                      v-if="weixinQrExpiresAt"
+                      class="mt-3 text-xs text-n-slate-10"
+                    >
+                      {{
+                        $t('INBOX_MGMT.EDIT.WEIXIN.QR_EXPIRES_AT', {
+                          value: formatWeixinDate(weixinQrExpiresAt),
+                        })
+                      }}
+                    </p>
+                    <NextButton
+                      class="mt-4 w-full sm:w-auto"
+                      outline
+                      slate
+                      start
+                      :label="weixinQrButtonLabel"
+                      :is-loading="isRunningWeixinRequestQr"
+                      @click="requestWeixinQr"
+                    />
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-n-strong p-5">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-medium text-n-slate-12">
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.DIAGNOSTICS_SECTION') }}
+                      </p>
+                      <p class="mt-1 text-sm text-n-slate-10">
+                        {{
+                          $t(
+                            'INBOX_MGMT.EDIT.WEIXIN.DIAGNOSTICS_SECTION_SUBTITLE'
+                          )
+                        }}
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <NextButton
+                        ghost
+                        slate
+                        sm
+                        icon="i-lucide-refresh-cw"
+                        :is-loading="isLoadingWeixinDiagnostics"
+                        :aria-label="
+                          $t('INBOX_MGMT.EDIT.WEIXIN.REFRESH_DIAGNOSTICS')
+                        "
+                        :title="
+                          $t('INBOX_MGMT.EDIT.WEIXIN.REFRESH_DIAGNOSTICS')
+                        "
+                        @click="refreshWeixinDiagnostics"
+                      />
+                      <NextButton
+                        ghost
+                        slate
+                        sm
+                        icon="i-lucide-bug"
+                        :aria-label="
+                          $t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS_TOGGLE')
+                        "
+                        :title="
+                          $t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS_TOGGLE')
+                        "
+                        @click="
+                          isWeixinRawDiagnosticsVisible =
+                            !isWeixinRawDiagnosticsVisible
+                        "
+                      />
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.AUTH_STATE') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{ humanizeWeixinState(weixinAuthState) }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.QR_LOGIN_STATE') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{ humanizeWeixinState(weixinQrLoginState) }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.LAST_INBOUND_AT') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{ formatWeixinDate(weixinLastInboundAt) }}
+                      </p>
+                    </div>
+                    <div
+                      class="rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                    >
+                      <p
+                        class="text-xs uppercase tracking-wide text-n-slate-10"
+                      >
+                        {{ $t('INBOX_MGMT.EDIT.WEIXIN.LAST_OUTBOUND_AT') }}
+                      </p>
+                      <p class="mt-2 text-sm font-semibold text-n-slate-12">
+                        {{ formatWeixinDate(weixinLastOutboundAt) }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="isWeixinRawDiagnosticsVisible"
+                    class="mt-4 rounded-xl border border-n-strong bg-n-alpha-2 p-4"
+                  >
+                    <p class="mb-3 text-sm font-medium text-n-slate-12">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.RAW_DIAGNOSTICS') }}
+                    </p>
+                    <woot-code
+                      v-if="weixinDiagnosticsJson"
+                      lang="text"
+                      :script="weixinDiagnosticsJson"
+                    />
+                    <p v-else class="text-sm text-n-slate-10">
+                      {{ $t('INBOX_MGMT.EDIT.WEIXIN.NOT_AVAILABLE') }}
                     </p>
                   </div>
                 </div>

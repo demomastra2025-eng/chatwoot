@@ -600,6 +600,29 @@
           "ERROR_MESSAGE": "We were not able to save the VK channel"
         }
       },
+      "WEIXIN_CHANNEL": {
+        "TITLE": "WeChat / Weixin арнасы",
+        "DESC": "Жеке WeChat аккаунтын iLink gateway арқылы қосып, хабарламаларды OneLink-ке бағыттаңыз.",
+        "ILINK_TOKEN": {
+          "LABEL": "iLink токені",
+          "PLACEHOLDER": "WeChat iLink токені",
+          "SUBTITLE": "Осы аккаунт үшін WeChat personal gateway берген токен."
+        },
+        "PROVIDER_ACCOUNT_ID": {
+          "LABEL": "Провайдер аккаунтының ID-і",
+          "PLACEHOLDER": "WeChat аккаунтының ID-і",
+          "SUBTITLE": "Міндетті емес. Бұл inbox-ты gateway ішіндегі белгілі WeChat аккаунтына байлау үшін пайдаланыңыз."
+        },
+        "DISPLAY_NAME": {
+          "LABEL": "Көрсетілетін атау",
+          "PLACEHOLDER": "WeChat қолдау",
+          "SUBTITLE": "OneLink ішінде осы WeChat inbox үшін көрсетілетін қосымша атау."
+        },
+        "SUBMIT_BUTTON": "WeChat арнасын жасау",
+        "API": {
+          "ERROR_MESSAGE": "WeChat арнасын сақтау мүмкін болмады"
+        }
+      },
       "AUTH": {
         "TITLE": "Choose a channel",
         "DESC": "OneLink supports live-chat widgets, Facebook Messenger, WhatsApp, Emails, etc., as channels. If you want to build a custom channel, you can create it using the API channel. To get started, choose one of the channels below.",
@@ -653,6 +676,10 @@
           "VK": {
             "TITLE": "VK",
             "DESCRIPTION": "Connect VK community direct messages"
+          },
+          "WEIXIN": {
+            "TITLE": "WeChat / Weixin",
+            "DESCRIPTION": "Жеке WeChat аккаунтын iLink арқылы қосу"
           },
           "LINE": {
             "TITLE": "Line",
@@ -798,6 +825,33 @@
         "STATUS": "Status:",
         "CONNECTION": "Connection:",
         "LAST_ERROR": "Last error:"
+      },
+      "WEIXIN": {
+        "TITLE": "WeChat / Weixin қосылымы",
+        "DESCRIPTION": "Жеке WeChat аккаунтын iLink gateway арқылы авторизациялаңыз. OneLink бұл inbox-ты бір жеке WeChat сессиясына бекітеді.",
+        "LOADING": "WeChat авторизациясы дайындалуда.",
+        "REQUESTING_QR": "WeChat QR кіруі дайындалуда.",
+        "REQUEST_QR_HINT": "QR кодын жасап, осы inbox-ты қосу үшін оны WeChat мобильді қолданбасында сканерлеңіз.",
+        "REQUEST_QR": "QR жасау",
+        "REFRESH_QR": "QR жаңарту",
+        "REQUEST_QR_SUCCESS": "WeChat QR кіруі дайын",
+        "REQUEST_QR_ERROR": "WeChat QR кіруін дайындау мүмкін болмады",
+        "QR_LOGIN": "QR сканерлеу арқылы кіру",
+        "QR_HINT": "Телефоныңызда WeChat ашып, iLink сессиясын авторизациялау үшін осы QR кодын сканерлеңіз.",
+        "QR_EMPTY": "QR кіруін бастау үшін WeChat QR кодын жасаңыз.",
+        "QR_IMAGE_ALT": "WeChat / Weixin QR коды",
+        "QR_EXPIRES_AT": "QR мерзімі: {value}",
+        "QR_READY": "QR кодын WeChat-та сканерлеп, телефонда кіруді растаңыз.",
+        "QR_EXPIRED": "WeChat QR кодының мерзімі өтті. Жалғастыру үшін жаңасын жасаңыз.",
+        "CONNECTED": "WeChat / Weixin қосылды.",
+        "CONNECTED_SUCCESS": "WeChat / Weixin сәтті қосылды.",
+        "CONNECTED_REDIRECT": "Авторизация аяқталды. Inbox параметрлеріне өтеміз...",
+        "FAILED": "WeChat / Weixin авторизациясы сәтсіз аяқталды.",
+        "DISPLAY_NAME": "Аты:",
+        "PROVIDER_ACCOUNT_ID": "WeChat аккаунты:",
+        "STATUS": "Күйі:",
+        "CONNECTION": "Қосылым:",
+        "LAST_ERROR": "Соңғы қате:"
       }
     },
     "REAUTH": "Reauthorize",
@@ -971,6 +1025,65 @@
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
+      },
+      "WEIXIN": {
+        "TITLE": "WeChat / Weixin",
+        "SUBTITLE": "Жеке WeChat inbox қосылымын және диагностикасын басқарыңыз.",
+        "OVERVIEW": "Шолу",
+        "OVERVIEW_SUBTITLE": "Ағымдағы канал, QR авторизация және iLink runtime күйі бір жерде.",
+        "CONNECTION_STATE": "Қосылым күйі",
+        "DISPLAY_NAME": "Аты:",
+        "PROVIDER_ACCOUNT_ID": "WeChat аккаунты:",
+        "STATUS": "Күйі:",
+        "CONNECTION": "Қосылым:",
+        "LAST_SYNCED": "Соңғы синхрондау:",
+        "LAST_ERROR": "Соңғы қате:",
+        "SERVICE_CONTROLS": "Сервис әрекеттері",
+        "SERVICE_CONTROLS_SUBTITLE": "iLink runtime қайта қосыңыз немесе каналды негізгі сценарийді ауырлатпай ажыратыңыз.",
+        "ACCESS_SECTION": "Аккаунтқа кіру",
+        "ACCESS_SECTION_SUBTITLE": "iLink сессиясына авторизация керек болса, QR кіруін қолданыңыз.",
+        "DIAGNOSTICS_SECTION": "Сервис диагностикасы",
+        "DIAGNOSTICS_SECTION_SUBTITLE": "Жылдам тексеруге арналған қысқа техникалық сигналдар.",
+        "RAW_DIAGNOSTICS": "Raw diagnostics JSON",
+        "RAW_DIAGNOSTICS_TOGGLE": "Raw diagnostics JSON көрсету/жасыру",
+        "REFRESH_DIAGNOSTICS": "Диагностиканы жаңарту",
+        "REQUEST_QR": "QR жасау",
+        "REFRESH_QR": "QR жаңарту",
+        "REQUEST_QR_SUCCESS": "WeChat QR кіруі дайын",
+        "REQUEST_QR_ERROR": "WeChat QR кіруін дайындау мүмкін болмады",
+        "RECONNECT": "Қайта қосу",
+        "RECONNECT_SUCCESS": "WeChat / Weixin қайта қосылуы басталды",
+        "RECONNECT_ERROR": "WeChat / Weixin қайта қосу мүмкін болмады",
+        "DISCONNECT": "Ажырату",
+        "DISCONNECT_SUCCESS": "WeChat / Weixin ажыратылды",
+        "DISCONNECT_ERROR": "WeChat / Weixin ажырату мүмкін болмады",
+        "AUTO_SYNC_HINT": "Бұл параметрлер беті ашылған сайын статус пен диагностика автоматты түрде жаңарады.",
+        "QR_LOGIN": "QR сканерлеу арқылы кіру",
+        "QR_HINT": "Телефоныңызда WeChat ашып, iLink сессиясын авторизациялау үшін осы QR кодын сканерлеңіз.",
+        "QR_EMPTY": "QR кіруін бастау үшін WeChat QR кодын жасаңыз.",
+        "QR_IMAGE_ALT": "WeChat / Weixin QR коды",
+        "QR_EXPIRES_AT": "QR мерзімі: {value}",
+        "DIAGNOSTICS": "Диагностика",
+        "REFRESHING": "Жаңартылуда...",
+        "AUTH_STATE": "Авторизация күйі",
+        "QR_LOGIN_STATE": "QR кіру күйі",
+        "LAST_INBOUND_AT": "Соңғы кіріс",
+        "LAST_OUTBOUND_AT": "Соңғы шығыс",
+        "NOT_AVAILABLE": "Қолжетімсіз",
+        "STATE_LABELS": {
+          "AUTHORIZED": "Авторизацияланған",
+          "CONNECTED": "Қосылған",
+          "DISCONNECTED": "Ажыратылған",
+          "PENDING_AUTH": "Авторизация күтуде",
+          "QR_READY": "QR дайын",
+          "QR_EXPIRED": "QR мерзімі өтті",
+          "READY": "Дайын",
+          "WAITING_SCAN": "Сканерлеуді күтуде",
+          "SCANNED": "Сканерленді",
+          "CONFIRMED": "Расталды",
+          "CONNECTING": "Қосылуда",
+          "FAILED": "Қате"
+        }
       }
     },
     "DELETE": {

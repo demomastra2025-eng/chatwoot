@@ -105,6 +105,22 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.get(`${this.url}/${inboxId}/telegram_personal_diagnostics`);
   }
 
+  requestWeixinQr(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/weixin_request_qr`);
+  }
+
+  reconnectWeixin(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/weixin_reconnect`);
+  }
+
+  disconnectWeixin(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/weixin_disconnect`);
+  }
+
+  getWeixinDiagnostics(inboxId) {
+    return axios.get(`${this.url}/${inboxId}/weixin_diagnostics`);
+  }
+
   createCSATTemplate(inboxId, template) {
     return axios.post(`${this.url}/${inboxId}/csat_template`, {
       template,

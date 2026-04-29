@@ -74,6 +74,12 @@ const channelList = computed(() => {
       icon: 'i-woot-telegram',
     },
     {
+      key: 'weixin',
+      title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WEIXIN.TITLE'),
+      description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.WEIXIN.DESCRIPTION'),
+      icon: 'i-ri-wechat-fill',
+    },
+    {
       key: 'vk_community',
       title: t('INBOX_MGMT.ADD.AUTH.CHANNEL.VK.TITLE'),
       description: t('INBOX_MGMT.ADD.AUTH.CHANNEL.VK.DESCRIPTION'),

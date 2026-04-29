@@ -129,4 +129,20 @@ class InboxPolicy < ApplicationPolicy
   def telegram_personal_diagnostics?
     @account_user.administrator?
   end
+
+  def weixin_request_qr?
+    @account_user.administrator?
+  end
+
+  def weixin_reconnect?
+    @account_user.administrator?
+  end
+
+  def weixin_disconnect?
+    @account_user.administrator?
+  end
+
+  def weixin_diagnostics?
+    @account_user.administrator?
+  end
 end

@@ -55,6 +55,7 @@ class Inbox < ApplicationRecord
     Channel::Line
     Channel::Telegram
     Channel::TelegramPersonal
+    Channel::Weixin
     Channel::Tiktok
     Channel::VkCommunity
     Channel::Whatsapp
@@ -180,6 +181,10 @@ class Inbox < ApplicationRecord
     channel_type == 'Channel::TelegramPersonal'
   end
 
+  def weixin?
+    channel_type == 'Channel::Weixin'
+  end
+
   def vk_community?
     channel_type == 'Channel::VkCommunity'
   end
@@ -215,7 +220,9 @@ class Inbox < ApplicationRecord
 
     transaction do
       update!(deleting_at: timestamp)
-      channel.mark_pending_deletion!(timestamp: timestamp) if (whatsapp_web? || telegram_personal?) && channel.respond_to?(:mark_pending_deletion!)
+      if (whatsapp_web? || telegram_personal? || weixin?) && channel.respond_to?(:mark_pending_deletion!)
+        channel.mark_pending_deletion!(timestamp: timestamp)
+      end
     end
 
     self
@@ -247,6 +254,8 @@ class Inbox < ApplicationRecord
     when 'Channel::Line'
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/line/#{channel.line_channel_id}"
     when 'Channel::TelegramPersonal'
+      channel.callback_webhook_url
+    when 'Channel::Weixin'
       channel.callback_webhook_url
     when 'Channel::Whatsapp'
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/whatsapp/#{channel.phone_number}"

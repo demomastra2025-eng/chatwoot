@@ -600,6 +600,29 @@
           "ERROR_MESSAGE": "We were not able to save the VK channel"
         }
       },
+      "WEIXIN_CHANNEL": {
+        "TITLE": "WeChat / Weixin Channel",
+        "DESC": "Connect a personal WeChat account through the iLink gateway and route messages into OneLink.",
+        "ILINK_TOKEN": {
+          "LABEL": "iLink token",
+          "PLACEHOLDER": "WeChat iLink token",
+          "SUBTITLE": "Token issued by the WeChat personal gateway for this account."
+        },
+        "PROVIDER_ACCOUNT_ID": {
+          "LABEL": "Provider account ID",
+          "PLACEHOLDER": "WeChat account ID",
+          "SUBTITLE": "Optional. Use it to bind this inbox to a known WeChat account in the gateway."
+        },
+        "DISPLAY_NAME": {
+          "LABEL": "Display name",
+          "PLACEHOLDER": "WeChat support",
+          "SUBTITLE": "Optional name shown in OneLink for this WeChat inbox."
+        },
+        "SUBMIT_BUTTON": "Create WeChat channel",
+        "API": {
+          "ERROR_MESSAGE": "We were not able to save the WeChat channel"
+        }
+      },
       "AUTH": {
         "TITLE": "Choose a channel",
         "DESC": "OneLink supports live-chat widgets, Facebook Messenger, WhatsApp, Emails, etc., as channels. If you want to build a custom channel, you can create it using the API channel. To get started, choose one of the channels below.",
@@ -653,6 +676,10 @@
           "VK": {
             "TITLE": "VK",
             "DESCRIPTION": "Connect VK community direct messages"
+          },
+          "WEIXIN": {
+            "TITLE": "WeChat / Weixin",
+            "DESCRIPTION": "Connect a personal WeChat account through iLink"
           },
           "LINE": {
             "TITLE": "Line",
@@ -815,6 +842,33 @@
         "CONNECTED_REDIRECT": "Authorization is complete. Redirecting to inbox settings...",
         "FAILED": "Telegram Personal authorization failed.",
         "PHONE_NUMBER": "Phone number:",
+        "STATUS": "Status:",
+        "CONNECTION": "Connection:",
+        "LAST_ERROR": "Last error:"
+      },
+      "WEIXIN": {
+        "TITLE": "WeChat / Weixin connection",
+        "DESCRIPTION": "Authorize a personal WeChat account through the iLink gateway. OneLink keeps this inbox bound to a single private WeChat session.",
+        "LOADING": "Preparing the WeChat authorization flow.",
+        "REQUESTING_QR": "Preparing a WeChat QR login.",
+        "REQUEST_QR_HINT": "Generate a QR code and scan it from the WeChat mobile app to connect this inbox.",
+        "REQUEST_QR": "Generate QR",
+        "REFRESH_QR": "Refresh QR",
+        "REQUEST_QR_SUCCESS": "WeChat QR login is ready",
+        "REQUEST_QR_ERROR": "Unable to prepare a WeChat QR login",
+        "QR_LOGIN": "Sign in by scanning QR",
+        "QR_HINT": "Open WeChat on your phone and scan this QR code to authorize the iLink session.",
+        "QR_EMPTY": "Generate a WeChat QR code to start QR login.",
+        "QR_IMAGE_ALT": "WeChat / Weixin QR code",
+        "QR_EXPIRES_AT": "QR expires at: {value}",
+        "QR_READY": "Scan the QR code in WeChat and confirm the login on your phone.",
+        "QR_EXPIRED": "The WeChat QR code expired. Generate a new one to continue.",
+        "CONNECTED": "WeChat / Weixin is connected.",
+        "CONNECTED_SUCCESS": "WeChat / Weixin connected successfully.",
+        "CONNECTED_REDIRECT": "Authorization is complete. Redirecting to inbox settings...",
+        "FAILED": "WeChat / Weixin authorization failed.",
+        "DISPLAY_NAME": "Display name:",
+        "PROVIDER_ACCOUNT_ID": "WeChat account:",
         "STATUS": "Status:",
         "CONNECTION": "Connection:",
         "LAST_ERROR": "Last error:"
@@ -1036,6 +1090,65 @@
       },
       "ENABLE_HMAC": {
         "LABEL": "Enable"
+      },
+      "WEIXIN": {
+        "TITLE": "WeChat / Weixin",
+        "SUBTITLE": "Manage connection and diagnostics for the personal WeChat inbox.",
+        "OVERVIEW": "Overview",
+        "OVERVIEW_SUBTITLE": "The current channel, QR auth, and iLink runtime status in one clean place.",
+        "CONNECTION_STATE": "Connection state",
+        "DISPLAY_NAME": "Display name:",
+        "PROVIDER_ACCOUNT_ID": "WeChat account:",
+        "STATUS": "Status:",
+        "CONNECTION": "Connection:",
+        "LAST_SYNCED": "Last synced:",
+        "LAST_ERROR": "Last error:",
+        "SERVICE_CONTROLS": "Service controls",
+        "SERVICE_CONTROLS_SUBTITLE": "Restart the iLink runtime or disconnect the channel without cluttering the main workflow.",
+        "ACCESS_SECTION": "Account sign-in",
+        "ACCESS_SECTION_SUBTITLE": "Use QR login when the iLink session needs authorization.",
+        "DIAGNOSTICS_SECTION": "Service diagnostics",
+        "DIAGNOSTICS_SECTION_SUBTITLE": "A compact set of technical signals for quick health checks.",
+        "RAW_DIAGNOSTICS": "Raw diagnostics JSON",
+        "RAW_DIAGNOSTICS_TOGGLE": "Show or hide raw diagnostics JSON",
+        "REFRESH_DIAGNOSTICS": "Refresh diagnostics",
+        "REQUEST_QR": "Generate QR",
+        "REFRESH_QR": "Refresh QR",
+        "REQUEST_QR_SUCCESS": "WeChat QR login is ready",
+        "REQUEST_QR_ERROR": "Unable to prepare WeChat QR login",
+        "RECONNECT": "Reconnect",
+        "RECONNECT_SUCCESS": "WeChat / Weixin reconnect started",
+        "RECONNECT_ERROR": "Unable to reconnect WeChat / Weixin",
+        "DISCONNECT": "Disconnect",
+        "DISCONNECT_SUCCESS": "WeChat / Weixin disconnected",
+        "DISCONNECT_ERROR": "Unable to disconnect WeChat / Weixin",
+        "AUTO_SYNC_HINT": "Status and diagnostic signals refresh automatically whenever this settings screen opens.",
+        "QR_LOGIN": "Sign in by scanning QR",
+        "QR_HINT": "Open WeChat on your phone and scan this QR code to authorize the iLink session.",
+        "QR_EMPTY": "Generate a WeChat QR code to start QR login.",
+        "QR_IMAGE_ALT": "WeChat / Weixin QR code",
+        "QR_EXPIRES_AT": "QR expires at: {value}",
+        "DIAGNOSTICS": "Diagnostics",
+        "REFRESHING": "Refreshing...",
+        "AUTH_STATE": "Auth state",
+        "QR_LOGIN_STATE": "QR login state",
+        "LAST_INBOUND_AT": "Last inbound",
+        "LAST_OUTBOUND_AT": "Last outbound",
+        "NOT_AVAILABLE": "Not available",
+        "STATE_LABELS": {
+          "AUTHORIZED": "Authorized",
+          "CONNECTED": "Connected",
+          "DISCONNECTED": "Disconnected",
+          "PENDING_AUTH": "Pending auth",
+          "QR_READY": "QR ready",
+          "QR_EXPIRED": "QR expired",
+          "READY": "Ready",
+          "WAITING_SCAN": "Waiting for scan",
+          "SCANNED": "Scanned",
+          "CONFIRMED": "Confirmed",
+          "CONNECTING": "Connecting",
+          "FAILED": "Failed"
+        }
       }
     },
     "DELETE": {
