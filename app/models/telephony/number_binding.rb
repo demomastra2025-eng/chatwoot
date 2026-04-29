@@ -39,6 +39,7 @@ class Telephony::NumberBinding < ApplicationRecord
     app_route_app_ref
     target_app_ref
     routing_mode
+    ai_enabled
     ai_app_ref
     ai_deployment_mode
     fonoster_ai_app_ref
@@ -85,8 +86,9 @@ class Telephony::NumberBinding < ApplicationRecord
       policy = binding.routing_policy || binding.build_routing_policy(account: voice_channel.account)
       policy.assign_attributes(
         mode: config[:routing_mode].presence || policy.mode || 'operator',
+        ai_enabled: normalized_ai_enabled(config, policy),
         ai_app_ref: config[:ai_app_ref],
-        ai_deployment_mode: config[:ai_deployment_mode].presence || policy.ai_deployment_mode,
+        ai_deployment_mode: normalized_ai_deployment_mode(config, policy),
         fonoster_ai_app_ref: config[:fonoster_ai_app_ref],
         onelink_ai_app_ref: config[:onelink_ai_app_ref],
         fallback_ai_app_ref: config[:fallback_ai_app_ref],
@@ -185,5 +187,23 @@ class Telephony::NumberBinding < ApplicationRecord
 
   def self.normalized_metadata(config)
     config.except(*KNOWN_PROVIDER_CONFIG_KEYS).compact
+  end
+
+  def self.normalized_ai_enabled(config, policy)
+    return ActiveModel::Type::Boolean.new.cast(config[:ai_enabled]) if config.key?(:ai_enabled)
+    return true if captain_ai_configured?(config)
+
+    policy.ai_enabled?
+  end
+
+  def self.normalized_ai_deployment_mode(config, policy)
+    return config[:ai_deployment_mode] if config[:ai_deployment_mode].present?
+    return Telephony::RoutingPolicy::AI_DEPLOYMENT_ONELINK_MANAGED if captain_ai_configured?(config)
+
+    policy.ai_deployment_mode
+  end
+
+  def self.captain_ai_configured?(config)
+    config[:captain_assistant_id].present? || config[:onelink_ai_app_ref].present?
   end
 end

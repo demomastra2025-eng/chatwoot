@@ -21,18 +21,14 @@ class CaptainInbox < ApplicationRecord
   validates :inbox_id, uniqueness: true
 
   after_commit :invalidate_inbox_cache, on: %i[create update destroy]
-  after_commit :sync_voice_routing_policy, on: %i[create update]
+  after_commit :sync_voice_routing_policy!, on: %i[create update]
   after_commit :clear_voice_routing_policy, on: :destroy
 
-  private
-
-  def invalidate_inbox_cache
-    return if Current.suppress_runtime_events
-
-    inbox&.account&.update_cache_key(Inbox.name.underscore)
+  def self.sync_voice_routing_policies!
+    includes(inbox: :channel).find_each(&:sync_voice_routing_policy!)
   end
 
-  def sync_voice_routing_policy
+  def sync_voice_routing_policy!
     number_binding = voice_number_binding
     return if number_binding.blank?
 
@@ -45,6 +41,14 @@ class CaptainInbox < ApplicationRecord
       fallback_mode: synced_fallback_mode(policy, number_binding)
     )
     policy.save!
+  end
+
+  private
+
+  def invalidate_inbox_cache
+    return if Current.suppress_runtime_events
+
+    inbox&.account&.update_cache_key(Inbox.name.underscore)
   end
 
   def clear_voice_routing_policy

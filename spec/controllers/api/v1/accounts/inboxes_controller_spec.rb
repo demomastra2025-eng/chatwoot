@@ -521,7 +521,9 @@ RSpec.describe 'Inboxes API', type: :request do
 
       it 'persists top-level Fonoster voice channel parameters for native voice inbox creation' do
         account.enable_features!('channel_voice')
-        allow_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!).and_wrap_original do |_method, number_binding:, attributes:|
+        phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
+        allow_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!)
+          .and_wrap_original do |_method, number_binding:, attributes:|
           number_binding.update!(metadata: number_binding.metadata.merge('last_route_attributes' => attributes.deep_stringify_keys))
         end
 
@@ -530,7 +532,7 @@ RSpec.describe 'Inboxes API', type: :request do
                headers: admin.create_new_auth_token,
                params: {
                  name: 'Fonoster Voice Inbox',
-                 phone_number: '+15551234568',
+                 phone_number: phone_number,
                  provider: 'fonoster',
                  provider_config: {
                    number_ref: 'number-ref-top-level',
@@ -549,7 +551,7 @@ RSpec.describe 'Inboxes API', type: :request do
                                                                        .and change(Telephony::NumberBinding, :count).by(1)
 
         expect(response).to have_http_status(:success)
-        voice_channel = Channel::Voice.find_by!(phone_number: '+15551234568')
+        voice_channel = Channel::Voice.find_by!(phone_number: phone_number)
         expect(voice_channel).to have_attributes(provider: 'fonoster')
         expect(voice_channel.provider_config).to include(
           'number_ref' => 'number-ref-top-level',
@@ -564,7 +566,7 @@ RSpec.describe 'Inboxes API', type: :request do
         number_binding = voice_channel.inbox.telephony_number_binding
         expect(number_binding).to have_attributes(
           number_ref: 'number-ref-top-level',
-          phone_number: '+15551234568',
+          phone_number: phone_number,
           app_ref: 'runtime-app-ref-top-level',
           trunk_ref: 'trunk-ref-top-level'
         )
@@ -574,6 +576,62 @@ RSpec.describe 'Inboxes API', type: :request do
           fallback_mode: 'ai',
           ai_app_ref: 'ai-fallback-app-ref',
           ai_enabled: true
+        )
+      end
+
+      it 'creates one Fonoster voice inbox that is ready for both operator and Captain routing' do
+        account.enable_features!('channel_voice')
+        assistant = create(:captain_assistant, account: account)
+        phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
+        expect_any_instance_of(Telephony::RoutingService).to receive(:update_number_route!).with(
+          number_binding: an_instance_of(Telephony::NumberBinding),
+          attributes: hash_including(
+            mode: 'operator',
+            ai_enabled: true,
+            ai_deployment_mode: 'onelink_managed',
+            onelink_ai_app_ref: 'captain-ai-app-ref-unified',
+            fallback_mode: 'app',
+            captain_assistant_id: assistant.id
+          )
+        ).and_return({})
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: {
+                 name: 'Unified Voice Inbox',
+                 phone_number: phone_number,
+                 provider: 'fonoster',
+                 provider_config: {
+                   number_ref: 'number-ref-unified',
+                   app_ref: 'runtime-app-ref-unified',
+                   app_route_app_ref: 'fallback-app-ref-unified',
+                   trunk_ref: 'trunk-ref-unified',
+                   routing_mode: 'operator',
+                   operator_agent_aor: 'sip:1001@example.test',
+                   fallback_mode: 'app',
+                   onelink_ai_app_ref: 'captain-ai-app-ref-unified',
+                   captain_assistant_id: assistant.id
+                 },
+                 channel: { type: 'voice' }
+               },
+               as: :json
+        end.to change(CaptainInbox, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        voice_channel = Channel::Voice.find_by!(phone_number: phone_number)
+        number_binding = voice_channel.inbox.telephony_number_binding
+        policy = number_binding.routing_policy
+
+        expect(CaptainInbox.find_by(inbox: voice_channel.inbox)).to have_attributes(captain_assistant_id: assistant.id)
+        expect(policy).to have_attributes(
+          mode: 'operator',
+          operator_agent_aor: 'sip:1001@example.test',
+          ai_enabled: true,
+          ai_deployment_mode: 'onelink_managed',
+          onelink_ai_app_ref: 'captain-ai-app-ref-unified',
+          fallback_mode: 'app',
+          captain_assistant_id: assistant.id
         )
       end
 

@@ -34,9 +34,9 @@ class Telephony::InboundRoutingService
   def primary_decision
     case routing_policy.mode
     when 'operator'
-      return operator_decision(reason: 'operator_route') if operator_available?
+      return operator_decision(reason: 'operator_route') if operator_routable?
 
-      fallback_decision(reason: 'operator_unavailable')
+      fallback_decision(reason: 'operator_unavailable', prefer_ai: ai_routing_enabled?)
     when 'app'
       return app_decision(reason: 'app_route') if resolved_primary_app_ref.present?
 
@@ -68,9 +68,9 @@ class Telephony::InboundRoutingService
   end
 
   def non_pending_conversation_operator_decision
-    return operator_decision(reason: 'non_pending_conversation_operator_route') if operator_available?
+    return operator_decision(reason: 'non_pending_conversation_operator_route') if operator_routable?
 
-    fallback_decision(reason: 'operator_unavailable')
+    fallback_decision(reason: 'operator_unavailable', prefer_ai: true)
   end
 
   def ai_routing_enabled?
@@ -114,11 +114,11 @@ class Telephony::InboundRoutingService
     "route_lookup:#{call_ref}:session_started"
   end
 
-  def fallback_decision(reason:, prefer_out_of_office_message: false)
-    fallback_order.each do |mode|
+  def fallback_decision(reason:, prefer_out_of_office_message: false, prefer_ai: false)
+    fallback_order(prefer_ai: prefer_ai).each do |mode|
       case mode
       when 'operator'
-        return operator_decision(reason: reason) if operator_available?
+        return operator_decision(reason: reason) if operator_routable?
       when 'ai'
         return ai_decision(reason: reason) if resolved_ai_app_ref.present?
       when 'app'
@@ -129,22 +129,26 @@ class Telephony::InboundRoutingService
     reject_decision(reason: reason, prefer_out_of_office_message: prefer_out_of_office_message)
   end
 
-  def fallback_order
-    case routing_policy.fallback_mode
-    when 'operator'
-      %w[operator app]
-    when 'app'
-      %w[app operator]
-    when 'ai'
-      %w[ai operator app]
-    else
-      []
-    end
+  def fallback_order(prefer_ai: false)
+    order = case routing_policy.fallback_mode
+            when 'operator'
+              %w[operator app]
+            when 'app'
+              %w[app operator]
+            when 'ai'
+              %w[ai operator app]
+            else
+              []
+            end
+
+    return order unless prefer_ai && fallback_target_available?('ai')
+
+    (['ai'] + order).uniq
   end
 
-  def operator_available?
+  def operator_routable?
     return false unless sip_operator_aor?(resolved_operator_aor)
-    return false if operator_binding.blank?
+    return true if operator_binding.blank?
 
     operator_binding.registered_for_routing?
   end

@@ -3,6 +3,10 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   rescue_from Telephony::Error, with: :render_telephony_error
 
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
+  VOICE_ROUTE_POLICY_ATTRIBUTES = %i[
+    mode ai_enabled ai_app_ref ai_deployment_mode fonoster_ai_app_ref onelink_ai_app_ref fallback_ai_app_ref
+    captain_assistant_id ai_voice_settings operator_agent_ref operator_agent_aor fallback_mode fallback_message
+  ].freeze
 
   before_action :fetch_inbox, except: [:index, :create]
   before_action :fetch_agent_bot, only: [:set_agent_bot]
@@ -217,15 +221,34 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return unless defined?(Channel::Voice) && channel.is_a?(Channel::Voice)
     return unless channel.provider == 'fonoster'
 
+    sync_voice_captain_inbox!(channel)
     binding = Telephony::NumberBinding.sync_from_voice_channel!(channel.reload)
     return if binding.blank?
 
     Telephony::RoutingService.new(account: Current.account).update_number_route!(
       number_binding: binding,
-      attributes: binding.routing_policy.attributes.symbolize_keys.slice(
-        :mode, :ai_app_ref, :operator_agent_ref, :operator_agent_aor, :fallback_mode, :fallback_message
-      )
+      attributes: binding.routing_policy.attributes.symbolize_keys.slice(*VOICE_ROUTE_POLICY_ATTRIBUTES)
     )
+  end
+
+  def sync_voice_captain_inbox!(channel)
+    return unless Object.const_defined?('CaptainInbox')
+    return unless Current.account.respond_to?(:captain_assistants)
+
+    assistant_id = voice_captain_assistant_id(channel)
+    voice_inbox = channel.inbox || @inbox
+    return if assistant_id.blank? || voice_inbox.blank?
+
+    assistant = Current.account.captain_assistants.find(assistant_id)
+    captain_inbox = ::CaptainInbox.find_or_initialize_by(inbox: voice_inbox)
+    captain_inbox.captain_assistant = assistant
+    captain_inbox.save! if captain_inbox.changed? || captain_inbox.new_record?
+  end
+
+  def voice_captain_assistant_id(channel)
+    channel.provider_config_hash.with_indifferent_access[:captain_assistant_id].presence
+  rescue JSON::ParserError, TypeError
+    nil
   end
 
   def format_csat_config(config)

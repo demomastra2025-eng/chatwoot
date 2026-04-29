@@ -53,7 +53,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'falls back to the primary app when an operator AOR is configured but no registration binding exists' do
+  it 'returns an operator route when a SIP operator AOR is configured without a registration binding' do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: 'sip:unregistered@example.test',
@@ -65,7 +65,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-no-operator-registration',
              ingress_number: voice_channel.phone_number,
-             caller_number: '+15550000101'
+             caller_number: '+15555550101'
            },
            headers: {
              'X-Bridge-Secret' => 'bridge-secret'
@@ -75,8 +75,41 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'app',
-      'app_ref' => number_binding.configured_app_ref,
+      'action' => 'operator',
+      'agent_aor' => 'sip:unregistered@example.test',
+      'reason' => 'operator_route'
+    )
+  end
+
+  it 'routes to AI before app fallback when the operator target is missing and the Captain side is enabled' do
+    number_binding.routing_policy.assign_attributes(
+      mode: 'operator',
+      operator_agent_ref: nil,
+      operator_agent_aor: nil,
+      ai_enabled: true,
+      ai_deployment_mode: 'onelink_managed',
+      onelink_ai_app_ref: 'captain-ai-app-ref',
+      fallback_mode: 'app'
+    )
+    number_binding.routing_policy.save!(validate: false)
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-no-operator-registration-ai-side',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15555550102'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'app_ref' => 'captain-ai-app-ref',
       'reason' => 'operator_unavailable'
     )
   end
@@ -402,13 +435,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'routes every existing non-pending voice conversation status to the operator when AI routing is enabled' do
-    create(
-      :telephony_agent_binding,
-      :registered,
-      account: account,
-      agent_aor: 'sip:status-aware-operator@example.test'
-    )
+  it 'routes every existing non-pending voice conversation status to the operator ' \
+     'when AI routing is enabled without requiring a registration binding' do
     number_binding.routing_policy.update!(
       mode: 'ai',
       ai_app_ref: 'ai-status-aware-app-ref',

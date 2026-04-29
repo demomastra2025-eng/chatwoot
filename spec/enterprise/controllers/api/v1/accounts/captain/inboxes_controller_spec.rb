@@ -99,6 +99,49 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         )
       end
 
+      it 'backfills existing voice routing policies for previously connected Captain inboxes' do
+        account.enable_features!('channel_voice')
+        voice_channel = create(
+          :channel_voice,
+          :fonoster,
+          account: account,
+          provider_config: {
+            number_ref: SecureRandom.uuid,
+            app_ref: 'runtime-app-ref',
+            app_route_app_ref: 'fallback-app-ref',
+            trunk_ref: SecureRandom.uuid,
+            routing_mode: 'operator',
+            operator_agent_aor: 'sip:1001@example.test'
+          }
+        )
+        voice_inbox = voice_channel.inbox
+        existing_link = create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+        policy = voice_inbox.telephony_number_binding.routing_policy
+        policy.update!(
+          mode: 'operator',
+          operator_agent_aor: 'sip:1001@example.test',
+          fallback_mode: 'reject',
+          ai_enabled: false,
+          ai_deployment_mode: 'fonoster_managed',
+          onelink_ai_app_ref: nil,
+          captain_assistant_id: nil
+        )
+
+        with_modified_env(ONELINK_AI_VOICE_APP_REF: 'onelink-managed-ai-app-ref') do
+          CaptainInbox.sync_voice_routing_policies!
+        end
+
+        expect(existing_link.reload).to be_present
+        expect(policy.reload).to have_attributes(
+          mode: 'operator',
+          ai_enabled: true,
+          ai_deployment_mode: 'onelink_managed',
+          onelink_ai_app_ref: 'onelink-managed-ai-app-ref',
+          fallback_mode: 'app',
+          captain_assistant_id: assistant.id
+        )
+      end
+
       it 'does not allow connecting an internal assistant to an inbox' do
         internal_assistant = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
 
