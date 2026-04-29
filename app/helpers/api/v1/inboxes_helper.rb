@@ -3,6 +3,7 @@ module Api::V1::InboxesHelper
     return channel.try(:bot_name) if channel.is_a?(Channel::Telegram)
     return channel.generated_inbox_name if channel.is_a?(Channel::WhatsappWeb)
     return channel.generated_inbox_name if channel.is_a?(Channel::TelegramPersonal)
+    return channel.generated_inbox_name if channel.is_a?(Channel::Weixin)
     return channel.generated_inbox_name if channel.is_a?(Channel::VkCommunity)
 
     permitted_params[:name]
@@ -112,6 +113,6 @@ module Api::V1::InboxesHelper
   end
 
   def creating_main_channel_inbox?
-    %w[api whatsapp whatsapp_web telegram telegram_personal vk_community].include?(permitted_params[:channel][:type])
+    %w[api whatsapp whatsapp_web telegram telegram_personal weixin vk_community].include?(permitted_params[:channel][:type])
   end
 end
