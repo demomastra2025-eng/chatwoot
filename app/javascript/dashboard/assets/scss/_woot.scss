@@ -66,6 +66,7 @@ body {
     --channel-icon-gmail: 234 67 53;
     --channel-icon-outlook: 0 120 212;
     --channel-icon-telegram: 34 158 217;
+    --channel-icon-wechat: 7 193 96;
     --channel-icon-line: 6 199 85;
     --channel-icon-instagram: 228 64 95;
     --channel-icon-tiktok: 0 0 0;
@@ -132,6 +133,12 @@ body {
   .i-ri-telegram-line,
   .brand-telegram-outline {
     color: rgb(var(--channel-icon-telegram)) !important;
+  }
+
+  .i-ri-wechat-fill,
+  .i-ri-wechat-line,
+  .brand-wechat-outline {
+    color: rgb(var(--channel-icon-wechat)) !important;
   }
 
   .i-woot-line,
