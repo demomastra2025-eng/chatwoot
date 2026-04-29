@@ -23,6 +23,11 @@ class Captain::Tools::HttpRequestExecutor
   ].freeze
   MAX_RESPONSE_SIZE = 1.megabyte
   RETRYABLE_HTTP_STATUSES = [408, 425, 429, 500, 502, 503, 504].freeze
+  AUTO_RETRYABLE_HTTP_STATUSES = [502, 503, 504].freeze
+  AUTO_RETRYABLE_HTTP_METHODS = %w[GET HEAD].freeze
+  AUTO_RETRYABLE_CUSTOM_TOOL_SLUGS = %w[custom_search_apartments].freeze
+  MAX_HTTP_ATTEMPTS = 2
+  RETRY_BACKOFF_SECONDS = 0.25
 
   def initialize(assistant:, custom_tool:, state: {}, feature: nil, preferences: nil, enforce_safety: false)
     @assistant = assistant
@@ -283,7 +288,33 @@ class Captain::Tools::HttpRequestExecutor
   def execute_http_request(url, body, raise_on_http_error: true)
     uri = URI.parse(url)
     resolved_ip = resolve_public_ip!(uri.host)
+    attempts = auto_retryable_request? ? MAX_HTTP_ATTEMPTS : 1
 
+    attempts.times do |attempt_index|
+      response = perform_http_request(uri, resolved_ip, body)
+      validate_response!(response)
+
+      if raise_on_http_error && auto_retryable_response?(response) && retry_remaining?(attempt_index, attempts)
+        log_retry_attempt(response.code.to_i, attempt_index + 1, attempts)
+        sleep(RETRY_BACKOFF_SECONDS)
+        next
+      end
+
+      raise HttpRequestFailedError, response.code if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
+
+      return response
+    rescue StandardError => e
+      if retryable_exception?(e) && idempotent_retryable_http_method? && retry_remaining?(attempt_index, attempts)
+        log_retry_attempt(e.class.name, attempt_index + 1, attempts)
+        sleep(RETRY_BACKOFF_SECONDS)
+        next
+      end
+
+      raise
+    end
+  end
+
+  def perform_http_request(uri, resolved_ip, body)
     http = Net::HTTP.new(uri.host, uri.port)
     http.ipaddr = resolved_ip
     http.use_ssl = uri.scheme == 'https'
@@ -295,11 +326,7 @@ class Captain::Tools::HttpRequestExecutor
     apply_authentication(request)
     apply_metadata_headers(request)
 
-    response = http.request(request)
-    validate_response!(response)
-    raise HttpRequestFailedError, response.code if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
-
-    response
+    http.request(request)
   end
 
   def resolve_public_ip!(hostname)
@@ -498,6 +525,32 @@ class Captain::Tools::HttpRequestExecutor
 
   def retryable_http_status?(status)
     RETRYABLE_HTTP_STATUSES.include?(status.to_i)
+  end
+
+  def auto_retryable_response?(response)
+    AUTO_RETRYABLE_HTTP_STATUSES.include?(response.code.to_i)
+  end
+
+  def auto_retryable_request?
+    idempotent_retryable_http_method? || allowlisted_retryable_post_tool?
+  end
+
+  def idempotent_retryable_http_method?
+    AUTO_RETRYABLE_HTTP_METHODS.include?(@custom_tool.http_method.to_s)
+  end
+
+  def allowlisted_retryable_post_tool?
+    @custom_tool.http_method.to_s == 'POST' && AUTO_RETRYABLE_CUSTOM_TOOL_SLUGS.include?(@custom_tool.slug.to_s)
+  end
+
+  def retry_remaining?(attempt_index, attempts)
+    attempt_index < attempts - 1
+  end
+
+  def log_retry_attempt(reason, attempt, attempts)
+    Rails.logger.warn(
+      "HttpTool retrying #{@custom_tool.slug}: attempt #{attempt}/#{attempts} failed with #{reason}"
+    )
   end
 
   def retryable_exception?(error)

@@ -23,21 +23,23 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
       account_id: account.id,
       assistant_id: assistant.id,
       conversation: { id: 123, display_id: 456 },
-      contact: { id: 789, phone_number: '+77001234567' },
+      contact: { id: 789, phone_number: 'customer-phone' },
       prompt_context: {
-        contact: { id: 789, phone_number: '+77001234567' },
+        contact: { id: 789, phone_number: 'customer-phone' },
         conversation: { id: 123, display_id: 456 }
       }
     }
   end
   let(:executor) { described_class.new(assistant: assistant, custom_tool: custom_tool, state: state) }
+  let!(:lead_request_stub) do
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 200, body: '{"ok": true}')
+  end
 
   before do
     allow(Resolv).to receive(:getaddresses).and_call_original
     allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34'])
-    stub_request(:post, 'https://example.com/leads')
-      .with(body: '{"lead_name":"Alice","phone":"+77001234567"}')
-      .to_return(status: 200, body: '{"ok": true}')
   end
 
   it 'executes request with templated body and formatted response' do
@@ -50,5 +52,85 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
         request.headers['X-Chatwoot-Conversation-Id'] == '123' &&
         request.headers['X-Chatwoot-Contact-Id'] == '789'
     end)
+  end
+
+  it 'retries transient upstream errors for search apartments tool before failing over' do
+    custom_tool.update!(slug: 'custom_search_apartments')
+    allow(executor).to receive(:sleep)
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return({ status: 502, body: 'bad gateway' }, { status: 200, body: '{"ok": true}' })
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('Lead accepted: true')
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads').twice
+  end
+
+  it 'retries transient upstream errors for idempotent GET tools' do
+    custom_tool.update!(http_method: 'GET', request_template: nil)
+    allow(executor).to receive(:sleep)
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads')
+      .to_return({ status: 503, body: 'temporarily unavailable' }, { status: 200, body: '{"ok": true}' })
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('Lead accepted: true')
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads').twice
+  end
+
+  it 'retries network exceptions for idempotent GET tools' do
+    custom_tool.update!(http_method: 'GET', request_template: nil)
+    allow(executor).to receive(:sleep)
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads')
+      .to_timeout
+      .then
+      .to_return(status: 200, body: '{"ok": true}')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('Lead accepted: true')
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads').twice
+  end
+
+  it 'does not automatically retry arbitrary side-effectful POST tools' do
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 502, body: 'bad gateway')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: HTTP request failed with status 502')
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
+  end
+
+  it 'does not retry non-post tools that only share the search apartments slug' do
+    custom_tool.update!(slug: 'custom_search_apartments', http_method: 'PUT')
+    remove_request_stub(lead_request_stub)
+    stub_request(:put, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 502, body: 'bad gateway')
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: HTTP request failed with status 502')
+    expect(WebMock).to have_requested(:put, 'https://example.com/leads').once
+  end
+
+  it 'does not retry allowlisted POST tools on ambiguous network exceptions' do
+    custom_tool.update!(slug: 'custom_search_apartments')
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_timeout
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('ERROR: An error occurred while executing the request')
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
 end
