@@ -275,6 +275,7 @@ defineExpose({
   headerComponent,
   renderedTemplate,
   rawRenderedTemplate,
+  isFormInvalid,
   v$,
   updateMediaUrl,
   updateMediaName,
