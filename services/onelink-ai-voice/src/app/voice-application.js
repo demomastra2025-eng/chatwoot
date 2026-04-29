@@ -25,6 +25,34 @@ class VoiceApplication {
       accountId: requestPayload.account_id
     });
     this.registry?.create({ callRef, context: {}, accountId: requestPayload.account_id });
+
+    const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
+    await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
+    const routeAction = normalizeRouteAction(routeDecision);
+
+    if (routeAction === 'operator') {
+      await answerCall(call);
+      await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
+      await dialOperator(call, routeDecision);
+      this.registry?.update?.(callRef, { routeDecision, state: 'operator' });
+      return { session, decision: routeDecision, mode: 'operator', completion: Promise.resolve() };
+    }
+
+    if (routeAction === 'reject') {
+      await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, { reason: routeDecision.reason || 'route_rejected' });
+      await rejectCall(call, routeDecision);
+      this.registry?.update?.(callRef, { routeDecision, state: 'rejected' });
+      return { session, decision: routeDecision, mode: 'reject', completion: Promise.resolve() };
+    }
+
+    if (routeAction === 'app') {
+      await answerCall(call);
+      await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
+      await handoffToApp(call, routeDecision);
+      this.registry?.update?.(callRef, { routeDecision, state: 'app' });
+      return { session, decision: routeDecision, mode: 'app', completion: Promise.resolve() };
+    }
+
     await answerCall(call);
 
     const context = await session.bootstrap();
@@ -46,6 +74,32 @@ class VoiceApplication {
       return { session, context, mode: 'fallback', completion: Promise.resolve(), reason };
     }
     return { session, context, realtime: bridge.realtime, mediaStream: bridge.mediaStream, mode: 'realtime', completion: bridge.completion };
+  }
+
+  async routeInboundSafely(requestPayload, callRef) {
+    try {
+      return await this.routeInbound(requestPayload, callRef);
+    } catch (error) {
+      return routeLookupFailureDecision(error);
+    }
+  }
+
+  routeInbound(requestPayload, callRef) {
+    if (!this.client || typeof this.client.routeInbound !== 'function') {
+      throw new Error('client.routeInbound is required');
+    }
+
+    return this.client.routeInbound(routePayload(requestPayload, callRef));
+  }
+
+  async safeBridgeEvent(event, session, requestPayload, routeDecision = {}, metadata = {}) {
+    if (!this.client || typeof this.client.sendBridgeEvent !== 'function') return;
+
+    try {
+      await this.client.sendBridgeEvent(bridgeEventPayload(event, session, requestPayload, routeDecision, metadata));
+    } catch (_error) {
+      // Telephony execution must not be interrupted by transient lifecycle persistence errors.
+    }
   }
 
   async startRealtimeBridge(call, session, context, requestPayload = {}) {
@@ -280,6 +334,82 @@ function isAudioIn(type) {
 function mimeTypeForStreamPayload(payload) {
   if (payload.mimeType) return payload.mimeType;
   return 'audio/pcm;rate=16000';
+}
+
+function compactPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+}
+
+function routePayload(requestPayload = {}, callRef) {
+  return compactPayload({
+    call_ref: callRef,
+    ingress_number: requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to_number || requestPayload.to,
+    caller_number: requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from_number || requestPayload.from,
+    number_ref: requestPayload.number_ref || requestPayload.numberRef,
+    account_id: requestPayload.account_id || requestPayload.accountId,
+    app_ref: requestPayload.app_ref || requestPayload.appRef,
+    media_session_ref: requestPayload.media_session_ref || requestPayload.mediaSessionRef
+  });
+}
+
+function bridgeEventPayload(event, session, requestPayload = {}, routeDecision = {}, metadata = {}) {
+  return compactPayload({
+    event_key: `runtime:${session.callRef}:${event}`,
+    event,
+    call_ref: session.callRef,
+    account_id: session.accountId || requestPayload.account_id || requestPayload.accountId,
+    number_ref: session.numberRef || requestPayload.number_ref || requestPayload.numberRef,
+    ingress_number: session.ingressNumber || requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to,
+    caller_number: session.callerNumber || requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from,
+    metadata: {
+      ...metadata,
+      route_action: routeDecision.action || routeDecision.mode,
+      route_reason: routeDecision.reason
+    }
+  });
+}
+
+function normalizeRouteAction(routeDecision = {}) {
+  return String(routeDecision.action || routeDecision.mode || 'ai').trim().toLowerCase() || 'ai';
+}
+
+function routeLookupFailureDecision(error) {
+  return {
+    action: 'reject',
+    reason: 'route_lookup_failed',
+    message: sanitizeReason(error?.message || 'route lookup failed')
+  };
+}
+
+function operatorTarget(routeDecision = {}) {
+  return routeDecision.agent_aor || routeDecision.agentAor || routeDecision.destination || routeDecision.to || routeDecision.target;
+}
+
+async function dialOperator(call, routeDecision = {}) {
+  const agentAor = operatorTarget(routeDecision);
+  if (!agentAor) return false;
+
+  const payload = { agent_aor: agentAor, destination: agentAor, to: agentAor };
+  if (typeof call?.dial === 'function') return call.dial(payload);
+  if (typeof call?.transfer === 'function') return call.transfer(payload);
+  return false;
+}
+
+async function handoffToApp(call, routeDecision = {}) {
+  const appRef = routeDecision.app_ref || routeDecision.appRef;
+  if (!appRef) return false;
+
+  const payload = { app_ref: appRef, appRef };
+  if (typeof call?.transferToApp === 'function') return call.transferToApp(payload);
+  if (typeof call?.transfer === 'function') return call.transfer(payload);
+  return false;
+}
+
+async function rejectCall(call, routeDecision = {}) {
+  const reason = routeDecision.reason || routeDecision.message || 'route_rejected';
+  if (typeof call?.reject === 'function') return call.reject({ reason });
+  if (typeof call?.hangup === 'function') return call.hangup({ reason });
+  return false;
 }
 
 function normalizeCallPayload(call, payload = {}) {

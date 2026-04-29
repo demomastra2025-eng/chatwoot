@@ -58,6 +58,49 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
   }
 });
 
+test('OnelinkClient calls Rails inbound route and bridge lifecycle event APIs', async () => {
+  const seen = await withServer((req, res, body) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/internal/voice/inbound/route') {
+      const payload = JSON.parse(body);
+      res.end(JSON.stringify({ action: 'operator', agent_aor: payload.operator_agent_aor || 'sip:1001@example.test' }));
+    } else if (req.url === '/internal/voice/inbound/event') {
+      res.end(JSON.stringify({ status: 'ok', event: JSON.parse(body).event }));
+    } else {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not_found' }));
+    }
+  });
+
+  try {
+    const client = new OnelinkClient({ baseUrl: seen.baseUrl, token: 'internal-token', timeoutMs: 1_000 });
+    const decision = await client.routeInbound({
+      call_ref: 'call-route-1',
+      ingress_number: '+15551234567',
+      caller_number: '+15557654321',
+      number_ref: 'number-1',
+      app_ref: 'runtime-app-1'
+    });
+    const event = await client.sendBridgeEvent({
+      event: 'session_started',
+      call_ref: 'call-route-1',
+      ingress_number: '+15551234567',
+      caller_number: '+15557654321'
+    });
+
+    assert.equal(decision.action, 'operator');
+    assert.equal(event.event, 'session_started');
+    assert.equal(seen.requests.length, 2);
+    assert.equal(seen.requests[0].method, 'POST');
+    assert.equal(seen.requests[0].url, '/internal/voice/inbound/route');
+    assert.equal(JSON.parse(seen.requests[0].body).app_ref, 'runtime-app-1');
+    assert.equal(seen.requests[1].url, '/internal/voice/inbound/event');
+    assert.ok(seen.requests.every((request) => request.headers.authorization === 'Bearer internal-token'));
+  } finally {
+    await seen.close();
+  }
+});
+
 test('OnelinkClient returns structured errors without leaking tokens', async () => {
   const seen = await withServer((_req, res) => {
     res.statusCode = 503;

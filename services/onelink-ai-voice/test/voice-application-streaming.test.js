@@ -53,6 +53,8 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   });
 
   const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
     getContext: async () => ({
       call_ref: 'call-native-1',
       ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
@@ -117,10 +119,102 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(completed, true);
 });
 
+test('VoiceApplication asks Rails for a route first and dials operator without AI bootstrap', async () => {
+  const routeCalls = [];
+  const bridgeEvents = [];
+  const dialCalls = [];
+  const client = {
+    routeInbound: async payload => {
+      routeCalls.push(payload);
+      return { action: 'operator', agent_aor: 'sip:1001@example.test', reason: 'operator_route' };
+    },
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    async dial(target) { dialCalls.push(target); }
+  };
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-operator-1',
+    from: '+15557654321',
+    to: '+15551234567',
+    number_ref: 'number-1',
+    app_ref: 'runtime-app-1'
+  });
+
+  assert.equal(result.mode, 'operator');
+  assert.equal(call.answerCount, 1);
+  assert.equal(routeCalls.length, 1);
+  assert.equal(routeCalls[0].call_ref, 'call-operator-1');
+  assert.equal(routeCalls[0].app_ref, 'runtime-app-1');
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing']);
+  assert.equal(dialCalls[0].agent_aor, 'sip:1001@example.test');
+});
+
+test('VoiceApplication hands app route decisions to the target app without AI bootstrap', async () => {
+  const bridgeEvents = [];
+  const handoffs = [];
+  const client = {
+    routeInbound: async () => ({ action: 'app', app_ref: 'target-app-1', reason: 'app_route' }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for app routes'); }
+  };
+  const call = {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    async transferToApp(target) { handoffs.push(target); }
+  };
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-app-1',
+    from: '+15554321001',
+    to: '+15554567001',
+    number_ref: 'number-1'
+  });
+
+  assert.equal(result.mode, 'app');
+  assert.equal(call.answerCount, 1);
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'app_routing']);
+  assert.equal(handoffs[0].app_ref, 'target-app-1');
+});
+
+test('VoiceApplication rejects the call safely when Rails route lookup fails', async () => {
+  const bridgeEvents = [];
+  const rejects = [];
+  const client = {
+    routeInbound: async () => { throw new Error('route token=super-secret unavailable'); },
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded when routing fails'); }
+  };
+  const call = {
+    async reject(payload) { rejects.push(payload); }
+  };
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-route-failed',
+    from: '+15554321002',
+    to: '+15554567002'
+  });
+
+  assert.equal(result.mode, 'reject');
+  assert.equal(result.decision.reason, 'route_lookup_failed');
+  assert.equal(rejects.length, 1);
+  assert.doesNotMatch(rejects[0].reason, /super-secret/);
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'session_failed']);
+});
+
 test('VoiceApplication falls back safely when realtime setup fails after context bootstrap', async () => {
   const controls = [];
   const greetings = [];
   const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
     getContext: async () => ({
       call_ref: 'call-realtime-fail',
       ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },

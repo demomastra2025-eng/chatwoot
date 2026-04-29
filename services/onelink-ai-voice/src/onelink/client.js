@@ -24,6 +24,10 @@ class OnelinkClient {
     return this.request('/internal/voice/ai/control', { method: 'POST', body: normalizeKeys(payload) });
   }
 
+  routeInbound(payload = {}) {
+    return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload) });
+  }
+
   async callTool(name, payload = {}) {
     const safeName = encodeURIComponent(String(name || '').trim());
     const response = await this.request(`/internal/voice/ai/tools/${safeName}`, { method: 'POST', body: normalizeKeys(payload) });
