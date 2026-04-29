@@ -1,20 +1,29 @@
 require 'rails_helper'
 
 RSpec.describe 'Api::V1::Accounts::WeixinChannelsController', type: :request do
-  before do
-    allow_any_instance_of(AccountUser).to receive(:create_notification_setting)
-  end
-
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
 
   describe 'POST /api/v1/accounts/:account_id/inboxes/:id/weixin_request_qr' do
+    it 'returns an unprocessable response when the gateway is not configured' do
+      channel = Channel::Weixin.create!(account: account, display_name: 'Pending QR Login')
+      inbox = create(:inbox, account: account, channel: channel)
+
+      with_modified_env('WEIXIN_GATEWAY_URL' => nil, 'WEIXIN_GATEWAY_TOKEN' => nil) do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/weixin_request_qr",
+             headers: admin.create_new_auth_token,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to include('WEIXIN_GATEWAY_URL')
+    end
+
     it 'stores QR-issued iLink credentials without exposing secrets in the inbox response' do
       channel = Channel::Weixin.create!(account: account, display_name: 'Pending QR Login')
       inbox = create(:inbox, account: account, channel: channel)
 
-      allow_any_instance_of(Weixin::GatewayClient).to receive(:sync_channel!).and_return({})
-      allow_any_instance_of(Weixin::GatewayClient).to receive(:request_qr_login!).and_return(
+      gateway_result = {
         channel: {
           connection_state: 'connected',
           lifecycle_state: 'connected',
@@ -24,7 +33,13 @@ RSpec.describe 'Api::V1::Accounts::WeixinChannelsController', type: :request do
           last_error: nil,
           runtime_state: { qr_login_state: 'confirmed', poller_state: 'running' }
         }
+      }
+      gateway_client = instance_double(
+        Weixin::GatewayClient,
+        sync_channel!: {},
+        request_qr_login!: gateway_result
       )
+      allow(Weixin::GatewayClient).to receive(:new).and_return(gateway_client)
 
       post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/weixin_request_qr",
            headers: admin.create_new_auth_token,

@@ -54,6 +54,24 @@ RSpec.describe Weixin::GatewayClient do
 
       client.sync_channel!
     end
+
+    it 'raises a gateway error when the gateway URL is not configured' do
+      with_modified_env('WEIXIN_GATEWAY_URL' => nil) do
+        expect { client.sync_channel! }.to raise_error(
+          Weixin::GatewayClient::GatewayError,
+          /WEIXIN_GATEWAY_URL/
+        )
+      end
+    end
+
+    it 'wraps gateway transport failures without leaking a raw exception' do
+      allow(HTTParty).to receive(:post).and_raise(Errno::ECONNREFUSED)
+
+      expect { client.sync_channel! }.to raise_error(
+        Weixin::GatewayClient::GatewayError,
+        /Weixin gateway unavailable/
+      )
+    end
   end
 
   describe '#request_qr_login!' do

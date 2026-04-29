@@ -1,8 +1,21 @@
 class Weixin::GatewayClient
   class GatewayError < StandardError; end
 
+  DEVELOPMENT_GATEWAY_URL = 'http://127.0.0.1:8097'.freeze
+  DEVELOPMENT_GATEWAY_TOKEN = 'local-weixin-gateway'.freeze
   RUNTIME_NOT_SYNCED_ERROR = /\bChannel\s+\d+\s+is not synced\b/i
   SENSITIVE_ERROR_PATTERN = /(authorization|bearer|token|secret|password|api[_-]?key|connection[_-]?string)(["'\s:=]+)([^"'\s,}]+)/i
+  TRANSPORT_ERRORS = [
+    HTTParty::Error,
+    SocketError,
+    Errno::ECONNREFUSED,
+    Errno::ECONNRESET,
+    Errno::EHOSTUNREACH,
+    Net::OpenTimeout,
+    Net::ReadTimeout,
+    EOFError,
+    Timeout::Error
+  ].freeze
 
   pattr_initialize [:channel!]
 
@@ -85,13 +98,17 @@ class Weixin::GatewayClient
   end
 
   def get(path)
-    response = HTTParty.get("#{base_url}#{path}", headers: headers.except('Content-Type'), timeout: 30)
-    parse_response(response)
+    with_transport_error_handling do
+      response = HTTParty.get("#{base_url}#{path}", headers: headers.except('Content-Type'), timeout: 30)
+      parse_response(response)
+    end
   end
 
   def post(path, body:)
-    response = HTTParty.post("#{base_url}#{path}", headers: headers, body: body.to_json, timeout: 60)
-    parse_response(response)
+    with_transport_error_handling do
+      response = HTTParty.post("#{base_url}#{path}", headers: headers, body: body.to_json, timeout: 60)
+      parse_response(response)
+    end
   end
 
   def post_with_runtime_retry(path, body:)
@@ -104,8 +121,10 @@ class Weixin::GatewayClient
   end
 
   def delete(path)
-    response = HTTParty.delete("#{base_url}#{path}", headers: headers.except('Content-Type'), timeout: 30)
-    parse_response(response)
+    with_transport_error_handling do
+      response = HTTParty.delete("#{base_url}#{path}", headers: headers.except('Content-Type'), timeout: 30)
+      parse_response(response)
+    end
   end
 
   def parse_response(response)
@@ -123,11 +142,27 @@ class Weixin::GatewayClient
   end
 
   def base_url
-    ENV.fetch('WEIXIN_GATEWAY_URL')
+    gateway_setting('WEIXIN_GATEWAY_URL', DEVELOPMENT_GATEWAY_URL).delete_suffix('/')
   end
 
   def gateway_token
-    ENV.fetch('WEIXIN_GATEWAY_TOKEN')
+    gateway_setting('WEIXIN_GATEWAY_TOKEN', DEVELOPMENT_GATEWAY_TOKEN)
+  end
+
+  def gateway_setting(key, development_default)
+    value = ENV.fetch(key, nil).presence
+    return value if value.present?
+    return development_default if Rails.env.development?
+
+    raise GatewayError, "Weixin gateway is not configured: #{key} is missing"
+  end
+
+  def with_transport_error_handling
+    yield
+  rescue GatewayError
+    raise
+  rescue *TRANSPORT_ERRORS => e
+    raise GatewayError, "Weixin gateway unavailable: #{redact_error_message(e.message.presence || e.class.name)}"
   end
 
   def runtime_not_synced_error?(error)

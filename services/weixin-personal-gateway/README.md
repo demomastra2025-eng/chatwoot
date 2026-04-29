@@ -19,4 +19,4 @@ cd services/weixin-personal-gateway
 python3 -m unittest discover -s tests
 ```
 
-Runtime wiring into docker/systemd is intentionally not added in this change; production rollout should happen separately after protocol tests and Rails specs are green.
+Runtime wiring into docker/systemd is intentionally not added in this change; production rollout should happen separately after protocol tests and Rails specs are green. Local dev Procfiles may run the gateway on `127.0.0.1:8097` with a non-production development token.
