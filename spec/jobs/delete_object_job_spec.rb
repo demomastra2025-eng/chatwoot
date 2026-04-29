@@ -32,29 +32,125 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect(Contact.where(id: contact_ids).reload).not_to be_empty
         expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
       end
+
+      it 'keeps telephony call audit records when destroying an inbox' do
+        conversation = create(:conversation, account: account, inbox: inbox)
+        call_session = create(
+          :telephony_call_session,
+          account: account,
+          conversation: conversation,
+          contact: conversation.contact,
+          inbox: inbox,
+          external_call_ref: 'delete-inbox-call-ref'
+        )
+
+        described_class.perform_now(inbox)
+
+        expect(call_session.reload).to have_attributes(
+          conversation_id: nil,
+          inbox_id: nil,
+          number_binding_id: nil,
+          contact_id: conversation.contact_id
+        )
+      end
+
+      it 'removes a voice inbox while preserving telephony call sessions and events as audit records' do
+        voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551239999')
+        voice_inbox = voice_channel.inbox
+        number_binding = voice_inbox.telephony_number_binding
+        routing_policy = number_binding.routing_policy
+        conversation = create(:conversation, account: account, inbox: voice_inbox)
+        call_session = create(
+          :telephony_call_session,
+          account: account,
+          conversation: conversation,
+          contact: conversation.contact,
+          inbox: voice_inbox,
+          number_binding: number_binding,
+          external_call_ref: 'delete-voice-inbox-call-ref'
+        )
+        event = Telephony::Event.create!(
+          account: account,
+          call_session: call_session,
+          event_key: 'delete-voice-inbox-event',
+          event_type: 'session_completed',
+          payload: {},
+          status: 'processed'
+        )
+
+        described_class.perform_now(voice_inbox)
+
+        expect { voice_inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect { voice_channel.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect(Telephony::NumberBinding.exists?(number_binding.id)).to be(false)
+        expect(Telephony::RoutingPolicy.exists?(routing_policy.id)).to be(false)
+        expect(call_session.reload).to have_attributes(
+          conversation_id: nil,
+          inbox_id: nil,
+          number_binding_id: nil,
+          contact_id: conversation.contact_id
+        )
+        expect(event.reload.call_session_id).to eq(call_session.id)
+      end
+    end
+
+    context 'when object is a conversation with telephony call sessions' do
+      let!(:account) { create(:account) }
+      let!(:conversation) { create(:conversation, account: account) }
+
+      it 'keeps telephony call audit records when destroying the conversation' do
+        call_session = create(
+          :telephony_call_session,
+          account: account,
+          conversation: conversation,
+          contact: conversation.contact,
+          inbox: conversation.inbox,
+          external_call_ref: 'delete-conversation-call-ref'
+        )
+
+        described_class.perform_now(conversation)
+
+        expect(call_session.reload).to have_attributes(
+          conversation_id: nil,
+          inbox_id: conversation.inbox_id,
+          contact_id: conversation.contact_id
+        )
+      end
     end
 
     context 'when object is a WhatsApp Web inbox' do
-      let!(:account) { create(:account) }
+      let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_whatsapp_web, account: account) }
       let!(:inbox) { channel.inbox }
 
       it 'tears down the remote instance before destroying local records' do
-        expect(channel).to receive(:teardown_provider_instance!).ordered
-        expect(channel).to receive(:destroy).and_call_original.ordered
+        teardown_started = false
+        allow(channel).to receive(:teardown_provider_instance!) do
+          teardown_started = true
+        end
+        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+          expect(teardown_started).to be(true)
+          method.call(*args)
+        end
 
         described_class.perform_now(inbox)
       end
     end
 
     context 'when object is a Telegram Personal inbox' do
-      let!(:account) { create(:account) }
+      let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_telegram_personal, account: account) }
       let!(:inbox) { channel.inbox }
 
       it 'tears down the gateway runtime before destroying local records' do
-        expect(channel).to receive(:teardown_runtime!).ordered
-        expect(channel).to receive(:destroy).and_call_original.ordered
+        teardown_started = false
+        allow(channel).to receive(:teardown_runtime!) do
+          teardown_started = true
+        end
+        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+          expect(teardown_started).to be(true)
+          method.call(*args)
+        end
 
         described_class.perform_now(inbox)
       end

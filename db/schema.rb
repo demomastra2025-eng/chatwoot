@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_29_114500) do
+ActiveRecord::Schema[7.1].define(version: 2026_04_29_153000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2350,10 +2350,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_04_29_114500) do
   add_foreign_key "telephony_agent_bindings", "users"
   add_foreign_key "telephony_call_sessions", "accounts"
   add_foreign_key "telephony_call_sessions", "contacts"
-  add_foreign_key "telephony_call_sessions", "conversations"
-  add_foreign_key "telephony_call_sessions", "inboxes"
+  add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
+  add_foreign_key "telephony_call_sessions", "inboxes", on_delete: :nullify
   add_foreign_key "telephony_call_sessions", "telephony_agent_bindings", column: "agent_binding_id"
-  add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id"
+  add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
   add_foreign_key "telephony_events", "accounts"
   add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
   add_foreign_key "telephony_number_bindings", "accounts"

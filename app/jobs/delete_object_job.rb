@@ -8,6 +8,7 @@ class DeleteObjectJob < ApplicationJob
 
     mark_pending_deletion(object)
     teardown_remote_dependencies(object)
+    prepare_telephony_dependencies(object)
 
     # Pre-purge heavy associations for large objects to avoid
     # timeouts & race conditions due to destroy_async fan-out.
@@ -54,6 +55,35 @@ class DeleteObjectJob < ApplicationJob
       object.channel&.teardown_provider_instance!
     elsif object.telegram_personal?
       object.channel&.teardown_runtime!
+    end
+  end
+
+  def prepare_telephony_dependencies(object)
+    case object
+    when Inbox
+      prepare_inbox_telephony_dependencies(object)
+    when Conversation
+      nullify_telephony_call_sessions(conversation_id: object.id)
+    end
+  end
+
+  # Telephony calls are audit records. Keep sessions/events, but detach them from
+  # records that are about to be removed so FK constraints cannot strand deletion.
+  def prepare_inbox_telephony_dependencies(inbox)
+    conversation_ids = inbox.conversations.select(:id)
+    number_binding_ids = Telephony::NumberBinding.where(inbox_id: inbox.id).select(:id)
+
+    nullify_telephony_call_sessions(conversation_id: conversation_ids)
+    nullify_telephony_call_sessions(inbox_id: inbox.id)
+    nullify_telephony_call_sessions(number_binding_id: number_binding_ids)
+  end
+
+  def nullify_telephony_call_sessions(filters)
+    assignments = filters.transform_values { nil }
+    assignments[:updated_at] = Time.current
+
+    Telephony::CallSession.where(filters).in_batches(of: BATCH_SIZE) do |batch|
+      batch.update_all(assignments) # rubocop:disable Rails/SkipsModelValidations
     end
   end
 

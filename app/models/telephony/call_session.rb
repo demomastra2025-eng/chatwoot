@@ -3,12 +3,17 @@
 # Table name: telephony_call_sessions
 #
 #  id                :bigint           not null, primary key
+#  answered_at       :datetime
+#  answered_by       :string
 #  direction         :string           default("outbound"), not null
 #  duration_seconds  :integer
+#  end_reason        :string
 #  ended_at          :datetime
+#  ended_by          :string
 #  external_call_ref :string           not null
 #  from_number       :string
 #  last_event_at     :datetime
+#  legs              :jsonb            not null
 #  metadata          :jsonb            not null
 #  provider          :string           default("fonoster"), not null
 #  provider_call_sid :string
@@ -46,9 +51,9 @@
 #  fk_rails_...  (account_id => accounts.id)
 #  fk_rails_...  (agent_binding_id => telephony_agent_bindings.id)
 #  fk_rails_...  (contact_id => contacts.id)
-#  fk_rails_...  (conversation_id => conversations.id)
-#  fk_rails_...  (inbox_id => inboxes.id)
-#  fk_rails_...  (number_binding_id => telephony_number_bindings.id)
+#  fk_rails_...  (conversation_id => conversations.id) ON DELETE => nullify
+#  fk_rails_...  (inbox_id => inboxes.id) ON DELETE => nullify
+#  fk_rails_...  (number_binding_id => telephony_number_bindings.id) ON DELETE => nullify
 #
 class Telephony::CallSession < ApplicationRecord
   self.table_name = 'telephony_call_sessions'
