@@ -1,7 +1,14 @@
 require 'rails_helper'
 
 RSpec.describe Messages::AudioTranscriptionService, type: :service do
-  let(:account) { create(:account, audio_transcriptions: true) }
+  let(:account) do
+    create(
+      :account,
+      audio_transcriptions: false,
+      captain_features: { 'audio_transcription' => true },
+      captain_runtime: { 'audio_transcription_prompt' => 'Transcribe Kazakh and Russian accurately.' }
+    )
+  end
   let(:conversation) { create(:conversation, account: account) }
   let(:message) { create(:message, conversation: conversation) }
   let(:attachment) { message.attachments.create!(account: account, file_type: :audio) }
@@ -31,6 +38,11 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
     context 'when transcription is successful' do
       before do
+        attachment.file.attach(
+          io: File.open(Rails.public_path.join('audio/widget/ding.mp3')),
+          filename: 'speech.mp3',
+          content_type: 'audio/mpeg'
+        )
         # Mock can_transcribe? to return true and transcribe_audio method
         allow(service).to receive(:can_transcribe?).and_return(true)
         allow(service).to receive(:transcribe_audio).and_return('Hello world transcription')
@@ -42,9 +54,9 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       end
     end
 
-    context 'when audio transcriptions are disabled' do
+    context 'when captain audio transcription feature is disabled' do
       before do
-        account.update!(audio_transcriptions: false)
+        account.update!(captain_features: { 'audio_transcription' => false }, audio_transcriptions: true)
       end
 
       it 'returns error for transcription limit exceeded' do
@@ -122,7 +134,8 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       expect(Llm::ApiClient).to receive(:transcribe).with(
         instance_of(String),
         context: mock_context,
-        model: 'whisper-1',
+        model: 'gpt-4o-transcribe',
+        prompt: 'Transcribe Kazakh and Russian accurately.',
         temperature: 0.4,
         observability: hash_including(
           runtime_mode: 'audio_transcription',

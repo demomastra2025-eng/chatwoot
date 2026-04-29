@@ -214,6 +214,19 @@ RSpec.describe Account do
         expect(account.settings['audio_transcriptions']).to eq(false)
       end
 
+      it 'keeps legacy audio_transcriptions as captain audio transcription fallback' do
+        account.update!(audio_transcriptions: true, captain_features: {})
+
+        expect(account.reload.captain_audio_transcription_enabled?).to be(true)
+        expect(account.captain_preferences[:features]['audio_transcription']).to be(true)
+      end
+
+      it 'allows explicit captain audio transcription preference to override legacy setting' do
+        account.update!(audio_transcriptions: true, captain_features: { 'audio_transcription' => false })
+
+        expect(account.reload.captain_audio_transcription_enabled?).to be(false)
+      end
+
       it 'correctly gets and sets auto_resolve_after' do
         account.auto_resolve_after = 30
         expect(account.auto_resolve_after).to eq(30)

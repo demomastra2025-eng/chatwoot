@@ -167,7 +167,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_audio_transcriptions
-    return unless account.audio_transcriptions
+    return unless account.captain_audio_transcription_enabled?
     return unless pending_audio_transcription?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f

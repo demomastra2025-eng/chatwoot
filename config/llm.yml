@@ -137,6 +137,12 @@ models:
     credit_multiplier: 1
     type: transcription
     capabilities: [transcription]
+  gpt-4o-transcribe:
+    provider: openai
+    display_name: 'GPT-4o Transcribe'
+    credit_multiplier: 1
+    type: transcription
+    capabilities: [transcription]
   text-embedding-3-small:
     provider: openai
     display_name: 'Text Embedding 3 Small'
@@ -209,8 +215,8 @@ features:
       [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
     default: gpt-5.4-mini
   audio_transcription:
-    models: [whisper-1]
-    default: whisper-1
+    models: [gpt-4o-transcribe, whisper-1]
+    default: gpt-4o-transcribe
   help_center_search:
     models: [text-embedding-3-small]
     default: text-embedding-3-small

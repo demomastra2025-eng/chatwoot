@@ -46,6 +46,10 @@ module CaptainFeaturable
     define_method(:captain_trace_output_capture?) do
       captain_runtime_with_defaults['trace_output_capture'] == true
     end
+
+    define_method(:captain_audio_transcription_prompt) do
+      captain_runtime_with_defaults['audio_transcription_prompt'].to_s.strip.presence
+    end
   end
 
   def captain_preferences
@@ -73,7 +77,13 @@ module CaptainFeaturable
   def captain_features_with_defaults
     stored_features = captain_features || {}
     Llm::Models.feature_keys.index_with do |feature_key|
-      stored_features[feature_key] == true
+      if stored_features.key?(feature_key)
+        stored_features[feature_key] == true
+      elsif feature_key == 'audio_transcription'
+        ActiveModel::Type::Boolean.new.cast(audio_transcriptions)
+      else
+        false
+      end
     end
   end
 

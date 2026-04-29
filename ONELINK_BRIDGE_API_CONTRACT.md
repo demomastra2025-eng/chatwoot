@@ -61,7 +61,7 @@ Current Onelink URL used by the live Fonoster bridge:
 https://app.one-link.kz
 ```
 
-Latest probe result on 2026-04-27:
+Latest probe result on 2026-04-28:
 
 - Bridge `/healthz` is OK.
 - Phone number `+18623964686` still reaches the runtime app.
@@ -110,11 +110,16 @@ Use these values for the current test channel.
 phone_number: +18623964686
 number_ref: d451bbe2-53d8-4458-bd0e-d811d85f57e0
 runtime_app_ref: 96fc259c-6bcd-4cbf-bb7d-d2c51f248934
+ai_agent_app_ref: 7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8
 demo_app_ref: 74fec1f6-48e8-436c-8147-9176a5da4fa4
 trunk_ref: a299c0e0-150b-4fc9-9a58-f44bb3634324
 operator_agent_aor: sip:1001@operator.cloud.vconsult.kz
 operator_sip_wss_url: wss://sip.75.119.131.165.sslip.io
 ```
+
+`ai_agent_app_ref` points to the current `Fonoster Gemini Live Voice Agent`
+application at `test-voiceapp:50061`. Use it when the current test channel
+should route an inbound call to the AI voice agent.
 
 `demo_app_ref` points to the current `Twilio Test App`. It is useful as a
 temporary test route target, but it is not a final production AI application.
@@ -146,7 +151,8 @@ Important distinction for Onelink:
 - Do not return `runtime_app_ref` as the target `app_ref` from an Onelink route
   decision for the same inbound call. That can create a recursive app handoff.
 - Use a separate real AI application ref for AI routing. The current
-  `demo_app_ref` may be used only for smoke tests.
+  `ai_agent_app_ref` is the test AI voice agent target; `demo_app_ref` may be
+  used only for smoke tests.
 - Operator routing is available for the current smoke-test operator identity
   `sip:1001@operator.cloud.vconsult.kz`.
 
@@ -159,9 +165,406 @@ There are two separate API directions:
 2. `Fonoster bridge -> Onelink`: runtime callbacks for inbound route decisions
    and call lifecycle events.
 
-For the current live bridge, Onelink should rely only on the endpoints described
-in this file. Some repository docs mention extra event-stream endpoints, but the
-currently running bridge container does not expose them yet.
+Outbound calls are command-driven: Onelink calls the bridge first. Inbound calls
+are callback-driven: Fonoster receives the PSTN call first and asks Onelink for
+a route decision.
+
+For the current live bridge, Onelink should rely on the command endpoints and
+callbacks described in this file. Event history, poll, and stream endpoints
+under `/telephony/events*` are also available for diagnostics or future UI use,
+but they are not required for the core call flow.
+
+## Target Call Lifecycle Model
+
+This section is the implementation gate before extending the Fonoster side.
+The current bridge is enough for basic smoke tests, but production CRM behavior
+requires an explicit, actor-aware call model in Onelink.
+
+### Source Of Truth
+
+Onelink should treat every Fonoster call as an append-only event stream and
+derive the current CRM call state from that stream.
+
+- `call_ref`: primary external call-session key from Fonoster.
+- `direction`: `inbound` or `outbound`.
+- `conversation_id`: Onelink conversation linked to the call.
+- `contact_id`: Onelink contact or lead linked to the caller/callee.
+- `current_status`: canonical Onelink status derived from events.
+- `answered_by`: actor that first established real media.
+- `ended_by`: actor that ended the active call.
+- `end_reason`: normalized reason for the terminal state.
+- `started_at`, `answered_at`, `ended_at`, `duration_sec`: timing fields.
+- `legs`: optional per-participant records for customer, operator, app, AI,
+  provider, and bridge/runtime.
+- `raw_events`: immutable event payloads for audit/debugging.
+
+`call_ref` groups events. `X-Idempotency-Key` or an event key deduplicates one
+delivery attempt. Onelink must not create multiple active call sessions for the
+same `account_id + call_ref`.
+
+### Canonical Statuses
+
+Use these CRM-facing statuses. Fonoster/provider-specific values should be
+normalized before they affect the UI.
+
+```text
+created       call object exists, no ring state confirmed yet
+ringing       inbound caller is waiting, or outbound callee is ringing
+connecting    route decision is known and bridge/runtime is connecting a leg
+in_progress   real media is established with caller/callee
+completed     call had real media and ended normally
+missed        inbound call ended before any real media with an operator/app/AI
+no_answer     outbound or operator leg timed out without answer
+busy          destination returned busy
+cancelled     caller/callee cancelled before answer
+rejected      Onelink or policy rejected the call
+failed        provider, bridge, runtime, or integration failure
+```
+
+Terminal statuses are `completed`, `missed`, `no_answer`, `busy`, `cancelled`,
+`rejected`, and `failed`. Once a terminal status is set, late non-terminal
+events must not downgrade it.
+
+Important missed-call rule: `missed` means there was no real conversation. If
+real media was established and a participant later hangs up, the final status is
+`completed` with `ended_by` and `duration_sec`, not `missed`.
+
+### Actors And Reasons
+
+Onelink should store actor fields even when the current Fonoster event does not
+yet provide them directly. If the actor is inferred, store the inferred value
+and preserve the raw event.
+
+Recommended actor enum:
+
+```text
+caller
+callee
+operator_device
+operator_crm
+app
+ai
+bridge
+provider
+system
+unknown
+```
+
+Recommended terminal reason enum:
+
+```text
+normal
+caller_cancelled
+operator_cancelled
+crm_cancelled
+busy
+no_answer
+timeout
+rejected_by_policy
+route_unavailable
+provider_failed
+runtime_failed
+bridge_failed
+unknown
+```
+
+Current events can identify `action` (`operator`, `app`, `ai`, `reject`) and
+provider statuses. They do not yet reliably identify every hangup actor. Until
+Fonoster-side actor events are implemented, Onelink should classify unknown
+hangups conservatively as `unknown` and keep raw payloads for reconciliation.
+
+### Inbound Call State Machine
+
+Target inbound flow:
+
+```text
+session_started
+-> ringing
+-> route_decision / decision_received
+-> connecting
+-> answered
+-> in_progress
+-> session_completed
+-> completed
+```
+
+Inbound caller cancels before answer:
+
+```text
+session_started
+-> ringing
+-> session_completed / failed provider status
+-> missed or cancelled
+```
+
+Inbound route rejected by Onelink:
+
+```text
+session_started
+-> route_decision(action=reject)
+-> rejected
+-> session_completed(outcome=rejected)
+```
+
+Inbound operator route:
+
+```text
+session_started
+-> route_decision(action=operator, agent_aor=...)
+-> decision_received
+-> dial_status(status=ringing)
+-> connecting
+-> dial_status(status=answered) / answered
+-> in_progress
+-> session_completed
+-> completed
+```
+
+Inbound AI/app route:
+
+```text
+session_started
+-> route_decision(action=ai|app, app_ref=...)
+-> decision_received
+-> answered
+-> in_progress
+-> session_completed
+-> completed
+```
+
+CRM display requirements:
+
+- Before answer, show an active incoming call as `ringing`.
+- When operator device answers, show `in_progress` with
+  `answered_by=operator_device`.
+- When CRM initiates accept/route-to-operator, show `connecting` until a real
+  SIP/runtime `answered` event arrives.
+- If the caller hangs up before answer, show `missed` or `cancelled` depending
+  on available provider reason.
+- If anyone hangs up after `in_progress`, show `completed` plus `ended_by`.
+
+CRM must not treat a button click alone as proof that PSTN media is answered.
+The real answer source is the Fonoster runtime/SIP/provider event.
+
+### Outbound Call State Machine
+
+Target outbound flow:
+
+```text
+Onelink command POST /telephony/calls/outbound
+-> call_created
+-> created
+-> provider ringing / call status poll
+-> ringing
+-> answered
+-> in_progress
+-> completed / no_answer / busy / failed
+```
+
+Current bridge behavior creates the outbound call and returns `ref`. The
+current event stream confirms `call_created`, but does not yet provide a full
+outbound lifecycle for every provider state. Until Fonoster-side outbound event
+normalization is implemented, Onelink should reconcile outbound state with
+`GET /telephony/calls` and keep `UNKNOWN` provider statuses visible for
+operations/debugging.
+
+Outbound CRM display requirements:
+
+- Immediately after `POST /telephony/calls/outbound`, create an Onelink call
+  session with `current_status=created`.
+- Store bridge response `ref` as `call_ref`.
+- Move to `ringing` only when a provider/Fonoster event or call poll indicates
+  ringing/progress.
+- Move to `in_progress` only when real answer is confirmed.
+- Finalize as `completed`, `no_answer`, `busy`, `cancelled`, or `failed` based
+  on provider/Fonoster terminal state.
+
+### App, Operator, And Transfer
+
+There are three different actions and they must not be collapsed in the CRM:
+
+- `app` or `ai`: bridge/runtime hands the call to a Fonoster application.
+- `operator`: bridge/runtime dials a SIP operator AOR.
+- `transfer`: an already active app/AI session dials a live operator or another
+  target.
+
+### Routing Mode Semantics
+
+Onelink should store both the technical route target and the business-facing
+mode. `app`, `operator`, and `ai` are not interchangeable in the CRM.
+
+`app` means a technical Fonoster application route.
+
+- Target field: `app_ref`.
+- Used for custom voice workflows, IVR, bridge apps, smoke-test apps, or any
+  non-AI/non-human Fonoster app.
+- The caller may hear prompts, be bridged elsewhere, or run workflow logic.
+- CRM should display this as an application/workflow call, not as a human
+  operator conversation and not as an AI-agent conversation unless Onelink
+  explicitly selected `ai`.
+- Do not use `runtime_app_ref` as the `app_ref` target for the same inbound
+  channel because that creates recursive handoff risk.
+
+`operator` means human-to-human conversation through a SIP operator.
+
+- Target field: `agent_aor`.
+- Current test target: `sip:1001@operator.cloud.vconsult.kz`.
+- Fonoster runtime answers/bridges the caller and dials the operator SIP AOR.
+- CRM should represent the human leg separately: `operator_ringing`,
+  `operator_answered`, `operator_hangup`, and `answered_by=operator_device`
+  when those events are available or can be inferred.
+- A CRM user click can request/claim/route the call, but the call becomes
+  `in_progress` only after Fonoster/SIP confirms the operator leg answered.
+
+`ai` means AI voice-agent conversation.
+
+- Target field: `app_ref` or `ai_app_ref`, normalized to a real AI Fonoster
+  application ref.
+- Current test AI target: `7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8`.
+- Technically, Fonoster runs this through an application target, but Onelink
+  must keep `routing_mode=ai` so CRM can show that the caller is talking to an
+  AI agent.
+- AI can later request transfer to `operator`; that transfer is a separate
+  transition and should not rewrite the original mode history.
+
+AI deployment modes:
+
+```text
+fonoster_managed  current Gemini AI app hosted on the Fonoster side
+onelink_managed  future Onelink AI Voice Service app hosted/owned by Onelink
+```
+
+Both modes are technically selected through `action=ai` and a Fonoster
+application ref. The difference is ownership of the application behind that
+ref.
+
+Current supported route shapes:
+
+```json
+{
+  "action": "ai",
+  "ai_mode": "fonoster_managed",
+  "app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
+  "reason": "fonoster_ai_route"
+}
+```
+
+```json
+{
+  "action": "ai",
+  "ai_mode": "onelink_managed",
+  "app_ref": "<onelink_ai_voice_app_ref>",
+  "reason": "onelink_ai_route"
+}
+```
+
+The bridge also accepts mode-specific aliases:
+
+```json
+{
+  "action": "ai",
+  "ai_mode": "onelink_managed",
+  "onelink_ai_app_ref": "<onelink_ai_voice_app_ref>",
+  "reason": "onelink_ai_route"
+}
+```
+
+```json
+{
+  "action": "ai",
+  "ai_mode": "fonoster_managed",
+  "fonoster_ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
+  "reason": "fonoster_ai_route"
+}
+```
+
+Priority order for selecting the executable AI app:
+
+1. Explicit `app_ref` / `appRef`.
+2. Explicit `ai_app_ref` / `aiAppRef`.
+3. `onelink_ai_app_ref` when `ai_mode=onelink_managed`.
+4. `fonoster_ai_app_ref` when `ai_mode=fonoster_managed`.
+5. Bridge configured default/fallback AI app ref.
+
+This means Onelink can switch between the current Fonoster-hosted AI and a
+future Onelink-owned AI Voice Service by changing configuration, not by changing
+the bridge protocol.
+
+`reject` means Onelink intentionally declines the route.
+
+- No `app_ref` or `agent_aor` is required.
+- Use for unknown number, closed business hours, unavailable operator without
+  fallback, policy rejection, or invalid routing configuration.
+- Return HTTP `200` with `action=reject`; do not use non-2xx for normal
+  business rejection.
+
+Target transfer events for future Fonoster implementation:
+
+```text
+transfer_started
+transfer_ringing
+transfer_answered
+transfer_failed
+transfer_completed
+```
+
+Until those events exist, Onelink should not promise precise transfer UI state.
+It may show a generic `connecting` state based on current `dial_status` and raw
+runtime events, then finalize based on `answered` or terminal status.
+
+### Current Fonoster Event Coverage
+
+Currently implemented and usable:
+
+- inbound route decision callback to Onelink
+- `route_decision` in the bridge event stream
+- `session_started`
+- `decision_received`
+- `answered`
+- `dial_status` with normalized `answered`, `ringing`, `no-answer`, `busy`,
+  and `failed` where the provider/runtime exposes it
+- `session_completed`
+- `session_failed`
+- outbound command `POST /telephony/calls/outbound`
+- outbound `call_created` bridge event
+
+Not complete yet:
+
+- explicit `answered_by` and `ended_by` on every lifecycle event
+- explicit `caller_hangup`, `operator_hangup`, and `crm_hangup`
+- full outbound lifecycle event stream after `call_created`
+- first-class transfer events
+- strict leg-level modeling for customer/operator/app/AI/provider
+
+## Onelink Implementation Required Before Fonoster-Side Expansion
+
+Onelink should complete this work before the Fonoster bridge/runtime are
+extended further. This lets the CRM consume richer events without changing the
+database and UI model repeatedly.
+
+1. Add or confirm a persistent telephony call session model keyed by
+   `account_id + provider + call_ref`.
+2. Store canonical fields: `direction`, `current_status`, `answered_by`,
+   `ended_by`, `end_reason`, `started_at`, `answered_at`, `ended_at`,
+   `duration_sec`, `conversation_id`, `contact_id`, and raw event metadata.
+3. Make `/internal/voice/inbound/route` idempotent and fast. It should find or
+   create the call/conversation/contact, then return an executable route.
+4. Make `/internal/voice/inbound/event` append-only and idempotent. It must
+   return 2xx for duplicates and process slow CRM side effects asynchronously.
+5. Implement a state reducer that maps Fonoster events to canonical statuses.
+6. Add terminal-state guards so late `ringing`, `decision_received`, or
+   `answered` events cannot overwrite `completed`, `missed`, `no_answer`,
+   `busy`, `cancelled`, `rejected`, or `failed`.
+7. Implement CRM UI states for inbound ringing, connecting, in-progress,
+   missed, completed, no-answer, busy, cancelled, rejected, and failed.
+8. Separate CRM operator actions from real SIP answer events. `Accept` or
+   `route_to_operator` should move the CRM to `connecting`; only runtime/SIP
+   answer moves it to `in_progress`.
+9. Store operator device identity and CRM user identity separately when known.
+10. Implement outbound call creation state immediately after bridge `201` and
+    reconcile later provider status through bridge events or `GET /telephony/calls`.
+11. Keep raw unknown fields/events for future Fonoster actor/transfer events.
+12. Add smoke tests for all scenarios listed in the acceptance matrix below.
 
 ## Common Rules
 
@@ -290,8 +693,8 @@ Optional query parameters: none.
 - `counts.applications`: number of Fonoster applications visible to the bridge.
 - `counts.numbers`: number of DID/phone number resources.
 - `counts.trunks`: number of SIP/PSTN trunks.
-- `counts.agents`: number of Fonoster agents. Current value is `0`.
-- `counts.domains`: number of SIP domains. Current value is `0`.
+- `counts.agents`: number of Fonoster agents. Current value is `1`.
+- `counts.domains`: number of SIP domains. Current value is `1`.
 - `firsts.application`: first application returned by Fonoster SDK, or `null`.
 - `firsts.number`: first phone number returned by Fonoster SDK, or `null`.
 - `firsts.trunk`: first trunk returned by Fonoster SDK, or `null`.
@@ -312,6 +715,22 @@ Creates an outbound PSTN call through Fonoster.
 ```http
 POST /telephony/calls/outbound
 ```
+
+### Outbound Flow
+
+For outbound calls, Onelink chooses the call flow at creation time. The bridge
+does not call `POST /internal/voice/inbound/route` for outbound calls.
+
+```text
+Onelink/Rails -> POST /telephony/calls/outbound -> Fonoster createCall
+Fonoster dials the customer number -> selected app_ref handles the answered call
+```
+
+Use `app_ref` to choose what handles the outbound call after the callee answers:
+
+- AI voice agent: `7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8`
+- Demo smoke-test app: `74fec1f6-48e8-436c-8147-9176a5da4fa4`
+- Any future production app: its own Fonoster application ref
 
 ### Request Body
 
@@ -349,7 +768,29 @@ Recommended current values:
 
 ```text
 from_number_ref: d451bbe2-53d8-4458-bd0e-d811d85f57e0
+app_ref: 7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8 for AI voice-agent tests
 app_ref: 74fec1f6-48e8-436c-8147-9176a5da4fa4 for demo tests
+```
+
+### Request Body: Outbound AI Voice Agent
+
+Use this shape when an Onelink agent or automation wants the current AI voice
+agent to handle the outbound call after the customer answers.
+
+```json
+{
+  "from_number_ref": "d451bbe2-53d8-4458-bd0e-d811d85f57e0",
+  "to": "tel:+77475318623",
+  "app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
+  "timeout": 30,
+  "metadata": {
+    "onelink_account_id": "1",
+    "onelink_conversation_id": "123",
+    "onelink_contact_id": "456",
+    "initiated_by": "agent",
+    "direction": "outbound"
+  }
+}
 ```
 
 ### Response 201
@@ -578,14 +1019,14 @@ POST /telephony/ai/toggle
 
 ### Request Body: Enable AI
 
-The `ai_app_ref` below uses the current demo app for smoke testing. Replace it
-with the real AI app ref when the production AI application exists.
+The `ai_app_ref` below uses the current test AI voice agent. Replace it with
+the real production AI app ref when the production AI application exists.
 
 ```json
 {
   "number_ref": "d451bbe2-53d8-4458-bd0e-d811d85f57e0",
   "enabled": true,
-  "ai_app_ref": "74fec1f6-48e8-436c-8147-9176a5da4fa4"
+  "ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8"
 }
 ```
 
@@ -612,14 +1053,14 @@ with the real AI app ref when the production AI application exists.
 
 ### Request Body: Disable AI And Restore Operator Route
 
-Only use after a real Fonoster agent/domain exists.
+Use the current smoke-test operator AOR:
 
 ```json
 {
   "number_ref": "d451bbe2-53d8-4458-bd0e-d811d85f57e0",
   "enabled": false,
   "fallback_mode": "operator",
-  "fallback_agent_aor": "sip:1001@company.example"
+  "fallback_agent_aor": "sip:1001@operator.cloud.vconsult.kz"
 }
 ```
 
@@ -650,7 +1091,7 @@ Only use after a real Fonoster agent/domain exists.
     "extra_headers": [
       {
         "name": "x-app-ref",
-        "value": "74fec1f6-48e8-436c-8147-9176a5da4fa4"
+        "value": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8"
       }
     ],
     "updated_at": "2026-04-19T12:00:00.000Z"
@@ -693,13 +1134,13 @@ curl -sS -X POST "$BRIDGE_BASE_URL/telephony/ai/toggle" \
   -d '{
     "number_ref": "d451bbe2-53d8-4458-bd0e-d811d85f57e0",
     "enabled": true,
-    "ai_app_ref": "74fec1f6-48e8-436c-8147-9176a5da4fa4"
+    "ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8"
   }' | jq .
 ```
 
 ## 5. List Calls
 
-Returns recent calls from Fonoster.
+Returns recent inbound and outbound calls from Fonoster.
 
 ```http
 GET /telephony/calls
@@ -886,7 +1327,7 @@ canonical response shape for the current integration.
 ```json
 {
   "action": "ai",
-  "app_ref": "74fec1f6-48e8-436c-8147-9176a5da4fa4",
+  "app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
   "reason": "ai_enabled",
   "timeout": 60,
   "transfer_message": "Please hold while I connect you."
@@ -900,8 +1341,8 @@ Rules:
 - Do not return `96fc259c-6bcd-4cbf-bb7d-d2c51f248934` as the target `app_ref`
   for the current inbound channel; that is the runtime app already handling the
   call.
-- `74fec1f6-48e8-436c-8147-9176a5da4fa4` is only a demo smoke-test app.
-  Replace it with the real AI app ref when production AI exists.
+- `7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8` is the current test AI voice agent
+  app. Replace it with the production AI app ref when production AI exists.
 - The bridge/runtime can accept `appRef` as a compatibility alias, but current
   Onelink should emit snake_case `app_ref`.
 
@@ -1133,26 +1574,46 @@ Session failed:
 
 ## Required Onelink Business Cases
 
-Onelink should implement these cases before the channel is considered ready.
+Onelink should implement these cases before the channel is considered ready and
+before the Fonoster side is extended with richer actor/transfer events.
 
 1. Bound inbound number: for `+18623964686`, route lookup must no longer return
    `number_not_bound`.
-2. Unknown number: return HTTP `200` with `action=reject` and
+2. Unknown inbound number: return HTTP `200` with `action=reject` and
    `reason=number_not_bound`.
 3. Known caller/contact: create or attach the call to the existing contact and
    conversation.
 4. Unknown caller/contact: create a contact or temporary lead and attach the
    call conversation.
-5. Business-hours closed: return `action=reject` with a user-friendly message.
-6. AI enabled: return `action=ai` with a real non-runtime `app_ref`.
-7. AI disabled/operator available: return `action=operator` with a valid
-   `agent_aor`.
-8. Operator unavailable: return `action=reject`, voicemail action if later
-   supported, or AI fallback with a valid AI `app_ref`.
-9. Inbound events: store `session_started`, `decision_received`, `answered`,
-   `dial_status`, `session_completed`, and `session_failed`.
-10. Outbound calls: call `POST /telephony/calls/outbound`, store the returned
-   `ref`, and reconcile status with `GET /telephony/calls`.
+5. Inbound ringing before answer: create/update a CRM call session with
+   `current_status=ringing`.
+6. Inbound operator answer from SIP device: move to `in_progress` only after a
+   real runtime/SIP answer event; set `answered_by=operator_device` when known.
+7. Inbound CRM accept/route action: move to `connecting`, not `in_progress`,
+   until Fonoster confirms real answer.
+8. Caller cancels before answer: finalize as `missed` or `cancelled`, not
+   `completed`.
+9. Caller/operator/CRM/app ends after answer: finalize as `completed` with
+   `ended_by` and `duration_sec`.
+10. Business-hours closed: return `action=reject` with a user-friendly message.
+11. AI enabled: return `action=ai` with a real non-runtime `app_ref`.
+12. AI disabled/operator available: return `action=operator` with a valid
+    `agent_aor`.
+13. Operator unavailable: return `action=reject`, voicemail action if later
+    supported, or AI fallback with a valid AI `app_ref`.
+14. Inbound events: store `session_started`, `route_decision`,
+    `decision_received`, `answered`, `dial_status`, `session_completed`,
+    `session_failed`, and unknown future event types.
+15. Outbound calls: call `POST /telephony/calls/outbound`, store the returned
+    `ref`, create a CRM call session, and reconcile status with bridge events
+    and `GET /telephony/calls`.
+16. Outbound no-answer/busy/failed: produce distinct terminal CRM statuses, not
+    a generic completed call.
+17. App/AI to operator transfer: keep current state as `connecting` or
+    `in_progress` until explicit transfer events are implemented; preserve raw
+    dial/runtime events for later mapping.
+18. Event ordering: terminal statuses must not be overwritten by late
+    non-terminal events.
 
 The route cache in the current bridge may keep a route decision for about 30
 seconds per ingress number. During tests, wait for cache expiry or restart the
@@ -1169,7 +1630,11 @@ For the current test channel, store these values in Onelink:
   "number_ref": "d451bbe2-53d8-4458-bd0e-d811d85f57e0",
   "app_ref": "96fc259c-6bcd-4cbf-bb7d-d2c51f248934",
   "trunk_ref": "a299c0e0-150b-4fc9-9a58-f44bb3634324",
-  "ai_app_ref": null,
+  "ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
+  "ai_mode": "fonoster_managed",
+  "fonoster_ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
+  "onelink_ai_app_ref": null,
+  "fallback_ai_app_ref": "7b9f0bbd-eac4-46e4-80a8-7b3d5341c9f8",
   "operator_agent_aor": "sip:1001@operator.cloud.vconsult.kz",
   "routing_policy": {
     "mode": "operator"
@@ -1180,8 +1645,13 @@ For the current test channel, store these values in Onelink:
 The smoke-test operator agent/domain now exists in Fonoster. Use
 `operator_agent_aor` for the current operator route while this test operator is
 the selected human handoff target.
-Use `ai_app_ref` only after a real Fonoster AI or AI-compatible application is
-created or intentionally selected.
+Use `ai_app_ref` only when this test AI app or a production AI app is
+intentionally selected for the channel.
+Use `ai_mode=fonoster_managed` while the current Fonoster-side Gemini app is the
+selected AI implementation.
+Use `ai_mode=onelink_managed` only after Onelink has registered and tested its
+own `onelink-ai-voice` Fonoster application and has a real
+`onelink_ai_app_ref`.
 Use `app_ref` to bind the number to the current Fonoster runtime application.
 Do not use that same `app_ref` as the AI target in route decisions for the same
 inbound call.
@@ -1208,6 +1678,22 @@ a replacement for `ai_app_ref`.
 9. For `+18623964686`, Onelink route decision does not return `number_not_bound` after the channel is bound.
 10. `POST /internal/voice/inbound/event` on Onelink returns HTTP `200` or `202` and stores the event.
 11. A real inbound call creates or updates one Onelink conversation linked by `call_ref`.
+12. Inbound call before answer is visible in CRM as `ringing`.
+13. Inbound call answered by operator device becomes `in_progress` only after
+    runtime/SIP answer confirmation.
+14. CRM accept/route action shows `connecting` until Fonoster answer
+    confirmation.
+15. Caller hangup before answer becomes `missed` or `cancelled`.
+16. Caller/operator/app hangup after answer becomes `completed` with non-zero
+    duration when duration is available.
+17. Outbound answered call moves `created -> ringing -> in_progress -> completed`.
+18. Outbound no-answer moves to `no_answer`.
+19. Outbound busy/failed moves to `busy` or `failed`.
+20. Duplicate inbound event delivery returns 2xx and does not create duplicate
+    call sessions.
+21. Late non-terminal event after a terminal state does not reopen the call.
+22. App/AI to operator transfer can be represented without data loss even while
+    explicit transfer events are pending on the Fonoster side.
 
 Outbound acceptance still depends on SIP carrier behavior after the bridge
 successfully creates the call.

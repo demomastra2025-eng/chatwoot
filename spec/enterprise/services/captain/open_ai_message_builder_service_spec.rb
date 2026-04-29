@@ -75,7 +75,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(audio_transcriptions: true)
+        message.account.update!(captain_features: { 'audio_transcription' => true })
       end
 
       it 'includes stored transcription text part without transcribing synchronously' do
@@ -121,7 +121,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(audio_transcriptions: true)
+        message.account.update!(captain_features: { 'audio_transcription' => true })
       end
 
       it 'includes all relevant parts' do
@@ -254,7 +254,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(audio_transcriptions: true)
+        message.account.update!(captain_features: { 'audio_transcription' => true })
       end
 
       it 'concatenates all stored transcriptions without transcribing synchronously' do
@@ -279,7 +279,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(audio_transcriptions: true)
+        message.account.update!(captain_features: { 'audio_transcription' => true })
       end
 
       it 'returns empty string when transcription is not stored yet' do
@@ -293,7 +293,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
-    context 'when account audio transcriptions are disabled' do
+    context 'when captain audio transcription feature is disabled' do
       let(:audio_attachment) do
         attachment = message.attachments.build(account_id: message.account_id, file_type: :audio, meta: { 'transcribed_text' => 'Hidden audio text' })
         attachment.save!
@@ -301,7 +301,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(audio_transcriptions: false)
+        message.account.update!(captain_features: { 'audio_transcription' => false })
       end
 
       it 'does not include stored audio transcription text' do

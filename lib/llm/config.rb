@@ -3,7 +3,7 @@ require 'ruby_llm'
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
   DEFAULT_MODEL = 'gpt-5.4-mini'.freeze
-  DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1'.freeze
+  DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'omni-moderation-latest'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
 
@@ -210,6 +210,7 @@ module Llm::Config
       model_name = account.public_send(accessor_name)
       return unless model_name.present?
       return unless Llm::Models.valid_model_for?(feature_key, model_name)
+
       canonical_model = Llm::Models.canonical_model_name(model_name)
       return unless runtime_usable_model?(canonical_model)
 
@@ -219,6 +220,7 @@ module Llm::Config
     def installation_model_for(feature_key)
       model_name = installation_default_model
       return if model_name.blank?
+
       canonical_model = Llm::Models.canonical_model_name(model_name)
       return canonical_model if feature_key.blank? && runtime_usable_model?(canonical_model)
       return if feature_key.blank?

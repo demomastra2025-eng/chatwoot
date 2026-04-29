@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useAlert } from 'dashboard/composables';
@@ -16,6 +16,8 @@ import FeatureToggle from './components/FeatureToggle.vue';
 import RuntimeSettingsCard from './components/RuntimeSettingsCard.vue';
 import RuntimeModerationPolicyCard from './components/RuntimeModerationPolicyCard.vue';
 import RuntimeStatusCard from './components/RuntimeStatusCard.vue';
+import NextButton from 'dashboard/components-next/button/Button.vue';
+import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
 const { t } = useI18n();
@@ -24,9 +26,14 @@ const { isEnterprise, enterprisePlanName } = useConfig();
 const { isOnChatwootCloud } = useAccount();
 
 const captainConfigStore = useCaptainConfigStore();
-const { uiFlags } = storeToRefs(captainConfigStore);
+const { uiFlags, runtime } = storeToRefs(captainConfigStore);
 
 const isLoading = computed(() => uiFlags.value.isFetching);
+const audioTranscriptionFeature = {
+  key: 'audio_transcription',
+  enterprise: true,
+};
+const audioTranscriptionPrompt = ref('');
 
 const modelFeatures = computed(() => [
   {
@@ -57,8 +64,7 @@ const featureToggles = computed(() => [
     enterprise: true,
   },
   {
-    key: 'audio_transcription',
-    enterprise: true,
+    ...audioTranscriptionFeature,
   },
 ]);
 
@@ -108,6 +114,26 @@ const isFeatureAccessible = feature => {
   return true;
 };
 
+const storedAudioTranscriptionPrompt = computed(
+  () => runtime.value.audio_transcription_prompt || ''
+);
+
+const isAudioTranscriptionAccessible = computed(() =>
+  isFeatureAccessible(audioTranscriptionFeature)
+);
+
+const isAudioTranscriptionPromptDirty = computed(
+  () => audioTranscriptionPrompt.value !== storedAudioTranscriptionPrompt.value
+);
+
+watch(
+  storedAudioTranscriptionPrompt,
+  value => {
+    audioTranscriptionPrompt.value = value;
+  },
+  { immediate: true }
+);
+
 async function handleFeatureToggle({ feature, enabled }) {
   try {
     await captainConfigStore.updatePreferences({
@@ -132,16 +158,22 @@ async function handleModelChange({ feature, model }) {
   }
 }
 
-async function handleRuntimeChange(runtime) {
+async function handleRuntimeChange(runtimeConfig) {
   try {
     await captainConfigStore.updatePreferences({
-      captain_runtime: runtime,
+      captain_runtime: runtimeConfig,
     });
     useAlert(t('CAPTAIN_SETTINGS.API.SUCCESS'));
   } catch (error) {
     useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
     captainConfigStore.fetch();
   }
+}
+
+async function handleAudioTranscriptionPromptSave() {
+  await handleRuntimeChange({
+    audio_transcription_prompt: audioTranscriptionPrompt.value,
+  });
 }
 
 onMounted(() => {
@@ -199,6 +231,64 @@ onMounted(() => {
               @change="handleFeatureToggle"
               @model-change="handleModelChange"
             />
+            <div
+              v-show="shouldShowFeature(audioTranscriptionFeature)"
+              class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+              :class="{
+                'opacity-60 pointer-events-none':
+                  !isAudioTranscriptionAccessible,
+              }"
+            >
+              <div class="min-w-0">
+                <h4 class="text-sm font-medium text-n-slate-12">
+                  {{
+                    t(
+                      'CAPTAIN_SETTINGS.FEATURES.AUDIO_TRANSCRIPTION.PROMPT_TITLE'
+                    )
+                  }}
+                </h4>
+                <p class="text-sm text-n-slate-11 mt-0.5">
+                  {{
+                    t(
+                      'CAPTAIN_SETTINGS.FEATURES.AUDIO_TRANSCRIPTION.PROMPT_DESCRIPTION'
+                    )
+                  }}
+                </p>
+              </div>
+              <TextArea
+                v-model="audioTranscriptionPrompt"
+                :disabled="!isAudioTranscriptionAccessible"
+                :placeholder="
+                  t(
+                    'CAPTAIN_SETTINGS.FEATURES.AUDIO_TRANSCRIPTION.PROMPT_PLACEHOLDER'
+                  )
+                "
+                :max-length="2000"
+                show-character-count
+                auto-height
+                resize
+                min-height="5rem"
+                max-height="14rem"
+              />
+              <div class="flex justify-end">
+                <NextButton
+                  sm
+                  blue
+                  type="button"
+                  :disabled="
+                    !isAudioTranscriptionAccessible ||
+                    !isAudioTranscriptionPromptDirty
+                  "
+                  @click="handleAudioTranscriptionPromptSave"
+                >
+                  {{
+                    t(
+                      'CAPTAIN_SETTINGS.FEATURES.AUDIO_TRANSCRIPTION.SAVE_PROMPT'
+                    )
+                  }}
+                </NextButton>
+              </div>
+            </div>
           </div>
         </SectionLayout>
 

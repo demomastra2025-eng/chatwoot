@@ -71,4 +71,23 @@ describe('useCallsStore', () => {
       })
     );
   });
+
+  it('removes calls for all canonical native terminal statuses', () => {
+    const store = useCallsStore();
+
+    [
+      'completed',
+      'busy',
+      'failed',
+      'missed',
+      'no_answer',
+      'cancelled',
+      'rejected',
+    ].forEach(status => {
+      store.addCall({ callSid: `call-${status}` });
+      store.handleCallStatusChanged({ callSid: `call-${status}`, status });
+    });
+
+    expect(store.calls).toEqual([]);
+  });
 });

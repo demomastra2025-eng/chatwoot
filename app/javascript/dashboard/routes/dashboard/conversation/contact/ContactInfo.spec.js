@@ -123,4 +123,15 @@ describe('ContactInfo', () => {
       '/app/accounts/1/inbox/7/conversations/42?status=pending'
     );
   });
+
+  it('closes the edit contact modal when the modal show model is set to false', async () => {
+    const wrapper = buildWrapper();
+
+    await wrapper.setData({ showEditModal: true });
+    wrapper
+      .findComponent({ name: 'EditContact' })
+      .vm.$emit('update:show', false);
+
+    expect(wrapper.vm.showEditModal).toBe(false);
+  });
 });

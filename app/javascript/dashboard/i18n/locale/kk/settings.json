@@ -441,7 +441,11 @@
       "DESCRIPTION": "Enable or disable AI-powered features.",
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Audio Transcription",
-        "DESCRIPTION": "Automatically convert voice messages and call recordings into searchable text transcripts."
+        "DESCRIPTION": "Automatically convert voice messages and call recordings into searchable text transcripts.",
+        "PROMPT_TITLE": "Voice recognition prompt",
+        "PROMPT_DESCRIPTION": "Optional instructions used only when transcribing voice messages. They are sent to the transcription model, not to Captain chat prompts.",
+        "PROMPT_PLACEHOLDER": "Example: Transcribe Russian and Kazakh speech accurately. Preserve names, numbers, and product terms.",
+        "SAVE_PROMPT": "Save prompt"
       },
       "HELP_CENTER_SEARCH": {
         "TITLE": "Wiki Search Indexing",

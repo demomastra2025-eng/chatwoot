@@ -107,6 +107,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       :assistant_moderation,
       :copilot_moderation,
       :moderation_failure_mode,
+      :audio_transcription_prompt,
       :trace_input_capture,
       :trace_output_capture,
       :agent_high_risk_tools,
@@ -199,6 +200,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     RUNTIME_BOOLEAN_KEYS.each do |key|
       runtime[key] = ActiveModel::Type::Boolean.new.cast(runtime[key]) if runtime.key?(key)
     end
+    runtime['audio_transcription_prompt'] = runtime['audio_transcription_prompt'].to_s.strip if runtime.key?('audio_transcription_prompt')
     runtime['release_gate'] = normalize_release_gate(runtime['release_gate']) if runtime['release_gate'].present?
     runtime
   end

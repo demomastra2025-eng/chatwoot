@@ -509,7 +509,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       before do
-        account.update!(audio_transcriptions: true)
+        account.update!(captain_features: { 'audio_transcription' => true })
         audio_attachment
         conversation.messages.where.not(id: audio_message.id).destroy_all
         stub_const('Captain::Conversation::ResponseBuilderJob::AUDIO_TRANSCRIPTION_WAIT_TIMEOUT', 0.05)
@@ -540,8 +540,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
       end
 
-      it 'does not wait or include transcription when account audio transcription is disabled' do
-        account.update!(audio_transcriptions: false)
+      it 'does not wait or include transcription when captain audio transcription feature is disabled' do
+        account.update!(captain_features: { 'audio_transcription' => false })
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
 
         expect_any_instance_of(described_class).not_to receive(:sleep)

@@ -19,7 +19,6 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import AccountId from './components/AccountId.vue';
 import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
-import AudioTranscription from './components/AudioTranscription.vue';
 import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
 import SamlSettings from '../security/components/SamlSettings.vue';
@@ -33,7 +32,6 @@ export default {
     AccountId,
     BuildInfo,
     AccountDelete,
-    AudioTranscription,
     SectionLayout,
     WorkspaceLogo,
     WithLabel,
@@ -99,15 +97,8 @@ export default {
     ...mapGetters({
       getAccount: 'accounts/getAccount',
       uiFlags: 'accounts/getUIFlags',
-      isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
       isOnChatwootCloud: 'globalConfig/isOnChatwootCloud',
     }),
-    showAudioTranscriptionConfig() {
-      return this.isFeatureEnabledonAccount(
-        this.accountId,
-        FEATURE_FLAGS.CAPTAIN
-      );
-    },
     languagesSortedByCode() {
       const enabledLanguages = [...this.enabledLanguages];
       return enabledLanguages.sort((l1, l2) =>
@@ -376,7 +367,6 @@ export default {
         {{ $t('SECURITY_SETTINGS.SAML_DISABLED_MESSAGE') }}
       </div>
     </SectionLayout>
-    <AudioTranscription v-if="showAudioTranscriptionConfig" />
     <AccountId />
     <div v-if="!uiFlags.isFetchingItem && isOnChatwootCloud">
       <AccountDelete />

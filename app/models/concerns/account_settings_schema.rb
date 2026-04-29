@@ -53,6 +53,7 @@ module AccountSettingsSchema
             'assistant_moderation': { 'type': %w[boolean null] },
             'copilot_moderation': { 'type': %w[boolean null] },
             'moderation_failure_mode': { 'type': %w[string null], 'enum': ['fail_open', 'fail_closed', nil] },
+            'audio_transcription_prompt': { 'type': %w[string null] },
             'trace_input_capture': { 'type': %w[boolean null] },
             'trace_output_capture': { 'type': %w[boolean null] },
             'safety_blocklist': {

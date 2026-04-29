@@ -25,11 +25,12 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   def perform
     return { error: 'Transcription limit exceeded' } unless can_transcribe?
     return { error: 'Message not found' } if message.blank?
+    return { success: true, transcriptions: cached_transcription } if cached_transcription.present?
     return unsupported_audio_format_result unless supported_attachment_format?
 
     transcriptions = transcribe_audio
     Rails.logger.info(
-      "Audio transcription completed " \
+      'Audio transcription completed ' \
       "attachment_id=#{attachment.id} message_id=#{message.id}"
     )
     { success: true, transcriptions: transcriptions }
@@ -42,7 +43,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def can_transcribe?
     return false unless account.feature_enabled?('captain_integration')
-    return false if account.audio_transcriptions.blank?
+    return false unless account.captain_audio_transcription_enabled?
 
     account.captain_quota_available?
   end
@@ -70,7 +71,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_audio
-    transcribed_text = attachment.meta&.[]('transcribed_text') || ''
+    transcribed_text = cached_transcription || ''
     return transcribed_text if transcribed_text.present?
 
     temp_file_path = fetch_audio_file
@@ -81,6 +82,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
           temp_file_path,
           context: context,
           model: model,
+          prompt: transcription_prompt,
           temperature: 0.4,
           observability: observability.merge(runtime_mode: 'audio_transcription')
         )
@@ -110,6 +112,10 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def llm_model_account
     account
+  end
+
+  def transcription_prompt
+    account.captain_audio_transcription_prompt
   end
 
   def api_key
@@ -157,6 +163,8 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def supported_audio_extension
     @supported_audio_extension ||= begin
+      return unless attachment.file.attached?
+
       blob = attachment.file.blob
       extension = blob.filename.extension_without_delimiter.presence || extension_from_content_type(blob.content_type)
       normalized_extension = extension.to_s.downcase.presence
@@ -166,12 +174,17 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def unsupported_audio_format_result
+    blob = attachment.file.blob if attachment.file.attached?
     Rails.logger.warn(
-      "Skipping audio transcription: unsupported format " \
+      'Skipping audio transcription: unsupported format ' \
       "attachment_id=#{attachment.id} message_id=#{message.id} " \
-      "filename=#{attachment.file.blob.filename} content_type=#{attachment.file.blob.content_type}"
+      "filename=#{blob&.filename} content_type=#{blob&.content_type}"
     )
 
     { error: 'Unsupported audio format' }
+  end
+
+  def cached_transcription
+    attachment.meta&.[]('transcribed_text').to_s.presence
   end
 end

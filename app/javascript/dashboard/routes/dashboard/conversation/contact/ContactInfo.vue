@@ -200,8 +200,11 @@ export default {
   },
   methods: {
     dynamicTime,
-    toggleEditModal() {
-      this.showEditModal = !this.showEditModal;
+    openEditModal() {
+      this.showEditModal = true;
+    },
+    closeEditModal() {
+      this.showEditModal = false;
     },
     openComposeConversationModal(toggleFn) {
       toggleFn();
@@ -594,7 +597,7 @@ export default {
             slate
             faded
             sm
-            @click="toggleEditModal"
+            @click="openEditModal"
           />
           <NextButton
             v-tooltip.top-end="$t('CONTACT_PANEL.MERGE_CONTACT')"
@@ -610,9 +613,9 @@ export default {
 
       <EditContact
         v-if="showEditModal"
-        :show="showEditModal"
+        v-model:show="showEditModal"
         :contact="contact"
-        @cancel="toggleEditModal"
+        @cancel="closeEditModal"
       />
       <ContactMergeModal ref="mergeModal" :primary-contact="contact" />
     </div>
