@@ -30,14 +30,17 @@ const createWrapper = ({
   });
 
 describe('ChannelItem.vue', () => {
-  it('keeps whatsapp channel available in the inbox channel list', () => {
-    const wrapper = createWrapper({
-      channel: { key: 'whatsapp' },
-    });
+  it.each(['whatsapp', 'weixin'])(
+    'keeps %s channel available in the inbox channel list',
+    channelKey => {
+      const wrapper = createWrapper({
+        channel: { key: channelKey },
+      });
 
-    expect(wrapper.vm.isActive).toBe(true);
-    expect(wrapper.findComponent(channelSelectorStub).props('disabled')).toBe(
-      false
-    );
-  });
+      expect(wrapper.vm.isActive).toBe(true);
+      expect(wrapper.findComponent(channelSelectorStub).props('disabled')).toBe(
+        false
+      );
+    }
+  );
 });

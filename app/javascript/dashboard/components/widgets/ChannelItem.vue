@@ -74,6 +74,7 @@ const isActive = computed(() => {
     'sms',
     'telegram',
     'telegram_personal',
+    'weixin',
     'vk_community',
     'line',
     'instagram',
