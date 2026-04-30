@@ -538,6 +538,18 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:guardrails]).to eq(['Updated guardrail'])
       end
 
+      it 'updates prompt instructions up to the product limit' do
+        long_description = 'а' * Captain::Assistant::DESCRIPTION_MAX_LENGTH
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { description: long_description } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.description).to eq(long_description)
+      end
+
       it 'updates only response_guidelines when only that is provided' do
         assistant.update!(response_guidelines: ['Original guideline'], guardrails: ['Original guardrail'])
         original_name = assistant.name

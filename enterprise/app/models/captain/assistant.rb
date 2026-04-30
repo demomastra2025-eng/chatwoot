@@ -31,6 +31,7 @@ class Captain::Assistant < ApplicationRecord
 
   self.table_name = 'captain_assistants'
   INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
+  DESCRIPTION_MAX_LENGTH = 20_000
   RULES_CONFIG_KEY = 'rules'
   RULE_TYPE_SYSTEM = 'system'
   RULE_TYPE_RESPONSE_GUIDELINE = 'response_guideline'
@@ -350,7 +351,7 @@ class Captain::Assistant < ApplicationRecord
 
   validates :name, presence: true
   validates :description, presence: true
-  validates :description, length: { maximum: 10_000 }
+  validates :description, length: { maximum: DESCRIPTION_MAX_LENGTH }
   validates :account_id, presence: true
   validates :usage_mode, presence: true, inclusion: { in: %w[external_agent internal_assistant] }
   validates :message_collapse_window_seconds,

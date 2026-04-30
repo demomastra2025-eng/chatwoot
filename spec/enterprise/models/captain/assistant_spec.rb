@@ -2,7 +2,20 @@ require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
   describe 'validations' do
-    it { is_expected.to validate_length_of(:description).is_at_most(10_000) }
+    it { is_expected.to validate_length_of(:description).is_at_most(Captain::Assistant::DESCRIPTION_MAX_LENGTH) }
+
+    it 'allows prompt instructions up to the product limit' do
+      assistant = build(:captain_assistant, account: create(:account), description: 'a' * Captain::Assistant::DESCRIPTION_MAX_LENGTH)
+
+      expect(assistant).to be_valid
+    end
+
+    it 'rejects prompt instructions above the product limit' do
+      assistant = build(:captain_assistant, account: create(:account), description: 'a' * (Captain::Assistant::DESCRIPTION_MAX_LENGTH + 1))
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors.details[:description]).to include(error: :too_long, count: Captain::Assistant::DESCRIPTION_MAX_LENGTH)
+    end
 
     it 'allows external assistants with names that do not transliterate into ASCII' do
       assistant = build(:captain_assistant, account: create(:account), name: 'Арманище')
