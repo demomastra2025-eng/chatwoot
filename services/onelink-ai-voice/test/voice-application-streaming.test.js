@@ -38,6 +38,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   const controls = [];
   const transcripts = [];
   const realtimeAudio = [];
+  const sentTexts = [];
   let realtimeCallbacks;
 
   const call = Object.assign(new EventEmitter(), {
@@ -58,7 +59,12 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
     getContext: async () => ({
       call_ref: 'call-native-1',
       ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
-      tools: [{ name: 'lookup_customer', description: 'Lookup customer' }],
+      captain: { name: 'Кайрат Сатыбалды', system_prompt: 'Работай по инструкциям капитана.' },
+      tools: [
+        { name: 'lookup_customer', description: 'Lookup customer' },
+        { name: 'faq_lookup', description: 'Search FAQ responses', parameters: { type: 'object', properties: {} } },
+        { name: 'handoff', description: 'Hand off to human', parameters: { type: 'object', properties: {} } }
+      ],
       transfer: { enabled: true }
     }),
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
@@ -68,6 +74,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
 
   const realtime = {
     connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
     sendAudio: (chunk, metadata) => realtimeAudio.push({ chunk, metadata }),
     close: () => {}
   };
@@ -88,16 +95,31 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(call.streamOptions.direction, 'both');
   assert.equal(call.streamOptions.format, 'wav');
   assert.equal(realtimeCallbacks.systemPrompt.includes('Здравствуйте'), true);
+  assert.equal(realtimeCallbacks.systemPrompt.includes('Кайрат Сатыбалды'), true);
+  assert.equal(realtimeCallbacks.systemPrompt.includes('Работай по инструкциям капитана.'), true);
+  assert.equal(sentTexts.length, 1);
+  assert.equal(sentTexts[0].includes('Здравствуйте'), true);
+  assert.equal(sentTexts[0].includes('стартовую фразу'), true);
   assert.equal(realtimeCallbacks.tools[0].name, 'lookup_customer');
+  const faqTool = realtimeCallbacks.tools.find(tool => tool.name === 'faq_lookup');
+  assert.equal(faqTool.parameters.properties.query.type, 'string');
+  assert.deepEqual(faqTool.parameters.required, ['query']);
+  const handoffTool = realtimeCallbacks.tools.find(tool => tool.name === 'handoff');
+  assert.equal(handoffTool.parameters.properties.reason.type, 'string');
 
   stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1', format: 'wav' });
   assert.deepEqual(realtimeAudio[0].chunk, Buffer.from([1, 2]));
   assert.equal(realtimeAudio[0].metadata.mimeType, 'audio/pcm;rate=16000');
 
-  realtimeCallbacks.onAudio(Buffer.from([3, 4]), { mimeType: 'audio/pcm;rate=24000' });
+  const geminiPcm24 = Buffer.alloc(960);
+  for (let index = 0; index < 480; index += 1) geminiPcm24.writeInt16LE(index, index * 2);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
   assert.equal(stream.writes[0].type, 'audio_out');
-  assert.deepEqual(stream.writes[0].data, Buffer.from([3, 4]));
+  assert.equal(stream.writes[0].data.length, 320);
+  assert.equal(stream.writes[0].data.readInt16LE(0), 0);
+  assert.equal(stream.writes[0].data.readInt16LE(2), 3);
   assert.equal(stream.writes[0].streamRef, 'stream-1');
+  assert.equal(stream.writes[0].mimeType, undefined);
 
   realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'нужен оператор', final: true });
   await result.session.flushTranscript({ final: true });
@@ -117,6 +139,86 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   call.emit('end');
   await result.completion;
   assert.equal(completed, true);
+});
+
+test('VoiceApplication passes configured tool timeout into realtime tool execution', async () => {
+  const controls = [];
+  let realtimeCallbacks;
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return new FakeVoiceStream(); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-tool-timeout',
+      ai: { provider: 'gemini-live' },
+      tools: [{ name: 'slow_tool', description: 'Slow tool', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise(resolve => setTimeout(() => resolve({ ok: true }), 50))
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, toolTimeoutMs: 10 });
+  const result = await app.handleCall(call, { call_ref: 'call-tool-timeout' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ name: 'slow_tool', args: {} });
+  assert.equal(toolResult.ok, false);
+  assert.equal(toolResult.error.includes('10ms'), true);
+  assert.equal(controls.some(payload => payload.action === 'tool_failed'), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication paces model audio into 20ms frames and keeps buffered output on caller interruption by default', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-pacer-1', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-pacer-1' });
+
+  const geminiPcm24 = Buffer.alloc(1920);
+  for (let index = 0; index < 960; index += 1) geminiPcm24.writeInt16LE(index, index * 2);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
+
+  assert.equal(stream.writes.length, 1);
+  assert.equal(stream.writes[0].data.length, 320);
+  assert.equal(stream.writes[0].data.readInt16LE(2), 3);
+
+  await realtimeCallbacks.onInterrupt();
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(stream.writes.length, 2);
+
+  call.emit('end');
+  await result.completion;
 });
 
 test('VoiceApplication asks Rails for a route first and dials operator without AI bootstrap', async () => {
@@ -309,6 +411,62 @@ test('VoiceApplication emits a terminal event when the operator leg ends', async
 
   assert.equal(result.mode, 'operator');
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_answered', 'session_completed']);
+});
+
+test('VoiceApplication treats recursive AI app route decisions as local realtime sessions', async () => {
+  const stream = new FakeVoiceStream();
+  const bridgeEvents = [];
+  let contextPayload;
+  let realtimeCallbacks;
+  const client = {
+    routeInbound: async () => ({
+      action: 'app',
+      app_ref: 'fallback-runtime-app-1',
+      reason: 'recursive_runtime_app_ref',
+      account_id: 6,
+      number_ref: 'number-ai-1'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async payload => {
+      contextPayload = payload;
+      return {
+        call_ref: payload.call_ref,
+        account_id: payload.account_id,
+        number_ref: payload.number_ref,
+        ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+        tools: []
+      };
+    },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    stream: () => stream,
+    async transferToApp() { throw new Error('recursive AI app should not be transferred again'); }
+  });
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({ connect: async options => { realtimeCallbacks = options; }, close: () => {} })
+  });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-recursive-ai-app',
+    from: '+155****1001',
+    to: '+155****7001',
+    app_ref: 'ai-app-1'
+  });
+
+  assert.equal(result.mode, 'realtime');
+  assert.equal(call.answerCount, 1);
+  assert.equal(contextPayload.account_id, 6);
+  assert.equal(contextPayload.number_ref, 'number-ai-1');
+  assert.equal(realtimeCallbacks.systemPrompt.includes('Здравствуйте'), true);
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started']);
+
+  call.emit('end');
+  await result.completion;
 });
 
 test('VoiceApplication hands app route decisions to the target app without AI bootstrap', async () => {

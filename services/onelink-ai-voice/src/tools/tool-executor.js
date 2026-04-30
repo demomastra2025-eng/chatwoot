@@ -2,7 +2,7 @@ const { withTimeout, safeReason } = require('../utils/timeout');
 const { sanitizeErrorMessage } = require('../utils/errors');
 
 class ToolExecutor {
-  constructor({ client, callRef, timeoutMs = 800, scopeProvider = () => ({}) } = {}) {
+  constructor({ client, callRef, timeoutMs = 3_000, scopeProvider = () => ({}) } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;

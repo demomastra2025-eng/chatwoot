@@ -2,15 +2,19 @@ const { VoiceSession } = require('../sessions/voice-session');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
 
 const streamConstants = loadStreamConstants();
+const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
+const FONOSTER_CALL_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_CALL_RATE, 8_000);
+const GEMINI_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_OUTPUT_RATE, 24_000);
 
 class VoiceApplication {
-  constructor({ client, registry = null, realtimeFactory = null, fallbackResponder = new ScriptedFallbackResponder(), mediaStreamFactory = null } = {}) {
+  constructor({ client, registry = null, realtimeFactory = null, fallbackResponder = new ScriptedFallbackResponder(), mediaStreamFactory = null, toolTimeoutMs = 3_000 } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
     this.registry = registry;
     this.realtimeFactory = realtimeFactory;
     this.fallbackResponder = fallbackResponder;
     this.mediaStreamFactory = mediaStreamFactory;
+    this.toolTimeoutMs = toolTimeoutMs;
   }
 
   async handleCall(call, payload = {}) {
@@ -22,13 +26,16 @@ class VoiceApplication {
       ingressNumber: requestPayload.ingress_number || requestPayload.to,
       callerNumber: requestPayload.caller_number || requestPayload.from,
       numberRef: requestPayload.number_ref,
-      accountId: requestPayload.account_id
+      accountId: requestPayload.account_id,
+      toolTimeoutMs: this.toolTimeoutMs
     });
     this.registry?.create({ callRef, context: {}, accountId: requestPayload.account_id });
 
     const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
+    applyRouteScope(session, routeDecision);
     await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
     const routeAction = normalizeRouteAction(routeDecision);
+    const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
 
     if (routeAction === 'operator') {
       await answerCall(call);
@@ -64,7 +71,7 @@ class VoiceApplication {
       return { session, decision: routeDecision, mode: 'reject', completion: Promise.resolve() };
     }
 
-    if (routeAction === 'app') {
+    if (routeAction === 'app' && !handleLocallyAsAi) {
       await answerCall(call);
       await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
       await handoffToApp(call, routeDecision);
@@ -158,20 +165,29 @@ class VoiceApplication {
     const mediaStream = await this.startMediaStream(call);
     let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
-
-    const callbacks = {
-      systemPrompt: buildSystemPrompt(context),
-      tools: normalizeContextTools(context.tools),
-      onAudio: (chunk, metadata = {}) => {
-        if (!mediaStream || !chunk) return;
+    const outputPacer = mediaStream ? new Pcm16FramePacer({
+      sampleRate: FONOSTER_CALL_RATE,
+      frameMs: 20,
+      maxBufferedMs: 15_000,
+      onFrame: data => {
         mediaStream.write({
           mediaSessionRef,
           streamRef,
           format: streamConstants.wavFormat,
           type: streamConstants.audioOut,
-          data: Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
-          ...(metadata.mimeType ? { mimeType: metadata.mimeType } : {})
+          data
         });
+      }
+    }) : null;
+
+    const callbacks = {
+      systemPrompt: buildSystemPrompt(context),
+      tools: normalizeContextTools(context.tools),
+      onAudio: (chunk, metadata = {}) => {
+        if (!outputPacer || !chunk) return;
+        const data = fonosterAudioChunk(chunk, metadata);
+        if (!data.length) return;
+        outputPacer.push(data);
       },
       onTranscript: item => {
         const speaker = normalizeSpeaker(item.speaker);
@@ -186,6 +202,9 @@ class VoiceApplication {
         tool_call_id: callPayload.id
       }),
       onInterrupt: async () => {
+        if (shouldClearOutputOnInterrupt()) {
+          outputPacer?.clear?.();
+        }
         await session.safeControl('caller_interrupted', { provider: 'gemini-live' });
       }
     };
@@ -203,12 +222,18 @@ class VoiceApplication {
       });
     });
 
-    const completion = buildCompletion({ call, mediaStream, realtime, session, registry: this.registry });
+    const completion = buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry: this.registry });
     try {
       await realtime.connect(callbacks);
+      sendInitialGreeting(realtime, context);
     } catch (error) {
       try {
         realtime?.close?.();
+      } catch (_closeError) {
+        // ignore cleanup errors
+      }
+      try {
+        outputPacer?.close?.();
       } catch (_closeError) {
         // ignore cleanup errors
       }
@@ -374,12 +399,17 @@ function operatorFallbackDecision(routeDecision = {}, reason = 'operator_failed'
   };
 }
 
-function buildCompletion({ call, mediaStream, realtime, session, registry }) {
+function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry }) {
   return new Promise(resolve => {
     let completed = false;
     const finish = async action => {
       if (completed) return;
       completed = true;
+      try {
+        outputPacer?.close?.();
+      } catch (_error) {
+        // ignore pacer cleanup errors
+      }
       try {
         realtime?.close?.();
       } catch (_error) {
@@ -480,24 +510,90 @@ function callErrorEvents() {
 }
 
 function buildSystemPrompt(context = {}) {
+  const assistantName = String(context.captain?.name || context.ai?.name || '').trim();
   const pieces = [
+    assistantName ? `Твое имя в Captain: ${assistantName}. Если пользователь спрашивает, как тебя зовут, отвечай этим именем. Для приветствий и вопросов о твоем имени не вызывай FAQ или другие инструменты.` : null,
     context.system_prompt,
     context.prompt,
-    context.ai?.system_prompt,
+    context.ai?.system_prompt || context.captain?.system_prompt,
     context.ai?.instructions,
     context.ai?.first_message ? `Начни разговор коротко: ${context.ai.first_message}` : null
   ].filter(Boolean);
   return pieces.join('\n\n');
 }
 
+function sendInitialGreeting(realtime, context = {}) {
+  const greeting = initialGreetingText(context);
+  if (!greeting || typeof realtime?.sendText !== 'function') return false;
+
+  realtime.sendText(`Произнеси клиенту стартовую фразу дословно, без дополнительных комментариев: ${greeting}`);
+  return true;
+}
+
+function initialGreetingText(context = {}) {
+  return String(context.ai?.first_message || context.first_message || context.captain?.first_message || '').trim();
+}
+
 function normalizeContextTools(tools) {
   return (Array.isArray(tools) ? tools : [])
     .filter(tool => tool && tool.name && tool.enabled !== false)
-    .map(tool => ({
-      name: tool.name,
-      description: tool.description || tool.summary || `OneLink tool ${tool.name}`,
-      parameters: tool.parameters || tool.schema || { type: 'object', properties: {} }
-    }));
+    .map(tool => {
+      const name = String(tool.name);
+      return {
+        name,
+        description: tool.description || tool.summary || `OneLink tool ${name}`,
+        parameters: normalizeToolParameters(name, tool.parameters || tool.schema)
+      };
+    });
+}
+
+function normalizeToolParameters(name, parameters) {
+  const schema = isObjectSchema(parameters) ? parameters : { type: 'object', properties: {} };
+  const properties = isObjectSchema(schema.properties) ? schema.properties : {};
+  const hasProperties = Object.keys(properties).length > 0;
+  const normalizedName = String(name || '').toLowerCase();
+
+  if (normalizedName === 'faq_lookup' && !properties.query) {
+    return {
+      ...schema,
+      type: 'object',
+      properties: {
+        ...properties,
+        query: {
+          type: 'string',
+          description: 'The customer question or topic to search for in the FAQ database'
+        }
+      },
+      required: mergeRequired(schema.required, ['query'])
+    };
+  }
+
+  if (normalizedName === 'handoff' && !hasProperties) {
+    return {
+      ...schema,
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Short reason for handing the conversation to a human operator'
+        },
+        message: {
+          type: 'string',
+          description: 'Optional customer-facing transfer message'
+        }
+      }
+    };
+  }
+
+  return { ...schema, type: 'object', properties };
+}
+
+function isObjectSchema(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeRequired(existing, names) {
+  return [...new Set([...(Array.isArray(existing) ? existing : []), ...names])];
 }
 
 function normalizeSpeaker(speaker) {
@@ -511,7 +607,113 @@ function isAudioIn(type) {
 
 function mimeTypeForStreamPayload(payload) {
   if (payload.mimeType) return payload.mimeType;
-  return 'audio/pcm;rate=16000';
+  return `audio/pcm;rate=${FONOSTER_INPUT_RATE}`;
+}
+
+function fonosterAudioChunk(chunk, metadata = {}) {
+  const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || []);
+  if (buffer.length < 2) return Buffer.alloc(0);
+  const sourceRate = audioRateFromMimeType(metadata.mimeType) || GEMINI_OUTPUT_RATE;
+  return resamplePcm16(buffer, sourceRate, FONOSTER_CALL_RATE);
+}
+
+function audioRateFromMimeType(mimeType) {
+  const match = String(mimeType || '').match(/rate\s*=\s*(\d+)/i);
+  if (!match) return null;
+  const rate = Number.parseInt(match[1], 10);
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+function parseStreamRate(value, fallback) {
+  const rate = Number.parseInt(value, 10);
+  return Number.isFinite(rate) && rate > 0 ? rate : fallback;
+}
+
+function shouldClearOutputOnInterrupt() {
+  const value = String(process.env.VOICE_AGENT_CLEAR_AUDIO_ON_INTERRUPT || 'false').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+function resamplePcm16(buffer, sourceRate, targetRate) {
+  const evenLength = buffer.length - (buffer.length % 2);
+  if (evenLength <= 0) return Buffer.alloc(0);
+  const input = evenLength === buffer.length ? buffer : buffer.subarray(0, evenLength);
+  if (!sourceRate || sourceRate === targetRate) return input;
+
+  const inputSamples = Math.floor(input.length / 2);
+  const outputSamples = Math.max(1, Math.floor((inputSamples * targetRate) / sourceRate));
+  const output = Buffer.alloc(outputSamples * 2);
+
+  for (let i = 0; i < outputSamples; i += 1) {
+    const position = (i * sourceRate) / targetRate;
+    const leftIndex = Math.min(Math.floor(position), inputSamples - 1);
+    const rightIndex = Math.min(leftIndex + 1, inputSamples - 1);
+    const fraction = position - leftIndex;
+    const left = input.readInt16LE(leftIndex * 2);
+    const right = input.readInt16LE(rightIndex * 2);
+    output.writeInt16LE(clampPcm16(Math.round(left + ((right - left) * fraction))), i * 2);
+  }
+
+  return output;
+}
+
+function clampPcm16(value) {
+  return Math.max(-32768, Math.min(32767, value));
+}
+
+class Pcm16FramePacer {
+  constructor({ sampleRate, frameMs = 20, maxBufferedMs = 15_000, onFrame }) {
+    this.sampleRate = Number(sampleRate) || 8_000;
+    this.frameMs = Number(frameMs) || 20;
+    this.frameBytes = Math.max(2, Math.round((this.sampleRate * this.frameMs * 2) / 1000));
+    if (this.frameBytes % 2 !== 0) this.frameBytes += 1;
+    this.maxBufferedBytes = Math.max(this.frameBytes, Math.round((this.sampleRate * 2 * maxBufferedMs) / 1000));
+    this.onFrame = onFrame;
+    this.buffer = Buffer.alloc(0);
+    this.timer = null;
+    this.closed = false;
+  }
+
+  push(chunk) {
+    if (this.closed) return;
+    const input = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk || []);
+    if (!input.length) return;
+
+    this.buffer = this.buffer.length ? Buffer.concat([this.buffer, input]) : input;
+    if (this.buffer.length > this.maxBufferedBytes) {
+      const overflow = this.buffer.length - this.maxBufferedBytes;
+      const alignedOverflow = overflow % 2 === 0 ? overflow : overflow + 1;
+      this.buffer = this.buffer.subarray(Math.min(alignedOverflow, this.buffer.length));
+    }
+    this.start();
+  }
+
+  start() {
+    if (this.timer || this.closed) return;
+    this.timer = setInterval(() => this.tick(), this.frameMs);
+    this.timer.unref?.();
+    this.tick();
+  }
+
+  tick() {
+    if (this.closed || this.buffer.length < this.frameBytes) return;
+    const frame = this.buffer.subarray(0, this.frameBytes);
+    this.buffer = this.buffer.subarray(this.frameBytes);
+    this.onFrame?.(frame);
+  }
+
+  clear() {
+    this.buffer = Buffer.alloc(0);
+  }
+
+  close() {
+    this.closed = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.clear();
+  }
 }
 
 function compactPayload(payload = {}) {
@@ -545,6 +747,17 @@ function bridgeEventPayload(event, session, requestPayload = {}, routeDecision =
       route_reason: routeDecision.reason
     }
   });
+}
+
+function applyRouteScope(session, routeDecision = {}) {
+  if (!session || !routeDecision) return;
+  session.accountId = routeDecision.account_id || routeDecision.accountId || session.accountId;
+  session.numberRef = routeDecision.number_ref || routeDecision.numberRef || session.numberRef;
+}
+
+function shouldHandleAppRouteLocally(routeDecision = {}, _requestPayload = {}) {
+  if (normalizeRouteAction(routeDecision) !== 'app') return false;
+  return String(routeDecision.reason || '').toLowerCase() === 'recursive_runtime_app_ref';
 }
 
 function normalizeRouteAction(routeDecision = {}) {

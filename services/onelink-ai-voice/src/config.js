@@ -17,7 +17,7 @@ function loadConfig(env = process.env) {
     identityAddress: env.VOICE_AGENT_IDENTITY_ADDRESS || '',
     apiPort: parseInteger(env.VOICE_AGENT_API_PORT, 8081),
     sessionTtlMs: parseInteger(env.VOICE_AGENT_SESSION_TTL_MS, 3_600_000),
-    toolTimeoutMs: parseInteger(env.VOICE_AGENT_TOOL_TIMEOUT_MS, 800),
+    toolTimeoutMs: parseInteger(env.VOICE_AGENT_TOOL_TIMEOUT_MS, 3_000),
     realtimeProvider: env.VOICE_AGENT_REALTIME_PROVIDER || 'gemini-live',
     geminiApiKey: env.VOICE_AGENT_REALTIME_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '',
     geminiModel: env.VOICE_AGENT_REALTIME_MODEL || 'gemini-3.1-flash-live-preview',

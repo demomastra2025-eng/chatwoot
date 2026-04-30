@@ -4,6 +4,8 @@ class GeminiLiveClient {
     model = 'gemini-2.0-flash-live-001',
     voice = 'Puck',
     language = 'ru-KZ',
+    temperature = 0.3,
+    maxOutputTokens = 512,
     url = null,
     WebSocketImpl = null,
     setupTimeoutMs = 15_000,
@@ -18,6 +20,8 @@ class GeminiLiveClient {
     this.model = model;
     this.voice = voice;
     this.language = language;
+    this.temperature = temperature;
+    this.maxOutputTokens = maxOutputTokens;
     this.url = url || buildGeminiLiveUrl(model);
     this.WebSocketImpl = WebSocketImpl;
     this.setupTimeoutMs = setupTimeoutMs;
@@ -110,6 +114,8 @@ class GeminiLiveClient {
       model: normalizeModel(this.model),
       generationConfig: {
         responseModalities: ['AUDIO'],
+        temperature: this.temperature,
+        maxOutputTokens: this.maxOutputTokens,
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } },
           ...(this.language ? { languageCode: this.language } : {})
@@ -267,10 +273,8 @@ class GeminiLiveClient {
   }
 }
 
-function buildGeminiLiveUrl(model) {
-  const url = new URL('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent');
-  url.searchParams.set('model', normalizeModel(model));
-  return url.toString();
+function buildGeminiLiveUrl(_model) {
+  return 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 }
 
 function normalizeModel(model) {

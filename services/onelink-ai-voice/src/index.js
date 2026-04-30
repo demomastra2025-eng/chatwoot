@@ -13,6 +13,7 @@ async function main() {
   const app = new VoiceApplication({
     client,
     registry,
+    toolTimeoutMs: config.toolTimeoutMs,
     realtimeFactory: ({ context, onAudio, onTranscript, onToolCall, onInterrupt, onEvent }) => new GeminiLiveClient({
       apiKey: config.geminiApiKey,
       model: context.ai?.model || config.geminiModel,

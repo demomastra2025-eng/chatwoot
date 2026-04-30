@@ -73,8 +73,11 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.equal(socket.url.includes('secret-token-123'), false, 'api key must not be placed in URL');
 
   socket.open();
+  assert.equal(new URL(socket.url).searchParams.get('model'), null);
   assert.equal(socket.sent[0].setup.model, 'models/gemini-live-test');
   assert.equal(socket.sent[0].setup.generationConfig.responseModalities[0], 'AUDIO');
+  assert.equal(socket.sent[0].setup.generationConfig.temperature, 0.3);
+  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 512);
   assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'START_OF_ACTIVITY_INTERRUPTS');
   assert.equal(socket.sent[0].setup.systemInstruction.parts[0].text, 'Ты голосовой оператор OneLink.');
   assert.equal(socket.sent[0].setup.tools[0].functionDeclarations[0].name, 'lookup_customer');
@@ -109,8 +112,8 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.deepEqual(socket.sent.at(-1).toolResponse.functionResponses[0].response, { ok: true, result: { found: true } });
 });
 
-test('buildGeminiLiveUrl includes model but never includes API key', () => {
+test('buildGeminiLiveUrl uses the base websocket endpoint and never includes API key or model query', () => {
   const url = buildGeminiLiveUrl('gemini-live-test', 'do-not-leak');
   assert.equal(url.includes('do-not-leak'), false);
-  assert.equal(new URL(url).searchParams.get('model'), 'models/gemini-live-test');
+  assert.equal(new URL(url).searchParams.get('model'), null);
 });

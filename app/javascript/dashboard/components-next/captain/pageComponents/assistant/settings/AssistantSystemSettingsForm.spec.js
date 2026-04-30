@@ -66,6 +66,7 @@ describe('AssistantSystemSettingsForm', () => {
         model: 'gemini-3.1-flash-live-preview',
         voice: 'sulafat',
         language: 'ru-KZ',
+        system_prompt: '',
         first_message: '',
         transfer_message: '',
         max_duration_sec: 0,
@@ -84,6 +85,7 @@ describe('AssistantSystemSettingsForm', () => {
             model: 'gemini-3.1-flash-live-preview',
             voice: 'sulafat',
             language: 'ru-KZ',
+            system_prompt: 'Говори коротко, без markdown и списков.',
             first_message: 'Сәлеметсіз бе!',
             transfer_message: 'Қазір операторға қосамын.',
             max_duration_sec: 450,
@@ -99,8 +101,13 @@ describe('AssistantSystemSettingsForm', () => {
     expect(wrapper.text()).toContain(
       'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TITLE'
     );
+    expect(
+      wrapper.find('[data-test-id="assistant-voice-system-prompt"]').exists()
+    ).toBe(true);
 
     wrapper.vm.state.voiceSettings.voice = 'leda';
+    wrapper.vm.state.voiceSettings.systemPrompt =
+      'Отвечай максимум двумя короткими предложениями.';
     wrapper.vm.state.voiceSettings.firstMessage = 'Алло!';
     const payload = await wrapper.vm.buildPayload();
 
@@ -109,6 +116,7 @@ describe('AssistantSystemSettingsForm', () => {
       model: 'gemini-3.1-flash-live-preview',
       voice: 'leda',
       language: 'ru-KZ',
+      system_prompt: 'Отвечай максимум двумя короткими предложениями.',
       first_message: 'Алло!',
       transfer_message: 'Қазір операторға қосамын.',
       max_duration_sec: 450,

@@ -42,6 +42,7 @@ const DEFAULT_VOICE_SETTINGS = {
   model: 'gemini-3.1-flash-live-preview',
   voice: 'sulafat',
   language: 'ru-KZ',
+  systemPrompt: '',
   firstMessage: '',
   transferMessage: '',
   maxDurationSec: 0,
@@ -100,6 +101,9 @@ const resolutionInfoPoints = computed(() => [
 
 const temperatureMinLabel = '0.0';
 const temperatureMaxLabel = '1.0';
+const voiceSettingsSummary = computed(
+  () => `${state.voiceSettings.model} / ${state.voiceSettings.voice}`
+);
 
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
@@ -120,6 +124,8 @@ const updateStateFromAssistant = assistant => {
     model: voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
     voice: voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
     language: voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
+    systemPrompt:
+      voiceSettings.system_prompt ?? DEFAULT_VOICE_SETTINGS.systemPrompt,
     firstMessage:
       voiceSettings.first_message ?? DEFAULT_VOICE_SETTINGS.firstMessage,
     transferMessage:
@@ -177,6 +183,7 @@ const buildPayload = async () => {
           voice: state.voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
           language:
             state.voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
+          system_prompt: state.voiceSettings.systemPrompt || '',
           first_message: state.voiceSettings.firstMessage || '',
           transfer_message: state.voiceSettings.transferMessage || '',
           max_duration_sec: normalizeNonNegativeInteger(
@@ -439,7 +446,7 @@ defineExpose({
             </p>
           </div>
           <span class="text-xs font-medium text-n-slate-10">
-            {{ state.voiceSettings.model }} / {{ state.voiceSettings.voice }}
+            {{ voiceSettingsSummary }}
           </span>
         </div>
       </summary>
@@ -465,6 +472,36 @@ defineExpose({
           :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE')"
           placeholder="ru-KZ"
         />
+        <div
+          data-test-id="assistant-voice-system-prompt"
+          class="md:col-span-2 flex flex-col gap-2"
+        >
+          <div>
+            <h5 class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SYSTEM_PROMPT') }}
+            </h5>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SYSTEM_PROMPT_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <Editor
+            v-model="state.voiceSettings.systemPrompt"
+            override-line-breaks
+            :placeholder="
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SYSTEM_PROMPT_PLACEHOLDER'
+              )
+            "
+            :show-character-count="false"
+            class="z-0 compact-system-message-editor"
+            enable-captain-fields
+            :captain-context-assistant-id="assistant.id"
+          />
+        </div>
         <Input
           v-model="state.voiceSettings.firstMessage"
           :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FIRST_MESSAGE')"

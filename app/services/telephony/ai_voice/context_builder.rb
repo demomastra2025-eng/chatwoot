@@ -4,6 +4,16 @@ class Telephony::AiVoice::ContextBuilder
   DEFAULT_VOICE = 'sulafat'.freeze
   DEFAULT_LANGUAGE = 'ru-KZ'.freeze
   DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze
+  DEFAULT_SYSTEM_PROMPT = <<~PROMPT.squish.freeze
+    Ты голосовой ассистент в телефонном звонке.
+    Говори по-русски, коротко и естественно.
+    Не используй markdown, списки, эмодзи или спецсимволы.
+    Отвечай максимум 1-2 короткими предложениями.
+    Задавай только один вопрос за раз.
+    Если пользователь перебивает, сразу остановись и слушай.
+    Если не уверен, уточни коротким вопросом.
+    Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
+  PROMPT
   DEFAULT_MAX_DURATION_SEC = 900
 
   def initialize(params:)
@@ -129,7 +139,7 @@ class Telephony::AiVoice::ContextBuilder
     base << captain_assistant.system_instruction if captain_assistant&.system_instruction.present?
     base.concat(captain_assistant.system_rule_contents) if captain_assistant.present?
     base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
-    base << 'You are a realtime voice agent. Keep answers concise, natural, and suitable for spoken conversation.'
+    base << DEFAULT_SYSTEM_PROMPT
     base.compact_blank.join("\n")
   end
 

@@ -3,7 +3,7 @@ const { ToolExecutor } = require('../tools/tool-executor');
 const { safeReason } = require('../utils/timeout');
 
 class VoiceSession {
-  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, toolTimeoutMs = 800 } = {}) {
+  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, toolTimeoutMs = 3_000 } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;

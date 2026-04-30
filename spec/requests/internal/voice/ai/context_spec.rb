@@ -90,6 +90,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'interruptions_enabled' => true,
       'max_duration_sec' => 600
     )
+    expect(body.dig('ai', 'system_prompt')).to include('Ты голосовой ассистент в телефонном звонке')
+    expect(body.dig('ai', 'system_prompt')).to include('Отвечай максимум 1-2 короткими предложениями')
     expect(body.dig('captain', 'assistant_id')).to eq(assistant.id)
     expect(body.dig('captain', 'system_prompt')).to include('Answer callers using OneLink account context.')
     expect(body.dig('transfer', 'operator_agent_aor')).to eq('sip:1001@example.test')
@@ -118,6 +120,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
           model: 'gemini-3.1-flash-live-preview',
           voice: 'sulafat',
           language: 'ru-KZ',
+          system_prompt: 'Говори как ресепшен клиники и не перечисляй списками.',
           first_message: 'Сәлеметсіз бе! Қалай көмектесемін?',
           max_duration_sec: 450,
           interruptions_enabled: false,
@@ -158,6 +161,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'provider' => 'gemini-live',
       'model' => 'gemini-3.1-flash-live-preview',
       'voice' => 'sulafat',
+      'system_prompt' => a_string_including('Говори как ресепшен клиники'),
       'first_message' => 'Сәлеметсіз бе! Қалай көмектесемін?',
       'interruptions_enabled' => false,
       'max_duration_sec' => 450
