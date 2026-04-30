@@ -34,5 +34,16 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
         'segment' => 'enterprise'
       )
     end
+
+    it 'updates the current deal from an AI-facing major-unit amount without exposing trailing zero decimals' do
+      result = service.execute(amount: '200.00', currency: 'USD')
+
+      deal.reload
+
+      expect(deal.amount_minor).to eq(20_000)
+      expect(result).to include('Amount: 200 USD')
+      expect(result).not_to include('Amount Minor')
+      expect(result).not_to include('20000')
+    end
   end
 end

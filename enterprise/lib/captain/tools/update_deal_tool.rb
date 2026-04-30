@@ -2,17 +2,22 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
   description 'Update the CRM deal linked to the current conversation'
   param :title, type: 'string', desc: 'Updated deal title', required: false
   param :description, type: 'string', desc: 'Updated deal description', required: false
-  param :amount_minor, type: 'number', desc: 'Updated amount in minor currency units', required: false
+  param :amount,
+        type: 'string',
+        desc: 'Updated amount in major units; prefer this over amount_minor',
+        required: false
+  param :amount_minor, type: 'number', desc: 'Legacy updated amount in minor currency units', required: false
   param :currency, type: 'string', desc: 'Updated ISO currency code', required: false
   param :expected_close_on, type: 'string', desc: 'Updated close date in YYYY-MM-DD format', required: false
   param :win_probability, type: 'number', desc: 'Updated win probability from 0 to 100', required: false
   param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
-  def perform(tool_context, title: nil, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil,
-              custom_attributes: nil)
+  def perform(tool_context, title: nil, description: nil, amount: nil, amount_minor: nil, currency: nil,
+              expected_close_on: nil, win_probability: nil, custom_attributes: nil)
     deal = operations(tool_context.state).update_current_deal(
       title: title,
       description: description,
+      amount: amount,
       amount_minor: amount_minor,
       currency: currency,
       expected_close_on: expected_close_on,
@@ -22,7 +27,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
 
     JSON.pretty_generate(
       action: 'update_deal',
-      deal: ::Crm::PayloadBuilder.deal(deal)
+      deal: ::Crm::PayloadBuilder.ai_deal(deal)
     )
   rescue StandardError => e
     tool_failure(e)

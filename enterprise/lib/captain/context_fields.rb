@@ -10,7 +10,7 @@ class Captain::ContextFields
     label_list custom_attributes additional_attributes
   ].freeze
   DEAL_STATE_ATTRIBUTES = %i[
-    id title description amount_minor currency expected_close_on win_probability
+    id title description amount amount_minor currency expected_close_on win_probability
     closed_at external_ref pipeline_id stage_id owner_id creator_id team_id company_id
     originating_conversation_id pipeline_name stage_name owner_name creator_name
     team_name company_name custom_attributes
@@ -53,6 +53,7 @@ class Captain::ContextFields
     { key: 'id', title: 'Deal ID', description: 'deal.id' },
     { key: 'title', title: 'Title', description: 'deal.title' },
     { key: 'description', title: 'Description', description: 'deal.description' },
+    { key: 'amount', title: 'Amount', description: 'deal.amount' },
     { key: 'amount_minor', title: 'Amount (minor units)', description: 'deal.amount_minor' },
     { key: 'currency', title: 'Currency', description: 'deal.currency' },
     { key: 'expected_close_on', title: 'Expected Close Date', description: 'deal.expected_close_on' },
@@ -204,6 +205,7 @@ class Captain::ContextFields
       return if deal.blank?
 
       deal.attributes.symbolize_keys.slice(*DEAL_STATE_ATTRIBUTES).merge(
+        amount: Crm::AmountFormatter.major_from_minor(deal.amount_minor),
         pipeline_name: deal.pipeline&.name,
         stage_name: deal.stage&.name,
         owner_name: deal.owner&.name,

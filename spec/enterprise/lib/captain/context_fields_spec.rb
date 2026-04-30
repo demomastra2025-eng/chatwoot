@@ -272,6 +272,8 @@ RSpec.describe Captain::ContextFields do
         :crm_deal,
         account: account,
         originating_conversation: conversation_record,
+        amount_minor: 20_000,
+        currency: 'USD',
         updated_at: 1.day.ago
       )
     end
@@ -290,6 +292,8 @@ RSpec.describe Captain::ContextFields do
 
       expect(state[:id]).to eq(latest_open_deal.id)
       expect(state[:stage_name]).to eq(latest_open_deal.stage.name)
+      expect(state[:amount]).to eq('200')
+      expect(state[:amount_minor]).to eq(20_000)
     end
   end
 

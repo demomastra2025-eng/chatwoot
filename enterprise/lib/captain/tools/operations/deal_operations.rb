@@ -7,14 +7,15 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     current_deal.comments.create!(account: account, user: actor, body: body.to_s.strip)
   end
 
-  def create_deal(title:, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil, custom_attributes: nil)
+  def create_deal(title:, description: nil, amount: nil, amount_minor: nil, currency: nil, expected_close_on: nil,
+                  win_probability: nil, custom_attributes: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     bootstrap_crm_defaults!
 
     create_params = {
       title: title,
       description: description,
-      amount_minor: amount_minor,
+      amount_minor: amount_minor_for_write(amount: amount, amount_minor: amount_minor),
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,
@@ -50,7 +51,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     ).perform
   end
 
-  def update_current_deal(title: nil, description: nil, amount_minor: nil, currency: nil, expected_close_on: nil, win_probability: nil, custom_attributes: nil)
+  def update_current_deal(title: nil, description: nil, amount: nil, amount_minor: nil, currency: nil,
+                          expected_close_on: nil, win_probability: nil, custom_attributes: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     raise ArgumentError, 'Current deal is not available' if current_deal.blank?
 
@@ -58,15 +60,13 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
       lock_version: current_deal.lock_version
     }
     params[:title] = title if title.present?
-    params[:description] = description if !description.nil?
-    params[:amount_minor] = amount_minor if !amount_minor.nil?
-    params[:currency] = currency if !currency.nil?
-    params[:expected_close_on] = expected_close_on if !expected_close_on.nil?
-    params[:win_probability] = win_probability if !win_probability.nil?
+    params[:description] = description unless description.nil?
+    params[:amount_minor] = amount_minor_for_write(amount: amount, amount_minor: amount_minor) if !amount.nil? || !amount_minor.nil?
+    params[:currency] = currency unless currency.nil?
+    params[:expected_close_on] = expected_close_on unless expected_close_on.nil?
+    params[:win_probability] = win_probability unless win_probability.nil?
 
-    if custom_attributes.present?
-      params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes')
-    end
+    params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
     ::Crm::Deals::UpsertService.new(
       account: account,
@@ -77,6 +77,12 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   private
+
+  def amount_minor_for_write(amount:, amount_minor:)
+    return Crm::AmountFormatter.minor_from_major(amount) unless amount.nil?
+
+    amount_minor
+  end
 
   def resolve_stage(stage_id:, stage_name:, stage_code:)
     return account.crm_stages.find(stage_id) if stage_id.present?

@@ -37,5 +37,16 @@ RSpec.describe Captain::Tools::Copilot::CreateDealService do
         'priority_band' => 'high'
       )
     end
+
+    it 'creates a deal from an AI-facing major-unit amount without exposing trailing zero decimals' do
+      result = service.execute(title: 'Whole amount deal', currency: 'USD', amount: '200.00')
+
+      deal = account.crm_deals.order(:id).last
+
+      expect(deal.amount_minor).to eq(20_000)
+      expect(result).to include('Amount: 200 USD')
+      expect(result).not_to include('Amount Minor')
+      expect(result).not_to include('20000')
+    end
   end
 end

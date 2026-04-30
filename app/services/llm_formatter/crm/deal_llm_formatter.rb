@@ -7,7 +7,7 @@ module LlmFormatter::Crm
       sections << "Description: #{@record.description.presence || 'Not set'}"
       sections << "Pipeline: #{@record.pipeline&.name || 'Not set'}"
       sections << "Stage: #{@record.stage&.name || 'Not set'}"
-      sections << "Amount Minor: #{@record.amount_minor || 'Not set'}"
+      sections << "Amount: #{formatted_amount}"
       sections << "Currency: #{@record.currency.presence || 'Not set'}"
       sections << "Expected Close On: #{@record.expected_close_on || 'Not set'}"
       sections << "Win Probability: #{@record.win_probability || 'Not set'}"
@@ -19,6 +19,15 @@ module LlmFormatter::Crm
       sections << "Closed At: #{@record.closed_at || 'Not set'}"
       sections << "Custom Attributes: #{@record.custom_attributes.to_json}"
       sections.join("\n")
+    end
+
+    private
+
+    def formatted_amount
+      amount = Crm::AmountFormatter.major_from_minor(@record.amount_minor)
+      return 'Not set' if amount.blank?
+
+      [amount, @record.currency.presence].compact.join(' ')
     end
   end
 end

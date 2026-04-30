@@ -86,6 +86,7 @@ module Crm::PayloadBuilder
       originating_conversation_display_id: deal.originating_conversation&.display_id,
       title: deal.title,
       description: deal.description,
+      amount: amount_for(deal),
       amount_minor: deal.amount_minor,
       currency: deal.currency,
       expected_close_on: deal.expected_close_on&.iso8601,
@@ -109,6 +110,10 @@ module Crm::PayloadBuilder
       created_at: deal.created_at&.iso8601,
       updated_at: deal.updated_at&.iso8601
     }
+  end
+
+  def ai_deal(deal)
+    deal(deal).except(:amount_minor)
   end
 
   def compact_company(company)
@@ -159,6 +164,10 @@ module Crm::PayloadBuilder
       created_at: conversation.created_at&.iso8601,
       contact: compact_contact(conversation.contact)
     }
+  end
+
+  def amount_for(deal)
+    Crm::AmountFormatter.major_from_minor(deal.amount_minor)
   end
 
   def compact_user(user)

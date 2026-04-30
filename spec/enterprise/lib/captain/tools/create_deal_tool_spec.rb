@@ -14,9 +14,15 @@ RSpec.describe Captain::Tools::CreateDealTool, type: :model do
     conversation = create(:conversation, account: account, contact: contact)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, title: 'Enterprise renewal'))
+    payload = JSON.parse(tool.perform(tool_context, title: 'Enterprise renewal', amount: '200.00', currency: 'USD'))
 
     expect(payload).to include('action' => 'create_deal')
-    expect(payload['deal']).to include('title' => 'Enterprise renewal', 'originating_conversation_id' => conversation.id)
+    expect(payload['deal']).to include(
+      'title' => 'Enterprise renewal',
+      'originating_conversation_id' => conversation.id,
+      'amount' => '200'
+    )
+    expect(payload['deal']).not_to have_key('amount_minor')
+    expect(payload.to_json).not_to include('20000')
   end
 end
