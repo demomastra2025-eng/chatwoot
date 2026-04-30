@@ -430,6 +430,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(number_binding.routing_policy.reload.ai_enabled).to be(true)
     expect(response.parsed_body).to include(
       'action' => 'ai',
+      'ai_mode' => 'onelink_managed',
       'app_ref' => 'onelink-ai-status-aware-app-ref',
       'reason' => 'pending_conversation_ai_route'
     )
@@ -507,6 +508,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
       'action' => 'ai',
+      'ai_mode' => 'onelink_managed',
       'app_ref' => 'onelink-ai-voice-app',
       'reason' => 'ai_route',
       'number_ref' => number_binding.number_ref

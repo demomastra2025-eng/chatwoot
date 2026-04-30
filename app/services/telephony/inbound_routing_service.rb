@@ -212,6 +212,7 @@ class Telephony::InboundRoutingService
   def ai_decision(reason:)
     {
       action: 'ai',
+      ai_mode: routing_policy.ai_deployment_mode,
       app_ref: resolved_ai_app_ref,
       reason: reason
     }.merge(shared_context)
