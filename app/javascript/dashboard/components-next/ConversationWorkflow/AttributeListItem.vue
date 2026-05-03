@@ -19,6 +19,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  deleteDisabled: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['edit', 'delete']);
@@ -102,6 +106,7 @@ const attributeIcon = computed(() => {
           slate
           sm
           class="hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-2"
+          :disabled="deleteDisabled"
           @click="emit('delete', attribute)"
         />
       </div>

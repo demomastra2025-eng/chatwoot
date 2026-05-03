@@ -147,6 +147,103 @@ RSpec.describe 'CRM Field Definitions API', type: :request do
     expect(response.parsed_body.dig('payload', 0, 'entity_kind')).to eq('deal')
   end
 
+  it 'marks the deal source field as system in API payloads' do
+    source_field = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'source',
+      label: 'Источник',
+      field_type: 'select',
+      options: [{ label: 'Вручную', value: 'manual' }]
+    )
+
+    get path, params: { entity_kind: 'deal' }, headers: headers, as: :json
+
+    payload = response.parsed_body.fetch('payload').find { |item| item['id'] == source_field.id }
+    expect(response).to have_http_status(:ok)
+    expect(payload['system']).to be(true)
+  end
+
+  it 'allows editable attributes of the system deal source field' do
+    source_field = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'source',
+      label: 'Источник',
+      field_type: 'select',
+      options: [{ label: 'Вручную', value: 'manual' }]
+    )
+
+    patch "#{path}/#{source_field.id}",
+          params: {
+            label: 'Канал источника',
+            active: false,
+            default_value: 'website',
+            position: 7,
+            options: [{ label: 'Сайт', value: 'website' }]
+          },
+          headers: headers,
+          as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload).to include(
+      'key' => 'source',
+      'field_type' => 'select',
+      'label' => 'Канал источника',
+      'active' => false,
+      'default_value' => 'website',
+      'position' => 7,
+      'system' => true
+    )
+    expect(payload['options']).to eq([{ 'label' => 'Сайт', 'value' => 'website' }])
+  end
+
+  it 'rejects key and type changes for the system deal source field' do
+    source_field = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'source',
+      label: 'Источник',
+      field_type: 'select',
+      options: [{ label: 'Вручную', value: 'manual' }]
+    )
+
+    patch "#{path}/#{source_field.id}",
+          params: {
+            key: 'origin',
+            field_type: 'text',
+            label: 'Origin'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('SYSTEM_FIELD_LOCKED')
+    expect(source_field.reload).to have_attributes(key: 'source', field_type: 'select')
+  end
+
+  it 'rejects deleting the system deal source field' do
+    source_field = create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'source',
+      label: 'Источник',
+      field_type: 'select',
+      options: [{ label: 'Вручную', value: 'manual' }]
+    )
+
+    delete "#{path}/#{source_field.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('SYSTEM_FIELD_LOCKED')
+    expect(account.crm_field_definitions.where(id: source_field.id)).to exist
+  end
+
   it 'returns forbidden when neither crm_deals nor crm_tasks is enabled' do
     account.disable_features!('crm_deals')
 

@@ -70,6 +70,7 @@ const crmFieldForm = reactive({
   position: '',
   regex: '',
   required: false,
+  system: false,
 });
 
 const legacyUiFlags = computed(() => getters['attributes/getUIFlags'].value);
@@ -385,7 +386,8 @@ const derivedLegacyAttributes = computed(() =>
 const derivedCrmAttributes = computed(() =>
   currentAttributes.value.map(fieldDefinition => ({
     ...fieldDefinition,
-    badges: [],
+    badges: fieldDefinition.system ? [{ type: 'system' }] : [],
+    deleteDisabled: Boolean(fieldDefinition.system),
     description: describeCrmField(fieldDefinition),
     kind: 'crm',
     label: fieldDefinition.label,
@@ -449,6 +451,7 @@ const crmFieldSupportsOptions = computed(() =>
 const crmFieldSupportsRegex = computed(() =>
   ['text', 'textarea', 'url'].includes(crmFieldForm.fieldType)
 );
+const crmFieldIsSystem = computed(() => Boolean(crmFieldForm.system));
 const crmFieldSupportsNumericRules = computed(() =>
   ['number', 'currency', 'percent'].includes(crmFieldForm.fieldType)
 );
@@ -536,6 +539,7 @@ const resetCrmFieldForm = (entityKind = defaultCrmEntityKind()) => {
     position: '',
     regex: '',
     required: false,
+    system: false,
   });
 };
 
@@ -586,6 +590,7 @@ function openCrmFieldDialog(fieldDefinition) {
           : String(fieldDefinition.position),
       regex: fieldDefinition.rules?.regex || '',
       required: fieldDefinition.required,
+      system: Boolean(fieldDefinition.system),
     });
   } else {
     resetCrmFieldForm();
@@ -697,6 +702,10 @@ const saveCrmFieldDefinition = async () => {
 };
 
 async function removeCrmFieldDefinition(fieldDefinition) {
+  if (fieldDefinition.system) {
+    return;
+  }
+
   // eslint-disable-next-line no-alert
   if (!window.confirm(t('CRM.SETTINGS.FIELDS.DELETE_CONFIRM'))) {
     return;
@@ -745,6 +754,10 @@ const handleDeleteAttribute = attribute => {
   if (attribute.kind === 'legacy') {
     selectedAttribute.value = attribute;
     toggleDeletePopup(true);
+    return;
+  }
+
+  if (attribute.deleteDisabled) {
     return;
   }
 
@@ -836,6 +849,7 @@ onMounted(async () => {
             :attribute="attribute"
             :badges="attribute.badges"
             :read-only="!canManageCurrentTab"
+            :delete-disabled="attribute.deleteDisabled"
             @edit="handleEditAttribute"
             @delete="handleDeleteAttribute"
           />
@@ -909,7 +923,7 @@ onMounted(async () => {
             <Select
               v-model="crmFieldForm.entityKind"
               :options="crmEntityOptions"
-              :disabled="crmEntityOptions.length <= 1"
+              :disabled="crmFieldIsSystem || crmEntityOptions.length <= 1"
             />
           </div>
 
@@ -920,6 +934,7 @@ onMounted(async () => {
             <Select
               v-model="crmFieldForm.fieldType"
               :options="crmFieldTypeOptions"
+              :disabled="crmFieldIsSystem"
             />
           </div>
         </div>
@@ -934,6 +949,7 @@ onMounted(async () => {
           <Input
             :label="$t('CRM.SETTINGS.FIELDS.FORM.KEY')"
             :model-value="crmFieldForm.key"
+            :disabled="crmFieldIsSystem"
             @update:model-value="crmFieldForm.key = $event"
           />
         </div>

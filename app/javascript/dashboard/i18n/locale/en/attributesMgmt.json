@@ -72,7 +72,8 @@
         },
         "BADGES": {
           "PRE_CHAT": "Pre-chat",
-          "RESOLUTION": "Resolution"
+          "RESOLUTION": "Resolution",
+          "SYSTEM": "System"
         }
       },
       "API": {
@@ -167,7 +168,8 @@
     },
     "BADGES": {
       "PRE_CHAT": "Pre-chat",
-      "RESOLUTION": "Resolution"
+      "RESOLUTION": "Resolution",
+      "SYSTEM": "System"
     }
   }
 }

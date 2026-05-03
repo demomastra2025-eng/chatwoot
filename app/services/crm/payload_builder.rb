@@ -60,6 +60,7 @@ module Crm::PayloadBuilder
       field_type: field_definition.field_type,
       required: field_definition.required,
       active: field_definition.active,
+      system: field_definition.system?,
       position: field_definition.position,
       default_value: field_definition.default_value,
       options: field_definition.options,

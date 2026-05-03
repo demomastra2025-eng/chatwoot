@@ -26,6 +26,8 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
 
   def update
     authorize @field_definition
+    ensure_system_field_update_allowed!
+
     @field_definition.update!(field_definition_params)
 
     render_payload(::Crm::PayloadBuilder.field_definition(@field_definition.reload))
@@ -33,6 +35,7 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
 
   def destroy
     authorize @field_definition
+    ensure_system_field_destroy_allowed!
 
     cleanup_service = ::Crm::FieldDefinitionValueCleanupService.new(
       account: Current.account,
@@ -60,6 +63,40 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
       code: 'FEATURE_DISABLED',
       message: 'CRM deals, CRM tasks, or scheduling must be enabled for this account',
       status: :forbidden
+    )
+  end
+
+  def ensure_system_field_update_allowed!
+    return unless @field_definition.system?
+
+    locked_attributes = locked_system_field_update_attributes
+    return if locked_attributes.empty?
+
+    raise_system_field_locked!("System field #{locked_attributes.to_sentence} cannot be changed")
+  end
+
+  def ensure_system_field_destroy_allowed!
+    return unless @field_definition.system?
+
+    raise_system_field_locked!('System fields cannot be deleted')
+  end
+
+  def locked_system_field_update_attributes
+    locked_attributes = []
+    locked_attributes << 'entity_kind' if params.key?(:entity_kind) && params[:entity_kind].to_s != @field_definition.entity_kind
+    if params.key?(:key) &&
+       params[:key].to_s.parameterize(separator: '_') != @field_definition.key
+      locked_attributes << 'key'
+    end
+    locked_attributes << 'field_type' if params.key?(:field_type) && params[:field_type].to_s != @field_definition.field_type
+    locked_attributes
+  end
+
+  def raise_system_field_locked!(message)
+    raise ::Crm::Error.new(
+      code: 'SYSTEM_FIELD_LOCKED',
+      message: message,
+      status: :unprocessable_content
     )
   end
 
@@ -96,7 +133,7 @@ class Api::V1::Accounts::Crm::FieldDefinitionsController < Api::V1::Accounts::Cr
       :required,
       :active,
       :position,
-      options: [],
+      options: [:label, :value],
       rules: {}
     ).to_h
     permitted['default_value'] = params[:default_value] if params.key?(:default_value)

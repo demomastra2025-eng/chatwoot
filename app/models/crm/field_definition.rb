@@ -33,6 +33,25 @@ class Crm::FieldDefinition < ApplicationRecord
 
   ENTITY_KINDS = %w[deal task appointment].freeze
   FIELD_TYPES = %w[text textarea number currency percent checkbox date datetime select multiselect url].freeze
+  SYSTEM_FIELD_DEFINITIONS = {
+    'deal' => {
+      'source' => {
+        label: 'Источник',
+        field_type: 'select',
+        active: true,
+        required: false,
+        default_value: nil,
+        options: [
+          { label: 'Вручную', value: 'manual' },
+          { label: 'Диалог', value: 'conversation' },
+          { label: 'AI', value: 'ai' },
+          { label: 'Импорт', value: 'import' },
+          { label: 'Другое', value: 'other' }
+        ],
+        rules: {}
+      }
+    }
+  }.freeze
   BUILT_IN_FIELDS = {
     'deal' => %w[
       title description owner_id creator_id team_id company_id originating_conversation_id
@@ -72,6 +91,7 @@ class Crm::FieldDefinition < ApplicationRecord
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :key_must_not_conflict_with_built_in_fields
   validate :select_fields_require_options
+  validate :system_field_identity_must_not_change, on: :update
 
   scope :ordered, -> { order(:position, :id) }
   scope :active, -> { where(active: true) }
@@ -80,6 +100,33 @@ class Crm::FieldDefinition < ApplicationRecord
   before_validation :normalize_key
   before_validation :normalize_label
   before_validation :assign_position, on: :create
+  before_destroy :prevent_system_field_destroy
+
+  class << self
+    def system_definition_for(entity_kind, key)
+      SYSTEM_FIELD_DEFINITIONS.dig(entity_kind.to_s, key.to_s)
+    end
+
+    def system_field_key?(entity_kind, key)
+      system_definition_for(entity_kind, key).present?
+    end
+  end
+
+  def system?
+    self.class.system_field_key?(entity_kind, key)
+  end
+
+  def persisted_system_field?
+    return false unless persisted?
+
+    definition = self.class.system_definition_for(
+      entity_kind_in_database || entity_kind,
+      key_in_database || key
+    )
+    return false if definition.blank?
+
+    (field_type_in_database || field_type).to_s == definition[:field_type].to_s
+  end
 
   private
 
@@ -110,5 +157,22 @@ class Crm::FieldDefinition < ApplicationRecord
     return if options.present?
 
     errors.add(:options, 'must be present for select fields')
+  end
+
+  def system_field_identity_must_not_change
+    return unless persisted_system_field?
+
+    errors.add(:entity_kind, 'cannot be changed for system fields') if will_save_change_to_entity_kind?
+    errors.add(:key, 'cannot be changed for system fields') if will_save_change_to_key?
+    return unless will_save_change_to_field_type?
+
+    errors.add(:field_type, 'cannot be changed for system fields')
+  end
+
+  def prevent_system_field_destroy
+    return unless system?
+
+    errors.add(:base, 'system field cannot be deleted')
+    throw(:abort)
   end
 end

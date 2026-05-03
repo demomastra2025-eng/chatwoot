@@ -8,7 +8,7 @@ const props = defineProps({
   type: {
     type: String,
     default: 'resolution',
-    validator: value => ['pre-chat', 'resolution'].includes(value),
+    validator: value => ['pre-chat', 'resolution', 'system'].includes(value),
   },
 });
 
@@ -18,23 +18,33 @@ const attributeConfig = {
   'pre-chat': {
     colorClass: 'text-n-blue-11',
     icon: 'i-lucide-message-circle',
-    labelKey: 'ATTRIBUTES_MGMT.BADGES.PRE_CHAT',
     color: 'slate',
   },
   resolution: {
     colorClass: 'text-n-teal-11',
     icon: 'i-lucide-circle-check-big',
-    labelKey: 'ATTRIBUTES_MGMT.BADGES.RESOLUTION',
+    color: 'slate',
+  },
+  system: {
+    colorClass: 'text-n-slate-11',
+    icon: 'i-lucide-shield-check',
     color: 'slate',
   },
 };
 const config = computed(
   () => attributeConfig[props.type] || attributeConfig.resolution
 );
+
+const label = computed(() => {
+  if (props.type === 'pre-chat') return t('ATTRIBUTES_MGMT.BADGES.PRE_CHAT');
+  if (props.type === 'system') return t('ATTRIBUTES_MGMT.BADGES.SYSTEM');
+
+  return t('ATTRIBUTES_MGMT.BADGES.RESOLUTION');
+});
 </script>
 
 <template>
-  <Label :label="t(config.labelKey)" :color="config.color" compact>
+  <Label :label="label" :color="config.color" compact>
     <template #icon>
       <Icon :icon="config.icon" class="size-3.5 text-n-slate-12" />
     </template>
