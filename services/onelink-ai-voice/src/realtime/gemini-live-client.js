@@ -14,6 +14,7 @@ class GeminiLiveClient {
     speechEndSensitivity = 'END_SENSITIVITY_HIGH',
     prefixPaddingMs = 120,
     silenceDurationMs = 300,
+    turnCoverage = 'TURN_INCLUDES_ONLY_ACTIVITY',
     onAudio = null,
     onTranscript = null,
     onToolCall = null,
@@ -30,6 +31,7 @@ class GeminiLiveClient {
     this.speechEndSensitivity = speechEndSensitivity;
     this.prefixPaddingMs = prefixPaddingMs;
     this.silenceDurationMs = silenceDurationMs;
+    this.turnCoverage = turnCoverage;
     this.url = url || buildGeminiLiveUrl(model);
     this.WebSocketImpl = WebSocketImpl;
     this.setupTimeoutMs = setupTimeoutMs;
@@ -138,7 +140,7 @@ class GeminiLiveClient {
           silenceDurationMs: this.silenceDurationMs
         },
         activityHandling: this.interruptions ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION',
-        turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY'
+        turnCoverage: this.turnCoverage
       },
       inputAudioTranscription: {},
       outputAudioTranscription: {}

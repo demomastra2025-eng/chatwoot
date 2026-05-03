@@ -7,7 +7,16 @@ const FONOSTER_CALL_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_CALL
 const GEMINI_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_OUTPUT_RATE, 24_000);
 
 class VoiceApplication {
-  constructor({ client, registry = null, realtimeFactory = null, fallbackResponder = new ScriptedFallbackResponder(), mediaStreamFactory = null, toolTimeoutMs = 3_000 } = {}) {
+  constructor({
+    client,
+    registry = null,
+    realtimeFactory = null,
+    fallbackResponder = new ScriptedFallbackResponder(),
+    mediaStreamFactory = null,
+    toolTimeoutMs = 3_000,
+    outputMaxBufferedMs = 1_500,
+    clearOutputOnInterrupt = true
+  } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
     this.registry = registry;
@@ -15,6 +24,8 @@ class VoiceApplication {
     this.fallbackResponder = fallbackResponder;
     this.mediaStreamFactory = mediaStreamFactory;
     this.toolTimeoutMs = toolTimeoutMs;
+    this.outputMaxBufferedMs = outputMaxBufferedMs;
+    this.clearOutputOnInterrupt = clearOutputOnInterrupt;
   }
 
   async handleCall(call, payload = {}) {
@@ -186,7 +197,7 @@ class VoiceApplication {
     const outputPacer = mediaStream ? new Pcm16FramePacer({
       sampleRate: FONOSTER_CALL_RATE,
       frameMs: 20,
-      maxBufferedMs: 15_000,
+      maxBufferedMs: this.outputMaxBufferedMs,
       onFrame: data => {
         mediaStream.write({
           mediaSessionRef,
@@ -224,7 +235,7 @@ class VoiceApplication {
         return toolResult;
       },
       onInterrupt: async () => {
-        if (shouldClearOutputOnInterrupt()) {
+        if (this.clearOutputOnInterrupt) {
           outputPacer?.clear?.();
         }
         await session.safeControl('caller_interrupted', { provider: 'gemini-live' });
@@ -859,11 +870,6 @@ function audioRateFromMimeType(mimeType) {
 function parseStreamRate(value, fallback) {
   const rate = Number.parseInt(value, 10);
   return Number.isFinite(rate) && rate > 0 ? rate : fallback;
-}
-
-function shouldClearOutputOnInterrupt() {
-  const value = String(process.env.VOICE_AGENT_CLEAR_AUDIO_ON_INTERRUPT || 'false').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'on'].includes(value);
 }
 
 function resamplePcm16(buffer, sourceRate, targetRate) {

@@ -8,12 +8,22 @@ const { loadConfig } = require('./config');
 
 async function main() {
   const config = loadConfig();
-  const client = new OnelinkClient({ baseUrl: config.railsBaseUrl, token: config.internalToken });
+  const client = new OnelinkClient({
+    baseUrl: config.railsBaseUrl,
+    token: config.internalToken,
+    contextPath: config.contextPath,
+    transcriptPath: config.transcriptPath,
+    controlPath: config.controlPath,
+    eventPath: config.eventPath,
+    finalizePath: config.finalizePath
+  });
   const registry = new SessionRegistry({ ttlMs: config.sessionTtlMs });
   const app = new VoiceApplication({
     client,
     registry,
     toolTimeoutMs: config.toolTimeoutMs,
+    outputMaxBufferedMs: config.outputMaxBufferedMs,
+    clearOutputOnInterrupt: config.clearAudioOnInterrupt,
     realtimeFactory: ({ context, onAudio, onTranscript, onToolCall, onInterrupt, onEvent }) => new GeminiLiveClient({
       apiKey: config.geminiApiKey,
       model: context.ai?.model || config.geminiModel,
@@ -27,6 +37,7 @@ async function main() {
       speechEndSensitivity: config.speechEndSensitivity,
       prefixPaddingMs: config.prefixPaddingMs,
       silenceDurationMs: config.silenceDurationMs,
+      turnCoverage: config.turnCoverage,
       onAudio,
       onTranscript,
       onToolCall,

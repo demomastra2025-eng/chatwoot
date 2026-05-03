@@ -1,11 +1,35 @@
 const { OnelinkApiError, sanitizeErrorMessage } = require('../utils/errors');
 
 class OnelinkClient {
-  constructor({ baseUrl, token, timeoutMs = 5_000, fetchImpl = globalThis.fetch } = {}) {
-    this.baseUrl = normalizeBaseUrl(baseUrl || process.env.ONELINK_INTERNAL_BASE_URL || process.env.CHATWOOT_INTERNAL_BASE_URL || 'http://127.0.0.1:3000');
-    this.token = token || process.env.ONELINK_INTERNAL_TOKEN || process.env.VOICE_AGENT_INTERNAL_TOKEN || '';
+  constructor({
+    baseUrl,
+    token,
+    timeoutMs = 5_000,
+    fetchImpl = globalThis.fetch,
+    contextPath = '/internal/voice/ai/context',
+    transcriptPath = '/internal/voice/ai/transcript',
+    controlPath = '/internal/voice/ai/control',
+    eventPath = '/internal/voice/ai/event',
+    finalizePath = '/internal/voice/ai/finalize'
+  } = {}) {
+    this.baseUrl = normalizeBaseUrl(
+      baseUrl ||
+      process.env.VOICE_AGENT_ONELINK_AI_BASE_URL ||
+      process.env.ONELINK_INTERNAL_BASE_URL ||
+      process.env.CHATWOOT_INTERNAL_BASE_URL ||
+      'http://127.0.0.1:3000'
+    );
+    this.token = token || process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET || process.env.ONELINK_AI_VOICE_INTERNAL_TOKEN ||
+      process.env.ONELINK_INTERNAL_SECRET || process.env.ONELINK_INTERNAL_TOKEN || process.env.VOICE_AGENT_INTERNAL_TOKEN || '';
     this.timeoutMs = timeoutMs;
     this.fetchImpl = fetchImpl;
+    this.paths = {
+      context: contextPath,
+      transcript: transcriptPath,
+      control: controlPath,
+      event: eventPath,
+      finalize: finalizePath
+    };
 
     if (typeof this.fetchImpl !== 'function') {
       throw new Error('fetch implementation is required');
@@ -13,19 +37,19 @@ class OnelinkClient {
   }
 
   getContext(params = {}) {
-    return this.request('/internal/voice/ai/context', { method: 'GET', query: normalizeKeys(params) });
+    return this.request(this.paths.context, { method: 'POST', body: normalizeKeys(params) });
   }
 
   sendTranscript(payload = {}) {
-    return this.request('/internal/voice/ai/transcript', { method: 'POST', body: normalizeKeys(payload) });
+    return this.request(this.paths.transcript, { method: 'POST', body: normalizeKeys(payload) });
   }
 
   sendControl(payload = {}) {
-    return this.request('/internal/voice/ai/control', { method: 'POST', body: normalizeKeys(payload) });
+    return this.request(this.paths.control, { method: 'POST', body: normalizeKeys(payload) });
   }
 
   sendEvent(payload = {}) {
-    return this.request('/internal/voice/ai/event', {
+    return this.request(this.paths.event, {
       method: 'POST',
       body: normalizeKeys(payload),
       headers: eventHeaders(payload)
@@ -33,7 +57,7 @@ class OnelinkClient {
   }
 
   finalizeCall(payload = {}) {
-    return this.request('/internal/voice/ai/finalize', {
+    return this.request(this.paths.finalize, {
       method: 'POST',
       body: normalizeKeys(payload),
       headers: eventHeaders(payload)

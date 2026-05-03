@@ -242,7 +242,7 @@ test('VoiceApplication executes AI transfer tools and finalizes the call as tran
   assert.equal(finalizations.at(-1).transfer_result.result, 'answered');
 });
 
-test('VoiceApplication paces model audio into 20ms frames and keeps buffered output on caller interruption by default', async () => {
+test('VoiceApplication paces model audio into 20ms frames and clears buffered output on caller interruption by default', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
   let realtimeCallbacks;
@@ -279,7 +279,7 @@ test('VoiceApplication paces model audio into 20ms frames and keeps buffered out
   await new Promise(resolve => setTimeout(resolve, 30));
 
   assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(stream.writes.length, 2);
+  assert.equal(stream.writes.length, 1);
 
   call.emit('end');
   await result.completion;

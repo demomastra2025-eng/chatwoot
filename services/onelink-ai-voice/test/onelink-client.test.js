@@ -59,12 +59,53 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
     assert.equal(finalize.event_id, 'evt-finalize-1');
     assert.deepEqual(tool, { contacts: [{ id: 1 }] });
     assert.equal(seen.requests.length, 6);
-    assert.ok(seen.requests[0].url.includes('call_ref=call-1'));
+    assert.equal(seen.requests[0].method, 'POST');
+    assert.equal(seen.requests[0].url, '/internal/voice/ai/context');
+    assert.equal(JSON.parse(seen.requests[0].body).call_ref, 'call-1');
     assert.equal(seen.requests[3].headers['x-event-id'], 'evt-1');
     assert.equal(seen.requests[3].headers['x-idempotency-key'], 'evt-1');
     assert.equal(seen.requests[4].headers['x-idempotency-key'], 'evt-finalize-1');
     assert.ok(seen.requests.every((request) => request.headers.authorization === 'Bearer internal-token'));
   } finally {
+    await seen.close();
+  }
+});
+
+test('OnelinkClient accepts contract base URL, token and endpoint path overrides', async () => {
+  const seen = await withServer((req, res, body) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/custom/event') {
+      res.end(JSON.stringify({ status: 'ok', event_id: JSON.parse(body).event_id }));
+    } else if (req.url === '/custom/finalize') {
+      res.end(JSON.stringify({ status: 'ok', event_id: JSON.parse(body).event_id }));
+    } else {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not_found' }));
+    }
+  });
+
+  const previousBaseUrl = process.env.VOICE_AGENT_ONELINK_AI_BASE_URL;
+  const previousSecret = process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET;
+  try {
+    process.env.VOICE_AGENT_ONELINK_AI_BASE_URL = seen.baseUrl;
+    process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET = 'contract-secret';
+    const client = new OnelinkClient({
+      eventPath: '/custom/event',
+      finalizePath: '/custom/finalize',
+      timeoutMs: 1_000
+    });
+
+    await client.sendEvent({ event_id: 'evt-custom', event_type: 'stream_started' });
+    await client.finalizeCall({ event_id: 'evt-finalize-custom', status: 'completed' });
+
+    assert.equal(seen.requests[0].url, '/custom/event');
+    assert.equal(seen.requests[1].url, '/custom/finalize');
+    assert.ok(seen.requests.every((request) => request.headers.authorization === 'Bearer contract-secret'));
+  } finally {
+    if (previousBaseUrl === undefined) delete process.env.VOICE_AGENT_ONELINK_AI_BASE_URL;
+    else process.env.VOICE_AGENT_ONELINK_AI_BASE_URL = previousBaseUrl;
+    if (previousSecret === undefined) delete process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET;
+    else process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET = previousSecret;
     await seen.close();
   }
 });

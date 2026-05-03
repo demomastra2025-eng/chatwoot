@@ -15,8 +15,19 @@ function parseFloatValue(value, fallback) {
 
 function loadConfig(env = process.env) {
   return {
-    railsBaseUrl: (env.ONELINK_INTERNAL_BASE_URL || env.CHATWOOT_INTERNAL_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, ''),
-    internalToken: env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN || env.VOICE_AGENT_INTERNAL_TOKEN || env.ONELINK_INTERNAL_TOKEN || '',
+    railsBaseUrl: (
+      env.VOICE_AGENT_ONELINK_AI_BASE_URL ||
+      env.ONELINK_INTERNAL_BASE_URL ||
+      env.CHATWOOT_INTERNAL_BASE_URL ||
+      'http://127.0.0.1:3000'
+    ).replace(/\/+$/, ''),
+    internalToken: env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET || env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN ||
+      env.VOICE_AGENT_INTERNAL_TOKEN || env.ONELINK_INTERNAL_SECRET || env.ONELINK_INTERNAL_TOKEN || '',
+    contextPath: env.VOICE_AGENT_ONELINK_AI_CONTEXT_PATH || '/internal/voice/ai/context',
+    transcriptPath: env.VOICE_AGENT_ONELINK_AI_TRANSCRIPT_PATH || '/internal/voice/ai/transcript',
+    controlPath: env.VOICE_AGENT_ONELINK_AI_CONTROL_PATH || '/internal/voice/ai/control',
+    eventPath: env.VOICE_AGENT_ONELINK_AI_EVENT_PATH || '/internal/voice/ai/event',
+    finalizePath: env.VOICE_AGENT_ONELINK_AI_FINALIZE_PATH || '/internal/voice/ai/finalize',
     grpcPort: parseInteger(env.VOICE_AGENT_GRPC_PORT || env.VOICE_AGENT_PORT, 50061),
     skipIdentity: parseBoolean(env.VOICE_AGENT_SKIP_IDENTITY, false),
     identityAddress: env.VOICE_AGENT_IDENTITY_ADDRESS || '',
@@ -32,10 +43,14 @@ function loadConfig(env = process.env) {
     maxOutputTokens: parseInteger(env.VOICE_AGENT_REALTIME_MAX_OUTPUT_TOKENS, 120),
     setupTimeoutMs: parseInteger(env.VOICE_AGENT_REALTIME_SETUP_TIMEOUT_MS, 15_000),
     interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase()),
-    speechStartSensitivity: env.VOICE_AGENT_REALTIME_START_SENSITIVITY || 'START_SENSITIVITY_HIGH',
-    speechEndSensitivity: env.VOICE_AGENT_REALTIME_END_SENSITIVITY || 'END_SENSITIVITY_HIGH',
-    prefixPaddingMs: parseInteger(env.VOICE_AGENT_REALTIME_PREFIX_PADDING_MS, 120),
-    silenceDurationMs: parseInteger(env.VOICE_AGENT_REALTIME_SILENCE_DURATION_MS, 300)
+    startupBeeps: parseBoolean(env.VOICE_AGENT_REALTIME_STARTUP_BEEPS, false),
+    outputMaxBufferedMs: parseInteger(env.VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS, 1_500),
+    clearAudioOnInterrupt: parseBoolean(env.VOICE_AGENT_CLEAR_AUDIO_ON_INTERRUPT ?? env.VOICE_AGENT_REALTIME_CLEAR_AUDIO_ON_INTERRUPT, true),
+    speechStartSensitivity: env.VOICE_AGENT_REALTIME_VAD_START_SENSITIVITY || env.VOICE_AGENT_REALTIME_START_SENSITIVITY || 'START_SENSITIVITY_HIGH',
+    speechEndSensitivity: env.VOICE_AGENT_REALTIME_VAD_END_SENSITIVITY || env.VOICE_AGENT_REALTIME_END_SENSITIVITY || 'END_SENSITIVITY_HIGH',
+    prefixPaddingMs: parseInteger(env.VOICE_AGENT_REALTIME_VAD_PREFIX_PADDING_MS || env.VOICE_AGENT_REALTIME_PREFIX_PADDING_MS, 120),
+    silenceDurationMs: parseInteger(env.VOICE_AGENT_REALTIME_VAD_SILENCE_DURATION_MS || env.VOICE_AGENT_REALTIME_SILENCE_DURATION_MS, 300),
+    turnCoverage: env.VOICE_AGENT_REALTIME_TURN_COVERAGE || 'TURN_INCLUDES_ONLY_ACTIVITY'
   };
 }
 
