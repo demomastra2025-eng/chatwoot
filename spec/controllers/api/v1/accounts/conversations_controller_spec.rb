@@ -700,6 +700,52 @@ RSpec.describe 'Conversations API', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/{account.id}/conversations/:id/cancel_captain_response' do
+    let(:conversation) { create(:conversation, account: account, status: :pending) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:cancellation_key) do
+      format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)
+    end
+
+    before do
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      create(:captain_inbox, captain_assistant: assistant, inbox: conversation.inbox)
+      create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+    end
+
+    after do
+      Redis::Alfred.delete(cancellation_key)
+    end
+
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/cancel_captain_response"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    it 'stores a cancellation token and turns off the Captain typing indicator' do
+      post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/cancel_captain_response",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      cancellation_state = JSON.parse(Redis::Alfred.get(cancellation_key))
+      expect(cancellation_state).to include(
+        'assistant_id' => assistant.id,
+        'last_message_id' => conversation.messages.incoming.last.id,
+        'cancelled_by_id' => agent.id
+      )
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+        conversation: conversation,
+        assistant: assistant
+      )
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/update_last_seen' do
     let(:conversation) { create(:conversation, account: account) }
 
@@ -843,6 +889,16 @@ RSpec.describe 'Conversations API', type: :request do
       end
 
       context 'when the conversation belongs to a WhatsApp Web inbox' do
+        around do |example|
+          with_modified_env(
+            'EVOLUTION_API_URL' => 'https://evolution.example.com',
+            'EVOLUTION_API_KEY' => 'test-api-key',
+            'FRONTEND_URL' => 'https://app.example.com'
+          ) do
+            example.run
+          end
+        end
+
         let(:channel) { create(:channel_whatsapp_web, account: account) }
         let(:contact) do
           create(

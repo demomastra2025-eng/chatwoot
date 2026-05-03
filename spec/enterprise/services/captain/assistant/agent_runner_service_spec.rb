@@ -214,6 +214,27 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
     end
 
+    it 'passes the current runtime clock to the agent context' do
+      inbox.update!(timezone: 'Asia/Almaty')
+
+      travel_to Time.zone.parse('2026-05-03 14:00:00 UTC') do
+        expect(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
+          expect(context[:state]).to include(
+            runtime_clock: hash_including(
+              now_utc: '2026-05-03T14:00:00Z',
+              timezone: 'Asia/Almaty',
+              now_local: '2026-05-03T19:00:00+05:00',
+              date_local: '2026-05-03',
+              time_local: '19:00:00'
+            )
+          )
+          mock_result
+        end
+
+        service.generate_response(message_history: message_history)
+      end
+    end
+
     it 'processes and formats agent result' do
       result = service.generate_response(message_history: message_history)
 
@@ -279,6 +300,33 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'handoff_message' => 'I’m connecting you with a human support specialist.',
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
+        }
+      )
+    end
+
+    it 'returns a silent cancellation payload when the runtime cancels the response' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: 'response_cancelled',
+          context: {
+            current_agent: 'assistant_agent',
+            pending_response_cancellation: {
+              reason: 'Acknowledgement does not need a reply'
+            }
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to eq(
+        {
+          'response' => 'response_cancelled',
+          'response_cancelled' => true,
+          'cancel_reason' => 'Acknowledgement does not need a reply',
+          'agent_name' => 'assistant_agent'
         }
       )
     end

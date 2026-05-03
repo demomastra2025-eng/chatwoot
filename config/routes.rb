@@ -273,6 +273,7 @@ Rails.application.routes.draw do
               post :destroy_custom_attributes
               get :attachments
               get :inbox_assistant
+              post :cancel_captain_response if ChatwootApp.enterprise?
               get :reporting_events if ChatwootApp.enterprise?
             end
           end

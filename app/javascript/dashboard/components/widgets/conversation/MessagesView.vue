@@ -4,6 +4,7 @@ import { useElementSize } from '@vueuse/core';
 // composable
 import { useLabelSuggestions } from 'dashboard/composables/useLabelSuggestions';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
+import { useAlert } from 'dashboard/composables';
 
 // components
 import ReplyBox from './ReplyBox.vue';
@@ -11,10 +12,12 @@ import MessageList from 'next/message/MessageList.vue';
 import ConversationLabelSuggestion from './conversation/LabelSuggestion.vue';
 import Banner from 'dashboard/components/ui/Banner.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ResizableEditorWrapper from './ResizableEditorWrapper.vue';
 
 // stores and apis
 import { mapGetters } from 'vuex';
+import ConversationApi from 'dashboard/api/inbox/conversation';
 
 // mixins
 import inboxMixin, { INBOX_FEATURES } from 'shared/mixins/inboxMixin';
@@ -44,6 +47,7 @@ export default {
     Banner,
     ConversationLabelSuggestion,
     Spinner,
+    Icon,
     ResizableEditorWrapper,
   },
   mixins: [inboxMixin],
@@ -84,6 +88,7 @@ export default {
       isProgrammaticScroll: false,
       messageSentSinceOpened: false,
       labelSuggestions: [],
+      isCancellingCaptainResponse: false,
     };
   },
 
@@ -120,6 +125,11 @@ export default {
     isAnyoneTyping() {
       const userList = this.typingUsersList;
       return userList.length !== 0;
+    },
+    isCaptainAssistantTyping() {
+      return this.typingUsersList.some(
+        user => user.type === 'captain_assistant'
+      );
     },
     typingUserNames() {
       const userList = this.typingUsersList;
@@ -438,6 +448,20 @@ export default {
       const payload = useSnakeCase(message);
       await this.$store.dispatch('sendMessageWithData', payload);
     },
+    async cancelCaptainResponse() {
+      if (this.isCancellingCaptainResponse || !this.currentChat?.id) return;
+
+      this.isCancellingCaptainResponse = true;
+      try {
+        await ConversationApi.cancelCaptainResponse({
+          conversationId: this.currentChat.id,
+        });
+      } catch (error) {
+        useAlert(this.$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL_FAILED'));
+      } finally {
+        this.isCancellingCaptainResponse = false;
+      }
+    },
     toggleReplyEditorSize() {
       this.resizableEditorWrapperRef?.toggleEditorExpand?.();
     },
@@ -524,6 +548,17 @@ export default {
             src="assets/images/typing.gif"
             alt="Someone is typing"
           />
+          <button
+            v-if="isCaptainAssistantTyping"
+            type="button"
+            class="inline-flex items-center justify-center flex-shrink-0 rounded-full text-n-ruby-9 hover:text-n-ruby-10 hover:bg-n-ruby-3 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-5"
+            :title="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
+            :aria-label="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
+            :disabled="isCancellingCaptainResponse"
+            @click="cancelCaptainResponse"
+          >
+            <Icon icon="i-ph-stop" class="size-4" />
+          </button>
         </div>
       </div>
       <ResizableEditorWrapper

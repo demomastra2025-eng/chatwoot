@@ -20,6 +20,19 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     end
   end
 
+  def cancel_captain_response
+    assistant = @conversation.inbox.captain_assistant
+    return render json: { error: 'Captain assistant not found' }, status: :not_found unless assistant
+
+    Captain::Conversation::ResponseCancellationService.new(
+      conversation: @conversation,
+      assistant: assistant,
+      actor: Current.user
+    ).perform(reason: params[:reason])
+
+    render json: { response_cancelled: true }
+  end
+
   def reporting_events
     @reporting_events = @conversation.reporting_events.order(created_at: :asc)
   end

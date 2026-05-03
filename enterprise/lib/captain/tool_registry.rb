@@ -192,6 +192,19 @@ class Captain::ToolRegistry
           risk_level: 'medium'
         ),
         definition(
+          id: 'cancel_response',
+          title: 'Cancel Response',
+          description: 'Silently stop the current AI response when no customer reply should be sent',
+          group_name: 'Conversations',
+          icon: 'stop-circle',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
+          agent_tool_class: Captain::Tools::CancelResponseTool,
+          assistant_tool_class: Captain::Tools::Copilot::CancelResponseService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'get_conversation',
           title: 'Get Conversation',
           description: 'Get details of a conversation including messages and contact information',

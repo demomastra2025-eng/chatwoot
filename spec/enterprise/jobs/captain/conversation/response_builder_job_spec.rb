@@ -128,6 +128,101 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { conversation.messages.outgoing.count })
     end
 
+    it 'silently skips outgoing messages when the assistant cancels its own response' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'response_cancelled',
+          'response_cancelled' => true,
+          'cancel_reason' => 'Acknowledgement does not need a reply',
+          'usage' => { 'total_tokens' => 42 }
+        }
+      )
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+    end
+
+    it 'skips generation when a manager has cancelled the pending response' do
+      cancellation_key = format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)
+      last_incoming_message_id = conversation.messages.incoming.last.id
+      Redis::Alfred.set(
+        cancellation_key,
+        {
+          assistant_id: assistant.id,
+          last_message_id: last_incoming_message_id,
+          cancelled_at: Time.current.iso8601
+        }.to_json,
+        ex: 10.minutes.to_i
+      )
+
+      expect(agent_runner_service).not_to receive(:generate_response)
+
+      expect do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: last_incoming_message_id)
+      end.not_to(change { conversation.messages.count })
+
+      expect(Redis::Alfred.get(cancellation_key)).to be_nil
+    ensure
+      Redis::Alfred.delete(cancellation_key) if defined?(cancellation_key)
+    end
+
+    it 'does not turn typing back on when manager cancellation happens during runtime callbacks' do
+      callbacks = nil
+      last_incoming_message_id = conversation.messages.incoming.last.id
+
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
+        expect(kwargs[:assistant]).to eq(assistant)
+        expect(kwargs[:conversation]).to eq(conversation)
+        callbacks = kwargs[:callbacks]
+        agent_runner_service
+      end
+
+      allow(agent_runner_service).to receive(:generate_response) do
+        Captain::Conversation::ResponseCancellationService.new(
+          conversation: conversation,
+          assistant: assistant
+        ).perform(reason: 'Manager stopped the response')
+        callbacks[:on_tool_start].call('lookup_order')
+        { 'response' => 'This late answer must be ignored' }
+      end
+
+      expect do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: last_incoming_message_id)
+      end.not_to(change { conversation.messages.count })
+
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_on).with(
+        conversation: conversation,
+        assistant: assistant
+      ).once
+      expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+        conversation: conversation,
+        assistant: assistant
+      ).at_least(:once)
+    end
+
+    it 'keeps manager cancellation silent when a late runtime error is raised' do
+      last_incoming_message_id = conversation.messages.incoming.last.id
+
+      allow(agent_runner_service).to receive(:generate_response) do
+        Captain::Conversation::ResponseCancellationService.new(
+          conversation: conversation,
+          assistant: assistant
+        ).perform(reason: 'Manager stopped the response')
+        raise StandardError, 'provider failed after cancellation'
+      end
+
+      expect do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: last_incoming_message_id)
+      end.not_to(change { conversation.messages.count })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+    end
+
     it 'stores captain trace on the outgoing message when provided by the assistant runtime' do
       trace_payload = Captain::ToolTraceBuilder.payload([
                                                           Captain::ToolTraceBuilder.step(

@@ -88,6 +88,10 @@ class ConversationApi extends ApiClient {
     });
   }
 
+  cancelCaptainResponse({ conversationId }) {
+    return axios.post(`${this.url}/${conversationId}/cancel_captain_response`);
+  }
+
   mute(conversationId) {
     return axios.post(`${this.url}/${conversationId}/mute`);
   }

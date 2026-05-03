@@ -57,6 +57,10 @@ class Captain::Assistant::AgentRunnerService
     handoff_tool_called = handoff_tool_called_from_context(result.context)
     return provider_error_response(result.error, handoff_tool_called: handoff_tool_called) if result.respond_to?(:error) && result.error.present?
 
+    if result.context&.dig(:pending_response_cancellation).present?
+      return response_cancellation_response(result.context[:pending_response_cancellation], result.context[:current_agent])
+    end
+
     if result.context&.dig(:pending_human_handoff).present?
       return human_handoff_response(result.context[:pending_human_handoff],
                                     result.context[:current_agent],
@@ -122,10 +126,34 @@ class Captain::Assistant::AgentRunnerService
       captain_runtime: @assistant.account.captain_preferences[:runtime]
     }
     state[:source] = @source if @source.present?
+    state[:runtime_clock] = runtime_clock_state
 
     build_conversation_state(state) if @conversation
     state[:prompt_context] = @assistant.prompt_context_state(state)
     state
+  end
+
+  def runtime_clock_state
+    timezone = runtime_timezone
+    now = Time.current
+    local_now = now.in_time_zone(timezone)
+
+    {
+      now_utc: now.utc.iso8601,
+      now_local: local_now.iso8601,
+      timezone: timezone,
+      date_local: local_now.to_date.iso8601,
+      time_local: local_now.strftime('%H:%M:%S')
+    }
+  end
+
+  def runtime_timezone
+    configured_timezone = @conversation&.inbox&.timezone.presence || Time.zone.name
+    return configured_timezone if Time.find_zone(configured_timezone).present?
+
+    'UTC'
+  rescue StandardError
+    'UTC'
   end
 
   def request_event_context(context)
@@ -156,8 +184,29 @@ class Captain::Assistant::AgentRunnerService
   def base_conversation_state
     {
       conversation: slice_attrs(@conversation, Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES),
-      channel_type: @conversation.inbox&.channel_type
+      channel_type: @conversation.inbox&.channel_type,
+      reply_window: reply_window_state
     }
+  end
+
+  def reply_window_state
+    return {} unless @conversation&.inbox&.channel.is_a?(Channel::Whatsapp)
+
+    last_incoming_at = @conversation.messages
+                                    .where(account_id: @conversation.account_id)
+                                    .incoming
+                                    .reorder(created_at: :desc)
+                                    .limit(1)
+                                    .pick(:created_at)
+    closes_at = last_incoming_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
+
+    {
+      channel: 'official_whatsapp',
+      last_incoming_at: last_incoming_at&.iso8601,
+      closes_at: closes_at&.iso8601,
+      open_now: closes_at.present? && Time.current < closes_at,
+      requires_template_after_close: true
+    }.compact
   end
 
   def add_related_record_state(state)
@@ -300,6 +349,17 @@ class Captain::Assistant::AgentRunnerService
       'response' => 'conversation_handoff',
       'reasoning' => reason
     }
+  end
+
+  def response_cancellation_response(cancellation_payload, agent_name)
+    reason = cancellation_payload[:reason].presence || cancellation_payload['reason'].presence
+
+    {
+      'response' => 'response_cancelled',
+      'response_cancelled' => true,
+      'cancel_reason' => reason,
+      'agent_name' => agent_name
+    }.compact
   end
 
   def human_handoff_response(handoff_payload, agent_name, handoff_tool_called: false)

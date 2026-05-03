@@ -44,11 +44,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     Current.executed_by = @assistant
 
+    return process_cancelled_response if response_cancelled?
+
     maintain_typing_indicator
     generate_and_process_response
   rescue ActiveStorage::FileNotFoundError, Faraday::BadRequestError => e
+    cancelled = response_cancelled?
     handle_error(e)
-    raise e
+    raise e unless cancelled
   rescue StandardError => e
     handle_error(e)
   ensure
@@ -77,6 +80,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_response
     return unless current_buffer_state_valid?
+    return process_cancelled_response if response_cancelled?
 
     normalize_blank_public_response!
 
@@ -96,6 +100,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def process_pending_response
     attachment_ids = response_attachment_ids
+    return process_cancelled_response if response_cancelled?
+
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
     ActiveRecord::Base.transaction do
@@ -200,6 +206,42 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def handoff_requested?
     v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
+  end
+
+  def response_cancelled?
+    assistant_cancelled_response? || manager_cancelled_response?
+  end
+
+  def assistant_cancelled_response?
+    return false if @response.blank?
+
+    ActiveModel::Type::Boolean.new.cast(@response['response_cancelled']) || @response['response'] == 'response_cancelled'
+  end
+
+  def manager_cancelled_response?
+    return false unless @conversation.present? && @assistant.present?
+
+    response_cancellation_service.cancelled?(
+      buffer_token: @buffer_token,
+      expected_last_message_id: @expected_last_message_id
+    )
+  end
+
+  def process_cancelled_response
+    account.increment_token_usage(@response.dig('usage', 'total_tokens')) if @response&.dig('usage', 'total_tokens').present?
+    clear_buffer_state_if_current
+    response_cancellation_service.clear_if_current!(
+      buffer_token: @buffer_token,
+      expected_last_message_id: @expected_last_message_id
+    )
+    true
+  end
+
+  def response_cancellation_service
+    @response_cancellation_service ||= Captain::Conversation::ResponseCancellationService.new(
+      conversation: @conversation,
+      assistant: @assistant
+    )
   end
 
   def handoff_action_name
@@ -456,6 +498,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handle_error(error)
+    return process_cancelled_response if response_cancelled?
+
     log_error(error)
     return true unless current_buffer_state_valid?
 
@@ -505,6 +549,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def maintain_typing_indicator
+    return unless @conversation.present? && @assistant.present?
+    return clear_typing_indicator if response_cancelled?
+
     Captain::Conversation::TypingIndicatorService.turn_on(
       conversation: @conversation,
       assistant: @assistant
