@@ -29,6 +29,7 @@ const emit = defineEmits(['close']);
 const { t } = useI18n();
 const store = useStore();
 const getConversationById = useMapGetter('getConversationById');
+const getAllConversations = useMapGetter('getAllConversations');
 const currentChat = useMapGetter('getSelectedChat');
 
 const ui = reactive({
@@ -38,7 +39,7 @@ const ui = reactive({
 const activationRequestId = ref(0);
 
 const normalizePositiveNumber = value => {
-  const normalizedValue = Number(value);
+  const normalizedValue = Number(String(value || '').replace(/[^\d]/g, ''));
   return Number.isFinite(normalizedValue) && normalizedValue > 0
     ? normalizedValue
     : 0;
@@ -56,11 +57,28 @@ const conversationApiId = computed(
 const conversationLabelId = computed(
   () => normalizedConversationDisplayId.value || normalizedConversationId.value
 );
+const conversationByDisplayId = computed(() => {
+  if (!normalizedConversationDisplayId.value) return null;
+
+  return (getAllConversations.value || []).find(conversation => {
+    return (
+      normalizePositiveNumber(conversation.display_id) ===
+      normalizedConversationDisplayId.value
+    );
+  });
+});
 
 const activeConversation = computed(() => {
-  if (!normalizedConversationId.value) return null;
+  if (!conversationApiId.value) {
+    return null;
+  }
 
-  return getConversationById.value(normalizedConversationId.value) || null;
+  return (
+    getConversationById.value(conversationApiId.value) ||
+    getConversationById.value(normalizedConversationId.value) ||
+    conversationByDisplayId.value ||
+    null
+  );
 });
 
 const isConversationReady = computed(() => {
@@ -69,16 +87,18 @@ const isConversationReady = computed(() => {
     currentChat.value?.display_id || currentChat.value?.displayId
   );
 
-  if (
-    normalizedConversationId.value &&
-    currentChatId === normalizedConversationId.value
-  ) {
-    return true;
-  }
+  const candidateConversationIds = new Set(
+    [
+      normalizedConversationId.value,
+      normalizedConversationDisplayId.value,
+      conversationApiId.value,
+    ].filter(Boolean)
+  );
 
   return (
-    normalizedConversationDisplayId.value &&
-    currentChatDisplayId === normalizedConversationDisplayId.value
+    candidateConversationIds.has(currentChatId) ||
+    (normalizedConversationDisplayId.value &&
+      currentChatDisplayId === normalizedConversationDisplayId.value)
   );
 });
 

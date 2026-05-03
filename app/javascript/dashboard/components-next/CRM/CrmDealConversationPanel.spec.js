@@ -12,11 +12,14 @@ vi.mock('vue-i18n', () => ({
   }),
 }));
 
-const mountPanel = () =>
+const mountPanel = ({
+  conversationId = 11963,
+  conversationDisplayId = 185,
+} = {}) =>
   mount(CrmDealConversationPanel, {
     props: {
-      conversationDisplayId: 185,
-      conversationId: 11963,
+      conversationDisplayId,
+      conversationId,
       visible: true,
     },
     global: {
@@ -70,12 +73,42 @@ describe('CrmDealConversationPanel', () => {
         return currentChat;
       }
 
+      if (getter === 'getAllConversations') {
+        return ref(conversations);
+      }
+
       return ref(undefined);
     });
   });
 
   it('loads the linked conversation by display id and activates it by internal id', async () => {
     mountPanel();
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('getConversation', 185);
+    expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+      data: expect.objectContaining({
+        display_id: 185,
+        id: 11963,
+      }),
+    });
+  });
+
+  it('loads by display id when internal id is missing/invalid', async () => {
+    mountPanel({ conversationId: '', conversationDisplayId: 185 });
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('getConversation', 185);
+    expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+      data: expect.objectContaining({
+        display_id: 185,
+        id: 11963,
+      }),
+    });
+  });
+
+  it('parses non-digit conversationDisplayId and still opens', async () => {
+    mountPanel({ conversationId: '', conversationDisplayId: '#185' });
     await flushPromises();
 
     expect(dispatch).toHaveBeenCalledWith('getConversation', 185);

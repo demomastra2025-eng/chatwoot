@@ -32,13 +32,25 @@ export const hasMessageFailedWithExternalError = pendingMessage => {
 
 // actions
 const actions = {
-  getConversation: async ({ commit }, conversationId) => {
+  getConversation: async ({ commit, state }, conversationId) => {
     try {
       const response = await ConversationApi.show(conversationId);
-      commit(types.UPDATE_CONVERSATION, response.data);
-      commit(`contacts/${types.SET_CONTACT_ITEM}`, response.data.meta.sender);
+      const conversation = response.data;
+      const exists = state.allConversations.some(
+        existingConversation => existingConversation.id === conversation.id
+      );
+
+      if (exists) {
+        commit(types.UPDATE_CONVERSATION, conversation);
+      } else {
+        commit(types.ADD_CONVERSATION, conversation);
+      }
+
+      commit(`contacts/${types.SET_CONTACT_ITEM}`, conversation.meta.sender);
+      return conversation;
     } catch (error) {
       // Ignore error
+      return null;
     }
   },
 
