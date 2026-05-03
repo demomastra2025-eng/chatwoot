@@ -254,6 +254,7 @@ export default function useAutomationValues() {
       labels: labels.value,
       teams: teams.value,
       slaPolicies: slaPolicies.value,
+      statusFilterOptions: statusFilterOptions.value,
       touchPlans: touchPlans.value,
       languages,
       type,

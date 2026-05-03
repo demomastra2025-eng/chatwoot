@@ -203,6 +203,7 @@
       "SEND_MESSAGE": "Send a Message",
       "ADD_PRIVATE_NOTE": "Add a Private Note",
       "CHANGE_PRIORITY": "Change Priority",
+      "CHANGE_STATUS": "Change Status",
       "ADD_SLA": "Add SLA",
       "OPEN_CONVERSATION": "Open conversation",
       "PENDING_CONVERSATION": "Mark conversation as pending"
@@ -255,6 +256,8 @@
       "MAIL_SUBJECT": "Email Subject",
       "COUNTRY_NAME": "Country",
       "REFERER_LINK": "Referrer Link",
+      "CITY": "City",
+      "COMPANY": "Company",
       "ASSIGNEE_NAME": "Assignee",
       "TEAM_NAME": "Team",
       "PRIORITY": "Priority",

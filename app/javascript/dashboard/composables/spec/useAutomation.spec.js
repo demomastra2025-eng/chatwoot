@@ -29,6 +29,11 @@ vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables');
 vi.mock('vue-i18n');
 vi.mock('dashboard/helper/automationHelper');
+vi.mock('dashboard/api/touchPlans', () => ({
+  default: {
+    get: vi.fn(() => Promise.resolve({ data: { payload: [] } })),
+  },
+}));
 
 describe('useAutomation', () => {
   beforeEach(() => {
@@ -171,7 +176,7 @@ describe('useAutomation', () => {
         case 'send_message':
           return [];
         case 'add_sla':
-          return slaPolicies;
+          return undefined;
         case 'change_priority':
           return priorityOptions;
         case 'change_deal_stage':
@@ -389,7 +394,7 @@ describe('useAutomation', () => {
     ]);
     expect(getActionDropdownValues('send_email_to_team')).toEqual(teams);
     expect(getActionDropdownValues('send_message')).toEqual([]);
-    expect(getActionDropdownValues('add_sla')).toEqual(slaPolicies);
+    expect(getActionDropdownValues('add_sla')).toBeUndefined();
     expect(getActionDropdownValues('change_priority')).toEqual(priorityOptions);
     expect(getActionDropdownValues('change_deal_stage')).toEqual([
       { id: 111, name: 'Sales / Qualified' },

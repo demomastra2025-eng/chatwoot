@@ -30,7 +30,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     key: 'source',
     name: 'SOURCE',
     inputType: 'plain_text',
-    filterOperators: OPERATOR_TYPES_6,
+    filterOperators: OPERATOR_TYPES_7,
   },
 ];
 
@@ -281,694 +281,224 @@ const TASK_AUTOMATION_ACTIONS = [
   },
 ];
 
+const CONVERSATION_AUTOMATION_CONDITIONS = [
+  {
+    key: 'content',
+    name: 'MESSAGE_CONTAINS',
+    inputType: 'comma_separated_plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'email',
+    name: 'EMAIL',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'country_code',
+    name: 'COUNTRY_NAME',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'status',
+    name: 'STATUS',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'message_type',
+    name: 'MESSAGE_TYPE',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'browser_language',
+    name: 'BROWSER_LANGUAGE',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'assignee_id',
+    name: 'ASSIGNEE_NAME',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_3,
+  },
+  {
+    key: 'team_id',
+    name: 'TEAM_NAME',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_3,
+  },
+  {
+    key: 'referer',
+    name: 'REFERER_LINK',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'city',
+    name: 'CITY',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'company',
+    name: 'COMPANY',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'inbox_id',
+    name: 'INBOX',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'mail_subject',
+    name: 'MAIL_SUBJECT',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_2,
+  },
+  {
+    key: 'phone_number',
+    name: 'PHONE_NUMBER',
+    inputType: 'plain_text',
+    filterOperators: OPERATOR_TYPES_6,
+  },
+  {
+    key: 'priority',
+    name: 'PRIORITY',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'conversation_language',
+    name: 'CONVERSATION_LANGUAGE',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'labels',
+    name: 'LABELS',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_3,
+  },
+  {
+    key: 'private_note',
+    name: 'PRIVATE_NOTE',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+];
+
+const CONVERSATION_AUTOMATION_ACTIONS = [
+  {
+    key: 'send_message',
+    name: 'SEND_MESSAGE',
+  },
+  {
+    key: 'add_label',
+    name: 'ADD_LABEL',
+  },
+  {
+    key: 'remove_label',
+    name: 'REMOVE_LABEL',
+  },
+  {
+    key: 'send_email_to_team',
+    name: 'SEND_EMAIL_TO_TEAM',
+  },
+  {
+    key: 'assign_team',
+    name: 'ASSIGN_TEAM',
+  },
+  {
+    key: 'assign_agent',
+    name: 'ASSIGN_AGENT',
+  },
+  {
+    key: 'remove_assigned_agent',
+    name: 'REMOVE_ASSIGNED_AGENT',
+  },
+  {
+    key: 'remove_assigned_team',
+    name: 'REMOVE_ASSIGNED_TEAM',
+  },
+  {
+    key: 'send_webhook_event',
+    name: 'SEND_WEBHOOK_EVENT',
+  },
+  {
+    key: 'mute_conversation',
+    name: 'MUTE_CONVERSATION',
+  },
+  {
+    key: 'send_attachment',
+    name: 'SEND_ATTACHMENT',
+  },
+  {
+    key: 'change_status',
+    name: 'CHANGE_STATUS',
+  },
+  {
+    key: 'resolve_conversation',
+    name: 'RESOLVE_CONVERSATION',
+  },
+  {
+    key: 'open_conversation',
+    name: 'OPEN_CONVERSATION',
+  },
+  {
+    key: 'pending_conversation',
+    name: 'PENDING_CONVERSATION',
+  },
+  {
+    key: 'snooze_conversation',
+    name: 'SNOOZE_CONVERSATION',
+  },
+  {
+    key: 'change_priority',
+    name: 'CHANGE_PRIORITY',
+  },
+  {
+    key: 'send_email_transcript',
+    name: 'SEND_EMAIL_TRANSCRIPT',
+  },
+  {
+    key: 'add_private_note',
+    name: 'ADD_PRIVATE_NOTE',
+  },
+  {
+    key: 'apply_touch_plan',
+    name: 'APPLY_TOUCH_PLAN',
+  },
+  {
+    key: 'create_touch',
+    name: 'CREATE_TOUCH',
+  },
+];
+
 export const AUTOMATIONS = {
   message_created: {
-    conditions: [
-      {
-        key: 'message_type',
-        name: 'MESSAGE_TYPE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'private_note',
-        name: 'PRIVATE_NOTE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'content',
-        name: 'MESSAGE_CONTAINS',
-        inputType: 'comma_separated_plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'email',
-        name: 'EMAIL',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'inbox_id',
-        name: 'INBOX',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'status',
-        name: 'STATUS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'assignee_id',
-        name: 'ASSIGNEE_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'team_id',
-        name: 'TEAM_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'priority',
-        name: 'PRIORITY',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'conversation_language',
-        name: 'CONVERSATION_LANGUAGE',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'phone_number',
-        name: 'PHONE_NUMBER',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_6,
-      },
-      {
-        key: 'labels',
-        name: 'LABELS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-    ],
-    actions: [
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'assign_team',
-        name: 'ASSIGN_TEAM',
-      },
-      {
-        key: 'remove_assigned_agent',
-        name: 'REMOVE_ASSIGNED_AGENT',
-      },
-      {
-        key: 'remove_assigned_team',
-        name: 'REMOVE_ASSIGNED_TEAM',
-      },
-      {
-        key: 'add_label',
-        name: 'ADD_LABEL',
-      },
-      {
-        key: 'remove_label',
-        name: 'REMOVE_LABEL',
-      },
-      {
-        key: 'send_email_to_team',
-        name: 'SEND_EMAIL_TO_TEAM',
-      },
-      {
-        key: 'send_message',
-        name: 'SEND_MESSAGE',
-      },
-      {
-        key: 'send_email_transcript',
-        name: 'SEND_EMAIL_TRANSCRIPT',
-      },
-      {
-        key: 'mute_conversation',
-        name: 'MUTE_CONVERSATION',
-      },
-      {
-        key: 'snooze_conversation',
-        name: 'SNOOZE_CONVERSATION',
-      },
-      {
-        key: 'open_conversation',
-        name: 'OPEN_CONVERSATION',
-      },
-      {
-        key: 'pending_conversation',
-        name: 'PENDING_CONVERSATION',
-      },
-      {
-        key: 'resolve_conversation',
-        name: 'RESOLVE_CONVERSATION',
-      },
-      {
-        key: 'send_webhook_event',
-        name: 'SEND_WEBHOOK_EVENT',
-      },
-      {
-        key: 'send_attachment',
-        name: 'SEND_ATTACHMENT',
-      },
-      {
-        key: 'apply_touch_plan',
-        name: 'APPLY_TOUCH_PLAN',
-      },
-      {
-        key: 'create_touch',
-        name: 'CREATE_TOUCH',
-      },
-    ],
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
   conversation_created: {
-    conditions: [
-      {
-        key: 'status',
-        name: 'STATUS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'browser_language',
-        name: 'BROWSER_LANGUAGE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'mail_subject',
-        name: 'MAIL_SUBJECT',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'country_code',
-        name: 'COUNTRY_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'phone_number',
-        name: 'PHONE_NUMBER',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_6,
-      },
-      {
-        key: 'referer',
-        name: 'REFERER_LINK',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'email',
-        name: 'EMAIL',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'inbox_id',
-        name: 'INBOX',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'conversation_language',
-        name: 'CONVERSATION_LANGUAGE',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'priority',
-        name: 'PRIORITY',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'labels',
-        name: 'LABELS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-    ],
-    actions: [
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'assign_team',
-        name: 'ASSIGN_TEAM',
-      },
-      {
-        key: 'remove_assigned_agent',
-        name: 'REMOVE_ASSIGNED_AGENT',
-      },
-      {
-        key: 'remove_assigned_team',
-        name: 'REMOVE_ASSIGNED_TEAM',
-      },
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'send_email_to_team',
-        name: 'SEND_EMAIL_TO_TEAM',
-      },
-      {
-        key: 'send_message',
-        name: 'SEND_MESSAGE',
-      },
-      {
-        key: 'send_email_transcript',
-        name: 'SEND_EMAIL_TRANSCRIPT',
-      },
-      {
-        key: 'mute_conversation',
-        name: 'MUTE_CONVERSATION',
-      },
-      {
-        key: 'snooze_conversation',
-        name: 'SNOOZE_CONVERSATION',
-      },
-      {
-        key: 'pending_conversation',
-        name: 'PENDING_CONVERSATION',
-      },
-      {
-        key: 'resolve_conversation',
-        name: 'RESOLVE_CONVERSATION',
-      },
-      {
-        key: 'send_webhook_event',
-        name: 'SEND_WEBHOOK_EVENT',
-      },
-      {
-        key: 'send_attachment',
-        name: 'SEND_ATTACHMENT',
-      },
-      {
-        key: 'apply_touch_plan',
-        name: 'APPLY_TOUCH_PLAN',
-      },
-      {
-        key: 'create_touch',
-        name: 'CREATE_TOUCH',
-      },
-    ],
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
   conversation_updated: {
-    conditions: [
-      {
-        key: 'status',
-        name: 'STATUS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'browser_language',
-        name: 'BROWSER_LANGUAGE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'mail_subject',
-        name: 'MAIL_SUBJECT',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'country_code',
-        name: 'COUNTRY_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'referer',
-        name: 'REFERER_LINK',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'phone_number',
-        name: 'PHONE_NUMBER',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_6,
-      },
-      {
-        key: 'assignee_id',
-        name: 'ASSIGNEE_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'team_id',
-        name: 'TEAM_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'email',
-        name: 'EMAIL',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'inbox_id',
-        name: 'INBOX',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'conversation_language',
-        name: 'CONVERSATION_LANGUAGE',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'priority',
-        name: 'PRIORITY',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'labels',
-        name: 'LABELS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-    ],
-    actions: [
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'assign_team',
-        name: 'ASSIGN_TEAM',
-      },
-      {
-        key: 'remove_assigned_agent',
-        name: 'REMOVE_ASSIGNED_AGENT',
-      },
-      {
-        key: 'remove_assigned_team',
-        name: 'REMOVE_ASSIGNED_TEAM',
-      },
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'send_email_to_team',
-        name: 'SEND_EMAIL_TO_TEAM',
-      },
-      {
-        key: 'send_message',
-        name: 'SEND_MESSAGE',
-      },
-      {
-        key: 'send_email_transcript',
-        name: 'SEND_EMAIL_TRANSCRIPT',
-      },
-      {
-        key: 'mute_conversation',
-        name: 'MUTE_CONVERSATION',
-      },
-      {
-        key: 'snooze_conversation',
-        name: 'SNOOZE_CONVERSATION',
-      },
-      {
-        key: 'pending_conversation',
-        name: 'PENDING_CONVERSATION',
-      },
-      {
-        key: 'resolve_conversation',
-        name: 'RESOLVE_CONVERSATION',
-      },
-      {
-        key: 'send_webhook_event',
-        name: 'SEND_WEBHOOK_EVENT',
-      },
-      {
-        key: 'send_attachment',
-        name: 'SEND_ATTACHMENT',
-      },
-      {
-        key: 'apply_touch_plan',
-        name: 'APPLY_TOUCH_PLAN',
-      },
-      {
-        key: 'create_touch',
-        name: 'CREATE_TOUCH',
-      },
-    ],
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
   conversation_opened: {
-    conditions: [
-      {
-        key: 'browser_language',
-        name: 'BROWSER_LANGUAGE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'email',
-        name: 'EMAIL',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'mail_subject',
-        name: 'MAIL_SUBJECT',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'country_code',
-        name: 'COUNTRY_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'referer',
-        name: 'REFERER_LINK',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'assignee_id',
-        name: 'ASSIGNEE_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'phone_number',
-        name: 'PHONE_NUMBER',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_6,
-      },
-      {
-        key: 'team_id',
-        name: 'TEAM_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'inbox_id',
-        name: 'INBOX',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'conversation_language',
-        name: 'CONVERSATION_LANGUAGE',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'priority',
-        name: 'PRIORITY',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'labels',
-        name: 'LABELS',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-    ],
-    actions: [
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'assign_team',
-        name: 'ASSIGN_TEAM',
-      },
-      {
-        key: 'remove_assigned_agent',
-        name: 'REMOVE_ASSIGNED_AGENT',
-      },
-      {
-        key: 'remove_assigned_team',
-        name: 'REMOVE_ASSIGNED_TEAM',
-      },
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'send_email_to_team',
-        name: 'SEND_EMAIL_TO_TEAM',
-      },
-      {
-        key: 'send_message',
-        name: 'SEND_MESSAGE',
-      },
-      {
-        key: 'send_email_transcript',
-        name: 'SEND_EMAIL_TRANSCRIPT',
-      },
-      {
-        key: 'mute_conversation',
-        name: 'MUTE_CONVERSATION',
-      },
-      {
-        key: 'snooze_conversation',
-        name: 'SNOOZE_CONVERSATION',
-      },
-      {
-        key: 'pending_conversation',
-        name: 'PENDING_CONVERSATION',
-      },
-      {
-        key: 'send_webhook_event',
-        name: 'SEND_WEBHOOK_EVENT',
-      },
-      {
-        key: 'send_attachment',
-        name: 'SEND_ATTACHMENT',
-      },
-      {
-        key: 'apply_touch_plan',
-        name: 'APPLY_TOUCH_PLAN',
-      },
-      {
-        key: 'create_touch',
-        name: 'CREATE_TOUCH',
-      },
-    ],
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
   conversation_resolved: {
-    conditions: [
-      {
-        key: 'browser_language',
-        name: 'BROWSER_LANGUAGE',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'email',
-        name: 'EMAIL',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'mail_subject',
-        name: 'MAIL_SUBJECT',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'country_code',
-        name: 'COUNTRY_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'referer',
-        name: 'REFERER_LINK',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_2,
-      },
-      {
-        key: 'assignee_id',
-        name: 'ASSIGNEE_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'phone_number',
-        name: 'PHONE_NUMBER',
-        inputType: 'plain_text',
-        filterOperators: OPERATOR_TYPES_6,
-      },
-      {
-        key: 'team_id',
-        name: 'TEAM_NAME',
-        inputType: 'search_select',
-        filterOperators: OPERATOR_TYPES_3,
-      },
-      {
-        key: 'inbox_id',
-        name: 'INBOX',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'conversation_language',
-        name: 'CONVERSATION_LANGUAGE',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-      {
-        key: 'priority',
-        name: 'PRIORITY',
-        inputType: 'multi_select',
-        filterOperators: OPERATOR_TYPES_1,
-      },
-    ],
-    actions: [
-      {
-        key: 'assign_agent',
-        name: 'ASSIGN_AGENT',
-      },
-      {
-        key: 'assign_team',
-        name: 'ASSIGN_TEAM',
-      },
-      {
-        key: 'remove_assigned_agent',
-        name: 'REMOVE_ASSIGNED_AGENT',
-      },
-      {
-        key: 'remove_assigned_team',
-        name: 'REMOVE_ASSIGNED_TEAM',
-      },
-      {
-        key: 'send_email_to_team',
-        name: 'SEND_EMAIL_TO_TEAM',
-      },
-      {
-        key: 'send_message',
-        name: 'SEND_MESSAGE',
-      },
-      {
-        key: 'send_email_transcript',
-        name: 'SEND_EMAIL_TRANSCRIPT',
-      },
-      {
-        key: 'send_webhook_event',
-        name: 'SEND_WEBHOOK_EVENT',
-      },
-      {
-        key: 'send_attachment',
-        name: 'SEND_ATTACHMENT',
-      },
-      {
-        key: 'apply_touch_plan',
-        name: 'APPLY_TOUCH_PLAN',
-      },
-      {
-        key: 'create_touch',
-        name: 'CREATE_TOUCH',
-      },
-    ],
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
   appointment_created: {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
@@ -1159,6 +689,11 @@ export const AUTOMATION_ACTION_TYPES = [
     inputType: null,
   },
   {
+    key: 'change_status',
+    label: 'CHANGE_STATUS',
+    inputType: 'search_select',
+  },
+  {
     key: 'resolve_conversation',
     label: 'RESOLVE_CONVERSATION',
     inputType: null,
@@ -1271,11 +806,6 @@ export const AUTOMATION_ACTION_TYPES = [
   {
     key: 'change_priority',
     label: 'CHANGE_PRIORITY',
-    inputType: 'search_select',
-  },
-  {
-    key: 'add_sla',
-    label: 'ADD_SLA',
     inputType: 'search_select',
   },
 ];

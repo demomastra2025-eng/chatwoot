@@ -241,7 +241,7 @@ export const getActionOptions = ({
   eventName,
   teams,
   labels,
-  slaPolicies,
+  statusFilterOptions,
   touchPlans,
   type,
   addNoneToListFn,
@@ -259,12 +259,17 @@ export const getActionOptions = ({
     entityKind = 'conversation';
   }
 
+  const actionStatusOptions = (statusFilterOptions || []).filter(
+    status => status.id !== 'all'
+  );
+
   const actionsMap = {
     assign_agent: addNoneToListFn ? addNoneToListFn(agents) : agents,
     assign_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
     send_email_to_team: teams,
     add_label: generateConditionOptions(labels, 'title'),
     remove_label: generateConditionOptions(labels, 'title'),
+    change_status: actionStatusOptions,
     change_priority: priorityOptions,
     change_appointment_status: appointmentStatusOptions,
     change_deal_stage: crmStageOptions,
@@ -279,7 +284,6 @@ export const getActionOptions = ({
     apply_touch_plan: (touchPlans || []).filter(
       plan => !entityKind || (plan.entity_kinds || []).includes(entityKind)
     ),
-    add_sla: slaPolicies,
   };
   return actionsMap[type];
 };
