@@ -14,10 +14,14 @@ class Telephony::EventsIngestionService
     'operator_no_answer' => nil,
     'operator_failed' => nil,
     'caller_hangup' => 'cancelled',
+    'call_started' => 'ringing',
+    'stream_started' => 'in_progress',
     'ai_ringing' => 'ringing',
     'dial_status' => nil,
     'connecting' => 'connecting',
     'transfer_started' => 'in_progress',
+    'transfer_requested' => nil,
+    'transfer_result' => nil,
     'tool_started' => nil,
     'tool_completed' => nil,
     'tool_failed' => nil,
@@ -33,6 +37,8 @@ class Telephony::EventsIngestionService
     'session_completed' => 'completed',
     'transfer_completed' => 'completed',
     'close' => 'completed',
+    'call_ended' => 'completed',
+    'recording_ready' => nil,
     'completed' => 'completed',
     'missed' => 'missed',
     'no-answer' => 'no_answer',
@@ -46,6 +52,8 @@ class Telephony::EventsIngestionService
     'session_failed' => 'failed',
     'transfer_failed' => 'failed',
     'unsupported_action' => 'failed',
+    'error' => nil,
+    'finalize' => nil,
     'failed' => 'failed'
   }.freeze
 
@@ -147,6 +155,9 @@ class Telephony::EventsIngestionService
     conversation = resolve_metadata_conversation
     return conversation.account if conversation.present?
 
+    conversation = resolve_payload_conversation
+    return conversation.account if conversation.present?
+
     inbox = resolve_metadata_inbox
     return inbox.account if inbox.present?
 
@@ -204,9 +215,11 @@ class Telephony::EventsIngestionService
       direction: resolved_direction || call_session.direction || 'inbound',
       from_number: resolved_from_number || call_session.from_number,
       to_number: resolved_to_number || call_session.to_number,
-      recording_ref: payload_value('recording_ref', 'recordingRef') || call_session.recording_ref,
+      recording_ref: payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
+        nested_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
+        call_session.recording_ref,
       transcript_ref: payload_value('transcript_ref', 'transcriptRef') || call_session.transcript_ref,
-      summary: payload_value('summary') || call_session.summary,
+      summary: payload_value('summary') || nested_payload_value('summary') || call_session.summary,
       duration_seconds: next_duration_seconds(call_session, status, started_at, answered_at, ended_at),
       started_at: started_at,
       answered_at: answered_at,
@@ -548,7 +561,7 @@ class Telephony::EventsIngestionService
   end
 
   def call_ref
-    payload_value('call_ref', 'callRef', 'call_sid', 'callSid', 'ref')
+    payload_value('call_ref', 'callRef', 'provider_call_id', 'providerCallId', 'call_sid', 'callSid', 'ref')
   end
 
   def resolved_status
@@ -556,6 +569,12 @@ class Telephony::EventsIngestionService
     if event_name == 'dial_status'
       dial_status = nested_payload_value('status', 'callStatus').to_s.strip.downcase
       return normalize_status(dial_status) if dial_status.present?
+    elsif event_name == 'transfer_result'
+      transfer_result = nested_payload_value('result', 'status').to_s.strip.downcase
+      return normalize_status(transfer_result) if transfer_result.present?
+    elsif event_name == 'call_ended'
+      ended_reason = nested_payload_value('reason', 'end_reason', 'endReason').to_s.strip.downcase
+      return 'cancelled' if ended_reason == 'caller_hung_up'
     elsif EVENT_STATUS_MAP.key?(event_name) && EVENT_STATUS_MAP[event_name].present?
       return normalize_status(event_name)
     end
@@ -609,7 +628,13 @@ class Telephony::EventsIngestionService
 
   def resolved_duration
     duration = payload_value('duration', 'call_duration', 'callDuration') || nested_payload_value('duration')
+    duration ||= duration_ms / 1000 if duration_ms&.positive?
     duration&.to_i
+  end
+
+  def duration_ms
+    value = payload_value('duration_ms', 'durationMs') || nested_payload_value('duration_ms', 'durationMs')
+    value.to_i if value.present?
   end
 
   def resolved_started_at
@@ -678,6 +703,13 @@ class Telephony::EventsIngestionService
 
   def resolve_metadata_conversation
     conversation_id = metadata_value('chatwoot_conversation_id', 'conversation_id', 'conversationId')
+    return if conversation_id.blank?
+
+    ::Conversation.find_by(id: conversation_id)
+  end
+
+  def resolve_payload_conversation
+    conversation_id = payload_value('conversation_id', 'conversationId')
     return if conversation_id.blank?
 
     ::Conversation.find_by(id: conversation_id)

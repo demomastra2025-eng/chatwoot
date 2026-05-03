@@ -101,6 +101,8 @@ class Telephony::AiVoice::TranscriptIngestionService
   end
 
   def normalized_speaker(value)
+    return 'ai' if value.to_s == 'assistant'
+
     value.to_s.presence_in(%w[caller ai operator system]) || 'system'
   end
 

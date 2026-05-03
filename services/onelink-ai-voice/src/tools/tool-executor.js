@@ -2,13 +2,14 @@ const { withTimeout, safeReason } = require('../utils/timeout');
 const { sanitizeErrorMessage } = require('../utils/errors');
 
 class ToolExecutor {
-  constructor({ client, callRef, timeoutMs = 3_000, scopeProvider = () => ({}) } = {}) {
+  constructor({ client, callRef, timeoutMs = 3_000, scopeProvider = () => ({}), eventSender = null } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;
     this.callRef = callRef;
     this.timeoutMs = timeoutMs;
     this.scopeProvider = scopeProvider;
+    this.eventSender = eventSender;
   }
 
   async execute(name, args = {}, metadata = {}) {
@@ -36,6 +37,11 @@ class ToolExecutor {
       await this.client.sendControl(this.scopedPayload({ action, metadata }));
     } catch (_error) {
       // Control-plane acknowledgement must not block realtime audio/tool fallback.
+    }
+    try {
+      await this.eventSender?.(action, metadata);
+    } catch (_error) {
+      // Event persistence is best effort from the realtime media path.
     }
   }
 

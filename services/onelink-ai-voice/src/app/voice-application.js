@@ -34,6 +34,14 @@ class VoiceApplication {
     const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
     applyRouteScope(session, routeDecision);
     await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
+    await session.safeEvent('call_started', {
+      route_action: routeDecision.action || routeDecision.mode,
+      route_reason: routeDecision.reason,
+      app_ref: routeDecision.app_ref || routeDecision.appRef || requestPayload.app_ref || requestPayload.appRef,
+      from: requestPayload.caller_number || requestPayload.from,
+      to: requestPayload.ingress_number || requestPayload.to,
+      direction: requestPayload.direction || 'inbound'
+    });
     const routeAction = normalizeRouteAction(routeDecision);
     const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
 
@@ -95,6 +103,7 @@ class VoiceApplication {
     } catch (error) {
       const reason = sanitizeReason(error?.message || 'realtime_unavailable');
       session.state = 'fallback';
+      await session.safeEvent('error', { scope: 'gemini_live', error_code: 'realtime_unavailable', error_message: reason, retryable: false });
       await session.safeControl('session_failed', { reason });
       await this.fallbackResponder.greet(call);
       return { session, context, mode: 'fallback', completion: Promise.resolve(), reason };
@@ -165,6 +174,15 @@ class VoiceApplication {
     const mediaStream = await this.startMediaStream(call);
     let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
+    await session.safeEvent('stream_started', {
+      stream_ref: streamRef,
+      media_session_ref: mediaSessionRef,
+      direction: 'BOTH',
+      input_rate: FONOSTER_INPUT_RATE,
+      output_rate: FONOSTER_CALL_RATE,
+      gemini_output_rate: GEMINI_OUTPUT_RATE,
+      gemini_model: context.ai?.model
+    });
     const outputPacer = mediaStream ? new Pcm16FramePacer({
       sampleRate: FONOSTER_CALL_RATE,
       frameMs: 20,
@@ -197,10 +215,14 @@ class VoiceApplication {
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
-      onToolCall: callPayload => session.executeTool(callPayload.name, callPayload.args || {}, {
-        provider: 'gemini-live',
-        tool_call_id: callPayload.id
-      }),
+      onToolCall: async callPayload => {
+        const toolResult = await session.executeTool(callPayload.name, callPayload.args || {}, {
+          provider: 'gemini-live',
+          tool_call_id: callPayload.id
+        });
+        await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
+        return toolResult;
+      },
       onInterrupt: async () => {
         if (shouldClearOutputOnInterrupt()) {
           outputPacer?.clear?.();
@@ -257,6 +279,181 @@ class VoiceApplication {
     return call.stream({
       direction: streamConstants.bothDirection,
       format: streamConstants.wavFormat
+    });
+  }
+
+  async handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall }) {
+    const result = toolResult?.result;
+    const action = String(result?.action || '').trim().toLowerCase();
+    if (!toolResult?.ok || !action) return;
+
+    if (action === 'transfer') {
+      await this.handleRealtimeTransfer({ call, session, requestPayload, result, toolCall });
+      return;
+    }
+
+    if (action === 'end_call') {
+      const reason = result.reason || toolCall?.args?.reason || 'ai_voice_end_call';
+      await session.safeEvent('call_ended', { ended_by: 'ai_agent', reason });
+      if (typeof call?.hangup === 'function') {
+        try {
+          await call.hangup({ reason });
+        } catch (_error) {
+          // Provider hangup failure should not block final call state persistence.
+        }
+      }
+      await session.close('session_completed', { reason });
+    }
+  }
+
+  async handleRealtimeTransfer({ call, session, result, toolCall }) {
+    const operatorAgentAor = result.operator_agent_aor || result.operatorAgentAor || result.agent_aor || result.agentAor;
+    const reason = result.reason || toolCall?.args?.reason || 'voice_ai_requested_transfer';
+    const dialStartedAt = new Date().toISOString();
+
+    await session.safeEvent('transfer_requested', {
+      requested_by: 'ai_tool',
+      reason,
+      operator_agent_aor: operatorAgentAor
+    });
+    await session.safeControl('transfer_started', { reason, operator_agent_aor: operatorAgentAor });
+
+    let dialResult;
+    try {
+      dialResult = await dialOperator(call, { agent_aor: operatorAgentAor });
+    } catch (error) {
+      const errorMessage = sanitizeReason(error?.message || 'operator_dial_failed');
+      await this.finalizeTransferFailure(session, {
+        operatorAgentAor,
+        reason: errorMessage,
+        result: 'failed',
+        dialStartedAt,
+        errorCode: 'operator_dial_failed',
+        errorMessage
+      });
+      return;
+    }
+
+    if (dialResult === false) {
+      await this.finalizeTransferFailure(session, {
+        operatorAgentAor,
+        reason: 'operator_dial_unavailable',
+        result: 'failed',
+        dialStartedAt,
+        errorCode: 'operator_dial_unavailable',
+        errorMessage: 'operator dial is unavailable'
+      });
+      return;
+    }
+
+    this.trackRealtimeTransfer({ call, dialResult, session, operatorAgentAor, reason, dialStartedAt });
+  }
+
+  trackRealtimeTransfer({ call, dialResult, session, operatorAgentAor, reason, dialStartedAt }) {
+    let settled = false;
+    let connected = false;
+    let answeredAt = null;
+
+    const emitResult = async ({ result, errorCode = null, errorMessage = null }) => {
+      const now = new Date().toISOString();
+      const payload = {
+        operator_agent_aor: operatorAgentAor,
+        result,
+        dial_started_at: dialStartedAt,
+        answered_at: answeredAt,
+        ended_at: connected ? null : now,
+        duration_ms: Math.max(0, Date.now() - Date.parse(dialStartedAt)),
+        error_code: errorCode,
+        error_message: errorMessage
+      };
+      await session.safeEvent('transfer_result', payload);
+      return payload;
+    };
+
+    const answer = async eventName => {
+      if (settled || connected) return;
+      connected = true;
+      answeredAt = new Date().toISOString();
+      session.transferState = { connected: true, operatorAgentAor, dialStartedAt, answeredAt };
+      await session.safeControl('transfer_answered', { provider_event: eventName, operator_agent_aor: operatorAgentAor });
+      await emitResult({ result: 'answered' });
+    };
+
+    const fail = async (result, eventName) => {
+      if (settled) return;
+      settled = true;
+      const transferResult = await emitResult({
+        result,
+        errorCode: result,
+        errorMessage: eventName
+      });
+      await session.safeControl('transfer_failed', { provider_event: eventName, operator_agent_aor: operatorAgentAor, result });
+      await session.close('session_failed', {
+        final_status: result === 'failed' ? 'failed' : 'operator_unavailable',
+        reason: result,
+        transfer_result: transferResult,
+        error_code: result,
+        error_message: eventName
+      });
+    };
+
+    const complete = async eventName => {
+      if (settled) return;
+      settled = true;
+      await session.safeControl('transfer_completed', { provider_event: eventName, operator_agent_aor: operatorAgentAor, reason });
+      await session.safeEvent('call_ended', { ended_by: 'operator', reason: eventName });
+      await session.close('transfer_completed', {
+        final_status: connected ? 'transferred' : 'operator_unavailable',
+        reason: connected ? 'operator_completed' : 'operator_unavailable',
+        transfer_result: {
+          operator_agent_aor: operatorAgentAor,
+          result: connected ? 'answered' : 'no_answer',
+          dial_started_at: dialStartedAt,
+          answered_at: answeredAt,
+          duration_ms: Math.max(0, Date.now() - Date.parse(dialStartedAt))
+        }
+      });
+    };
+
+    const sources = operatorEventSources(call, dialResult);
+    for (const { source } of sources) {
+      for (const eventName of operatorAnswerEvents()) registerOnce(source, eventName, () => { void answer(eventName); });
+      for (const eventName of operatorNoAnswerEvents()) {
+        registerOnce(source, eventName, () => { void fail(normalizeTransferResult(eventName), eventName); });
+      }
+      for (const eventName of callErrorEvents()) registerOnce(source, eventName, () => { void fail('failed', eventName); });
+      for (const eventName of callEndEvents()) registerOnce(source, eventName, () => { void complete(eventName); });
+    }
+
+    if (sources.length === 0) {
+      void session.safeEvent('transfer_result', {
+        operator_agent_aor: operatorAgentAor,
+        result: 'answered',
+        dial_started_at: dialStartedAt,
+        duration_ms: 0
+      });
+    }
+  }
+
+  async finalizeTransferFailure(session, { operatorAgentAor, reason, result, dialStartedAt, errorCode, errorMessage }) {
+    const transferResult = {
+      operator_agent_aor: operatorAgentAor,
+      result,
+      dial_started_at: dialStartedAt,
+      ended_at: new Date().toISOString(),
+      duration_ms: Math.max(0, Date.now() - Date.parse(dialStartedAt)),
+      error_code: errorCode,
+      error_message: errorMessage
+    };
+    await session.safeEvent('transfer_result', transferResult);
+    await session.safeEvent('error', { scope: 'transfer', error_code: errorCode, error_message: errorMessage, retryable: false });
+    await session.safeControl('transfer_failed', { reason, operator_agent_aor: operatorAgentAor, result });
+    await session.close('session_failed', {
+      final_status: result === 'failed' ? 'failed' : 'operator_unavailable',
+      reason,
+      transfer_result: transferResult,
+      error_code: errorCode,
+      error_message: errorMessage
     });
   }
 }
@@ -379,6 +576,15 @@ function normalizeOperatorFailureReason(eventName) {
   return String(eventName || 'operator_failed').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'operator_failed';
 }
 
+function normalizeTransferResult(eventName) {
+  const normalized = normalizeOperatorFailureReason(eventName);
+  if (normalized.includes('busy')) return 'busy';
+  if (normalized.includes('cancel')) return 'cancelled';
+  if (normalized.includes('reject') || normalized.includes('decline')) return 'cancelled';
+  if (normalized.includes('no_answer') || normalized.includes('timeout') || normalized.includes('end')) return 'no_answer';
+  return 'failed';
+}
+
 function terminalOperatorState(event) {
   return event === 'session_completed' ? 'completed' : 'failed';
 }
@@ -416,7 +622,12 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
         // ignore close errors
       }
       try {
-        await session.close(action || 'session_completed');
+        await session.safeEvent('call_ended', { reason: action || 'session_completed' });
+      } catch (_error) {
+        // event persistence errors should not block media cleanup
+      }
+      try {
+        await session.close(completionAction(session, action), completionMetadata(session, action));
       } catch (_error) {
         // transcript/control persistence errors should not block media cleanup
       }
@@ -442,6 +653,27 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
       resolve();
     }
   });
+}
+
+function completionAction(session, action) {
+  if (session?.transferState?.connected && action === 'session_completed') return 'transfer_completed';
+  return action || 'session_completed';
+}
+
+function completionMetadata(session, action) {
+  if (!session?.transferState?.connected || action !== 'session_completed') return {};
+
+  return {
+    final_status: 'transferred',
+    reason: 'operator_completed',
+    transfer_result: {
+      operator_agent_aor: session.transferState.operatorAgentAor,
+      result: 'answered',
+      dial_started_at: session.transferState.dialStartedAt,
+      answered_at: session.transferState.answeredAt,
+      duration_ms: Math.max(0, Date.now() - Date.parse(session.transferState.dialStartedAt))
+    }
+  };
 }
 
 function registerCallCompletion(call, finish) {

@@ -9,6 +9,7 @@ class TranscriptBuffer {
     this.flushSize = flushSize;
     this.scopeProvider = scopeProvider;
     this.pending = [];
+    this.items = [];
     this.seen = new Set();
   }
 
@@ -23,7 +24,12 @@ class TranscriptBuffer {
     if (this.seen.has(key)) return null;
     this.seen.add(key);
     this.pending.push(normalized);
+    this.items.push(normalized);
     return normalized;
+  }
+
+  finalItems() {
+    return this.items.filter((item) => item.final !== false);
   }
 
   async addAndMaybeFlush(item) {

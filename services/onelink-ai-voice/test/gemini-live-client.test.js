@@ -77,8 +77,10 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.equal(socket.sent[0].setup.model, 'models/gemini-live-test');
   assert.equal(socket.sent[0].setup.generationConfig.responseModalities[0], 'AUDIO');
   assert.equal(socket.sent[0].setup.generationConfig.temperature, 0.3);
-  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 512);
+  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 120);
   assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'START_OF_ACTIVITY_INTERRUPTS');
+  assert.equal(socket.sent[0].setup.realtimeInputConfig.turnCoverage, 'TURN_INCLUDES_ONLY_ACTIVITY');
+  assert.equal(socket.sent[0].setup.realtimeInputConfig.automaticActivityDetection.silenceDurationMs, 300);
   assert.equal(socket.sent[0].setup.systemInstruction.parts[0].text, 'Ты голосовой оператор OneLink.');
   assert.equal(socket.sent[0].setup.tools[0].functionDeclarations[0].name, 'lookup_customer');
 

@@ -788,9 +788,12 @@ Rails.application.routes.draw do
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
   get 'internal/voice/ai/context', to: 'internal/voice/ai/context#show'
+  post 'internal/voice/ai/context', to: 'internal/voice/ai/context#create'
   post 'internal/voice/ai/transcript', to: 'internal/voice/ai/transcripts#create'
   post 'internal/voice/ai/tools/:name', to: 'internal/voice/ai/tools#create'
   post 'internal/voice/ai/control', to: 'internal/voice/ai/control#create'
+  post 'internal/voice/ai/event', to: 'internal/voice/ai/events#create'
+  post 'internal/voice/ai/finalize', to: 'internal/voice/ai/finalizations#create'
 
   get 'microsoft/callback', to: 'microsoft/callbacks#show'
   get 'google/callback', to: 'google/callbacks#show'

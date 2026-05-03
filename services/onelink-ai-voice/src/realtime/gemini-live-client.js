@@ -1,15 +1,19 @@
 class GeminiLiveClient {
   constructor({
     apiKey,
-    model = 'gemini-2.0-flash-live-001',
-    voice = 'Puck',
+    model = 'gemini-3.1-flash-live-preview',
+    voice = 'sulafat',
     language = 'ru-KZ',
     temperature = 0.3,
-    maxOutputTokens = 512,
+    maxOutputTokens = 120,
     url = null,
     WebSocketImpl = null,
     setupTimeoutMs = 15_000,
     interruptions = true,
+    speechStartSensitivity = 'START_SENSITIVITY_HIGH',
+    speechEndSensitivity = 'END_SENSITIVITY_HIGH',
+    prefixPaddingMs = 120,
+    silenceDurationMs = 300,
     onAudio = null,
     onTranscript = null,
     onToolCall = null,
@@ -22,6 +26,10 @@ class GeminiLiveClient {
     this.language = language;
     this.temperature = temperature;
     this.maxOutputTokens = maxOutputTokens;
+    this.speechStartSensitivity = speechStartSensitivity;
+    this.speechEndSensitivity = speechEndSensitivity;
+    this.prefixPaddingMs = prefixPaddingMs;
+    this.silenceDurationMs = silenceDurationMs;
     this.url = url || buildGeminiLiveUrl(model);
     this.WebSocketImpl = WebSocketImpl;
     this.setupTimeoutMs = setupTimeoutMs;
@@ -122,8 +130,15 @@ class GeminiLiveClient {
         }
       },
       realtimeInputConfig: {
-        automaticActivityDetection: { disabled: false },
-        activityHandling: this.interruptions ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION'
+        automaticActivityDetection: {
+          disabled: false,
+          startOfSpeechSensitivity: this.speechStartSensitivity,
+          endOfSpeechSensitivity: this.speechEndSensitivity,
+          prefixPaddingMs: this.prefixPaddingMs,
+          silenceDurationMs: this.silenceDurationMs
+        },
+        activityHandling: this.interruptions ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION',
+        turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY'
       },
       inputAudioTranscription: {},
       outputAudioTranscription: {}
@@ -278,7 +293,7 @@ function buildGeminiLiveUrl(_model) {
 }
 
 function normalizeModel(model) {
-  const raw = String(model || 'gemini-2.0-flash-live-001').replace(/^models\//, '');
+  const raw = String(model || 'gemini-3.1-flash-live-preview').replace(/^models\//, '');
   return `models/${raw}`;
 }
 

@@ -24,6 +24,22 @@ class OnelinkClient {
     return this.request('/internal/voice/ai/control', { method: 'POST', body: normalizeKeys(payload) });
   }
 
+  sendEvent(payload = {}) {
+    return this.request('/internal/voice/ai/event', {
+      method: 'POST',
+      body: normalizeKeys(payload),
+      headers: eventHeaders(payload)
+    });
+  }
+
+  finalizeCall(payload = {}) {
+    return this.request('/internal/voice/ai/finalize', {
+      method: 'POST',
+      body: normalizeKeys(payload),
+      headers: eventHeaders(payload)
+    });
+  }
+
   routeInbound(payload = {}) {
     return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload) });
   }
@@ -38,7 +54,7 @@ class OnelinkClient {
     return this.request('/internal/voice/inbound/event', { method: 'POST', body: normalizeKeys(payload) });
   }
 
-  async request(path, { method = 'GET', query = null, body = null, timeoutMs = this.timeoutMs } = {}) {
+  async request(path, { method = 'GET', query = null, body = null, headers: extraHeaders = {}, timeoutMs = this.timeoutMs } = {}) {
     const url = new URL(path, `${this.baseUrl}/`);
     if (query && typeof query === 'object') {
       Object.entries(query).forEach(([key, value]) => {
@@ -53,6 +69,7 @@ class OnelinkClient {
     const headers = {
       accept: 'application/json',
       ...(body ? { 'content-type': 'application/json' } : {}),
+      ...extraHeaders,
       ...(this.token ? { authorization: `Bearer ${this.token}` } : {})
     };
 
@@ -105,6 +122,18 @@ function parseJson(raw) {
 function normalizeKeys(payload) {
   if (!payload || typeof payload !== 'object') return {};
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
+}
+
+function eventHeaders(payload = {}) {
+  const eventId = payload.event_id || payload.eventId;
+  const idempotencyKey = payload.idempotency_key || payload.idempotencyKey || payload.event_key || payload.eventKey || eventId;
+  const attempt = payload.attempt || payload.event_attempt || payload.eventAttempt || 1;
+
+  return Object.fromEntries(Object.entries({
+    'x-event-id': eventId,
+    'x-idempotency-key': idempotencyKey,
+    'x-event-attempt': attempt
+  }).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 module.exports = { OnelinkClient, OnelinkApiError };

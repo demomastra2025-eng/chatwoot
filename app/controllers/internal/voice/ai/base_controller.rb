@@ -39,6 +39,15 @@ class Internal::Voice::Ai::BaseController < ApplicationController
     payload
   end
 
+  def request_event_headers
+    {
+      event_id: request.headers['X-Event-Id'].to_s.presence,
+      idempotency_key: request.headers['X-Idempotency-Key'].to_s.presence,
+      event_attempt: request.headers['X-Event-Attempt'].to_s.presence,
+      request_id: request.headers['X-Request-Id'].to_s.presence
+    }.compact
+  end
+
   def parsed_json_body
     return {} unless request.media_type == 'application/json'
     return {} if request.raw_post.blank?

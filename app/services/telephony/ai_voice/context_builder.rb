@@ -106,6 +106,8 @@ class Telephony::AiVoice::ContextBuilder
       language: settings['language'].presence || DEFAULT_LANGUAGE,
       system_prompt: system_prompt,
       first_message: settings['first_message'].presence || DEFAULT_FIRST_MESSAGE,
+      temperature: settings['temperature'].presence&.to_f || 0.3,
+      max_output_tokens: settings['max_output_tokens'].presence&.to_i || 120,
       interruptions_enabled: settings.key?('interruptions_enabled') ? ActiveModel::Type::Boolean.new.cast(settings['interruptions_enabled']) : true,
       max_duration_sec: settings['max_duration_sec'].presence&.to_i || DEFAULT_MAX_DURATION_SEC
     }.compact
@@ -234,7 +236,7 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def call_ref
-    params['call_ref'].presence || params['callRef'].presence
+    params['call_ref'].presence || params['callRef'].presence || params['provider_call_id'].presence || params['providerCallId'].presence
   end
 
   def explicit_account
@@ -274,10 +276,12 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def caller_number
-    params['caller_number'].presence || params['callerNumber'].presence || params['from_number'].presence || params['fromNumber'].presence
+    params['caller_number'].presence || params['callerNumber'].presence || params['from_number'].presence || params['fromNumber'].presence ||
+      params['from'].presence
   end
 
   def ingress_number
-    params['ingress_number'].presence || params['ingressNumber'].presence || params['to_number'].presence || params['toNumber'].presence
+    params['ingress_number'].presence || params['ingressNumber'].presence || params['to_number'].presence || params['toNumber'].presence ||
+      params['to'].presence
   end
 end

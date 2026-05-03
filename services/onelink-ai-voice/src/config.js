@@ -8,6 +8,11 @@ function parseBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
 }
 
+function parseFloatValue(value, fallback) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function loadConfig(env = process.env) {
   return {
     railsBaseUrl: (env.ONELINK_INTERNAL_BASE_URL || env.CHATWOOT_INTERNAL_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, ''),
@@ -23,9 +28,15 @@ function loadConfig(env = process.env) {
     geminiModel: env.VOICE_AGENT_REALTIME_MODEL || 'gemini-3.1-flash-live-preview',
     geminiVoice: env.VOICE_AGENT_REALTIME_VOICE || 'sulafat',
     language: env.VOICE_AGENT_LANGUAGE || env.VOICE_AGENT_REALTIME_LANGUAGE || 'ru-KZ',
+    temperature: parseFloatValue(env.VOICE_AGENT_REALTIME_TEMPERATURE, 0.3),
+    maxOutputTokens: parseInteger(env.VOICE_AGENT_REALTIME_MAX_OUTPUT_TOKENS, 120),
     setupTimeoutMs: parseInteger(env.VOICE_AGENT_REALTIME_SETUP_TIMEOUT_MS, 15_000),
-    interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase())
+    interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase()),
+    speechStartSensitivity: env.VOICE_AGENT_REALTIME_START_SENSITIVITY || 'START_SENSITIVITY_HIGH',
+    speechEndSensitivity: env.VOICE_AGENT_REALTIME_END_SENSITIVITY || 'END_SENSITIVITY_HIGH',
+    prefixPaddingMs: parseInteger(env.VOICE_AGENT_REALTIME_PREFIX_PADDING_MS, 120),
+    silenceDurationMs: parseInteger(env.VOICE_AGENT_REALTIME_SILENCE_DURATION_MS, 300)
   };
 }
 
-module.exports = { loadConfig, parseInteger, parseBoolean };
+module.exports = { loadConfig, parseInteger, parseBoolean, parseFloatValue };

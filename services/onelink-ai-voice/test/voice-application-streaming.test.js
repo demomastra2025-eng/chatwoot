@@ -178,6 +178,70 @@ test('VoiceApplication passes configured tool timeout into realtime tool executi
   await result.completion;
 });
 
+test('VoiceApplication executes AI transfer tools and finalizes the call as transferred', async () => {
+  const stream = new FakeVoiceStream();
+  const dialLeg = new EventEmitter();
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  const dialCalls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; },
+    async dial(target) {
+      dialCalls.push(target);
+      return dialLeg;
+    }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42, number_ref: 'num-1' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-ai-transfer',
+      account_id: 42,
+      number_ref: 'num-1',
+      conversation_id: 77,
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'request_transfer', description: 'Transfer to operator' }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; },
+    callTool: async () => ({
+      action: 'transfer',
+      operator_agent_aor: 'sip:1001@example.test',
+      reason: 'caller_requested_operator'
+    })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-ai-transfer' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-transfer-1', name: 'request_transfer', args: { reason: 'caller_requested_operator' } });
+  assert.equal(toolResult.result.action, 'transfer');
+  assert.equal(dialCalls[0].agent_aor, 'sip:1001@example.test');
+  assert.equal(events.some(payload => payload.event_type === 'transfer_requested'), true);
+
+  dialLeg.emit('answered');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controls.some(payload => payload.action === 'transfer_answered'), true);
+  assert.equal(events.some(payload => payload.event_type === 'transfer_result' && payload.payload.result === 'answered'), true);
+
+  call.emit('end');
+  await result.completion;
+
+  assert.equal(finalizations.at(-1).status, 'transferred');
+  assert.equal(finalizations.at(-1).transfer_result.result, 'answered');
+});
+
 test('VoiceApplication paces model audio into 20ms frames and keeps buffered output on caller interruption by default', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];

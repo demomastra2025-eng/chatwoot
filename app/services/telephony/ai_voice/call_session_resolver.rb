@@ -4,12 +4,20 @@ class Telephony::AiVoice::CallSessionResolver
   end
 
   def call_session
-    @call_session ||= resolve_by_call_ref || resolve_by_conversation_id
+    @call_session ||= resolve_by_call_id || resolve_by_call_ref || resolve_by_conversation_id
   end
 
   private
 
   attr_reader :payload
+
+  def resolve_by_call_id
+    return if call_id.blank?
+
+    return scope_account.telephony_call_sessions.find_by(id: call_id) if scope_account.present?
+
+    Telephony::CallSession.find_by(id: call_id)
+  end
 
   def resolve_by_call_ref
     return if call_ref.blank?
@@ -32,8 +40,10 @@ class Telephony::AiVoice::CallSessionResolver
 
       binding = number_binding
       raise_number_binding_mismatch! if explicit.present? && binding.present? && binding.account_id != explicit.id
+      raise_conversation_account_mismatch! if explicit.present? && conversation_record.present? && conversation_record.account_id != explicit.id
+      raise_conversation_account_mismatch! if binding.present? && conversation_record.present? && conversation_record.account_id != binding.account_id
 
-      explicit || binding&.account
+      explicit || binding&.account || conversation_record&.account
     end
   end
 
@@ -68,12 +78,29 @@ class Telephony::AiVoice::CallSessionResolver
     )
   end
 
+  def raise_conversation_account_mismatch!
+    raise Telephony::Error.new(
+      code: 'CONVERSATION_ACCOUNT_MISMATCH',
+      message: 'conversation_id does not belong to the resolved account',
+      status: :unprocessable_content
+    )
+  end
+
   def call_ref
-    payload['call_ref'].presence || payload['callRef'].presence
+    payload['call_ref'].presence || payload['callRef'].presence || payload['provider_call_id'].presence || payload['providerCallId'].presence
+  end
+
+  def call_id
+    raw = payload['call_id'].presence || payload['callId'].presence
+    raw.to_s[/\d+/] if raw.present?
   end
 
   def conversation_id
     payload['conversation_id'].presence || payload['conversationId'].presence
+  end
+
+  def conversation_record
+    @conversation_record ||= ::Conversation.find_by(id: conversation_id) if conversation_id.present?
   end
 
   def account_id
@@ -85,6 +112,7 @@ class Telephony::AiVoice::CallSessionResolver
   end
 
   def ingress_number
-    payload['ingress_number'].presence || payload['ingressNumber'].presence || payload['to_number'].presence || payload['toNumber'].presence
+    payload['ingress_number'].presence || payload['ingressNumber'].presence || payload['to_number'].presence || payload['toNumber'].presence ||
+      payload['to'].presence
   end
 end
