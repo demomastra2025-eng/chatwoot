@@ -6,14 +6,16 @@ class Crm::Deals::ArchiveService < Crm::BaseWriteService
   end
 
   def perform
-    ApplicationRecord.transaction do
+    changed = false
+    saved_deal = ApplicationRecord.transaction do
       deal.lock!
       assert_lock_version!
 
-      return deal if archived == deal.archived_at.present?
+      next deal if archived == deal.archived_at.present?
 
       archived_at = archived ? Time.zone.now : nil
       deal.update!(archived_at: archived_at)
+      changed = true
 
       ::Crm::Events::Writer.record!(
         account: account,
@@ -25,6 +27,21 @@ class Crm::Deals::ArchiveService < Crm::BaseWriteService
 
       deal.reload
     end
+
+    if changed
+      event_name = if archived
+                     Events::Types::CRM_DEAL_ARCHIVED
+                   else
+                     Events::Types::CRM_DEAL_UNARCHIVED
+                   end
+      event_type = archived ? 'deal_archived' : 'deal_unarchived'
+      dispatch_crm_deal_realtime_event!(
+        event_name,
+        saved_deal,
+        meta: { event_type: event_type }
+      )
+    end
+    saved_deal
   end
 
   private

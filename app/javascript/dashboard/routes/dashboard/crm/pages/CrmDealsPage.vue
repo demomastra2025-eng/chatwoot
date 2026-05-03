@@ -1,7 +1,14 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { format } from 'date-fns';
-import { useLocalStorage } from '@vueuse/core';
+import { useDebounceFn, useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -77,6 +84,8 @@ import {
   DuplicateContactException,
   ExceptionWithMessage,
 } from 'shared/helpers/CustomErrors';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
@@ -87,6 +96,10 @@ const { locale, t } = useI18n();
 
 const DEALS_PREFERENCES_STORAGE_KEY = 'crm-deals-page-preferences';
 const MANUAL_BOARD_SORT_KEY = 'position';
+const CRM_DEAL_ARCHIVE_EVENTS = new Set([
+  'crm.deal.archived',
+  'crm.deal.unarchived',
+]);
 
 const deals = ref([]);
 const currentPresentation = ref('board');
@@ -209,7 +222,12 @@ const linkedConversationId = computed(() => {
     ? conversationId
     : 0;
 });
-const canOpenLinkedConversation = computed(() => !!linkedConversationId.value);
+const linkedConversationDisplayId = computed(() =>
+  String(form.originatingConversationDisplayId || '').replace(/[^\d]/g, '')
+);
+const canOpenLinkedConversation = computed(
+  () => !!linkedConversationId.value || !!linkedConversationDisplayId.value
+);
 const archiveTooltip = computed(() =>
   selectedDeal.value?.archivedAt
     ? t('CRM.GENERAL.UNARCHIVE')
@@ -953,6 +971,48 @@ const upsertDeal = deal => {
   deals.value = nextDeals;
 };
 
+const removeDeal = dealId => {
+  deals.value = deals.value.filter(item => Number(item.id) !== Number(dealId));
+};
+
+const hasCustomFieldFilters = () =>
+  Object.keys(customFieldFilters.value || {}).length > 0;
+
+const dealMatchesCurrentFilters = deal => {
+  if (hasCustomFieldFilters()) return null;
+
+  const archived = Boolean(deal.archivedAt);
+  if (archived !== Boolean(filters.archived)) return false;
+  if (
+    filters.companyId &&
+    Number(deal.companyId) !== Number(filters.companyId)
+  ) {
+    return false;
+  }
+  if (filters.ownerId && Number(deal.ownerId) !== Number(filters.ownerId)) {
+    return false;
+  }
+  if (
+    filters.pipelineId &&
+    Number(deal.pipelineId) !== Number(filters.pipelineId)
+  ) {
+    return false;
+  }
+  if (filters.stageId && Number(deal.stageId) !== Number(filters.stageId)) {
+    return false;
+  }
+  if (filters.teamId && Number(deal.teamId) !== Number(filters.teamId)) {
+    return false;
+  }
+  if (filters.contactId) {
+    return (deal.dealContacts || []).some(
+      contact => Number(contact.contactId) === Number(filters.contactId)
+    );
+  }
+
+  return true;
+};
+
 const loadContacts = async query => {
   const response = query
     ? await ContactAPI.search(query, 1)
@@ -1315,6 +1375,38 @@ async function loadDeals() {
     ui.isLoading = false;
   }
 }
+
+const scheduleDealsReload = useDebounceFn(() => {
+  loadDeals();
+}, 300);
+
+const handleCrmDealRealtimeEvent = payload => {
+  const realtimeDeal = normalizePayload({ payload: payload?.deal });
+  if (!realtimeDeal?.id) return;
+
+  const isSelectedDeal =
+    selectedDeal.value &&
+    Number(selectedDeal.value.id) === Number(realtimeDeal.id);
+  if (isSelectedDeal) {
+    selectedDeal.value = realtimeDeal;
+  }
+
+  const filterMatch = dealMatchesCurrentFilters(realtimeDeal);
+  if (filterMatch === null) {
+    scheduleDealsReload();
+    return;
+  }
+
+  if (filterMatch) {
+    upsertDeal(realtimeDeal);
+  } else {
+    removeDeal(realtimeDeal.id);
+  }
+
+  if (CRM_DEAL_ARCHIVE_EVENTS.has(payload?.event)) {
+    syncSelectedDeal(deals.value);
+  }
+};
 
 const startEditingDealTitle = deal => {
   if (!canManageDeals.value) {
@@ -1820,9 +1912,15 @@ onBeforeRouteLeave(() => {
   }
 });
 
+onBeforeUnmount(() => {
+  emitter.off(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
+  scheduleDealsReload.cancel?.();
+});
+
 onMounted(async () => {
   if (!canViewDeals.value) return;
 
+  emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
   restoreDealsPreferences();
 
   if (!agents.value.length) {
@@ -2173,6 +2271,7 @@ onMounted(async () => {
 
     <CrmDealConversationPanel
       :conversation-id="linkedConversationId"
+      :conversation-display-id="linkedConversationDisplayId"
       :visible="drawerOpen && showLinkedConversationPanel"
       @close="showLinkedConversationPanel = false"
     />

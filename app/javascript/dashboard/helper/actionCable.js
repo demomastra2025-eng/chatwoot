@@ -68,6 +68,16 @@ class ActionCableConnector extends BaseActionCableConnector {
       'whatsapp_call.permission_granted': this.onWhatsappCallPermissionGranted,
       'whatsapp_call.agent_offer': this.onWhatsappCallAgentOffer,
       'whatsapp_call.agent_disconnected': this.onWhatsappCallAgentDisconnected,
+      'crm.deal.created': data =>
+        this.onCrmDealRealtimeEvent('crm.deal.created', data),
+      'crm.deal.updated': data =>
+        this.onCrmDealRealtimeEvent('crm.deal.updated', data),
+      'crm.deal.stage_changed': data =>
+        this.onCrmDealRealtimeEvent('crm.deal.stage_changed', data),
+      'crm.deal.archived': data =>
+        this.onCrmDealRealtimeEvent('crm.deal.archived', data),
+      'crm.deal.unarchived': data =>
+        this.onCrmDealRealtimeEvent('crm.deal.unarchived', data),
     };
   }
 
@@ -101,6 +111,11 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onSessionReplaced = data => {
     handleSessionReplaced(data);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onCrmDealRealtimeEvent = (event, data) => {
+    emitter.emit(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, { event, ...data });
   };
 
   onMessageUpdated = data => {

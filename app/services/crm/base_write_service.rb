@@ -92,4 +92,16 @@ class Crm::BaseWriteService
       details: { attribute => [message] }
     )
   end
+
+  def dispatch_crm_deal_realtime_event!(event_name, deal, meta: {})
+    Rails.configuration.dispatcher.dispatch(
+      event_name,
+      Time.zone.now,
+      {
+        account: account,
+        deal: deal,
+        meta: meta
+      }
+    )
+  end
 end

@@ -9,13 +9,30 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
     requested_position = resolve_requested_position
     return deal if deal.stage_id == target_stage.id && requested_position.blank?
 
-    ApplicationRecord.transaction do
+    realtime_event_name = if deal.stage_id == target_stage.id
+                            Events::Types::CRM_DEAL_UPDATED
+                          else
+                            Events::Types::CRM_DEAL_STAGE_CHANGED
+                          end
+    saved_deal = ApplicationRecord.transaction do
       deal.lock!
       assert_lock_version!
 
       ensure_required_fields_for_closed_stage!(target_stage)
       transition_to_stage!(target_stage)
     end
+
+    event_type = if realtime_event_name == Events::Types::CRM_DEAL_STAGE_CHANGED
+                   'deal_stage_changed'
+                 else
+                   'deal_updated'
+                 end
+    dispatch_crm_deal_realtime_event!(
+      realtime_event_name,
+      saved_deal,
+      meta: { event_type: event_type }
+    )
+    saved_deal
   end
 
   private

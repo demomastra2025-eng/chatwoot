@@ -231,4 +231,34 @@ describe ActionCableListener do
       listener.conversation_updated(event)
     end
   end
+
+  describe '#crm_deal_created' do
+    let(:event_name) { :'crm.deal.created' }
+    let(:pipeline) { create(:crm_pipeline, account: account) }
+    let(:stage) { create(:crm_stage, account: account, pipeline: pipeline) }
+    let(:deal) { create(:crm_deal, account: account, pipeline: pipeline, stage: stage) }
+    let(:event) do
+      Events::Base.new(
+        event_name,
+        Time.zone.now,
+        account: account,
+        deal: deal,
+        meta: { event_type: 'deal_created' }
+      )
+    end
+
+    it 'broadcasts the deal payload to the account stream' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        ["account_#{account.id}"],
+        'crm.deal.created',
+        hash_including(
+          account_id: account.id,
+          deal: hash_including(id: deal.id, title: deal.title),
+          meta: { event_type: 'deal_created' }
+        )
+      )
+
+      listener.crm_deal_created(event)
+    end
+  end
 end

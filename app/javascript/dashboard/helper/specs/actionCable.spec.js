@@ -2,6 +2,8 @@ import { describe, it, beforeEach, expect, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import ActionCableConnector from '../actionCable';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const { reconnectMock, handleAgentOfferMock } = vi.hoisted(() => ({
   reconnectMock: vi.fn(),
@@ -120,6 +122,38 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'fresh-offer', []);
       expect(callsStore.activeCall.status).toBe('connected');
       expect(callsStore.isReconnecting).toBe(false);
+    });
+    it('should emit dashboard bus events for CRM deal ActionCable events', () => {
+      const dealPayload = {
+        account_id: 1,
+        deal: { id: 42, title: 'Realtime Deal' },
+        meta: { event_type: 'deal_created' },
+      };
+
+      actionCable.onReceived({
+        event: 'crm.deal.created',
+        data: dealPayload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CRM_DEAL_REALTIME_EVENT,
+        {
+          event: 'crm.deal.created',
+          ...dealPayload,
+        }
+      );
+    });
+
+    it('should reject CRM deal events without account_id', () => {
+      actionCable.onReceived({
+        event: 'crm.deal.created',
+        data: { deal: { id: 42, title: 'Missing account' } },
+      });
+
+      expect(emitter.emit).not.toHaveBeenCalledWith(
+        BUS_EVENTS.CRM_DEAL_REALTIME_EVENT,
+        expect.any(Object)
+      );
     });
   });
 });

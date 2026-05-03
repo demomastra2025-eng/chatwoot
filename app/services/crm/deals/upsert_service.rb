@@ -5,7 +5,9 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
   end
 
   def perform
-    ApplicationRecord.transaction do
+    realtime_event_name = nil
+    realtime_meta = {}
+    saved_deal = ApplicationRecord.transaction do
       bootstrap_defaults!
       assert_lock_version!
 
@@ -58,10 +60,27 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       reposition_deal!(requested_position) if requested_position.present?
 
       contacts_changed = sync_contacts!(contacts: contacts, primary_contact: primary_contact)
+      realtime_event_name = realtime_event_name_for(
+        new_record: new_record,
+        contacts_changed: contacts_changed
+      )
+      realtime_meta = realtime_event_meta(
+        new_record: new_record,
+        contacts_changed: contacts_changed
+      )
       write_event!(new_record: new_record, contacts_changed: contacts_changed)
 
       deal.reload
     end
+
+    if realtime_event_name.present?
+      dispatch_crm_deal_realtime_event!(
+        realtime_event_name,
+        saved_deal,
+        meta: realtime_meta
+      )
+    end
+    saved_deal
   end
 
   private
@@ -190,6 +209,21 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         primary_contact_id: deal.primary_contact_id
       }
     )
+  end
+
+  def realtime_event_name_for(new_record:, contacts_changed:)
+    return Events::Types::CRM_DEAL_CREATED if new_record
+    return Events::Types::CRM_DEAL_UPDATED if contacts_changed || filtered_previous_changes.present?
+
+    nil
+  end
+
+  def realtime_event_meta(new_record:, contacts_changed:)
+    {
+      changes: filtered_previous_changes,
+      contacts_changed: contacts_changed,
+      event_type: new_record ? 'deal_created' : 'deal_updated'
+    }
   end
 
   def auto_apply_default_touch_plan!

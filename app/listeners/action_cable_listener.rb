@@ -166,6 +166,26 @@ class ActionCableListener < BaseListener
     broadcast(account, [account_token(account)], CONTACT_DELETED, contact_data)
   end
 
+  def crm_deal_created(event)
+    broadcast_crm_deal_event(event, CRM_DEAL_CREATED)
+  end
+
+  def crm_deal_updated(event)
+    broadcast_crm_deal_event(event, CRM_DEAL_UPDATED)
+  end
+
+  def crm_deal_stage_changed(event)
+    broadcast_crm_deal_event(event, CRM_DEAL_STAGE_CHANGED)
+  end
+
+  def crm_deal_archived(event)
+    broadcast_crm_deal_event(event, CRM_DEAL_ARCHIVED)
+  end
+
+  def crm_deal_unarchived(event)
+    broadcast_crm_deal_event(event, CRM_DEAL_UNARCHIVED)
+  end
+
   def conversation_mentioned(event)
     conversation, account = extract_conversation_and_account(event)
     user = event.data[:user]
@@ -208,6 +228,22 @@ class ActionCableListener < BaseListener
     contact = contact_inbox.contact
 
     contact_inbox.hmac_verified? ? contact.contact_inboxes.where(hmac_verified: true).filter_map(&:pubsub_token) : [contact_inbox.pubsub_token]
+  end
+
+  def broadcast_crm_deal_event(event, event_name)
+    deal = event.data[:deal]
+    account = event.data[:account] || deal&.account
+    return if account.blank? || deal.blank?
+
+    broadcast(
+      account,
+      [account_token(account)],
+      event_name,
+      {
+        deal: ::Crm::PayloadBuilder.deal(deal),
+        meta: event.data[:meta] || {}
+      }
+    )
   end
 
   def broadcast(account, tokens, event_name, data)

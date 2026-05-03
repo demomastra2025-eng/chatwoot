@@ -50,6 +50,13 @@ module Events::Types
   APPOINTMENT_CANCELLED = 'appointment.cancelled'
   APPOINTMENT_COMPLETED = 'appointment.completed'
 
+  # CRM deal events
+  CRM_DEAL_CREATED = 'crm.deal.created'
+  CRM_DEAL_UPDATED = 'crm.deal.updated'
+  CRM_DEAL_STAGE_CHANGED = 'crm.deal.stage_changed'
+  CRM_DEAL_ARCHIVED = 'crm.deal.archived'
+  CRM_DEAL_UNARCHIVED = 'crm.deal.unarchived'
+
   # contact events
   INBOX_CREATED = 'inbox.created'
   INBOX_UPDATED = 'inbox.updated'
