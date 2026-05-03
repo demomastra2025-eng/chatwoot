@@ -1,239 +1,184 @@
 # Onelink Fonoster Voice Contract
 
-This is the production integration contract between Onelink and the Fonoster
-execution layer for voice calls and Gemini Live voice agents.
+Canonical sync document for Onelink, Fonoster, and the Onelink AI Voice Service.
+Last updated: 2026-05-03.
 
-This file is intentionally stricter than an architecture note. It defines the
-boundary, required identifiers, event schemas, retry/idempotency rules, transfer
-behavior, fallback behavior, and open questions that must be closed before live
-production traffic.
+Use this document as the source of truth for the production voice/call contract.
 
-## Non-Negotiable Boundary
+## Active Documents
 
-Onelink is the source of truth.
+Only these documents are active for Fonoster synchronization:
 
-Fonoster is the reliable call execution layer.
+- `ONELINK_FONOSTER_VOICE_CONTRACT.md` - canonical behavior, payloads, ids, retries, fallback, transfer, finalization.
+- `ONELINK_CRM_GEMINI_SYNC_HANDOFF.md` - cross-team handoff checklist for Onelink CRM/Gemini synchronization.
+- `ONELINK_EXTERNAL_GEMINI_LIVE_VOICEAPP.md` - deployment shape for the Onelink-hosted Gemini Live VoiceApp.
+- `ONELINK_BRIDGE_API_CONTRACT.md` - Onelink to Fonoster bridge command API and inbound route/event callbacks.
+
+Everything else in `fonoster-docs/` is historical background unless explicitly copied into one of the active documents above.
+
+## Production Split
 
 ```text
-Onelink Rails
-  owns CRM state, customer context, prompt policy, tools, routing policy,
-  transcript storage, final call status, summaries, business fallback rules,
-  and the decision to transfer to an operator.
-
-Onelink AI Voice Service
-  owns the realtime voice-agent runtime next to Onelink: Fonoster VoiceServer,
-  Gemini Live websocket, audio pacing, barge-in, Gemini tool calls, transcript
-  batching, and low-level call actions after Onelink authorizes them.
-
 Fonoster
   owns PSTN/SIP, inbound call delivery, outbound createCall execution,
-  voice.stream, dial/transfer execution, hangup, recording, and technical call
-  events.
+  bidirectional media bridge, dial/transfer execution, hangup, recording,
+  technical call events, app refs, trunks, numbers, domains, agents.
+
+Onelink AI Voice Service
+  runs next to Onelink as a separate Node service.
+  owns Fonoster VoiceServer endpoint, one Gemini Live websocket per active call,
+  realtime audio loop, resampling, barge-in, audio buffering, Gemini tool calls,
+  transcript buffering, and low-level call actions after Rails authorizes them.
+
+Onelink Rails
+  owns CRM state, contacts, conversations, routing policy, AI config, prompts,
+  tools, operator selection policy, fallback policy, transcript storage,
+  summaries, final business status, and audit state.
 ```
 
-Rails must not receive live audio frames. Audio flows only between Fonoster and
-the Onelink AI Voice Service. Rails receives JSON only.
+Rails must not receive realtime audio frames. Rails receives JSON only.
 
-## What Fonoster Must Not Own
+## What Fonoster Team Needs
 
-Fonoster must not own or persist:
+Give Fonoster team only:
 
-- Gemini API keys
-- AI prompts
-- customer context
-- CRM tools
-- business routing policy
-- operator selection policy
-- transcript canonical storage
-- final business call status
-- summaries
-- tenant-specific AI behavior
-
-Fonoster may hold only technical configuration needed to execute the call, such
-as app refs, SIP domains, trunk config, and safe technical fallback targets.
-
-## Required Services
-
-```text
-Fonoster server
-  telephony-bridge
-  voice-runtime
-  apiserver
-  asterisk
-  routr
-  rtpengine
-
-Onelink server
-  Rails CRM
-  onelink-ai-voice
-```
-
-`onelink-ai-voice` is the production successor to the current
-`test-voiceapp` reference implementation.
-
-## Information To Give Fonoster Team
-
-Fonoster team needs only the information required to execute calls and deliver
-technical events.
-
-Give Fonoster team:
-
-- Onelink AI Voice Service endpoint reachable from the Fonoster server:
-  `<private-host>:50061`
-- optional health/metrics endpoint if exposed, for example
-  `<private-host>:8081`
-- Fonoster application ref that points to this endpoint, or permission to
-  update/create that application ref
-- network access requirements: private DNS/VPN/allowlist, TCP `50061`, optional
-  TCP `8081`
-- required routing behavior: use Onelink route decisions and target app refs
-- technical fallback policy only
-- call event contract: ids, event names, retry rules, final statuses, transfer
-  results, and error reason codes
+- private `onelink-ai-voice` endpoint reachable from Fonoster: `<private-host>:50061`
+- optional private health endpoint if exposed: `<private-host>:8081`
+- Fonoster `EXTERNAL` application ref pointing to that endpoint, or permission to create/update it
+- technical routing requirement: inbound AI route must use the Onelink AI app ref
+- technical fallback rule if the selected app endpoint cannot be reached
+- event identity/retry/finalization rules from this document
+- requirement that the Fonoster image supports bidirectional stream `AUDIO_IN` and `AUDIO_OUT`
 
 Do not give Fonoster team:
 
+- Gemini API keys
 - Rails internal auth secret
-- Gemini keys
 - CRM database access
-- internal Rails controllers/routes
 - prompt templates
-- CRM tool implementation
 - customer context rules
-- operator selection/business policy beyond the route/transfer decision payload
+- CRM tool implementation
+- operator selection/business policy beyond executable route and transfer targets returned by Onelink
 
-If the Fonoster team operates part of the deployment on Onelink's behalf, secrets
-may be injected by Onelink operations, but they are not part of the Fonoster
-application contract.
+## Secrets Boundary
 
-## Onelink-Internal Inputs
+Gemini keys live only on the Onelink AI Voice Service side.
 
-These are required for Onelink's own implementation and verification, but not
-for the external Fonoster team:
+Remove these from the Fonoster server when the Onelink-hosted app is active:
 
-- current Rails routes/controllers for `/context`, `/transcript`,
-  `/tools/:name`, and `/control`
-- the internal auth header/secret between `onelink-ai-voice` and Rails
-- the Gemini API key
-- Rails data model for calls, conversations, transcripts, raw events, and
-  finalization
-- business fallback policy per account/channel
-- operator availability and selection logic
+- `GEMINI_API_KEY`
+- `GOOGLE_API_KEY`
+- `VOICE_AGENT_REALTIME_API_KEY`
+- prompt/customer/tool config for the AI agent
+- local `test-voiceapp` as the production target
 
-## Transport And Auth
+Fonoster keeps only technical execution config: app refs, bridge URL/secret, trunks, numbers, SIP resources, and technical fallback targets.
 
-### Fonoster Voice gRPC To Onelink AI Voice Service
+## Network Boundary
 
-The Fonoster application endpoint must point to the Onelink AI Voice Service:
+Fonoster currently connects to `EXTERNAL` voice apps over gRPC. The Onelink AI Voice Service endpoint must be private.
 
-```text
-<onelink-private-host>:50061
-```
+Allowed production options:
 
-This endpoint must be private. Use WireGuard, Tailscale, private VPC, or a
-firewall that allows only the Fonoster server.
+1. Private network, WireGuard, Tailscale, private VPC, or equivalent.
+2. Temporary controlled test: expose TCP `50061` only to the Fonoster server IP.
+3. Public internet only after TLS/mTLS is implemented and tested for the Fonoster voice client and the Onelink VoiceServer.
 
-Do not expose the voice gRPC endpoint publicly without TLS/mTLS.
+Do not expose `50061` openly to the internet.
 
-### Fonoster Bridge To Onelink Rails
-
-Inbound route and event callbacks use internal HTTP:
+Minimum connectivity check before route/app ref switch:
 
 ```text
-POST /internal/voice/inbound/route
-POST /internal/voice/inbound/event
+Fonoster server -> onelink-ai-voice TCP 50061
 ```
 
-Required headers:
+## Canonical Call Paths
 
-```http
-Content-Type: application/json
-X-Account-Id: <onelink account id>
-X-Request-Id: <uuid>
-Authorization: Bearer <shared internal token>
-```
-
-For event delivery, also send:
-
-```http
-X-Event-Id: <event_id>
-X-Idempotency-Key: <event_id>
-X-Event-Attempt: <attempt number, starting at 1>
-```
-
-These Rails credentials are Onelink-controlled deployment configuration. They
-should not be handed to the Fonoster team as product integration inputs.
-
-### Onelink AI Voice Service To Rails
-
-Current Onelink AI endpoints may remain:
+Inbound AI call:
 
 ```text
-POST /internal/voice/ai/context
-POST /internal/voice/ai/transcript
-POST /internal/voice/ai/tools/:name
-POST /internal/voice/ai/control
+PSTN/SIP
+-> Fonoster number
+-> Fonoster runtime/bridge asks Onelink for route
+-> Onelink returns action=ai with onelink_ai_app_ref
+-> Fonoster connects call to Onelink AI Voice Service
+-> Onelink AI Voice Service opens Gemini Live
+-> caller audio -> Gemini
+-> Gemini audio -> caller
+-> events/transcripts/finalize -> Rails JSON endpoints
 ```
 
-Rails exposes compatible adapter endpoints for external integrators and future
-Fonoster runtime work:
+Outbound AI call:
 
 ```text
-POST /internal/voice/ai/event
-POST /internal/voice/ai/finalize
+Onelink Rails
+-> Fonoster bridge POST /telephony/calls/outbound
+-> Fonoster Calls.createCall with appRef = onelink_ai_app_ref
+-> Fonoster connects call to Onelink AI Voice Service
+-> Gemini Live voice loop
+-> events/transcripts/finalize -> Rails JSON endpoints
 ```
 
-Do not remove the current endpoints. The adapter endpoints should call the same
-internal Rails services used by the existing implementation.
+Operator route:
 
-Required headers:
-
-```http
-Content-Type: application/json
-X-Request-Id: <uuid>
-Authorization: Bearer <onelink internal token>
+```text
+Fonoster inbound call
+-> Onelink route decision action=operator
+-> Fonoster dials agent_aor
+-> answer/no-answer/busy/failed events -> Rails
 ```
 
-For events and finalize:
+AI transfer to operator:
 
-```http
-X-Event-Id: <event_id>
-X-Idempotency-Key: <event_id or finalize key>
-X-Event-Attempt: <attempt number, starting at 1>
+```text
+Gemini tool_call
+-> onelink-ai-voice
+-> Rails /internal/voice/ai/tools/:name
+-> Rails returns action=transfer and operator_agent_aor
+-> onelink-ai-voice executes voice.dial(...)
+-> transfer_requested and transfer_result events -> Rails
+-> finalize as transferred or operator_unavailable
 ```
 
-## Canonical Identifiers
+## Required Fonoster Core Capability
 
-Every cross-service request must use stable identifiers.
+The active Fonoster image must support bidirectional voice streams:
+
+- caller audio to app as `StreamMessageType.AUDIO_IN`
+- app audio to caller as `StreamMessageType.AUDIO_OUT`
+- stable `streamRef`
+- cleanup on `StopStream` and `StasisEnd`
+
+If only `AUDIO_IN` works, Gemini will hear the caller but the caller will not hear Gemini.
+
+## Identifiers
+
+Every cross-service request must carry stable ids when available.
 
 ```text
 call_id
-  Onelink canonical call row id. Created by Onelink.
+  Onelink canonical call/session id.
 
 provider_call_id
-  Fonoster call reference. In current code this maps to call_ref / callRef.
-  Stable across the technical call lifecycle.
+  Fonoster call reference. In legacy payloads this can be call_ref/callRef/ref.
 
 media_session_ref
-  Fonoster media session / channel reference. Useful for debugging and active
-  voice stream correlation.
+  Fonoster media/channel/stream session reference, useful for debugging.
 
 ai_session_id
-  Onelink AI Voice Service session id. One active realtime Gemini session per
-  call. May equal media_session_ref, but should be treated as its own id.
+  Onelink AI Voice Service session id. One active Gemini websocket per active call.
 
 conversation_id
   Onelink conversation linked to the call.
 
 event_id
-  Unique id for one event. Retries must reuse the same event_id.
+  Stable id for one event. Retries must reuse the same event_id.
 
 event_seq
-  Monotonic integer inside one provider_call_id or ai_session_id. Starts at 1.
-  Used for ordering and duplicate detection.
+  Monotonic integer inside one ai_session_id/provider_call_id. Starts at 1.
 
 request_id
-  Trace id for one HTTP delivery attempt.
+  Trace id for one delivery attempt.
 
 attempt
   Delivery attempt number. Starts at 1 and increments on retry.
@@ -251,111 +196,92 @@ Minimum event identity:
 }
 ```
 
-If `call_id` is not known yet, send `provider_call_id` and `ai_session_id`.
-Rails must attach the event once `call_id` is created.
+If `call_id` is not known yet, send `provider_call_id` and `ai_session_id`. Rails must attach the event after the call row exists.
 
-## Idempotency And Ordering
+## Auth Headers
 
-Delivery is at least once.
+### Fonoster bridge to Rails
 
-The sender must:
+```http
+Content-Type: application/json
+X-Account-Id: <onelink account id>
+X-Request-Id: <uuid>
+Authorization: Bearer <bridge shared token>
+```
 
-- retry transient failures
-- reuse the same `event_id` on retry
-- reuse the same `X-Idempotency-Key` on retry
-- increment `attempt`
-- never generate a new event id for the same event
+Compatibility headers accepted by Onelink bridge controllers:
 
-Rails must deduplicate by:
+```http
+X-Bridge-Secret: <token>
+X-Telephony-Secret: <token>
+Authorization: Bearer <token>
+```
+
+### Onelink AI Voice Service to Rails
+
+```http
+Content-Type: application/json
+X-Request-Id: <uuid>
+Authorization: Bearer <onelink internal voice token>
+```
+
+For `/event` and `/finalize` also send:
+
+```http
+X-Event-Id: <event_id>
+X-Idempotency-Key: <event_id or finalize key>
+X-Event-Attempt: <attempt number>
+```
+
+Current Rails code accepts the internal voice token from these env aliases:
 
 ```text
-(provider_call_id, event_id)
+VOICE_AGENT_ONELINK_AI_SHARED_SECRET
+ONELINK_AI_VOICE_INTERNAL_TOKEN
+AI_VOICE_INTERNAL_TOKEN
+ONELINK_INTERNAL_SECRET
+ONELINK_INTERNAL_TOKEN
 ```
 
-or, for AI runtime events:
+Use the same value on Rails and `onelink-ai-voice`.
+
+## Rails API Surface
+
+Bridge callbacks from Fonoster:
 
 ```text
-(ai_session_id, event_seq)
+POST /internal/voice/inbound/route
+POST /internal/voice/inbound/event
+POST /telephony/internal/events
 ```
 
-The recommended primary dedupe key is:
+AI runtime callbacks from `onelink-ai-voice`:
 
 ```text
-event_id
+POST /internal/voice/ai/context
+POST /internal/voice/ai/transcript
+POST /internal/voice/ai/tools/:name
+POST /internal/voice/ai/control
+POST /internal/voice/ai/event
+POST /internal/voice/ai/finalize
 ```
 
-with `provider_call_id` as a safety scope.
-
-Events may arrive out of order. Rails must accept out-of-order events and apply
-state transitions safely. `finalize` is terminal for business state, but late
-non-conflicting events such as `recording_ready` may still update the call row.
-
-Duplicate response:
-
-```json
-{
-  "status": "duplicate",
-  "event_id": "evt_01JZ...",
-  "call_id": "call_123"
-}
-```
-
-## Retry Rules
-
-Retry on:
-
-- network timeout
-- connection reset
-- HTTP 408
-- HTTP 409 when the response explicitly says retryable
-- HTTP 425
-- HTTP 429
-- HTTP 500, 502, 503, 504
-
-Do not retry on normal validation errors:
-
-- HTTP 400
-- HTTP 401
-- HTTP 403
-- HTTP 404
-- HTTP 422
-
-Recommended retry schedule for events:
-
-```text
-1s, 5s, 15s, 60s, 5m, 15m
-```
-
-Use jitter. Stop retrying after the configured event retention window, but keep
-an operational dead-letter log.
-
-Route decision calls are different:
-
-- target p95: under 300 ms
-- hard timeout: 1500 ms
-- if route decision fails, only technical fallback may run
-
-Event/finalize calls:
-
-- target p95: under 300 ms
-- hard timeout: 2000 ms
-- retry is allowed
+`/event` and `/finalize` are compatibility adapter endpoints and must stay idempotent.
 
 ## Inbound Route Decision
 
-Fonoster asks Onelink what to do with the inbound call.
+Endpoint:
 
 ```http
 POST /internal/voice/inbound/route
 ```
 
-### Request
+Request shape:
 
 ```json
 {
   "event_id": "evt_route_01JZ...",
   "event_type": "inbound_route_requested",
-  "event_seq": 1,
   "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
   "call_ref": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
   "media_session_ref": "asterisk-channel-or-media-session",
@@ -363,34 +289,32 @@ POST /internal/voice/inbound/route
   "to": "+18623964686",
   "direction": "inbound",
   "ingress_number": "+18623964686",
-  "app_ref": "96fc259c-6bcd-4cbf-bb7d-d2c51f248934",
+  "app_ref": "runtime-router-app-ref",
   "started_at": "2026-05-03T12:00:00.000Z",
-  "received_at": "2026-05-03T12:00:00.100Z",
-  "attempt": 1,
   "metadata": {}
 }
 ```
 
-### Response: AI Route
+AI response:
 
 ```json
 {
   "action": "ai",
   "call_id": "call_123",
   "conversation_id": "conv_123",
-  "app_ref": "onelink_ai_voice_app_ref",
+  "app_ref": "<onelink_ai_app_ref>",
   "ai_session_mode": "onelink_managed",
   "reason": "ai_enabled",
   "timeout": 60,
   "fallback": {
     "on_ai_unavailable": "operator",
     "operator_agent_aor": "sip:1001@operator.cloud.vconsult.kz",
-    "fallback_app_ref": "fallback_app_ref"
+    "fallback_app_ref": null
   }
 }
 ```
 
-### Response: Operator Route
+Operator response:
 
 ```json
 {
@@ -398,14 +322,12 @@ POST /internal/voice/inbound/route
   "call_id": "call_123",
   "conversation_id": "conv_123",
   "agent_aor": "sip:1001@operator.cloud.vconsult.kz",
-  "reason": "non_pending_conversation_operator_route",
+  "reason": "operator_route",
   "timeout": 30
 }
 ```
 
-### Response: Reject
-
-Business rejection must return HTTP 200 with `action=reject`.
+Reject response:
 
 ```json
 {
@@ -417,17 +339,24 @@ Business rejection must return HTTP 200 with `action=reject`.
 }
 ```
 
-Non-2xx means technical failure, not business rejection.
+Business rejection must return HTTP `200` with `action=reject`. Non-2xx means technical failure.
 
-## Onelink AI Context
+Route rules:
 
-The Onelink AI Voice Service asks Rails for AI context.
+- `action=ai` must include a real AI app ref.
+- Do not return the current runtime/router app ref as the target AI/app ref for the same inbound call.
+- Operator route must include an executable SIP AOR.
+- Onelink route decisions are authoritative. Fonoster may only apply technical fallback if Onelink is unavailable or the selected target cannot be reached.
+
+## AI Context
+
+Endpoint:
 
 ```http
 POST /internal/voice/ai/context
 ```
 
-### Request
+Request:
 
 ```json
 {
@@ -443,7 +372,7 @@ POST /internal/voice/ai/context
 }
 ```
 
-### Response
+Response:
 
 ```json
 {
@@ -453,7 +382,7 @@ POST /internal/voice/ai/context
   "language": "ru-RU",
   "model": "gemini-3.1-flash-live-preview",
   "voice": "Sulafat",
-  "system_prompt": "You are the Onelink voice assistant. Keep answers short.",
+  "system_prompt": "Short phone assistant instructions...",
   "max_output_tokens": 120,
   "temperature": 0.3,
   "tools": [
@@ -478,23 +407,17 @@ POST /internal/voice/ai/context
 }
 ```
 
-Rails owns this response. Fonoster must not invent prompt, tools, or CRM
-context locally.
+Rails owns this response. Fonoster must not invent prompt, tools, CRM context, model, or transfer policy.
 
-## Event Adapter Endpoint
+## Event Adapter
 
-Rails exposes this compatibility endpoint:
+Endpoint:
 
 ```http
 POST /internal/voice/ai/event
 ```
 
-It accepts lifecycle, media, tool, transfer, recording, and error events from
-the Onelink AI Voice Service or a future Fonoster runtime.
-
-It should adapt internally to the current Rails control/event processing.
-
-### Common Event Shape
+Common event shape:
 
 ```json
 {
@@ -513,7 +436,7 @@ It should adapt internally to the current Rails control/event processing.
 }
 ```
 
-### Response
+Response:
 
 ```json
 {
@@ -524,108 +447,23 @@ It should adapt internally to the current Rails control/event processing.
 }
 ```
 
-## Required Event Types
+Required AI event types:
 
-### call_started
-
-```json
-{
-  "event_id": "evt_call_started_01JZ...",
-  "event_seq": 1,
-  "event_type": "call_started",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "media_session_ref": "asterisk-channel-or-media-session",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "from": "+77066318623",
-  "to": "+18623964686",
-  "direction": "inbound",
-  "started_at": "2026-05-03T12:00:00.000Z",
-  "occurred_at": "2026-05-03T12:00:00.000Z",
-  "attempt": 1,
-  "payload": {
-    "app_ref": "onelink_ai_voice_app_ref",
-    "route_action": "ai"
-  }
-}
+```text
+call_started
+stream_started
+transcript_delta
+tool_started
+tool_completed
+tool_failed
+transfer_requested
+transfer_result
+recording_ready
+error
+call_ended
 ```
 
-### stream_started
-
-```json
-{
-  "event_id": "evt_stream_started_01JZ...",
-  "event_seq": 2,
-  "event_type": "stream_started",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "media_session_ref": "asterisk-channel-or-media-session",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:00:01.000Z",
-  "attempt": 1,
-  "payload": {
-    "stream_ref": "stream_uuid",
-    "direction": "BOTH",
-    "input_rate": 16000,
-    "output_rate": 8000,
-    "gemini_model": "gemini-3.1-flash-live-preview"
-  }
-}
-```
-
-### transcript_delta
-
-Use this for partial or batched transcript updates if the existing
-`/transcript` endpoint is not used.
-
-```json
-{
-  "event_id": "evt_transcript_01JZ...",
-  "event_seq": 8,
-  "event_type": "transcript_delta",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:00:15.000Z",
-  "attempt": 1,
-  "payload": {
-    "speaker": "caller",
-    "text": "I want to talk to an operator.",
-    "is_final": true,
-    "provider": "gemini-live"
-  }
-}
-```
-
-### transfer_requested
-
-This event records the intent to transfer. It does not prove the operator
-answered.
-
-```json
-{
-  "event_id": "evt_transfer_requested_01JZ...",
-  "event_seq": 11,
-  "event_type": "transfer_requested",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:01:10.000Z",
-  "attempt": 1,
-  "payload": {
-    "requested_by": "ai_tool",
-    "reason": "caller_requested_operator",
-    "operator_agent_aor": "sip:1001@operator.cloud.vconsult.kz"
-  }
-}
-```
-
-### transfer_result
-
-Allowed results:
+Transfer results:
 
 ```text
 answered
@@ -635,113 +473,29 @@ failed
 cancelled
 ```
 
-```json
-{
-  "event_id": "evt_transfer_result_01JZ...",
-  "event_seq": 12,
-  "event_type": "transfer_result",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:01:20.000Z",
-  "attempt": 1,
-  "payload": {
-    "operator_agent_aor": "sip:1001@operator.cloud.vconsult.kz",
-    "result": "answered",
-    "dial_started_at": "2026-05-03T12:01:10.000Z",
-    "answered_at": "2026-05-03T12:01:18.000Z",
-    "ended_at": null,
-    "duration_ms": 8000,
-    "bridge_id": "optional-bridge-id",
-    "error_code": null,
-    "error_message": null
-  }
-}
+Error scopes:
+
+```text
+gemini_live
+voice_stream
+rails_context
+rails_tool
+transfer
+recording
+unknown
 ```
 
-### call_ended
+## Finalize
 
-Use this technical event when the call leg ends. It does not replace
-`finalize`.
-
-```json
-{
-  "event_id": "evt_call_ended_01JZ...",
-  "event_seq": 20,
-  "event_type": "call_ended",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:02:00.000Z",
-  "attempt": 1,
-  "payload": {
-    "ended_by": "caller",
-    "reason": "caller_hung_up",
-    "duration_ms": 120000
-  }
-}
-```
-
-### recording_ready
-
-Recording may arrive after `finalize`.
-
-```json
-{
-  "event_id": "evt_recording_ready_01JZ...",
-  "event_seq": 21,
-  "event_type": "recording_ready",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:02:10.000Z",
-  "attempt": 1,
-  "payload": {
-    "recording_url": "https://recordings.example/call_123.wav",
-    "recording_ref": "rec_123",
-    "format": "wav",
-    "duration_ms": 120000
-  }
-}
-```
-
-### error
-
-```json
-{
-  "event_id": "evt_error_01JZ...",
-  "event_seq": 15,
-  "event_type": "error",
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "ai_session_id": "ai_sess_01JZ...",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "occurred_at": "2026-05-03T12:01:30.000Z",
-  "attempt": 1,
-  "payload": {
-    "scope": "gemini_live",
-    "error_code": "gemini_unavailable",
-    "error_message": "Gemini Live websocket closed before setup",
-    "retryable": false
-  }
-}
-```
-
-## Finalize Endpoint
-
-Rails exposes this endpoint:
+Endpoint:
 
 ```http
 POST /internal/voice/ai/finalize
 ```
 
-`finalize` is the canonical terminal business event for the AI voice session.
+`finalize` is the canonical terminal business event for the AI voice session. It must be idempotent.
 
-It must be idempotent.
-
-### Allowed Final Statuses
+Allowed final statuses:
 
 ```text
 completed
@@ -749,17 +503,12 @@ transferred
 failed
 caller_hung_up
 operator_unavailable
-```
-
-Optional extended statuses, if Onelink wants them:
-
-```text
 rejected
 cancelled
 timeout
 ```
 
-### Request
+Request:
 
 ```json
 {
@@ -804,7 +553,7 @@ timeout
 }
 ```
 
-### Response
+Response:
 
 ```json
 {
@@ -815,32 +564,80 @@ timeout
 }
 ```
 
-Duplicate finalize with the same terminal payload must return 2xx:
+Duplicate finalize with the same terminal payload must return HTTP `2xx` and `already_finalized=true`.
 
-```json
-{
-  "status": "ok",
-  "call_id": "call_123",
-  "conversation_id": "conv_123",
-  "already_finalized": true
-}
+Conflicting duplicate finalize must not break retries with `5xx`; Rails should keep the first terminal state, store an operational conflict event, and return `2xx` with the stored state.
+
+## Idempotency And Retry
+
+Delivery is at least once.
+
+Sender rules:
+
+- retry transient failures
+- reuse the same `event_id` and `X-Idempotency-Key` on retry
+- increment `attempt`
+- never generate a new event id for the same event
+
+Rails dedupe priority:
+
+1. `event_id`
+2. `(provider_call_id, event_id)` as safety scope
+3. `(ai_session_id, event_seq)` for AI runtime compatibility
+
+Retry on:
+
+```text
+network timeout
+connection reset
+HTTP 408
+HTTP 409 when retryable
+HTTP 425
+HTTP 429
+HTTP 500
+HTTP 502
+HTTP 503
+HTTP 504
 ```
 
-If a duplicate finalize conflicts with the stored terminal state, Rails should
-keep the first final state, store an operational conflict event, and return 2xx
-with the stored state. Do not break the sender retry loop with a terminal 5xx.
+Do not retry normal validation/auth errors:
+
+```text
+HTTP 400
+HTTP 401
+HTTP 403
+HTTP 404
+HTTP 422
+```
+
+Recommended event retry schedule:
+
+```text
+1s, 5s, 15s, 60s, 5m, 15m, with jitter
+```
+
+Targets:
+
+```text
+route decision p95: <= 300ms
+route hard timeout: 1500ms
+event/finalize p95: <= 300ms
+event/finalize hard timeout: 2000ms
+AI context p95: <= 300ms
+realtime tool p95: <= 800ms
+```
 
 ## Tool Boundary
 
 Fonoster must not implement CRM tools.
 
-Allowed low-level call actions:
+Allowed low-level call actions after Onelink authorizes them:
 
 ```text
 transfer
 end_call
 hold
-playback, only if Onelink explicitly enables it
+playback, only if explicitly enabled by Onelink
 ```
 
 Everything else belongs to Onelink:
@@ -858,18 +655,7 @@ Everything else belongs to Onelink:
 - transcript storage
 - final business state
 
-Tool call flow:
-
-```text
-Gemini tool_call
--> onelink-ai-voice
--> Rails /internal/voice/ai/tools/:name
--> Rails returns business decision
--> onelink-ai-voice executes only allowed low-level call action
--> onelink-ai-voice returns toolResponse to Gemini
-```
-
-### Transfer Tool Result From Rails
+Transfer tool result from Rails:
 
 ```json
 {
@@ -881,7 +667,7 @@ Gemini tool_call
 }
 ```
 
-### End Call Tool Result From Rails
+End call tool result from Rails:
 
 ```json
 {
@@ -893,136 +679,61 @@ Gemini tool_call
 
 If Rails returns a CRM-only result, the voice service must not invent a transfer.
 
-## Transfer Contract
+## Fallback Cases
 
-When Onelink authorizes transfer, the voice service or Fonoster execution layer
-must:
+Fallback policy is owned by Onelink. Fonoster may only do technical fallback when Onelink cannot be reached or a selected target cannot be executed.
 
-1. Dial `operator_agent_aor`.
-2. Preserve caller id where supported by the trunk/provider.
-3. Emit `transfer_requested`.
-4. Emit `transfer_result`.
-5. Return one of:
+Gemini unavailable:
 
 ```text
-answered
-no_answer
-busy
-failed
-cancelled
+onelink-ai-voice emits error scope=gemini_live
+onelink-ai-voice applies Rails fallback_policy
+if policy=operator, transfer to Onelink-approved operator target
+if no fallback exists, finalize failed
 ```
 
-6. Include bridge timestamps:
-
-```json
-{
-  "dial_started_at": "2026-05-03T12:01:10.000Z",
-  "ringing_at": "2026-05-03T12:01:11.000Z",
-  "answered_at": "2026-05-03T12:01:18.000Z",
-  "ended_at": null,
-  "duration_ms": 8000
-}
-```
-
-7. Do not lose recording or final call state.
-
-If the operator does not answer, final status should be:
+Onelink AI Voice Service unavailable:
 
 ```text
-operator_unavailable
+Fonoster cannot connect selected EXTERNAL app endpoint
+Fonoster uses only route response technical fallback or cached safe policy
+Fonoster emits error event when possible
+if no fallback exists, reject/end safely
 ```
 
-unless Onelink context explicitly says to continue AI or use another fallback.
+Rails context timeout:
 
-## Fallback Rules
-
-Fallback policy is owned by Onelink. Fonoster may only perform technical
-fallback when Onelink cannot be reached or the selected target is unavailable.
-
-### Gemini Unavailable
-
-Expected behavior:
-
-1. Onelink AI Voice Service emits `error` with `scope=gemini_live`.
-2. It applies Rails-provided `fallback_policy`.
-3. If policy is `operator`, it asks/uses Onelink-approved operator target and
-   attempts transfer.
-4. If no fallback is available, it finalizes `failed`.
-
-### Onelink AI Voice Service Unavailable
-
-Expected behavior:
-
-1. Fonoster fails to connect the selected EXTERNAL app endpoint.
-2. Fonoster uses only technical fallback from route response or cached policy.
-3. Fonoster emits an error event to Onelink when possible.
-4. If no fallback exists, Fonoster rejects or ends the call safely.
-
-### Onelink Rails Context API Slow Or Down
-
-Expected behavior:
-
-1. Onelink AI Voice Service times out quickly.
-2. It uses the configured fallback policy.
-3. It emits `error` and eventually `finalize`.
-4. It never blocks the audio callback waiting on Rails.
-
-### Operator Unavailable
-
-Expected behavior:
-
-1. Emit `transfer_result` with `no_answer`, `busy`, or `failed`.
-2. Finalize as `operator_unavailable`, unless Onelink explicitly configured AI
-   continuation or a second operator/fallback target.
-
-### Stream Broken
-
-Realtime media stream cannot be safely retried inside the same call as if
-nothing happened.
-
-Expected behavior:
-
-1. Emit `error` with `scope=voice_stream`.
-2. Stop Gemini audio loop.
-3. Apply Onelink fallback policy.
-4. If no fallback exists, finalize `failed` with a clear `error_code`.
-
-## Required Fonoster Behavior
-
-Fonoster team must:
-
-1. Treat Onelink routing decisions as authoritative.
-2. Connect calls to the Onelink-selected app ref or operator target.
-3. Avoid local business rules except technical fallback.
-4. Emit stable identifiers in every event:
-
-```json
-{
-  "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "from": "+77066318623",
-  "to": "+18623964686",
-  "direction": "inbound",
-  "started_at": "2026-05-03T12:00:00.000Z",
-  "event_id": "evt_01JZ...",
-  "event_type": "call_started",
-  "event_seq": 1,
-  "attempt": 1
-}
+```text
+onelink-ai-voice times out quickly
+no audio callback waits on Rails
+apply configured fallback policy
+emit error scope=rails_context
+finalize or transfer according to policy
 ```
 
-5. Deliver webhooks at least once.
-6. Retry transient failures with the same `event_id`.
-7. Preserve recording and final call state across transfer.
-8. Keep audio out of Rails.
+Operator unavailable:
 
-Fonoster team must not:
+```text
+emit transfer_result no_answer/busy/failed
+finalize operator_unavailable unless Rails explicitly configured another fallback
+```
 
-- store Gemini keys
-- own prompt logic
-- implement CRM tools
-- select operators without Onelink policy
-- decide AI vs operator except technical fallback
-- send raw audio to Rails
+Stream broken:
+
+```text
+emit error scope=voice_stream
+stop Gemini loop
+apply fallback policy
+finalize failed if no fallback exists
+```
+
+Recording failure:
+
+```text
+emit error scope=recording
+finalize must not wait for recording
+recording_ready may update the call after terminal state
+```
 
 ## Recording Rules
 
@@ -1030,12 +741,12 @@ Recording is a technical artifact from Fonoster.
 
 Rules:
 
-- recording may be delivered after finalize
+- recording may arrive after finalize
 - `recording_ready` must update the existing call row
 - missing recording must not block finalize
-- if recording failed, emit `error` with `scope=recording`
+- recording failure must be an `error` event, not a broken call finalization
 
-Recommended recording payload:
+Recommended payload:
 
 ```json
 {
@@ -1049,100 +760,51 @@ Recommended recording payload:
 }
 ```
 
-## State Machine
-
-Recommended Onelink canonical state transitions:
-
-```text
-created
--> ringing
--> in_progress
--> transferred
--> completed
-```
-
-Failure paths:
-
-```text
-created -> rejected
-created -> failed
-in_progress -> caller_hung_up
-in_progress -> operator_unavailable
-in_progress -> failed
-```
-
-`recording_ready` may arrive after any terminal state.
-
 ## Production Readiness Checklist
 
-Before enabling production traffic:
+Code/contract readiness:
 
-1. Fonoster app endpoint points to Onelink AI Voice Service.
-2. Voice gRPC endpoint is private.
-3. Gemini keys exist only on the Onelink server.
-4. Bidirectional Fonoster stream is verified with real audio both ways.
-5. Rails implements `/internal/voice/ai/event`.
-6. Rails implements `/internal/voice/ai/finalize`.
-7. `finalize` is idempotent.
-8. Rails deduplicates events by `event_id`.
-9. AI service includes `event_seq`.
-10. Route decisions return `call_id` or create it deterministically.
-11. Transfer emits requested and result events.
-12. Recording can update after finalize.
-13. Gemini outage fallback is tested.
-14. Onelink AI Voice Service outage fallback is tested.
-15. Operator no-answer path finalizes `operator_unavailable`.
-16. Outbound AI call uses the Onelink AI app ref.
-17. No raw audio reaches Rails.
+1. Rails exposes `/internal/voice/ai/event`.
+2. Rails exposes `/internal/voice/ai/finalize`.
+3. `finalize` is idempotent.
+4. Rails deduplicates events by `event_id` or compatible idempotency key.
+5. `onelink-ai-voice` emits `event_seq`.
+6. Transfer emits `transfer_requested` and `transfer_result`.
+7. Recording can update after finalize.
+8. No raw audio reaches Rails.
 
-## Questions For Onelink
+Deployment readiness:
 
-These must be answered by the Onelink side before the contract is considered
-closed.
+1. Fonoster app endpoint points to `onelink-ai-voice`, not local `test-voiceapp`.
+2. TCP `50061` is reachable from Fonoster and private from the public internet.
+3. Running Fonoster image has bidirectional stream support.
+4. Gemini keys exist only on the Onelink side.
+5. Rails and `onelink-ai-voice` use the same internal voice token.
+6. Outbound AI calls use the Onelink AI app ref.
+7. Gemini outage fallback is tested.
+8. Onelink AI Voice Service outage fallback is tested.
+9. Operator no-answer path finalizes `operator_unavailable`.
+10. One inbound and one outbound live smoke call pass end to end.
 
-1. What is the canonical `call_id` format, and is it created during inbound
-   route decision or AI context fetch?
-2. Does Rails already have a call-session table that can store
-   `provider_call_id`, `media_session_ref`, `ai_session_id`, and `event_seq`?
-3. Which endpoint currently owns lifecycle events: `/control`, an events
-   service, or another controller?
-4. Should `/internal/voice/ai/event` write to the same table as current bridge
-   lifecycle events, or to a separate AI voice events table?
-5. What exact auth header should the Onelink AI Voice Service use for Rails:
-   `Authorization: Bearer`, `X-Bridge-Secret`, or a new internal header?
-6. Should `finalize` create the summary synchronously, or should it store the
-   final payload and enqueue summary generation?
-7. What final statuses does the UI expect today?
-8. Can `recording_url` be updated after terminal state in the current UI/model?
-9. What transcript format is canonical: append-only utterances, full final text,
-   or both?
-10. Who owns operator availability: Rails only, or Rails plus Fonoster SIP
-    registration state?
-11. When transfer fails, should AI continue, try a second operator, or finalize
-    `operator_unavailable`?
-12. What is the tenant/account fallback policy when Gemini is unavailable?
-13. What is the max allowed AI call duration per account?
-14. Are there compliance requirements for recording consent, retention,
-    redaction, or PII masking?
-15. Should outbound AI calls use the same `onelink_ai_app_ref` as inbound AI
-    calls?
-16. Should event payloads be stored raw for audit/debugging?
-17. What is the acceptable event replay retention window?
-18. Should the AI service be allowed to call `voice.dial` directly after Rails
-    returns a transfer action, or must it go through another Onelink control
-    approval step?
+## Values To Fill For Fonoster Sync
 
-## Final Contract Summary
-
-The correct production model is:
+These are deployment values, not source-code constants:
 
 ```text
-Fonoster executes the call.
-Onelink AI Voice Service runs Gemini Live.
+onelink_ai_voice_private_host=<private host or IP reachable from Fonoster>
+onelink_ai_voice_grpc_endpoint=<private host>:50061
+onelink_ai_voice_health_endpoint=<private host>:8081, optional
+fonoster_onelink_ai_app_ref=<Fonoster EXTERNAL app ref pointing to onelink-ai-voice>
+operator_agent_aor=<production SIP AOR for fallback/transfer>
+technical_fallback=<operator|reject|fallback_app_ref>
+```
+
+## Final Rule
+
+```text
+Fonoster executes calls.
+Onelink AI Voice Service runs Gemini Live realtime audio.
 Onelink Rails owns business truth.
 ```
 
-The system is production-ready only when events and finalize are idempotent,
-retries are at least once with stable event ids, transfer has explicit result
-semantics, fallback policy is owned by Onelink, and no realtime audio passes
-through Rails.
+This is the native, reliable, scalable split for production voice agents.

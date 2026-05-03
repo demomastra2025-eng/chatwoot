@@ -290,4 +290,16 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
     expect(response.parsed_body['conversation_id']).to eq(session.conversation_id)
   end
+
+  it 'accepts the Fonoster contract shared secret alias' do
+    with_modified_env(VOICE_AGENT_ONELINK_AI_SHARED_SECRET: 'contract-secret') do
+      post '/internal/voice/ai/context',
+           params: { call_ref: call_session.external_call_ref, account_id: account.id },
+           headers: { 'Authorization' => 'Bearer contract-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['account_id']).to eq(account.id)
+  end
 end

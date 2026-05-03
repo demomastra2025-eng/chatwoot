@@ -7,20 +7,25 @@ class Internal::Voice::Ai::BaseController < ApplicationController
   private
 
   def authenticate_internal_voice!
-    expected_token = internal_voice_token
     provided_tokens = [
       bearer_token,
       request.headers['X-Onelink-Internal-Token'].to_s.presence,
       request.headers['X-Voice-Internal-Token'].to_s.presence
     ].compact
 
-    return if provided_tokens.any? { |provided_token| secure_match?(provided_token, expected_token) }
+    return if provided_tokens.any? { |provided_token| internal_voice_tokens.any? { |expected_token| secure_match?(provided_token, expected_token) } }
 
     render json: { error: 'unauthorized' }, status: :unauthorized
   end
 
-  def internal_voice_token
-    ENV.fetch('ONELINK_AI_VOICE_INTERNAL_TOKEN', '').presence || ENV.fetch('AI_VOICE_INTERNAL_TOKEN', '').presence
+  def internal_voice_tokens
+    [
+      ENV.fetch('VOICE_AGENT_ONELINK_AI_SHARED_SECRET', '').presence,
+      ENV.fetch('ONELINK_AI_VOICE_INTERNAL_TOKEN', '').presence,
+      ENV.fetch('AI_VOICE_INTERNAL_TOKEN', '').presence,
+      ENV.fetch('ONELINK_INTERNAL_SECRET', '').presence,
+      ENV.fetch('ONELINK_INTERNAL_TOKEN', '').presence
+    ].compact.uniq
   end
 
   def bearer_token
