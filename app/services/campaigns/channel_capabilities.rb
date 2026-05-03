@@ -198,9 +198,7 @@ class Campaigns::ChannelCapabilities
       delivery_readiness: 'ready',
       planned_rollout_tier: 1,
       supports_first_contact: true,
-      requires_template_for_outside_window: true,
-      supports_media: true,
-      notes: ['Twilio WhatsApp requires template params outside the active reply window.']
+      supports_media: true
     }
   end
 

@@ -60,6 +60,24 @@ RSpec.describe Campaigns::PreviewService do
       expect(result[:sample_contacts].first[:reason]).to eq('requires_template')
     end
 
+    it 'requires whatsapp templates when a scheduled free-text campaign will deliver after the reply window closes' do
+      account.enable_features!(:whatsapp_campaign)
+      channel = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      inbox = channel.inbox
+      contact = create(:contact, account: account, phone_number: '+15550001115')
+      contact.label_list.add(label.title)
+      contact.save!
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 1.hour.ago)
+
+      result = described_class.new(account: account, inbox: inbox, audience: audience, scheduled_at: 25.hours.from_now).call
+
+      expect(result[:deliverable_count]).to eq(0)
+      expect(result[:totals]['requires_template']).to eq(1)
+      expect(result[:sample_contacts].first[:reason]).to eq('requires_template')
+    end
+
     it 'treats whatsapp contacts as deliverable when template params are present' do
       account.enable_features!(:whatsapp_campaign)
       channel = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
@@ -136,7 +154,15 @@ RSpec.describe Campaigns::PreviewService do
         created_at: 2.hours.ago
       )
 
-      campaign_conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox, campaign: create(:campaign, account: account, inbox: inbox))
+      campaign = create(:campaign, account: account, inbox: inbox)
+      campaign_conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        campaign: campaign
+      )
       create(
         :message,
         :bot_message,

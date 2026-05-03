@@ -81,6 +81,13 @@ class AutomationRuleListener < BaseListener
 
   def ignore_message_created_event?(event)
     message = event.data[:message]
-    performed_by_automation?(event) || message.activity? || message.auto_reply_email?
+    performed_by_automation?(event) || message.activity? || message.auto_reply_email? || scheduled_touch_message?(message)
+  end
+
+  def scheduled_touch_message?(message)
+    content_attributes = message.content_attributes.to_h.with_indifferent_access
+    additional_attributes = message.additional_attributes.to_h.with_indifferent_access
+
+    content_attributes[:touch_id].present? || additional_attributes[:touch_id].present?
   end
 end

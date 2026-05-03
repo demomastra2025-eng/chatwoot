@@ -39,7 +39,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       attachment_ids: attachment_ids,
       artifact_ids: artifact_ids
     )
-    delivery_policy = ensure_delivery_allowed!(create_params)
+    delivery_policy = ensure_delivery_allowed!(create_params, remindable: remindable)
     create_params[:metadata] = (create_params[:metadata] || {}).merge('delivery_policy' => delivery_policy.as_json)
 
     with_idempotent_creation('create_touch', create_params.merge(remindable_gid: remindable.to_gid_param)) do
@@ -90,11 +90,17 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       }.compact
     }
 
-    if relative_anchor.present?
-      validate_relative_anchor!(relative_anchor, remindable)
+    effective_relative_anchor = normalized_relative_anchor(
+      relative_anchor,
+      relative_offset_minutes: relative_offset_minutes,
+      scheduled_at: scheduled_at
+    )
+
+    if effective_relative_anchor.present?
+      validate_relative_anchor!(effective_relative_anchor, remindable)
       params.merge!(
         timing_mode: 'relative',
-        relative_anchor: relative_anchor,
+        relative_anchor: effective_relative_anchor,
         relative_offset_seconds: parse_relative_offset_minutes(relative_offset_minutes)
       )
     else
@@ -131,15 +137,32 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     end
   end
 
-  def ensure_delivery_allowed!(params)
+  def ensure_delivery_allowed!(params, remindable:)
     ::Outbound::DeliveryPolicy.ensure!(
       conversation: conversation,
       inbox: target_inbox_for_policy(params[:target_inbox_id]),
       content_kind: params[:content_kind],
       template_params: params[:template_params],
       attachments: params[:attachments],
-      scheduled_at: params[:scheduled_at]
+      scheduled_at: effective_scheduled_at_for_policy(params, remindable: remindable)
     )
+  end
+
+  def effective_scheduled_at_for_policy(params, remindable:)
+    return params[:scheduled_at] unless params[:timing_mode].to_s == 'relative'
+
+    policy_probe = Reminder.new(
+      account: account,
+      remindable: remindable,
+      conversation: conversation,
+      target_inbox_id: params[:target_inbox_id],
+      timing_mode: params[:timing_mode],
+      relative_anchor: params[:relative_anchor],
+      relative_offset_seconds: params[:relative_offset_seconds],
+      timezone: params[:timezone]
+    )
+    policy_probe.send(:materialize_schedule)
+    policy_probe.scheduled_at
   end
 
   def target_inbox_for_policy(target_inbox_id)
@@ -183,6 +206,13 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     return if relative_anchor.to_s.start_with?(entity_prefix)
 
     raise ArgumentError, "relative_anchor #{relative_anchor} does not match the selected remindable"
+  end
+
+  def normalized_relative_anchor(relative_anchor, relative_offset_minutes:, scheduled_at:)
+    return relative_anchor if relative_anchor.present?
+    return 'touch.created_at' if relative_offset_minutes.present? && scheduled_at.blank?
+
+    nil
   end
 
   def parse_relative_offset_minutes(value)

@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import ContactPanel from 'dashboard/routes/dashboard/conversation/ContactPanel.vue';
-import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
+import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
@@ -57,12 +57,6 @@ const closeSidebar = () => {
     });
   }
 };
-
-const handleTouchSidebarModelUpdate = value => {
-  updateUISettings({
-    is_touch_sidebar_open: value,
-  });
-};
 </script>
 
 <template>
@@ -85,25 +79,15 @@ const handleTouchSidebarModelUpdate = value => {
         :conversation-id="currentChat.id"
         :inbox-id="currentChat.inbox_id"
       />
-      <TouchEditorDrawer
-        v-if="activeTab === 'touch'"
-        model-value
-        display-mode="sidebar"
-        :conversation-id="currentChat.id"
-        :inbox-id="currentChat.inbox_id"
-        :create-title="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
-        :create-label="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
-        :success-created-message="
-          $t('OUTBOUND_WORKSPACE.TOUCHES.EDITOR.SUCCESS_CREATED')
-        "
-        :success-updated-message="
-          $t('OUTBOUND_WORKSPACE.TOUCHES.EDITOR.SUCCESS_UPDATED')
-        "
-        remindable-type="Conversation"
-        :remindable-id="currentChat.id"
-        @update:model-value="handleTouchSidebarModelUpdate"
-        @close="handleTouchSidebarModelUpdate(false)"
-      />
+      <div v-if="activeTab === 'touch'" class="min-w-0 flex-1 p-3">
+        <EntityTouchesCard
+          :conversation-id="currentChat.id"
+          :title="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
+          :description="$t('CONVERSATION.REPLYBOX.DELAYED_MESSAGE_DESCRIPTION')"
+          remindable-type="Conversation"
+          :remindable-id="currentChat.id"
+        />
+      </div>
     </div>
   </div>
 </template>

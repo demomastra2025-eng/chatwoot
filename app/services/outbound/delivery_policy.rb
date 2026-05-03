@@ -1,7 +1,9 @@
 class Outbound::DeliveryPolicy
   VALID_CONTENT_KINDS = %w[free_text channel_template].freeze
-  WHATSAPP_TEMPLATE_REQUIRED_REASON = 'WhatsApp Business API requires an approved channel_template when the 24-hour customer service window is closed'.freeze
-  TEMPLATE_ATTACHMENTS_UNSUPPORTED_REASON = 'Native attachments cannot be combined with channel_template messages; use template header/media parameters instead'.freeze
+  WHATSAPP_TEMPLATE_REQUIRED_REASON = 'Official WhatsApp Business API requires an approved channel_template ' \
+                                      'when the 24-hour customer service window is closed'
+  TEMPLATE_ATTACHMENTS_UNSUPPORTED_REASON = 'Native attachments cannot be combined with channel_template messages; ' \
+                                            'use template header/media parameters instead'
 
   Result = Struct.new(
     :allowed,
@@ -72,7 +74,7 @@ class Outbound::DeliveryPolicy
   attr_reader :conversation, :inbox, :content_kind, :template_params, :attachments, :scheduled_at
 
   def evaluate_free_text
-    return allowed_result(delivery_mode: 'free_text') unless whatsapp_business_channel?
+    return allowed_result(delivery_mode: 'free_text') unless official_whatsapp_channel?
     return allowed_result(delivery_mode: 'free_text', reply_window_open: true) if reply_window_open_at_delivery?
 
     denied_result(
@@ -135,14 +137,14 @@ class Outbound::DeliveryPolicy
   end
 
   def reply_window_value(value = nil)
-    return nil unless whatsapp_business_channel?
+    return nil unless official_whatsapp_channel?
     return value unless value.nil?
 
     reply_window_open_at_delivery?
   end
 
-  def whatsapp_business_channel?
-    channel.is_a?(Channel::Whatsapp) || twilio_whatsapp?
+  def official_whatsapp_channel?
+    channel.is_a?(Channel::Whatsapp)
   end
 
   def channel_template_supported?
@@ -154,7 +156,7 @@ class Outbound::DeliveryPolicy
   end
 
   def reply_window_open_at_delivery?
-    return true unless whatsapp_business_channel?
+    return true unless official_whatsapp_channel?
     return false if conversation.blank?
     return false if reply_window_closes_at.blank?
 
@@ -162,7 +164,7 @@ class Outbound::DeliveryPolicy
   end
 
   def reply_window_closes_at
-    return unless whatsapp_business_channel?
+    return unless official_whatsapp_channel?
 
     last_incoming_message&.created_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
   end

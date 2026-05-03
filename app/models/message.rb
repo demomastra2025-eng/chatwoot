@@ -448,8 +448,16 @@ class Message < ApplicationRecord
     return unless captain_pending_conversation?
     return unless human_response?
     return if private?
+    return if scheduled_touch_message?
 
     conversation.open!
+  end
+
+  def scheduled_touch_message?
+    touch_content_attributes = content_attributes.to_h.with_indifferent_access
+    touch_additional_attributes = additional_attributes.to_h.with_indifferent_access
+
+    touch_content_attributes[:touch_id].present? || touch_additional_attributes[:touch_id].present?
   end
 
   def captain_pending_conversation?

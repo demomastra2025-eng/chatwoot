@@ -96,6 +96,52 @@ RSpec.describe Reminder do
     end
   end
 
+  describe 'official WhatsApp delivery policy' do
+    it 'rejects manual free-text touches when the scheduled delivery is outside the 24-hour window' do
+      account = create(:account)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: :incoming, created_at: 1.hour.ago)
+
+      reminder = build(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        scheduled_at: 25.hours.from_now,
+        body: 'Future free text'
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+    end
+
+    it 'treats AI-generated touch instructions as free text for the official WhatsApp window policy' do
+      account = create(:account)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: :incoming, created_at: 1.hour.ago)
+
+      reminder = build(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        text_mode: :agent,
+        body: nil,
+        instructions: 'Write a friendly follow-up',
+        scheduled_at: 25.hours.from_now
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+    end
+  end
+
   describe 'status defaults' do
     it 'falls back to draft when routing is incomplete' do
       account = create(:account)

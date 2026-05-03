@@ -120,6 +120,31 @@ RSpec.describe Campaign do
     end
   end
 
+  describe 'official WhatsApp delivery policy' do
+    let(:account) { create(:account) }
+    let(:label) { create(:label, account: account, title: 'vip') }
+    let(:audience) { [{ type: 'Label', id: label.id }] }
+
+    before do
+      account.enable_features!(:whatsapp_campaign)
+    end
+
+    it 'rejects free-text one-off campaigns that will deliver after the 24-hour window closes' do
+      channel = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      inbox = channel.inbox
+      contact = create(:contact, account: account, phone_number: '+15550001116')
+      contact.update_labels([label.title])
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 1.hour.ago)
+
+      campaign = build(:campaign, account: account, inbox: inbox, audience: audience, scheduled_at: 25.hours.from_now, message: 'Future free text')
+
+      expect(campaign).not_to be_valid
+      expect(campaign.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+    end
+  end
+
   describe 'ensure_correct_campaign_attributes' do
     context 'when Twilio SMS campaign' do
       let(:account) { create(:account) }

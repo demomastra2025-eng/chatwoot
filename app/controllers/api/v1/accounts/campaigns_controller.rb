@@ -35,7 +35,8 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
       message: permitted_campaign_params[:message],
       instructions: permitted_campaign_params[:instructions],
       text_mode: permitted_campaign_params[:text_mode],
-      template_params: permitted_campaign_params[:template_params]
+      template_params: permitted_campaign_params[:template_params],
+      scheduled_at: permitted_campaign_params[:scheduled_at]
     ).call
   end
 

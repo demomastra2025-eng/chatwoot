@@ -9,7 +9,7 @@ class Campaigns::PreviewService
     requires_template
   ].freeze
 
-  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params]
+  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params, :scheduled_at]
 
   def call
     {
@@ -118,8 +118,13 @@ class Campaigns::PreviewService
     return false unless capabilities[:requires_template_for_outside_window]
     return false if template_params.present?
 
-    conversation = latest_conversation_for(contact)
-    conversation.blank? || !conversation.can_reply?
+    policy = Outbound::DeliveryPolicy.evaluate(
+      conversation: latest_conversation_for(contact),
+      inbox: inbox,
+      content_kind: 'free_text',
+      scheduled_at: scheduled_at
+    )
+    !policy.allowed? && policy.requires_template
   end
 
   def requires_open_reply_window?(contact)

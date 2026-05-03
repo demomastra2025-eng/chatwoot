@@ -55,7 +55,7 @@ class AutomationRules::TouchActionService
   end
 
   def load_touch_plan!(action_params)
-    reminder_group = account.reminder_groups.kept.find_by(id: normalized_action_param(action_params))
+    reminder_group = account.reminder_groups.kept.find_by(id: normalize_action_param(action_params))
     raise ArgumentError, 'apply_touch_plan requires a valid touch plan' if reminder_group.blank?
     raise ArgumentError, 'Touch plan does not support this entity type' unless reminder_group.entity_kind_supported?(entity_kind)
 

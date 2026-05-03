@@ -12,7 +12,11 @@ RSpec.describe AutomationRules::AppointmentActionService do
       event_name: 'appointment_updated',
       conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
       actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
-      )
+    )
+  end
+
+  before do
+    account.enable_features!('scheduling')
   end
 
   it 'enqueues a webhook with appointment payload and changed attributes' do

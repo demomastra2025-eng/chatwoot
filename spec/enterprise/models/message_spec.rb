@@ -97,5 +97,19 @@ RSpec.describe Message do
 
       expect(conversation.reload.pending?).to be true
     end
+
+    it 'does not mark the conversation open for scheduled touch messages sent by a user' do
+      expect do
+        create(
+          :message,
+          message_type: :outgoing,
+          conversation: conversation,
+          sender: create(:user, account: conversation.account),
+          content_attributes: { touch_id: 123, touch_source: 'touch' }
+        )
+      end.not_to have_enqueued_job(Conversations::ActivityMessageJob)
+
+      expect(conversation.reload.pending?).to be true
+    end
   end
 end

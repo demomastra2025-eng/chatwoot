@@ -38,6 +38,8 @@ module Concerns::Agentable
         end
 
       enhanced_context = enhanced_context.merge(
+        runtime_clock: state[:runtime_clock] || {},
+        reply_window: state[:reply_window] || {},
         conversation: conversation_data,
         contact: contact_data,
         deal: deal_data,
@@ -99,6 +101,8 @@ module Concerns::Agentable
       task: nil,
       appointment: nil,
       campaign: {},
+      runtime_clock: {},
+      reply_window: {},
       conversation_visible_fields: [],
       contact_visible_fields: [],
       deal_visible_fields: [],

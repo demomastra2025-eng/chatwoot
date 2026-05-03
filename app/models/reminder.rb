@@ -147,6 +147,7 @@ class Reminder < ApplicationRecord
   validate :validate_account_matches
   validate :validate_json_field_shapes
   validate :validate_content_requirements
+  validate :validate_delivery_policy
   validate :validate_repeat_requirements
   validate :validate_open_duplicate_absence
 
@@ -477,6 +478,40 @@ class Reminder < ApplicationRecord
     elsif free_text? && !agent? && body.blank? && attachments.blank? && !files.attached?
       errors.add(:body, 'must be present for message touches')
     end
+  end
+
+  def validate_delivery_policy
+    return unless delivery_policy_ready_for_validation?
+
+    ::Outbound::DeliveryPolicy.ensure!(
+      conversation: delivery_policy_conversation,
+      inbox: target_inbox,
+      content_kind: delivery_policy_content_kind,
+      template_params: template_params,
+      attachments: attachments,
+      scheduled_at: scheduled_at
+    )
+  rescue ArgumentError => e
+    errors.add(:base, e.message)
+  end
+
+  def delivery_policy_ready_for_validation?
+    return false unless send_message?
+    return false if target_inbox.blank? || scheduled_at.blank?
+    return true if channel_template? && template_params.present?
+    return true if agent? && instructions.present?
+
+    free_text? && (body.present? || attachments.present? || files.attached?)
+  end
+
+  def delivery_policy_content_kind
+    return 'channel_template' if channel_template? || template_params.present?
+
+    'free_text'
+  end
+
+  def delivery_policy_conversation
+    target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
   end
 
   def validate_repeat_requirements

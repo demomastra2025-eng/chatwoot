@@ -678,6 +678,37 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(rendered).to include('Act as the main orchestrator for this conversation')
     end
 
+    it 'renders runtime clock details when the run context provides them' do
+      context_double = instance_double(
+        Captain::Runtime::RunContext,
+        context: {
+          state: {
+            runtime_clock: {
+              now_utc: '2026-05-03T14:00:00Z',
+              now_local: '2026-05-03T19:00:00+05:00',
+              timezone: 'Asia/Almaty',
+              date_local: '2026-05-03',
+              time_local: '19:00:00'
+            },
+            reply_window: {
+              channel: 'official_whatsapp',
+              last_incoming_at: '2026-05-03T10:00:00Z',
+              closes_at: '2026-05-04T10:00:00Z',
+              open_now: true
+            }
+          }
+        }
+      )
+
+      rendered = assistant.agent_instructions(context_double)
+
+      expect(rendered).to include('# Current Date and Time')
+      expect(rendered).to include('Current local time: 2026-05-03T19:00:00+05:00')
+      expect(rendered).to include('Timezone: Asia/Almaty')
+      expect(rendered).to include('# Official WhatsApp Reply Window')
+      expect(rendered).to include('24-hour window closes at: 2026-05-04T10:00:00Z')
+    end
+
     it 'prioritizes explicit context, language mirroring, and single-question flow in default rules' do
       rendered = assistant.agent_instructions
 

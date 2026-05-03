@@ -94,16 +94,16 @@ RSpec.describe Outbound::DeliveryPolicy do
       end
     end
 
-    it 'treats Twilio WhatsApp as a WhatsApp Business channel' do
+    it 'does not apply official WhatsApp 24-hour template rules to Twilio WhatsApp' do
       twilio_channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
       twilio_inbox = create(:inbox, channel: twilio_channel, account: account)
       conversation = conversation_for(twilio_inbox)
 
-      result = described_class.evaluate(conversation: conversation, content_kind: 'free_text')
+      result = described_class.evaluate(conversation: conversation, content_kind: 'free_text', scheduled_at: 3.days.from_now)
 
-      expect(result).not_to be_allowed
+      expect(result).to be_allowed
       expect(result.provider).to eq('twilio_whatsapp')
-      expect(result.requires_template).to be(true)
+      expect(result.requires_template).to be(false)
     end
 
     it 'allows Twilio WhatsApp content templates by content_sid' do

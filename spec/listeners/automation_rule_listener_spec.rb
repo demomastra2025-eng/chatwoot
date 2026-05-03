@@ -220,6 +220,14 @@ describe AutomationRuleListener do
         expect(AutomationRules::ActionService).not_to have_received(:new)
       end
 
+      it 'does not call AutomationRules::ActionService if message was created by a scheduled touch' do
+        message.update!(content_attributes: { touch_id: 123, touch_source: 'touch' })
+        allow(condition_match).to receive(:present?).and_return(true)
+
+        listener.message_created(event)
+        expect(AutomationRules::ActionService).not_to have_received(:new)
+      end
+
       it 'calls AutomationRules::ActionService if message is a private note' do
         message.update!(private: true)
         allow(condition_match).to receive(:present?).and_return(true)

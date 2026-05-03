@@ -55,6 +55,23 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(touch.relative_offset_seconds).to eq(-3600)
     end
 
+    it 'defaults relative offsets from now to the touch creation time' do
+      freeze_time do
+        touch = described_class.new(
+          assistant: assistant,
+          conversation: conversation,
+          actor: user
+        ).create_touch(
+          body: 'Ping in three minutes',
+          relative_offset_minutes: 3
+        )
+
+        expect(touch.relative_anchor).to eq('touch.created_at')
+        expect(touch.relative_offset_seconds).to eq(180)
+        expect(touch.scheduled_at).to be_within(1.second).of(3.minutes.from_now)
+      end
+    end
+
     it 'uses the same template detection pattern for touch bodies' do
       touch = described_class.new(
         assistant: assistant,
@@ -174,6 +191,36 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
         operation.create_touch(
           body: 'Scheduled free text',
           scheduled_at: 25.hours.from_now.iso8601
+        )
+      end.to raise_error(ArgumentError, /approved channel_template/)
+    end
+
+    it 'fails fast for relative WhatsApp Business free text when the reply window will be closed at delivery time' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: whatsapp_inbox)
+      whatsapp_conversation = create(
+        :conversation,
+        account: account,
+        inbox: whatsapp_inbox,
+        contact: conversation.contact,
+        contact_inbox: contact_inbox
+      )
+      create(
+        :message,
+        account: account,
+        inbox: whatsapp_inbox,
+        conversation: whatsapp_conversation,
+        message_type: 'incoming',
+        created_at: 1.hour.ago
+      )
+      operation = described_class.new(assistant: assistant, conversation: whatsapp_conversation, actor: user)
+
+      expect do
+        operation.create_touch(
+          body: 'Relative free text',
+          relative_anchor: 'touch.created_at',
+          relative_offset_minutes: 25.hours.in_minutes
         )
       end.to raise_error(ArgumentError, /approved channel_template/)
     end

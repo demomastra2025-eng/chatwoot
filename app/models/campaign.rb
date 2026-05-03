@@ -56,6 +56,7 @@ class Campaign < ApplicationRecord
   validate :captain_assistant_must_be_connected_to_inbox
   validate :inbox_must_belong_to_account
   validate :validate_ai_authoring_availability
+  validate :validate_official_whatsapp_delivery_policy
 
   belongs_to :account
   belongs_to :inbox
@@ -233,6 +234,31 @@ class Campaign < ApplicationRecord
     return if captain_assistant.present?
 
     errors.add(:inbox_id, 'must have a configured AI assistant')
+  end
+
+  def validate_official_whatsapp_delivery_policy
+    return unless one_off?
+    return if account.blank?
+    return unless inbox&.channel.is_a?(Channel::Whatsapp)
+    return if campaign_channel_template?
+
+    preview = Campaigns::PreviewService.new(
+      account: account,
+      inbox: inbox,
+      audience: audience,
+      message: message,
+      instructions: instructions,
+      text_mode: text_mode,
+      template_params: template_params,
+      scheduled_at: scheduled_at
+    ).call
+    return unless preview.dig(:totals, 'requires_template').to_i.positive?
+
+    errors.add(:base, Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+  end
+
+  def campaign_channel_template?
+    template_params.present?
   end
 
   def assign_captain_assistant_from_inbox

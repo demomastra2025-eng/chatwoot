@@ -75,6 +75,48 @@ RSpec.describe AutomationRules::ActionService do
       end
     end
 
+    describe '#perform with apply_touch_plan action' do
+      let(:touch_plan) do
+        create(
+          :reminder_group,
+          account: account,
+          entity_kinds: ['conversation'],
+          touches: [
+            {
+              action_type: 'send_message',
+              content_kind: 'free_text',
+              text_mode: 'static',
+              timing_mode: 'relative',
+              relative_anchor: 'touch.created_at',
+              relative_offset_seconds: 60,
+              timezone: 'UTC',
+              body: 'Follow up',
+              attachments: [],
+              template_params: {},
+              metadata: {}
+            }
+          ]
+        )
+      end
+
+      before do
+        rule.actions = [{ action_name: 'apply_touch_plan', action_params: [touch_plan.id] }]
+        rule.save!
+      end
+
+      it 'creates pending touches from the touch plan for the conversation' do
+        expect do
+          described_class.new(rule, account, conversation).perform
+        end.to change { account.reminders.where(reminder_group: touch_plan, remindable: conversation).count }.by(1)
+
+        touch = account.reminders.where(reminder_group: touch_plan, remindable: conversation).last
+        expect(touch).to be_pending
+        expect(touch.target_inbox).to eq(conversation.inbox)
+        expect(touch.target_contact).to eq(conversation.contact)
+        expect(touch.target_conversation).to eq(conversation)
+      end
+    end
+
     describe '#perform with send_email_to_team action' do
       let!(:team) { create(:team, account: account) }
 

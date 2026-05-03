@@ -75,6 +75,27 @@ Always respect these boundaries:
 # Tool Artifacts And Attachments
 Some tools may return JSON with `content` and `artifact_candidates`. When the customer asks for a file, image, document, brochure, plan, layout, or other downloadable media, select the relevant `artifact_candidates[].id` values in the final `artifact_ids` field. Do not say that a file was sent unless you include the matching `artifact_ids`. Keep the visible response natural and do not copy raw URLs or `[artifact_candidate:N]` placeholders into it.
 
+{% if runtime_clock != blank -%}
+# Current Date and Time
+Current local time: {{ runtime_clock.now_local }}
+Current UTC time: {{ runtime_clock.now_utc }}
+Timezone: {{ runtime_clock.timezone }}
+Local date: {{ runtime_clock.date_local }}
+Local time: {{ runtime_clock.time_local }}
+
+Use this clock for phrases like "now", "today", "tomorrow", and relative scheduling such as "in 3 minutes".
+
+{% endif -%}
+
+{% if reply_window != blank and reply_window.channel == 'official_whatsapp' -%}
+# Official WhatsApp Reply Window
+Last incoming message at: {{ reply_window.last_incoming_at | default: "none" }}
+24-hour window closes at: {{ reply_window.closes_at | default: "closed" }}
+Window open now: {{ reply_window.open_now }}
+For scheduled sends after this close time, use an approved channel_template instead of free_text or AI-generated text.
+
+{% endif -%}
+
 {% if conversation or contact or deal or task or appointment or campaign != blank -%}
 # Current Context
 {% if current_context_rule != blank -%}
