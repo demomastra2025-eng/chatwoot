@@ -293,9 +293,9 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'create_deal')
-      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'create_deal')
-      expect(assistant.send(:agent_tools).map(&:class)).to contain_exactly(Captain::Tools::FaqLookupTool, Captain::Tools::CreateDealTool)
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
+      expect(assistant.send(:agent_tools).map(&:name)).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
     end
 
     it 'does not expose scenario-only template tool references in the root assistant prompt' do

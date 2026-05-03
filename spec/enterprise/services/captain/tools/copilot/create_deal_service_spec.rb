@@ -48,5 +48,18 @@ RSpec.describe Captain::Tools::Copilot::CreateDealService do
       expect(result).not_to include('Amount Minor')
       expect(result).not_to include('20000')
     end
+
+    it 'creates a deal in a selected non-default pipeline and stage' do
+      default_pipeline = create(:crm_pipeline, account: account, name: 'Andalusiya', code: 'andalusiya', default: true)
+      create(:crm_stage, account: account, pipeline: default_pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')
+      target_pipeline = create(:crm_pipeline, account: account, name: 'Andalusiya2', code: 'andalusiya2')
+      target_stage = create(:crm_stage, account: account, pipeline: target_pipeline, name: 'Новый', code: 'new', position: 1, color: '#222222')
+
+      service.execute(title: 'Pipeline-specific deal', pipeline_code: 'andalusiya2', stage_code: 'new')
+
+      deal = account.crm_deals.order(:id).last
+      expect(deal.pipeline_id).to eq(target_pipeline.id)
+      expect(deal.stage_id).to eq(target_stage.id)
+    end
   end
 end

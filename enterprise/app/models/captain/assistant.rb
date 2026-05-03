@@ -62,6 +62,8 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
+  CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
+  CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
   SYSTEM_TEMPLATE_SLOT_LABELS = {
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT => 'Assistant system context',
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY => 'Assistant identity',
@@ -477,7 +479,7 @@ class Captain::Assistant < ApplicationRecord
     return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
 
     available_ids = available_tool_ids
-    explicit_tool_ids = Array(referenced_tool_ids).map(&:to_s)
+    explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
 
     (scenario_default_tool_ids + explicit_tool_ids)
       .uniq
@@ -1103,11 +1105,18 @@ class Captain::Assistant < ApplicationRecord
     available_ids = available_tool_ids_for_scope(scope_name)
     selected_ids = selected_tool_ids_for_scope(scope_name)
     default_ids = default_tool_ids_for_scope(scope_name)
-    explicit_tool_ids = Array(referenced_tool_ids).map(&:to_s)
+    explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
 
     ((selected_ids & default_ids) + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
+  end
+
+  def companion_expanded_tool_ids(tool_ids)
+    normalized_tool_ids = Array(tool_ids).map(&:to_s).uniq
+    return normalized_tool_ids if (normalized_tool_ids & CRM_DEAL_PIPELINE_AWARE_TOOL_IDS).empty?
+
+    (normalized_tool_ids + CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS).uniq
   end
 
   def tool_scope_enabled?(scope_name)

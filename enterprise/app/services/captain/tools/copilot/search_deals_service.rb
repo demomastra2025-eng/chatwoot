@@ -3,20 +3,26 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     'search_deals'
   end
 
-  description 'Search CRM deals by title, stage, owner, or company'
+  description 'Search CRM deals by title, pipeline, stage, owner, or company. Use pipeline/stage filters to avoid duplicate stage-name ambiguity.'
   param :query, type: :string, desc: 'Deal title or external reference query', required: false
-  param :stage_name, type: :string, desc: 'Stage name', required: false
+  param :pipeline_id, type: :number, desc: 'Pipeline ID from list_deal_pipelines', required: false
+  param :pipeline_code, type: :string, desc: 'Pipeline code from list_deal_pipelines', required: false
+  param :stage_id, type: :number, desc: 'Stage ID from list_deal_stages/list_deal_pipelines', required: false
+  param :stage_name, type: :string, desc: 'Stage name; use with pipeline_id/pipeline_code when names repeat across pipelines', required: false
+  param :stage_code, type: :string, desc: 'Stage code; use with pipeline_id/pipeline_code when codes repeat across pipelines', required: false
   param :owner_id, type: :number, desc: 'Owner user ID', required: false
   param :company_id, type: :number, desc: 'Company ID', required: false
   param :archived, type: :boolean, desc: 'Whether to search archived deals', required: false
   param :limit, type: :number, desc: 'Maximum number of deals to return', required: false
 
-  def execute(query: nil, stage_name: nil, owner_id: nil, company_id: nil, archived: nil, limit: nil)
+  def execute(query: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil,
+              owner_id: nil, company_id: nil, archived: nil, limit: nil)
     deals = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
     deals = cast_boolean(archived) ? deals.archived : deals.kept
+    deals = apply_pipeline_filter(deals, pipeline_id: pipeline_id, pipeline_code: pipeline_code)
+    deals = apply_stage_filter(deals, stage_id: stage_id, stage_name: stage_name, stage_code: stage_code)
     deals = deals.where(owner_id: owner_id) if owner_id.present?
     deals = deals.where(company_id: company_id) if company_id.present?
-    deals = deals.joins(:stage).where('LOWER(crm_stages.name) = ?', stage_name.to_s.downcase) if stage_name.present?
     deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query.strip}%") if query.present?
 
     total_count = deals.count
@@ -25,7 +31,11 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     formatted_payload(
       filters: {
         query: query,
+        pipeline_id: pipeline_id,
+        pipeline_code: pipeline_code,
+        stage_id: stage_id,
         stage_name: stage_name,
+        stage_code: stage_code,
         owner_id: owner_id,
         company_id: company_id,
         archived: cast_boolean(archived)
@@ -37,5 +47,26 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
 
   def active?
     feature_enabled?('crm_deals') && (user_has_permission('crm_deal_view') || user_has_permission('crm_deal_manage'))
+  end
+
+  private
+
+  def apply_pipeline_filter(deals, pipeline_id:, pipeline_code:)
+    return deals.where(pipeline_id: pipeline_id) if pipeline_id.present?
+    return deals.joins(:pipeline).where(crm_pipelines: { code: normalized_code(pipeline_code) }) if pipeline_code.present?
+
+    deals
+  end
+
+  def apply_stage_filter(deals, stage_id:, stage_name:, stage_code:)
+    return deals.where(stage_id: stage_id) if stage_id.present?
+    return deals.joins(:stage).where(crm_stages: { code: normalized_code(stage_code) }) if stage_code.present?
+    return deals.joins(:stage).where('LOWER(crm_stages.name) = ?', stage_name.to_s.strip.downcase) if stage_name.present?
+
+    deals
+  end
+
+  def normalized_code(value)
+    ::Crm::CodeNormalizer.normalize(value)
   end
 end

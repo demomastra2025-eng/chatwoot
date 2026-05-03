@@ -335,7 +335,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_deals',
           title: 'Search Deals',
-          description: 'Search CRM deals by title, stage, owner, or company',
+          description: 'Search CRM deals by title, pipeline, stage, owner, or company',
           group_name: 'CRM Deals',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -344,6 +344,34 @@ class Captain::ToolRegistry
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_view crm_deal_manage],
           risk_level: 'low'
+        ),
+        definition(
+          id: 'list_deal_pipelines',
+          title: 'List Deal Pipelines',
+          description: 'List active CRM deal pipelines with ordered stages and stage IDs. Use before creating or moving deals.',
+          group_name: 'CRM Deals',
+          icon: 'table',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::ListDealPipelinesService,
+          required_features: %w[crm_deals],
+          required_permissions: %w[crm_deal_view crm_deal_manage],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'list_deal_stages',
+          title: 'List Deal Stages',
+          description: 'List ordered CRM deal stages for a pipeline/current deal with previous and next stage IDs.',
+          group_name: 'CRM Deals',
+          icon: 'list',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::ListDealStagesService,
+          required_features: %w[crm_deals],
+          required_permissions: %w[crm_deal_view crm_deal_manage],
+          risk_level: 'low',
+          idempotent: true
         ),
         definition(
           id: 'get_deal_timeline',
@@ -361,7 +389,7 @@ class Captain::ToolRegistry
         definition(
           id: 'create_deal',
           title: 'Create Deal',
-          description: 'Create a CRM deal from the current conversation context',
+          description: 'Create a CRM deal from current conversation context; supports pipeline_id/pipeline_code/stage_id from CRM pipeline catalog',
           group_name: 'CRM Deals',
           icon: 'money',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -375,7 +403,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_deal',
           title: 'Update Deal',
-          description: 'Update the CRM deal linked to the current conversation',
+          description: 'Update the CRM deal linked to current conversation; can move to a pipeline-aware stage using stage_id or pipeline-scoped stage code/name',
           group_name: 'CRM Deals',
           icon: 'money-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -388,7 +416,7 @@ class Captain::ToolRegistry
         definition(
           id: 'transition_deal_stage',
           title: 'Transition Deal Stage',
-          description: 'Move the CRM deal linked to the current conversation to another stage',
+          description: 'Move current conversation deal by stage_id or stage_action next/previous within the current pipeline position order',
           group_name: 'CRM Deals',
           icon: 'arrow-right',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

@@ -1,7 +1,12 @@
 class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
-  description 'Update the CRM deal linked to the current conversation'
+  description 'Update the CRM deal linked to the current conversation. Use list_deal_pipelines/list_deal_stages before changing pipeline or stage.'
   param :title, type: 'string', desc: 'Updated deal title', required: false
   param :description, type: 'string', desc: 'Updated deal description', required: false
+  param :pipeline_id, type: 'number', desc: 'Pipeline ID for moving the deal; usually pair with stage_id', required: false
+  param :pipeline_code, type: 'string', desc: 'Pipeline code for moving the deal; optional alternative to pipeline_id', required: false
+  param :stage_id, type: 'number', desc: 'Target stage ID from list_deal_stages/list_deal_pipelines', required: false
+  param :stage_name, type: 'string', desc: 'Target stage name; only use with pipeline_id/pipeline_code if names repeat', required: false
+  param :stage_code, type: 'string', desc: 'Target stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
   param :amount,
         type: 'string',
         desc: 'Updated amount in major units; prefer this over amount_minor',
@@ -13,7 +18,8 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
   param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
   def perform(tool_context, title: nil, description: nil, amount: nil, amount_minor: nil, currency: nil,
-              expected_close_on: nil, win_probability: nil, custom_attributes: nil)
+              expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
+              pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil)
     deal = operations(tool_context.state).update_current_deal(
       title: title,
       description: description,
@@ -22,7 +28,12 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,
-      custom_attributes: custom_attributes
+      custom_attributes: custom_attributes,
+      pipeline_id: pipeline_id,
+      pipeline_code: pipeline_code,
+      stage_id: stage_id,
+      stage_name: stage_name,
+      stage_code: stage_code
     )
 
     JSON.pretty_generate(

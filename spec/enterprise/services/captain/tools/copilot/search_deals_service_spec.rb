@@ -29,5 +29,21 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
         'company_id' => company.id
       )
     end
+
+    it 'filters deals by pipeline and stage identifiers without relying on duplicate stage names' do
+      other_pipeline = create(:crm_pipeline, account: account, code: 'andalusiya')
+      duplicate_stage = create(:crm_stage, account: account, pipeline: other_pipeline, name: 'Qualified', code: 'qualified', color: '#111111')
+      other_deal = create(:crm_deal, account: account, title: 'Other pipeline deal', pipeline: other_pipeline, stage: duplicate_stage)
+
+      by_pipeline = JSON.parse(service.execute(pipeline_id: pipeline.id))
+      by_stage = JSON.parse(service.execute(pipeline_code: pipeline.code.titleize, stage_code: stage.code.titleize))
+
+      expect(by_pipeline['filters']).to include('pipeline_id' => pipeline.id)
+      expect(by_pipeline['deals'].map { |deal| deal['id'] }).to include(deal1.id, deal2.id)
+      expect(by_pipeline['deals'].map { |deal| deal['id'] }).not_to include(other_deal.id)
+
+      expect(by_stage['filters']).to include('pipeline_code' => pipeline.code.titleize, 'stage_code' => stage.code.titleize)
+      expect(by_stage['deals'].map { |deal| deal['id'] }).to contain_exactly(deal1.id, deal2.id)
+    end
   end
 end
