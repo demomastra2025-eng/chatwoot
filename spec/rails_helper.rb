@@ -1,5 +1,15 @@
 require 'spec_helper'
 ENV['RAILS_ENV'] ||= 'test'
+
+if ENV['RAILS_ENV'] == 'test'
+  ENV['NODE_ENV'] ||= 'test'
+
+  postgres_database = ENV.fetch('POSTGRES_DATABASE', nil)
+  unsafe_test_database = postgres_database.to_s.empty? ||
+                         %w[chatwoot_dev chatwoot_production].include?(postgres_database)
+  ENV['POSTGRES_DATABASE'] = ENV.fetch('POSTGRES_TEST_DATABASE', 'chatwoot_test') if unsafe_test_database
+end
+
 require File.expand_path('../config/environment', __dir__)
 # Prevent database truncation if the environment is production
 abort('The Rails environment is running in production mode!') if Rails.env.production?

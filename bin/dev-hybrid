@@ -70,6 +70,27 @@ Usage:
 EOF
 }
 
+setup_ruby_environment() {
+  local rbenv_root candidate
+
+  for candidate in "${RBENV_ROOT:-}" "${HOME:-}/.rbenv" /root/.rbenv; do
+    [[ -n "${candidate}" ]] || continue
+    [[ -x "${candidate}/bin/rbenv" ]] || continue
+    rbenv_root="${candidate}"
+    break
+  done
+
+  [[ -n "${rbenv_root:-}" ]] || return
+
+  export RBENV_ROOT="${rbenv_root}"
+  export PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:${PATH}"
+
+  if command -v rbenv >/dev/null 2>&1; then
+    eval "$(rbenv init - bash)"
+  fi
+}
+
+setup_ruby_environment
 load_env
 
 guard_dev_environment() {
