@@ -160,12 +160,14 @@ class Captain::CustomTool < ApplicationRecord
     def stringify_param_value(value)
       case value
       when Hash, Array
-        JSON.generate(value)
+        JSON.generate(Captain::EncodingNormalizer.utf8(value))
+      when String
+        Captain::EncodingNormalizer.string(value)
       else
         value.to_s
       end
     rescue JSON::GeneratorError
-      value.to_s
+      Captain::EncodingNormalizer.string(value.to_s)
     end
   end
 

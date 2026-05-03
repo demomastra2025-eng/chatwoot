@@ -54,6 +54,60 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
     end)
   end
 
+  it 'normalizes binary-encoded HTTP response bodies before returning them to Captain runtime' do
+    custom_tool.update!(response_template: nil)
+    binary_body = '{"status":"принято"}'.dup.force_encoding(Encoding::ASCII_8BIT)
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 200, body: binary_body)
+
+    result = nil
+    expect do
+      result = executor.call('lead_name' => 'Alice')
+      JSON.generate([{ role: 'tool', content: result }])
+    end.not_to output(/UTF-8 string passed as BINARY/).to_stderr
+
+    expect(result).to eq('{"status":"принято"}')
+    expect(result.encoding).to eq(Encoding::UTF_8)
+  end
+
+  it 'keeps raw upstream body hidden when result safety blocks details response' do
+    custom_tool.update!(response_template: nil)
+    remove_request_stub(lead_request_stub)
+    stub_request(:post, 'https://example.com/leads')
+      .with(body: '{"lead_name":"Alice","phone":"customer-phone"}')
+      .to_return(status: 200, body: '{"status":"blocked marker"}')
+    safety_executor = described_class.new(
+      assistant: assistant,
+      custom_tool: custom_tool,
+      state: state,
+      feature: :assistant,
+      enforce_safety: true
+    )
+    allow(Llm::SafetyPolicy).to receive(:check!) do |stage:, **|
+      if stage == :tool_results
+        raise Llm::SafetyPolicy::UnsafeContentError.new(
+          feature: :assistant,
+          stage: :tool_results,
+          reason: :custom_blocklist
+        )
+      end
+
+      Llm::SafetyPolicy::CheckResult.new(status: :allowed, feature: :assistant, stage: stage)
+    end
+
+    result = safety_executor.execute_with_details({ 'lead_name' => 'Alice' }, raise_on_http_error: false)
+
+    expect(result[:response]).to include(
+      blocked: true,
+      formatted_body: 'ERROR: Tool result blocked by safety policy',
+      stage: :tool_results
+    )
+    expect(result[:response]).not_to have_key(:body)
+    expect(result[:response].to_json).not_to include('blocked marker')
+  end
+
   it 'retries transient upstream errors for search apartments tool before failing over' do
     custom_tool.update!(slug: 'custom_search_apartments')
     allow(executor).to receive(:sleep)

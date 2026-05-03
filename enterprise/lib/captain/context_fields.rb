@@ -678,14 +678,16 @@ class Captain::ContextFields
       when nil
         nil
       when Array
-        value.join(', ')
+        value.map { |item| Captain::EncodingNormalizer.string(item.to_s) }.join(', ')
       when Hash
-        JSON.generate(value)
+        JSON.generate(Captain::EncodingNormalizer.utf8(value))
+      when String
+        Captain::EncodingNormalizer.string(value).presence
       else
         value.to_s.presence
       end
     rescue JSON::GeneratorError
-      value.to_s.presence
+      Captain::EncodingNormalizer.string(value.to_s).presence
     end
 
     def clean_reference_label(label, definition)

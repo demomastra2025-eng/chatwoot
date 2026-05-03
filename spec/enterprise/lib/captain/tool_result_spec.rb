@@ -69,6 +69,31 @@ RSpec.describe Captain::ToolResult do
       )
     end
 
+    it 'normalizes binary-encoded strings before rendering JSON payloads' do
+      binary_text = 'Принято'.dup.force_encoding(Encoding::ASCII_8BIT)
+      rendered = nil
+
+      expect do
+        rendered = described_class.render(described_class.success(data: { status: binary_text }))
+      end.not_to output(/UTF-8 string passed as BINARY/).to_stderr
+
+      expect(JSON.parse(rendered)).to eq('status' => 'Принято')
+      expect(rendered.encoding).to eq(Encoding::UTF_8)
+    end
+
+    it 'normalizes binary-encoded success messages before returning tool content' do
+      binary_message = 'Принято'.dup.force_encoding(Encoding::ASCII_8BIT)
+      rendered = nil
+
+      expect do
+        rendered = described_class.render(described_class.success(message: binary_message))
+        JSON.generate([{ role: 'tool', content: rendered }])
+      end.not_to output(/UTF-8 string passed as BINARY/).to_stderr
+
+      expect(rendered).to eq('Принято')
+      expect(rendered.encoding).to eq(Encoding::UTF_8)
+    end
+
     it 'renders halting tool results as their content' do
       expect(described_class.render(RubyLLM::Tool::Halt.new('Transferred'))).to eq('Transferred')
     end

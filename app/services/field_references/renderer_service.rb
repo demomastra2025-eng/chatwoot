@@ -1,6 +1,6 @@
 class FieldReferences::RendererService
-  FIELD_REFERENCE_REGEX = %r{\[([^\]]+)\]\(field://([^)]+)\)}.freeze
-  RAW_BLOCK_REGEX = /({% raw %}.*?{% endraw %})/m.freeze
+  FIELD_REFERENCE_REGEX = %r{\[([^\]]+)\]\(field://([^)]+)\)}
+  RAW_BLOCK_REGEX = /({% raw %}.*?{% endraw %})/m
   CONTACT_STATE_ATTRIBUTES = %i[
     id name email phone_number identifier contact_type
     custom_attributes additional_attributes
@@ -153,17 +153,11 @@ class FieldReferences::RendererService
   def value_for(state, path)
     return if state.blank? || path.blank?
 
-    if path.start_with?('custom_attributes.')
-      return value_from_custom_attributes(state, path.delete_prefix('custom_attributes.'))
-    end
+    return value_from_custom_attributes(state, path.delete_prefix('custom_attributes.')) if path.start_with?('custom_attributes.')
 
-    if path.start_with?('custom_attribute.')
-      return value_from_custom_attributes(state, path.delete_prefix('custom_attribute.'))
-    end
+    return value_from_custom_attributes(state, path.delete_prefix('custom_attribute.')) if path.start_with?('custom_attribute.')
 
-    if path.start_with?('additional_attributes.')
-      return value_from_additional_attributes(state, path.delete_prefix('additional_attributes.'))
-    end
+    return value_from_additional_attributes(state, path.delete_prefix('additional_attributes.')) if path.start_with?('additional_attributes.')
 
     path.split('.').reduce(with_indifferent_access(state)) do |memo, key|
       break if memo.blank?
@@ -205,14 +199,44 @@ class FieldReferences::RendererService
     when nil
       ''
     when Array
-      value.join(', ')
+      value.map { |item| utf8_string(item.to_s) }.join(', ')
     when Hash
-      JSON.generate(value)
+      JSON.generate(utf8_value(value))
+    when String
+      utf8_string(value)
     else
       value.to_s
     end
   rescue JSON::GeneratorError
-    value.to_s
+    utf8_string(value.to_s)
+  end
+
+  def utf8_value(value)
+    return Captain::EncodingNormalizer.utf8(value) if defined?(Captain::EncodingNormalizer)
+
+    case value
+    when String
+      utf8_string(value)
+    when Array
+      value.map { |item| utf8_value(item) }
+    when Hash
+      value.each_with_object({}) do |(key, item), memo|
+        memo[key.is_a?(String) ? utf8_string(key) : key] = utf8_value(item)
+      end
+    else
+      value
+    end
+  end
+
+  def utf8_string(value)
+    return Captain::EncodingNormalizer.string(value) if defined?(Captain::EncodingNormalizer)
+    return value unless value.is_a?(String)
+
+    candidate = value.dup
+    candidate.force_encoding(Encoding::UTF_8) if candidate.encoding == Encoding::ASCII_8BIT
+    return candidate if candidate.encoding == Encoding::UTF_8 && candidate.valid_encoding?
+
+    candidate.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: '�')
   end
 
   def normalize_field_id(field_id)

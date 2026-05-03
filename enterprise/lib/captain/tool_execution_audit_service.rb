@@ -72,11 +72,11 @@ class Captain::ToolExecutionAuditService
   end
 
   def serializable_value(value)
-    return value.as_json if value.respond_to?(:as_json)
+    serializable = value.respond_to?(:as_json) ? value.as_json : value
 
-    value
+    Captain::EncodingNormalizer.utf8(serializable)
   rescue StandardError
-    value.to_s
+    Captain::EncodingNormalizer.string(value.to_s)
   end
 
   def serialized_preview(value)
@@ -85,7 +85,7 @@ class Captain::ToolExecutionAuditService
     preview =
       case value
       when String
-        value
+        Captain::EncodingNormalizer.string(value)
       else
         JSON.generate(serializable_value(value))
       end

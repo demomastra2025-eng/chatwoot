@@ -77,7 +77,7 @@ class Captain::ToolResult
     end
 
     def error_output(message)
-      text = message.to_s.strip
+      text = Captain::EncodingNormalizer.string(message.to_s).strip
       return ERROR_PREFIX if text.blank?
       return text if text.start_with?(ERROR_PREFIX)
 
@@ -93,7 +93,7 @@ class Captain::ToolResult
     end
 
     def normalize_hash(result)
-      normalized = result.deep_symbolize_keys
+      normalized = Captain::EncodingNormalizer.utf8(result).deep_symbolize_keys
       {
         success: normalized.key?(:success) ? normalized[:success] : !truthy_error?(normalized[:error]),
         data: normalized[:data],
@@ -106,10 +106,15 @@ class Captain::ToolResult
 
     def normalize_raw(result)
       return normalize_raw(result.content) if halt_result?(result)
-      return { success: false, error: result.to_s } if error_string?(result)
-      return { success: true, message: result } if result.is_a?(String)
 
-      { success: true, data: result }
+      if result.is_a?(String)
+        normalized_result = Captain::EncodingNormalizer.string(result)
+        return { success: false, error: normalized_result } if error_string?(normalized_result)
+
+        return { success: true, message: normalized_result }
+      end
+
+      { success: true, data: Captain::EncodingNormalizer.utf8(result) }
     end
 
     def error_string?(result)
@@ -128,17 +133,17 @@ class Captain::ToolResult
     end
 
     def error_message(error)
-      return error.to_s unless error.is_a?(StandardError)
+      return Captain::EncodingNormalizer.string(error.to_s) unless error.is_a?(StandardError)
 
-      "#{error.class.name}: #{error.message}"
+      Captain::EncodingNormalizer.string("#{error.class.name}: #{error.message}")
     end
 
     def serialize_payload(value)
-      return value if value.is_a?(String)
+      return Captain::EncodingNormalizer.string(value) if value.is_a?(String)
 
-      JSON.generate(value)
+      JSON.generate(Captain::EncodingNormalizer.utf8(value))
     rescue StandardError
-      value.to_s
+      Captain::EncodingNormalizer.string(value.to_s)
     end
 
     def halt_result?(result)

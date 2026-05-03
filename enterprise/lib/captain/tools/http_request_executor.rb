@@ -37,7 +37,7 @@ class Captain::Tools::HttpRequestExecutor
       sanitized_body = sanitize_error_hash(parsed_body)
       return if sanitized_body.blank?
 
-      JSON.generate(sanitized_body).squish.first(MAX_ERROR_BODY_LENGTH).presence
+      JSON.generate(Captain::EncodingNormalizer.utf8(sanitized_body)).squish.first(MAX_ERROR_BODY_LENGTH).presence
     end
 
     def parse_json_body(body)
@@ -116,8 +116,9 @@ class Captain::Tools::HttpRequestExecutor
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
     response = execute_http_request(execution_url, request_preview[:body])
-    formatted_body = @custom_tool.format_response(response.body)
-    response_with_artifacts(response.body, formatted_body)
+    raw_response_body = normalize_response_body(response.body)
+    formatted_body = @custom_tool.format_response(raw_response_body)
+    response_with_artifacts(raw_response_body, formatted_body)
   rescue MissingRequiredParametersError => e
     Rails.logger.warn("HttpTool missing parameters for #{@custom_tool.slug}: #{e.message}")
     Captain::ToolResult.failure_output(error: e.message, audit: failure_audit(request_preview, failure_stage: 'validation'))
@@ -158,7 +159,8 @@ class Captain::Tools::HttpRequestExecutor
       request_preview[:body],
       raise_on_http_error: raise_on_http_error
     )
-    formatted_body, format_error = format_response_details(response.body)
+    raw_response_body = normalize_response_body(response.body)
+    formatted_body, format_error = format_response_details(raw_response_body)
     if format_error
       return {
         preview: request_preview,
@@ -175,7 +177,8 @@ class Captain::Tools::HttpRequestExecutor
           response,
           formatted_body: nil,
           format_error: format_error,
-          successful: false
+          successful: false,
+          raw_response_body: raw_response_body
         )
       }
     end
@@ -191,7 +194,7 @@ class Captain::Tools::HttpRequestExecutor
     {
       preview: request_preview,
       tool_result: tool_result,
-      response: build_response_details(response, formatted_body: formatted_body)
+      response: build_response_details(response, formatted_body: formatted_body, raw_response_body: raw_response_body)
     }
   end
 
@@ -201,6 +204,10 @@ class Captain::Tools::HttpRequestExecutor
     [@custom_tool.format_response(raw_response_body), nil]
   rescue StandardError => e
     [nil, e.message]
+  end
+
+  def normalize_response_body(body)
+    Captain::EncodingNormalizer.string(body.to_s)
   end
 
   def build_request_preview(params)
@@ -469,6 +476,7 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def response_with_artifacts(raw_response_body, formatted_body)
+    formatted_body = Captain::EncodingNormalizer.string(formatted_body.to_s)
     return formatted_body unless @custom_tool.allow_file_artifacts?
 
     artifact_candidates = Captain::Tools::HttpArtifactExtractor.call(
@@ -479,10 +487,14 @@ class Captain::Tools::HttpRequestExecutor
     )
     return formatted_body if artifact_candidates.blank?
 
-    {
-      content: redacted_artifact_content(formatted_body, artifact_candidates),
-      artifact_candidates: artifact_candidates
-    }.to_json
+    Captain::ToolResult.render(
+      Captain::ToolResult.success(
+        data: {
+          content: redacted_artifact_content(formatted_body, artifact_candidates),
+          artifact_candidates: artifact_candidates
+        }
+      )
+    )
   end
 
   def redacted_artifact_content(content, artifact_candidates)
@@ -494,14 +506,14 @@ class Captain::Tools::HttpRequestExecutor
     end
   end
 
-  def build_response_details(response, formatted_body:, format_error: nil, successful: nil)
+  def build_response_details(response, formatted_body:, format_error: nil, successful: nil, raw_response_body: nil)
     successful = response.is_a?(Net::HTTPSuccess) if successful.nil?
 
     {
       successful: successful,
       status: response.code.to_i,
-      body: response.body,
-      formatted_body: formatted_body,
+      body: raw_response_body || normalize_response_body(response.body),
+      formatted_body: Captain::EncodingNormalizer.utf8(formatted_body),
       format_error: format_error,
       headers: normalize_response_headers(response.to_hash)
     }.compact
