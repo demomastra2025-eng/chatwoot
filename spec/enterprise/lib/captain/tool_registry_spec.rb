@@ -22,6 +22,7 @@ RSpec.describe Captain::ToolRegistry do
         'get_scheduling_resource_availability',
         'send_message_to_conversation',
         'cancel_response',
+        'send_notification',
         'assign_conversation',
         'search_canned_responses',
         'create_canned_response',
@@ -50,7 +51,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(64)
+      expect(agent_tool_ids.size).to eq(65)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -94,10 +95,12 @@ RSpec.describe Captain::ToolRegistry do
     it 'marks capability tools that are controlled through assistant settings checkboxes' do
       handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
       cancel_response = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'cancel_response' }
+      send_notification = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'send_notification' }
       add_private_note = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).find { |tool| tool[:id] == 'add_private_note' }
 
       expect(handoff).to include(id: 'handoff', capability_tool: true)
       expect(cancel_response).to include(id: 'cancel_response', capability_tool: true, risk_level: 'low', idempotent: true)
+      expect(send_notification).to include(id: 'send_notification', capability_tool: true, risk_level: 'medium')
       expect(add_private_note).to include(id: 'add_private_note', capability_tool: true)
     end
   end

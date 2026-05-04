@@ -43,7 +43,8 @@ class Notification < ApplicationRecord
     participating_conversation_new_message: 5,
     sla_missed_first_response: 6,
     sla_missed_next_response: 7,
-    sla_missed_resolution: 8
+    sla_missed_resolution: 8,
+    captain_notification: 9
   }.freeze
 
   enum notification_type: NOTIFICATION_TYPES
@@ -194,6 +195,8 @@ class Notification < ApplicationRecord
 
     if notification_type == 'conversation_creation'
       I18n.t(i18n_key, display_id: live_conversation_display_id, inbox_name: live_conversation_inbox_name)
+    elsif notification_type == 'captain_notification'
+      captain_notification_title
     elsif conversation_scoped_notification?
       I18n.t(i18n_key, display_id: live_conversation_display_id)
     else
@@ -210,6 +213,8 @@ class Notification < ApplicationRecord
     when 'conversation_assignment', 'sla_missed_next_response', 'sla_missed_resolution'
       latest_message = live_conversation&.messages&.incoming&.last || live_conversation&.messages&.outgoing&.last
       message_body(latest_message)
+    when 'captain_notification'
+      captain_notification_message
     else
       ''
     end
@@ -248,7 +253,7 @@ class Notification < ApplicationRecord
 
   def conversation_scoped_notification?
     %w[conversation_assignment assigned_conversation_new_message participating_conversation_new_message
-       conversation_mention].include?(notification_type)
+       conversation_mention captain_notification].include?(notification_type)
   end
 
   def default_primary_actor_payload
@@ -279,12 +284,29 @@ class Notification < ApplicationRecord
       'conversation_mention' => 'notifications.notification_title.conversation_mention',
       'sla_missed_first_response' => 'notifications.notification_title.sla_missed_first_response',
       'sla_missed_next_response' => 'notifications.notification_title.sla_missed_next_response',
-      'sla_missed_resolution' => 'notifications.notification_title.sla_missed_resolution'
+      'sla_missed_resolution' => 'notifications.notification_title.sla_missed_resolution',
+      'captain_notification' => 'notifications.notification_title.captain_notification'
     }[notification_type]
   end
 
   def primary_actor_display_id
     primary_actor&.try(:display_id) || primary_actor_id
+  end
+
+  def captain_notification_title
+    captain_notification_meta[:title].presence || I18n.t(
+      'notifications.notification_title.captain_notification',
+      display_id: live_conversation_display_id
+    )
+  end
+
+  def captain_notification_message
+    captain_notification_meta[:message].presence || ''
+  end
+
+  def captain_notification_meta
+    raw_meta = meta.is_a?(Hash) ? meta['captain_notification'] || meta[:captain_notification] : nil
+    raw_meta.is_a?(Hash) ? raw_meta.with_indifferent_access : {}
   end
 
   def render_snapshot

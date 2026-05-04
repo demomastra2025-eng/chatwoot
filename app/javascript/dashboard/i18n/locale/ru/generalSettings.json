@@ -193,7 +193,8 @@
       "conversation_mention": "Упоминание",
       "sla_missed_first_response": "Пропущено SLA",
       "sla_missed_next_response": "Пропущено SLA",
-      "sla_missed_resolution": "Пропущено SLA"
+      "sla_missed_resolution": "Пропущено SLA",
+      "captain_notification": "Уведомление Captain"
     }
   },
   "NETWORK": {

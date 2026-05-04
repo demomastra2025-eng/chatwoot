@@ -70,6 +70,16 @@ has been assigned to you"
 
       expect(notification.push_message_title).to eq "You have been mentioned in conversation (##{notification.primary_actor.display_id})"
     end
+
+    it 'uses custom title for captain notifications' do
+      notification = create(
+        :notification,
+        notification_type: 'captain_notification',
+        meta: { 'captain_notification' => { 'title' => 'Manager approval needed', 'message' => 'Review requested' } }
+      )
+
+      expect(notification.push_message_title).to eq('Manager approval needed')
+    end
   end
 
   context 'when push_message_body is called' do
@@ -169,6 +179,16 @@ has been assigned to you"
       allow(Notification::RemoveDuplicateNotificationJob).to receive(:perform_later)
       notification = create(:notification, notification_type: 'conversation_mention')
       expect(Notification::RemoveDuplicateNotificationJob).to have_received(:perform_later).with(notification)
+    end
+
+    it 'uses custom body for captain notifications' do
+      notification = create(
+        :notification,
+        notification_type: 'captain_notification',
+        meta: { 'captain_notification' => { 'title' => 'Manager approval needed', 'message' => 'Review requested' } }
+      )
+
+      expect(notification.push_message_body).to eq('Review requested')
     end
   end
 

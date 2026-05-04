@@ -205,6 +205,23 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'send_notification',
+          title: 'Send Notification',
+          description: 'Send an in-app notification to an account user about the current or specified conversation',
+          group_name: 'Conversations',
+          icon: 'bell',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          capability_tool: true,
+          agent_tool_class: Captain::Tools::SendNotificationTool,
+          assistant_tool_class: Captain::Tools::Copilot::SendNotificationService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'medium'
+        ),
+        definition(
           id: 'get_conversation',
           title: 'Get Conversation',
           description: 'Get details of a conversation including messages and contact information',

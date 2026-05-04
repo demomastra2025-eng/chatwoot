@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_04_29_153000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_04_001000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
