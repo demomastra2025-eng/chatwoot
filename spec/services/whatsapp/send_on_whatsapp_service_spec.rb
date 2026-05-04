@@ -219,6 +219,66 @@ describe Whatsapp::SendOnWhatsappService do
         )
       end
 
+      it 'updates the delivery that belongs to the message campaign run' do
+        campaign = create(
+          :campaign,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          template_params: {
+            'name' => 'sample_shipping_confirmation',
+            'namespace' => '23423423_2342423_324234234_2343224',
+            'language' => 'en_US',
+            'category' => 'Marketing',
+            'processed_params' => { 'body' => { '1' => '3' } }
+          }
+        )
+        old_run = create(:campaign_run, campaign: campaign, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)
+        retry_run = create(:campaign_run, campaign: campaign, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)
+        old_delivery = create(
+          :campaign_delivery,
+          campaign: campaign,
+          campaign_run: old_run,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: conversation.contact,
+          provider: whatsapp_channel.provider,
+          status: :failed,
+          provider_message_id: nil
+        )
+        retry_delivery = create(
+          :campaign_delivery,
+          campaign: campaign,
+          campaign_run: retry_run,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: conversation.contact,
+          provider: whatsapp_channel.provider,
+          status: :pending,
+          provider_message_id: nil
+        )
+        message = create(
+          :message,
+          additional_attributes: { campaign_id: campaign.id, campaign_run_id: retry_run.id, template_params: template_params },
+          content: 'Your package will be delivered in 3 business days.',
+          conversation: conversation,
+          message_type: :outgoing,
+          account: conversation.account
+        )
+
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+          .with(
+            headers: headers,
+            body: template_body.to_json
+          ).to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(retry_delivery.reload.status).to eq('submitted')
+        expect(retry_delivery.provider_message_id).to eq('123456789')
+        expect(old_delivery.reload.status).to eq('failed')
+        expect(old_delivery.provider_message_id).to be_nil
+      end
+
       it 'calls channel.send_template with named params if template parameter type is NAMED' do
         whatsapp_cloud_channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
         cloud_contact_inbox = create(:contact_inbox, inbox: whatsapp_cloud_channel.inbox, source_id: '123456789')

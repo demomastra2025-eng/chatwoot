@@ -46,7 +46,7 @@ RSpec.describe Campaigns::RetryFailedDeliveriesService do
       status: :delivered
     )
 
-    campaign.failed!
+    campaign.update_column(:campaign_status, Campaign.campaign_statuses.fetch('failed'))
 
     retried_run = service.perform
 
@@ -61,6 +61,33 @@ RSpec.describe Campaigns::RetryFailedDeliveriesService do
     expect(campaign.campaign_deliveries.find_by(campaign_run: retried_run, contact: retried_contact).status).to eq('pending')
     expect(campaign.campaign_deliveries.find_by(campaign_run: source_run, contact: retried_contact).status).to eq('failed')
     expect(enqueued_jobs.count { |job| job[:job] == SendReplyJob }).to eq(1)
+  end
+
+  it 'retries stale pending deliveries without a provider message id' do
+    retried_contact = create(:contact, account: account, email: 'stale@example.com')
+    retried_contact.update_labels([label.title])
+    source_run = create(:campaign_run, campaign: campaign, account: account, inbox: inbox, status: :completed)
+
+    create(
+      :campaign_delivery,
+      campaign: campaign,
+      campaign_run: source_run,
+      account: account,
+      inbox: inbox,
+      contact: retried_contact,
+      provider: 'email',
+      status: :pending,
+      provider_message_id: nil
+    )
+
+    campaign.update_column(:campaign_status, Campaign.campaign_statuses.fetch('completed'))
+
+    retried_run = service.perform
+
+    expect(retried_run.metadata['retry_source_run_id']).to eq(source_run.id)
+    expect(retried_run.total_count).to eq(1)
+    expect(campaign.campaign_deliveries.where(contact: retried_contact).count).to eq(2)
+    expect(campaign.campaign_deliveries.find_by(campaign_run: retried_run, contact: retried_contact).status).to eq('pending')
   end
 
   it 'raises when there is no failed delivery to retry' do

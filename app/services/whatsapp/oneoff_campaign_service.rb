@@ -31,7 +31,14 @@ class Whatsapp::OneoffCampaignService < Campaigns::OneoffBaseService
   end
 
   def perform_delivery(contact:, delivery:, target_identifier:)
-    Campaigns::OneoffConversationBuilder.new(campaign: campaign, contact: contact).perform
+    target_identifier # The base service validates this before WhatsApp conversation creation.
+
+    message = Campaigns::OneoffConversationBuilder.new(
+      campaign: campaign,
+      contact: contact,
+      campaign_run: current_campaign_run
+    ).perform
+    delivery.mark_status!(status: :pending, metadata: { message_id: message.id })
     delivery
   end
 

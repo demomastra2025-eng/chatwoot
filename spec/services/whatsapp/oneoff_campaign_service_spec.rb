@@ -111,6 +111,20 @@ describe Whatsapp::OneoffCampaignService do
         expect(enqueued_jobs.count { |job| job[:job] == SendReplyJob }).to eq(3)
       end
 
+      it 'tags created messages and deliveries with the current campaign run' do
+        contact = create(:contact, :with_phone_number, account: account)
+        contact.update_labels([label1.title])
+        campaign_run = create(:campaign_run, campaign: campaign, account: account, inbox: whatsapp_inbox)
+
+        described_class.new(campaign: campaign, campaign_run: campaign_run).perform
+
+        message = whatsapp_inbox.messages.outgoing.find_by("additional_attributes ->> 'campaign_run_id' = ?", campaign_run.id.to_s)
+        delivery = campaign.campaign_deliveries.find_by!(campaign_run: campaign_run, contact: contact)
+        expect(message).to be_present
+        expect(message.additional_attributes['campaign_id']).to eq(campaign.id)
+        expect(delivery.metadata['message_id']).to eq(message.id)
+      end
+
       it 'skips contacts without phone numbers' do
         contact_without_phone = create(:contact, account: account, phone_number: nil)
         contact_without_phone.update_labels([label1.title])
@@ -149,12 +163,13 @@ describe Whatsapp::OneoffCampaignService do
         builder_error = instance_double(Campaigns::OneoffConversationBuilder)
         builder_success = instance_double(Campaigns::OneoffConversationBuilder)
 
-        allow(Campaigns::OneoffConversationBuilder).to receive(:new) do |campaign:, contact:|
+        allow(Campaigns::OneoffConversationBuilder).to receive(:new) do |campaign:, contact:, campaign_run:|
           expect(campaign).to eq(expected_campaign)
+          expect(campaign_run).to be_a(CampaignRun)
           contact == contact_error ? builder_error : builder_success
         end
         expect(builder_error).to receive(:perform).and_raise(StandardError, error_message)
-        expect(builder_success).to receive(:perform).and_return(instance_double(Message))
+        expect(builder_success).to receive(:perform).and_return(instance_double(Message, id: 123))
 
         expect(Rails.logger).to receive(:error)
           .with("Failed to create WhatsApp campaign message for #{contact_error.phone_number}: #{error_message}")

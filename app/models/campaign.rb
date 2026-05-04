@@ -237,6 +237,7 @@ class Campaign < ApplicationRecord
   end
 
   def validate_official_whatsapp_delivery_policy
+    return if status_only_change?
     return unless one_off?
     return if account.blank?
     return unless inbox&.channel.is_a?(Channel::Whatsapp)
@@ -274,6 +275,10 @@ class Campaign < ApplicationRecord
     return unless completed? || running? || failed? || cancelled?
 
     errors.add :status, 'The campaign can no longer be updated'
+  end
+
+  def status_only_change?
+    persisted? && changed == ['campaign_status']
   end
 
   # creating db triggers

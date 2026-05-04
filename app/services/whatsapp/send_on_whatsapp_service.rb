@@ -60,11 +60,13 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   def update_campaign_delivery(status:, provider_message_id: nil, error_message: nil, metadata: {})
     return if campaign_id.blank?
 
-    delivery = CampaignDelivery.find_by(
+    deliveries = CampaignDelivery.where(
       campaign_id: campaign_id,
       contact_id: conversation.contact_id,
       inbox_id: inbox.id
     )
+    deliveries = deliveries.where(campaign_run_id: campaign_run_id) if campaign_run_id.present?
+    delivery = deliveries.order(created_at: :desc).first
     return if delivery.blank?
 
     delivery.mark_status!(
@@ -77,5 +79,9 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
 
   def campaign_id
     message.additional_attributes&.[]('campaign_id') || conversation.campaign_id
+  end
+
+  def campaign_run_id
+    message.additional_attributes&.[]('campaign_run_id')
   end
 end
