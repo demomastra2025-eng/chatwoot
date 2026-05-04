@@ -126,4 +126,36 @@ describe('Account settings', () => {
     );
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
   });
+
+  it('submits logo-only updates when the workspace name and locale are valid', async () => {
+    const { wrapper, updateAction } = buildWrapper();
+    const logo = new File(['logo'], 'logo.png', { type: 'image/png' });
+    await wrapper.vm.hydrateAccountForm();
+
+    wrapper.vm.updateWorkspaceLogo({ file: logo, url: 'blob:logo' });
+    await wrapper.vm.updateAccount();
+
+    expect(updateAction).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        id: 530,
+        name: 'Acme Inc',
+        locale: 'en',
+        logo,
+      })
+    );
+    expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
+  });
+
+  it('shows a field-specific validation error instead of a generic form error', async () => {
+    const { wrapper, updateAction } = buildWrapper();
+    await wrapper.vm.hydrateAccountForm();
+    await wrapper.setData({ name: '   ', locale: 'ru' });
+
+    await wrapper.vm.updateAccount();
+
+    expect(updateAction).not.toHaveBeenCalled();
+    expect(useAlert).toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.NAME.ERROR');
+    expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
+  });
 });

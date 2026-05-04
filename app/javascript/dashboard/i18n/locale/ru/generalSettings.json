@@ -85,7 +85,7 @@
       "LANGUAGE": {
         "LABEL": "Язык сайта",
         "PLACEHOLDER": "Имя вашего workspace",
-        "ERROR": ""
+        "ERROR": "Пожалуйста, выберите язык сайта"
       },
       "DOMAIN": {
         "LABEL": "Домен входящей почты",

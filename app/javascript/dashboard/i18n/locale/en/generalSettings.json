@@ -85,7 +85,7 @@
       "LANGUAGE": {
         "LABEL": "Site language",
         "PLACEHOLDER": "Your account name",
-        "ERROR": ""
+        "ERROR": "Please select a site language"
       },
       "DOMAIN": {
         "LABEL": "Incoming Email Domain",

@@ -80,7 +80,7 @@
       "LANGUAGE": {
         "LABEL": "Site language",
         "PLACEHOLDER": "Your workspace name",
-        "ERROR": ""
+        "ERROR": "Please select a site language"
       },
       "DOMAIN": {
         "LABEL": "Incoming Email Domain",

@@ -190,6 +190,31 @@ export default {
       }
     },
 
+    workspaceFormValidationMessage() {
+      if (!this.name) {
+        return this.$t('GENERAL_SETTINGS.FORM.NAME.ERROR');
+      }
+
+      if (!this.locale) {
+        return (
+          this.$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR') ||
+          this.$t('GENERAL_SETTINGS.FORM.ERROR')
+        );
+      }
+
+      return this.$t('GENERAL_SETTINGS.FORM.ERROR');
+    },
+
+    async validateWorkspaceForm() {
+      const isValid = await this.v$.$validate();
+      if (isValid && this.name) {
+        return true;
+      }
+
+      useAlert(this.workspaceFormValidationMessage());
+      return false;
+    },
+
     async updateAccount() {
       if (this.isWorkspaceReadOnly) {
         useAlert(this.$t('GENERAL_SETTINGS.LIMIT_MESSAGES.NON_ADMIN'));
@@ -201,8 +226,7 @@ export default {
       this.domain = payload.domain;
       this.supportEmail = payload.support_email;
       this.v$.$touch();
-      if (this.v$.$invalid || !this.name) {
-        useAlert(this.$t('GENERAL_SETTINGS.FORM.ERROR'));
+      if (!(await this.validateWorkspaceForm())) {
         return;
       }
       try {
