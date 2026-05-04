@@ -6,19 +6,12 @@ class Telephony::WebphoneService
 
   def token_for(user:, inbox: nil)
     agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
-    response = bridge_client.post(
-      '/telephony/webphone/token',
-      {
-        chatwoot_user_id: user.id,
-        agent_ref: agent_binding&.agent_ref,
-        inbox_id: inbox&.id,
-        number_ref: inbox&.telephony_number_binding&.number_ref
-      }.compact
-    )
+    response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, agent_binding))
 
     response = response.deep_dup
-    response['provider'] ||= inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
+    response['provider'] ||= fallback_provider(inbox, agent_binding)
     response['agent_ref'] ||= agent_binding&.agent_ref
+    apply_signaling_server_override(response)
     response['calling_supported'] = bridge_calling_supported?(response)
     response
   end
@@ -26,6 +19,31 @@ class Telephony::WebphoneService
   private
 
   attr_reader :account, :bridge_client
+
+  def token_request_payload(user, inbox, agent_binding)
+    {
+      chatwoot_user_id: user.id,
+      agent_ref: agent_binding&.agent_ref,
+      inbox_id: inbox&.id,
+      number_ref: inbox&.telephony_number_binding&.number_ref
+    }.compact
+  end
+
+  def fallback_provider(inbox, agent_binding)
+    inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
+  end
+
+  def apply_signaling_server_override(response)
+    signaling_server_url = ENV.fetch('TELEPHONY_WEBPHONE_SIGNALING_SERVER_URL', '').presence
+    return if signaling_server_url.blank?
+
+    provider = response_value(response, 'provider').presence || 'fonoster'
+    return unless provider == 'fonoster'
+
+    response['signalingServer'] = signaling_server_url
+    response.delete('signaling_server')
+    response.delete(:signaling_server)
+  end
 
   def bridge_calling_supported?(response)
     provider = response_value(response, 'provider').presence || 'fonoster'

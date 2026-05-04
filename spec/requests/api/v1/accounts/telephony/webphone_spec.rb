@@ -142,4 +142,38 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
     expect(response.parsed_body.dig('payload', 'targetAor')).to eq('sip:agent-101@agents.example.test')
   end
+
+  it 'uses the configured public signaling server override for fonoster browser calls' do
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
+      TELEPHONY_WEBPHONE_SIGNALING_SERVER_URL: 'wss://app.example.test/telephony/sip-ws'
+    ) do
+      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
+        .to_return(
+          status: 200,
+          body: {
+            token: 'test-token',
+            provider: 'fonoster',
+            username: 'agent-101',
+            domain: 'agents.example.test',
+            displayName: 'Operator 101',
+            signalingServer: 'ws://bridge.example:5062',
+            targetAor: 'sip:agent-101@agents.example.test'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post path,
+           params: { inbox_id: voice_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+    expect(response.parsed_body.dig('payload', 'signalingServer')).to eq('wss://app.example.test/telephony/sip-ws')
+  end
 end
