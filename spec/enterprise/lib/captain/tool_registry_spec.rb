@@ -15,6 +15,12 @@ RSpec.describe Captain::ToolRegistry do
         'list_deal_stages',
         'create_appointment',
         'create_touch',
+        'cancel_touch',
+        'delete_touch',
+        'cancel_touches',
+        'create_touch_plan',
+        'apply_touch_plan',
+        'archive_touch_plan',
         'list_channel_templates',
         'list_scheduling_resources',
         'search_scheduling_resources',
@@ -51,7 +57,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(65)
+      expect(agent_tool_ids.size).to eq(71)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -81,14 +87,14 @@ RSpec.describe Captain::ToolRegistry do
         risk_level: 'low',
         idempotent: true,
         required_features: ['crm_deals'],
-        required_permissions: ['crm_deal_view', 'crm_deal_manage']
+        required_permissions: %w[crm_deal_view crm_deal_manage]
       )
       expect(list_stages).to include(
         id: 'list_deal_stages',
         risk_level: 'low',
         idempotent: true,
         required_features: ['crm_deals'],
-        required_permissions: ['crm_deal_view', 'crm_deal_manage']
+        required_permissions: %w[crm_deal_view crm_deal_manage]
       )
     end
 

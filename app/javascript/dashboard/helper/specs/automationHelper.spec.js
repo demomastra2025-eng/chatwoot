@@ -148,6 +148,7 @@ const BACKEND_CONVERSATION_ACTIONS = [
   'add_private_note',
   'apply_touch_plan',
   'create_touch',
+  'cancel_touches',
 ];
 
 const BACKEND_CONVERSATION_CONDITIONS = [
@@ -177,6 +178,7 @@ const BACKEND_APPOINTMENT_ACTIONS = [
   'cancel_appointment_payment',
   'apply_touch_plan',
   'create_touch',
+  'cancel_touches',
 ];
 
 const BACKEND_DEAL_ACTIONS = [
@@ -188,6 +190,7 @@ const BACKEND_DEAL_ACTIONS = [
   'unarchive_deal',
   'apply_touch_plan',
   'create_touch',
+  'cancel_touches',
 ];
 
 const BACKEND_TASK_ACTIONS = [
@@ -200,6 +203,7 @@ const BACKEND_TASK_ACTIONS = [
   'unarchive_task',
   'apply_touch_plan',
   'create_touch',
+  'cancel_touches',
 ];
 
 const BACKEND_APPOINTMENT_CONDITIONS = [
@@ -535,6 +539,29 @@ describe('getActionOptions', () => {
         type: 'assign_deal_team',
       })
     ).toEqual(teams);
+  });
+
+  it('returns entity-scoped touch plans with a None option for cancel_touches', () => {
+    const touchPlans = [
+      { id: 1, name: 'Conversation plan', entity_kinds: ['conversation'] },
+      { id: 2, name: 'Deal plan', entity_kinds: ['deal'] },
+    ];
+    const addNoneToListFn = list => [
+      { id: 'nil', name: 'None' },
+      ...(list || []),
+    ];
+
+    expect(
+      helpers.getActionOptions({
+        touchPlans,
+        eventName: 'conversation_created',
+        type: 'cancel_touches',
+        addNoneToListFn,
+      })
+    ).toEqual([
+      { id: 'nil', name: 'None' },
+      { id: 1, name: 'Conversation plan', entity_kinds: ['conversation'] },
+    ]);
   });
 });
 

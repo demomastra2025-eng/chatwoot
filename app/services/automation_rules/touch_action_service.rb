@@ -46,6 +46,25 @@ class AutomationRules::TouchActionService
     ).perform
   end
 
+  def cancel_touches(action_params)
+    params = normalize_cancel_params(action_params)
+    reminder_group = load_optional_touch_plan!(params[:reminder_group_id])
+
+    Reminders::BulkCancelService.new(
+      account: account,
+      remindable: record,
+      reminder_group: reminder_group,
+      actor: nil,
+      reason: params[:reason].presence || "Cancelled by automation rule ##{rule.id}",
+      metadata: {
+        'automation_rule_id' => rule.id,
+        'touch_source' => 'automation',
+        'cancelled_via' => 'automation_cancel_touches',
+        'cancel_touches_entity_kind' => entity_kind
+      }
+    ).perform
+  end
+
   private
 
   def delay_minutes(params)
@@ -62,8 +81,39 @@ class AutomationRules::TouchActionService
     reminder_group
   end
 
+  def load_optional_touch_plan!(reminder_group_id)
+    return if reminder_group_id.blank?
+
+    reminder_group = account.reminder_groups.kept.find_by(id: reminder_group_id)
+    raise ArgumentError, 'cancel_touches requires a valid touch plan' if reminder_group.blank?
+    raise ArgumentError, 'Touch plan does not support this entity type' unless reminder_group.entity_kind_supported?(entity_kind)
+
+    reminder_group
+  end
+
   def normalize_action_param(action_params)
     Array(action_params).first.to_s.presence
+  end
+
+  def normalize_optional_action_param(value)
+    value = value.to_s.strip
+    return if value.blank? || value == 'nil'
+
+    value
+  end
+
+  def normalize_cancel_params(action_params)
+    raw = Array(action_params).first
+    raw = raw.to_unsafe_h if raw.is_a?(ActionController::Parameters)
+    raw = raw.to_h if raw.respond_to?(:to_h) && !raw.is_a?(Hash)
+
+    return { reminder_group_id: normalize_optional_action_param(raw) } unless raw.is_a?(Hash)
+
+    params = raw.with_indifferent_access
+    {
+      reminder_group_id: normalize_optional_action_param(params[:reminder_group_id] || params[:touch_plan_id]),
+      reason: params[:reason]
+    }
   end
 
   def normalize_touch_params(action_params)

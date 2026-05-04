@@ -135,6 +135,7 @@ const validateSingleAction = action => {
     'unarchive_deal',
     'archive_task',
     'unarchive_task',
+    'cancel_touches',
   ];
 
   if (action.action_name === 'create_touch') {

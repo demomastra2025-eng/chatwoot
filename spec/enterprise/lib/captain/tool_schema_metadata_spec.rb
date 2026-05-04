@@ -5,14 +5,13 @@ RSpec.describe 'Captain tool schema metadata' do
     public_params = Captain::Tools::CreateTouchTool.parameters
     assistant_params = Captain::Tools::Copilot::CreateTouchService.parameters
 
+    expected_create_touch_description =
+      'Create a scheduled outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+      'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
     expected_relative_anchor_description = 'Optional relative anchor: touch.created_at, conversation.created_at, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at'
 
-    expect(Captain::Tools::CreateTouchTool.description).to eq(
-      'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template'
-    )
-    expect(Captain::Tools::Copilot::CreateTouchService.description).to eq(
-      'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template'
-    )
+    expect(Captain::Tools::CreateTouchTool.description).to eq(expected_create_touch_description)
+    expect(Captain::Tools::Copilot::CreateTouchService.description).to eq(expected_create_touch_description)
     expect(public_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(assistant_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(public_params[:target_inbox_id].description).to include('ID')

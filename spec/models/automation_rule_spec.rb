@@ -60,6 +60,45 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
+    it 'allows conversation automation rules to cancel all scheduled touches' do
+      params[:actions] = [
+        {
+          action_name: :cancel_touches,
+          action_params: []
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
+    it 'allows conversation automation rules to cancel touches by a matching touch plan' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [
+        {
+          action_name: :cancel_touches,
+          action_params: [{ reminder_group_id: touch_plan.id }]
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be true
+    end
+
+    it 'rejects cancel_touches touch plans for unsupported entity kinds' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['appointment'])
+      params[:actions] = [
+        {
+          action_name: :cancel_touches,
+          action_params: [{ reminder_group_id: touch_plan.id }]
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+      expect(rule.valid?).to be false
+      expect(rule.errors.messages[:actions]).to eq(['Automation action parameters cancel_touches not supported.'])
+    end
+
     it 'returns invalid record' do
       params[:conditions][0].delete('query_operator')
       rule = FactoryBot.build(:automation_rule, params)

@@ -199,6 +199,7 @@
       "SEND_WEBHOOK_EVENT": "Send Webhook Event",
       "APPLY_TOUCH_PLAN": "Apply Touch Plan",
       "CREATE_TOUCH": "Create Touch",
+      "CANCEL_TOUCHES": "Cancel Touches",
       "SEND_ATTACHMENT": "Send Attachment",
       "SEND_MESSAGE": "Send a Message",
       "ADD_PRIVATE_NOTE": "Add a Private Note",

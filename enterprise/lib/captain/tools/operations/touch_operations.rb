@@ -52,6 +52,98 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     end
   end
 
+  def cancel_touch(touch_id:, reason: nil)
+    touch = find_touch!(touch_id)
+
+    touch.with_lock do
+      return touch if touch.cancelled?
+
+      raise ArgumentError, 'Touch can only be cancelled while draft or pending' unless touch.draft? || touch.pending?
+
+      cancellation_reason = reason.presence || 'Cancelled by Captain'
+      touch.update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        last_error: cancellation_reason,
+        metadata: touch.metadata.to_h.merge(cancellation_metadata(cancelled_via: 'captain_cancel_touch', reason: cancellation_reason))
+      )
+      touch
+    end
+  end
+
+  def delete_touch(touch_id:)
+    touch = find_touch!(touch_id)
+    raise ArgumentError, 'Only draft, pending, failed, or cancelled touches can be deleted' unless touch.destroyable?
+
+    payload = ::Outbound::PayloadBuilder.touch_payload(touch)
+    touch.destroy!
+    payload
+  end
+
+  def cancel_touches(remindable_kind: nil, touch_plan_id: nil, touch_plan_name: nil, reason: nil)
+    normalized_kind = normalized_remindable_kind(remindable_kind)
+    remindable = resolve_remindable!(normalized_kind)
+    touch_plan = find_optional_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+    ensure_touch_plan_supports!(touch_plan, normalized_kind) if touch_plan.present?
+    cancellation_reason = reason.presence || 'Cancelled by Captain'
+
+    cancelled_count = ::Reminders::BulkCancelService.new(
+      account: account,
+      remindable: remindable,
+      reminder_group: touch_plan,
+      actor: actor,
+      reason: cancellation_reason,
+      metadata: cancellation_metadata(cancelled_via: 'captain_cancel_touches', reason: cancellation_reason).merge(
+        'cancel_touches_entity_kind' => normalized_kind,
+        'touch_plan_id' => touch_plan&.id
+      ).compact
+    ).perform
+
+    {
+      cancelled_count: cancelled_count,
+      remindable: ::Outbound::PayloadBuilder.remindable_payload(remindable),
+      touch_plan: touch_plan ? ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan) : nil
+    }
+  end
+
+  def create_touch_plan(name:, touches:, description: nil, entity_kinds: nil)
+    normalized_name = name.to_s.strip
+    raise ArgumentError, 'Touch plan name is required' if normalized_name.blank?
+
+    create_params = {
+      name: normalized_name,
+      description: description.presence,
+      entity_kinds: normalized_plan_entity_kinds(entity_kinds),
+      touches: normalized_touch_definitions(touches)
+    }.compact
+
+    with_idempotent_creation('create_touch_plan', create_params) do
+      account.reminder_groups.create!(create_params.merge(creator: actor))
+    end
+  end
+
+  def apply_touch_plan(touch_plan_id: nil, touch_plan_name: nil, remindable_kind: nil)
+    normalized_kind = normalized_remindable_kind(remindable_kind)
+    remindable = resolve_remindable!(normalized_kind)
+    touch_plan = find_kept_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+    ensure_touch_plan_supports!(touch_plan, normalized_kind)
+
+    created_touches = ::Reminders::ApplyGroupService.new(
+      account: account,
+      reminder_group: touch_plan,
+      remindable: remindable,
+      actor: actor
+    ).perform
+    tag_created_plan_touches!(created_touches, touch_plan)
+    created_touches
+  end
+
+  def archive_touch_plan(touch_plan_id: nil, touch_plan_name: nil)
+    touch_plan = find_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+    touch_plan.archive! if touch_plan.archived_at.blank? || touch_plan.active?
+    touch_plan
+  end
+
   private
 
   def normalized_touch_params(
@@ -111,6 +203,102 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     end
 
     params.compact
+  end
+
+  def find_touch!(touch_id)
+    raise ArgumentError, 'touch_id is required' if touch_id.blank?
+
+    account.reminders.find(touch_id)
+  end
+
+  def find_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
+    scope = account.reminder_groups
+    touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+    raise ActiveRecord::RecordNotFound, 'Touch plan not found' if touch_plan.blank?
+
+    touch_plan
+  end
+
+  def find_kept_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
+    scope = account.reminder_groups.kept
+    touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+    raise ActiveRecord::RecordNotFound, 'Touch plan not found' if touch_plan.blank?
+
+    touch_plan
+  end
+
+  def find_optional_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
+    return if touch_plan_id.blank? && touch_plan_name.blank?
+
+    find_kept_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
+  end
+
+  def find_touch_plan_in_scope(scope, touch_plan_id:, touch_plan_name:)
+    return scope.find_by(id: touch_plan_id) if touch_plan_id.present?
+    return if touch_plan_name.blank?
+
+    scope.where('LOWER(name) = ?', touch_plan_name.to_s.strip.downcase).order(:id).first
+  end
+
+  def ensure_touch_plan_supports!(touch_plan, entity_kind)
+    return if touch_plan.entity_kind_supported?(entity_kind)
+
+    raise ArgumentError, 'Touch plan does not support this entity kind'
+  end
+
+  def normalized_plan_entity_kinds(entity_kinds)
+    values = parsed_array(entity_kinds, field_name: 'entity_kinds')
+    values = ['conversation'] if values.blank?
+    values.map(&:to_s).map(&:strip).reject(&:blank?).uniq
+  end
+
+  def normalized_touch_definitions(touches)
+    definitions = parsed_array(touches, field_name: 'touches')
+    raise ArgumentError, 'Touch plan touches are required' if definitions.blank?
+
+    definitions.map do |definition|
+      raise ArgumentError, 'Each touch plan item must be an object' unless definition.respond_to?(:to_h)
+
+      ::Reminders::DefinitionNormalizer.call(definition.to_h)
+    end
+  end
+
+  def parsed_array(value, field_name:)
+    return [] if value.blank?
+    return value if value.is_a?(Array)
+
+    parsed = JSON.parse(value.to_s)
+    raise ArgumentError, "#{field_name} must be a JSON array" unless parsed.is_a?(Array)
+
+    parsed
+  rescue JSON::ParserError
+    raise ArgumentError, "#{field_name} must be valid JSON"
+  end
+
+  def tag_created_plan_touches!(touches, touch_plan)
+    touches.each do |touch|
+      touch.update!(
+        metadata: touch.metadata.to_h.merge(
+          'touch_source' => 'captain',
+          'captain_assistant_id' => assistant.id,
+          'captain_actor_id' => actor&.id,
+          'captain_touch_plan_id' => touch_plan.id
+        ).compact
+      )
+    end
+  end
+
+  def cancellation_metadata(cancelled_via:, reason:)
+    {
+      'touch_source' => 'captain',
+      'captain_assistant_id' => assistant.id,
+      'captain_actor_id' => actor&.id,
+      'cancelled_via' => cancelled_via,
+      'cancelled_reason' => reason,
+      'cancelled_at' => Time.current.iso8601,
+      'cancelled_by_type' => actor&.class&.name,
+      'cancelled_by_id' => actor&.id
+    }.compact
   end
 
   def materialized_attachment_ids(attachment_ids:, artifact_ids:)
@@ -176,8 +364,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def resolve_remindable!(kind)
-    normalized_kind = kind.to_s.presence || 'conversation'
-    raise ArgumentError, "Unsupported remindable_kind: #{normalized_kind}" unless SUPPORTED_REMINDABLE_KINDS.include?(normalized_kind)
+    normalized_kind = normalized_remindable_kind(kind)
 
     remindable =
       case normalized_kind
@@ -194,6 +381,13 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     raise ArgumentError, "Current #{normalized_kind} is not available" if remindable.blank?
 
     remindable
+  end
+
+  def normalized_remindable_kind(kind)
+    normalized_kind = kind.to_s.presence || 'conversation'
+    raise ArgumentError, "Unsupported remindable_kind: #{normalized_kind}" unless SUPPORTED_REMINDABLE_KINDS.include?(normalized_kind)
+
+    normalized_kind
   end
 
   def validate_relative_anchor!(relative_anchor, remindable)

@@ -197,6 +197,7 @@
       "SEND_WEBHOOK_EVENT": "Отправить событие Webhook",
       "APPLY_TOUCH_PLAN": "Применить план касаний",
       "CREATE_TOUCH": "Создать касание",
+      "CANCEL_TOUCHES": "Отменить касания",
       "SEND_ATTACHMENT": "Отправить вложение",
       "SEND_MESSAGE": "Отправить сообщение",
       "ADD_PRIVATE_NOTE": "Добавить личную заметку",

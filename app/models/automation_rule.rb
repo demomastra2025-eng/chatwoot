@@ -58,7 +58,7 @@ class AutomationRule < ApplicationRecord
     send_message add_label remove_label send_email_to_team assign_team assign_agent remove_assigned_agent remove_assigned_team
     send_webhook_event mute_conversation
     send_attachment change_status resolve_conversation open_conversation pending_conversation snooze_conversation change_priority
-    send_email_transcript add_private_note apply_touch_plan create_touch
+    send_email_transcript add_private_note apply_touch_plan create_touch cancel_touches
   ].freeze
   APPOINTMENT_ACTION_ATTRIBUTES = %w[
     send_webhook_event
@@ -66,6 +66,7 @@ class AutomationRule < ApplicationRecord
     cancel_appointment_payment
     apply_touch_plan
     create_touch
+    cancel_touches
   ].freeze
   DEAL_ACTION_ATTRIBUTES = %w[
     send_webhook_event
@@ -76,6 +77,7 @@ class AutomationRule < ApplicationRecord
     unarchive_deal
     apply_touch_plan
     create_touch
+    cancel_touches
   ].freeze
   TASK_ACTION_ATTRIBUTES = %w[
     send_webhook_event
@@ -87,6 +89,7 @@ class AutomationRule < ApplicationRecord
     unarchive_task
     apply_touch_plan
     create_touch
+    cancel_touches
   ].freeze
   CONVERSATION_CONDITION_ATTRIBUTES = %w[
     content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
@@ -326,6 +329,8 @@ class AutomationRule < ApplicationRecord
       touch_plan_action_params_supported?(action_params, 'appointment')
     when 'create_touch'
       create_touch_action_params_supported?(action_params)
+    when 'cancel_touches'
+      cancel_touches_action_params_supported?(action_params, 'appointment')
     else
       true
     end
@@ -347,6 +352,8 @@ class AutomationRule < ApplicationRecord
       touch_plan_action_params_supported?(action_params, crm_entity_kind)
     when 'create_touch'
       create_touch_action_params_supported?(action_params)
+    when 'cancel_touches'
+      cancel_touches_action_params_supported?(action_params, crm_entity_kind)
     else
       true
     end
@@ -358,6 +365,8 @@ class AutomationRule < ApplicationRecord
       touch_plan_action_params_supported?(action_params, 'conversation')
     when 'create_touch'
       create_touch_action_params_supported?(action_params)
+    when 'cancel_touches'
+      cancel_touches_action_params_supported?(action_params, 'conversation')
     else
       true
     end
@@ -365,6 +374,14 @@ class AutomationRule < ApplicationRecord
 
   def touch_plan_action_params_supported?(action_params, entity_kind)
     reminder_group = account.reminder_groups.kept.find_by(id: normalized_action_param(action_params))
+    reminder_group.present? && reminder_group.entity_kind_supported?(entity_kind)
+  end
+
+  def cancel_touches_action_params_supported?(action_params, entity_kind)
+    value = normalized_cancel_touches_plan_param(action_params)
+    return true if value.blank?
+
+    reminder_group = account.reminder_groups.kept.find_by(id: value)
     reminder_group.present? && reminder_group.entity_kind_supported?(entity_kind)
   end
 
@@ -394,6 +411,20 @@ class AutomationRule < ApplicationRecord
     return unless value.is_a?(Hash)
 
     value.with_indifferent_access
+  end
+
+  def normalized_cancel_touches_plan_param(action_params)
+    params = normalized_action_hash(action_params)
+    value = if params.present?
+              params[:reminder_group_id] || params[:touch_plan_id]
+            else
+              normalized_action_param(action_params)
+            end
+
+    value = value.to_s.strip
+    return nil if value.blank? || value == 'nil'
+
+    value
   end
 
   def normalized_optional_action_param(action_params)

@@ -3,7 +3,10 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
     'create_touch'
   end
 
-  description 'Create a scheduled outbound touch with free text, attachments, or an approved WhatsApp/Twilio channel template'
+  description(
+    'Create a scheduled outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+    'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
+  )
   param :body, type: :string, desc: 'Touch message body. Required for free_text touches; optional for channel_template touches', required: false
   param :content_kind, type: :string,
                        desc: 'Touch content kind: free_text or channel_template. Defaults to channel_template when template_params are provided', required: false

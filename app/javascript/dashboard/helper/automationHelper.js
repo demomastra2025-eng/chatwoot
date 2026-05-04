@@ -262,6 +262,9 @@ export const getActionOptions = ({
   const actionStatusOptions = (statusFilterOptions || []).filter(
     status => status.id !== 'all'
   );
+  const entityTouchPlans = (touchPlans || []).filter(
+    plan => !entityKind || (plan.entity_kinds || []).includes(entityKind)
+  );
 
   const actionsMap = {
     assign_agent: addNoneToListFn ? addNoneToListFn(agents) : agents,
@@ -281,9 +284,10 @@ export const getActionOptions = ({
     assign_task_assignee: addNoneToListFn ? addNoneToListFn(agents) : agents,
     assign_task_team: addNoneToListFn ? addNoneToListFn(teams) : teams,
     change_task_priority: priorityOptions,
-    apply_touch_plan: (touchPlans || []).filter(
-      plan => !entityKind || (plan.entity_kinds || []).includes(entityKind)
-    ),
+    apply_touch_plan: entityTouchPlans,
+    cancel_touches: addNoneToListFn
+      ? addNoneToListFn(entityTouchPlans)
+      : entityTouchPlans,
   };
   return actionsMap[type];
 };

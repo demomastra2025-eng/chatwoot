@@ -55,6 +55,10 @@ class AutomationRules::AppointmentActionService
     touch_action_service.create_touch(action_params)
   end
 
+  def cancel_touches(action_params)
+    touch_action_service.cancel_touches(action_params)
+  end
+
   def formatted_changed_attributes
     return if @changed_attributes.blank?
 

@@ -117,6 +117,35 @@ RSpec.describe AutomationRules::ActionService do
       end
     end
 
+    describe '#perform with cancel_touches action' do
+      let(:touch_plan) { create(:reminder_group, account: account, entity_kinds: ['conversation']) }
+
+      before do
+        rule.actions = [
+          {
+            action_name: 'cancel_touches',
+            action_params: [{ reminder_group_id: touch_plan.id, reason: 'Customer replied' }]
+          }
+        ]
+        rule.save!
+      end
+
+      it 'delegates cancellation to the touch action service' do
+        touch_action_service = instance_double(AutomationRules::TouchActionService)
+        allow(AutomationRules::TouchActionService).to receive(:new).and_return(touch_action_service)
+        allow(touch_action_service).to receive(:cancel_touches)
+
+        described_class.new(rule, account, conversation).perform
+
+        expect(touch_action_service).to have_received(:cancel_touches) do |action_params|
+          expect(action_params.first).to include(
+            'reminder_group_id' => touch_plan.id,
+            'reason' => 'Customer replied'
+          )
+        end
+      end
+    end
+
     describe '#perform with send_email_to_team action' do
       let!(:team) { create(:team, account: account) }
 

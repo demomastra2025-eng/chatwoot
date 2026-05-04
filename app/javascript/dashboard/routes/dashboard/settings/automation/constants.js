@@ -55,6 +55,10 @@ const APPOINTMENT_AUTOMATION_ACTIONS = [
     key: 'create_touch',
     name: 'CREATE_TOUCH',
   },
+  {
+    key: 'cancel_touches',
+    name: 'CANCEL_TOUCHES',
+  },
 ];
 
 const DEAL_AUTOMATION_CONDITIONS = [
@@ -171,6 +175,10 @@ const DEAL_AUTOMATION_ACTIONS = [
     key: 'create_touch',
     name: 'CREATE_TOUCH',
   },
+  {
+    key: 'cancel_touches',
+    name: 'CANCEL_TOUCHES',
+  },
 ];
 
 const TASK_AUTOMATION_CONDITIONS = [
@@ -278,6 +286,10 @@ const TASK_AUTOMATION_ACTIONS = [
   {
     key: 'create_touch',
     name: 'CREATE_TOUCH',
+  },
+  {
+    key: 'cancel_touches',
+    name: 'CANCEL_TOUCHES',
   },
 ];
 
@@ -476,6 +488,10 @@ const CONVERSATION_AUTOMATION_ACTIONS = [
   {
     key: 'create_touch',
     name: 'CREATE_TOUCH',
+  },
+  {
+    key: 'cancel_touches',
+    name: 'CANCEL_TOUCHES',
   },
 ];
 
@@ -787,6 +803,11 @@ export const AUTOMATION_ACTION_TYPES = [
     key: 'create_touch',
     label: 'CREATE_TOUCH',
     inputType: 'touch',
+  },
+  {
+    key: 'cancel_touches',
+    label: 'CANCEL_TOUCHES',
+    inputType: 'search_select',
   },
   {
     key: 'send_attachment',
