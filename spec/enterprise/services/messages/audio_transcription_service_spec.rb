@@ -77,13 +77,32 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       end
     end
 
+    context 'when WhatsApp Web sends audio/opus without an extension' do
+      before do
+        allow(service).to receive(:can_transcribe?).and_return(true)
+        attachment.file.attach(
+          io: StringIO.new('OggSfake-opus-data'),
+          filename: 'ptt-message',
+          content_type: 'audio/opus'
+        )
+      end
+
+      it 'treats it as an Ogg Opus file and calls the transcription API' do
+        expect(service).to receive(:transcribe_audio).and_return('Привет')
+
+        result = service.perform
+
+        expect(result).to eq({ success: true, transcriptions: 'Привет' })
+      end
+    end
+
     context 'when the attachment format is not supported' do
       before do
         allow(service).to receive(:can_transcribe?).and_return(true)
         attachment.file.attach(
-          io: File.open(Rails.public_path.join('audio/widget/ding.mp3')),
-          filename: 'speech.opus',
-          content_type: 'audio/opus'
+          io: StringIO.new('plain text'),
+          filename: 'speech.txt',
+          content_type: 'text/plain'
         )
       end
 
@@ -102,11 +121,15 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
     before do
       attachment.file.attach(
-        io: File.open(Rails.public_path.join('audio/widget/ding.mp3')),
-        filename: 'speech',
-        content_type: 'audio/mpeg'
+        io: upload_io,
+        filename: filename,
+        content_type: content_type
       )
     end
+
+    let(:upload_io) { File.open(Rails.public_path.join('audio/widget/ding.mp3')) }
+    let(:filename) { 'speech' }
+    let(:content_type) { 'audio/mpeg' }
 
     it 'adds extension from content type when filename has no extension' do
       temp_file_path = service.send(:fetch_audio_file)
@@ -114,6 +137,20 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       expect(File.extname(temp_file_path)).to eq('.mpeg')
     ensure
       FileUtils.rm_f(temp_file_path) if temp_file_path.present?
+    end
+
+    context 'when WhatsApp Web stores audio/opus without an extension' do
+      let(:upload_io) { StringIO.new('OggSfake-opus-data') }
+      let(:filename) { 'ptt-message' }
+      let(:content_type) { 'audio/opus' }
+
+      it 'writes a temp file with an ogg extension accepted by the transcription provider' do
+        temp_file_path = service.send(:fetch_audio_file)
+
+        expect(File.extname(temp_file_path)).to eq('.ogg')
+      ensure
+        FileUtils.rm_f(temp_file_path) if temp_file_path.present?
+      end
     end
   end
 

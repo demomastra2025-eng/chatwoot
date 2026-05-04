@@ -52,12 +52,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     blob = attachment.file.blob
     temp_dir = Rails.root.join('tmp/uploads/audio-transcriptions')
     FileUtils.mkdir_p(temp_dir)
-    temp_file_name = "#{blob.key}-#{blob.filename}"
-
-    if blob.filename.extension_without_delimiter.blank?
-      extension = extension_from_content_type(blob.content_type)
-      temp_file_name = "#{temp_file_name}.#{extension}" if extension.present?
-    end
+    temp_file_name = transcription_temp_file_name(blob)
 
     temp_file_path = File.join(temp_dir, temp_file_name)
 
@@ -153,8 +148,20 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     {
       'x-m4a' => 'm4a',
       'x-wav' => 'wav',
-      'x-mp3' => 'mp3'
+      'x-mp3' => 'mp3',
+      'opus' => 'ogg'
     }.fetch(subtype, subtype)
+  end
+
+  def transcription_temp_file_name(blob)
+    original_filename = blob.filename
+    filename_extension = original_filename.extension_without_delimiter.to_s.downcase
+    extension = supported_audio_extension || extension_from_content_type(blob.content_type)
+
+    return "#{blob.key}-#{original_filename}" if extension.blank? || filename_extension == extension
+
+    filename_base = original_filename.base.presence || original_filename.to_s
+    "#{blob.key}-#{filename_base}.#{extension}"
   end
 
   def supported_attachment_format?
@@ -166,10 +173,11 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
       return unless attachment.file.attached?
 
       blob = attachment.file.blob
-      extension = blob.filename.extension_without_delimiter.presence || extension_from_content_type(blob.content_type)
-      normalized_extension = extension.to_s.downcase.presence
-
-      normalized_extension if normalized_extension.present? && normalized_extension.in?(SUPPORTED_AUDIO_EXTENSIONS)
+      [
+        extension_from_content_type(blob.content_type),
+        blob.filename.extension_without_delimiter
+      ].filter_map { |extension| extension.to_s.downcase.presence }
+       .find { |extension| extension.in?(SUPPORTED_AUDIO_EXTENSIONS) }
     end
   end
 
