@@ -85,6 +85,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   before_validation :normalize_phone_number!
   before_validation :normalize_ignore_jids!
   before_validation :ensure_defaults!
+  before_validation :release_stuck_deleting_instance_name!, on: :create
 
   validates :provider, inclusion: { in: PROVIDERS }
   validates :lifecycle_state, inclusion: { in: LIFECYCLE_STATES }
@@ -663,6 +664,33 @@ class Channel::WhatsappWeb < ApplicationRecord
     self.webhook_identifier ||= self.class.generate_unique_secure_token
     self.webhook_secret ||= self.class.generate_unique_secure_token
     self.instance_name ||= "onelink-waweb-#{generated_instance_name_suffix}"
+  end
+
+  def release_stuck_deleting_instance_name!
+    return if instance_name.blank?
+
+    stale_channel = self.class.where(instance_name: instance_name).where.not(id: id).find do |channel|
+      channel.send(:pending_deletion?)
+    end
+    stale_channel&.send(:release_instance_name_for_reuse!)
+  end
+
+  def pending_deletion?
+    lifecycle_state == 'deleting' || inbox&.deleting?
+  end
+
+  def release_instance_name_for_reuse!
+    return unless persisted?
+    return if instance_name.to_s.end_with?(released_instance_name_suffix)
+
+    update_columns( # rubocop:disable Rails/SkipsModelValidations
+      instance_name: "#{instance_name}#{released_instance_name_suffix}",
+      updated_at: Time.current
+    )
+  end
+
+  def released_instance_name_suffix
+    "--deleted-#{id}"
   end
 
   def ensure_ignore_jids_array

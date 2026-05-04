@@ -29,6 +29,20 @@ RSpec.describe Channel::WhatsappWeb do
       expect(channel.webhook_secret).to be_present
       expect(channel.webhook_callback_url).to eq("https://app.example.com/webhooks/whatsapp_web/#{channel.webhook_identifier}")
     end
+
+    it 'releases a stuck deleting channel instance name so the same number can be recreated' do
+      account = create(:account)
+      phone_number = '+77066318623'
+      old_channel = create(:channel_whatsapp_web, account: account, phone_number: phone_number)
+      old_instance_name = old_channel.instance_name
+      old_channel.inbox.mark_pending_deletion!
+
+      new_channel = create(:channel_whatsapp_web, account: account, phone_number: phone_number)
+
+      expect(new_channel.instance_name).to eq(old_instance_name)
+      expect(old_channel.reload.instance_name).to eq("#{old_instance_name}--deleted-#{old_channel.id}")
+      expect(old_channel.inbox.reload).to be_deleting
+    end
   end
 
   describe 'runtime validation' do
