@@ -25,6 +25,9 @@ class Reminders::ExecuteService
 
   def execute_send_message
     conversation = Reminders::ConversationResolver.new(reminder: reminder).perform
+    return reminder if cancel_due_to_campaign_conflict(conversation)
+    return reminder if reschedule_outside_delivery_window(conversation)
+
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: reminder.content_kind, template_params: reminder.template_params,
                                                              attachments: reminder.attachments)
     generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
@@ -51,6 +54,9 @@ class Reminders::ExecuteService
   def execute_ai_agent_wakeup
     conversation = reminder.target_conversation || reminder.conversation
     raise ArgumentError, 'AI wakeup touches require a conversation target' if conversation.blank?
+
+    return reminder if cancel_due_to_campaign_conflict(conversation)
+    return reminder if reschedule_outside_delivery_window(conversation)
 
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: 'free_text', template_params: {}, attachments: [])
 
@@ -130,5 +136,14 @@ class Reminders::ExecuteService
       attachments: attachments,
       scheduled_at: Time.current
     )
+  end
+
+  def reschedule_outside_delivery_window(conversation)
+    result = Reminders::DeliveryWindowPolicy.apply!(reminder: reminder, conversation: conversation)
+    result.blocked?
+  end
+
+  def cancel_due_to_campaign_conflict(conversation)
+    Reminders::CampaignConflictPolicy.new(reminder: reminder, conversation: conversation).cancel_if_conflict!
   end
 end

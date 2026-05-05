@@ -59,8 +59,8 @@ class Reminders::CreateService
       instructions: attributes[:instructions],
       attachments: Array(attributes[:attachments]),
       template_params: (attributes[:template_params] || {}).to_h,
-      metadata: (attributes[:metadata] || {}).to_h,
-      auto_cancel_on_incoming: normalize_boolean(attributes[:auto_cancel_on_incoming], default: true),
+      metadata: normalized_metadata,
+      auto_cancel_on_incoming: auto_cancel_on_incoming_value,
       target_inbox_id: attributes[:target_inbox_id],
       target_contact_id: attributes[:target_contact_id],
       target_contact_inbox_id: attributes[:target_contact_inbox_id],
@@ -69,9 +69,18 @@ class Reminders::CreateService
   end
   # rubocop:enable Metrics/MethodLength
 
-  def normalize_boolean(value, default:)
-    return default if value.nil?
+  def auto_cancel_on_incoming_value
+    Reminders::BooleanParam.call(
+      attributes[:auto_cancel_on_incoming],
+      default: false,
+      field_name: 'auto_cancel_on_incoming'
+    )
+  end
 
-    ActiveModel::Type::Boolean.new.cast(value)
+  def normalized_metadata
+    metadata = (attributes[:metadata] || {}).to_h.stringify_keys
+    return metadata unless attributes.key?(:auto_cancel_on_incoming)
+
+    metadata.merge('auto_cancel_on_incoming_explicit' => auto_cancel_on_incoming_value)
   end
 end

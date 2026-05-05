@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_04_001000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_05_093000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1691,7 +1691,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_04_001000) do
     t.jsonb "template_params", default: {}, null: false
     t.jsonb "metadata", default: {}, null: false
     t.string "fingerprint"
-    t.boolean "auto_cancel_on_incoming", default: true, null: false
+    t.boolean "auto_cancel_on_incoming", default: false, null: false
     t.integer "attempts_count", default: 0, null: false
     t.text "last_error"
     t.datetime "processing_started_at"

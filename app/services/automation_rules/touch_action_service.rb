@@ -1,4 +1,6 @@
 class AutomationRules::TouchActionService
+  AUTOMATION_CANCEL_REASON = 'отменен автоматизацией'.freeze
+
   attr_reader :account, :entity_kind, :record, :rule
 
   def initialize(rule:, account:, record:, entity_kind:)
@@ -11,18 +13,25 @@ class AutomationRules::TouchActionService
   def apply_touch_plan(action_params)
     reminder_group = load_touch_plan!(action_params)
 
-    Reminders::ApplyGroupService.new(
+    reminders = Reminders::ApplyGroupService.new(
       account: account,
       reminder_group: reminder_group,
       remindable: record,
       actor: nil
     ).perform
+
+    reminders.each do |reminder|
+      mark_automation_reminder!(reminder)
+      Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
+    end
+
+    reminders
   end
 
   def create_touch(action_params)
     params = normalize_touch_params(action_params)
 
-    Reminders::CreateService.new(
+    reminder = Reminders::CreateService.new(
       account: account,
       remindable: record,
       attributes: {
@@ -37,13 +46,17 @@ class AutomationRules::TouchActionService
         scheduled_at: Time.current + delay_minutes(params).minutes,
         timezone: 'UTC',
         body: params[:body],
-        auto_cancel_on_incoming: params.fetch(:auto_cancel_on_incoming, true),
-        metadata: {
-          'automation_rule_id' => rule.id,
-          'touch_source' => 'automation'
-        }
+        auto_cancel_on_incoming: Reminders::BooleanParam.call(
+          params[:auto_cancel_on_incoming],
+          default: false,
+          field_name: 'auto_cancel_on_incoming'
+        ),
+        metadata: automation_metadata
       }
     ).perform
+
+    Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
+    reminder
   end
 
   def cancel_touches(action_params)
@@ -55,7 +68,7 @@ class AutomationRules::TouchActionService
       remindable: record,
       reminder_group: reminder_group,
       actor: nil,
-      reason: params[:reason].presence || "Cancelled by automation rule ##{rule.id}",
+      reason: params[:reason].presence || AUTOMATION_CANCEL_REASON,
       metadata: {
         'automation_rule_id' => rule.id,
         'touch_source' => 'automation',
@@ -71,6 +84,19 @@ class AutomationRules::TouchActionService
     Integer(params[:delay_minutes] || 0)
   rescue ArgumentError, TypeError
     raise ArgumentError, 'create_touch delay_minutes must be a non-negative integer'
+  end
+
+  def automation_metadata
+    {
+      'automation_rule_id' => rule.id,
+      'touch_source' => 'automation'
+    }
+  end
+
+  def mark_automation_reminder!(reminder)
+    metadata = reminder.metadata.to_h.merge(automation_metadata)
+    reminder.update!(metadata: metadata) if reminder.metadata != metadata
+    reminder
   end
 
   def load_touch_plan!(action_params)

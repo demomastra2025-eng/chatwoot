@@ -6,7 +6,7 @@
 #  action_type             :integer          default("send_message"), not null
 #  attachments             :jsonb            not null
 #  attempts_count          :integer          default(0), not null
-#  auto_cancel_on_incoming :boolean          default(TRUE), not null
+#  auto_cancel_on_incoming :boolean          default(FALSE), not null
 #  body                    :text
 #  cancelled_at            :datetime
 #  completed_at            :datetime
@@ -496,6 +496,7 @@ class Reminder < ApplicationRecord
   end
 
   def delivery_policy_ready_for_validation?
+    return false if cancelled? || completed? || failed?
     return false unless send_message?
     return false if target_inbox.blank? || scheduled_at.blank?
     return true if channel_template? && template_params.present?

@@ -156,7 +156,74 @@ RSpec.describe Reminders::ExecuteService do
       contact = create(:contact, account: account)
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
       conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
-      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+
+      touch = nil
+      travel_to(Time.zone.parse('2026-05-05 10:00:00 UTC')) do
+        create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming')
+        touch = create(
+          :reminder,
+          account: account,
+          touch_conversation: conversation,
+          conversation: conversation,
+          remindable: conversation,
+          status: :pending,
+          scheduled_at: 1.hour.from_now,
+          body: 'This should not be sent outside the window'
+        )
+      end
+
+      travel_to(Time.zone.parse('2026-05-06 11:01:00 UTC')) do
+        touch.update_columns(status: Reminder.statuses[:processing], scheduled_at: Time.current, updated_at: Time.current)
+
+        expect do
+          described_class.new(reminder: touch).perform
+        end.to raise_error(ArgumentError, /approved channel_template/)
+
+        expect(touch.reload).to be_failed
+        expect(conversation.messages.outgoing.count).to eq(0)
+      end
+    end
+
+    it 'reschedules a due touch into the first 30 minutes of the next inbox working window' do
+      travel_to(Time.zone.parse('2026-05-02 23:00:00 UTC')) do
+        account = create(:account)
+        inbox = create(:inbox, account: account, timezone: 'UTC', working_hours_enabled: true)
+        contact = create(:contact, account: account)
+        contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+        conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+        touch = create(
+          :reminder,
+          account: account,
+          touch_conversation: conversation,
+          conversation: conversation,
+          remindable: conversation,
+          status: :processing,
+          scheduled_at: 5.minutes.ago,
+          body: 'Wait for business hours'
+        )
+
+        expect do
+          described_class.new(reminder: touch).perform
+        end.not_to(change { conversation.messages.outgoing.count })
+
+        touch.reload
+        expect(touch).to be_pending
+        expect(touch.scheduled_at).to be_between(
+          Time.zone.parse('2026-05-04 09:00:00 UTC'),
+          Time.zone.parse('2026-05-04 09:30:00 UTC')
+        ).inclusive
+        expect(touch.metadata).to include('rescheduled_by_working_hours' => true, 'working_hours_reschedule_reason' => 'outside_working_hours')
+      end
+    end
+
+    it 'cancels an automation touch instead of sending or rescheduling when a same-contact campaign is blocking' do
+      account = create(:account)
+      inbox = create(:inbox, account: account, working_hours_enabled: false)
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
+      campaign = create(:campaign, account: account, inbox: inbox)
+      create(:campaign_delivery, campaign: campaign, account: account, inbox: inbox, contact: contact, status: :pending)
       touch = create(
         :reminder,
         account: account,
@@ -164,15 +231,17 @@ RSpec.describe Reminders::ExecuteService do
         conversation: conversation,
         remindable: conversation,
         status: :processing,
-        body: 'This should not be sent outside the window'
+        body: 'Automation follow-up',
+        metadata: { 'touch_source' => 'automation', 'automation_rule_id' => 123 }
       )
 
       expect do
         described_class.new(reminder: touch).perform
-      end.to raise_error(ArgumentError, /approved channel_template/)
+      end.not_to(change { conversation.messages.outgoing.count })
 
-      expect(touch.reload).to be_failed
-      expect(conversation.messages.outgoing.count).to eq(0)
+      expect(touch.reload).to be_cancelled
+      expect(touch.last_error).to eq('отменен из-за рассылки')
+      expect(touch.metadata).to include('cancelled_via' => 'campaign_conflict_policy', 'campaign_conflict_campaign_id' => campaign.id)
     end
 
     it 'executes a WhatsApp channel_template touch and stores template delivery metadata' do

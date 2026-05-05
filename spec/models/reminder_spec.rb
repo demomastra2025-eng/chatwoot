@@ -142,6 +142,14 @@ RSpec.describe Reminder do
     end
   end
 
+  describe 'auto-cancel defaults' do
+    it 'defaults direct reminder creation to not auto-cancel on incoming replies' do
+      reminder = create(:reminder)
+
+      expect(reminder.auto_cancel_on_incoming).to be(false)
+    end
+  end
+
   describe 'status defaults' do
     it 'falls back to draft when routing is incomplete' do
       account = create(:account)

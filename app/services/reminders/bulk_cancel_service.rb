@@ -8,7 +8,7 @@ class Reminders::BulkCancelService
     @remindable = remindable
     @reminder_group = reminder_group
     @actor = actor
-    @reason = reason.presence || 'Cancelled by automation'
+    @reason = reason.presence || 'отменен автоматизацией'
     @metadata = (metadata || {}).to_h.stringify_keys
   end
 

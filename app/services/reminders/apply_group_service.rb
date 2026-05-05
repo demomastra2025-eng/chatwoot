@@ -36,7 +36,7 @@ class Reminders::ApplyGroupService
 
     reminder_group.touches.map do |definition|
       normalized_definition = Reminders::DefinitionNormalizer.call(definition)
-      attributes = normalized_definition.with_indifferent_access.slice(*TOUCH_ATTRIBUTE_KEYS)
+      attributes = touch_attributes_from(normalized_definition)
       reminder = account.reminders.create!(
         attributes.merge(
           creator: actor,
@@ -64,5 +64,21 @@ class Reminders::ApplyGroupService
     else
       raise ArgumentError, "Unsupported remindable: #{remindable.class.name}"
     end
+  end
+
+  def touch_attributes_from(definition)
+    attributes = definition.with_indifferent_access.slice(*TOUCH_ATTRIBUTE_KEYS)
+    explicit_auto_cancel = attributes.key?(:auto_cancel_on_incoming)
+    attributes[:auto_cancel_on_incoming] = Reminders::BooleanParam.call(
+      attributes[:auto_cancel_on_incoming],
+      default: false,
+      field_name: 'auto_cancel_on_incoming'
+    )
+    return attributes unless explicit_auto_cancel
+
+    attributes[:metadata] = attributes[:metadata].to_h.stringify_keys.merge(
+      'auto_cancel_on_incoming_explicit' => attributes[:auto_cancel_on_incoming]
+    )
+    attributes
   end
 end
