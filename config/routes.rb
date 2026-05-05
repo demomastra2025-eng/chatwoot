@@ -395,6 +395,7 @@ Rails.application.routes.draw do
             post 'agents/:agent_ref/enabled', to: 'agents#enabled'
             post 'ai/toggle', to: 'routing#toggle_ai'
             post 'webphone/token', to: 'webphone#create'
+            post 'webphone/presence', to: 'webphone#presence'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do

@@ -75,7 +75,11 @@ class Telephony::CallSession < ApplicationRecord
     'decision_received' => 'ringing',
     'operator_ringing' => 'ringing',
     'operator_answered' => 'in_progress',
+    'operator_no_answer' => 'no_answer',
+    'operator_timeout' => 'no_answer',
+    'operator_failed' => 'failed',
     'caller_hangup' => 'cancelled',
+    'timeout' => 'no_answer',
     'session_completed' => 'completed',
     'session_failed' => 'failed',
     'unsupported_action' => 'failed'

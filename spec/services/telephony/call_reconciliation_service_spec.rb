@@ -117,5 +117,65 @@ RSpec.describe Telephony::CallReconciliationService do
         'terminal_fallback' => 'missed'
       )
     end
+
+    it 'closes stale operator calls that disappeared from the bridge poll as no-answer' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        direction: 'inbound',
+        status: 'ringing',
+        external_call_ref: 'call-ref-missing-operator',
+        started_at: now - 10.minutes,
+        last_event_at: now - 6.minutes,
+        metadata: {
+          'last_payload' => {
+            'metadata' => {
+              'route_action' => 'operator',
+              'route_reason' => 'operator_route'
+            }
+          }
+        }
+      )
+
+      result = service.perform
+
+      expect(result).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      expect(call_session.reload).to have_attributes(
+        status: 'no_answer',
+        ended_at: now,
+        ended_by: 'bridge_reconciliation',
+        end_reason: 'bridge_missing_operator_no_answer'
+      )
+      expect(call_session.metadata['bridge_reconciliation']).to include(
+        'missing_from_bridge' => true,
+        'route_action' => 'operator',
+        'target_status' => 'no_answer'
+      )
+    end
+
+    it 'does not close missing non-operator inbound calls without terminal evidence' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        direction: 'inbound',
+        status: 'in_progress',
+        external_call_ref: 'call-ref-missing-ai',
+        started_at: now - 10.minutes,
+        last_event_at: now - 6.minutes,
+        metadata: {
+          'last_payload' => {
+            'metadata' => {
+              'route_action' => 'ai',
+              'route_reason' => 'ai_route'
+            }
+          }
+        }
+      )
+
+      result = service.perform
+
+      expect(result).to include(checked: 1, missing: 1, updated: 0, errors: 0)
+      expect(call_session.reload.status).to eq('in_progress')
+    end
   end
 end

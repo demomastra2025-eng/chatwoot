@@ -6,6 +6,15 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     render_payload(webphone_service.token_for(user: Current.user, inbox: inbox))
   end
 
+  def presence
+    render_payload(
+      webphone_service.update_presence!(
+        user: Current.user,
+        registered: ActiveModel::Type::Boolean.new.cast(params.require(:registered))
+      )
+    )
+  end
+
   private
 
   def webphone_service

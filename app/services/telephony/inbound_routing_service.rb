@@ -148,7 +148,7 @@ class Telephony::InboundRoutingService
 
   def operator_routable?
     return false unless sip_operator_aor?(resolved_operator_aor)
-    return true if operator_binding.blank?
+    return false if operator_binding.blank?
 
     operator_binding.registered_for_routing?
   end

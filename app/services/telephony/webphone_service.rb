@@ -12,8 +12,14 @@ class Telephony::WebphoneService
     response['provider'] ||= fallback_provider(inbox, agent_binding)
     response['agent_ref'] ||= agent_binding&.agent_ref
     apply_signaling_server_override(response)
-    response['calling_supported'] = bridge_calling_supported?(response)
+    response['calling_supported'] = agent_binding_usable?(agent_binding) && bridge_calling_supported?(response)
     response
+  end
+
+  def update_presence!(user:, registered:)
+    agent_binding = account.telephony_agent_bindings.find_by!(user_id: user.id)
+    agent_binding.update_browser_registration!(registered: registered)
+    agent_binding.to_telephony_h.merge(registered_for_routing: agent_binding.registered_for_routing?)
   end
 
   private
@@ -31,6 +37,10 @@ class Telephony::WebphoneService
 
   def fallback_provider(inbox, agent_binding)
     inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
+  end
+
+  def agent_binding_usable?(agent_binding)
+    agent_binding.present? && agent_binding.enabled?
   end
 
   def apply_signaling_server_override(response)

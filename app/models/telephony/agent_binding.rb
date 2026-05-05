@@ -53,8 +53,24 @@ class Telephony::AgentBinding < ApplicationRecord
       domain_ref: domain_ref,
       credentials_ref: credentials_ref,
       enabled: enabled,
+      registered_for_routing: registered_for_routing?,
+      registration_state: metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state'),
+      last_presence_source: metadata_value('last_presence_source'),
+      last_presence_event_at: metadata_value('last_presence_event_at'),
       last_synced_at: last_synced_at
     }.compact
+  end
+
+  def update_browser_registration!(registered:, occurred_at: Time.current)
+    registration_metadata = (metadata || {}).deep_dup
+    registration_metadata['registration_state'] = registered ? 'registered' : 'offline'
+    registration_metadata['presence'] = registered ? 'online' : 'offline'
+    registration_metadata['registered'] = registered
+    registration_metadata['available'] = registered
+    registration_metadata['last_presence_source'] = 'browser_webphone'
+    registration_metadata['last_presence_event_at'] = occurred_at.iso8601
+
+    update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
 
   def registered_for_routing?

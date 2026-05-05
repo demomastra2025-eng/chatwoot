@@ -1,4 +1,5 @@
 import { Web } from 'sip.js';
+import VoiceAPI from './voiceAPIClient';
 
 const createCallDisconnectedEvent = detail =>
   new CustomEvent('call:disconnected', { detail });
@@ -116,10 +117,12 @@ class FonosterVoiceClient extends EventTarget {
       },
       onRegistered: () => {
         this.registered = true;
+        FonosterVoiceClient.reportPresence(true);
         this.dispatchEvent(createCallRegisteredEvent({ provider: 'fonoster' }));
       },
       onUnregistered: () => {
         this.registered = false;
+        FonosterVoiceClient.reportPresence(false);
       },
       onServerConnect: () => {
         this.connected = true;
@@ -128,6 +131,7 @@ class FonosterVoiceClient extends EventTarget {
         const hadCall = this.pendingIncomingCall || this.hasActiveCall;
         this.connected = false;
         this.registered = false;
+        FonosterVoiceClient.reportPresence(false);
         this.pendingIncomingCall = false;
         this.hasActiveCall = false;
         if (hadCall) {
@@ -207,6 +211,10 @@ class FonosterVoiceClient extends EventTarget {
     await this.registrationPromise;
   }
 
+  static reportPresence(registered) {
+    VoiceAPI.updateWebphonePresence(registered).catch(() => {});
+  }
+
   async ensureConnectedAndRegistered() {
     if (!this.simpleUser) return;
     if (!this.simpleUser.isConnected()) {
@@ -263,6 +271,7 @@ class FonosterVoiceClient extends EventTarget {
     this.initialized = false;
     this.connected = false;
     this.registered = false;
+    FonosterVoiceClient.reportPresence(false);
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
     this.registrationPromise = null;

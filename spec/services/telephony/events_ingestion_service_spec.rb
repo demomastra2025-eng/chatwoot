@@ -116,6 +116,33 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-native-busy-1')).to be_processed
     end
 
+    it 'closes operator no-answer lifecycle events as native no_answer terminal state' do
+      occurred_at = Time.zone.parse(15.seconds.ago.iso8601)
+      existing_call_session.update!(status: 'ringing', last_event_at: 1.minute.ago)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-operator-no-answer-1',
+          event: 'operator_no_answer',
+          occurred_at: occurred_at.iso8601,
+          ended_by: 'operator',
+          end_reason: 'operator_timeout'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'no_answer',
+        ended_at: occurred_at,
+        ended_by: 'operator',
+        end_reason: 'operator_timeout'
+      )
+      expect(result.legs.last).to include(
+        'event_key' => 'evt-operator-no-answer-1',
+        'event_type' => 'operator_no_answer',
+        'status' => 'no_answer'
+      )
+    end
+
     it 'does not downgrade a terminal call session when a late non-terminal event arrives' do
       existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
 

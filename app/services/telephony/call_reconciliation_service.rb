@@ -2,6 +2,7 @@ class Telephony::CallReconciliationService
   DEFAULT_PAGE_SIZE = 100
   DEFAULT_MAX_PAGES = 3
   DEFAULT_STALE_AFTER = 30.seconds
+  DEFAULT_MISSING_AFTER = 5.minutes
 
   BRIDGE_STATUS_MAP = {
     'queued' => 'created',
@@ -43,6 +44,7 @@ class Telephony::CallReconciliationService
     @page_size = positive_integer(page_size || ENV.fetch('TELEPHONY_RECONCILE_PAGE_SIZE', DEFAULT_PAGE_SIZE))
     @max_pages = positive_integer(max_pages || ENV.fetch('TELEPHONY_RECONCILE_MAX_PAGES', DEFAULT_MAX_PAGES))
     @stale_after = stale_after || ENV.fetch('TELEPHONY_RECONCILE_STALE_AFTER_SECONDS', DEFAULT_STALE_AFTER.to_i).to_i.seconds
+    @missing_after = ENV.fetch('TELEPHONY_RECONCILE_MISSING_AFTER_SECONDS', DEFAULT_MISSING_AFTER.to_i).to_i.seconds
   end
 
   def perform
@@ -57,6 +59,7 @@ class Telephony::CallReconciliationService
         bridge_item = bridge_item_for(session, indexed_items)
         unless bridge_item
           result[:missing] += 1
+          result[:updated] += 1 if reconcile_missing_session(session)
           next
         end
 
@@ -72,7 +75,7 @@ class Telephony::CallReconciliationService
 
   private
 
-  attr_reader :account, :bridge_client, :max_pages, :now, :page_size, :stale_after
+  attr_reader :account, :bridge_client, :max_pages, :missing_after, :now, :page_size, :stale_after
 
   def grouped_active_sessions
     sessions = active_candidate_scope.includes(:account).to_a
@@ -132,6 +135,44 @@ class Telephony::CallReconciliationService
 
     session.update!(attrs)
     true
+  end
+
+  def reconcile_missing_session(session)
+    return false unless missing_terminal_candidate?(session)
+
+    target_status = missing_terminal_status(session)
+    ended_at = now
+    session.update!(
+      status: target_status,
+      ended_at: ended_at,
+      ended_by: 'bridge_reconciliation',
+      end_reason: missing_end_reason(session, target_status),
+      duration_seconds: missing_duration_seconds(session, ended_at),
+      last_event_at: ended_at,
+      metadata: missing_metadata(session, target_status),
+      legs: append_missing_leg_snapshot(session, target_status)
+    )
+    true
+  end
+
+  def missing_terminal_candidate?(session)
+    return false if session.terminal?
+    return false unless missing_reconcilable_route?(session)
+
+    reference_time = session.last_event_at || session.started_at || session.updated_at || session.created_at
+    reference_time.present? && reference_time <= now - missing_after
+  end
+
+  def missing_reconcilable_route?(session)
+    %w[operator reject].include?(route_action(session)) || session.direction == 'outbound'
+  end
+
+  def missing_terminal_status(session)
+    return 'rejected' if route_action(session) == 'reject'
+    return 'no_answer' if route_action(session) == 'operator'
+    return 'no_answer' if session.direction == 'outbound'
+
+    'missed'
   end
 
   def base_reconciliation_attributes(session, item, target_status)
@@ -218,6 +259,61 @@ class Telephony::CallReconciliationService
 
   def raw_duration_seconds(item)
     item['duration'] || item['durationSec'] || item['duration_sec'] || item['duration_seconds']
+  end
+
+  def missing_end_reason(session, target_status)
+    return 'bridge_missing_operator_no_answer' if target_status == 'no_answer' && route_action(session) == 'operator'
+    return 'bridge_missing_rejected_route' if target_status == 'rejected'
+
+    'bridge_missing_call'
+  end
+
+  def missing_duration_seconds(session, ended_at)
+    return session.duration_seconds if session.duration_seconds.present?
+
+    started_at = session.answered_at || session.started_at || session.created_at
+    return unless started_at.present? && ended_at.present?
+
+    [ended_at.to_i - started_at.to_i, 0].max
+  end
+
+  def missing_metadata(session, target_status)
+    metadata = session.metadata.to_h.deep_dup
+    metadata['bridge_reconciliation'] = {
+      'target_status' => target_status,
+      'missing_from_bridge' => true,
+      'route_action' => route_action(session),
+      'route_reason' => route_reason(session),
+      'reconciled_at' => now.iso8601
+    }.compact
+    metadata
+  end
+
+  def append_missing_leg_snapshot(session, status)
+    legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
+    legs << {
+      'source' => 'bridge_reconciliation',
+      'status' => status,
+      'missing_from_bridge' => true,
+      'route_action' => route_action(session),
+      'occurred_at' => now.iso8601
+    }.compact
+    legs.last(20)
+  end
+
+  def route_action(session)
+    route_metadata_value(session, 'route_action')
+  end
+
+  def route_reason(session)
+    route_metadata_value(session, 'route_reason')
+  end
+
+  def route_metadata_value(session, key)
+    metadata = session.metadata.to_h.deep_stringify_keys
+    metadata[key].presence ||
+      metadata.dig('metadata', key).presence ||
+      metadata.dig('last_payload', 'metadata', key).presence
   end
 
   def merged_metadata(session, item, target_status)

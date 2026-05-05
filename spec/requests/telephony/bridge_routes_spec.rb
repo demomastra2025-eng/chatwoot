@@ -53,7 +53,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'returns an operator route when a SIP operator AOR is configured without a registration binding' do
+  it 'falls back when a SIP operator AOR is configured without a registration binding' do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: 'sip:unregistered@example.test',
@@ -65,7 +65,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-no-operator-registration',
              ingress_number: voice_channel.phone_number,
-             caller_number: '+15555550101'
+             caller_number: '+155****0101'
            },
            headers: {
              'X-Bridge-Secret' => 'bridge-secret'
@@ -75,10 +75,11 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'operator',
-      'agent_aor' => 'sip:unregistered@example.test',
-      'reason' => 'operator_route'
+      'action' => 'app',
+      'app_ref' => number_binding.configured_app_ref,
+      'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('agent_aor')
   end
 
   it 'routes to AI before app fallback when the operator target is missing and the Captain side is enabled' do
@@ -436,12 +437,20 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'routes every existing non-pending voice conversation status to the operator ' \
-     'when AI routing is enabled without requiring a registration binding' do
+  it 'routes every existing non-pending voice conversation status to a registered operator ' \
+     'when AI routing is enabled' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      agent_aor: 'sip:status-aware-operator@example.test',
+      enabled: true
+    )
     number_binding.routing_policy.update!(
       mode: 'ai',
       ai_app_ref: 'ai-status-aware-app-ref',
-      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
       fallback_mode: 'operator'
     )
 

@@ -50,6 +50,51 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'agent_ref')).to eq('fonoster-agent-42')
   end
 
+  it 'records browser registration presence on the agent binding' do
+    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(agent_binding.reload.registered_for_routing?).to be(true)
+    expect(agent_binding.metadata).to include(
+      'registration_state' => 'registered',
+      'presence' => 'online',
+      'last_presence_source' => 'browser_webphone'
+    )
+    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
+  end
+
+  it 'does not advertise browser calling without an operator binding even when the bridge contract is complete' do
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
+        .to_return(
+          status: 200,
+          body: {
+            token: 'test-token',
+            provider: 'fonoster',
+            username: 'agent-404',
+            domain: 'agents.example.test',
+            signalingServer: 'wss://bridge.example/ws',
+            targetAor: 'sip:agent-404@agents.example.test'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post path, headers: headers, as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
+  end
+
   it 'does not advertise browser calling for fonoster without a complete browser contract' do
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
@@ -111,6 +156,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'advertises browser calling for fonoster when the bridge returns the required SIP contract' do
+    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -144,6 +191,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'uses the configured public signaling server override for fonoster browser calls' do
+    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
