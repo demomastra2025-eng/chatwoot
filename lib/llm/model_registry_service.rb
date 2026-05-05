@@ -31,14 +31,20 @@ class Llm::ModelRegistryService
       raise
     end
 
+    def refresh_openrouter!
+      Llm::Config.reset!
+      Llm::Config.initialize!
+      Llm::OpenRouterModelCatalog.refresh!
+    end
+
     def audit_configuration
       errors = []
       warnings = []
 
-      validate_configured_models(errors:, warnings:)
-      validate_feature_defaults(errors:)
-      validate_installation_defaults(errors:)
-      validate_moderation_model(errors:)
+      validate_configured_models(errors: errors, warnings: warnings)
+      validate_feature_defaults(errors: errors)
+      validate_installation_defaults(errors: errors)
+      validate_moderation_model(errors: errors)
 
       {
         valid: errors.empty?,
@@ -72,7 +78,8 @@ class Llm::ModelRegistryService
         configured_models: Llm::Models.models.count,
         resolved_models: Llm::Models.models.keys.count { |model_name| Llm::Models.registry_known?(model_name) },
         last_refreshed_at: Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY) || @last_refreshed_at,
-        last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY) || @last_refresh_error
+        last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY) || @last_refresh_error,
+        openrouter: Llm::OpenRouterModelCatalog.metadata
       }
     end
 
@@ -83,6 +90,7 @@ class Llm::ModelRegistryService
           configured: Llm::Config.provider_available?(provider_name),
           custom_endpoint: Llm::Config.custom_api_base_configured?(provider_name)
         }
+        result[provider_name][:models_api] = Llm::OpenRouterModelCatalog.metadata if provider_name == Llm::OpenRouterModelCatalog::PROVIDER
       end
     end
 
@@ -110,7 +118,7 @@ class Llm::ModelRegistryService
         provider_name = model_config.fetch('provider', nil)
 
         errors << "Model '#{model_name}' references unknown provider '#{provider_name}'." if provider_name.present? &&
-          !Llm::Models.providers.key?(provider_name)
+                                                                                             !Llm::Models.providers.key?(provider_name)
 
         unless Llm::Models.registry_known?(model_name)
           errors << "Configured model '#{model_name}' is not known to RubyLLM.models."
@@ -152,9 +160,15 @@ class Llm::ModelRegistryService
           next
         end
 
-        errors << "Feature '#{feature_key}' default '#{default_model}' is not listed in its allowed models." unless allowed_models.include?(default_model)
-        errors << "Feature '#{feature_key}' default '#{default_model}' is not defined in config/llm.yml models." unless Llm::Models.models.key?(default_model)
-        errors << "Feature '#{feature_key}' default '#{default_model}' is not known to RubyLLM.models." unless Llm::Models.registry_known?(default_model)
+        unless allowed_models.include?(default_model)
+          errors << "Feature '#{feature_key}' default '#{default_model}' is not listed in its allowed models."
+        end
+        unless Llm::Models.models.key?(default_model)
+          errors << "Feature '#{feature_key}' default '#{default_model}' is not defined in config/llm.yml models."
+        end
+        unless Llm::Models.registry_known?(default_model)
+          errors << "Feature '#{feature_key}' default '#{default_model}' is not known to RubyLLM.models."
+        end
       end
     end
 
@@ -167,7 +181,9 @@ class Llm::ModelRegistryService
         return
       end
 
-      errors << "Installation default model '#{installation_default_model}' is not known to RubyLLM.models." unless Llm::Models.registry_known?(installation_default_model)
+      return if Llm::Models.registry_known?(installation_default_model)
+
+      errors << "Installation default model '#{installation_default_model}' is not known to RubyLLM.models."
     end
 
     def validate_moderation_model(errors:)

@@ -14,10 +14,18 @@ module Llm::Models
     'embedding' => %w[embedding],
     'transcription' => %w[transcription]
   }.freeze
+  OPENROUTER_PROVIDER = 'openrouter'.freeze
+  OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS = {
+    'editor' => [],
+    'label_suggestion' => [],
+    'assistant' => %w[structured_output tool_calling],
+    'copilot' => %w[structured_output tool_calling]
+  }.freeze
 
   class << self
     def providers = CONFIG['providers']
-    def models = CONFIG['models']
+    def configured_models = CONFIG['models']
+    def models = configured_models.merge(dynamic_model_configs)
     def features = CONFIG['features']
     def feature_keys = CONFIG['features'].keys
 
@@ -30,7 +38,9 @@ module Llm::Models
     end
 
     def models_for(feature)
-      Array(CONFIG.dig('features', feature.to_s, 'models')).map { |model_name| canonical_model_name(model_name) }
+      static_models = Array(CONFIG.dig('features', feature.to_s, 'models')).map { |model_name| canonical_model_name(model_name) }
+
+      (static_models + dynamic_models_for_feature(feature.to_s)).uniq
     end
 
     def valid_model_for?(feature, model_name)
@@ -38,11 +48,12 @@ module Llm::Models
     end
 
     def model_config(model_name)
-      models[canonical_model_name(model_name)]
+      canonical_name = canonical_model_name(model_name)
+      configured_models[canonical_name] || dynamic_model_configs[canonical_name]
     end
 
     def provider_for(model_name)
-      model_config(model_name)&.fetch('provider', nil)
+      model_config(model_name)&.fetch('provider', nil) || inferred_dynamic_provider_for(model_name)
     end
 
     def provider_config(provider_name)
@@ -100,6 +111,8 @@ module Llm::Models
     end
 
     def registry_known?(model_name)
+      return true if dynamic_model_configs.key?(canonical_model_name(model_name))
+
       registry_model_for(model_name).present?
     end
 
@@ -112,18 +125,24 @@ module Llm::Models
       return nil unless feature
 
       {
-        models: feature['models'].map do |model_name|
+        models: models_for(feature_key).map do |model_name|
           canonical_name = canonical_model_name(model_name)
-          model = model_config(canonical_name)
+          model = model_config(canonical_name).to_h
+          provider = model['provider']
+          provider_metadata = provider_config(provider)
           {
             id: canonical_name,
-            display_name: model['display_name'],
-            provider: model['provider'],
+            display_name: model['display_name'].presence || canonical_name,
+            provider: provider,
+            provider_display_name: provider_metadata&.fetch('display_name', nil) || provider,
             coming_soon: model['coming_soon'],
             credit_multiplier: model['credit_multiplier'],
             capabilities: capabilities_for(canonical_name),
             type: type_for(canonical_name),
-            known_to_registry: registry_known?(canonical_name)
+            known_to_registry: registry_known?(canonical_name),
+            source: model['source'],
+            context_length: model['context_length'],
+            max_output_tokens: model['max_output_tokens']
           }
         end,
         default: default_model_for(feature_key)
@@ -135,6 +154,13 @@ module Llm::Models
     end
 
     def estimated_text_cost(model_name, input_tokens: 0, output_tokens: 0)
+      openrouter_cost = Llm::OpenRouterModelCatalog.estimated_text_cost(
+        model_name,
+        input_tokens: input_tokens,
+        output_tokens: output_tokens
+      )
+      return openrouter_cost if openrouter_cost.present?
+
       registry_model = registry_model_for(model_name)
       return if registry_model.blank?
 
@@ -142,15 +168,48 @@ module Llm::Models
       output_price = registry_model.respond_to?(:output_price_per_million) ? registry_model.output_price_per_million.to_f : 0.0
       return if input_price.zero? && output_price.zero?
 
-      ((input_tokens.to_f / 1_000_000) * input_price + (output_tokens.to_f / 1_000_000) * output_price).round(8)
+      input_cost = (input_tokens.to_f / 1_000_000) * input_price
+      output_cost = (output_tokens.to_f / 1_000_000) * output_price
+
+      (input_cost + output_cost).round(8)
     rescue StandardError
       nil
     end
 
     private
 
+    def dynamic_model_configs
+      Llm::OpenRouterModelCatalog.model_configs
+    end
+
+    def dynamic_models_for_feature(feature_key)
+      required_capabilities = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS[feature_key]
+      return [] if required_capabilities.nil?
+
+      dynamic_model_configs.filter_map do |model_name, model_config|
+        model_name if dynamic_model_allowed_for_feature?(model_config, required_capabilities)
+      end
+    end
+
+    def dynamic_model_allowed_for_feature?(model_config, required_capabilities)
+      return false unless model_config['provider'] == OPENROUTER_PROVIDER
+      return false unless model_config['type'] == 'chat'
+
+      required_capabilities.all? { |capability| Array(model_config['capabilities']).include?(capability) }
+    end
+
+    def inferred_dynamic_provider_for(model_name)
+      return OPENROUTER_PROVIDER if openrouter_model_id?(model_name)
+
+      nil
+    end
+
+    def openrouter_model_id?(model_name)
+      dynamic_model_configs.key?(canonical_model_name(model_name)) && providers.key?(OPENROUTER_PROVIDER)
+    end
+
     def assume_exists_supported?(model_name)
-      provider_for(model_name) == 'anthropic'
+      %w[anthropic openrouter].include?(provider_for(model_name))
     end
 
     def normalize_capabilities(capabilities)

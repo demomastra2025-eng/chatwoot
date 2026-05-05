@@ -19,8 +19,6 @@ RSpec.describe Llm::ModelRegistryService do
         registry_model
       when 'whisper-1'
         transcription_registry_model
-      else
-        nil
       end
     end
     allow(Llm::Models).to receive(:models).and_return(
@@ -33,7 +31,8 @@ RSpec.describe Llm::ModelRegistryService do
     allow(Llm::Models).to receive(:providers).and_return(
       {
         'openai' => { 'display_name' => 'OpenAI' },
-        'anthropic' => { 'display_name' => 'Anthropic' }
+        'anthropic' => { 'display_name' => 'Anthropic' },
+        'openrouter' => { 'display_name' => 'OpenRouter' }
       }
     )
     allow(Llm::Models).to receive(:provider_config) do |provider_name|
@@ -70,6 +69,12 @@ RSpec.describe Llm::ModelRegistryService do
         display_name: 'OpenAI',
         configured: true
       )
+      expect(metadata.dig(:providers, 'openrouter')).to include(
+        display_name: 'OpenRouter',
+        configured: false,
+        models_api: include(:total_models, :using_fallback)
+      )
+      expect(metadata.dig(:registry, :openrouter)).to include(:total_models, :using_fallback)
       expect(metadata.dig(:features, 'assistant')).to include(
         selected_model: 'gpt-5.1',
         provider: 'openai',
@@ -87,6 +92,16 @@ RSpec.describe Llm::ModelRegistryService do
       expect(metadata[:total_models]).to eq(1)
       expect(metadata[:last_refreshed_at]).to be_present
       expect(Rails.cache.read(described_class::LAST_REFRESH_AT_CACHE_KEY)).to be_present
+    end
+  end
+
+  describe '.refresh_openrouter!' do
+    it 'refreshes LLM config and OpenRouter models through the catalog' do
+      expect(Llm::Config).to receive(:reset!)
+      expect(Llm::Config).to receive(:initialize!)
+      expect(Llm::OpenRouterModelCatalog).to receive(:refresh!).and_return(total_models: 1)
+
+      expect(described_class.refresh_openrouter!).to eq(total_models: 1)
     end
   end
 end

@@ -79,6 +79,24 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           ]
         )
       end
+
+      it 'persists OpenRouter provider config and refreshes LLM runtime config' do
+        sign_in(super_admin, scope: :super_admin)
+        expect(Llm::Config).to receive(:reset!).ordered
+        expect(Llm::Config).to receive(:initialize!).ordered
+
+        post '/super_admin/app_config?config=captain', params: {
+          app_config: {
+            CAPTAIN_OPENROUTER_API_KEY: '[REDACTED]',
+            CAPTAIN_OPENROUTER_ENDPOINT: 'https://openrouter.example/api/v1'
+          }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(response).to redirect_to(super_admin_settings_path)
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('[REDACTED]')
+        expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
+      end
     end
   end
 end

@@ -70,7 +70,9 @@ Rails.application.routes.draw do
               get :export
               resources :annotations, only: [:index, :create, :destroy], controller: 'observability_annotations'
             end
-            resource :preferences, only: [:show, :update]
+            resource :preferences, only: [:show, :update] do
+              post :refresh_openrouter_models
+            end
             resources :assistants do
               member do
                 patch :avatar

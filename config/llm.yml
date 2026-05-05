@@ -15,6 +15,10 @@ providers:
     display_name: 'Gemini'
     api_key_config: 'CAPTAIN_GEMINI_API_KEY'
     api_base_config: 'CAPTAIN_GEMINI_ENDPOINT'
+  openrouter:
+    display_name: 'OpenRouter'
+    api_key_config: 'CAPTAIN_OPENROUTER_API_KEY'
+    api_base_config: 'CAPTAIN_OPENROUTER_ENDPOINT'
 
 models:
   gpt-4.1:

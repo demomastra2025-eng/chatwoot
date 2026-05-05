@@ -435,6 +435,10 @@
       "SELECT_MODEL": "Select model",
       "CREDITS_PER_MESSAGE": "{credits} credit/message",
       "COMING_SOON": "Coming soon",
+      "SOURCE_OPENROUTER_API": "OpenRouter API",
+      "SOURCE_LOCAL_FALLBACK": "local fallback",
+      "CONTEXT_TOKENS": "{count} context tokens",
+      "METADATA_SEPARATOR": " · ",
       "EDITOR": {
         "TITLE": "Editor Features",
         "DESCRIPTION": "Powers smart compose, grammar corrections, tone adjustments, and content enhancement in your message editor."
@@ -525,6 +529,19 @@
         "NOT_CONFIGURED": "Missing API key",
         "CUSTOM_ENDPOINT": "Custom endpoint",
         "DEFAULT_ENDPOINT": "Default endpoint"
+      },
+      "OPENROUTER": {
+        "TITLE": "OpenRouter model catalog",
+        "DESCRIPTION": "OpenRouter models are fetched from the OpenRouter API and fall back to the bundled catalog until the first successful refresh.",
+        "REFRESH": "Refresh OpenRouter models",
+        "REFRESH_SUCCESS": "OpenRouter models refreshed successfully.",
+        "REFRESH_ERROR": "Failed to refresh OpenRouter models.",
+        "SOURCE": "Catalog source",
+        "API_SOURCE": "OpenRouter API ({count} models)",
+        "FALLBACK_SOURCE": "Bundled fallback ({count} models)",
+        "LAST_REFRESH": "Last OpenRouter refresh",
+        "MISSING_KEY": "Configure CAPTAIN_OPENROUTER_API_KEY in Super Admin to refresh models from OpenRouter.",
+        "ERROR": "Last OpenRouter refresh error: {error}"
       },
       "FEATURES": {
         "TITLE": "Resolved feature models",

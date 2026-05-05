@@ -21,7 +21,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   ].freeze
 
   before_action :current_account
-  before_action :authorize_account_update, only: [:update]
+  before_action :authorize_account_update, only: [:update, :refresh_openrouter_models]
 
   def show
     render json: preferences_payload
@@ -36,6 +36,18 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     @current_account.save!
 
     render json: preferences_payload
+  end
+
+  def refresh_openrouter_models
+    Llm::ModelRegistryService.refresh_openrouter!
+
+    render json: preferences_payload
+  rescue Llm::OpenRouterModelCatalog::MissingApiKeyError => e
+    render json: preferences_payload.merge(error: e.message), status: :unprocessable_entity
+  rescue StandardError => e
+    sanitized_error = Llm::OpenRouterModelCatalog.sanitize_error_message(e)
+    Rails.logger.warn("[Captain Preferences] OpenRouter model refresh failed: #{e.class}: #{sanitized_error}")
+    render json: preferences_payload.merge(error: 'OpenRouter models refresh failed.'), status: :bad_gateway
   end
 
   private

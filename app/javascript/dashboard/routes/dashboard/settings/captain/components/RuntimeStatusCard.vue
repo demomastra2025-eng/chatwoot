@@ -3,11 +3,13 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import { useAlert } from 'dashboard/composables';
+import NextButton from 'dashboard/components-next/button/Button.vue';
 
 const { t, locale } = useI18n();
 
 const captainConfigStore = useCaptainConfigStore();
-const { runtimeMetadata } = storeToRefs(captainConfigStore);
+const { runtimeMetadata, uiFlags } = storeToRefs(captainConfigStore);
 
 const defaults = computed(() => runtimeMetadata.value.defaults || {});
 const registry = computed(() => runtimeMetadata.value.registry || {});
@@ -15,6 +17,13 @@ const providers = computed(() => runtimeMetadata.value.providers || {});
 const features = computed(() => runtimeMetadata.value.features || {});
 
 const providerEntries = computed(() => Object.entries(providers.value));
+const openRouterProvider = computed(() => providers.value.openrouter || null);
+const openRouterCatalog = computed(
+  () => openRouterProvider.value?.models_api || registry.value.openrouter || {}
+);
+const isRefreshingOpenRouterModels = computed(
+  () => uiFlags.value.isRefreshingOpenRouterModels
+);
 const featureEntries = computed(() =>
   Object.entries(features.value).filter(
     ([, metadata]) => metadata?.selected_model
@@ -31,6 +40,33 @@ const formatDateTime = value => {
     }).format(new Date(value));
   } catch {
     return value;
+  }
+};
+
+const openRouterCatalogSourceLabel = computed(() => {
+  if (openRouterCatalog.value.using_fallback) {
+    return t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.FALLBACK_SOURCE', {
+      count:
+        openRouterCatalog.value.fallback_models ||
+        openRouterCatalog.value.total_models ||
+        0,
+    });
+  }
+
+  return t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.API_SOURCE', {
+    count: openRouterCatalog.value.total_models || 0,
+  });
+});
+
+const refreshOpenRouterModels = async () => {
+  try {
+    await captainConfigStore.refreshOpenRouterModels();
+    useAlert(t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.REFRESH_SUCCESS'));
+  } catch (error) {
+    useAlert(
+      error?.response?.data?.error ||
+        t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.REFRESH_ERROR')
+    );
   }
 };
 
@@ -116,13 +152,85 @@ const featureLabel = key => {
             {{ formatDateTime(registry.last_refreshed_at) }}
           </span>
         </div>
-        <p v-if="registry.last_refresh_error" class="text-xs text-n-ruby-11">
+        <p
+          v-if="registry.last_refresh_error"
+          class="text-xs text-n-ruby-11 break-words"
+        >
           {{
             t('CAPTAIN_SETTINGS.RUNTIME_STATUS.REGISTRY.ERROR', {
               error: registry.last_refresh_error,
             })
           }}
         </p>
+      </div>
+
+      <div v-if="openRouterProvider" class="p-3 grid gap-3">
+        <div
+          class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+        >
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.TITLE') }}
+            </div>
+            <p class="text-xs text-n-slate-11 mt-0.5">
+              {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.DESCRIPTION') }}
+            </p>
+          </div>
+          <NextButton
+            sm
+            outline
+            blue
+            type="button"
+            icon="i-lucide-refresh-cw"
+            :disabled="
+              !openRouterProvider.configured || isRefreshingOpenRouterModels
+            "
+            :is-loading="isRefreshingOpenRouterModels"
+            @click="refreshOpenRouterModels"
+          >
+            {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.REFRESH') }}
+          </NextButton>
+        </div>
+        <div
+          class="grid gap-2 rounded-lg border border-n-weak bg-n-solid-1 p-3"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-sm text-n-slate-11">
+              {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.SOURCE') }}
+            </span>
+            <span
+              class="text-sm font-medium text-n-slate-12 text-right break-words min-w-0"
+            >
+              {{ openRouterCatalogSourceLabel }}
+            </span>
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-sm text-n-slate-11">
+              {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.LAST_REFRESH') }}
+            </span>
+            <span
+              class="text-sm font-medium text-n-slate-12 text-right break-words min-w-0"
+            >
+              {{ formatDateTime(openRouterCatalog.last_refreshed_at) }}
+            </span>
+          </div>
+          <p
+            v-if="!openRouterProvider.configured"
+            class="text-xs text-n-ruby-11 break-words"
+          >
+            {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.MISSING_KEY') }}
+          </p>
+          <p
+            v-if="openRouterCatalog.last_refresh_error"
+            class="text-xs text-n-ruby-11 break-words"
+          >
+            {{
+              t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.ERROR', {
+                error: openRouterCatalog.last_refresh_error,
+              })
+            }}
+          </p>
+        </div>
       </div>
 
       <div class="p-3 grid gap-3">
@@ -186,7 +294,7 @@ const featureLabel = key => {
                 <div class="text-sm font-medium text-n-slate-12">
                   {{ featureLabel(featureKey) }}
                 </div>
-                <div class="text-xs text-n-slate-11 mt-0.5">
+                <div class="text-xs text-n-slate-11 mt-0.5 break-all">
                   <span>{{ feature.selected_model }}</span>
                   <span class="px-1" aria-hidden="true">
                     {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.SEPARATOR') }}

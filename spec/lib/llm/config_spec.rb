@@ -17,6 +17,14 @@ RSpec.describe Llm::Config do
     it 'resolves provider through the product model registry' do
       expect(described_class.provider_for_model('gemini-2.5-pro')).to eq('gemini')
     end
+
+    it 'infers OpenRouter for provider-prefixed model ids discovered from OpenRouter' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[streaming] }
+      )
+
+      expect(described_class.provider_for_model('openai/gpt-4o')).to eq('openrouter')
+    end
   end
 
   describe '.api_key' do
@@ -24,6 +32,24 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_ANTHROPIC_API_KEY', 'anthropic-key')
 
       expect(described_class.api_key('anthropic')).to eq('anthropic-key')
+    end
+
+    it 'reads the OpenRouter installation config' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+
+      expect(described_class.api_key('openrouter')).to eq('[REDACTED]')
+    end
+  end
+
+  describe '.api_base' do
+    it 'uses the default OpenRouter API base when no custom endpoint is configured' do
+      expect(described_class.api_base('openrouter')).to eq('https://openrouter.ai/api/v1')
+    end
+
+    it 'keeps custom OpenRouter API base unchanged except for trailing slash' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_ENDPOINT', 'https://openrouter.example/api/v1/')
+
+      expect(described_class.api_base('openrouter')).to eq('https://openrouter.example/api/v1')
     end
   end
 

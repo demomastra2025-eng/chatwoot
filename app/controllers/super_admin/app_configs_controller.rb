@@ -3,6 +3,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     CAPTAIN_OPEN_AI_API_KEY CAPTAIN_DEFAULT_MODEL CAPTAIN_OPEN_AI_ENDPOINT
     CAPTAIN_ANTHROPIC_API_KEY CAPTAIN_ANTHROPIC_ENDPOINT
     CAPTAIN_GEMINI_API_KEY CAPTAIN_GEMINI_ENDPOINT
+    CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_ENDPOINT
     CAPTAIN_MODERATION_MODEL
     CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT CAPTAIN_SYSTEM_PROMPTS
     ACCOUNT_CAPTAIN_TOKENS_LIMIT
@@ -58,6 +59,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     if errors.any?
       redirect_to super_admin_app_config_path(config: @config), alert: errors.join(', ')
     else
+      refresh_llm_config if @config == 'captain'
       redirect_to super_admin_settings_path, notice: "App Configs - #{@config.titleize} updated successfully"
     end
   end
@@ -80,6 +82,13 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   rescue JSON::ParserError
     errors << 'Captain system prompts must be valid JSON'
     :invalid
+  end
+
+  def refresh_llm_config
+    Llm::Config.reset!
+    Llm::Config.initialize!
+  rescue StandardError => e
+    Rails.logger.warn("[SuperAdmin::AppConfigsController] Failed to refresh LLM config: #{e.class}: #{e.message}")
   end
 
   def set_config

@@ -232,6 +232,15 @@
   display_title: 'Gemini API Endpoint (optional)'
   description: 'The Gemini endpoint configured for use in AI Agents.'
   locked: false
+- name: CAPTAIN_OPENROUTER_API_KEY
+  display_title: 'OpenRouter API Key'
+  description: 'The API key used to authenticate OpenRouter requests for AI Agents. Used for chat completions and fetching selectable OpenRouter models.'
+  locked: false
+  type: secret
+- name: CAPTAIN_OPENROUTER_ENDPOINT
+  display_title: 'OpenRouter API Endpoint (optional)'
+  description: 'The OpenRouter endpoint configured for use in AI Agents. Default: https://openrouter.ai/api/v1'
+  locked: false
 - name: CAPTAIN_MODERATION_MODEL
   display_title: 'Moderation Model'
   description: 'The moderation model used for optional AI safety checks. Default: omni-moderation-latest'

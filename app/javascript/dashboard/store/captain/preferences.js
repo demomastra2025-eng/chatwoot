@@ -11,6 +11,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
+      isRefreshingOpenRouterModels: false,
     },
   }),
 
@@ -26,7 +27,12 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       const feature = state.features[featureKey];
       const models = feature?.models || [];
 
-      const providerOrder = { openai: 0, anthropic: 1, gemini: 2 };
+      const providerOrder = {
+        openai: 0,
+        anthropic: 1,
+        gemini: 2,
+        openrouter: 3,
+      };
 
       return [...models].sort((a, b) => {
         // Move coming_soon items to the end
@@ -53,16 +59,20 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
   },
 
   actions: {
+    applyPayload(data = {}) {
+      this.providers = data.providers || {};
+      this.models = data.models || {};
+      this.features = data.features || {};
+      this.runtime = data.runtime || {};
+      this.observability = data.observability || {};
+      this.runtimeMetadata = data.runtime_metadata || {};
+    },
+
     async fetch() {
       this.uiFlags.isFetching = true;
       try {
         const response = await CaptainPreferencesAPI.get();
-        this.providers = response.data.providers || {};
-        this.models = response.data.models || {};
-        this.features = response.data.features || {};
-        this.runtime = response.data.runtime || {};
-        this.observability = response.data.observability || {};
-        this.runtimeMetadata = response.data.runtime_metadata || {};
+        this.applyPayload(response.data);
       } catch (error) {
         // Ignore error
       } finally {
@@ -72,12 +82,23 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
 
     async updatePreferences(data) {
       const response = await CaptainPreferencesAPI.updatePreferences(data);
-      this.providers = response.data.providers || {};
-      this.models = response.data.models || {};
-      this.features = response.data.features || {};
-      this.runtime = response.data.runtime || {};
-      this.observability = response.data.observability || {};
-      this.runtimeMetadata = response.data.runtime_metadata || {};
+      this.applyPayload(response.data);
+    },
+
+    async refreshOpenRouterModels() {
+      this.uiFlags.isRefreshingOpenRouterModels = true;
+      try {
+        const response = await CaptainPreferencesAPI.refreshOpenRouterModels();
+        this.applyPayload(response.data);
+        return response;
+      } catch (error) {
+        if (error?.response?.data) {
+          this.applyPayload(error.response.data);
+        }
+        throw error;
+      } finally {
+        this.uiFlags.isRefreshingOpenRouterModels = false;
+      }
     },
   },
 });

@@ -23,10 +23,11 @@ const PROVIDER_ICONS = {
   anthropic: 'i-ri-anthropic-line',
   mistral: 'i-logos-mistral-icon',
   gemini: 'i-woot-gemini',
+  openrouter: 'i-lucide-route',
 };
 
 const iconForModel = model => {
-  return PROVIDER_ICONS[model.provider];
+  return PROVIDER_ICONS[model.provider] || 'i-lucide-bot';
 };
 
 const { t } = useI18n();
@@ -71,6 +72,53 @@ const getCreditLabel = model => {
   });
 };
 
+const formatTokenCount = value => {
+  if (!value) return null;
+
+  return new Intl.NumberFormat().format(value);
+};
+
+const sourceLabel = model => {
+  if (model.source === 'openrouter_api') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.SOURCE_OPENROUTER_API');
+  }
+
+  if (model.source === 'config/llm_models.json') {
+    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.SOURCE_LOCAL_FALLBACK');
+  }
+
+  return null;
+};
+
+const providerDisplayName = model => {
+  return model.provider_display_name || model.provider;
+};
+
+const modelMetadataLabel = model => {
+  const parts = [providerDisplayName(model)].filter(Boolean);
+  const source = sourceLabel(model);
+  const contextLength = formatTokenCount(model.context_length);
+  const maxOutputTokens = formatTokenCount(model.max_output_tokens);
+
+  if (source) parts.push(source);
+  if (contextLength) {
+    parts.push(
+      t('CAPTAIN_SETTINGS.MODEL_CONFIG.CONTEXT_TOKENS', {
+        count: contextLength,
+      })
+    );
+  }
+  if (maxOutputTokens) {
+    parts.push(
+      t('CAPTAIN_SETTINGS.MODEL_CONFIG.MAX_OUTPUT_TOKENS', {
+        count: maxOutputTokens,
+      })
+    );
+  }
+
+  return parts.join(t('CAPTAIN_SETTINGS.MODEL_CONFIG.METADATA_SEPARATOR'));
+};
+
 const toggleDropdown = () => {
   isOpen.value = !isOpen.value;
 };
@@ -96,10 +144,13 @@ const selectModel = model => {
   <div v-on-clickaway="closeDropdown" class="relative flex-shrink-0">
     <button
       type="button"
-      class="flex items-center gap-2 px-3 py-2 text-sm border rounded-lg border-n-weak dark:bg-n-solid-2 dark:hover:bg-n-solid-3 bg-n-alpha-2 hover:bg-n-alpha-1 min-w-[180px] justify-between"
+      class="flex items-center gap-2 px-3 py-2 text-sm border rounded-lg border-n-weak dark:bg-n-solid-2 dark:hover:bg-n-solid-3 bg-n-alpha-2 hover:bg-n-alpha-1 min-w-[180px] max-w-full justify-between"
       @click="toggleDropdown"
     >
-      <span v-if="selectedModelDetails" class="text-n-slate-12">
+      <span
+        v-if="selectedModelDetails"
+        class="text-n-slate-12 truncate min-w-0"
+      >
         {{ selectedModelDetails.display_name }}
       </span>
       <span v-else class="text-n-slate-10">
@@ -125,16 +176,16 @@ const selectModel = model => {
           'pointer-events-none opacity-60': model.coming_soon,
         }"
       >
-        <div class="flex gap-2 w-full">
+        <div class="flex gap-2 w-full min-w-0">
           <Icon :icon="iconForModel(model)" class="size-4 flex-shrink-0" />
-          <div class="flex flex-col w-full text-left gap-1">
+          <div class="flex flex-col w-full min-w-0 text-left gap-1">
             <div
-              class="text-sm w-full font-medium leading-none text-n-slate-12 flex items-baseline justify-between"
+              class="text-sm w-full font-medium leading-none text-n-slate-12 flex items-baseline justify-between gap-2 min-w-0"
             >
-              {{ model.display_name }}
+              <span class="truncate min-w-0">{{ model.display_name }}</span>
               <span
                 v-if="model.id === recommendedModelId"
-                class="text-[10px] uppercase text-n-iris-11 border border-1 border-n-iris-10 leading-none rounded-lg px-1 py-0.5"
+                class="text-[10px] uppercase text-n-iris-11 border border-1 border-n-iris-10 leading-none rounded-lg px-1 py-0.5 flex-shrink-0"
               >
                 {{ t('GENERAL.PREFERRED') }}
               </span>
@@ -142,7 +193,10 @@ const selectModel = model => {
             <span v-if="model.coming_soon" class="text-xs text-n-slate-11">
               {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.COMING_SOON') }}
             </span>
-            <span v-else-if="isOnChatwootCloud" class="text-xs text-n-slate-11">
+            <span class="text-xs text-n-slate-11 leading-snug break-words">
+              {{ modelMetadataLabel(model) }}
+            </span>
+            <span v-if="isOnChatwootCloud" class="text-xs text-n-slate-11">
               {{ getCreditLabel(model) }}
             </span>
           </div>

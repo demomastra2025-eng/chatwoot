@@ -881,6 +881,10 @@
       "SELECT_MODEL": "Выберите модель",
       "CREDITS_PER_MESSAGE": "{credits} кредит/сообщение",
       "COMING_SOON": "Скоро",
+      "SOURCE_OPENROUTER_API": "OpenRouter API",
+      "SOURCE_LOCAL_FALLBACK": "локальный fallback",
+      "CONTEXT_TOKENS": "{count} токенов контекста",
+      "METADATA_SEPARATOR": " · ",
       "EDITOR": {
         "TITLE": "Функции редактора",
         "DESCRIPTION": "Отвечает за умное написание, исправление грамматики, настройку тона и улучшение контента в редакторе сообщений."
@@ -971,6 +975,19 @@
         "NOT_CONFIGURED": "Нет API-ключа",
         "CUSTOM_ENDPOINT": "Кастомный endpoint",
         "DEFAULT_ENDPOINT": "Стандартный endpoint"
+      },
+      "OPENROUTER": {
+        "TITLE": "Каталог моделей OpenRouter",
+        "DESCRIPTION": "Модели OpenRouter загружаются через OpenRouter API; до первого успешного обновления используется встроенный каталог.",
+        "REFRESH": "Обновить модели OpenRouter",
+        "REFRESH_SUCCESS": "Модели OpenRouter успешно обновлены.",
+        "REFRESH_ERROR": "Не удалось обновить модели OpenRouter.",
+        "SOURCE": "Источник каталога",
+        "API_SOURCE": "OpenRouter API ({count} моделей)",
+        "FALLBACK_SOURCE": "Встроенный fallback ({count} моделей)",
+        "LAST_REFRESH": "Последнее обновление OpenRouter",
+        "MISSING_KEY": "Настройте CAPTAIN_OPENROUTER_API_KEY в Super Admin, чтобы обновлять модели через OpenRouter.",
+        "ERROR": "Ошибка последнего обновления OpenRouter: {error}"
       },
       "FEATURES": {
         "TITLE": "Разрешённые модели по функциям",

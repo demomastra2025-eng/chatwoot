@@ -6,6 +6,7 @@ module Llm::Config
   DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'omni-moderation-latest'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
+  OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
 
   class << self
     def initialized?
@@ -142,9 +143,12 @@ module Llm::Config
     end
 
     def default_api_base(provider_name)
-      return OPENAI_DEFAULT_API_BASE if provider_name.to_s == 'openai'
-
-      nil
+      case provider_name.to_s
+      when 'openai'
+        OPENAI_DEFAULT_API_BASE
+      when 'openrouter'
+        OPENROUTER_DEFAULT_API_BASE
+      end
     end
 
     def normalize_api_base(value, provider: 'openai')

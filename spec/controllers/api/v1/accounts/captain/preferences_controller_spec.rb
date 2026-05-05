@@ -75,6 +75,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response).to have_key(:runtime_metadata)
         expect(json_response.dig(:runtime_metadata, :providers, :openai)).to include(:configured, :display_name)
+        expect(json_response.dig(:runtime_metadata, :providers, :openrouter)).to include(:configured, :display_name, :models_api)
+        expect(json_response.dig(:runtime_metadata, :registry, :openrouter)).to include(:total_models, :using_fallback)
         expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
       end
     end
@@ -317,6 +319,110 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(account.reload.captain_observability.dig('saved_views', 0, 'filters')).to include(
           'trace_id' => 'trace-1'
         )
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/captain/preferences/refresh_openrouter_models' do
+    after do
+      Rails.cache.delete(Llm::OpenRouterModelCatalog::CACHE_KEY)
+      Rails.cache.delete(Llm::OpenRouterModelCatalog::LAST_REFRESH_AT_CACHE_KEY)
+      Rails.cache.delete(Llm::OpenRouterModelCatalog::LAST_REFRESH_ERROR_CACHE_KEY)
+    end
+
+    context 'when it is an unauthenticated user' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an agent' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when it is an admin' do
+      it 'refreshes OpenRouter models and returns updated settings payload' do
+        expect(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_return(total_models: 1)
+
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to have_key(:runtime_metadata)
+      end
+
+      it 'fetches OpenRouter API models through the refresh endpoint without real network calls' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+        stub_request(:get, 'https://openrouter.ai/api/v1/models')
+          .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+          .to_return(
+            status: 200,
+            body: {
+              data: [
+                {
+                  id: 'openai/gpt-4o',
+                  name: 'GPT-4o via OpenRouter',
+                  architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+                  context_length: 128_000,
+                  top_provider: { max_completion_tokens: 16_384 },
+                  supported_parameters: %w[tools response_format]
+                }
+              ]
+            }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        openrouter_model = json_response.dig(:features, :assistant, :models).find { |model| model[:id] == 'openai/gpt-4o' }
+        expect(openrouter_model).to include(
+          provider: 'openrouter',
+          provider_display_name: 'OpenRouter',
+          source: 'openrouter_api',
+          context_length: 128_000,
+          max_output_tokens: 16_384
+        )
+      end
+
+      it 'returns validation error when OpenRouter API key is missing' do
+        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
+          Llm::OpenRouterModelCatalog::MissingApiKeyError, 'OpenRouter API key is not configured.'
+        )
+
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response[:error]).to eq('OpenRouter API key is not configured.')
+      end
+
+      it 'returns a sanitized gateway error when refresh fails unexpectedly' do
+        allow(Llm::ModelRegistryService).to receive(:refresh_openrouter!).and_raise(
+          StandardError, 'upstream leaked Bearer sk-or-v1-secret and api_key=SECRET_VALUE'
+        )
+
+        post "/api/v1/accounts/#{account.id}/captain/preferences/refresh_openrouter_models",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:bad_gateway)
+        expect(json_response[:error]).to eq('OpenRouter models refresh failed.')
+        expect(response.body).not_to include('sk-or-v1-secret')
+        expect(response.body).not_to include('[REDACTED]')
       end
     end
   end

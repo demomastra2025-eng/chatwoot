@@ -76,6 +76,21 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'builds OpenRouter chats with explicit provider even for dynamically discovered models' do
+      allow(Llm::Models).to receive(:runtime_supported?).with('openai/gpt-4o').and_return(true)
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o').and_return('openrouter')
+
+      expect(RubyLLM).to receive(:chat).with(
+        model: 'openai/gpt-4o',
+        provider: 'openrouter',
+        assume_model_exists: true
+      ).and_return(chat)
+
+      result = described_class.build(model: 'openai/gpt-4o')
+
+      expect(result).to eq(chat)
+    end
+
     it 'reuses an existing chat instance when provided' do
       expect(RubyLLM).not_to receive(:chat)
       expect(context).not_to receive(:chat)

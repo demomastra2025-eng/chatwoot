@@ -15,27 +15,25 @@ class Llm::ChatClient
 
     def ask(chat, content, model: nil, observability: nil)
       payload = observability_payload(observability, chat, model)
-      return perform_ask(chat, content, model:) if payload.blank?
+      return perform_ask(chat, content, model: model) if payload.blank?
 
       Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-        begin
-          response = perform_ask(chat, content, model:)
-          Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
-          response
-        rescue StandardError => e
-          Llm::ObservabilityPayload.attach_error!(event_payload, e)
-          raise
-        end
+        response = perform_ask(chat, content, model: model)
+        Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
       end
     end
 
     private
 
     def perform_ask(chat, content, model:)
-      Llm::StructuredOutputPolicy.execute(chat:) do
+      Llm::StructuredOutputPolicy.execute(chat: chat) do
         if content.is_a?(RubyLLM::Content)
           attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
-          Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content:) if attachments.any?
+          Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content) if attachments.any?
           if attachments.any?
             chat.ask(content.text, with: attachments)
           else
@@ -61,7 +59,10 @@ class Llm::ChatClient
     end
 
     def assume_model_exists?(model)
-      model.present? && !Llm::Models.registry_known?(model) && Llm::Models.runtime_supported?(model)
+      return false if model.blank?
+      return false unless Llm::Models.runtime_supported?(model)
+
+      Llm::Config.provider_for_model(model) == 'openrouter' || !Llm::Models.registry_known?(model)
     end
 
     def attachment_source(attachment)

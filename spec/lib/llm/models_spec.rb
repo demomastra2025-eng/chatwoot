@@ -14,13 +14,28 @@ RSpec.describe Llm::Models do
 
   describe '.providers' do
     it 'loads providers from llm.yml' do
-      expect(described_class.providers.keys).to include('openai', 'anthropic', 'gemini')
+      expect(described_class.providers.keys).to include('openai', 'anthropic', 'gemini', 'openrouter')
     end
   end
 
   describe '.provider_for' do
     it 'returns the configured provider for a model' do
       expect(described_class.provider_for('claude-sonnet-4-6')).to eq('anthropic')
+    end
+
+    it 'returns OpenRouter for provider-prefixed dynamic model ids discovered from OpenRouter' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[streaming] }
+      )
+
+      expect(described_class.provider_for('openai/gpt-4o')).to eq('openrouter')
+    end
+
+    it 'does not treat unknown provider-prefixed ids as OpenRouter models' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      expect(described_class.provider_for('unknown/provider-model')).to be_nil
+      expect(described_class.runtime_supported?('unknown/provider-model')).to be false
     end
   end
 
@@ -59,6 +74,49 @@ RSpec.describe Llm::Models do
       )
       expect(claude[:capabilities]).to include('reasoning', 'structured_output', 'tool_calling')
     end
+
+    it 'includes dynamically fetched OpenRouter models that satisfy feature capabilities' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o via OpenRouter',
+          'type' => 'chat',
+          'source' => 'openrouter_api',
+          'context_length' => 128_000,
+          'max_output_tokens' => 16_384,
+          'capabilities' => %w[structured_output tool_calling streaming]
+        },
+        'tool/without-structured-output' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Tool Calls Only',
+          'type' => 'chat',
+          'capabilities' => %w[tool_calling streaming]
+        },
+        'text/only' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Only',
+          'type' => 'chat',
+          'capabilities' => %w[streaming]
+        }
+      )
+
+      config = described_class.feature_config(:assistant)
+
+      expect(config[:models]).to include(
+        hash_including(
+          id: 'openai/gpt-4o',
+          display_name: 'GPT-4o via OpenRouter',
+          provider: 'openrouter',
+          provider_display_name: 'OpenRouter',
+          source: 'openrouter_api',
+          context_length: 128_000,
+          max_output_tokens: 16_384,
+          capabilities: include('structured_output', 'tool_calling')
+        )
+      )
+      expect(config[:models]).not_to include(hash_including(id: 'tool/without-structured-output'))
+      expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+    end
   end
 
   describe '.canonical_model_name' do
@@ -73,6 +131,15 @@ RSpec.describe Llm::Models do
       allow(described_class).to receive(:registry_known?).with('claude-sonnet-4-6').and_return(false)
 
       expect(described_class.runtime_supported?('claude-sonnet-4-6')).to be true
+    end
+
+    it 'allows OpenRouter provider-prefixed model ids discovered from OpenRouter even when RubyLLM has not refreshed them yet' do
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[streaming] }
+      )
+      allow(described_class).to receive(:registry_model_for).with('openai/gpt-4o').and_return(nil)
+
+      expect(described_class.runtime_supported?('openai/gpt-4o')).to be true
     end
   end
 
