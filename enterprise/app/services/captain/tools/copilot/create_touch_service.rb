@@ -19,7 +19,8 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
   param :relative_offset_minutes, type: :number, desc: 'Offset in minutes for relative scheduling', required: false
   param :timezone, type: :string, desc: 'IANA timezone, for example Asia/Almaty', required: false
   param :target_inbox_id, type: :number, desc: 'Optional explicit target inbox/channel ID', required: false
-  param :auto_cancel_on_incoming, type: :boolean, desc: 'Cancel the touch if the customer replies in the same target', required: false
+  param :auto_cancel_on_incoming, type: :boolean,
+                                  desc: 'Set true only when a customer reply in the same conversation should cancel this scheduled touch; set false when the touch must remain scheduled', required: false
   param :attachment_ids, type: :array, desc: 'Optional ActiveStorage signed blob IDs to send when the touch executes', required: false
   param :artifact_ids, type: :array,
                        desc: 'Optional opaque artifact IDs selected from custom HTTP tool artifact_candidates; materialized now for reliable scheduled delivery', required: false

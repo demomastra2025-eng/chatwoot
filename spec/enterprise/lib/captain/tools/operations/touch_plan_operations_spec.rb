@@ -38,6 +38,16 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       )
     end
 
+    it 'uses the Captain cancellation reason when no explicit reason is provided' do
+      touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, status: :pending)
+
+      result = operation.cancel_touch(touch_id: touch.id)
+
+      expect(result.reload).to be_cancelled
+      expect(result.last_error).to eq('отменен капитаном')
+      expect(result.metadata['cancelled_reason']).to eq('отменен капитаном')
+    end
+
     it 'does not cancel a processing touch' do
       touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, status: :processing)
 
@@ -91,6 +101,18 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(processing_touch.reload).to be_processing
       expect(other_plan_touch.reload).to be_pending
       expect(pending_touch.metadata).to include('cancelled_via' => 'captain_cancel_touches', 'touch_plan_id' => touch_plan.id)
+    end
+
+    it 'uses the Captain cancellation reason for bulk cancel when no explicit reason is provided' do
+      pending_touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation,
+                                        status: :pending, body: 'Pending follow-up')
+
+      payload = operation.cancel_touches
+
+      expect(payload[:cancelled_count]).to eq(1)
+      expect(pending_touch.reload).to be_cancelled
+      expect(pending_touch.last_error).to eq('отменен капитаном')
+      expect(pending_touch.metadata['cancelled_reason']).to eq('отменен капитаном')
     end
   end
 

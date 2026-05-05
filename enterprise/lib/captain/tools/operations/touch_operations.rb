@@ -1,5 +1,6 @@
 class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::BaseOperation
   SUPPORTED_REMINDABLE_KINDS = %w[conversation deal task appointment].freeze
+  CAPTAIN_CANCEL_REASON = 'отменен капитаном'.freeze
 
   def create_touch(
     body: nil,
@@ -60,7 +61,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
       raise ArgumentError, 'Touch can only be cancelled while draft or pending' unless touch.draft? || touch.pending?
 
-      cancellation_reason = reason.presence || 'Cancelled by Captain'
+      cancellation_reason = reason.presence || CAPTAIN_CANCEL_REASON
       touch.update!(
         status: :cancelled,
         cancelled_at: Time.current,
@@ -85,7 +86,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     remindable = resolve_remindable!(normalized_kind)
     touch_plan = find_optional_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
     ensure_touch_plan_supports!(touch_plan, normalized_kind) if touch_plan.present?
-    cancellation_reason = reason.presence || 'Cancelled by Captain'
+    cancellation_reason = reason.presence || CAPTAIN_CANCEL_REASON
 
     cancelled_count = ::Reminders::BulkCancelService.new(
       account: account,
@@ -173,7 +174,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
       timezone: timezone.presence || 'UTC',
       body: body.to_s.strip.presence,
       attachments: selected_attachment_ids,
-      auto_cancel_on_incoming: auto_cancel_on_incoming.nil? || auto_cancel_on_incoming,
+      auto_cancel_on_incoming: normalized_auto_cancel_on_incoming(auto_cancel_on_incoming),
       target_inbox_id: target_inbox_id,
       metadata: {
         'touch_source' => 'captain',
@@ -303,6 +304,10 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
   def materialized_attachment_ids(attachment_ids:, artifact_ids:)
     attachment_resolver.resolve(attachment_ids: attachment_ids, artifact_ids: artifact_ids)
+  end
+
+  def normalized_auto_cancel_on_incoming(value)
+    Reminders::BooleanParam.call(value, default: false, field_name: 'auto_cancel_on_incoming')
   end
 
   def normalized_content_kind(content_kind, template_params:)

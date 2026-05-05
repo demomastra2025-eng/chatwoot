@@ -16,12 +16,13 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   end
 
   it 'returns a normalized touch payload wrapper' do
-    payload = JSON.parse(service.execute(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601))
+    payload = JSON.parse(service.execute(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601, auto_cancel_on_incoming: true))
 
     expect(payload).to include('action' => 'create_touch')
     expect(payload.fetch('touch')).to include(
       'body' => 'Ping client tomorrow',
-      'status' => 'pending'
+      'status' => 'pending',
+      'auto_cancel_on_incoming' => true
     )
   end
 

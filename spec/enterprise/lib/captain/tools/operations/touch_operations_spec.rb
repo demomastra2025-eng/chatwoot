@@ -31,6 +31,28 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(touch.remindable).to eq(conversation)
       expect(touch.target_inbox).to eq(conversation.inbox)
       expect(touch.metadata['touch_source']).to eq('captain')
+      expect(touch.auto_cancel_on_incoming).to be(false)
+      expect(touch.metadata['auto_cancel_on_incoming_explicit']).to be(false)
+    end
+
+    it 'persists Captain auto-cancel choice explicitly for customer replies' do
+      operation = described_class.new(assistant: assistant, conversation: conversation, actor: user)
+
+      cancel_on_reply_touch = operation.create_touch(
+        body: 'Cancel this if the customer replies',
+        scheduled_at: 1.day.from_now.iso8601,
+        auto_cancel_on_incoming: true
+      )
+      keep_scheduled_touch = operation.create_touch(
+        body: 'Keep this scheduled even if the customer replies',
+        scheduled_at: 2.days.from_now.iso8601,
+        auto_cancel_on_incoming: false
+      )
+
+      expect(cancel_on_reply_touch.auto_cancel_on_incoming).to be(true)
+      expect(cancel_on_reply_touch.metadata['auto_cancel_on_incoming_explicit']).to be(true)
+      expect(keep_scheduled_touch.auto_cancel_on_incoming).to be(false)
+      expect(keep_scheduled_touch.metadata['auto_cancel_on_incoming_explicit']).to be(false)
     end
 
     it 'supports relative scheduling for linked deal context' do
