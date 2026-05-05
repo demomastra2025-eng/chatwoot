@@ -26,6 +26,19 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.body).to include(config.value)
       end
+
+      it 'shows OpenRouter captain config fields for enterprise plan' do
+        allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/app_config?config=captain'
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include('OpenRouter API Key')
+        expect(response.body).to include('CAPTAIN_OPENROUTER_API_KEY')
+        expect(response.body).to include('OpenRouter API Endpoint')
+        expect(response.body).to include('CAPTAIN_OPENROUTER_ENDPOINT')
+      end
     end
   end
 
@@ -80,7 +93,8 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         )
       end
 
-      it 'persists OpenRouter provider config and refreshes LLM runtime config' do
+      it 'persists OpenRouter provider config and refreshes LLM runtime config on enterprise plan' do
+        allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
         sign_in(super_admin, scope: :super_admin)
         expect(Llm::Config).to receive(:reset!).ordered
         expect(Llm::Config).to receive(:initialize!).ordered
