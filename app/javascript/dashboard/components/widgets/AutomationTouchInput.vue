@@ -6,7 +6,7 @@ import NextSwitch from 'dashboard/components-next/switch/Switch.vue';
 const DEFAULT_TOUCH_PARAMS = {
   body: '',
   delay_minutes: 0,
-  auto_cancel_on_incoming: true,
+  auto_cancel_on_incoming: false,
 };
 
 export default {

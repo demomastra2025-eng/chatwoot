@@ -146,7 +146,7 @@ const friendlyTemplateName = templateName =>
 
 const form = reactive({
   actionType: 'send_message',
-  autoCancelOnIncoming: true,
+  autoCancelOnIncoming: false,
   body: '',
   contentKind: 'free_text',
   conversationId: '',
@@ -901,7 +901,7 @@ const hydrateTargetSelection = async () => {
 
 const resetForm = () => {
   form.actionType = 'send_message';
-  form.autoCancelOnIncoming = true;
+  form.autoCancelOnIncoming = false;
   form.body = props.initialBody || '';
   form.contentKind = 'free_text';
   form.conversationId = props.conversationId || '';
@@ -941,7 +941,7 @@ const hydrateForm = () => {
     return;
   }
 
-  form.autoCancelOnIncoming = props.touch.auto_cancel_on_incoming ?? true;
+  form.autoCancelOnIncoming = props.touch.auto_cancel_on_incoming ?? false;
   form.actionType = props.touch.action_type || 'send_message';
   form.body =
     props.touch.content_kind === 'channel_template'

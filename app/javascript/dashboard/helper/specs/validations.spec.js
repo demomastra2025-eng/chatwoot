@@ -121,4 +121,75 @@ describe('validateAutomation', () => {
     const errors = validateAutomation(automationWithNoParamAction);
     expect(errors).toEqual({});
   });
+
+  it('should validate create_touch body while allowing explicit auto cancel flag', () => {
+    const automation = {
+      name: 'Create touch',
+      description: 'Create a delayed touch',
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'content',
+          filter_operator: 'contains',
+          values: 'hello',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: {
+            body: 'Follow up later',
+            delay_minutes: 15,
+            auto_cancel_on_incoming: false,
+          },
+        },
+      ],
+    };
+
+    const errors = validateAutomation(automation);
+    expect(errors).toEqual({});
+  });
+
+  it('should reject create_touch without body', () => {
+    const automation = {
+      name: 'Create touch',
+      description: 'Create a delayed touch',
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'content',
+          filter_operator: 'contains',
+          values: 'hello',
+        },
+      ],
+      actions: [
+        {
+          action_name: 'create_touch',
+          action_params: { body: '   ', delay_minutes: 15 },
+        },
+      ],
+    };
+
+    const errors = validateAutomation(automation);
+    expect(errors).toHaveProperty('action_0');
+  });
+
+  it('should not require action params for cancel_touches', () => {
+    const automation = {
+      name: 'Cancel touches',
+      description: 'Cancel scheduled touches on incoming reply',
+      event_name: 'message_created',
+      conditions: [
+        {
+          attribute_key: 'content',
+          filter_operator: 'contains',
+          values: 'hello',
+        },
+      ],
+      actions: [{ action_name: 'cancel_touches' }],
+    };
+
+    const errors = validateAutomation(automation);
+    expect(errors).toEqual({});
+  });
 });

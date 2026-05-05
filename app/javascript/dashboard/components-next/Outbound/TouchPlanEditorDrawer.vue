@@ -421,7 +421,7 @@ const createStep = (seed = {}) => {
   );
 
   return {
-    autoCancelOnIncoming: seed.auto_cancel_on_incoming ?? true,
+    autoCancelOnIncoming: seed.auto_cancel_on_incoming ?? false,
     body: seed.content_kind === 'channel_template' ? '' : seed.body || '',
     contentKind: seed.content_kind || 'free_text',
     entityKind,
