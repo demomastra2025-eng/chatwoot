@@ -1,5 +1,6 @@
 class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
+  OPERATOR_CANDIDATE_LIMIT = 20
 
   def initialize(payload:)
     @payload = payload.deep_stringify_keys
@@ -90,6 +91,8 @@ class Telephony::InboundRoutingService
       route_reason: decision[:reason] || decision['reason']
     }
 
+    metadata.merge!(operator_route_metadata(decision)) if operator_decision?(decision)
+
     if existing_voice_conversation.present?
       metadata[:chatwoot_conversation_id] = existing_voice_conversation.id
       metadata[:chatwoot_conversation_status] = existing_voice_conversation.status
@@ -108,6 +111,26 @@ class Telephony::InboundRoutingService
       caller_number: caller_number,
       metadata: metadata.compact
     }.compact
+  end
+
+  def operator_route_metadata(decision)
+    candidates = decision[:operator_candidates] || decision['operator_candidates'] || []
+    return {} if candidates.blank?
+
+    candidate_hashes = candidates.map { |candidate| candidate.deep_stringify_keys }
+    {
+      operator_pool: true,
+      operator_pool_size: candidate_hashes.size,
+      operator_candidates: candidate_hashes,
+      operator_candidate_binding_ids: candidate_hashes.filter_map { |candidate| candidate['id'] },
+      operator_candidate_user_ids: candidate_hashes.filter_map { |candidate| candidate['user_id'] },
+      operator_candidate_agent_refs: candidate_hashes.filter_map { |candidate| candidate['agent_ref'] },
+      operator_candidate_agent_aors: candidate_hashes.filter_map { |candidate| candidate['agent_aor'] }
+    }.compact
+  end
+
+  def operator_decision?(decision)
+    (decision[:action] || decision['action']).to_s == 'operator'
   end
 
   def route_lifecycle_event_key
@@ -147,14 +170,11 @@ class Telephony::InboundRoutingService
   end
 
   def operator_routable?
-    return false unless sip_operator_aor?(resolved_operator_aor)
-    return false if operator_binding.blank?
-
-    operator_binding.registered_for_routing?
+    operator_candidates.any?
   end
 
   def resolved_operator_aor
-    operator_binding&.agent_aor.presence || routing_policy.operator_agent_aor
+    primary_operator_candidate&.agent_aor.presence || operator_binding&.agent_aor.presence || routing_policy.operator_agent_aor
   end
 
   def sip_operator_aor?(value)
@@ -162,7 +182,71 @@ class Telephony::InboundRoutingService
   end
 
   def operator_binding
-    @operator_binding ||= begin
+    @operator_binding ||= configured_operator_binding
+  end
+
+  def operator_decision(reason:)
+    {
+      action: 'operator',
+      reason: reason
+    }.merge(operator_target_payload).merge(operator_runtime_fallback_payload).merge(shared_context)
+  end
+
+  def operator_target_payload
+    candidates = operator_candidates
+    primary = candidates.first
+    return {} if primary.blank?
+
+    candidate_payload = candidates.map { |candidate| operator_candidate_payload(candidate) }
+    {
+      agent_aor: primary.agent_aor,
+      agent_ref: primary.agent_ref,
+      agent_aors: candidate_payload.filter_map { |candidate| candidate[:agent_aor] },
+      operator_pool: candidate_payload.size > 1,
+      operator_pool_size: candidate_payload.size,
+      operator_candidates: candidate_payload
+    }.compact
+  end
+
+  def operator_candidates
+    @operator_candidates ||= begin
+      candidates = operator_candidate_scope.select do |binding|
+        binding.enabled? && binding.registered_for_routing? && sip_operator_aor?(binding.agent_aor)
+      end
+      busy_ids = busy_operator_binding_ids(candidates.map(&:id))
+      candidates = candidates.reject { |binding| busy_ids.include?(binding.id) }
+
+      candidates.sort_by { |binding| operator_candidate_sort_key(binding) }.first(OPERATOR_CANDIDATE_LIMIT)
+    end
+  end
+
+  def primary_operator_candidate
+    operator_candidates.first
+  end
+
+  def operator_candidate_scope
+    scope = number_binding.account.telephony_agent_bindings.includes(:user)
+    scope = scope.where(user_id: inbox.members.select(:id)) if inbox.present? && inbox.inbox_members.exists?
+    scope
+  end
+
+  def busy_operator_binding_ids(candidate_ids)
+    return [] if candidate_ids.blank?
+
+    Telephony::CallSession.active
+                          .where(account_id: number_binding.account_id, agent_binding_id: candidate_ids)
+                          .where.not(external_call_ref: call_ref)
+                          .distinct
+                          .pluck(:agent_binding_id)
+  end
+
+  def operator_candidate_sort_key(binding)
+    preferred = binding.id == configured_operator_binding&.id ? 0 : 1
+    [preferred, binding.user_id || 0, binding.id]
+  end
+
+  def configured_operator_binding
+    @configured_operator_binding ||= begin
       scope = number_binding.account.telephony_agent_bindings
       if routing_policy.operator_agent_ref.present?
         scope.find_by(agent_ref: routing_policy.operator_agent_ref)
@@ -172,11 +256,14 @@ class Telephony::InboundRoutingService
     end
   end
 
-  def operator_decision(reason:)
+  def operator_candidate_payload(binding)
     {
-      action: 'operator',
-      reason: reason
-    }.merge(routing_policy.operator_target_payload).merge(operator_runtime_fallback_payload).merge(shared_context)
+      id: binding.id,
+      agent_ref: binding.agent_ref,
+      agent_aor: binding.agent_aor,
+      user_id: binding.user_id,
+      name: binding.user&.name
+    }.compact
   end
 
   def operator_runtime_fallback_payload

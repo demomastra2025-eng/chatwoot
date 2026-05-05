@@ -225,4 +225,94 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
     expect(response.parsed_body.dig('payload', 'signalingServer')).to eq('wss://app.example.test/telephony/sip-ws')
   end
+
+  it 'claims an incoming operator pool call for the current registered candidate' do
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-pool-claim-1',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [agent_binding.agent_ref]
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/claim",
+         params: { call_ref: call_session.external_call_ref },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'claimed')).to be(true)
+    expect(call_session.reload).to have_attributes(
+      agent_binding_id: agent_binding.id,
+      answered_by: "user:#{administrator.id}",
+      status: 'connecting'
+    )
+    expect(call_session.metadata.dig('operator_claim', 'user_id')).to eq(administrator.id)
+  end
+
+  it 'rejects the second operator when an incoming call was already claimed' do
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    loser_user = create(:user, account: account, role: :agent)
+    loser_headers = loser_user.create_new_auth_token
+    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-pool-claim-2',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'operator_candidate_user_ids' => [administrator.id, loser_user.id],
+          'operator_candidate_agent_refs' => [winner.agent_ref, loser.agent_ref]
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/claim",
+         params: { call_ref: call_session.external_call_ref },
+         headers: headers,
+         as: :json
+    expect(response).to have_http_status(:ok)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/claim",
+         params: { call_ref: call_session.external_call_ref },
+         headers: loser_headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
+    expect(response.parsed_body.dig('details', 'user_id')).to eq(administrator.id)
+    expect(call_session.reload.agent_binding_id).to eq(winner.id)
+  end
+
+  it 'rejects claim attempts from registered operators outside the route candidate pool' do
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-pool-claim-3',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'operator_candidate_user_ids' => [administrator.id + 10_000],
+          'operator_candidate_agent_refs' => [agent_binding.agent_ref]
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/claim",
+         params: { call_ref: call_session.external_call_ref },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body['code']).to eq('OPERATOR_NOT_CANDIDATE')
+    expect(call_session.reload.agent_binding_id).to be_nil
+  end
 end

@@ -15,6 +15,16 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     )
   end
 
+  def claim
+    render_payload(
+      Telephony::OperatorCallClaimService.new(
+        account: Current.account,
+        user: Current.user,
+        call_ref: params.require(:call_ref)
+      ).perform
+    )
+  end
+
   private
 
   def webphone_service

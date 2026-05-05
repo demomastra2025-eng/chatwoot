@@ -306,8 +306,8 @@ test('VoiceApplication asks Rails for a route first and dials operator without A
 
   const result = await app.handleCall(call, {
     call_ref: 'call-operator-1',
-    from: '+15557654321',
-    to: '+15551234567',
+    from: '+155****4321',
+    to: '+155****4567',
     number_ref: 'number-1',
     app_ref: 'runtime-app-1'
   });
@@ -321,6 +321,62 @@ test('VoiceApplication asks Rails for a route first and dials operator without A
   assert.equal(dialCalls[0].agent_aor, 'sip:1001@example.test');
   await result.completion;
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing']);
+});
+
+test('VoiceApplication fans out operator pool and records the first answered candidate', async () => {
+  const bridgeEvents = [];
+  const dialCalls = [];
+  const loserHangups = [];
+  const primaryLeg = Object.assign(new EventEmitter(), {
+    hangup(payload) { loserHangups.push({ leg: 'primary', payload }); }
+  });
+  const secondaryLeg = Object.assign(new EventEmitter(), {
+    hangup(payload) { loserHangups.push({ leg: 'secondary', payload }); }
+  });
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      reason: 'operator_route',
+      operator_timeout_ms: 1000,
+      operator_pool: true,
+      operator_candidates: [
+        { agent_ref: 'fonoster-agent-1', agent_aor: 'sip:1001@example.test', user_id: 11 },
+        { agent_ref: 'fonoster-agent-2', agent_aor: 'sip:1002@example.test', user_id: 12 }
+      ]
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for operator routes'); }
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    async dial(target) {
+      dialCalls.push(target);
+      return target.agent_aor === 'sip:1001@example.test' ? primaryLeg : secondaryLeg;
+    }
+  });
+  const app = new VoiceApplication({ client });
+
+  const result = await app.handleCall(call, { call_ref: 'call-operator-pool' });
+  secondaryLeg.emit('answered');
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(result.mode, 'operator');
+  assert.equal(call.answerCount, 1);
+  assert.deepEqual(dialCalls.map(target => target.agent_aor), ['sip:1001@example.test', 'sip:1002@example.test']);
+  const answeredEvent = bridgeEvents.find(event => event.event === 'operator_answered');
+  assert.equal(answeredEvent.metadata.agent_ref, 'fonoster-agent-2');
+  assert.equal(answeredEvent.metadata.user_id, 12);
+  assert.deepEqual(answeredEvent.metadata.operator_candidate_agent_aors, ['sip:1001@example.test', 'sip:1002@example.test']);
+  assert.deepEqual(loserHangups, [{ leg: 'primary', payload: { reason: 'answered_by_other_operator' } }]);
+
+  primaryLeg.emit('end');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_answered']);
+
+  call.emit('end');
+  await result.completion;
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'operator_ringing', 'operator_answered', 'session_completed']);
 });
 
 test('VoiceApplication falls back to an app when the operator leg reports no answer', async () => {

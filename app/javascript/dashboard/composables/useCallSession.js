@@ -64,6 +64,17 @@ export function useCallSession() {
     callsStore.clearActiveCall();
   };
 
+  const claimFonosterIncomingCall = async callSid => {
+    try {
+      await VoiceAPI.claimIncomingCall(callSid);
+      return true;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to claim incoming call:', error);
+      return false;
+    }
+  };
+
   const joinCall = async ({
     conversationId,
     inboxId,
@@ -100,6 +111,17 @@ export function useCallSession() {
       }
 
       if (resolvedProvider === 'fonoster') {
+        const claimed = await claimFonosterIncomingCall(callSid);
+        if (!claimed) {
+          await WebphoneClient.rejectIncomingCall('fonoster');
+          callsStore.dismissCall(callSid);
+          return {
+            provider: 'fonoster',
+            joinSupported: false,
+            alreadyClaimed: true,
+          };
+        }
+
         const joinResult = await WebphoneClient.joinClientCall({
           provider: 'fonoster',
           conversationId,

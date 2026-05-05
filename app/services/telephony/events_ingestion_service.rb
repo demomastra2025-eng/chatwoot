@@ -198,8 +198,9 @@ class Telephony::EventsIngestionService
     inbox = resolve_inbox(account)
     number_binding = resolve_number_binding(account) || inbox&.telephony_number_binding
     contact = resolve_contact(account, conversation)
-    agent_binding = resolve_agent_binding(account)
+    resolved_agent_binding = resolve_agent_binding(account)
     status = next_status_for(call_session)
+    agent_binding = next_agent_binding(call_session, resolved_agent_binding, status)
     started_at = next_started_at(call_session, status)
     answered_at = next_answered_at(call_session, status)
     ended_at = next_ended_at(call_session, status)
@@ -210,7 +211,7 @@ class Telephony::EventsIngestionService
       contact: contact || call_session.contact,
       inbox: inbox || call_session.inbox,
       number_binding: number_binding || call_session.number_binding,
-      agent_binding: agent_binding || call_session.agent_binding,
+      agent_binding: agent_binding,
       provider: payload_value('provider') || call_session.provider || 'fonoster',
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id',
                                        'providerCallId') || call_session.provider_call_sid,
@@ -243,6 +244,18 @@ class Telephony::EventsIngestionService
     return call_session.status if call_session.terminal? && !terminal_status?(status)
 
     status
+  end
+
+  def next_agent_binding(call_session, resolved_agent_binding, status)
+    return call_session.agent_binding if call_session.agent_binding.present? && operator_answer_event?(status)
+
+    resolved_agent_binding || call_session.agent_binding
+  end
+
+  def operator_answer_event?(status)
+    return false unless status == 'in_progress'
+
+    resolved_event_type.to_s.in?(%w[operator_answered transfer_answered answered])
   end
 
   def next_started_at(call_session, status)
@@ -375,6 +388,11 @@ class Telephony::EventsIngestionService
 
     data = (message.content_attributes || {}).deep_dup
     data['data'] ||= {}
+    voice_meta = voice_message_meta(call_session)
+    if voice_meta.present?
+      existing_meta = data['data']['meta'].is_a?(Hash) ? data['data']['meta'] : {}
+      data['data']['meta'] = existing_meta.merge(voice_meta)
+    end
     data['data']['status'] = call_session.status
     data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
     data['data']['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
@@ -383,6 +401,22 @@ class Telephony::EventsIngestionService
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.update!(content_attributes: data)
+  end
+
+  def voice_message_meta(call_session)
+    metadata = (call_session.metadata || {}).deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_stringify_keys : {}
+    meta = route_metadata.slice(
+      'operator_pool',
+      'operator_pool_size',
+      'operator_candidates',
+      'operator_candidate_binding_ids',
+      'operator_candidate_user_ids',
+      'operator_candidate_agent_refs',
+      'operator_candidate_agent_aors'
+    )
+    meta['operator_claim'] = metadata['operator_claim'] if metadata['operator_claim'].present?
+    meta.compact
   end
 
   def resolve_existing_conversation(account, call_session)
@@ -513,7 +547,10 @@ class Telephony::EventsIngestionService
   def merged_metadata(call_session)
     base = (call_session.metadata || {}).deep_dup
     base['last_payload'] = payload
-    base['metadata'] = metadata if metadata.present?
+    if metadata.present?
+      existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
+      base['metadata'] = existing_metadata.deep_merge(metadata)
+    end
     base.compact
   end
 

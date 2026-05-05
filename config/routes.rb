@@ -396,6 +396,7 @@ Rails.application.routes.draw do
             post 'ai/toggle', to: 'routing#toggle_ai'
             post 'webphone/token', to: 'webphone#create'
             post 'webphone/presence', to: 'webphone#presence'
+            post 'webphone/claim', to: 'webphone#claim'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do

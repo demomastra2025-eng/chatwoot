@@ -90,4 +90,16 @@ describe('useCallsStore', () => {
 
     expect(store.calls).toEqual([]);
   });
+
+  it('dismisses a non-active ringing widget when another operator moves the call in progress', () => {
+    const store = useCallsStore();
+
+    store.addCall({ callSid: 'shared-call-1', provider: 'fonoster' });
+    store.handleCallStatusChanged({
+      callSid: 'shared-call-1',
+      status: 'in_progress',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
 });

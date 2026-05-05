@@ -485,6 +485,12 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
   return new Promise(resolve => {
     let completed = false;
     let connected = false;
+    let answeredOperatorSource = null;
+    let timeout;
+
+    const sources = operatorEventSources(call, dialResult);
+    const operatorSources = sources.filter(({ leg }) => leg === 'operator');
+    const failedOperatorSources = new Set();
 
     const finish = async (event, metadata = {}) => {
       if (completed) return;
@@ -506,37 +512,71 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       }
     };
 
-    const sources = operatorEventSources(call, dialResult);
+    const markOperatorFailed = (source, event, reason) => {
+      if (completed || connected) return;
+      failedOperatorSources.add(source);
+      if (failedOperatorSources.size >= operatorSources.length) {
+        void failOrFallback(event, reason);
+      }
+    };
+
+    const markOperatorAnswered = (source, eventName, candidate) => {
+      if (completed || connected) return;
+      connected = true;
+      answeredOperatorSource = source;
+      clearTimer(timeout);
+      cleanupLosingOperatorLegs(operatorSources, source);
+      void app.safeBridgeEvent(
+        'operator_answered',
+        session,
+        requestPayload,
+        routeDecision,
+        operatorCandidateMetadata(candidate, { provider_event: eventName })
+      );
+      registry?.update?.(session.callRef, { state: 'operator_connected', routeDecision });
+    };
+
     if (sources.length === 0) {
       resolve();
       return;
     }
 
-    for (const { source, leg } of sources) {
+    for (const { source, leg, candidate } of sources) {
       for (const eventName of operatorAnswerEvents()) {
         registerOnce(source, eventName, () => {
-          if (completed || connected) return;
-          connected = true;
-          clearTimer(timeout);
-          void app.safeBridgeEvent('operator_answered', session, requestPayload, routeDecision, { provider_event: eventName });
-          registry?.update?.(session.callRef, { state: 'operator_connected', routeDecision });
+          if (leg === 'operator') {
+            markOperatorAnswered(source, eventName, candidate);
+          }
         });
       }
       for (const eventName of operatorNoAnswerEvents()) {
-        registerOnce(source, eventName, () => { void failOrFallback('operator_no_answer', normalizeOperatorFailureReason(eventName)); });
+        registerOnce(source, eventName, () => {
+          if (leg === 'operator') {
+            markOperatorFailed(source, 'operator_no_answer', normalizeOperatorFailureReason(eventName));
+          }
+        });
       }
       for (const eventName of callErrorEvents()) {
-        registerOnce(source, eventName, () => { void failOrFallback('operator_failed', normalizeOperatorFailureReason(eventName)); });
+        registerOnce(source, eventName, () => {
+          if (leg === 'operator') {
+            markOperatorFailed(source, 'operator_failed', normalizeOperatorFailureReason(eventName));
+            return;
+          }
+
+          void failOrFallback('operator_failed', normalizeOperatorFailureReason(eventName));
+        });
       }
       for (const eventName of callEndEvents()) {
         registerOnce(source, eventName, () => {
           if (connected) {
+            if (leg === 'operator' && source !== answeredOperatorSource) return;
+
             void finish('session_completed', { provider_event: eventName, provider_leg: leg });
             return;
           }
 
           if (leg === 'operator') {
-            void failOrFallback('operator_no_answer', normalizeOperatorFailureReason(eventName));
+            markOperatorFailed(source, 'operator_no_answer', normalizeOperatorFailureReason(eventName));
             return;
           }
 
@@ -545,7 +585,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       }
     }
 
-    const timeout = setTimer(() => {
+    timeout = setTimer(() => {
       void failOrFallback('operator_no_answer', 'operator_timeout');
     }, operatorTimeoutMs(routeDecision));
   });
@@ -553,10 +593,44 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
 
 function operatorEventSources(call, dialResult) {
   return [
-    { source: dialResult, leg: 'operator' },
+    ...operatorDialResults(dialResult).map(({ source, candidate }) => ({ source, leg: 'operator', candidate })),
     { source: call, leg: 'caller' },
     { source: call?.voice, leg: 'caller' }
   ].filter(({ source }) => source && (typeof source.on === 'function' || typeof source.once === 'function'));
+}
+
+function operatorDialResults(dialResult) {
+  return (Array.isArray(dialResult) ? dialResult : [dialResult]).filter(Boolean).map(entry => {
+    if (entry?.source) return { source: entry.source, candidate: entry.candidate || entry.__operatorCandidate };
+    return { source: entry, candidate: entry?.__operatorCandidate };
+  });
+}
+
+function operatorCandidateMetadata(candidate = {}, metadata = {}) {
+  return compactPayload({
+    ...metadata,
+    id: candidate.id,
+    agent_ref: candidate.agent_ref,
+    agentRef: candidate.agent_ref,
+    agent_aor: candidate.agent_aor,
+    operator_agent_aor: candidate.agent_aor,
+    user_id: candidate.user_id,
+    userId: candidate.user_id,
+    chatwoot_user_id: candidate.user_id
+  });
+}
+
+function cleanupLosingOperatorLegs(operatorSources, answeredSource) {
+  for (const { source } of operatorSources) {
+    if (!source || source === answeredSource) continue;
+    try {
+      if (typeof source.hangup === 'function') source.hangup({ reason: 'answered_by_other_operator' });
+      else if (typeof source.reject === 'function') source.reject({ reason: 'answered_by_other_operator' });
+      else if (typeof source.close === 'function') source.close();
+    } catch (_error) {
+      // Losing operator leg cleanup is best effort; the answered leg owns the call.
+    }
+  }
 }
 
 function operatorAnswerEvents() {
@@ -980,10 +1054,26 @@ function bridgeEventPayload(event, session, requestPayload = {}, routeDecision =
     ingress_number: session.ingressNumber || requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to,
     caller_number: session.callerNumber || requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from,
     metadata: {
+      ...operatorRouteMetadata(routeDecision),
       ...metadata,
       route_action: routeDecision.action || routeDecision.mode,
       route_reason: routeDecision.reason
     }
+  });
+}
+
+function operatorRouteMetadata(routeDecision = {}) {
+  const candidates = operatorTargetCandidates(routeDecision);
+  if (candidates.length === 0) return {};
+
+  return compactPayload({
+    operator_pool: routeDecision.operator_pool || routeDecision.operatorPool || candidates.length > 1,
+    operator_pool_size: routeDecision.operator_pool_size || routeDecision.operatorPoolSize || candidates.length,
+    operator_candidates: candidates,
+    operator_candidate_binding_ids: candidates.map(candidate => candidate.id).filter(Boolean),
+    operator_candidate_user_ids: candidates.map(candidate => candidate.user_id).filter(Boolean),
+    operator_candidate_agent_refs: candidates.map(candidate => candidate.agent_ref).filter(Boolean),
+    operator_candidate_agent_aors: candidates.map(candidate => candidate.agent_aor).filter(Boolean)
   });
 }
 
@@ -1010,18 +1100,95 @@ function routeLookupFailureDecision(error) {
   };
 }
 
-function operatorTarget(routeDecision = {}) {
-  return routeDecision.agent_aor || routeDecision.agentAor || routeDecision.destination || routeDecision.to || routeDecision.target;
+function operatorTargetCandidates(routeDecision = {}) {
+  const candidates = [];
+  const configuredCandidates = routeDecision.operator_candidates || routeDecision.operatorCandidates || [];
+  for (const candidate of Array.isArray(configuredCandidates) ? configuredCandidates : []) {
+    addOperatorCandidate(candidates, {
+      agent_ref: candidate.agent_ref || candidate.agentRef,
+      agent_aor: candidate.agent_aor || candidate.agentAor || candidate.destination || candidate.to || candidate.target,
+      id: candidate.id || candidate.agent_binding_id || candidate.agentBindingId,
+      user_id: candidate.user_id || candidate.userId,
+      name: candidate.name
+    });
+  }
+
+  const configuredAors = routeDecision.agent_aors || routeDecision.agentAors || routeDecision.operator_agent_aors || routeDecision.operatorAgentAors;
+  for (const agentAor of Array.isArray(configuredAors) ? configuredAors : []) {
+    addOperatorCandidate(candidates, { agent_aor: agentAor });
+  }
+
+  addOperatorCandidate(candidates, {
+    agent_ref: routeDecision.agent_ref || routeDecision.agentRef,
+    agent_aor: routeDecision.agent_aor || routeDecision.agentAor || routeDecision.destination || routeDecision.to || routeDecision.target,
+    id: routeDecision.id || routeDecision.agent_binding_id || routeDecision.agentBindingId,
+    user_id: routeDecision.user_id || routeDecision.userId
+  });
+
+  return candidates;
+}
+
+function addOperatorCandidate(candidates, candidate = {}) {
+  const agentAor = candidate.agent_aor || candidate.agentAor;
+  if (!agentAor || candidates.some(existing => existing.agent_aor === agentAor)) return;
+
+  candidates.push(compactPayload({
+    id: candidate.id || candidate.agent_binding_id || candidate.agentBindingId,
+    agent_ref: candidate.agent_ref || candidate.agentRef,
+    agent_aor: agentAor,
+    user_id: candidate.user_id || candidate.userId,
+    name: candidate.name
+  }));
 }
 
 async function dialOperator(call, routeDecision = {}) {
-  const agentAor = operatorTarget(routeDecision);
-  if (!agentAor) return false;
+  const candidates = operatorTargetCandidates(routeDecision);
+  if (candidates.length === 0) return false;
 
-  const payload = { agent_aor: agentAor, destination: agentAor, to: agentAor };
-  if (typeof call?.dial === 'function') return call.dial(payload);
-  if (typeof call?.transfer === 'function') return call.transfer(payload);
-  return false;
+  const dialResults = await Promise.all(candidates.map(async candidate => {
+    try {
+      return await dialOperatorCandidate(call, candidate);
+    } catch (_error) {
+      return false;
+    }
+  }));
+  const successfulResults = dialResults.filter(Boolean);
+  if (successfulResults.length === 0) return false;
+  if (successfulResults.length === 1) return successfulResults[0];
+
+  return successfulResults;
+}
+
+async function dialOperatorCandidate(call, candidate) {
+  const payload = {
+    agent_aor: candidate.agent_aor,
+    destination: candidate.agent_aor,
+    to: candidate.agent_aor,
+    agent_ref: candidate.agent_ref,
+    user_id: candidate.user_id
+  };
+
+  let result = false;
+  if (typeof call?.dial === 'function') result = await call.dial(payload);
+  else if (typeof call?.transfer === 'function') result = await call.transfer(payload);
+
+  if (result === false) return false;
+  return attachOperatorCandidate(result, candidate);
+}
+
+function attachOperatorCandidate(result, candidate) {
+  if (result && typeof result === 'object') {
+    try {
+      result.__operatorCandidate = candidate;
+      return result;
+    } catch (_error) {
+      // Some provider SDK objects may be sealed; fall back to a wrapper.
+      return { source: result, candidate };
+    }
+  }
+
+  // Some provider adapters resolve dial()/transfer() with no leg object on success.
+  return { source: result, candidate };
 }
 
 async function handoffToApp(call, routeDecision = {}) {

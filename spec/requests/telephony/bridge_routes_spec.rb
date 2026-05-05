@@ -53,6 +53,94 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'returns a registered operator pool for inbox members and excludes offline or busy bindings' do
+    primary_user = create(:user, account: account, role: :agent)
+    secondary_user = create(:user, account: account, role: :agent)
+    busy_user = create(:user, account: account, role: :agent)
+    offline_user = create(:user, account: account, role: :agent)
+    non_member_user = create(:user, account: account, role: :agent)
+    [primary_user, secondary_user, busy_user, offline_user].each { |user| create(:inbox_member, inbox: voice_inbox, user: user) }
+
+    primary_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: primary_user,
+      agent_ref: 'fonoster-agent-primary',
+      agent_aor: 'sip:1001@example.test'
+    )
+    create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: secondary_user,
+      agent_ref: 'fonoster-agent-secondary',
+      agent_aor: 'sip:1002@example.test'
+    )
+    busy_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: busy_user,
+      agent_ref: 'fonoster-agent-busy',
+      agent_aor: 'sip:1003@example.test'
+    )
+    create(
+      :telephony_agent_binding,
+      account: account,
+      user: offline_user,
+      agent_ref: 'fonoster-agent-offline',
+      agent_aor: 'sip:1004@example.test'
+    )
+    create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: non_member_user,
+      agent_ref: 'fonoster-agent-non-member',
+      agent_aor: 'sip:1005@example.test'
+    )
+    create(:telephony_call_session, account: account, agent_binding: busy_binding, status: 'in_progress')
+
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: primary_binding.agent_ref,
+      operator_agent_aor: primary_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-operator-pool',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****0100'
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'agent_aor' => 'sip:1001@example.test',
+      'agent_aors' => contain_exactly('sip:1001@example.test', 'sip:1002@example.test'),
+      'operator_pool' => true,
+      'operator_pool_size' => 2
+    )
+    expect(response.parsed_body['operator_candidates']).to contain_exactly(
+      include('agent_ref' => 'fonoster-agent-primary', 'agent_aor' => 'sip:1001@example.test', 'user_id' => primary_user.id),
+      include('agent_ref' => 'fonoster-agent-secondary', 'agent_aor' => 'sip:1002@example.test', 'user_id' => secondary_user.id)
+    )
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'inbound-route-operator-pool')
+    expect(call_session.metadata.dig('metadata', 'operator_candidate_user_ids')).to contain_exactly(primary_user.id, secondary_user.id)
+    expect(call_session.metadata.dig('metadata', 'operator_candidate_agent_refs')).to contain_exactly(
+      'fonoster-agent-primary',
+      'fonoster-agent-secondary'
+    )
+  end
+
   it 'falls back when a SIP operator AOR is configured without a registration binding' do
     number_binding.routing_policy.update!(
       mode: 'operator',

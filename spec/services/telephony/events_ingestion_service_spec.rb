@@ -143,6 +143,55 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'keeps the backend-claimed operator when provider answered metadata is late or ambiguous' do
+      claimed_binding = create(:telephony_agent_binding, :registered, account: account, user: create(:user, account: account, role: :agent))
+      provider_binding = create(:telephony_agent_binding, :registered, account: account, user: create(:user, account: account, role: :agent))
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'ringing' } }
+      )
+      existing_call_session.update!(
+        status: 'connecting',
+        agent_binding: claimed_binding,
+        metadata: {
+          'metadata' => {
+            'operator_pool' => true,
+            'operator_pool_size' => 2,
+            'operator_candidates' => [
+              { 'agent_ref' => claimed_binding.agent_ref, 'user_id' => claimed_binding.user_id },
+              { 'agent_ref' => provider_binding.agent_ref, 'user_id' => provider_binding.user_id }
+            ],
+            'operator_candidate_user_ids' => [claimed_binding.user_id, provider_binding.user_id],
+            'operator_candidate_agent_refs' => [claimed_binding.agent_ref, provider_binding.agent_ref]
+          },
+          'operator_claim' => {
+            'agent_binding_id' => claimed_binding.id,
+            'user_id' => claimed_binding.user_id
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-operator-answered-claimed-1',
+          event: 'operator_answered',
+          occurred_at: Time.current.iso8601,
+          metadata: { agent_ref: provider_binding.agent_ref, user_id: provider_binding.user_id }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'in_progress', agent_binding_id: claimed_binding.id)
+      expect(result.latest_voice_message.content_attributes.dig('data', 'meta', 'operator_claim', 'user_id')).to eq(claimed_binding.user_id)
+      expect(result.latest_voice_message.content_attributes.dig('data', 'meta', 'operator_candidate_agent_refs')).to contain_exactly(
+        claimed_binding.agent_ref,
+        provider_binding.agent_ref
+      )
+    end
+
     it 'does not downgrade a terminal call session when a late non-terminal event arrives' do
       existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
 

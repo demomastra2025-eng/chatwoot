@@ -43,6 +43,12 @@ export const useCallsStore = defineStore('calls', {
     handleCallStatusChanged({ callSid, status }) {
       if (TERMINAL_STATUSES.includes(status)) {
         this.removeCall(callSid);
+        return;
+      }
+
+      if (status === 'in_progress') {
+        const call = this.calls.find(item => item.callSid === callSid);
+        if (call && !call.isActive) this.dismissCall(callSid);
       }
     },
 
