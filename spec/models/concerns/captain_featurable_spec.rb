@@ -147,13 +147,14 @@ RSpec.describe CaptainFeaturable do
       expect(prefs[:runtime]).to include(
         'assistant_thinking_effort' => 'none',
         'copilot_thinking_effort' => 'none',
-        'assistant_moderation' => true,
-        'copilot_moderation' => true,
+        'assistant_moderation' => false,
+        'copilot_moderation' => false,
         'trace_input_capture' => true,
         'trace_output_capture' => true
       )
       expect(account.captain_assistant_thinking_effort).to eq('none')
-      expect(account.captain_copilot_moderation?).to be true
+      expect(account.captain_assistant_moderation?).to be false
+      expect(account.captain_copilot_moderation?).to be false
       expect(account.captain_trace_input_capture?).to be true
       expect(account.captain_trace_output_capture?).to be true
     end

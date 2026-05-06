@@ -220,7 +220,8 @@ RSpec.describe Captain::Copilot::ChatService do
 
     it 'returns a blocked payload when fail-closed moderation is unavailable' do
       account.update!(captain_runtime: { 'copilot_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
-      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+      allow(Llm::Config).to receive(:api_key).and_call_original
+      allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return(nil)
 
       expect(service.generate_response('Hello')).to eq(
         {

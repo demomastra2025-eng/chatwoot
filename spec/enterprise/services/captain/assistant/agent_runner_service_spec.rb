@@ -129,7 +129,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             assistant_id: assistant.id,
             captain_runtime: hash_including(
               'assistant_thinking_effort' => 'none',
-              'assistant_moderation' => true
+              'assistant_moderation' => false
             ),
             conversation: hash_including(id: conversation.id),
             contact: hash_including(id: contact.id)
@@ -348,9 +348,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'returns a handoff response when moderation blocks the input' do
-      account.update!(captain_runtime: { 'assistant_moderation' => true })
-      moderation_result = instance_double(RubyLLM::Moderation, flagged?: true)
-      allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+        Llm::SafetyPolicy::UnsafeContentError.new(feature: :assistant, stage: :input, reason: :moderation_flagged)
+      )
 
       result = service.generate_response(message_history: message_history)
 
@@ -363,8 +363,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     end
 
     it 'returns a handoff response when fail-closed moderation is unavailable' do
-      account.update!(captain_runtime: { 'assistant_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
-      allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return(nil)
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+        Llm::SafetyPolicy::UnavailableError.new(feature: :assistant, stage: :input, reason: :provider_not_configured)
+      )
 
       result = service.generate_response(message_history: message_history)
 

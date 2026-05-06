@@ -30,8 +30,13 @@ RSpec.describe Llm::RuntimePolicy do
   end
 
   describe '.moderation_enabled?' do
+    it 'defaults runtime assistant and copilot moderation to disabled' do
+      expect(described_class.moderation_enabled?(feature: :assistant, account: account)).to be false
+      expect(described_class.moderation_enabled?(feature: :copilot, account: account)).to be false
+    end
+
     it 'reads moderation flags from runtime preferences' do
-      account.update!(captain_runtime: { 'copilot_moderation' => true })
+      account.update!(captain_runtime: { 'assistant_moderation' => true, 'copilot_moderation' => true })
 
       expect(described_class.moderation_enabled?(feature: :copilot, account: account)).to be true
       expect(described_class.moderation_enabled?(feature: :assistant, account: account)).to be true

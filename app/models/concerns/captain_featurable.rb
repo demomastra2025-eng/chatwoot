@@ -5,8 +5,8 @@ module CaptainFeaturable
   RUNTIME_DEFAULTS = {
     'assistant_thinking_effort' => 'none',
     'copilot_thinking_effort' => 'none',
-    'assistant_moderation' => true,
-    'copilot_moderation' => true,
+    'assistant_moderation' => false,
+    'copilot_moderation' => false,
     'moderation_failure_mode' => 'fail_open',
     'trace_input_capture' => !Rails.env.production?,
     'trace_output_capture' => !Rails.env.production?
