@@ -129,6 +129,7 @@ RUN apk update && apk add --no-cache \
   tzdata \
   postgresql-client \
   imagemagick \
+  ffmpeg \
   git \
   vips \
   vips-tools \

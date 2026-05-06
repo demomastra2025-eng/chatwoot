@@ -202,6 +202,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       allow(service).to receive(:chat).with(model: 'openai/gpt-audio-mini', temperature: 0).and_return(chat)
 
       expect(Llm::ApiClient).not_to receive(:transcribe)
+      expect(Open3).not_to receive(:capture3)
       expect(Llm::ChatClient).to receive(:ask) do |received_chat, content, observability:, account:|
         expect(received_chat).to eq(chat)
         expect(account).to eq(service.account)
@@ -214,6 +215,42 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
       expect(service.send(:transcribe_audio)).to eq('OpenRouter transcription')
       expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter transcription' })
+    end
+
+    it 'normalizes Ogg Opus audio to WAV before sending it to OpenRouter audio input models' do
+      chat = instance_double(RubyLLM::Chat)
+      response = instance_double(RubyLLM::Message, content: 'OpenRouter Opus transcription')
+
+      attachment.file.detach
+      attachment.file.attach(
+        io: StringIO.new('OggSfake-opus-data'),
+        filename: 'voice-message',
+        content_type: 'audio/opus'
+      )
+      allow(service).to receive(:model).and_return('openai/gpt-4o-audio-preview')
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-audio-preview', account: account).and_return('openrouter')
+      allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-4o-audio-preview', account: account).and_return(true)
+      allow(service).to receive(:chat).with(model: 'openai/gpt-4o-audio-preview', temperature: 0).and_return(chat)
+      allow(service).to receive(:ffmpeg_path).and_return('/usr/bin/ffmpeg')
+
+      expect(Open3).to receive(:capture3) do |*args|
+        destination_file_path = args.last
+        expect(args).to include('/usr/bin/ffmpeg', '-i')
+        expect(destination_file_path).to end_with('.openrouter.wav')
+        File.binwrite(destination_file_path, 'RIFFfake-wav-data')
+        ['', '', instance_double(Process::Status, success?: true)]
+      end
+      expect(Llm::ChatClient).to receive(:ask) do |_received_chat, content, observability:, account:|
+        expect(account).to eq(service.account)
+        expect(content.attachments.first.type).to eq(:audio)
+        expect(content.attachments.first.format).to eq('wav')
+        expect(content.attachments.first.source.to_s).to end_with('.openrouter.wav')
+        expect(observability).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
+        response
+      end
+
+      expect(service.send(:transcribe_audio)).to eq('OpenRouter Opus transcription')
+      expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter Opus transcription' })
     end
   end
 end

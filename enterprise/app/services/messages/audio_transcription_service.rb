@@ -1,3 +1,5 @@
+require 'open3'
+
 class Messages::AudioTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
   SUPPORTED_AUDIO_EXTENSIONS = %w[
@@ -12,6 +14,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     wav
     webm
   ].freeze
+  OPENROUTER_AUDIO_INPUT_FORMATS = %w[mp3 wav].freeze
 
   attr_reader :attachment, :message, :account
 
@@ -70,12 +73,13 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     return transcribed_text if transcribed_text.present?
 
     temp_file_path = fetch_audio_file
-    observability = instrumentation_params(temp_file_path)
+    provider_file_path = audio_file_path_for_provider(temp_file_path)
+    observability = instrumentation_params(provider_file_path)
     response = instrument_audio_transcription(observability) do
       if openrouter_chat_transcription?
-        transcribe_with_openrouter_chat(temp_file_path, observability)
+        transcribe_with_openrouter_chat(provider_file_path, observability)
       else
-        transcribe_with_transcription_endpoint(temp_file_path, observability)
+        transcribe_with_transcription_endpoint(provider_file_path, observability)
       end
     end
     transcribed_text = response.respond_to?(:text) ? response.text.to_s : response.to_s
@@ -84,6 +88,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     transcribed_text
   ensure
     FileUtils.rm_f(temp_file_path) if temp_file_path.present?
+    FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != temp_file_path
   end
 
   def instrumentation_params(file_path)
@@ -111,6 +116,56 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
 
   def openrouter_chat_transcription?
     Llm::Config.provider_for_model(model, account: account) == 'openrouter' && Llm::Models.supports_audio_input?(model, account: account)
+  end
+
+  def audio_file_path_for_provider(temp_file_path)
+    return temp_file_path unless openrouter_chat_transcription?
+    return temp_file_path if openrouter_audio_input_format?(temp_file_path)
+
+    transcode_audio_for_openrouter(temp_file_path)
+  end
+
+  def openrouter_audio_input_format?(file_path)
+    RubyLLM::Attachment.new(file_path).format.in?(OPENROUTER_AUDIO_INPUT_FORMATS)
+  rescue StandardError
+    File.extname(file_path).delete_prefix('.').downcase.in?(OPENROUTER_AUDIO_INPUT_FORMATS)
+  end
+
+  def transcode_audio_for_openrouter(source_file_path)
+    destination_file_path = "#{source_file_path}.openrouter.wav"
+    ffmpeg = ffmpeg_path
+    raise 'Audio transcription converter ffmpeg is not available for OpenRouter audio input' if ffmpeg.blank?
+
+    stdout, stderr, status = Open3.capture3(
+      ffmpeg,
+      '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
+      '-i', source_file_path,
+      '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+      destination_file_path
+    )
+
+    if status.success? && File.size?(destination_file_path)
+      Rails.logger.info(
+        'Audio transcription normalized input for OpenRouter ' \
+        "attachment_id=#{attachment.id} message_id=#{message.id} output_format=wav"
+      )
+      return destination_file_path
+    end
+
+    FileUtils.rm_f(destination_file_path)
+    Rails.logger.warn(
+      'Audio transcription normalization failed ' \
+      "attachment_id=#{attachment.id} message_id=#{message.id} stderr=#{stderr.presence || stdout}"
+    )
+    raise 'Audio transcription normalization failed'
+  end
+
+  def ffmpeg_path
+    @ffmpeg_path ||= ENV.fetch('AUDIO_TRANSCODER_FFMPEG_PATH', nil).presence || system_ffmpeg_path
+  end
+
+  def system_ffmpeg_path
+    ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).map { |path| File.join(path, 'ffmpeg') }.find { |path| File.executable?(path) }
   end
 
   def transcribe_with_transcription_endpoint(temp_file_path, observability)
