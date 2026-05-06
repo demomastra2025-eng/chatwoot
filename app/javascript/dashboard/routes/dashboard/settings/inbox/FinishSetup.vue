@@ -1549,7 +1549,7 @@ onBeforeUnmount(() => {
 
                 <div
                   v-if="!isWhatsappWebConnected"
-                  class="grid gap-5 lg:grid-cols-[minmax(15rem,18rem)_minmax(18rem,22rem)] lg:items-stretch"
+                  class="grid gap-5 lg:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)] lg:items-stretch"
                 >
                   <div
                     class="rounded-2xl border border-n-weak bg-n-surface-1 px-6 py-4"
@@ -1588,7 +1588,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div
-                    class="min-w-[18rem] rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+                    class="min-w-0 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
                   >
                     <p
                       class="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-n-slate-10"
@@ -1602,12 +1602,12 @@ onBeforeUnmount(() => {
                         !isWhatsappWebConnected &&
                         !shouldShowWhatsappWebQrLoader
                       "
-                      class="flex w-full min-w-[16rem] items-center justify-center overflow-visible rounded-2xl bg-white p-3"
+                      class="flex w-full items-center justify-center rounded-2xl bg-white p-3"
                     >
                       <img
                         :src="whatsappWebDisplayQrCode"
                         :alt="$t('INBOX_MGMT.FINISH.WHATSAPP_WEB.QR_ALT')"
-                        class="block aspect-square h-auto w-full max-w-[18rem] object-contain"
+                        class="block aspect-square h-auto w-full max-w-none object-contain"
                       />
                     </div>
                     <div

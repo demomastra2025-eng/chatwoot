@@ -50,7 +50,7 @@ export default {
     },
     dropdownMaxHeight: {
       type: String,
-      default: 'max-h-[40rem]',
+      default: 'max-h-80',
     },
     eventName: {
       type: String,

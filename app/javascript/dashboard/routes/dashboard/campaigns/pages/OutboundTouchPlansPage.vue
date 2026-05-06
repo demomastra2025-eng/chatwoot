@@ -21,7 +21,6 @@ const isFetchingTouchPlans = ref(false);
 const isTouchPlanEditorOpen = ref(false);
 const editingTouchPlan = ref(null);
 const mutatingPlanId = ref(null);
-const editTouchPlanLoadRequestId = ref(0);
 
 const entityContext = computed(() => {
   const remindableType = route.query.remindable_type?.toString() || '';
@@ -96,46 +95,16 @@ const fetchTouchPlans = async () => {
 };
 
 const openCreateTouchPlan = () => {
-  editTouchPlanLoadRequestId.value += 1;
   editingTouchPlan.value = null;
   isTouchPlanEditorOpen.value = true;
 };
 
-const openEditTouchPlan = async touchPlan => {
-  editTouchPlanLoadRequestId.value += 1;
-  const requestId = editTouchPlanLoadRequestId.value;
+const openEditTouchPlan = touchPlan => {
   editingTouchPlan.value = touchPlan;
   isTouchPlanEditorOpen.value = true;
-
-  if (!touchPlan?.id) {
-    return;
-  }
-
-  try {
-    const { data } = await TouchPlansAPI.show(touchPlan.id);
-
-    if (
-      requestId !== editTouchPlanLoadRequestId.value ||
-      !isTouchPlanEditorOpen.value ||
-      editingTouchPlan.value?.id !== touchPlan.id
-    ) {
-      return;
-    }
-
-    editingTouchPlan.value = data.payload || touchPlan;
-  } catch (error) {
-    if (requestId !== editTouchPlanLoadRequestId.value) {
-      return;
-    }
-
-    useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_PLANS')
-    );
-  }
 };
 
 const closeTouchPlanEditor = () => {
-  editTouchPlanLoadRequestId.value += 1;
   isTouchPlanEditorOpen.value = false;
   editingTouchPlan.value = null;
 };

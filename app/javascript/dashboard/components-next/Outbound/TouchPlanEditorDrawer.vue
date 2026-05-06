@@ -656,10 +656,9 @@ const resetForm = () => {
 };
 
 const deriveTouchPlanInboxId = touchPlan => {
-  const touches = Array.isArray(touchPlan?.touches) ? touchPlan.touches : [];
   const inboxIds = [
     ...new Set(
-      touches
+      Array(touchPlan?.touches || [])
         .map(step => normalizeNumericId(step.target_inbox_id))
         .filter(Boolean)
     ),
@@ -683,10 +682,8 @@ const hydrateForm = () => {
   form.deliveryInboxId = deriveTouchPlanInboxId(props.touchPlan);
   form.description = props.touchPlan.description || '';
   form.name = props.touchPlan.name || '';
-  const touches = Array.isArray(props.touchPlan.touches)
-    ? props.touchPlan.touches
-    : [];
-  form.steps = touches.map(step => createStep(step));
+  form.steps =
+    Array(props.touchPlan.touches || []).map(step => createStep(step)) || [];
 
   if (!form.steps.length) {
     form.steps = [createStep()];
