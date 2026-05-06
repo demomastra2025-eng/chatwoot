@@ -94,13 +94,35 @@ const providerDisplayName = model => {
   return model.provider_display_name || model.provider;
 };
 
+const providerScopeLabel = model => {
+  if (!model.provider_configured) {
+    return t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.NOT_CONFIGURED');
+  }
+
+  const scopes = [];
+  if (model.account_configured) {
+    scopes.push(
+      t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.ACCOUNT_CONFIGURED')
+    );
+  }
+  if (model.global_configured) {
+    scopes.push(
+      t('CAPTAIN_SETTINGS.RUNTIME_STATUS.PROVIDERS.GLOBAL_CONFIGURED')
+    );
+  }
+
+  return scopes.join(t('CAPTAIN_SETTINGS.MODEL_CONFIG.METADATA_SEPARATOR'));
+};
+
 const modelMetadataLabel = model => {
   const parts = [providerDisplayName(model)].filter(Boolean);
   const source = sourceLabel(model);
+  const scope = providerScopeLabel(model);
   const contextLength = formatTokenCount(model.context_length);
   const maxOutputTokens = formatTokenCount(model.max_output_tokens);
 
   if (source) parts.push(source);
+  if (scope) parts.push(scope);
   if (contextLength) {
     parts.push(
       t('CAPTAIN_SETTINGS.MODEL_CONFIG.CONTEXT_TOKENS', {
@@ -195,6 +217,16 @@ const selectModel = model => {
             </span>
             <span class="text-xs text-n-slate-11 leading-snug break-words">
               {{ modelMetadataLabel(model) }}
+            </span>
+            <span
+              v-if="model.capabilities?.length"
+              class="text-xs text-n-slate-11 leading-snug break-words"
+            >
+              {{
+                t('CAPTAIN_SETTINGS.MODEL_CONFIG.CAPABILITIES', {
+                  capabilities: model.capabilities.join(', '),
+                })
+              }}
             </span>
             <span v-if="isOnChatwootCloud" class="text-xs text-n-slate-11">
               {{ getCreditLabel(model) }}

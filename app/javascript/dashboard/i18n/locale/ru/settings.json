@@ -875,6 +875,25 @@
     "LOADING": "Загрузка конфигурации AI-сотрудников...",
     "LINK_TEXT": "Подробнее о кредитах AI-сотрудников",
     "NOT_ENABLED": "AI-сотрудники не включены для вашего workspace. Перейдите на более высокий тариф, чтобы получить доступ к функциям AI-сотрудников.",
+    "PROVIDER_KEYS": {
+      "TITLE": "Ключи провайдеров",
+      "DESCRIPTION": "Настройте LLM-ключи на уровне workspace. Секреты хранятся на сервере и никогда не возвращаются в браузер.",
+      "OPENROUTER_TITLE": "Account key OpenRouter",
+      "OPENROUTER_STATUS": "Эффективный источник ключа: {status}",
+      "OPENROUTER_PLACEHOLDER": "Вставьте OpenRouter API key, чтобы переопределить глобальный ключ",
+      "SAVE": "Сохранить ключ",
+      "REMOVE_ACCOUNT_KEY": "Удалить ключ workspace",
+      "SECRET_NOTE": "Текущее значение ключа скрыто. Оставьте поле пустым, чтобы ничего не менять.",
+      "SAVE_SUCCESS": "Ключ OpenRouter для workspace сохранён.",
+      "SAVE_ERROR": "Не удалось сохранить ключ OpenRouter.",
+      "REMOVE_SUCCESS": "Ключ OpenRouter для workspace удалён.",
+      "REMOVE_ERROR": "Не удалось удалить ключ OpenRouter.",
+      "STATUS": {
+        "ACCOUNT": "workspace",
+        "GLOBAL": "глобальный",
+        "MISSING": "отсутствует"
+      }
+    },
     "MODEL_CONFIG": {
       "TITLE": "Конфигурация моделей",
       "DESCRIPTION": "Выберите AI-модели для разных функций.",
@@ -884,7 +903,11 @@
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "локальный fallback",
       "CONTEXT_TOKENS": "{count} токенов контекста",
+      "CAPABILITIES": "Возможности: {capabilities}",
       "METADATA_SEPARATOR": " · ",
+      "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ провайдера или обновите каталог OpenRouter.",
+      "SPECIALIZED_TITLE": "Специализированные AI-модели",
+      "SPECIALIZED_DESCRIPTION": "Выбирайте capability-safe модели для модерации, распознавания аудио и FAQ embeddings отдельно от chat-модели.",
       "EDITOR": {
         "TITLE": "Функции редактора",
         "DESCRIPTION": "Отвечает за умное написание, исправление грамматики, настройку тона и улучшение контента в редакторе сообщений."
@@ -896,6 +919,28 @@
       "COPILOT": {
         "TITLE": "Ассистент",
         "DESCRIPTION": "Дает контекстные подсказки в реальном времени, рекомендации из базы знаний и проактивные инсайты во время диалогов."
+      },
+      "MODERATION": {
+        "TITLE": "Модель модерации",
+        "DESCRIPTION": "Классифицирует небезопасный текст до/после AI-ответов. Модели OpenRouter должны поддерживать структурированный JSON-вывод."
+      },
+      "AUDIO_TRANSCRIPTION": {
+        "TITLE": "Модель распознавания аудио",
+        "DESCRIPTION": "Транскрибирует голосовые сообщения и записи звонков. OpenRouter-варианты должны поддерживать audio input; endpoint-модели OpenAI остаются опциональными."
+      },
+      "EMBEDDINGS": {
+        "TITLE": "FAQ / embedding-модель",
+        "DESCRIPTION": "Строит векторы для FAQ и семантического поиска по базе знаний. Если embeddings недоступны, FAQ lookup использует точный keyword fallback."
+      },
+      "IMAGE_UNDERSTANDING": {
+        "TITLE": "Распознавание картинок",
+        "DESCRIPTION": "Отдельной image-модели нет. Картинки использует выбранная chat-модель AI-агента / ассистента, если у неё есть поддержка image input.",
+        "SUPPORTED": "Картинки поддерживаются",
+        "NOT_SUPPORTED": "Картинки не поддерживаются",
+        "FEATURES": {
+          "ASSISTANT": "AI-агент",
+          "COPILOT": "Ассистент"
+        }
       }
     },
     "FEATURES": {
@@ -973,11 +1018,16 @@
         "TITLE": "Провайдеры",
         "CONFIGURED": "Настроен",
         "NOT_CONFIGURED": "Нет API-ключа",
+        "ACCOUNT_CONFIGURED": "Ключ workspace",
+        "GLOBAL_CONFIGURED": "Глобальный ключ",
         "CUSTOM_ENDPOINT": "Кастомный endpoint",
         "DEFAULT_ENDPOINT": "Стандартный endpoint"
       },
       "OPENROUTER": {
         "TITLE": "Каталог моделей OpenRouter",
+        "PRIMARY": "Маршрутизация OpenRouter",
+        "PRIMARY_ACTIVE": "Основной / fallback активен",
+        "PRIMARY_INACTIVE": "Нет ключа OpenRouter",
         "DESCRIPTION": "Модели OpenRouter загружаются через OpenRouter API; до первого успешного обновления используется встроенный каталог.",
         "REFRESH": "Обновить модели OpenRouter",
         "REFRESH_SUCCESS": "Модели OpenRouter успешно обновлены.",
@@ -1004,7 +1054,8 @@
         "COPILOT": "Ассистент",
         "LABEL_SUGGESTION": "Подсказка меток",
         "AUDIO_TRANSCRIPTION": "Транскрибация аудио",
-        "HELP_CENTER_SEARCH": "Поиск по справке"
+        "HELP_CENTER_SEARCH": "Поиск по справке",
+        "MODERATION": "Модерация"
       }
     },
     "API": {

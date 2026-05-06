@@ -33,6 +33,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     @current_account.captain_features = params_to_update[:captain_features] if params_to_update[:captain_features]
     @current_account.captain_runtime = params_to_update[:captain_runtime] if params_to_update[:captain_runtime]
     @current_account.captain_observability = params_to_update[:captain_observability] if params_to_update[:captain_observability]
+    update_openrouter_credentials if openrouter_credentials_update?
     @current_account.save!
 
     render json: preferences_payload
@@ -59,6 +60,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       features: features_with_account_preferences,
       runtime: runtime_with_account_preferences,
       observability: observability_with_account_preferences,
+      provider_credentials: provider_credentials_payload,
       runtime_metadata: Llm::ModelRegistryService.runtime_metadata(account: Current.account)
     }
   end
@@ -101,7 +103,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def permitted_captain_models
     params.require(:captain_models).permit(
       :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :help_center_search
+      :audio_transcription, :help_center_search, :moderation
     ).to_h.stringify_keys
   end
 
@@ -206,6 +208,50 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def observability_with_account_preferences
     Llm::Monitoring::AccountPreferences.for(Current.account)
+  end
+
+  def provider_credentials_payload
+    hook = openrouter_hook
+    {
+      openrouter: {
+        account_configured: hook&.access_token.present?,
+        global_configured: Llm::Config.installation_provider_available?('openrouter'),
+        provider_configured: Llm::Config.provider_available?('openrouter', account: Current.account),
+        source: provider_credential_source(hook)
+      }
+    }
+  end
+
+  def provider_credential_source(hook)
+    return 'account' if hook&.access_token.present?
+    return 'global' if Llm::Config.installation_provider_available?('openrouter')
+
+    'missing'
+  end
+
+  def openrouter_credentials_update?
+    params.key?(:openrouter_api_key) || params.key?(:remove_openrouter_api_key)
+  end
+
+  def update_openrouter_credentials
+    if ActiveModel::Type::Boolean.new.cast(params[:remove_openrouter_api_key])
+      openrouter_hook&.destroy!
+      @openrouter_hook = nil
+      return
+    end
+
+    token = params[:openrouter_api_key].to_s.strip
+    return if token.blank?
+
+    hook = openrouter_hook || @current_account.hooks.build(app_id: 'openrouter', hook_type: 'account', status: 'enabled', settings: {})
+    hook.access_token = token
+    hook.status = 'enabled'
+    hook.save!
+    @openrouter_hook = hook
+  end
+
+  def openrouter_hook
+    @openrouter_hook ||= @current_account.hooks.find_by(app_id: 'openrouter', hook_type: 'account')
   end
 
   def normalize_captain_runtime(runtime)

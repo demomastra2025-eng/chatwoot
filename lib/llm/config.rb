@@ -2,7 +2,7 @@ require 'ruby_llm'
 
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
-  DEFAULT_MODEL = 'gpt-5.4-mini'.freeze
+  DEFAULT_MODEL = 'openai/gpt-5.4-mini'.freeze
   DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'omni-moderation-latest'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
@@ -56,25 +56,29 @@ module Llm::Config
 
       if feature_key.present?
         feature_default_model = Llm::Models.default_model_for(feature_key, account: account)
-        return feature_default_model if runtime_usable_model?(feature_default_model, account: account)
+        return feature_default_model if default_model_available?(feature_default_model, account: account)
         return if Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
       end
 
-      fallback
+      default_model_available?(fallback, account: account) ? Llm::Models.canonical_model_name(fallback) : nil
     end
 
     def provider_for_model(model_name, account: nil)
       canonical_model = Llm::Models.canonical_model_name(model_name)
       return if canonical_model.blank?
 
-      Llm::Models.provider_for(canonical_model, account: account) || 'openai'
+      Llm::Models.provider_for(canonical_model, account: account)
     end
 
-    def api_key(provider = 'openai', account: nil)
+    def api_key(provider = nil, account: nil)
+      return if provider.blank?
+
       account_api_key(provider, account).presence || installation_api_key(provider)
     end
 
-    def api_base(provider = 'openai', account: nil)
+    def api_base(provider = nil, account: nil)
+      return if provider.blank?
+
       endpoint = account_api_base(provider, account).presence || provider_endpoint(provider)
       return default_api_base(provider) if endpoint.blank?
 
@@ -191,7 +195,6 @@ module Llm::Config
       return normalize_overrides_hash(overrides) if overrides.present?
 
       resolved_provider = provider.presence || provider_for_model(model, account: account)
-      resolved_provider ||= 'openai' if api_key.present? || api_base.present?
       return {} if resolved_provider.blank?
 
       resolved_api_key = api_key.presence || self.api_key(resolved_provider, account: account)
@@ -272,7 +275,7 @@ module Llm::Config
       return unless runtime_usable_model?(canonical_model, account: account)
 
       provider = provider_for_model(canonical_model, account: account)
-      return unless account_provider_available?(provider, account: account)
+      return unless provider_available?(provider, account: account)
 
       canonical_model
     end
@@ -305,6 +308,16 @@ module Llm::Config
     def runtime_usable_model?(model_name, account: nil)
       canonical_model = Llm::Models.canonical_model_name(model_name)
       canonical_model.present? && Llm::Models.runtime_supported?(canonical_model, account: account)
+    end
+
+    def default_model_available?(model_name, account: nil)
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      return false unless runtime_usable_model?(canonical_model, account: account)
+
+      provider = provider_for_model(canonical_model, account: account)
+      return false if provider.blank?
+
+      provider_available?(provider, account: account)
     end
   end
 end

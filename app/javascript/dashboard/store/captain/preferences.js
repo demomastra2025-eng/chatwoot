@@ -8,6 +8,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     features: {},
     runtime: {},
     observability: {},
+    providerCredentials: {},
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
@@ -21,6 +22,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     getFeatures: state => state.features,
     getRuntime: state => state.runtime,
     getObservability: state => state.observability,
+    getProviderCredentials: state => state.providerCredentials,
     getRuntimeMetadata: state => state.runtimeMetadata,
     getUIFlags: state => state.uiFlags,
     getModelsForFeature: state => featureKey => {
@@ -28,10 +30,10 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       const models = feature?.models || [];
 
       const providerOrder = {
-        openai: 0,
-        anthropic: 1,
-        gemini: 2,
-        openrouter: 3,
+        openrouter: 0,
+        openai: 1,
+        anthropic: 2,
+        gemini: 3,
       };
 
       return [...models].sort((a, b) => {
@@ -39,7 +41,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
         if (a.coming_soon && !b.coming_soon) return 1;
         if (!a.coming_soon && b.coming_soon) return -1;
 
-        // Sort by provider
+        // Sort OpenRouter first when its catalog is active, then by provider.
         const providerA = providerOrder[a.provider] ?? 999;
         const providerB = providerOrder[b.provider] ?? 999;
         if (providerA !== providerB) return providerA - providerB;
@@ -65,6 +67,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       this.features = data.features || {};
       this.runtime = data.runtime || {};
       this.observability = data.observability || {};
+      this.providerCredentials = data.provider_credentials || {};
       this.runtimeMetadata = data.runtime_metadata || {};
     },
 

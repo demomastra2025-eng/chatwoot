@@ -8,8 +8,8 @@ RSpec.describe Llm::Config do
   end
 
   describe 'defaults' do
-    it 'uses gpt-5.4-mini as the global fallback model' do
-      expect(described_class::DEFAULT_MODEL).to eq('gpt-5.4-mini')
+    it 'uses an OpenRouter-routed GPT model as the global fallback model' do
+      expect(described_class::DEFAULT_MODEL).to eq('openai/gpt-5.4-mini')
     end
   end
 
@@ -136,18 +136,10 @@ RSpec.describe Llm::Config do
       )
     end
 
-    it 'defaults explicit api_key/api_base overrides to the OpenAI writer for legacy callers without provider/model' do
-      yielded_config = Class.new do
-        attr_accessor :openai_api_key, :openai_api_base
-      end.new
-      allow(yielded_config).to receive(:openai_api_key=)
-      allow(yielded_config).to receive(:openai_api_base=)
+    it 'does not route explicit api_key/api_base overrides to OpenAI without provider/model' do
+      expect(RubyLLM).not_to receive(:context)
 
-      expect(RubyLLM).to receive(:context).and_yield(yielded_config)
-      expect(yielded_config).to receive(:openai_api_key=).with('legacy-key')
-      expect(yielded_config).to receive(:openai_api_base=).with('https://legacy.example/v1')
-
-      described_class.context(api_key: 'legacy-key', api_base: 'https://legacy.example')
+      expect(described_class.context(api_key: 'legacy-key', api_base: 'https://legacy.example')).to be_nil
     end
   end
 
@@ -174,7 +166,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers an account-selected model when that account has provider credentials' do
       account = create(:account)
-      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key')
+      create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {
           'provider' => 'openrouter',
@@ -186,6 +178,23 @@ RSpec.describe Llm::Config do
 
       expect(described_class.model_for(feature: 'assistant', account: account)).to eq('openai/gpt-4o')
       expect(described_class.provider_for_model('openai/gpt-4o', account: account)).to eq('openrouter')
+    end
+
+    it 'allows an account-selected OpenRouter model to use the global OpenRouter key' do
+      account = create(:account)
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling image_input streaming]
+        }
+      )
+      account.update!(captain_models: { 'assistant' => 'openai/gpt-4o' })
+
+      expect(described_class.model_for(feature: 'assistant', account: account)).to eq('openai/gpt-4o')
+      expect(described_class.account_provider_available?('openrouter', account: account)).to be false
+      expect(described_class.provider_available?('openrouter', account: account)).to be true
     end
 
     it 'uses a preferred OpenRouter audio chat model for audio transcription when OpenRouter is configured' do

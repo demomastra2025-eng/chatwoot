@@ -1,7 +1,10 @@
 <script setup>
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import ModelDropdown from './ModelDropdown.vue';
 
-defineProps({
+const props = defineProps({
   featureKey: {
     type: String,
     required: true,
@@ -21,6 +24,13 @@ defineProps({
 });
 
 const emit = defineEmits(['change']);
+const { t } = useI18n();
+const captainConfigStore = useCaptainConfigStore();
+
+const availableModels = computed(() =>
+  captainConfigStore.getModelsForFeature(props.featureKey)
+);
+const hasAvailableModels = computed(() => availableModels.value.length > 0);
 
 const handleModelChange = ({ feature, model }) => {
   emit('change', { feature, model });
@@ -39,9 +49,15 @@ const handleModelChange = ({ feature, model }) => {
       <p class="text-sm text-n-slate-11 mt-0.5">{{ description }}</p>
     </div>
     <ModelDropdown
-      v-if="isAllowed"
+      v-if="isAllowed && hasAvailableModels"
       :feature-key="featureKey"
       @change="handleModelChange"
     />
+    <div
+      v-else-if="isAllowed"
+      class="text-xs text-n-amber-11 bg-n-amber-3 border border-n-amber-5 rounded-lg px-3 py-2 max-w-72"
+    >
+      {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.NO_COMPATIBLE_MODELS') }}
+    </div>
   </div>
 </template>

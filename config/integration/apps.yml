@@ -57,6 +57,26 @@ openai:
       },
     ]
   visible_properties: ['api_key', 'label_suggestion']
+openrouter:
+  id: openrouter
+  logo: openai.png
+  i18n_key: openrouter
+  hook_type: account
+  hidden_in_ui: true
+  allow_multiple_hooks: false
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'api_key': { 'type': 'string' },
+          'api_base': { 'type': 'string' },
+          'base_url': { 'type': 'string' },
+          'endpoint': { 'type': 'string' },
+        },
+      'additionalProperties': false,
+    }
+  visible_properties: []
 linear:
   id: linear
   logo: linear.png

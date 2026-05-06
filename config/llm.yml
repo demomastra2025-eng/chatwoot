@@ -75,6 +75,41 @@ models:
     credit_multiplier: 1
     type: chat
     capabilities: *reasoning_chat_capabilities
+  openai/gpt-5.4:
+    provider: openrouter
+    display_name: 'GPT-5.4 via OpenRouter'
+    credit_multiplier: 4
+    type: chat
+    source: static_openrouter_default
+    capabilities: *reasoning_chat_capabilities
+  openai/gpt-5.4-mini:
+    provider: openrouter
+    display_name: 'GPT-5.4 Mini via OpenRouter'
+    credit_multiplier: 1
+    type: chat
+    source: static_openrouter_default
+    capabilities: *reasoning_chat_capabilities
+  openai/gpt-oss-safeguard-20b:
+    provider: openrouter
+    display_name: 'GPT OSS Safeguard 20B via OpenRouter'
+    credit_multiplier: 1
+    type: chat
+    source: static_openrouter_default
+    capabilities: [text_input, text_output, structured_output]
+  openai/gpt-4o-audio-preview:
+    provider: openrouter
+    display_name: 'GPT-4o Audio Preview via OpenRouter'
+    credit_multiplier: 1
+    type: chat
+    source: static_openrouter_default
+    capabilities: [audio_input, text_output]
+  mistralai/voxtral-small-24b-2507:
+    provider: openrouter
+    display_name: 'Voxtral Small via OpenRouter'
+    credit_multiplier: 1
+    type: chat
+    source: static_openrouter_default
+    capabilities: [audio_input, text_output]
   gpt-5.4-nano:
     provider: openai
     display_name: 'GPT-5.4 Nano'
@@ -219,8 +254,11 @@ features:
       [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
     default: gpt-5.4-mini
   audio_transcription:
-    models: [gpt-4o-transcribe, whisper-1]
+    models: [openai/gpt-4o-audio-preview, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
     default: gpt-4o-transcribe
   help_center_search:
     models: [text-embedding-3-small]
     default: text-embedding-3-small
+  moderation:
+    models: [openai/gpt-oss-safeguard-20b]
+    default: openai/gpt-oss-safeguard-20b

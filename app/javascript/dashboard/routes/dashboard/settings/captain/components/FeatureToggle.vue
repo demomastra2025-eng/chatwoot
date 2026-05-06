@@ -15,6 +15,10 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+  showModelSelector: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['change', 'modelChange']);
@@ -36,7 +40,7 @@ const hasMultipleModels = computed(() => {
 });
 
 const showModelSelector = computed(() => {
-  return isEnabled.value && hasMultipleModels.value;
+  return props.showModelSelector && isEnabled.value && hasMultipleModels.value;
 });
 
 const title = computed(() => {

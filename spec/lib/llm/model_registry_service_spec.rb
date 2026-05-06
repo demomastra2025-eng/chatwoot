@@ -41,9 +41,14 @@ RSpec.describe Llm::ModelRegistryService do
     allow(Llm::Models).to receive(:registry_known?).and_return(true)
     allow(Llm::Config).to receive(:installation_default_model).and_return('gpt-5.1')
     allow(Llm::Config).to receive(:moderation_model).and_return('omni-moderation-latest')
-    allow(Llm::Config).to receive(:provider_available?) do |provider_name|
+    allow(Llm::Config).to receive(:provider_available?) do |provider_name, **|
       provider_name.to_s == 'openai'
     end
+    allow(Llm::Config).to receive(:account_provider_available?).and_return(false)
+    allow(Llm::Config).to receive(:installation_provider_available?) do |provider_name|
+      provider_name.to_s == 'openai'
+    end
+    allow(Llm::Config).to receive(:openrouter_primary?).and_return(false)
     allow(Llm::Config).to receive(:custom_api_base_configured?).and_return(false)
     allow(Llm::Config).to receive(:model_for).with(feature: 'assistant', account: account).and_return('gpt-5.1')
     allow(Llm::Config).to receive(:model_for).with(feature: 'audio_transcription', account: account).and_return('whisper-1')
@@ -67,7 +72,10 @@ RSpec.describe Llm::ModelRegistryService do
 
       expect(metadata[:defaults]).to include(
         installation_default_model: 'gpt-5.1',
-        moderation_model: 'omni-moderation-latest'
+        installation_default_provider: 'openai',
+        moderation_model: 'omni-moderation-latest',
+        moderation_provider: nil,
+        openrouter_primary: false
       )
       expect(metadata.dig(:providers, 'openai')).to include(
         display_name: 'OpenAI',
@@ -82,6 +90,9 @@ RSpec.describe Llm::ModelRegistryService do
       expect(metadata.dig(:features, 'assistant')).to include(
         selected_model: 'gpt-5.1',
         provider: 'openai',
+        provider_configured: true,
+        account_configured: false,
+        global_configured: true,
         supports_thinking: true
       )
     end

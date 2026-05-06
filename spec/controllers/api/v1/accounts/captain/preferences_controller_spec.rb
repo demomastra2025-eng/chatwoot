@@ -79,6 +79,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:runtime_metadata, :registry, :openrouter)).to include(:total_models, :using_fallback)
         expect(json_response.dig(:runtime_metadata, :features, :assistant)).to include(:selected_model, :provider)
       end
+
+      it 'reports OpenRouter credential status without exposing the account key' do
+        create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:provider_credentials, :openrouter)).to include(
+          account_configured: true,
+          provider_configured: true,
+          source: 'account'
+        )
+        expect(response.body).not_to include('account-openrouter-key')
+      end
     end
   end
 
@@ -105,10 +121,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
     end
 
     context 'when it is an admin' do
-      it 'updates captain_models' do
+      it 'updates captain_models for chat and specialized AI surfaces' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
-            params: { captain_models: { editor: 'gpt-4.1-mini' } },
+            params: {
+              captain_models: {
+                editor: 'gpt-4.1-mini',
+                audio_transcription: 'whisper-1',
+                help_center_search: 'text-embedding-3-small',
+                moderation: 'openai/gpt-oss-safeguard-20b'
+              }
+            },
             as: :json
 
         expect(response).to have_http_status(:success)
@@ -117,7 +140,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
         expect(json_response).to have_key(:observability)
-        expect(account.reload.captain_models['editor']).to eq('gpt-4.1-mini')
+        expect(account.reload.captain_models).to include(
+          'editor' => 'gpt-4.1-mini',
+          'audio_transcription' => 'whisper-1',
+          'help_center_search' => 'text-embedding-3-small',
+          'moderation' => 'openai/gpt-oss-safeguard-20b'
+        )
       end
 
       it 'updates captain_features' do
@@ -319,6 +347,36 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(account.reload.captain_observability.dig('saved_views', 0, 'filters')).to include(
           'trace_id' => 'trace-1'
         )
+      end
+
+      it 'stores an OpenRouter account key via Integrations::Hook without returning the secret' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { openrouter_api_key: 'account-openrouter-key' },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        hook = account.hooks.find_by!(app_id: 'openrouter')
+        expect(hook.access_token).to eq('account-openrouter-key')
+        expect(json_response.dig(:provider_credentials, :openrouter)).to include(
+          account_configured: true,
+          source: 'account'
+        )
+        expect(response.body).not_to include('account-openrouter-key')
+      end
+
+      it 'removes an OpenRouter account key without returning the secret' do
+        create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { remove_openrouter_api_key: true },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.hooks.find_by(app_id: 'openrouter')).to be_nil
+        expect(json_response.dig(:provider_credentials, :openrouter, :account_configured)).to be false
+        expect(response.body).not_to include('account-openrouter-key')
       end
     end
   end

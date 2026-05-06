@@ -180,17 +180,22 @@ module Llm::Models
       feature = features[feature_key.to_s]
       return nil unless feature
 
+      provider_status = provider_status_by_name(account)
       {
         models: models_for(feature_key, account: account).map do |model_name|
           canonical_name = canonical_model_name(model_name)
           model = model_config(canonical_name, account: account).to_h
           provider = model['provider']
           provider_metadata = provider_config(provider)
+          status = provider_status[provider].to_h
           {
             id: canonical_name,
             display_name: model['display_name'].presence || canonical_name,
             provider: provider,
             provider_display_name: provider_metadata&.fetch('display_name', nil) || provider,
+            provider_configured: status[:configured] == true,
+            account_configured: status[:account_configured] == true,
+            global_configured: status[:global_configured] == true,
             coming_soon: model['coming_soon'],
             credit_multiplier: model['credit_multiplier'],
             capabilities: capabilities_for(canonical_name, account: account),
@@ -243,11 +248,9 @@ module Llm::Models
     end
 
     def account_static_models_for_feature(static_models, account)
-      return [] if account.blank?
-
       static_models.select do |model_name|
-        provider = provider_for(model_name)
-        provider.present? && Llm::Config.account_provider_available?(provider, account: account)
+        provider = provider_for(model_name, account: account)
+        provider.present? && Llm::Config.provider_available?(provider, account: account)
       end
     rescue StandardError
       []
@@ -259,7 +262,7 @@ module Llm::Models
 
       required_capabilities = required_capabilities_for(feature_key)
       openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
-        candidate_config = dynamic_model_configs(account: account)[candidate]
+        candidate_config = model_config(candidate, account: account)
         dynamic_model_allowed_for_feature?(candidate_config, required_capabilities)
       end
     end
@@ -296,8 +299,19 @@ module Llm::Models
       required_capabilities.all? { |capability| Array(model_config['capabilities']).include?(capability) }
     end
 
+    def provider_status_by_name(account)
+      providers.keys.index_with do |provider_name|
+        {
+          configured: Llm::Config.provider_available?(provider_name, account: account),
+          account_configured: Llm::Config.account_provider_available?(provider_name, account: account),
+          global_configured: Llm::Config.installation_provider_available?(provider_name)
+        }
+      end
+    end
+
     def inferred_dynamic_provider_for(model_name, account: nil)
       return OPENROUTER_PROVIDER if openrouter_model_id?(model_name, account: account)
+      return OPENROUTER_PROVIDER if canonical_model_name(model_name).include?('/') && providers.key?(OPENROUTER_PROVIDER)
 
       nil
     end

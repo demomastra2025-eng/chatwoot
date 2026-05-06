@@ -429,6 +429,25 @@
     "LOADING": "Loading AI Staff configuration...",
     "LINK_TEXT": "Learn more about AI credits",
     "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",
+    "PROVIDER_KEYS": {
+      "TITLE": "Provider keys",
+      "DESCRIPTION": "Configure workspace-level LLM credentials. Secrets are stored server-side and are never returned to the browser.",
+      "OPENROUTER_TITLE": "OpenRouter account key",
+      "OPENROUTER_STATUS": "Effective key source: {status}",
+      "OPENROUTER_PLACEHOLDER": "Paste OpenRouter API key to override the global key",
+      "SAVE": "Save key",
+      "REMOVE_ACCOUNT_KEY": "Remove account key",
+      "SECRET_NOTE": "The existing key value is hidden. Leave the input empty to keep it unchanged.",
+      "SAVE_SUCCESS": "OpenRouter account key saved.",
+      "SAVE_ERROR": "Failed to save OpenRouter account key.",
+      "REMOVE_SUCCESS": "OpenRouter account key removed.",
+      "REMOVE_ERROR": "Failed to remove OpenRouter account key.",
+      "STATUS": {
+        "ACCOUNT": "account",
+        "GLOBAL": "global",
+        "MISSING": "missing"
+      }
+    },
     "MODEL_CONFIG": {
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
@@ -438,7 +457,11 @@
       "SOURCE_OPENROUTER_API": "OpenRouter API",
       "SOURCE_LOCAL_FALLBACK": "local fallback",
       "CONTEXT_TOKENS": "{count} context tokens",
+      "CAPABILITIES": "Capabilities: {capabilities}",
       "METADATA_SEPARATOR": " · ",
+      "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure a provider key or refresh the OpenRouter catalog.",
+      "SPECIALIZED_TITLE": "Specialized AI models",
+      "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, and FAQ embeddings separately from the chat model.",
       "EDITOR": {
         "TITLE": "Editor Features",
         "DESCRIPTION": "Powers smart compose, grammar corrections, tone adjustments, and content enhancement in your message editor."
@@ -450,6 +473,28 @@
       "COPILOT": {
         "TITLE": "Assistant",
         "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
+      },
+      "MODERATION": {
+        "TITLE": "Moderation model",
+        "DESCRIPTION": "Classifies unsafe text before/after AI replies. OpenRouter models must support structured JSON output."
+      },
+      "AUDIO_TRANSCRIPTION": {
+        "TITLE": "Audio recognition model",
+        "DESCRIPTION": "Transcribes voice messages and call recordings. OpenRouter options must support audio input; OpenAI transcription endpoint models remain optional."
+      },
+      "EMBEDDINGS": {
+        "TITLE": "FAQ / embeddings model",
+        "DESCRIPTION": "Builds vectors for FAQ and help-center semantic search. If embeddings are unavailable, FAQ lookup can still use exact keyword fallback."
+      },
+      "IMAGE_UNDERSTANDING": {
+        "TITLE": "Image understanding",
+        "DESCRIPTION": "There is no separate image model. Images use the selected AI Agent / Assistant chat model when it advertises image input support.",
+        "SUPPORTED": "Images supported",
+        "NOT_SUPPORTED": "Images not supported",
+        "FEATURES": {
+          "ASSISTANT": "AI Agent",
+          "COPILOT": "Assistant"
+        }
       }
     },
     "FEATURES": {
@@ -527,11 +572,16 @@
         "TITLE": "Providers",
         "CONFIGURED": "Configured",
         "NOT_CONFIGURED": "Missing API key",
+        "ACCOUNT_CONFIGURED": "Account key",
+        "GLOBAL_CONFIGURED": "Global key",
         "CUSTOM_ENDPOINT": "Custom endpoint",
         "DEFAULT_ENDPOINT": "Default endpoint"
       },
       "OPENROUTER": {
         "TITLE": "OpenRouter model catalog",
+        "PRIMARY": "OpenRouter routing",
+        "PRIMARY_ACTIVE": "Primary / fallback active",
+        "PRIMARY_INACTIVE": "Missing OpenRouter key",
         "DESCRIPTION": "OpenRouter models are fetched from the OpenRouter API and fall back to the bundled catalog until the first successful refresh.",
         "REFRESH": "Refresh OpenRouter models",
         "REFRESH_SUCCESS": "OpenRouter models refreshed successfully.",
@@ -558,7 +608,8 @@
         "COPILOT": "Assistant",
         "LABEL_SUGGESTION": "Label Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
-        "HELP_CENTER_SEARCH": "Help Center Search"
+        "HELP_CENTER_SEARCH": "Help Center Search",
+        "MODERATION": "Moderation"
       }
     },
     "API": {

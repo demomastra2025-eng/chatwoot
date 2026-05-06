@@ -21,7 +21,25 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload['matches'].first).to include('question' => 'How to reset password?', 'answer' => 'Click forgot password')
   end
 
-  it 'returns an empty faq payload when semantic lookup is unavailable' do
+  it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do
+    allow(Captain::AssistantResponse).to receive(:search)
+      .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
+
+    expect(payload).to include(
+      'query' => 'reset password',
+      'total_count' => 1,
+      'error' => 'semantic_lookup_unavailable',
+      'lookup_strategy' => 'lexical'
+    )
+    expect(payload['matches'].first).to include(
+      'question' => 'How to reset password?',
+      'answer' => 'Click forgot password'
+    )
+  end
+
+  it 'returns an empty lexical payload when embeddings are unavailable and no keyword matches' do
     allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
@@ -31,7 +49,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       'query' => 'pricing',
       'total_count' => 0,
       'matches' => [],
-      'error' => 'faq_lookup_unavailable'
+      'error' => 'semantic_lookup_unavailable',
+      'lookup_strategy' => 'lexical'
     )
   end
 end

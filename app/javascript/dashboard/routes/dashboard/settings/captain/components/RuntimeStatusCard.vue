@@ -24,11 +24,7 @@ const openRouterCatalog = computed(
 const isRefreshingOpenRouterModels = computed(
   () => uiFlags.value.isRefreshingOpenRouterModels
 );
-const featureEntries = computed(() =>
-  Object.entries(features.value).filter(
-    ([, metadata]) => metadata?.selected_model
-  )
-);
+const featureEntries = computed(() => Object.entries(features.value));
 
 const formatDateTime = value => {
   if (!value) return t('CAPTAIN_SETTINGS.RUNTIME_STATUS.REGISTRY.NEVER');
@@ -125,6 +121,20 @@ const featureLabel = key => {
           </span>
           <span class="text-sm font-medium text-n-slate-12">
             {{ defaults.moderation_model || t('GENERAL.NONE') }}
+          </span>
+        </div>
+        <div class="flex items-center justify-between gap-4">
+          <span class="text-sm text-n-slate-11">
+            {{ t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.PRIMARY') }}
+          </span>
+          <span class="text-sm font-medium text-n-slate-12">
+            {{
+              defaults.openrouter_primary
+                ? t('CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.PRIMARY_ACTIVE')
+                : t(
+                    'CAPTAIN_SETTINGS.RUNTIME_STATUS.OPENROUTER.PRIMARY_INACTIVE'
+                  )
+            }}
           </span>
         </div>
       </div>

@@ -5,7 +5,10 @@ module Integrations::LlmInstrumentationHelpers
   include Integrations::LlmInstrumentationCompletionHelpers
 
   def determine_provider(model_name)
-    return 'openai' if model_name.blank?
+    return if model_name.blank?
+
+    resolved_provider = Llm::Config.provider_for_model(model_name)
+    return resolved_provider if resolved_provider.present?
 
     model = model_name.to_s.downcase
 
@@ -13,7 +16,7 @@ module Integrations::LlmInstrumentationHelpers
       return provider if prefixes.any? { |prefix| model.start_with?(prefix) }
     end
 
-    'openai'
+    nil
   end
 
   private
@@ -36,7 +39,7 @@ module Integrations::LlmInstrumentationHelpers
 
   def set_request_attributes(span, params)
     provider = determine_provider(params[:model])
-    span.set_attribute(ATTR_GEN_AI_PROVIDER, provider)
+    span.set_attribute(ATTR_GEN_AI_PROVIDER, provider) if provider.present?
     span.set_attribute(ATTR_GEN_AI_REQUEST_MODEL, params[:model])
     span.set_attribute(ATTR_GEN_AI_REQUEST_TEMPERATURE, params[:temperature]) if params[:temperature]
   end
