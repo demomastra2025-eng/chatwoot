@@ -537,27 +537,27 @@ export default {
     <div class="flex relative flex-col bg-n-surface-1">
       <div
         v-if="isAnyoneTyping"
-        class="absolute flex items-center w-full h-0 -top-7"
+        class="absolute z-10 flex items-center w-full h-0 -top-8"
       >
         <div
-          class="flex py-2 pr-4 pl-5 shadow-md rounded-full bg-white dark:bg-n-solid-3 text-n-slate-11 text-xs font-semibold my-2.5 mx-auto"
+          class="flex items-center py-2 pr-3 pl-5 shadow-md rounded-full bg-n-solid-1 border border-n-weak text-n-slate-12 text-xs font-semibold my-2.5 mx-auto"
         >
           {{ typingUserNames }}
           <img
-            class="w-6 ltr:ml-2 rtl:mr-2"
+            class="h-4 w-6 object-contain ltr:ml-2 rtl:mr-2"
             src="assets/images/typing.gif"
             alt="Someone is typing"
           />
           <button
             v-if="isCaptainAssistantTyping"
             type="button"
-            class="inline-flex items-center justify-center flex-shrink-0 rounded-full text-n-ruby-9 hover:text-n-ruby-10 hover:bg-n-ruby-3 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-5"
+            class="inline-flex items-center justify-center flex-shrink-0 rounded-full bg-n-ruby-3 text-n-ruby-11 hover:bg-n-ruby-4 hover:text-n-ruby-12 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-6"
             :title="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
             :aria-label="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
             :disabled="isCancellingCaptainResponse"
             @click="cancelCaptainResponse"
           >
-            <Icon icon="i-ph-stop" class="size-4" />
+            <Icon icon="i-ph-stop" class="size-4 text-current" />
           </button>
         </div>
       </div>

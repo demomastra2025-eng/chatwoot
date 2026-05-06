@@ -126,7 +126,7 @@ const toggleSelected = option => {
         }}</span>
       </Button>
     </template>
-    <DropdownBody class="top-0 min-w-56 z-50" strong>
+    <DropdownBody class="top-0 min-w-56 z-[1200]" strong>
       <div v-if="!disableSearch" class="relative">
         <Icon
           class="absolute size-4 top-2 ltr:right-2 rtl:left-2"

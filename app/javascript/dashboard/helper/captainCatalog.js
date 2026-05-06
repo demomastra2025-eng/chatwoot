@@ -4,6 +4,11 @@ const normalizeCatalogText = value =>
     .toLocaleLowerCase();
 
 const FIELD_GROUP_KEY_MAP = {
+  Contact: 'CONTACT',
+  Conversation: 'CONVERSATION',
+  Deal: 'DEAL',
+  Task: 'TASK',
+  Appointment: 'APPOINTMENT',
   'Contact Attributes': 'CONTACT_ATTRIBUTES',
   'Conversation Attributes': 'CONVERSATION_ATTRIBUTES',
   'Deal Attributes': 'DEAL_ATTRIBUTES',
@@ -59,6 +64,10 @@ const fieldGroupTranslationKey = field => {
   const groupKey = FIELD_GROUP_KEY_MAP[field?.group_name];
 
   if (groupKey) {
+    if (FIELD_SCOPE_KEY_MAP[groupKey.toLowerCase()]) {
+      return `CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.${groupKey}.TITLE`;
+    }
+
     return `CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.GROUPS.${groupKey}`;
   }
 
