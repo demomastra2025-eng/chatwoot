@@ -84,7 +84,7 @@ describe('captainCatalog helper', () => {
     ]);
   });
 
-  it('localizes field titles while preserving technical ids for descriptions', () => {
+  it('localizes field titles and base field groups', () => {
     const field = {
       id: 'appointment.id',
       title: 'Appointment ID',
@@ -94,18 +94,19 @@ describe('captainCatalog helper', () => {
       field_type: 'field',
       field_key: 'id',
     };
-    const t = key =>
-      ({
-        'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.APPOINTMENT.ID.TITLE':
-          'ID записи',
-      })[key] || key;
-    const te = key =>
-      key ===
-      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.APPOINTMENT.ID.TITLE';
+    const translations = {
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.APPOINTMENT.ID.TITLE':
+        'ID записи',
+      'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.TABLES.APPOINTMENT.TITLE':
+        'Запись',
+    };
+    const t = key => translations[key] || key;
+    const te = key => Object.hasOwn(translations, key);
 
     const result = localizeCatalogField(field, { t, te });
 
     expect(result.title).toBe('ID записи');
+    expect(result.group_label).toBe('Запись');
     expect(result.description).toBe('appointment.id');
     expect(result.id).toBe('appointment.id');
     expect(result.original_title).toBe('Appointment ID');

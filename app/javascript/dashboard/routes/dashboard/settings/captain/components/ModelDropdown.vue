@@ -80,7 +80,7 @@ const formatTokenCount = value => {
 
 const sourceLabel = model => {
   if (model.source === 'openrouter_api') {
-    return t('CAPTAIN_SETTINGS.MODEL_CONFIG.SOURCE_OPENROUTER_API');
+    return null;
   }
 
   if (model.source === 'config/llm_models.json') {

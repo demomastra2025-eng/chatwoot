@@ -126,7 +126,7 @@ const toggleOption = option => {
         <span class="text-n-slate-11">{{ t('COMBOBOX.PLACEHOLDER') }}</span>
       </Button>
     </template>
-    <DropdownBody class="top-0 min-w-48 z-50" strong>
+    <DropdownBody class="top-0 min-w-56 z-[1200]" strong>
       <DropdownSection :height="dropdownMaxHeight">
         <DropdownItem
           v-for="option in options"
