@@ -198,6 +198,18 @@ RSpec.describe Llm::Models do
         hash_including(id: 'openai/gpt-oss-safeguard-20b', provider: 'openrouter', capabilities: include('structured_output'))
       )
     end
+
+    it 'keeps the configured embedding default when OpenRouter catalog is enabled' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| %w[openrouter openai].include?(provider) }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      help_center_config = described_class.feature_config(:help_center_search)
+
+      expect(help_center_config[:default]).to eq('text-embedding-3-small')
+      expect(help_center_config[:models]).to include(
+        hash_including(id: 'text-embedding-3-small', provider: 'openai', capabilities: include('embedding'))
+      )
+    end
   end
 
   describe '.canonical_model_name' do

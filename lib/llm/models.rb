@@ -23,7 +23,7 @@ module Llm::Models
     'audio_transcription' => %w[audio_input text_output],
     'moderation' => %w[text_input text_output structured_output]
   }.freeze
-  OPENROUTER_NO_FALLBACK_FEATURES = (OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys + ['help_center_search']).freeze
+  OPENROUTER_NO_FALLBACK_FEATURES = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys.freeze
   OPENROUTER_PREFERRED_FEATURE_MODELS = {
     'audio_transcription' => %w[
       openai/gpt-audio-mini
