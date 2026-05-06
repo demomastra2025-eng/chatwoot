@@ -118,6 +118,9 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
 
   describe '#fetch_audio_file' do
     let(:service) { described_class.new(attachment) }
+    let(:upload_io) { File.open(Rails.public_path.join('audio/widget/ding.mp3')) }
+    let(:filename) { 'speech' }
+    let(:content_type) { 'audio/mpeg' }
 
     before do
       attachment.file.attach(
@@ -126,10 +129,6 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         content_type: content_type
       )
     end
-
-    let(:upload_io) { File.open(Rails.public_path.join('audio/widget/ding.mp3')) }
-    let(:filename) { 'speech' }
-    let(:content_type) { 'audio/mpeg' }
 
     it 'adds extension from content type when filename has no extension' do
       temp_file_path = service.send(:fetch_audio_file)
@@ -191,6 +190,30 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       expect(Llm::ApiClient).not_to receive(:transcribe)
 
       expect(service.send(:transcribe_audio)).to eq('Existing transcription')
+    end
+
+    it 'uses OpenRouter chat audio input when an OpenRouter audio model is selected' do
+      chat = instance_double(RubyLLM::Chat)
+      response = instance_double(RubyLLM::Message, content: 'OpenRouter transcription')
+
+      allow(service).to receive(:model).and_return('openai/gpt-audio-mini')
+      allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-audio-mini', account: account).and_return('openrouter')
+      allow(Llm::Models).to receive(:supports_audio_input?).with('openai/gpt-audio-mini', account: account).and_return(true)
+      allow(service).to receive(:chat).with(model: 'openai/gpt-audio-mini', temperature: 0).and_return(chat)
+
+      expect(Llm::ApiClient).not_to receive(:transcribe)
+      expect(Llm::ChatClient).to receive(:ask) do |received_chat, content, observability:, account:|
+        expect(received_chat).to eq(chat)
+        expect(account).to eq(service.account)
+        expect(content).to be_a(RubyLLM::Content)
+        expect(content.text).to include('Transcribe the attached audio accurately')
+        expect(content.attachments.first.type).to eq(:audio)
+        expect(observability).to include(runtime_mode: 'audio_transcription', provider: 'openrouter')
+        response
+      end
+
+      expect(service.send(:transcribe_audio)).to eq('OpenRouter transcription')
+      expect(attachment.reload.meta).to eq({ 'transcribed_text' => 'OpenRouter transcription' })
     end
   end
 end

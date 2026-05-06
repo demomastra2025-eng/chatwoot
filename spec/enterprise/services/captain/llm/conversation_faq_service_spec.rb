@@ -13,7 +13,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
     ]
   end
   let(:mock_response) do
-    instance_double(RubyLLM::Message, content: { faqs: sample_faqs }.to_json)
+    instance_double(RubyLLM::Message, content: { faqs: sample_faqs })
   end
 
   before do
@@ -23,6 +23,8 @@ RSpec.describe Captain::Llm::ConversationFaqService do
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
+    allow(mock_chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'gpt-5.4-mini'))
     allow(mock_chat).to receive(:ask).and_return(mock_response)
   end
 
@@ -107,10 +109,11 @@ RSpec.describe Captain::Llm::ConversationFaqService do
 
       before do
         allow(mock_chat).to receive(:ask).and_return(invalid_response)
+        allow(Rails.logger).to receive(:error)
       end
 
-      it 'handles JSON parsing errors gracefully' do
-        expect(Rails.logger).to receive(:error).with(/Error in parsing GPT processed response:/)
+      it 'handles structured-output parsing errors gracefully' do
+        expect(Rails.logger).to receive(:error).with(/LLM API Error: Structured output response was not valid JSON/)
         expect(service.generate_and_deduplicate).to eq([])
       end
     end

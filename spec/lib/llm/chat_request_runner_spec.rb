@@ -105,7 +105,7 @@ RSpec.describe Llm::ChatRequestRunner do
 
     result = described_class.new(
       context: context,
-      model: 'gpt-4',
+      model: 'gpt-4.1-mini',
       messages: [{ role: 'user', content: 'Hello' }],
       schema: schema,
       tools: [tool],

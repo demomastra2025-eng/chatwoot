@@ -372,7 +372,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
                 {
                   id: 'openai/gpt-4o',
                   name: 'GPT-4o via OpenRouter',
-                  architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+                  architecture: { input_modalities: %w[text image], output_modalities: ['text'] },
                   context_length: 128_000,
                   top_provider: { max_completion_tokens: 16_384 },
                   supported_parameters: %w[tools response_format]
@@ -393,7 +393,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           provider_display_name: 'OpenRouter',
           source: 'openrouter_api',
           context_length: 128_000,
-          max_output_tokens: 16_384
+          max_output_tokens: 16_384,
+          capabilities: include('image_input')
         )
       end
 

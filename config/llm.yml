@@ -1,6 +1,6 @@
 capability_sets:
-  chat: &chat_capabilities [structured_output, tool_calling, multimodal_input, streaming]
-  reasoning_chat: &reasoning_chat_capabilities [structured_output, tool_calling, multimodal_input, streaming, reasoning]
+  chat: &chat_capabilities [structured_output, tool_calling, multimodal_input, image_input, streaming]
+  reasoning_chat: &reasoning_chat_capabilities [structured_output, tool_calling, multimodal_input, image_input, streaming, reasoning]
 
 providers:
   openai:

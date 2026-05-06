@@ -51,14 +51,18 @@ class Captain::Llm::ArticleSearchTermsService < Llm::BaseAiService
   end
 
   def provider_configured?
-    provider = Llm::Config.provider_for_model(model)
-    return true if Llm::Config.api_key(provider).present?
+    provider = Llm::Config.provider_for_model(model, account: article.account)
+    return true if Llm::Config.api_key(provider, account: article.account).present?
 
     Rails.logger.warn(
       "Skipping article search term generation for article #{article.id}: " \
       "API key missing for provider #{provider}"
     )
     false
+  end
+
+  def llm_model_account
+    article.account
   end
 
   def instrumentation_params

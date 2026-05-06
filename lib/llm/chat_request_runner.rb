@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Llm::ChatRequestRunner
-  attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :on_end_message, :on_tool_call,
+  attr_reader :context, :model, :messages, :schema, :tools, :params, :chat, :account, :on_end_message, :on_tool_call,
               :on_tool_result, :content_builder, :observability
 
   def initialize(messages:, **options)
@@ -12,6 +12,7 @@ class Llm::ChatRequestRunner
     @tools = options[:tools] || []
     @params = options[:params] || {}
     @chat = options[:chat]
+    @account = options[:account]
     @on_end_message = options[:on_end_message]
     @on_tool_call = options[:on_tool_call]
     @on_tool_result = options[:on_tool_result]
@@ -23,8 +24,8 @@ class Llm::ChatRequestRunner
     llm_chat = build_chat
 
     apply_system_instructions(llm_chat)
-    Llm::CapabilityPolicy.ensure_chat_features_supported!(model: effective_model_name(llm_chat), schema:, tools:)
-    Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema:) if schema
+    Llm::CapabilityPolicy.ensure_chat_features_supported!(model: effective_model_name(llm_chat), schema: schema, tools: tools, account: account)
+    Llm::StructuredOutputPolicy.bind!(chat: llm_chat, schema: schema) if schema
     attach_tools_and_callbacks(llm_chat)
 
     conversation_messages = normalized_conversation_messages
@@ -39,10 +40,21 @@ class Llm::ChatRequestRunner
   private
 
   def build_chat
-    llm_chat = Llm::ChatClient.build(context: context, model: model, params: params, chat: chat)
+    llm_chat = Llm::ChatClient.build(**chat_build_kwargs)
     raise ArgumentError, 'Either chat or context/model must be provided' unless llm_chat
 
     llm_chat
+  end
+
+  def chat_build_kwargs
+    {
+      context: context,
+      model: model,
+      params: params,
+      chat: chat
+    }.tap do |kwargs|
+      kwargs[:account] = account if account.present?
+    end
   end
 
   def normalized_conversation_messages
@@ -98,7 +110,10 @@ class Llm::ChatRequestRunner
   end
 
   def ask_chat(chat, content)
-    Llm::ChatClient.ask(chat, content, model: effective_model_name(chat))
+    kwargs = { model: effective_model_name(chat) }
+    kwargs[:account] = account if account.present?
+
+    Llm::ChatClient.ask(chat, content, **kwargs)
   end
 
   def run_observed(chat)
@@ -106,14 +121,12 @@ class Llm::ChatRequestRunner
     return yield if payload.blank?
 
     Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-      begin
-        response = yield
-        Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
-        response
-      rescue StandardError => e
-        Llm::ObservabilityPayload.attach_error!(event_payload, e)
-        raise
-      end
+      response = yield
+      Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
+      response
+    rescue StandardError => e
+      Llm::ObservabilityPayload.attach_error!(event_payload, e)
+      raise
     end
   end
 
@@ -137,10 +150,11 @@ class Llm::ChatRequestRunner
   end
 
   def effective_model_name(chat)
-    chat_model = chat&.model
+    return model if model.present?
+    return unless chat.respond_to?(:model)
+
+    chat_model = chat.model
     return chat_model.id if chat_model.respond_to?(:id)
     return chat_model if chat_model.present?
-
-    model
   end
 end

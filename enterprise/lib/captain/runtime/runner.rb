@@ -31,6 +31,7 @@ class Captain::Runtime::Runner
       registry: options.fetch(:registry, {}),
       max_turns: options.fetch(:max_turns, DEFAULT_MAX_TURNS),
       llm_context: options[:llm_context],
+      account: options[:account],
       context_wrapper: Captain::Runtime::RunContext.new(deep_copy_context(options.fetch(:context, {})), callbacks: options.fetch(:callbacks, {})),
       runtime_headers: Captain::Runtime::HashNormalizer.normalize(options[:headers], label: 'headers'),
       runtime_params: Captain::Runtime::HashNormalizer.normalize(options[:params], label: 'params'),
@@ -67,7 +68,7 @@ class Captain::Runtime::Runner
     emit_agent_thinking(session)
 
     response = if first_turn?(session) && !session[:input_already_in_history]
-                 Llm::ChatClient.ask(session[:chat], session[:input])
+                 ask_chat(session[:chat], session[:input], account: session[:account])
                else
                  Llm::StructuredOutputPolicy.execute(chat: session[:chat]) { session[:chat].complete }
                end
@@ -80,6 +81,13 @@ class Captain::Runtime::Runner
       session[:context_wrapper]
     )
     response
+  end
+
+  def ask_chat(chat, input, account: nil)
+    kwargs = {}
+    kwargs[:account] = account if account.present?
+
+    Llm::ChatClient.ask(chat, input, **kwargs)
   end
 
   def emit_agent_thinking(session)
@@ -165,6 +173,7 @@ class Captain::Runtime::Runner
       agent: session[:current_agent],
       context_wrapper: session[:context_wrapper],
       llm_context: session[:llm_context],
+      account: session[:account],
       runtime_headers: session[:runtime_headers],
       runtime_params: session[:runtime_params]
     )

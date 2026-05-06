@@ -41,12 +41,32 @@ RSpec.describe Llm::CapabilityPolicy do
       end.not_to raise_error
     end
 
-    it 'raises for unsupported multimodal input' do
+    it 'allows image attachments for image-input-only models' do
+      allow(Llm::Models).to receive(:supports?).and_call_original
+      allow(Llm::Models).to receive(:supports?).with('image-only-model', :image_input, account: nil).and_return(true)
       content = RubyLLM::Content.new('Inspect this', ['https://example.com/image.png'])
 
       expect do
-        described_class.ensure_input_supported!(model: 'whisper-1', content:)
-      end.to raise_error(described_class::UnsupportedCapabilityError, /multimodal inputs/)
+        described_class.ensure_input_supported!(model: 'image-only-model', content: content)
+      end.not_to raise_error
+    end
+
+    it 'allows audio attachments for audio-input-only models' do
+      allow(Llm::Models).to receive(:supports?).and_call_original
+      allow(Llm::Models).to receive(:supports?).with('audio-only-model', :audio_input, account: nil).and_return(true)
+      content = RubyLLM::Content.new('Transcribe this', ['https://example.com/audio.mp3'])
+
+      expect do
+        described_class.ensure_input_supported!(model: 'audio-only-model', content: content)
+      end.not_to raise_error
+    end
+
+    it 'raises for unsupported image input' do
+      content = RubyLLM::Content.new('Inspect this', ['https://example.com/image.png'])
+
+      expect do
+        described_class.ensure_input_supported!(model: 'whisper-1', content: content)
+      end.to raise_error(described_class::UnsupportedCapabilityError, /image inputs/)
     end
   end
 end

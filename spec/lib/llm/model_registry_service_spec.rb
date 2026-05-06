@@ -47,14 +47,18 @@ RSpec.describe Llm::ModelRegistryService do
     allow(Llm::Config).to receive(:custom_api_base_configured?).and_return(false)
     allow(Llm::Config).to receive(:model_for).with(feature: 'assistant', account: account).and_return('gpt-5.1')
     allow(Llm::Config).to receive(:model_for).with(feature: 'audio_transcription', account: account).and_return('whisper-1')
-    allow(Llm::Config).to receive(:provider_for_model).with('gpt-5.1').and_return('openai')
-    allow(Llm::Config).to receive(:provider_for_model).with('whisper-1').and_return('openai')
-    allow(Llm::Models).to receive(:type_for).with('gpt-5.1').and_return('chat')
-    allow(Llm::Models).to receive(:type_for).with('whisper-1').and_return('transcription')
-    allow(Llm::Models).to receive(:capabilities_for).with('gpt-5.1').and_return(%w[reasoning streaming])
-    allow(Llm::Models).to receive(:capabilities_for).with('whisper-1').and_return([])
-    allow(Llm::Models).to receive(:supports_thinking?).with('gpt-5.1').and_return(true)
-    allow(Llm::Models).to receive(:supports_thinking?).with('whisper-1').and_return(false)
+    allow(Llm::Config).to receive(:provider_for_model) do |model_name, **|
+      { 'gpt-5.1' => 'openai', 'whisper-1' => 'openai' }[model_name]
+    end
+    allow(Llm::Models).to receive(:type_for) do |model_name, **|
+      { 'gpt-5.1' => 'chat', 'whisper-1' => 'transcription' }[model_name]
+    end
+    allow(Llm::Models).to receive(:capabilities_for) do |model_name, **|
+      { 'gpt-5.1' => %w[reasoning streaming], 'whisper-1' => [] }[model_name]
+    end
+    allow(Llm::Models).to receive(:supports_thinking?) do |model_name, **|
+      model_name == 'gpt-5.1'
+    end
   end
 
   describe '.runtime_metadata' do

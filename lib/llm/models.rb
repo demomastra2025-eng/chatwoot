@@ -18,14 +18,30 @@ module Llm::Models
   OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS = {
     'editor' => [],
     'label_suggestion' => [],
-    'assistant' => %w[structured_output tool_calling],
-    'copilot' => %w[structured_output tool_calling]
+    'assistant' => %w[structured_output tool_calling image_input],
+    'copilot' => %w[structured_output tool_calling image_input],
+    'audio_transcription' => %w[audio_input text_output],
+    'moderation' => %w[text_input text_output structured_output]
+  }.freeze
+  OPENROUTER_NO_FALLBACK_FEATURES = (OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys + ['help_center_search']).freeze
+  OPENROUTER_PREFERRED_FEATURE_MODELS = {
+    'audio_transcription' => %w[
+      openai/gpt-audio-mini
+      openai/gpt-audio
+      openai/gpt-4o-audio-preview
+      mistralai/voxtral-small-24b-2507
+    ],
+    'moderation' => %w[
+      openai/gpt-oss-safeguard-20b
+      meta-llama/llama-guard-4-12b
+      meta-llama/llama-guard-3-8b
+    ]
   }.freeze
 
   class << self
     def providers = CONFIG['providers']
     def configured_models = CONFIG['models']
-    def models = configured_models.merge(dynamic_model_configs)
+    def models(account: nil) = configured_models.merge(dynamic_model_configs(account: account))
     def features = CONFIG['features']
     def feature_keys = CONFIG['features'].keys
 
@@ -33,75 +49,114 @@ module Llm::Models
       LEGACY_MODEL_ALIASES.fetch(model_name.to_s, model_name.to_s)
     end
 
-    def default_model_for(feature)
+    def configured_default_model_for(feature)
       canonical_model_name(CONFIG.dig('features', feature.to_s, 'default'))
     end
 
-    def models_for(feature)
-      static_models = Array(CONFIG.dig('features', feature.to_s, 'models')).map { |model_name| canonical_model_name(model_name) }
+    def default_model_for(feature, account: nil)
+      feature_key = feature.to_s
+      configured_default = configured_default_model_for(feature_key)
 
-      (static_models + dynamic_models_for_feature(feature.to_s)).uniq
+      openrouter_default = openrouter_default_model_for(feature_key, configured_default, account: account)
+      return openrouter_default if openrouter_default.present?
+      return if openrouter_no_fallback_active_for?(feature_key, account: account)
+
+      configured_default
     end
 
-    def valid_model_for?(feature, model_name)
-      models_for(feature).include?(canonical_model_name(model_name))
+    def required_capabilities_for(feature)
+      OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.fetch(feature.to_s, [])
     end
 
-    def model_config(model_name)
+    def openrouter_no_fallback_active_for?(feature, account: nil)
+      OPENROUTER_NO_FALLBACK_FEATURES.include?(feature.to_s) && openrouter_catalog_enabled?(account: account)
+    end
+
+    def models_for(feature, account: nil)
+      feature_key = feature.to_s
+      static_models = Array(CONFIG.dig('features', feature_key, 'models')).map { |model_name| canonical_model_name(model_name) }
+      dynamic_models = dynamic_models_for_feature(feature_key, account: account)
+
+      if openrouter_no_fallback_active_for?(feature_key, account: account)
+        return (dynamic_models + account_static_models_for_feature(static_models, account)).uniq
+      end
+
+      (static_models + dynamic_models).uniq
+    end
+
+    def valid_model_for?(feature, model_name, account: nil)
+      models_for(feature, account: account).include?(canonical_model_name(model_name))
+    end
+
+    def configured_model_for_feature?(feature, model_name)
+      Array(CONFIG.dig('features', feature.to_s, 'models'))
+        .map { |configured_model| canonical_model_name(configured_model) }
+        .include?(canonical_model_name(model_name))
+    end
+
+    def model_config(model_name, account: nil)
       canonical_name = canonical_model_name(model_name)
-      configured_models[canonical_name] || dynamic_model_configs[canonical_name]
+      configured_models[canonical_name] || dynamic_model_configs(account: account)[canonical_name]
     end
 
-    def provider_for(model_name)
-      model_config(model_name)&.fetch('provider', nil) || inferred_dynamic_provider_for(model_name)
+    def provider_for(model_name, account: nil)
+      model_config(model_name, account: account)&.fetch('provider', nil) || inferred_dynamic_provider_for(model_name, account: account)
     end
 
     def provider_config(provider_name)
       providers&.fetch(provider_name.to_s, nil)
     end
 
-    def type_for(model_name)
-      model_config(model_name)&.fetch('type', nil) || registry_info_for(model_name)&.type
+    def type_for(model_name, account: nil)
+      model_config(model_name, account: account)&.fetch('type', nil) || registry_info_for(model_name)&.type
     end
 
-    def capabilities_for(model_name)
+    def capabilities_for(model_name, account: nil)
       normalize_capabilities(
-        Array(model_config(model_name)&.fetch('capabilities', nil)) +
+        Array(model_config(model_name, account: account)&.fetch('capabilities', nil)) +
         Array(registry_info_for(model_name)&.capabilities) +
-        TYPE_CAPABILITIES.fetch(type_for(model_name).to_s, [])
+        TYPE_CAPABILITIES.fetch(type_for(model_name, account: account).to_s, [])
       )
     end
 
-    def supports?(model_name, capability)
-      capabilities_for(model_name).include?(capability.to_s)
+    def supports?(model_name, capability, account: nil)
+      capabilities_for(model_name, account: account).include?(capability.to_s)
     end
 
-    def supports_thinking?(model_name)
-      supports?(model_name, :reasoning)
+    def supports_thinking?(model_name, account: nil)
+      supports?(model_name, :reasoning, account: account)
     end
 
-    def supports_structured_output?(model_name)
-      supports?(model_name, :structured_output)
+    def supports_structured_output?(model_name, account: nil)
+      supports?(model_name, :structured_output, account: account)
     end
 
-    def supports_tool_calling?(model_name)
-      supports?(model_name, :tool_calling)
+    def supports_tool_calling?(model_name, account: nil)
+      supports?(model_name, :tool_calling, account: account)
     end
 
-    def supports_multimodal_input?(model_name)
-      supports?(model_name, :multimodal_input)
+    def supports_multimodal_input?(model_name, account: nil)
+      supports?(model_name, :multimodal_input, account: account)
     end
 
-    def supports_streaming?(model_name)
-      supports?(model_name, :streaming)
+    def supports_image_input?(model_name, account: nil)
+      supports?(model_name, :image_input, account: account)
     end
 
-    def supports_embedding?(model_name)
-      supports?(model_name, :embedding)
+    def supports_audio_input?(model_name, account: nil)
+      supports?(model_name, :audio_input, account: account)
     end
 
-    def supports_transcription?(model_name)
-      supports?(model_name, :transcription)
+    def supports_streaming?(model_name, account: nil)
+      supports?(model_name, :streaming, account: account)
+    end
+
+    def supports_embedding?(model_name, account: nil)
+      supports?(model_name, :embedding, account: account)
+    end
+
+    def supports_transcription?(model_name, account: nil)
+      supports?(model_name, :transcription, account: account)
     end
 
     def registry_model_for(model_name)
@@ -110,24 +165,25 @@ module Llm::Models
       nil
     end
 
-    def registry_known?(model_name)
-      return true if dynamic_model_configs.key?(canonical_model_name(model_name))
+    def registry_known?(model_name, account: nil)
+      return true if dynamic_model_configs(account: account).key?(canonical_model_name(model_name))
 
       registry_model_for(model_name).present?
     end
 
-    def runtime_supported?(model_name)
-      registry_known?(model_name) || assume_exists_supported?(model_name)
+    def runtime_supported?(model_name, account: nil)
+      known = account.present? ? registry_known?(model_name, account: account) : registry_known?(model_name)
+      known || assume_exists_supported?(model_name, account: account)
     end
 
-    def feature_config(feature_key)
+    def feature_config(feature_key, account: nil)
       feature = features[feature_key.to_s]
       return nil unless feature
 
       {
-        models: models_for(feature_key).map do |model_name|
+        models: models_for(feature_key, account: account).map do |model_name|
           canonical_name = canonical_model_name(model_name)
-          model = model_config(canonical_name).to_h
+          model = model_config(canonical_name, account: account).to_h
           provider = model['provider']
           provider_metadata = provider_config(provider)
           {
@@ -137,15 +193,17 @@ module Llm::Models
             provider_display_name: provider_metadata&.fetch('display_name', nil) || provider,
             coming_soon: model['coming_soon'],
             credit_multiplier: model['credit_multiplier'],
-            capabilities: capabilities_for(canonical_name),
-            type: type_for(canonical_name),
-            known_to_registry: registry_known?(canonical_name),
+            capabilities: capabilities_for(canonical_name, account: account),
+            type: type_for(canonical_name, account: account),
+            known_to_registry: registry_known?(canonical_name, account: account),
             source: model['source'],
             context_length: model['context_length'],
             max_output_tokens: model['max_output_tokens']
           }
         end,
-        default: default_model_for(feature_key)
+        default: default_model_for(feature_key, account: account),
+        configured_default: configured_default_model_for(feature_key),
+        required_capabilities: required_capabilities_for(feature_key)
       }
     end
 
@@ -178,38 +236,88 @@ module Llm::Models
 
     private
 
-    def dynamic_model_configs
+    def dynamic_model_configs(account: nil)
+      return {} unless openrouter_catalog_enabled?(account: account)
+
       Llm::OpenRouterModelCatalog.model_configs
     end
 
-    def dynamic_models_for_feature(feature_key)
+    def account_static_models_for_feature(static_models, account)
+      return [] if account.blank?
+
+      static_models.select do |model_name|
+        provider = provider_for(model_name)
+        provider.present? && Llm::Config.account_provider_available?(provider, account: account)
+      end
+    rescue StandardError
+      []
+    end
+
+    def openrouter_default_model_for(feature_key, configured_default, account: nil)
+      return unless OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key)
+      return unless openrouter_catalog_enabled?(account: account)
+
+      required_capabilities = required_capabilities_for(feature_key)
+      openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
+        candidate_config = dynamic_model_configs(account: account)[candidate]
+        dynamic_model_allowed_for_feature?(candidate_config, required_capabilities)
+      end
+    end
+
+    def openrouter_default_candidates(feature_key, configured_default, account: nil)
+      candidates = [openrouter_equivalent_model_id(configured_default, account: account)]
+      candidates.concat(OPENROUTER_PREFERRED_FEATURE_MODELS.fetch(feature_key, []))
+      candidates.concat(dynamic_models_for_feature(feature_key, account: account))
+      candidates.compact_blank.uniq
+    end
+
+    def openrouter_equivalent_model_id(configured_default, account: nil)
+      configured_default = canonical_model_name(configured_default)
+      return if configured_default.blank?
+      return configured_default if dynamic_model_configs(account: account).key?(configured_default)
+
+      "openai/#{configured_default}"
+    end
+
+    def dynamic_models_for_feature(feature_key, account: nil)
       required_capabilities = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS[feature_key]
       return [] if required_capabilities.nil?
 
-      dynamic_model_configs.filter_map do |model_name, model_config|
+      dynamic_model_configs(account: account).filter_map do |model_name, model_config|
         model_name if dynamic_model_allowed_for_feature?(model_config, required_capabilities)
       end
     end
 
     def dynamic_model_allowed_for_feature?(model_config, required_capabilities)
+      return false if model_config.blank?
       return false unless model_config['provider'] == OPENROUTER_PROVIDER
       return false unless model_config['type'] == 'chat'
 
       required_capabilities.all? { |capability| Array(model_config['capabilities']).include?(capability) }
     end
 
-    def inferred_dynamic_provider_for(model_name)
-      return OPENROUTER_PROVIDER if openrouter_model_id?(model_name)
+    def inferred_dynamic_provider_for(model_name, account: nil)
+      return OPENROUTER_PROVIDER if openrouter_model_id?(model_name, account: account)
 
       nil
     end
 
-    def openrouter_model_id?(model_name)
-      dynamic_model_configs.key?(canonical_model_name(model_name)) && providers.key?(OPENROUTER_PROVIDER)
+    def openrouter_model_id?(model_name, account: nil)
+      dynamic_model_configs(account: account).key?(canonical_model_name(model_name)) && providers.key?(OPENROUTER_PROVIDER)
     end
 
-    def assume_exists_supported?(model_name)
-      %w[anthropic openrouter].include?(provider_for(model_name))
+    def openrouter_catalog_enabled?(account: nil)
+      if account.present?
+        Llm::Config.provider_available?(OPENROUTER_PROVIDER, account: account)
+      else
+        Llm::Config.provider_available?(OPENROUTER_PROVIDER)
+      end
+    rescue StandardError
+      false
+    end
+
+    def assume_exists_supported?(model_name, account: nil)
+      %w[anthropic openrouter].include?(provider_for(model_name, account: account))
     end
 
     def normalize_capabilities(capabilities)

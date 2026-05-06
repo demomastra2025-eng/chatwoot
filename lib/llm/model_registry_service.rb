@@ -9,9 +9,9 @@ class Llm::ModelRegistryService
   class << self
     def runtime_metadata(account:)
       {
-        defaults: defaults_metadata,
-        registry: registry_metadata,
-        providers: provider_metadata,
+        defaults: defaults_metadata(account),
+        registry: registry_metadata(account: account),
+        providers: provider_metadata(account: account),
         features: feature_metadata(account),
         audit: audit_configuration
       }
@@ -62,33 +62,35 @@ class Llm::ModelRegistryService
 
     private
 
-    def defaults_metadata
+    def defaults_metadata(account)
       {
         installation_default_model: Llm::Config.installation_default_model,
-        moderation_model: Llm::Config.moderation_model
+        moderation_model: Llm::Config.moderation_model(account: account)
       }
     end
 
-    def registry_metadata
+    def registry_metadata(account: nil)
       runtime_models = Array(RubyLLM.models.all)
 
       {
         total_models: runtime_models.count,
         chat_models: runtime_models.count { |model| model.type == 'chat' },
-        configured_models: Llm::Models.models.count,
-        resolved_models: Llm::Models.models.keys.count { |model_name| Llm::Models.registry_known?(model_name) },
+        configured_models: Llm::Models.models(account: account).count,
+        resolved_models: Llm::Models.models(account: account).keys.count { |model_name| Llm::Models.registry_known?(model_name, account: account) },
         last_refreshed_at: Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY) || @last_refreshed_at,
         last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY) || @last_refresh_error,
         openrouter: Llm::OpenRouterModelCatalog.metadata
       }
     end
 
-    def provider_metadata
+    def provider_metadata(account: nil)
       Llm::Models.providers.each_with_object({}) do |(provider_name, config), result|
         result[provider_name] = {
           display_name: config['display_name'],
-          configured: Llm::Config.provider_available?(provider_name),
-          custom_endpoint: Llm::Config.custom_api_base_configured?(provider_name)
+          configured: Llm::Config.provider_available?(provider_name, account: account),
+          account_configured: Llm::Config.account_provider_available?(provider_name, account: account),
+          global_configured: Llm::Config.installation_provider_available?(provider_name),
+          custom_endpoint: Llm::Config.custom_api_base_configured?(provider_name, account: account)
         }
         result[provider_name][:models_api] = Llm::OpenRouterModelCatalog.metadata if provider_name == Llm::OpenRouterModelCatalog::PROVIDER
       end
@@ -97,18 +99,18 @@ class Llm::ModelRegistryService
     def feature_metadata(account)
       Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
         selected_model = Llm::Config.model_for(feature: feature_key, account: account)
-        provider = Llm::Config.provider_for_model(selected_model)
+        provider = selected_model.present? ? Llm::Config.provider_for_model(selected_model, account: account) : nil
 
         result[feature_key] = {
           selected_model: selected_model,
           provider: provider,
           provider_display_name: Llm::Models.provider_config(provider)&.fetch('display_name', provider.to_s.titleize),
-          provider_configured: Llm::Config.provider_available?(provider),
-          custom_endpoint: Llm::Config.custom_api_base_configured?(provider),
-          type: Llm::Models.type_for(selected_model),
-          capabilities: Llm::Models.capabilities_for(selected_model),
-          supports_thinking: Llm::Models.supports_thinking?(selected_model),
-          known_to_registry: Llm::Models.registry_known?(selected_model)
+          provider_configured: Llm::Config.provider_available?(provider, account: account),
+          custom_endpoint: Llm::Config.custom_api_base_configured?(provider, account: account),
+          type: Llm::Models.type_for(selected_model, account: account),
+          capabilities: Llm::Models.capabilities_for(selected_model, account: account),
+          supports_thinking: Llm::Models.supports_thinking?(selected_model, account: account),
+          known_to_registry: Llm::Models.registry_known?(selected_model, account: account)
         }
       end
     end

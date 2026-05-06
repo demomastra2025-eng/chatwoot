@@ -2,6 +2,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
   WHISPER_MODEL = 'whisper-1'.freeze
+  TranscriptionResult = Struct.new(:text, :segments, keyword_init: true)
 
   attr_reader :call, :account
 
@@ -18,9 +19,9 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
     transcribed_text = transcribe_audio
     update_call_and_message(transcribed_text)
     { success: true, transcript: transcribed_text }
-  rescue Faraday::UnauthorizedError
-    Rails.logger.warn('[WHATSAPP CALL] Skipping transcription: OpenAI configuration is invalid (401)')
-    { error: 'OpenAI configuration is invalid' }
+  rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
+    Rails.logger.warn('[WHATSAPP CALL] Skipping transcription: LLM transcription provider configuration is invalid (401)')
+    { error: 'LLM transcription provider configuration is invalid' }
   end
 
   private
@@ -33,6 +34,8 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   # be attributed to Customer vs Agent. Falls back to the combined recording
   # if the media server isn't available or per-side files are missing.
   def transcribe_audio
+    return transcribe_combined if openrouter_chat_transcription?
+
     if call.media_session_id.present?
       diarized = diarized_transcript
       return diarized if diarized.present?
@@ -100,9 +103,11 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_file(file_path, temperature:, response_format: nil, timestamp_granularities: nil, observability: {})
+    return transcribe_file_with_openrouter_chat(file_path, observability: observability) if openrouter_chat_transcription?
+
     options = {
       context: llm_context,
-      model: WHISPER_MODEL,
+      model: model,
       temperature: temperature,
       observability: observability
     }
@@ -115,14 +120,41 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   end
 
   def llm_context
-    Llm::Config.with_api_key(api_key, api_base: api_base) { |context| return context }
+    Llm::Config.with_api_key(
+      api_key,
+      api_base: api_base,
+      provider: Llm::Config.provider_for_model(model, account: account),
+      model: model,
+      account: account
+    ) { |context| return context }
+  end
+
+  def openrouter_chat_transcription?
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' && Llm::Models.supports_audio_input?(model, account: account)
+  end
+
+  def transcribe_file_with_openrouter_chat(file_path, observability: {})
+    response = instrument_audio_transcription(observability) do
+      Llm::ChatClient.ask(
+        chat(model: model, temperature: 0),
+        RubyLLM::Content.new(openrouter_transcription_prompt, [file_path]),
+        observability: observability.merge(provider: 'openrouter'),
+        account: account
+      )
+    end
+
+    TranscriptionResult.new(text: response&.content.to_s, segments: [])
+  end
+
+  def openrouter_transcription_prompt
+    'Transcribe the attached call recording accurately. Return only the transcript text, without markdown or commentary.'
   end
 
   def instrumentation_params(file_path, runtime_mode)
     {
       span_name: 'llm.audio.transcription',
-      provider: 'openai',
-      model: WHISPER_MODEL,
+      provider: Llm::Config.provider_for_model(model, account: account),
+      model: model,
       account: account,
       account_id: account.id,
       runtime_mode: runtime_mode,
@@ -139,11 +171,11 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   end
 
   def api_key
-    system_api_key.presence || openai_hook&.settings&.dig('api_key')
+    Llm::Config.api_key(Llm::Config.provider_for_model(model, account: account), account: account)
   end
 
   def api_base
-    Llm::Config.api_base
+    Llm::Config.api_base(Llm::Config.provider_for_model(model, account: account), account: account)
   end
 
   def fetch_combined_recording

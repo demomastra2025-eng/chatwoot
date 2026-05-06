@@ -25,6 +25,9 @@ class Llm::OpenRouterModelCatalog
       payload = fetch_payload(models_uri(api_base.presence || Llm::Config.api_base(PROVIDER) || DEFAULT_API_BASE), resolved_api_key)
       model_configs = normalize_payload(payload)
       timestamp = Time.current.iso8601
+      @last_model_configs = model_configs
+      @last_refreshed_at = timestamp
+      @last_refresh_error = nil
 
       Rails.cache.write(CACHE_KEY, model_configs)
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
@@ -34,7 +37,8 @@ class Llm::OpenRouterModelCatalog
     rescue MissingApiKeyError
       raise
     rescue StandardError => e
-      Rails.cache.write(LAST_REFRESH_ERROR_CACHE_KEY, refresh_error_message(e))
+      @last_refresh_error = refresh_error_message(e)
+      Rails.cache.write(LAST_REFRESH_ERROR_CACHE_KEY, @last_refresh_error)
       raise
     end
 
@@ -50,7 +54,7 @@ class Llm::OpenRouterModelCatalog
     end
 
     def model_configs
-      cached_model_configs.presence || fallback_model_configs
+      refreshed_model_configs.presence || fallback_model_configs
     end
 
     def model_config(model_name)
@@ -62,16 +66,16 @@ class Llm::OpenRouterModelCatalog
     end
 
     def metadata
-      configs = model_configs
-      cached_configs = cached_model_configs
+      api_configs = refreshed_model_configs
+      configs = api_configs.presence || fallback_model_configs
       {
         total_models: configs.count,
         chat_models: configs.count { |_, config| config['type'] == 'chat' },
-        source: cached_configs.present? ? 'openrouter_api' : FALLBACK_SOURCE,
-        using_fallback: cached_configs.blank?,
+        source: api_configs.present? ? 'openrouter_api' : FALLBACK_SOURCE,
+        using_fallback: api_configs.blank?,
         fallback_models: fallback_model_configs.count,
-        last_refreshed_at: Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY),
-        last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY)
+        last_refreshed_at: Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY) || @last_refreshed_at,
+        last_refresh_error: Rails.cache.read(LAST_REFRESH_ERROR_CACHE_KEY) || @last_refresh_error
       }
     end
 
@@ -128,6 +132,14 @@ class Llm::OpenRouterModelCatalog
 
     def cached_model_configs
       normalize_cached_models(Rails.cache.read(CACHE_KEY))
+    end
+
+    def refreshed_model_configs
+      cached_model_configs.presence || in_memory_model_configs
+    end
+
+    def in_memory_model_configs
+      normalize_cached_models(@last_model_configs)
     end
 
     def fallback_model_configs
@@ -221,9 +233,17 @@ class Llm::OpenRouterModelCatalog
     def capabilities_for(model_data)
       architecture = model_data['architecture'].is_a?(Hash) ? model_data['architecture'] : {}
       input_modalities = Array(architecture['input_modalities']).map(&:to_s)
+      output_modalities = Array(architecture['output_modalities']).map(&:to_s)
       supported_parameters = Array(model_data['supported_parameters']).map(&:to_s)
       capabilities = ['streaming']
 
+      capabilities << 'text_input' if input_modalities.include?('text')
+      capabilities << 'text_output' if output_modalities.include?('text')
+      capabilities << 'image_input' if input_modalities.include?('image')
+      capabilities << 'image_output' if output_modalities.include?('image')
+      capabilities << 'audio_input' if input_modalities.include?('audio')
+      capabilities << 'audio_output' if output_modalities.include?('audio')
+      capabilities << 'file_input' if input_modalities.include?('file')
       capabilities << 'tool_calling' if supported_parameters.intersect?(%w[tools tool_choice])
       capabilities << 'structured_output' if supported_parameters.intersect?(%w[response_format structured_outputs])
       capabilities << 'reasoning' if supported_parameters.intersect?(%w[reasoning reasoning_effort include_reasoning])
@@ -234,9 +254,17 @@ class Llm::OpenRouterModelCatalog
 
     def fallback_capabilities_for(model_data)
       input_modalities = Array(model_data.dig('modalities', 'input')).map(&:to_s)
+      output_modalities = Array(model_data.dig('modalities', 'output')).map(&:to_s)
       configured_capabilities = Array(model_data['capabilities']).map(&:to_s)
       capabilities = ['streaming']
 
+      capabilities << 'text_input' if input_modalities.include?('text')
+      capabilities << 'text_output' if output_modalities.include?('text')
+      capabilities << 'image_input' if configured_capabilities.include?('vision') || input_modalities.include?('image')
+      capabilities << 'image_output' if output_modalities.include?('image')
+      capabilities << 'audio_input' if input_modalities.include?('audio')
+      capabilities << 'audio_output' if output_modalities.include?('audio')
+      capabilities << 'file_input' if input_modalities.include?('file')
       capabilities << 'tool_calling' if configured_capabilities.include?('function_calling') || configured_capabilities.include?('tool_calling')
       capabilities << 'structured_output' if configured_capabilities.intersect?(%w[structured_output response_format json_schema structured_outputs])
       capabilities << 'reasoning' if configured_capabilities.include?('reasoning')

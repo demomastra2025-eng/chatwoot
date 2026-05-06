@@ -19,6 +19,7 @@ RSpec.describe Llm::ModerationService do
       allow(Llm::RuntimePolicy).to receive(:moderation_failure_mode).and_return('fail_open')
       allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
       allow(Llm::Config).to receive(:moderation_model).and_return('omni-moderation-latest')
+      allow(Llm::Config).to receive(:moderation_provider).and_return('openai')
       allow(Llm::ApiClient).to receive(:moderate).and_return(moderation_result)
     end
 
@@ -41,6 +42,31 @@ RSpec.describe Llm::ModerationService do
         'feature' => :assistant,
         'stage' => :input
       )
+    end
+
+    it 'uses an OpenRouter guard chat model instead of the OpenAI moderation endpoint when OpenRouter is selected' do
+      chat = instance_double(RubyLLM::Chat)
+      response = instance_double(RubyLLM::Message, content: { 'flagged' => false, 'categories' => [], 'reason' => 'safe' })
+
+      allow(Llm::Config).to receive(:moderation_provider).and_return('openrouter')
+      allow(Llm::Config).to receive(:moderation_model).and_return('openai/gpt-oss-safeguard-20b')
+      allow(Llm::Config).to receive(:api_key).with('openrouter').and_return('[REDACTED]')
+      allow(Llm::Models).to receive(:supports_structured_output?).with('openai/gpt-oss-safeguard-20b').and_return(true)
+      allow(Llm::ChatClient).to receive(:build).with(model: 'openai/gpt-oss-safeguard-20b', temperature: 0).and_return(chat)
+      allow(Llm::StructuredOutputPolicy).to receive(:bind!).with(chat: chat, schema: kind_of(Hash)).and_return(chat)
+
+      expect(Llm::ApiClient).not_to receive(:moderate)
+      expect(Llm::ChatClient).to receive(:ask).with(
+        chat,
+        include('Content:', 'Hello'),
+        observability: hash_including(provider: 'openrouter', model: 'openai/gpt-oss-safeguard-20b')
+      ).and_return(response)
+
+      result = described_class.check!(feature: :assistant, stage: :input, content: 'Hello')
+
+      expect(result.status).to eq(:allowed)
+      expect(result.provider).to eq('openrouter')
+      expect(result.result).not_to be_flagged
     end
 
     it 'returns a skipped result when moderation is unavailable in fail_open mode' do
@@ -94,6 +120,7 @@ RSpec.describe Llm::ModerationService do
 
       expect(Llm::ApiClient).to have_received(:moderate).with(
         'Look here',
+        context: anything,
         model: 'omni-moderation-latest',
         provider: 'openai'
       )

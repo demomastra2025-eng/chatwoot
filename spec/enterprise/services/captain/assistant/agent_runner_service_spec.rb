@@ -36,6 +36,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
     allow(Llm::Config).to receive(:initialize!)
     allow(Llm::Config).to receive(:api_key).and_call_original
     allow(Llm::Config).to receive(:api_key).with('openai').and_return('openai-key')
+    allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return('openai-key')
     allow(Llm::ApiClient).to receive(:moderate).and_return(instance_double(RubyLLM::Moderation, flagged?: false))
     allow(assistant).to receive(:agent).and_return(mock_agent)
     scenarios_relation = instance_double(Captain::Scenario)
@@ -363,7 +364,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'returns a handoff response when fail-closed moderation is unavailable' do
       account.update!(captain_runtime: { 'assistant_moderation' => true, 'moderation_failure_mode' => 'fail_closed' })
-      allow(Llm::Config).to receive(:api_key).with('openai').and_return(nil)
+      allow(Llm::Config).to receive(:api_key).with('openai', account: account).and_return(nil)
 
       result = service.generate_response(message_history: message_history)
 
@@ -377,15 +378,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
     it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do
       hook = create(:integrations_hook, account: account, app_id: 'openai', status: 'enabled', settings: { api_key: 'account-key' })
+      allow(account.hooks).to receive(:find_by).and_call_original
       allow(account.hooks).to receive(:find_by).with(app_id: 'openai', status: 'enabled').and_return(hook)
 
       expect(mock_runner).to receive(:run).with(
         anything,
         context: anything,
         max_turns: described_class::MAX_RUNTIME_TURNS,
-        runtime_options: {
-          llm_context: an_instance_of(RubyLLM::Context)
-        }
+        runtime_options: hash_including(
+          llm_context: an_instance_of(RubyLLM::Context),
+          account: account
+        )
       )
 
       service.generate_response(message_history: message_history)

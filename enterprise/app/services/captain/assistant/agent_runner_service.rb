@@ -35,7 +35,8 @@ class Captain::Assistant::AgentRunnerService
         context: context,
         max_turns: MAX_RUNTIME_TURNS,
         runtime_options: {
-          llm_context: llm_context_for_run
+          llm_context: llm_context_for_run,
+          account: @assistant.account
         }
       )
 
@@ -326,6 +327,7 @@ class Captain::Assistant::AgentRunnerService
       feature: :assistant,
       stage: :input,
       content: message_to_process,
+      account: @assistant.account,
       preferences: context.dig(:state, :captain_runtime)
     )
     nil
@@ -340,6 +342,7 @@ class Captain::Assistant::AgentRunnerService
       feature: :assistant,
       stage: :output,
       content: response['response'],
+      account: @assistant.account,
       preferences: runtime_preferences
     )
   end

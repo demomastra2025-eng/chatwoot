@@ -24,6 +24,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'returns OpenRouter for provider-prefixed dynamic model ids discovered from OpenRouter' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(true)
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[streaming] }
       )
@@ -32,6 +33,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'does not treat unknown provider-prefixed ids as OpenRouter models' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(false)
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
       expect(described_class.provider_for('unknown/provider-model')).to be_nil
@@ -57,6 +59,7 @@ RSpec.describe Llm::Models do
       expect(described_class.supports_structured_output?('gpt-4.1-mini')).to be true
       expect(described_class.supports_tool_calling?('gpt-4.1-mini')).to be true
       expect(described_class.supports_multimodal_input?('gpt-4.1-mini')).to be true
+      expect(described_class.supports_image_input?('gpt-4.1-mini')).to be true
       expect(described_class.supports_streaming?('gpt-4.1-mini')).to be true
       expect(described_class.supports_embedding?('text-embedding-3-small')).to be true
       expect(described_class.supports_transcription?('whisper-1')).to be true
@@ -75,7 +78,8 @@ RSpec.describe Llm::Models do
       expect(claude[:capabilities]).to include('reasoning', 'structured_output', 'tool_calling')
     end
 
-    it 'includes dynamically fetched OpenRouter models that satisfy feature capabilities' do
+    it 'includes dynamically fetched OpenRouter models that satisfy feature capabilities when OpenRouter is configured' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(true)
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {
           'provider' => 'openrouter',
@@ -84,13 +88,19 @@ RSpec.describe Llm::Models do
           'source' => 'openrouter_api',
           'context_length' => 128_000,
           'max_output_tokens' => 16_384,
+          'capabilities' => %w[structured_output tool_calling image_input streaming]
+        },
+        'tool/without-image-input' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Tool Calls Text Only',
+          'type' => 'chat',
           'capabilities' => %w[structured_output tool_calling streaming]
         },
         'tool/without-structured-output' => {
           'provider' => 'openrouter',
           'display_name' => 'Tool Calls Only',
           'type' => 'chat',
-          'capabilities' => %w[tool_calling streaming]
+          'capabilities' => %w[tool_calling image_input streaming]
         },
         'text/only' => {
           'provider' => 'openrouter',
@@ -111,11 +121,64 @@ RSpec.describe Llm::Models do
           source: 'openrouter_api',
           context_length: 128_000,
           max_output_tokens: 16_384,
-          capabilities: include('structured_output', 'tool_calling')
+          capabilities: include('structured_output', 'tool_calling', 'image_input')
         )
       )
+      expect(config[:models]).not_to include(hash_including(id: 'tool/without-image-input'))
       expect(config[:models]).not_to include(hash_including(id: 'tool/without-structured-output'))
       expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+    end
+
+    it 'does not include OpenRouter catalog models when OpenRouter is not configured' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(false)
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling streaming]
+        }
+      )
+
+      config = described_class.feature_config(:assistant)
+
+      expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-4o'))
+      expect(config[:default]).to eq('gpt-5.4')
+    end
+
+    it 'uses OpenRouter default equivalents only when the OpenRouter catalog has a capability-compatible model' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(true)
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-5.4 via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling image_input streaming]
+        },
+        'openai/gpt-audio-mini' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT Audio Mini via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[audio_input text_output structured_output streaming]
+        }
+      )
+
+      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
+      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-audio-mini')
+    end
+
+    it 'does not fall back to the static OpenAI default when OpenRouter primary has no capability-compatible assistant model' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(true)
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-5.4 via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[streaming]
+        }
+      )
+
+      expect(described_class.feature_config(:assistant)[:default]).to be_nil
     end
   end
 
@@ -134,6 +197,7 @@ RSpec.describe Llm::Models do
     end
 
     it 'allows OpenRouter provider-prefixed model ids discovered from OpenRouter even when RubyLLM has not refreshed them yet' do
+      allow(Llm::Config).to receive(:provider_available?).with('openrouter').and_return(true)
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => { 'provider' => 'openrouter', 'type' => 'chat', 'capabilities' => %w[streaming] }
       )

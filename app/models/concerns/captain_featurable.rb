@@ -66,10 +66,10 @@ module CaptainFeaturable
     stored_models = captain_models || {}
     Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
       stored_value = stored_models[feature_key]
-      result[feature_key] = if stored_value.present? && Llm::Models.valid_model_for?(feature_key, stored_value)
+      result[feature_key] = if stored_value.present? && Llm::Models.valid_model_for?(feature_key, stored_value, account: self)
                               Llm::Models.canonical_model_name(stored_value)
                             else
-                              Llm::Models.default_model_for(feature_key)
+                              Llm::Models.default_model_for(feature_key, account: self)
                             end
     end
   end
@@ -97,16 +97,14 @@ module CaptainFeaturable
 
     captain_models.each do |feature_key, model_name|
       next if model_name.blank?
-      next if Llm::Models.valid_model_for?(feature_key, model_name)
 
-      allowed_models = Llm::Models.models_for(feature_key)
-      errors.add(:captain_models, "'#{model_name}' is not a valid model for #{feature_key}. Allowed: #{allowed_models.join(', ')}")
-    end
+      unless Llm::Models.valid_model_for?(feature_key, model_name, account: self)
+        allowed_models = Llm::Models.models_for(feature_key, account: self)
+        errors.add(:captain_models, "'#{model_name}' is not a valid model for #{feature_key}. Allowed: #{allowed_models.join(', ')}")
+        next
+      end
 
-    captain_models.each do |feature_key, model_name|
-      next if model_name.blank?
-      next unless Llm::Models.valid_model_for?(feature_key, model_name)
-      next if Llm::Models.runtime_supported?(model_name)
+      next if Llm::Models.runtime_supported?(model_name, account: self)
 
       errors.add(:captain_models, "'#{model_name}' for #{feature_key} is not available in RubyLLM.models.")
     end

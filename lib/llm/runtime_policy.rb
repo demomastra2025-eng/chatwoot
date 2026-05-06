@@ -28,10 +28,10 @@ class Llm::RuntimePolicy
     def thinking_options(feature:, model:, account: nil, preferences: nil)
       effort = runtime_preferences(account, preferences)["#{feature}_thinking_effort"].to_s
       return nil if effort.blank? || effort == 'none'
-      return nil unless Llm::Models.supports_thinking?(model)
+      return nil unless Llm::Models.supports_thinking?(model, account: account)
 
       options = { effort: effort }
-      options[:budget] = budget_for(model, effort) if budget_required?(model)
+      options[:budget] = budget_for(model, effort) if budget_required?(model, account: account)
       options
     end
 
@@ -125,8 +125,8 @@ class Llm::RuntimePolicy
       {}
     end
 
-    def budget_required?(model)
-      Llm::Config.provider_for_model(model) == 'anthropic'
+    def budget_required?(model, account: nil)
+      Llm::Config.provider_for_model(model, account: account) == 'anthropic'
     end
 
     def budget_for(_model, effort)

@@ -18,25 +18,72 @@ class Llm::BaseAiService
   end
 
   def chat(model: self.model, temperature: @temperature, thinking: nil)
-    Llm::ChatClient.build(model: model, temperature: temperature, thinking: thinking)
+    Llm::ChatClient.build(**chat_build_kwargs(model: model, temperature: temperature, thinking: thinking))
   end
 
   def ask_chat(chat, content, observability: default_observability_payload)
-    Llm::ChatClient.ask(chat, content, observability: observability)
+    Llm::ChatClient.ask(chat, content, **chat_ask_kwargs(observability: observability))
   end
 
   private
 
   def apply_chat_features(chat, schema: nil, tools: [])
-    Llm::CapabilityPolicy.ensure_chat_features_supported!(model: resolved_chat_model(chat), schema:, tools:)
+    Llm::CapabilityPolicy.ensure_chat_features_supported!(
+      model: resolved_chat_model(chat),
+      schema: schema,
+      tools: tools,
+      account: llm_model_account
+    )
 
-    chat = Llm::StructuredOutputPolicy.bind!(chat:, schema:) if schema.present?
+    chat = Llm::StructuredOutputPolicy.bind!(chat: chat, schema: schema) if schema.present?
     Array(tools).each { |tool| chat.with_tool(tool) }
     chat
   end
 
   def setup_temperature
     @temperature = DEFAULT_TEMPERATURE
+  end
+
+  def chat_build_kwargs(model:, temperature:, thinking:)
+    account = llm_model_account
+    {
+      model: model,
+      temperature: temperature,
+      thinking: thinking
+    }.tap do |kwargs|
+      kwargs[:account] = account if account.present?
+      context = llm_context_for_model(model, account)
+      kwargs[:context] = context if context.present?
+    end
+  end
+
+  def chat_ask_kwargs(observability:)
+    account = llm_model_account
+    { observability: observability }.tap do |kwargs|
+      kwargs[:account] = account if account.present?
+      kwargs[:model] = model if account.present? || observability.present?
+    end
+  end
+
+  def llm_context_for_model(model_name, account)
+    return if account.blank? || model_name.blank?
+
+    provider = Llm::Config.provider_for_model(model_name, account: account)
+    return if provider.blank?
+
+    return unless Llm::Config.account_provider_available?(provider, account: account)
+
+    runtime_api_key = Llm::Config.api_key(provider, account: account)
+    runtime_api_base = Llm::Config.api_base(provider, account: account) if Llm::Config.custom_api_base_configured?(provider, account: account)
+    return if runtime_api_key.blank? && runtime_api_base.blank?
+
+    Llm::Config.context(
+      model: model_name,
+      provider: provider,
+      api_key: runtime_api_key,
+      api_base: runtime_api_base,
+      account: account
+    )
   end
 
   def llm_feature_key
@@ -56,11 +103,11 @@ class Llm::BaseAiService
   end
 
   def resolved_chat_model(chat)
+    return model if model.present?
+
     chat_model = chat&.model
     return chat_model.id if chat_model.respond_to?(:id)
     return chat_model if chat_model.present?
-
-    model
   end
 
   def llm_thinking_options

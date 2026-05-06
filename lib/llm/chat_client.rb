@@ -3,9 +3,12 @@
 class Llm::ChatClient
   class << self
     def build(**options)
-      Llm::CapabilityPolicy.ensure_thinking_supported!(model: resolved_model_name(options[:chat], options[:model])) if options[:thinking].present?
+      account = options[:account]
+      if options[:thinking].present?
+        Llm::CapabilityPolicy.ensure_thinking_supported!(model: resolved_model_name(options[:chat], options[:model]), account: account)
+      end
 
-      llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model])
+      llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model], account: account)
       llm_chat = llm_chat.with_temperature(options[:temperature]) unless options[:temperature].nil?
       llm_chat = llm_chat.with_params(**options[:params]) if options[:params].present?
       llm_chat = llm_chat.with_headers(**options[:headers]) if options[:headers].present?
@@ -13,12 +16,12 @@ class Llm::ChatClient
       llm_chat
     end
 
-    def ask(chat, content, model: nil, observability: nil)
+    def ask(chat, content, model: nil, observability: nil, account: nil)
       payload = observability_payload(observability, chat, model)
-      return perform_ask(chat, content, model: model) if payload.blank?
+      return perform_ask(chat, content, model: model, account: account) if payload.blank?
 
       Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-        response = perform_ask(chat, content, model: model)
+        response = perform_ask(chat, content, model: model, account: account)
         Llm::ObservabilityPayload.attach_chat_response!(event_payload, response)
         response
       rescue StandardError => e
@@ -29,11 +32,13 @@ class Llm::ChatClient
 
     private
 
-    def perform_ask(chat, content, model:)
+    def perform_ask(chat, content, model:, account: nil)
       Llm::StructuredOutputPolicy.execute(chat: chat) do
         if content.is_a?(RubyLLM::Content)
           attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
-          Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content) if attachments.any?
+          if attachments.any?
+            Llm::CapabilityPolicy.ensure_input_supported!(model: resolved_model_name(chat, model), content: content, account: account)
+          end
           if attachments.any?
             chat.ask(content.text, with: attachments)
           else
@@ -45,9 +50,9 @@ class Llm::ChatClient
       end
     end
 
-    def build_chat(context:, model:)
-      if assume_model_exists?(model)
-        provider = Llm::Config.provider_for_model(model)
+    def build_chat(context:, model:, account: nil)
+      if assume_model_exists?(model, account: account)
+        provider = account.present? ? Llm::Config.provider_for_model(model, account: account) : Llm::Config.provider_for_model(model)
         return context.chat(model: model, provider: provider, assume_model_exists: true) if context
 
         return RubyLLM.chat(model: model, provider: provider, assume_model_exists: true)
@@ -58,11 +63,15 @@ class Llm::ChatClient
       RubyLLM.chat(model: model)
     end
 
-    def assume_model_exists?(model)
+    def assume_model_exists?(model, account: nil)
       return false if model.blank?
-      return false unless Llm::Models.runtime_supported?(model)
 
-      Llm::Config.provider_for_model(model) == 'openrouter' || !Llm::Models.registry_known?(model)
+      supported = account.present? ? Llm::Models.runtime_supported?(model, account: account) : Llm::Models.runtime_supported?(model)
+      return false unless supported
+
+      provider = account.present? ? Llm::Config.provider_for_model(model, account: account) : Llm::Config.provider_for_model(model)
+      known = account.present? ? Llm::Models.registry_known?(model, account: account) : Llm::Models.registry_known?(model)
+      provider == 'openrouter' || !known
     end
 
     def attachment_source(attachment)
@@ -70,11 +79,12 @@ class Llm::ChatClient
     end
 
     def resolved_model_name(chat, fallback_model)
-      chat_model = chat&.model
+      return fallback_model if fallback_model.present?
+      return unless chat.respond_to?(:model)
+
+      chat_model = chat.model
       return chat_model.id if chat_model.respond_to?(:id)
       return chat_model if chat_model.present?
-
-      fallback_model
     end
 
     def observability_payload(observability, chat, fallback_model)

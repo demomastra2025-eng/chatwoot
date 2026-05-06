@@ -71,6 +71,7 @@ class Captain::BaseTaskService
       messages: messages,
       schema: schema,
       tools: tools,
+      account: account,
       on_end_message: build_generation_callback(model, tools),
       observability: chat_observability_payload(model)
     ).call
@@ -239,32 +240,24 @@ class Captain::BaseTaskService
     api_key(model_provider(task_model)).present?
   end
 
-  def api_key(provider_name = model_provider)
-    return openai_hook&.settings&.dig('api_key').presence || Llm::Config.api_key('openai') if provider_name.to_s == 'openai'
-
+  def system_api_key(provider_name = 'openai')
     Llm::Config.api_key(provider_name)
   end
 
+  def api_key(provider_name = model_provider)
+    Llm::Config.api_key(provider_name, account: account)
+  end
+
   def llm_credential
-    @llm_credential ||= hook_llm_credential || system_llm_credential
-  end
+    provider_name = model_provider(task_model)
+    key = api_key(provider_name)
+    return if key.blank?
 
-  def hook_llm_credential
-    key = openai_hook&.settings&.dig('api_key').presence
-    { api_key: key, source: :hook } if key
-  end
-
-  def system_llm_credential(provider_name = model_provider(task_model))
-    key = provider_name.to_s == 'openai' ? system_api_key.presence : Llm::Config.api_key(provider_name)
-    { api_key: key, source: :system, provider: provider_name } if key.present?
-  end
-
-  def openai_hook
-    @openai_hook ||= account.hooks.find_by(app_id: 'openai', status: 'enabled')
-  end
-
-  def system_api_key
-    @system_api_key ||= InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
+    {
+      api_key: key,
+      source: Llm::Config.account_provider_available?(provider_name, account: account) ? :account : :system,
+      provider: provider_name
+    }
   end
 
   def task_model
@@ -318,18 +311,20 @@ class Captain::BaseTaskService
   def llm_context_for(model)
     provider_name = model_provider(model)
     runtime_api_key = api_key(provider_name)
-    runtime_api_base = Llm::Config.api_base(provider_name)
+    runtime_api_base = Llm::Config.api_base(provider_name, account: account)
     return nil if runtime_api_key.blank? && runtime_api_base.blank?
 
     Llm::Config.context(
       model: model,
       api_key: runtime_api_key,
-      api_base: runtime_api_base
+      api_base: runtime_api_base,
+      provider: provider_name,
+      account: account
     )
   end
 
   def model_provider(model = task_model)
-    Llm::Config.provider_for_model(model)
+    Llm::Config.provider_for_model(model, account: account)
   end
 end
 Captain::BaseTaskService.prepend_mod_with('Captain::BaseTaskService')

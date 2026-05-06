@@ -55,7 +55,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def preferences_payload
     {
       providers: Llm::Models.providers,
-      models: Llm::Models.models,
+      models: Llm::Models.models(account: Current.account),
       features: features_with_account_preferences,
       runtime: runtime_with_account_preferences,
       observability: observability_with_account_preferences,
@@ -188,14 +188,14 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     account_features = preferences[:features] || {}
 
     Llm::Models.feature_keys.index_with do |feature_key|
-      config = Llm::Models.feature_config(feature_key)
+      config = Llm::Models.feature_config(feature_key, account: Current.account)
       selected_model = Llm::Config.model_for(feature: feature_key, account: Current.account)
       config.merge(
         enabled: account_features[feature_key] == true,
         selected: selected_model,
-        selected_provider: Llm::Config.provider_for_model(selected_model),
-        selected_supports_thinking: Llm::Models.supports_thinking?(selected_model),
-        selected_known_to_registry: Llm::Models.registry_known?(selected_model)
+        selected_provider: selected_model.present? ? Llm::Config.provider_for_model(selected_model, account: Current.account) : nil,
+        selected_supports_thinking: Llm::Models.supports_thinking?(selected_model, account: Current.account),
+        selected_known_to_registry: Llm::Models.registry_known?(selected_model, account: Current.account)
       )
     end
   end

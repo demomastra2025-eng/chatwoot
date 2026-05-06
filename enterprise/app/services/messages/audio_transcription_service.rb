@@ -35,8 +35,8 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     )
     { success: true, transcriptions: transcriptions }
   rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
-    Rails.logger.warn('Skipping audio transcription: OpenAI configuration is invalid or disabled (401 Unauthorized).')
-    { error: 'OpenAI configuration is invalid or disabled (401)' }
+    Rails.logger.warn('Skipping audio transcription: LLM transcription provider configuration is invalid or disabled (401 Unauthorized).')
+    { error: 'LLM transcription provider configuration is invalid or disabled (401)' }
   end
 
   private
@@ -72,18 +72,13 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     temp_file_path = fetch_audio_file
     observability = instrumentation_params(temp_file_path)
     response = instrument_audio_transcription(observability) do
-      Llm::Config.with_api_key(api_key, api_base: api_base) do |context|
-        Llm::ApiClient.transcribe(
-          temp_file_path,
-          context: context,
-          model: model,
-          prompt: transcription_prompt,
-          temperature: 0.4,
-          observability: observability.merge(runtime_mode: 'audio_transcription')
-        )
+      if openrouter_chat_transcription?
+        transcribe_with_openrouter_chat(temp_file_path, observability)
+      else
+        transcribe_with_transcription_endpoint(temp_file_path, observability)
       end
     end
-    transcribed_text = response&.text.to_s
+    transcribed_text = response.respond_to?(:text) ? response.text.to_s : response.to_s
 
     update_transcription(transcribed_text)
     transcribed_text
@@ -95,6 +90,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     {
       span_name: 'llm.messages.audio_transcription',
       model: model,
+      provider: Llm::Config.provider_for_model(model, account: account),
       account_id: account&.id,
       feature_name: 'audio_transcription',
       file_path: file_path
@@ -113,20 +109,54 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     account.captain_audio_transcription_prompt
   end
 
+  def openrouter_chat_transcription?
+    Llm::Config.provider_for_model(model, account: account) == 'openrouter' && Llm::Models.supports_audio_input?(model, account: account)
+  end
+
+  def transcribe_with_transcription_endpoint(temp_file_path, observability)
+    provider_name = Llm::Config.provider_for_model(model, account: account)
+    Llm::Config.with_api_key(
+      api_key,
+      api_base: api_base,
+      provider: provider_name,
+      model: model,
+      account: account
+    ) do |context|
+      Llm::ApiClient.transcribe(
+        temp_file_path,
+        context: context,
+        model: model,
+        prompt: transcription_prompt,
+        temperature: 0.4,
+        observability: observability.merge(runtime_mode: 'audio_transcription')
+      )
+    end
+  end
+
+  def transcribe_with_openrouter_chat(temp_file_path, observability)
+    response = Llm::ChatClient.ask(
+      chat(model: model, temperature: 0),
+      RubyLLM::Content.new(openrouter_transcription_prompt, [temp_file_path]),
+      observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
+      account: account
+    )
+
+    response&.content.to_s
+  end
+
+  def openrouter_transcription_prompt
+    [
+      'Transcribe the attached audio accurately. Return only the transcript text, without markdown or commentary.',
+      transcription_prompt.presence
+    ].compact.join("\n")
+  end
+
   def api_key
-    @api_key ||= system_api_key.presence || openai_hook&.settings&.dig('api_key')
+    @api_key ||= Llm::Config.api_key(Llm::Config.provider_for_model(model, account: account), account: account)
   end
 
   def api_base
-    Llm::Config.api_base
-  end
-
-  def openai_hook
-    @openai_hook ||= account.hooks.find_by(app_id: 'openai', status: 'enabled')
-  end
-
-  def system_api_key
-    @system_api_key ||= InstallationConfig.find_by(name: 'CAPTAIN_OPEN_AI_API_KEY')&.value
+    Llm::Config.api_base(Llm::Config.provider_for_model(model, account: account), account: account)
   end
 
   def update_transcription(transcribed_text)
@@ -169,16 +199,19 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   end
 
   def supported_audio_extension
-    @supported_audio_extension ||= begin
-      return unless attachment.file.attached?
+    return @supported_audio_extension if defined?(@supported_audio_extension)
 
-      blob = attachment.file.blob
-      [
-        extension_from_content_type(blob.content_type),
-        blob.filename.extension_without_delimiter
-      ].filter_map { |extension| extension.to_s.downcase.presence }
-       .find { |extension| extension.in?(SUPPORTED_AUDIO_EXTENSIONS) }
-    end
+    @supported_audio_extension = supported_audio_extensions.find { |extension| extension.in?(SUPPORTED_AUDIO_EXTENSIONS) }
+  end
+
+  def supported_audio_extensions
+    return [] unless attachment.file.attached?
+
+    blob = attachment.file.blob
+    [
+      extension_from_content_type(blob.content_type),
+      blob.filename.extension_without_delimiter
+    ].filter_map { |extension| extension.to_s.downcase.presence }
   end
 
   def unsupported_audio_format_result

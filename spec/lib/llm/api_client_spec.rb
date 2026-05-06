@@ -38,6 +38,16 @@ RSpec.describe Llm::ApiClient do
       described_class.embed('hello', model: 'text-embedding-3-small', dimensions: 1536)
     end
 
+    it 'uses the provided scoped context instead of global RubyLLM when present' do
+      context = double('context')
+      response = double('embedding')
+
+      expect(context).to receive(:embed).with('hello', model: 'text-embedding-3-small').and_return(response)
+      expect(RubyLLM).not_to receive(:embed)
+
+      expect(described_class.embed('hello', context: context, model: 'text-embedding-3-small')).to eq(response)
+    end
+
     it 'publishes an embedding event when observability payload is provided' do
       events = []
       subscriber = ActiveSupport::Notifications.subscribe('llm.embedding.complete') do |*args|
@@ -74,6 +84,16 @@ RSpec.describe Llm::ApiClient do
       described_class.moderate('hello')
     end
 
+    it 'uses the provided scoped context for moderation when present' do
+      context = double('context')
+      response = instance_double(RubyLLM::Moderation, flagged?: false)
+
+      expect(context).to receive(:moderate).with('hello', model: 'safe-model').and_return(response)
+      expect(RubyLLM).not_to receive(:moderate)
+
+      expect(described_class.moderate('hello', context: context, model: 'safe-model')).to eq(response)
+    end
+
     it 'publishes a moderation event when observability payload is provided' do
       events = []
       subscriber = ActiveSupport::Notifications.subscribe('llm.moderation.complete') do |*args|
@@ -104,6 +124,16 @@ RSpec.describe Llm::ApiClient do
       expect(RubyLLM).to receive(:transcribe).with('/tmp/audio.mp3', model: 'whisper-1')
 
       described_class.transcribe('/tmp/audio.mp3', model: 'whisper-1')
+    end
+
+    it 'uses the provided scoped context for transcription when present' do
+      context = double('context')
+      response = double('transcription', text: 'hello')
+
+      expect(context).to receive(:transcribe).with('/tmp/audio.mp3', model: 'whisper-1').and_return(response)
+      expect(RubyLLM).not_to receive(:transcribe)
+
+      expect(described_class.transcribe('/tmp/audio.mp3', context: context, model: 'whisper-1')).to eq(response)
     end
 
     it 'publishes a transcription event when observability payload is provided' do

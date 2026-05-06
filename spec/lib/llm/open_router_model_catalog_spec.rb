@@ -43,6 +43,9 @@ RSpec.describe Llm::OpenRouterModelCatalog do
   before do
     allow(Rails).to receive(:cache).and_return(cache_store)
     Rails.cache.clear
+    described_class.instance_variable_set(:@last_model_configs, nil)
+    described_class.instance_variable_set(:@last_refreshed_at, nil)
+    described_class.instance_variable_set(:@last_refresh_error, nil)
   end
 
   describe '.model_configs' do
@@ -82,9 +85,22 @@ RSpec.describe Llm::OpenRouterModelCatalog do
         'max_output_tokens' => 4096
       )
       expect(described_class.model_config('openai/gpt-4')['capabilities']).to include(
-        'tool_calling', 'structured_output', 'reasoning', 'multimodal_input', 'streaming'
+        'tool_calling', 'structured_output', 'reasoning', 'multimodal_input', 'image_input', 'text_output', 'streaming'
       )
       expect(described_class.model_config('image/provider')).to be_nil
+    end
+
+    it 'keeps freshly refreshed API models active when the cache store drops writes' do
+      allow(cache_store).to receive(:write).and_return(false)
+      allow(cache_store).to receive(:read).and_return(nil)
+      stub_request(:get, api_url)
+        .with(headers: { 'Authorization' => 'Bearer [REDACTED]' })
+        .to_return(status: 200, body: api_response.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      metadata = described_class.refresh!(api_key: '[REDACTED]')
+
+      expect(metadata).to include(total_models: 1, source: 'openrouter_api', using_fallback: false)
+      expect(described_class.model_config('openai/gpt-4')).to include('source' => 'openrouter_api')
     end
 
     it 'raises when the OpenRouter API key is missing' do

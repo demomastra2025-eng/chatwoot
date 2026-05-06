@@ -10,14 +10,24 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
                                           .limit(5)
 
     log_tool_usage('found_results', { query: query, count: responses.size })
-    JSON.pretty_generate(
-      query: query,
-      total_count: responses.size,
-      matches: responses.map { |response| response_payload(response) }
-    )
+    faq_payload(query: query, responses: responses)
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
+    Rails.logger.warn "Captain::Tools::FaqLookupTool unavailable: #{e.class}: #{e.message}"
+    faq_payload(query: query, responses: [], error: 'faq_lookup_unavailable')
   end
 
   private
+
+  def faq_payload(query:, responses:, error: nil)
+    payload = {
+      query: query,
+      total_count: responses.size,
+      matches: responses.map { |response| response_payload(response) }
+    }
+    payload[:error] = error if error.present?
+
+    JSON.pretty_generate(payload)
+  end
 
   def response_payload(response)
     {

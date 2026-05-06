@@ -10,67 +10,72 @@ class Llm::ApiClient
       RubyLLM.context(&)
     end
 
-    def embed(*args, **kwargs, &block)
+    def embed(*, **kwargs, &)
+      context = kwargs.delete(:context)
       observability = kwargs.delete(:observability)
       payload = Llm::ObservabilityPayload.normalize(
         observability,
         model: kwargs[:model],
         runtime_mode: 'api_client'
       )
-      return RubyLLM.embed(*args, **kwargs, &block) if payload.blank?
+      return perform_contextual_call(context, :embed, *, **kwargs, &) if payload.blank?
 
       Llm::EventBus.publish('embedding.complete', payload) do |event_payload|
-        begin
-          response = RubyLLM.embed(*args, **kwargs, &block)
-          Llm::ObservabilityPayload.attach_embedding_response!(event_payload, response)
-          response
-        rescue StandardError => e
-          Llm::ObservabilityPayload.attach_error!(event_payload, e)
-          raise
-        end
+        response = perform_contextual_call(context, :embed, *, **kwargs, &)
+        Llm::ObservabilityPayload.attach_embedding_response!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
       end
     end
 
-    def moderate(*args, **kwargs, &block)
+    def moderate(*, **kwargs, &)
+      context = kwargs.delete(:context)
       observability = kwargs.delete(:observability)
       payload = Llm::ObservabilityPayload.normalize(
         observability,
         model: kwargs[:model],
         runtime_mode: 'api_client'
       )
-      return RubyLLM.moderate(*args, **kwargs, &block) if payload.blank?
+      return perform_contextual_call(context, :moderate, *, **kwargs, &) if payload.blank?
 
       Llm::EventBus.publish('moderation.complete', payload) do |event_payload|
-        begin
-          response = RubyLLM.moderate(*args, **kwargs, &block)
-          Llm::ObservabilityPayload.attach_moderation_response!(event_payload, response)
-          response
-        rescue StandardError => e
-          Llm::ObservabilityPayload.attach_error!(event_payload, e)
-          raise
-        end
+        response = perform_contextual_call(context, :moderate, *, **kwargs, &)
+        Llm::ObservabilityPayload.attach_moderation_response!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
       end
     end
 
-    def transcribe(*args, **kwargs, &block)
+    def transcribe(*, **kwargs, &)
+      context = kwargs.delete(:context)
       observability = kwargs.delete(:observability)
       payload = Llm::ObservabilityPayload.normalize(
         observability,
         model: kwargs[:model],
         runtime_mode: 'api_client'
       )
-      return RubyLLM.transcribe(*args, **kwargs, &block) if payload.blank?
+      return perform_contextual_call(context, :transcribe, *, **kwargs, &) if payload.blank?
 
       Llm::EventBus.publish('transcription.complete', payload) do |event_payload|
-        begin
-          response = RubyLLM.transcribe(*args, **kwargs, &block)
-          Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
-          response
-        rescue StandardError => e
-          Llm::ObservabilityPayload.attach_error!(event_payload, e)
-          raise
-        end
+        response = perform_contextual_call(context, :transcribe, *, **kwargs, &)
+        Llm::ObservabilityPayload.attach_transcription_response!(event_payload, response)
+        response
+      rescue StandardError => e
+        Llm::ObservabilityPayload.attach_error!(event_payload, e)
+        raise
       end
+    end
+
+    private
+
+    def perform_contextual_call(context, method_name, ...)
+      return context.public_send(method_name, ...) if context.respond_to?(method_name)
+
+      RubyLLM.public_send(method_name, ...)
     end
   end
 end

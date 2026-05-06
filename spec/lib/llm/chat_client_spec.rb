@@ -91,6 +91,21 @@ RSpec.describe Llm::ChatClient do
       expect(result).to eq(chat)
     end
 
+    it 'builds OpenRouter context chats with explicit provider for Captain runtime models' do
+      allow(Llm::Models).to receive(:runtime_supported?).with('deepseek/deepseek-v3.2').and_return(true)
+      allow(Llm::Config).to receive(:provider_for_model).with('deepseek/deepseek-v3.2').and_return('openrouter')
+
+      expect(context).to receive(:chat).with(
+        model: 'deepseek/deepseek-v3.2',
+        provider: 'openrouter',
+        assume_model_exists: true
+      ).and_return(chat)
+
+      result = described_class.build(context: context, model: 'deepseek/deepseek-v3.2')
+
+      expect(result).to eq(chat)
+    end
+
     it 'reuses an existing chat instance when provided' do
       expect(RubyLLM).not_to receive(:chat)
       expect(context).not_to receive(:chat)
@@ -182,13 +197,13 @@ RSpec.describe Llm::ChatClient do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'raises when multimodal content is sent to a model without multimodal support' do
+    it 'raises when image content is sent to a model without image input support' do
       allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'whisper-1'))
       content = RubyLLM::Content.new('Describe this', ['https://example.com/image.png'])
 
       expect do
         described_class.ask(chat, content)
-      end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /multimodal inputs/)
+      end.to raise_error(Llm::CapabilityPolicy::UnsupportedCapabilityError, /image inputs/)
     end
   end
 end
