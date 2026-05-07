@@ -11,6 +11,10 @@ class AutomationRuleListener < BaseListener
     process_conversation_event(event, 'conversation_opened')
   end
 
+  def conversation_pending(event)
+    process_conversation_event(event, 'conversation_pending')
+  end
+
   def conversation_resolved(event)
     process_conversation_event(event, 'conversation_resolved')
   end

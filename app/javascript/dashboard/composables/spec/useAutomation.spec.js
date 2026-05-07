@@ -300,6 +300,7 @@ describe('useAutomation', () => {
     automationTypes.conversation_created = { conditions: [] };
     automationTypes.conversation_updated = { conditions: [] };
     automationTypes.conversation_opened = { conditions: [] };
+    automationTypes.conversation_pending = { conditions: [] };
     automationTypes.conversation_resolved = { conditions: [] };
     automationTypes.deal_created = { conditions: [] };
     automationTypes.task_created = { conditions: [] };
@@ -329,6 +330,7 @@ describe('useAutomation', () => {
     expect(automationTypes.conversation_created.conditions).toHaveLength(0);
     expect(automationTypes.conversation_updated.conditions).toHaveLength(0);
     expect(automationTypes.conversation_opened.conditions).toHaveLength(0);
+    expect(automationTypes.conversation_pending.conditions).toHaveLength(0);
     expect(automationTypes.conversation_resolved.conditions).toHaveLength(0);
     expect(
       automationTypes.appointment_created.conditions.map(({ key }) => key)

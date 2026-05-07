@@ -154,6 +154,7 @@
       "MESSAGE_CREATED": "Сообщение создано",
       "CONVERSATION_RESOLVED": "Диалог решён",
       "CONVERSATION_OPENED": "Диалог открыт",
+      "CONVERSATION_PENDING": "Диалог переведён в ожидание",
       "APPOINTMENT_CREATED": "Запись создана",
       "APPOINTMENT_UPDATED": "Запись обновлена",
       "APPOINTMENT_CANCELLED": "Запись отменена",

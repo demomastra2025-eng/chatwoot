@@ -512,6 +512,10 @@ export const AUTOMATIONS = {
     conditions: CONVERSATION_AUTOMATION_CONDITIONS,
     actions: CONVERSATION_AUTOMATION_ACTIONS,
   },
+  conversation_pending: {
+    conditions: CONVERSATION_AUTOMATION_CONDITIONS,
+    actions: CONVERSATION_AUTOMATION_ACTIONS,
+  },
   conversation_resolved: {
     conditions: CONVERSATION_AUTOMATION_CONDITIONS,
     actions: CONVERSATION_AUTOMATION_ACTIONS,
@@ -594,6 +598,10 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'conversation_opened',
     value: 'CONVERSATION_OPENED',
+  },
+  {
+    key: 'conversation_pending',
+    value: 'CONVERSATION_PENDING',
   },
   {
     key: 'appointment_created',

@@ -322,6 +322,7 @@ class Conversation < ApplicationRecord
     {
       CONVERSATION_OPENED => -> { saved_change_to_status? && open? },
       CONVERSATION_RESOLVED => -> { saved_change_to_status? && resolved? },
+      CONVERSATION_PENDING => -> { saved_change_to_status? && pending? },
       CONVERSATION_STATUS_CHANGED => -> { saved_change_to_status? },
       CONVERSATION_READ => -> { saved_change_to_contact_last_seen_at? },
       CONVERSATION_CONTACT_CHANGED => -> { saved_change_to_contact_id? }

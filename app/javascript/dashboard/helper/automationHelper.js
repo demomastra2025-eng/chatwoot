@@ -411,6 +411,7 @@ export const getDefaultConditions = eventName => {
   }
   if (
     eventName === 'conversation_opened' ||
+    eventName === 'conversation_pending' ||
     eventName === 'conversation_resolved'
   ) {
     return structuredClone(DEFAULT_CONVERSATION_CONDITION);

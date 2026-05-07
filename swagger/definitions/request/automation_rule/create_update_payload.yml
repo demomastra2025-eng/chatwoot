@@ -15,6 +15,7 @@ properties:
       - conversation_updated
       - conversation_resolved
       - conversation_opened
+      - conversation_pending
       - message_created
       - appointment_created
       - appointment_updated

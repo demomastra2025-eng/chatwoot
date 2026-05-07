@@ -93,6 +93,7 @@ const CONVERSATION_EVENTS = [
   'conversation_updated',
   'conversation_resolved',
   'conversation_opened',
+  'conversation_pending',
   'message_created',
 ];
 

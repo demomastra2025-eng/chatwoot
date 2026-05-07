@@ -156,6 +156,7 @@
       "MESSAGE_CREATED": "Message Created",
       "CONVERSATION_RESOLVED": "Conversation Resolved",
       "CONVERSATION_OPENED": "Conversation Opened",
+      "CONVERSATION_PENDING": "Conversation marked pending",
       "APPOINTMENT_CREATED": "Appointment Created",
       "APPOINTMENT_UPDATED": "Appointment Updated",
       "APPOINTMENT_CANCELLED": "Appointment Cancelled",

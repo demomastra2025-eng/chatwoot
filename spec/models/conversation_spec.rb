@@ -151,6 +151,8 @@ RSpec.describe Conversation do
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(described_class::CONVERSATION_RESOLVED, kind_of(Time), conversation: conversation, notifiable_assignee_change: true,
                                                                      changed_attributes: status_change, performed_by: nil)
+      expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+        .with(described_class::CONVERSATION_PENDING, kind_of(Time), any_args)
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(described_class::CONVERSATION_READ, kind_of(Time), conversation: conversation, notifiable_assignee_change: true,
                                                                  changed_attributes: nil, performed_by: nil)
@@ -160,6 +162,23 @@ RSpec.describe Conversation do
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(described_class::CONVERSATION_UPDATED, kind_of(Time), conversation: conversation, notifiable_assignee_change: true,
                                                                     changed_attributes: changed_attributes, performed_by: nil)
+    end
+
+    it 'runs conversation pending event only when status changes to pending' do
+      conversation.update!(status: :pending)
+      status_change = conversation.status_change
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_PENDING, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
+                                                                    changed_attributes: status_change, performed_by: nil)
+    end
+
+    it 'does not repeat conversation pending event for later updates while already pending' do
+      conversation.update!(status: :pending)
+      conversation.update!(custom_attributes: { source: 'automation-test' })
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_PENDING, kind_of(Time), any_args).once
     end
 
     it 'will not run conversation_updated event for empty updates' do
