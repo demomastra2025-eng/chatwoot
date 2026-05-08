@@ -158,5 +158,28 @@ describe ContactInboxWithContactBuilder do
       expect(contact_inbox.id).not_to eq(facebook_contact_inbox.id)
       expect(contact_inbox.inbox_id).to eq(instagram_inbox.id)
     end
+
+    it 'reuses contact if it exists with the same source_id in another Telegram inbox for the account' do
+      telegram_user_id = '8269484707'
+      existing_channel = create(:channel_telegram, account: account, bot_token: '8269484707:existing')
+      existing_inbox = existing_channel.inbox
+      existing_contact = create(:contact, account: account, additional_attributes: { social_telegram_user_id: telegram_user_id })
+      existing_contact_inbox = create(:contact_inbox, contact: existing_contact, inbox: existing_inbox, source_id: telegram_user_id)
+      new_channel = create(:channel_telegram, account: account, bot_token: '8269484707:new')
+      new_inbox = new_channel.inbox
+
+      contact_inbox = described_class.new(
+        source_id: telegram_user_id,
+        inbox: new_inbox,
+        contact_attributes: {
+          name: 'Telegram User',
+          additional_attributes: { social_telegram_user_id: telegram_user_id }
+        }
+      ).perform
+
+      expect(contact_inbox.contact.id).to eq(existing_contact.id)
+      expect(contact_inbox.id).not_to eq(existing_contact_inbox.id)
+      expect(contact_inbox.inbox_id).to eq(new_inbox.id)
+    end
   end
 end

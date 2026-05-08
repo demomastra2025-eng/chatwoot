@@ -25,6 +25,10 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
 import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
+import {
+  majorAmountToMinor,
+  resolveDealAmountMajor,
+} from 'dashboard/components-next/CRM/dealAmount';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildDefaultCustomAttributes,
@@ -70,7 +74,7 @@ const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const selectedDeal = ref(null);
 
 const form = reactive({
-  amountMinor: 0,
+  amount: 0,
   companyId: '',
   contactIds: [],
   currency: '',
@@ -273,7 +277,7 @@ const resetForm = () => {
   const defaultStage = resolvedDefaultPipeline?.stages?.[0];
 
   Object.assign(form, {
-    amountMinor: 0,
+    amount: 0,
     companyId: '',
     contactIds: [],
     currency: defaultDealCurrency,
@@ -411,7 +415,7 @@ const populateFormFromDeal = deal => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
 
   Object.assign(form, {
-    amountMinor: deal.amountMinor ?? 0,
+    amount: resolveDealAmountMajor(deal) ?? 0,
     companyId: deal.companyId ?? '',
     contactIds: (deal.dealContacts || []).map(contact => contact.contactId),
     currency: deal.currency || defaultDealCurrency,
@@ -525,10 +529,7 @@ const createCompany = async company => {
 
 const buildPayload = () =>
   compactPayload({
-    amount_minor:
-      form.amountMinor === '' || form.amountMinor === null
-        ? 0
-        : Number(form.amountMinor),
+    amount_minor: majorAmountToMinor(form.amount),
     company_id: form.companyId ? Number(form.companyId) : undefined,
     contact_ids: form.contactIds.map(Number),
     currency: form.currency || undefined,
@@ -844,10 +845,11 @@ onBeforeRouteLeave(() => {
             @update:model-value="form.expectedCloseOn = $event"
           />
           <SchedulingCurrencyAmountInput
-            v-model:amount="form.amountMinor"
+            v-model:amount="form.amount"
             v-model:currency="form.currency"
             :currencies="dealCurrencyOptions"
             :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
+            step="1"
             :label="$t('CRM.DEALS.FORM.AMOUNT')"
           />
         </div>

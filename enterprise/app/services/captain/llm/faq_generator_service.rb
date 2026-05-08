@@ -54,4 +54,14 @@ class Captain::Llm::FaqGeneratorService < Llm::BaseAiService
     Rails.logger.error "Error in parsing FAQ generator response: #{e.message}"
     []
   end
+
+  def llm_feature_key
+    :assistant
+  end
+
+  def llm_model_account
+    return if @account_id.blank?
+
+    @llm_model_account ||= Account.find_by(id: @account_id)
+  end
 end

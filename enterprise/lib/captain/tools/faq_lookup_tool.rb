@@ -18,7 +18,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
     Rails.logger.warn "Captain::Tools::FaqLookupTool semantic lookup unavailable: #{e.class}: #{e.message}"
     responses = lexical_fallback_responses(query)
-    faq_payload(query: query, responses: responses, error: 'semantic_lookup_unavailable', lookup_strategy: 'lexical')
+    faq_payload(query: query, responses: responses, lookup_strategy: 'lexical')
   end
 
   private

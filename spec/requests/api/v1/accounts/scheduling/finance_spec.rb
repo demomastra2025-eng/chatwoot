@@ -85,6 +85,31 @@ RSpec.describe 'Scheduling Finance API', type: :request do
     expect(appointment.reload.expense.amount).to eq(6_000)
   end
 
+  it 'normalizes decimal zero payment amounts' do
+    appointment.update!(payment_status: 'awaiting_payment', settlement_amount: 0, settlement_payment_method: nil)
+
+    post "/api/v1/accounts/#{account.id}/scheduling/appointments/#{appointment.id}/payments",
+         params: { amount: '20000.0', payment_method: 'cash' },
+         headers: admin.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.payments.find_by!(payment_kind: 'payment').amount).to eq(20_000)
+  end
+
+  it 'rejects fractional payment amounts without truncating them' do
+    appointment.update!(payment_status: 'awaiting_payment', settlement_amount: 0, settlement_payment_method: nil)
+
+    post "/api/v1/accounts/#{account.id}/scheduling/appointments/#{appointment.id}/payments",
+         params: { amount: '1000.50', payment_method: 'cash' },
+         headers: admin.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['error']).to eq('amount must be an integer')
+    expect(appointment.reload.payments).to be_empty
+  end
+
   it 'blocks marking an appointment as paid when required custom fields are missing' do
     create(
       :crm_field_definition,

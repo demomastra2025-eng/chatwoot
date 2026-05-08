@@ -2,7 +2,11 @@ import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingExpensesAPI from 'dashboard/api/scheduling/expenses';
 import SchedulingPaymentsAPI from 'dashboard/api/scheduling/payments';
-import { extractSchedulingError, normalizePayload } from './shared';
+import {
+  extractSchedulingError,
+  normalizePayload,
+  toIntegerNumeric,
+} from './shared';
 import { buildCalendarRange } from 'dashboard/routes/dashboard/scheduling/helpers';
 
 const buildDefaultDateRange = () => {
@@ -155,7 +159,7 @@ export const useSchedulingKassaStore = defineStore('schedulingKassa', {
 
       try {
         await SchedulingPaymentsAPI.addPayment(appointmentId, {
-          amount: Number(amount),
+          amount: toIntegerNumeric(amount, 'amount'),
           payment_method: paymentMethod,
         });
         await this.loadAll();

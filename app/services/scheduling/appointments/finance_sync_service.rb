@@ -112,7 +112,7 @@ class Scheduling::Appointments::FinanceSyncService
   def resolve_payment_amount(amount)
     already_received = appointment.prepaid_amount.to_i + appointment.settlement_amount.to_i
     remaining = [appointment.service_amount.to_i - already_received, 0].max
-    payment_amount = amount.present? ? amount.to_i : remaining
+    payment_amount = amount.present? ? Scheduling::IntegerNumericNormalizer.normalize(amount, field_name: 'amount') : remaining
 
     raise ArgumentError, 'Payment amount must be greater than 0' unless payment_amount.positive?
     raise ArgumentError, 'Payment amount exceeds remaining balance' if already_received + payment_amount > appointment.service_amount.to_i
@@ -151,7 +151,7 @@ class Scheduling::Appointments::FinanceSyncService
 
   def upsert_payment_by_kind(kind, amount, payment_method)
     payment = appointment.payments.find_by(payment_kind: kind)
-    normalized_amount = amount.to_i
+    normalized_amount = Scheduling::IntegerNumericNormalizer.normalize_or_zero(amount, field_name: "#{kind}_amount")
 
     if normalized_amount <= 0 || payment_method.blank?
       payment&.destroy!

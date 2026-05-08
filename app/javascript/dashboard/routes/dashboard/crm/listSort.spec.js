@@ -8,9 +8,9 @@ import {
 
 describe('sortListRecords', () => {
   const records = [
-    { id: 3, amountMinor: 100, dueAt: '2026-03-03T10:00:00Z' },
-    { id: 1, amountMinor: null, dueAt: null },
-    { id: 2, amountMinor: 500, dueAt: '2026-03-01T10:00:00Z' },
+    { id: 3, amount: '100', dueAt: '2026-03-03T10:00:00Z' },
+    { id: 1, amount: null, dueAt: null },
+    { id: 2, amount: '500', dueAt: '2026-03-01T10:00:00Z' },
   ];
 
   it('returns original records when sort state is empty', () => {
@@ -32,7 +32,7 @@ describe('sortListRecords', () => {
   it('sorts descending by numeric values', () => {
     const result = sortListRecords(
       records,
-      { direction: 'desc', key: 'amountMinor' },
+      { direction: 'desc', key: 'amount' },
       (record, key) => record[key]
     );
 
@@ -72,7 +72,7 @@ describe('createDealListSortValueResolver', () => {
 
   it('resolves every visible deal list column', () => {
     const deal = {
-      amountMinor: 1200,
+      amount: '1200',
       id: 42,
       ownerId: 10,
       stageId: 20,
@@ -84,6 +84,7 @@ describe('createDealListSortValueResolver', () => {
     expect(resolveValue(deal, 'title')).toBe('big deal');
     expect(resolveValue(deal, 'stage')).toBe('qualified');
     expect(resolveValue(deal, 'amount')).toBe(1200);
+    expect(resolveValue(deal, 'amountMinor')).toBe(1200);
     expect(resolveValue(deal, 'owner')).toBe('mira owner');
     expect(resolveValue(deal, 'updatedAt')).toBe(
       new Date('2026-03-03T10:00:00Z').getTime()

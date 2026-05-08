@@ -19,18 +19,22 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     first_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#222222')
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'В работе', code: 'work', position: 2, color: '#333333')
     next_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Принимает решение', code: 'decision', position: 3, color: '#444444')
-    inactive_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Inactive', code: 'inactive', active: false, position: 4, color: '#555555')
+    inactive_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Inactive', code: 'inactive', active: false, position: 4,
+                                        color: '#555555')
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
 
     payload = JSON.parse(service.execute(current_deal: true))
 
     expect(payload['action']).to eq('list_deal_stages')
     expect(payload['pipeline']).to include('id' => pipeline.id, 'code' => 'andalusiya2')
+    expect(payload['pipeline']).not_to have_key('deal_count')
     expect(payload['current_deal']).to include('id' => deal.id, 'stage_id' => current_stage.id)
     expect(payload['stages'].map { |stage| stage['id'] }).to eq([first_stage.id, current_stage.id, next_stage.id])
     expect(payload['stages']).not_to include(include('id' => inactive_stage.id))
-    expect(payload['stages'].first).to include('default' => true, 'deal_count' => 0)
-    expect(payload['stages'].second).to include('default' => false, 'deal_count' => 1)
+    expect(payload['stages'].first).to include('default' => true)
+    expect(payload['stages'].first).not_to have_key('deal_count')
+    expect(payload['stages'].second).to include('default' => false)
+    expect(payload['stages'].second).not_to have_key('deal_count')
     expect(payload['previous_stage']).to include('id' => first_stage.id, 'position' => 1)
     expect(payload['next_stage']).to include('id' => next_stage.id, 'position' => 3)
   end

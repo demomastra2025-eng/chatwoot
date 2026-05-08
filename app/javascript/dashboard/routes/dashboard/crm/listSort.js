@@ -1,3 +1,5 @@
+import { resolveDealAmountMajor } from 'dashboard/components-next/CRM/dealAmount';
+
 const stringCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: 'base',
@@ -42,7 +44,8 @@ export const createDealListSortValueResolver = ({
   return (deal, key) => {
     switch (key) {
       case 'amount':
-        return numberOrNull(deal.amountMinor);
+      case 'amountMinor':
+        return numberOrNull(resolveDealAmountMajor(deal));
       case 'id':
         return Number(deal.id);
       case 'owner':

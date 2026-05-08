@@ -21,7 +21,7 @@ RSpec.describe Captain::Tools::Copilot::CreateDealService do
       service.execute(
         title: 'Enterprise expansion',
         currency: 'USD',
-        amount_minor: 250_000,
+        amount: '2500',
         custom_attributes: { 'lead_source' => 'captain', 'priority_band' => 'high' }
       )
 

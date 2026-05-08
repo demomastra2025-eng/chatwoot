@@ -122,14 +122,16 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
   end
 
   def deduplicate_faqs(faqs)
+    valid_faqs = faqs.select { |faq| faq_question(faq).present? }
+
     # Remove exact duplicates
-    unique_faqs = faqs.uniq { |faq| faq['question'].downcase.strip }
+    unique_faqs = valid_faqs.uniq { |faq| faq_question(faq).downcase }
 
     # Remove similar questions
     final_faqs = []
     unique_faqs.each do |faq|
       similar_exists = final_faqs.any? do |existing|
-        similarity_score(existing['question'], faq['question']) > 0.85
+        similarity_score(faq_question(existing), faq_question(faq)) > 0.85
       end
 
       final_faqs << faq unless similar_exists
@@ -139,9 +141,13 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
     final_faqs
   end
 
+  def faq_question(faq)
+    faq.to_h['question'].to_s.strip
+  end
+
   def similarity_score(str1, str2)
-    words1 = str1.downcase.split(/\W+/).reject(&:empty?)
-    words2 = str2.downcase.split(/\W+/).reject(&:empty?)
+    words1 = str1.to_s.downcase.split(/\W+/).reject(&:empty?)
+    words2 = str2.to_s.downcase.split(/\W+/).reject(&:empty?)
     common_words = words1 & words2
     total_words = (words1 + words2).uniq.size
     return 0 if total_words.zero?
@@ -173,7 +179,7 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
   end
 
   def llm_feature_key
-    nil
+    :assistant
   end
 
   def llm_model_account
@@ -184,7 +190,7 @@ class Captain::Llm::PaginatedFaqGeneratorService < Llm::BaseAiService
     Llm::Config.model_for(
       feature: llm_feature_key,
       account: llm_model_account,
-      fallback: LlmConstants::PDF_PROCESSING_MODEL
+      fallback: Llm::Config::DEFAULT_MODEL
     )
   end
 end

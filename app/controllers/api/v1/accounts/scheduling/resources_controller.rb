@@ -35,20 +35,25 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   private
 
   def resource_params
-    params.permit(
-      :name,
-      :specialty,
-      :photo_url,
-      :description,
-      :color,
-      :timezone,
+    normalize_integer_numeric_params!(
+      params.permit(
+        :name,
+        :specialty,
+        :photo_url,
+        :description,
+        :color,
+        :timezone,
+        :slot_duration_min,
+        :compensation_type,
+        :compensation_value,
+        :compensation_percent,
+        :active,
+        :user_id,
+        custom_attributes: {}
+      ),
       :slot_duration_min,
-      :compensation_type,
       :compensation_value,
-      :compensation_percent,
-      :active,
-      :user_id,
-      custom_attributes: {}
+      :compensation_percent
     )
   end
 

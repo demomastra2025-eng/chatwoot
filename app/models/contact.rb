@@ -196,7 +196,8 @@ class Contact < ApplicationRecord
   def self.resolved_contacts(use_crm_v2: false)
     return where(contact_type: 'lead') if use_crm_v2
 
-    where("contacts.email <> '' OR contacts.phone_number <> '' OR contacts.identifier <> ''")
+    where(contact_type: [:lead, :customer])
+      .or(where("contacts.email <> '' OR contacts.phone_number <> '' OR contacts.identifier <> ''"))
   end
 
   def display_preferences

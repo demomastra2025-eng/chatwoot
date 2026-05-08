@@ -3,8 +3,9 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     'search_deals'
   end
 
-  description 'Search CRM deals by title, pipeline, stage, owner, or company. Use pipeline/stage filters to avoid duplicate stage-name ambiguity.'
+  description 'Search CRM deals by current conversation contact, title, pipeline, stage, owner, company, or explicit contact. In a conversation, defaults to deals for the current contact.'
   param :query, type: :string, desc: 'Deal title or external reference query', required: false
+  param :contact_id, type: :number, desc: 'Contact ID. Defaults to the current conversation contact when available.', required: false
   param :pipeline_id, type: :number, desc: 'Pipeline ID from list_deal_pipelines', required: false
   param :pipeline_code, type: :string, desc: 'Pipeline code from list_deal_pipelines', required: false
   param :stage_id, type: :number, desc: 'Stage ID from list_deal_stages/list_deal_pipelines', required: false
@@ -15,22 +16,32 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
   param :archived, type: :boolean, desc: 'Whether to search archived deals', required: false
   param :limit, type: :number, desc: 'Maximum number of deals to return', required: false
 
-  def execute(query: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil,
+  def execute(query: nil, contact_id: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil,
               owner_id: nil, company_id: nil, archived: nil, limit: nil)
+    query = query.to_s.strip.presence
+    contact_id = positive_id(contact_id)
+    pipeline_id = positive_id(pipeline_id)
+    stage_id = positive_id(stage_id)
+    owner_id = positive_id(owner_id)
+    company_id = positive_id(company_id)
+    scoped_contact_id = contact_id || current_contact&.id
+
     deals = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
     deals = cast_boolean(archived) ? deals.archived : deals.kept
+    deals = apply_contact_filter(deals, scoped_contact_id)
     deals = apply_pipeline_filter(deals, pipeline_id: pipeline_id, pipeline_code: pipeline_code)
     deals = apply_stage_filter(deals, stage_id: stage_id, stage_name: stage_name, stage_code: stage_code)
     deals = deals.where(owner_id: owner_id) if owner_id.present?
     deals = deals.where(company_id: company_id) if company_id.present?
-    deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query.strip}%") if query.present?
+    deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query}%") if query.present?
 
-    total_count = deals.count
-    records = deals.ordered.limit(parse_limit(limit)).map { |deal| Crm::PayloadBuilder.deal(deal) }
+    records = deals.ordered.limit(parse_limit(limit)).map { |deal| Crm::PayloadBuilder.ai_deal(deal) }
 
     formatted_payload(
       filters: {
         query: query,
+        contact_id: contact_id,
+        current_contact_id: contact_id.blank? ? scoped_contact_id : nil,
         pipeline_id: pipeline_id,
         pipeline_code: pipeline_code,
         stage_id: stage_id,
@@ -40,7 +51,7 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
         company_id: company_id,
         archived: cast_boolean(archived)
       }.compact,
-      total_count: total_count,
+      returned_count: records.length,
       deals: records
     )
   end
@@ -50,6 +61,21 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
   end
 
   private
+
+  def positive_id(value)
+    return nil if value.blank?
+
+    numeric = Integer(value)
+    numeric.positive? ? numeric : nil
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  def apply_contact_filter(deals, contact_id)
+    return deals if contact_id.blank?
+
+    deals.where(id: ::Crm::DealContact.where(contact_id: contact_id).select(:deal_id))
+  end
 
   def apply_pipeline_filter(deals, pipeline_id:, pipeline_code:)
     return deals.where(pipeline_id: pipeline_id) if pipeline_id.present?

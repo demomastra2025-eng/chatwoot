@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::GetDealService < Captain::Tools::Copilot::BaseAcc
     deal = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :contacts).find_by(id: deal_id)
     return 'Deal not found' if deal.blank?
 
-    formatted_payload(deal: ::Crm::PayloadBuilder.deal(deal))
+    formatted_payload(deal: ::Crm::PayloadBuilder.ai_deal(deal))
   end
 
   def active?

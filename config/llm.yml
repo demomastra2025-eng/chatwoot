@@ -183,7 +183,7 @@ models:
     type: transcription
     capabilities: [transcription]
   text-embedding-3-small:
-    provider: openai
+    provider: openrouter
     display_name: 'Text Embedding 3 Small'
     credit_multiplier: 1
     type: embedding

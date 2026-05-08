@@ -48,4 +48,43 @@ describe('servicePricing', () => {
       resource_id: 7,
     });
   });
+
+  it('normalizes decimal-zero price and compensation values', () => {
+    expect(
+      buildServicePricePayload(
+        {
+          active: true,
+          compensationPercent: '10.00',
+          compensationType: 'fixed_plus_percent',
+          compensationValue: '3000.0',
+          price: '21000.00',
+          resourceId: 7,
+        },
+        18000
+      )
+    ).toEqual({
+      active: true,
+      compensation_percent: 10,
+      compensation_type: 'fixed_plus_percent',
+      compensation_value: 3000,
+      price: 21000,
+      resource_id: 7,
+    });
+  });
+
+  it('rejects fractional price values without truncating them', () => {
+    expect(() =>
+      buildServicePricePayload(
+        {
+          active: true,
+          compensationPercent: 0,
+          compensationType: 'percent',
+          compensationValue: 40,
+          price: '21000.50',
+          resourceId: 7,
+        },
+        18000
+      )
+    ).toThrow('price must be an integer');
+  });
 });

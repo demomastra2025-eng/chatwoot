@@ -11,21 +11,12 @@ class Captain::Tools::Copilot::ListDealPipelinesService < Captain::Tools::Copilo
     pipelines = account.crm_pipelines.includes(:stages).ordered
     pipelines = pipelines.active unless include_inactive_records
 
-    pipeline_deal_counts = account.crm_deals.group(:pipeline_id).count
-    stage_deal_counts = account.crm_deals.group(:stage_id).count
-    records = pipelines.map do |pipeline|
-      pipeline_payload(
-        pipeline,
-        deal_count: pipeline_deal_counts[pipeline.id].to_i,
-        stage_deal_counts: stage_deal_counts,
-        include_inactive: include_inactive_records
-      )
-    end
+    records = pipelines.map { |pipeline| pipeline_payload(pipeline, include_inactive: include_inactive_records) }
 
     formatted_payload(
       action: 'list_deal_pipelines',
       filters: { include_inactive: include_inactive_records },
-      total_count: records.length,
+      returned_count: records.length,
       pipelines: records
     )
   rescue StandardError => e
@@ -38,19 +29,14 @@ class Captain::Tools::Copilot::ListDealPipelinesService < Captain::Tools::Copilo
 
   private
 
-  def pipeline_payload(pipeline, deal_count:, stage_deal_counts:, include_inactive:)
+  def pipeline_payload(pipeline, include_inactive:)
     stages = pipeline.stages.ordered
     stages = stages.active unless include_inactive
     default_stage = default_stage_for(pipeline)
 
-    ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).merge(
-      deal_count: deal_count,
+    ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count).merge(
       stages: stages.map do |stage|
-        stage_payload(
-          stage,
-          default_stage_id: default_stage&.id,
-          deal_count: stage_deal_counts[stage.id].to_i
-        )
+        stage_payload(stage, default_stage_id: default_stage&.id)
       end
     )
   end
@@ -59,10 +45,9 @@ class Captain::Tools::Copilot::ListDealPipelinesService < Captain::Tools::Copilo
     pipeline.stages.active.where(outcome: 'open').ordered.first || pipeline.stages.active.ordered.first
   end
 
-  def stage_payload(stage, default_stage_id:, deal_count:)
+  def stage_payload(stage, default_stage_id:)
     ::Crm::PayloadBuilder.stage(stage).merge(
-      default: stage.id == default_stage_id,
-      deal_count: deal_count
+      default: stage.id == default_stage_id
     )
   end
 end

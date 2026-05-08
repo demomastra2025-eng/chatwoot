@@ -13,6 +13,7 @@ class ContactMergeAction
       merge_messages
       merge_contact_inboxes
       merge_contact_channel_profiles
+      merge_crm_deal_contacts
       merge_contact_notes
       merge_and_remove_mergee_contact
     end
@@ -65,6 +66,23 @@ class ContactMergeAction
       ContactChannelProfile.where(contact_id: @mergee_contact.id),
       contact_id: @base_contact.id
     )
+  end
+
+  def merge_crm_deal_contacts
+    Crm::DealContact.where(contact_id: @mergee_contact.id, account_id: @account.id).find_each do |deal_contact|
+      existing_link = Crm::DealContact.find_by(deal_id: deal_contact.deal_id, contact_id: @base_contact.id)
+      if existing_link
+        merge_duplicate_deal_contact(existing_link, deal_contact)
+      else
+        deal_contact.update!(contact_id: @base_contact.id)
+      end
+    end
+  end
+
+  def merge_duplicate_deal_contact(existing_link, duplicate_link)
+    duplicate_was_primary = duplicate_link.primary?
+    duplicate_link.destroy!
+    existing_link.update!(primary: true) if duplicate_was_primary && !existing_link.primary?
   end
 
   def merge_and_remove_mergee_contact

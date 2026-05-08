@@ -10,10 +10,17 @@ RSpec.describe Crm::AmountFormatter do
   end
 
   describe '.minor_from_major' do
-    it 'parses AI-facing major units into CRM storage minor units' do
+    it 'parses whole-number AI-facing major units into CRM storage minor units' do
       expect(described_class.minor_from_major('200.00')).to eq(20_000)
       expect(described_class.minor_from_major('200')).to eq(20_000)
-      expect(described_class.minor_from_major('200,50')).to eq(20_050)
+      expect(described_class.minor_from_major('200,00')).to eq(20_000)
+    end
+
+    it 'rejects fractional major units' do
+      expect { described_class.minor_from_major('200.50') }
+        .to raise_error(ArgumentError, 'amount must be a whole number in major units')
+      expect { described_class.minor_from_major('200,50') }
+        .to raise_error(ArgumentError, 'amount must be a whole number in major units')
     end
   end
 end

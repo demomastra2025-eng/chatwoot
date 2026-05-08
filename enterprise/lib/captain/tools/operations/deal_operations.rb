@@ -9,7 +9,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     current_deal.comments.create!(account: account, user: actor, body: body.to_s.strip)
   end
 
-  def create_deal(title:, description: nil, amount: nil, amount_minor: nil, currency: nil, expected_close_on: nil,
+  def create_deal(title:, description: nil, amount: nil, currency: nil, expected_close_on: nil,
                   win_probability: nil, custom_attributes: nil, pipeline_id: nil, pipeline_code: nil, stage_id: nil,
                   stage_name: nil, stage_code: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
@@ -29,7 +29,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     create_params = {
       title: title,
       description: description,
-      amount_minor: amount_minor_for_write(amount: amount, amount_minor: amount_minor),
+      amount_minor: amount_minor_for_write(amount: amount),
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,
@@ -55,7 +55,12 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     raise ArgumentError, 'Current deal is not available' if current_deal.blank?
 
-    raise ArgumentError, 'stage_action cannot be combined with stage_id, stage_name, stage_code, pipeline_id, or pipeline_code' if stage_action.present? && explicit_stage_target?(stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id, pipeline_code: pipeline_code)
+    if stage_action.present? && explicit_stage_target?(
+      stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id, pipeline_code: pipeline_code
+    )
+      raise ArgumentError,
+            'stage_action cannot be combined with stage_id, stage_name, stage_code, pipeline_id, or pipeline_code'
+    end
 
     stage = if stage_action.present?
               resolve_relative_stage(stage_action)
@@ -74,35 +79,37 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     transition_deal_to_stage(current_deal, stage)
   end
 
-  def update_current_deal(title: nil, description: nil, amount: nil, amount_minor: nil, currency: nil,
+  def update_current_deal(title: nil, description: nil, amount: nil, currency: nil,
                           expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
                           pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     deal = current_deal
     raise ArgumentError, 'Current deal is not available' if deal.blank?
 
-    target_stage = resolve_stage(
-      stage_id: stage_id,
-      stage_name: stage_name,
-      stage_code: stage_code,
-      pipeline_id: pipeline_id,
-      pipeline_code: pipeline_code,
-      fallback_pipeline: deal.pipeline,
-      allow_pipeline_default: pipeline_selector?(pipeline_id: pipeline_id, pipeline_code: pipeline_code)
-    ) if explicit_stage_target?(
+    if explicit_stage_target?(
       stage_id: stage_id,
       stage_name: stage_name,
       stage_code: stage_code,
       pipeline_id: pipeline_id,
       pipeline_code: pipeline_code
     )
+      target_stage = resolve_stage(
+        stage_id: stage_id,
+        stage_name: stage_name,
+        stage_code: stage_code,
+        pipeline_id: pipeline_id,
+        pipeline_code: pipeline_code,
+        fallback_pipeline: deal.pipeline,
+        allow_pipeline_default: pipeline_selector?(pipeline_id: pipeline_id, pipeline_code: pipeline_code)
+      )
+    end
 
     params = {
       lock_version: deal.lock_version
     }
     params[:title] = title if title.present?
     params[:description] = description unless description.nil?
-    params[:amount_minor] = amount_minor_for_write(amount: amount, amount_minor: amount_minor) if !amount.nil? || !amount_minor.nil?
+    params[:amount_minor] = amount_minor_for_write(amount: amount) unless amount.nil?
     params[:currency] = currency unless currency.nil?
     params[:expected_close_on] = expected_close_on unless expected_close_on.nil?
     params[:win_probability] = win_probability unless win_probability.nil?
@@ -120,10 +127,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
   private
 
-  def amount_minor_for_write(amount:, amount_minor:)
-    return Crm::AmountFormatter.minor_from_major(amount) unless amount.nil?
-
-    amount_minor
+  def amount_minor_for_write(amount:)
+    Crm::AmountFormatter.minor_from_major(amount) if amount.present?
   end
 
   def resolve_pipeline(pipeline_id: nil, pipeline_code: nil, fallback_pipeline: nil)

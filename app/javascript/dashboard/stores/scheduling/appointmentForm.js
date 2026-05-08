@@ -7,6 +7,7 @@ import {
   extractSchedulingError,
   normalizePayload,
   normalizeMeta,
+  toIntegerNumeric,
   toNumeric,
 } from './shared';
 import {
@@ -246,7 +247,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       syncServicePricing(services) {
-        const selectedServices = normalizeIdArray(this.form.serviceIds)
+        const activeServiceIds = normalizeIdArray(this.form.serviceIds);
+        const serviceIdsForPricing = activeServiceIds.length
+          ? activeServiceIds
+          : normalizeIdArray([this.form.serviceId]);
+        const selectedServices = serviceIdsForPricing
           .map(serviceId =>
             services.find(service => Number(service.id) === Number(serviceId))
           )
@@ -373,11 +378,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversation_id: toNumeric(normalizedForm.conversationId),
           custom_attributes: normalizedForm.customAttributes || {},
           ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
-          prepaid_amount: toNumeric(normalizedForm.prepaidAmount) || 0,
+          prepaid_amount:
+            toIntegerNumeric(normalizedForm.prepaidAmount, 'prepaid_amount') ||
+            0,
           prepaid_payment_method:
             normalizedForm.prepaidPaymentMethod || undefined,
           resource_id: toNumeric(normalizedForm.resourceId),
-          service_amount: toNumeric(normalizedForm.serviceAmount) || 0,
+          service_amount:
+            toIntegerNumeric(normalizedForm.serviceAmount, 'service_amount') ||
+            0,
           service_id: toNumeric(normalizedForm.serviceId),
           service_ids: normalizeIdArray(normalizedForm.serviceIds),
           source: normalizedForm.source || 'manual',

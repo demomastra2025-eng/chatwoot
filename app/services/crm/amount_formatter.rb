@@ -9,12 +9,15 @@ module Crm::AmountFormatter
     format_major(BigDecimal(amount_minor.to_s) / 100)
   end
 
+  WHOLE_MAJOR_AMOUNT = /\A[+-]?\d+(?:[\.,]0+)?\z/
+
   def minor_from_major(amount)
     return if amount.blank?
 
-    (parse_major(amount) * 100).round(0).to_i
+    value = normalize_major_amount(amount)
+    (BigDecimal(value) * 100).to_i
   rescue ArgumentError
-    raise ArgumentError, 'amount must be a valid number'
+    raise ArgumentError, 'amount must be a whole number in major units'
   end
 
   def format_major(amount)
@@ -23,10 +26,10 @@ module Crm::AmountFormatter
           .sub(/\.\z/, '')
   end
 
-  def parse_major(amount)
+  def normalize_major_amount(amount)
     value = amount.to_s.strip.delete(' ')
-    value = value.tr(',', '.') if value.exclude?('.') && value.count(',') == 1
+    raise ArgumentError unless value.match?(WHOLE_MAJOR_AMOUNT)
 
-    BigDecimal(value)
+    value.tr(',', '.')
   end
 end

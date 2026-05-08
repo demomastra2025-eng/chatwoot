@@ -8,8 +8,8 @@
 {% if deal_visible_fields contains 'description' -%}
 - Description: {{ deal.description | default: "None" }}
 {% endif -%}
-{% if deal_visible_fields contains 'amount_minor' -%}
-- Amount (minor units): {{ deal.amount_minor }}
+{% if deal_visible_fields contains 'amount' -%}
+- Amount: {{ deal.amount | default: "None" }}{% if deal.currency %} {{ deal.currency }}{% endif %}
 {% endif -%}
 {% if deal_visible_fields contains 'currency' -%}
 - Currency: {{ deal.currency | default: "None" }}

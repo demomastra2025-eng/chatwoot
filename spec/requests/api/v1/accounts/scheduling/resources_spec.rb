@@ -35,6 +35,54 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body.dig('payload', 'compensation_percent')).to eq(10)
   end
 
+  it 'normalizes decimal zero resource compensation values' do
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: {
+            name: resource.name,
+            timezone: resource.timezone,
+            slot_duration_min: '45.0',
+            compensation_type: 'fixed_plus_percent',
+            compensation_value: '5000.00',
+            compensation_percent: '10.0'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(resource.reload.slot_duration_min).to eq(45)
+    expect(resource.compensation_value).to eq(5_000)
+    expect(resource.compensation_percent).to eq(10)
+  end
+
+  it 'does not coerce non-integer resource fields through integer normalization' do
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: {
+            compensation_type: 'fixed_plus_percent',
+            active: false,
+            user_id: ''
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(resource.reload.compensation_type).to eq('fixed_plus_percent')
+    expect(resource.active).to be(false)
+    expect(resource.user_id).to be_nil
+  end
+
+  it 'rejects fractional resource compensation values without truncating them' do
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: {
+            compensation_value: '5000.50'
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['error']).to eq('compensation_value must be an integer')
+    expect(resource.reload.compensation_value).to eq(5_000)
+  end
+
   it 'updates work rules without auth header crashes' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
           params: {

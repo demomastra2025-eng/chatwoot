@@ -21,7 +21,7 @@ import SchedulingSelectField from 'dashboard/components-next/Scheduling/Scheduli
 import { COMPENSATION_TYPE_VALUES } from '../constants';
 import {
   formatSchedulingErrorMessage,
-  toNumeric,
+  toIntegerNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
 import {
@@ -179,11 +179,12 @@ const saveService = async () => {
   try {
     await referencesStore.saveService({
       active: serviceForm.active,
-      base_price: toNumeric(serviceForm.basePrice) || 0,
+      base_price: toIntegerNumeric(serviceForm.basePrice, 'base_price') || 0,
       category: serviceForm.category,
       description: serviceForm.description,
       direction: serviceForm.direction,
-      duration_min: toNumeric(serviceForm.durationMin) || 30,
+      duration_min:
+        toIntegerNumeric(serviceForm.durationMin, 'duration_min') || 30,
       id: serviceForm.id,
       name: serviceForm.name,
       prices: serviceForm.prices

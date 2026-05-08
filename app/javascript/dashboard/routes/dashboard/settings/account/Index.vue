@@ -45,9 +45,9 @@ export default {
     const { enabledLanguages } = useConfig();
     const { accountId } = useAccount();
     const { shouldShow, shouldShowPaywall, checkPermissions } = usePolicy();
-    const v$ = useVuelidate();
+    const v$ = useVuelidate({ $scope: false });
     const allowedLoginMethods = computed(
-      () => window.chatwootConfig.allowedLoginMethods || ['email']
+      () => window.chatwootConfig?.allowedLoginMethods || ['email']
     );
     const shouldShowSaml = computed(() => {
       const hasPermission = shouldShow(

@@ -293,7 +293,7 @@ RSpec.describe Captain::ContextFields do
       expect(state[:id]).to eq(latest_open_deal.id)
       expect(state[:stage_name]).to eq(latest_open_deal.stage.name)
       expect(state[:amount]).to eq('200')
-      expect(state[:amount_minor]).to eq(20_000)
+      expect(state).not_to have_key(:amount_minor)
     end
   end
 

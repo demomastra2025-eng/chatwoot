@@ -1,4 +1,8 @@
-import { formatDealAmount } from './dealAmount';
+import {
+  formatDealAmount,
+  majorAmountToMinor,
+  resolveDealAmountMajor,
+} from './dealAmount';
 
 describe('formatDealAmount', () => {
   it('returns the empty value for blank amounts', () => {
@@ -24,5 +28,30 @@ describe('formatDealAmount', () => {
         locale: 'ru-RU',
       })
     ).toBe('1\u00a0234\u00a0567 KZT');
+  });
+});
+
+describe('resolveDealAmountMajor', () => {
+  it('prefers API major amount over internal minor amount', () => {
+    expect(
+      resolveDealAmountMajor({ amount: '25000', amountMinor: 2500000 })
+    ).toBe('25000');
+  });
+
+  it('falls back to converting legacy minor amount', () => {
+    expect(resolveDealAmountMajor({ amountMinor: 2500000 })).toBe(25000);
+  });
+});
+
+describe('majorAmountToMinor', () => {
+  it('converts whole major units to internal minor units', () => {
+    expect(majorAmountToMinor('25000')).toBe(2500000);
+    expect(majorAmountToMinor('25000.00')).toBe(2500000);
+  });
+
+  it('rejects fractional major units', () => {
+    expect(() => majorAmountToMinor('25000.50')).toThrow(
+      'amount must be an integer'
+    );
   });
 });

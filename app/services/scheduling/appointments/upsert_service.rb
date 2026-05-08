@@ -202,9 +202,13 @@ class Scheduling::Appointments::UpsertService
       return base_attributes.to_h.deep_stringify_keys.merge(service_custom_attributes(services))
     end
 
-    preserved_system_custom_attributes.merge(
+    current_attributes = current_custom_attributes_without_service_metadata
+    existing_unmanaged_attributes = current_attributes.except(*catalog.definitions.map(&:key))
+
+    existing_unmanaged_attributes.merge(
+      preserved_system_custom_attributes,
       catalog.resolve_custom_attributes(
-        current_attributes: current_custom_attributes_without_service_metadata,
+        current_attributes: current_attributes,
         incoming_attributes: incoming,
         apply_defaults: appointment.new_record?
       )
@@ -310,13 +314,9 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_int(key, current:)
-    value = params[key]
     return current.to_i unless params.key?(key)
-    return 0 if value.blank?
 
-    Integer(value)
-  rescue ArgumentError, TypeError
-    raise ArgumentError, "#{key} must be an integer"
+    Scheduling::IntegerNumericNormalizer.normalize_or_zero(params[key], field_name: key)
   end
 
   def auto_apply_default_touch_plan!

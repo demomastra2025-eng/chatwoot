@@ -54,7 +54,11 @@ import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CreateCompanyDialog from 'dashboard/components-next/Companies/CompanyForm/CreateCompanyDialog.vue';
 import CreateNewContactDialog from 'dashboard/components-next/Contacts/ContactsForm/CreateNewContactDialog.vue';
-import { formatDealAmount } from 'dashboard/components-next/CRM/dealAmount';
+import {
+  formatDealAmount,
+  majorAmountToMinor,
+  resolveDealAmountMajor,
+} from 'dashboard/components-next/CRM/dealAmount';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildDefaultCustomAttributes,
@@ -158,7 +162,7 @@ const listQuickFilters = reactive({
 });
 
 const form = reactive({
-  amountMinor: 0,
+  amount: 0,
   companyId: '',
   contactIds: [],
   currency: '',
@@ -383,7 +387,7 @@ const boardSortOptions = computed(() => [
   },
   {
     label: t('CRM.DEALS.BOARD.SORT.OPTIONS.AMOUNT'),
-    value: 'amountMinor',
+    value: 'amount',
   },
   {
     label: t('CRM.DEALS.BOARD.SORT.OPTIONS.TITLE'),
@@ -580,7 +584,7 @@ const filteredListDeals = computed(() => {
       pipelineNameById.value[deal.pipelineId],
       stageNameById.value[deal.stageId],
       ownerNameById.value[deal.ownerId],
-      deal.amountMinor,
+      resolveDealAmountMajor(deal),
       deal.currency,
       ...searchableDealCustomFieldTerms(deal),
     ].some(value => normalizeFilterText(value).includes(search));
@@ -596,8 +600,8 @@ const resolveDealSortValue = computed(() =>
 
 const resolveDealBoardSortValue = (deal, key) => {
   switch (key) {
-    case 'amountMinor':
-      return Number(deal.amountMinor ?? 0);
+    case 'amount':
+      return Number(resolveDealAmountMajor(deal) ?? 0);
     case 'createdAt':
       return deal.createdAt ? new Date(deal.createdAt).getTime() : null;
     case 'expectedCloseOn':
@@ -848,7 +852,7 @@ const resetForm = () => {
   const defaultStage = resolvedDefaultPipeline?.stages?.[0];
 
   Object.assign(form, {
-    amountMinor: 0,
+    amount: 0,
     companyId: '',
     contactIds: [],
     currency: defaultDealCurrency,
@@ -870,7 +874,7 @@ const resetForm = () => {
 
 const populateFormFromDeal = deal => {
   Object.assign(form, {
-    amountMinor: deal.amountMinor ?? 0,
+    amount: resolveDealAmountMajor(deal) ?? 0,
     companyId: deal.companyId ?? '',
     contactIds: (deal.dealContacts || []).map(contact => contact.contactId),
     currency: deal.currency || defaultDealCurrency,
@@ -898,7 +902,7 @@ const formatErrorMessage = error => formatCrmErrorMessage(error, t);
 
 const formatDealAmountLabel = deal =>
   formatDealAmount({
-    amount: deal.amountMinor,
+    amount: resolveDealAmountMajor(deal),
     currency: deal.currency,
     emptyValue: t('CRM.GENERAL.EMPTY_VALUE'),
     locale: localeCode.value,
@@ -1244,10 +1248,7 @@ const syncSelectedDeal = records => {
 
 const buildPayload = () => {
   return compactPayload({
-    amount_minor:
-      form.amountMinor === '' || form.amountMinor === null
-        ? 0
-        : Number(form.amountMinor),
+    amount_minor: majorAmountToMinor(form.amount),
     company_id: form.companyId ? Number(form.companyId) : undefined,
     contact_ids: form.contactIds.map(Number),
     currency: form.currency || undefined,
@@ -2353,10 +2354,11 @@ onMounted(async () => {
               @update:model-value="form.expectedCloseOn = $event"
             />
             <SchedulingCurrencyAmountInput
-              v-model:amount="form.amountMinor"
+              v-model:amount="form.amount"
               v-model:currency="form.currency"
               :currencies="dealCurrencyOptions"
               :currency-aria-label="$t('CRM.DEALS.FORM.CURRENCY')"
+              step="1"
               :label="$t('CRM.DEALS.FORM.AMOUNT')"
             />
           </div>

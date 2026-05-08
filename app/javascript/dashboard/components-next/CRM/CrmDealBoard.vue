@@ -5,7 +5,7 @@ import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
-import { formatDealAmount } from './dealAmount';
+import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
 import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
@@ -165,7 +165,7 @@ const formatDateLabel = value => {
 
 const formatAmountLabel = deal => {
   return formatDealAmount({
-    amount: deal.amountMinor,
+    amount: resolveDealAmountMajor(deal),
     currency: deal.currency,
     emptyValue: t('CRM.GENERAL.EMPTY_VALUE'),
     locale: localeCode.value,

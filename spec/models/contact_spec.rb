@@ -179,6 +179,18 @@ RSpec.describe Contact do
         expect(resolved).to include(contact_with_email, contact_with_phone, contact_with_identifier)
         expect(resolved).not_to include(contact_without_details)
       end
+
+      it 'returns CRM leads without email, phone_number, or identifier' do
+        social_lead = create(:contact, account: account, name: 'Telegram Lead', email: nil, phone_number: nil, identifier: nil,
+                                       additional_attributes: { social_telegram_user_id: '8269484707' })
+        visitor = create(:contact, account: account, name: 'Anonymous Visitor', email: nil, phone_number: nil, identifier: nil)
+
+        resolved = account.contacts.resolved_contacts(use_crm_v2: false)
+
+        expect(social_lead.contact_type).to eq('lead')
+        expect(resolved).to include(social_lead)
+        expect(resolved).not_to include(visitor)
+      end
     end
 
     context 'when crm_v2 feature flag is enabled' do
@@ -246,8 +258,8 @@ RSpec.describe Contact do
 
         # Test with use_crm_v2: false
         resolved_old = account.contacts.resolved_contacts(use_crm_v2: false)
-        expect(resolved_old).to include(lead_with_email, customer_contact)
-        expect(resolved_old).not_to include(visitor_contact, lead_without_email)
+        expect(resolved_old).to include(lead_with_email, lead_without_email, customer_contact)
+        expect(resolved_old).not_to include(visitor_contact)
 
         # Test with use_crm_v2: true
         resolved_new = account.contacts.resolved_contacts(use_crm_v2: true)

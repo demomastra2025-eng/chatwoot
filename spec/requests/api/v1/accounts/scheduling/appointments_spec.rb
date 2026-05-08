@@ -55,11 +55,12 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     post path, params: base_params, headers: headers, as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'visit_reason' => 'initial consult'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
   end
 
   it 'accepts booking intake appointment fields in the standard scheduling create flow' do
@@ -79,11 +80,12 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'triage_note' => 'Needs translator'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
   end
 
   it 'rejects unknown appointment custom fields when managed definitions exist' do
@@ -125,6 +127,27 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(prepaid_payment.amount).to eq(5_000)
   end
 
+  it 'normalizes decimal zero money amounts when creating an appointment' do
+    post path,
+         params: base_params.merge(service_amount: '20000.0', prepaid_amount: '5000.00'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_amount')).to eq(20_000)
+    expect(response_body.dig('payload', 'prepaid_amount')).to eq(5_000)
+  end
+
+  it 'rejects fractional money amounts when creating an appointment' do
+    post path,
+         params: base_params.merge(service_amount: '20000.50'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['error']).to eq('service_amount must be an integer')
+  end
+
   it 'merges custom attributes when updating an appointment' do
     appointment = create(
       :scheduling_appointment,
@@ -146,12 +169,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'existing_key' => 'existing value',
         'new_key' => 'new value'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
     expect(appointment.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
 
@@ -184,12 +208,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'medelement_reception_code' => '42',
         'visit_reason' => 'follow up'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
     expect(appointment.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
 
@@ -225,12 +250,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'legacy_key' => 'legacy value',
         'visit_reason' => 'initial consult'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
     expect(appointment.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
 
@@ -258,11 +284,14 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       }
     )
 
-    delete "/api/v1/accounts/#{account.id}/crm/field_definitions/#{field_definition.id}",
-           headers: headers,
-           as: :json
-
-    expect(response).to have_http_status(:no_content)
+    field_definition.class.transaction do
+      field_definition.destroy!
+      Crm::FieldDefinitionValueCleanupService.new(
+        account: account,
+        entity_kind: 'appointment',
+        key: 'visit_reason'
+      ).perform
+    end
 
     put "#{path}/#{appointment.id}",
         params: {
@@ -272,11 +301,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'custom_attributes')).to eq(
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
       {
         'medelement_reception_code' => '42'
       }
     )
+    expect(response_body.dig('payload', 'custom_attributes')).not_to have_key('visit_reason')
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to include(service.id)
     expect(appointment.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
 

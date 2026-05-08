@@ -19,6 +19,7 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
+    allow(mock_chat).to receive(:model).and_return('openai/gpt-5.4')
     allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
@@ -97,6 +98,22 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
       it 'returns empty array via KeyError rescue' do
         expect(service.generate).to eq([])
       end
+    end
+  end
+
+  describe '#model' do
+    let(:account) { create(:account) }
+
+    it 'resolves FAQ generation through the account assistant model instead of a global OpenAI-only default' do
+      account_service = described_class.new(content, language, account_id: account.id)
+
+      expect(Llm::Config).to receive(:model_for).with(
+        feature: :assistant,
+        account: account,
+        fallback: Llm::BaseAiService::DEFAULT_MODEL
+      ).and_return('openai/gpt-5.4')
+
+      expect(account_service.model).to eq('openai/gpt-5.4')
     end
   end
 end

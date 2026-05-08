@@ -75,8 +75,9 @@ describe('useSchedulingKassaStore', () => {
       status: 'paid',
       to: expect.any(String),
     });
-    expect(store.buildQueryParams().from).toContain('2026-03-01T');
-    expect(store.buildQueryParams().to).toContain('2026-03-31T');
+    const params = store.buildQueryParams();
+    expect(params.from).toBe(new Date('2026-03-01T00:00:00').toISOString());
+    expect(params.to).toBe(new Date('2026-03-31T23:59:59').toISOString());
   });
 
   it('loads payments, expenses, and appointment candidates together', async () => {
@@ -149,6 +150,40 @@ describe('useSchedulingKassaStore', () => {
     );
     expect(store.paymentTotal).toBe(10000);
     expect(store.expenseTotals.unpaid).toBe(4000);
+  });
+
+  it('normalizes payment amounts before sending them to the API', async () => {
+    paymentsGetMock.mockResolvedValue({ data: { payload: [] } });
+    expensesGetMock.mockResolvedValue({ data: { payload: [] } });
+    appointmentsGetMock.mockResolvedValue({ data: { payload: [] } });
+    addPaymentMock.mockResolvedValue({ data: { payload: {} } });
+
+    const store = useSchedulingKassaStore();
+
+    await store.addPayment({
+      amount: '1000.00',
+      appointmentId: 41,
+      paymentMethod: 'cash',
+    });
+
+    expect(addPaymentMock).toHaveBeenCalledWith(41, {
+      amount: 1000,
+      payment_method: 'cash',
+    });
+  });
+
+  it('rejects fractional payment amounts before sending them to the API', async () => {
+    const store = useSchedulingKassaStore();
+
+    await expect(
+      store.addPayment({
+        amount: '1000.50',
+        appointmentId: 41,
+        paymentMethod: 'cash',
+      })
+    ).rejects.toThrow('amount must be an integer');
+
+    expect(addPaymentMock).not.toHaveBeenCalled();
   });
 
   it('runs payAll against the filtered window and reloads the journals', async () => {

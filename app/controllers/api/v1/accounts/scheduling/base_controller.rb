@@ -54,6 +54,16 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     parsed
   end
 
+  def normalize_integer_numeric_params!(attrs, *field_names)
+    field_names.each do |field_name|
+      next unless attrs.key?(field_name)
+
+      attrs[field_name] = Scheduling::IntegerNumericNormalizer.normalize_or_zero(attrs[field_name], field_name: field_name)
+    end
+
+    attrs
+  end
+
   def custom_attribute_filters_param
     raw_filters = params[:custom_attribute_filters]
     return {} if raw_filters.blank?

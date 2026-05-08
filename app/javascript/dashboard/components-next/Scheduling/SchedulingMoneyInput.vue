@@ -46,7 +46,7 @@ const props = defineProps({
   },
   step: {
     type: [String, Number],
-    default: '0.01',
+    default: '1',
   },
   symbol: {
     type: String,
@@ -76,7 +76,7 @@ const mergedInputClass = computed(() => [
     v-bind="attrs"
     v-model="modelValue"
     type="number"
-    inputmode="decimal"
+    inputmode="numeric"
     :step="props.step"
     :min="String(props.min)"
     :max="props.max === '' ? '' : String(props.max)"

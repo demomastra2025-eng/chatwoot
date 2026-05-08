@@ -9,22 +9,20 @@ class Captain::Tools::CreateDealTool < Captain::Tools::BasePublicTool
   param :stage_code, type: 'string', desc: 'Stage code; only use with pipeline_id/pipeline_code if codes repeat', required: false
   param :amount,
         type: 'string',
-        desc: 'Deal amount in major units; prefer this over amount_minor',
+        desc: 'Deal amount as a whole number in major currency units. Use 200 for 200 KZT; do not multiply by 100. Decimal zero forms like 200.00 are accepted; fractional amounts like 200.50 are rejected.',
         required: false
-  param :amount_minor, type: 'number', desc: 'Legacy deal amount in minor currency units', required: false
   param :currency, type: 'string', desc: 'ISO currency code', required: false
   param :expected_close_on, type: 'string', desc: 'Expected close date in YYYY-MM-DD format', required: false
   param :win_probability, type: 'number', desc: 'Win probability from 0 to 100', required: false
   param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
-  def perform(tool_context, title:, description: nil, amount: nil, amount_minor: nil, currency: nil,
+  def perform(tool_context, title:, description: nil, amount: nil, currency: nil,
               expected_close_on: nil, win_probability: nil, custom_attributes: nil, pipeline_id: nil,
               pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil)
     deal = operations(tool_context.state).create_deal(
       title: title,
       description: description,
       amount: amount,
-      amount_minor: amount_minor,
       currency: currency,
       expected_close_on: expected_close_on,
       win_probability: win_probability,

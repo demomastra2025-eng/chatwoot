@@ -26,6 +26,7 @@ import {
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
+  toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { formatCurrency } from '../helpers';
@@ -396,7 +397,7 @@ const handleFilterUpdate = patch => {
 const handleAddPayment = async () => {
   try {
     await kassaStore.addPayment({
-      amount: paymentForm.amount,
+      amount: toIntegerNumeric(paymentForm.amount, 'amount'),
       appointmentId: toNumeric(paymentForm.appointmentId),
       paymentMethod: paymentForm.paymentMethod,
     });

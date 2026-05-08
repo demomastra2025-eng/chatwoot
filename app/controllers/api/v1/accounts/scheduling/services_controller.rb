@@ -54,12 +54,16 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
 
     {
       resource: Current.account.scheduling_resources.not_deleted_from_scheduling.find(resource_id),
-      price: price,
+      price: normalize_integer_numeric_value(price, field_name: :price),
       compensation_type: payload[:compensation_type],
-      compensation_value: payload[:compensation_value],
-      compensation_percent: payload[:compensation_percent],
+      compensation_value: normalize_integer_numeric_value(payload[:compensation_value], field_name: :compensation_value),
+      compensation_percent: normalize_integer_numeric_value(payload[:compensation_percent], field_name: :compensation_percent),
       active: active
     }
+  end
+
+  def normalize_integer_numeric_value(value, field_name:)
+    Scheduling::IntegerNumericNormalizer.normalize_or_zero(value, field_name: field_name)
   end
 
   def price_payloads
@@ -71,7 +75,11 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
   end
 
   def service_params
-    params.permit(:name, :base_price, :duration_min, :category, :direction, :service_type, :description, :active, custom_attributes: {})
+    normalize_integer_numeric_params!(
+      params.permit(:name, :base_price, :duration_min, :category, :direction, :service_type, :description, :active, custom_attributes: {}),
+      :base_price,
+      :duration_min
+    )
   end
 
   def set_service

@@ -31,6 +31,7 @@ import {
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
+  toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import {
@@ -432,14 +433,23 @@ const saveResource = async () => {
     await referencesStore.saveResource({
       active: resourceForm.active,
       color: resourceForm.color,
-      compensation_percent: toNumeric(resourceForm.compensationPercent),
+      compensation_percent: toIntegerNumeric(
+        resourceForm.compensationPercent,
+        'compensation_percent'
+      ),
       compensation_type: resourceForm.compensationType,
-      compensation_value: toNumeric(resourceForm.compensationValue),
+      compensation_value: toIntegerNumeric(
+        resourceForm.compensationValue,
+        'compensation_value'
+      ),
       description: resourceForm.description,
       id: resourceForm.id,
       name: resourceForm.name,
       photo_url: resourceForm.photoUrl,
-      slot_duration_min: toNumeric(resourceForm.slotDurationMin),
+      slot_duration_min: toIntegerNumeric(
+        resourceForm.slotDurationMin,
+        'slot_duration_min'
+      ),
       specialty: resourceForm.specialty,
       timezone: resourceForm.timezone,
       user_id: toNumeric(resourceForm.userId),

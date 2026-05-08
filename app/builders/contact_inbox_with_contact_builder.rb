@@ -78,12 +78,17 @@ class ContactInboxWithContactBuilder
     contact ||= find_contact_by_email(contact_attributes[:email])
     contact ||= find_contact_by_phone_number(contact_attributes[:phone_number])
     contact ||= find_contact_by_instagram_source_id(source_id) if instagram_channel?
+    contact ||= find_contact_by_telegram_source_id(source_id) if telegram_channel?
 
     contact
   end
 
   def instagram_channel?
     inbox.channel_type == 'Channel::Instagram'
+  end
+
+  def telegram_channel?
+    inbox.channel_type == 'Channel::Telegram'
   end
 
   # There might be existing contact_inboxes created through Channel::FacebookPage
@@ -100,6 +105,20 @@ class ContactInboxWithContactBuilder
                                            'Channel::FacebookPage',
                                            account.id
                                          ).first
+
+    existing_contact_inbox&.contact
+  end
+
+  def find_contact_by_telegram_source_id(telegram_user_id)
+    return if telegram_user_id.blank?
+
+    existing_contact_inbox = ContactInbox.joins(:inbox)
+                                         .where(source_id: telegram_user_id.to_s)
+                                         .where(
+                                           'inboxes.channel_type = ? AND inboxes.account_id = ?',
+                                           'Channel::Telegram',
+                                           account.id
+                                         ).order(:id).first
 
     existing_contact_inbox&.contact
   end

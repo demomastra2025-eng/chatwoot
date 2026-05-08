@@ -30,9 +30,9 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(payload).to include(
       'query' => 'reset password',
       'total_count' => 1,
-      'error' => 'semantic_lookup_unavailable',
       'lookup_strategy' => 'lexical'
     )
+    expect(payload).not_to have_key('error')
     expect(payload['matches'].first).to include(
       'question' => 'How to reset password?',
       'answer' => 'Click forgot password'
@@ -49,8 +49,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       'query' => 'pricing',
       'total_count' => 0,
       'matches' => [],
-      'error' => 'semantic_lookup_unavailable',
       'lookup_strategy' => 'lexical'
     )
+    expect(payload).not_to have_key('error')
   end
 end

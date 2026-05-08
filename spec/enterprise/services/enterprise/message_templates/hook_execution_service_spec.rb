@@ -119,6 +119,83 @@ RSpec.describe MessageTemplates::HookExecutionService do
     end
   end
 
+  context 'when message collapse is enabled across channel types' do
+    channel_factories = {
+      'web widget' => [:channel_widget, {}],
+      'api' => [:channel_api, {}],
+      'whatsapp cloud' => [:channel_whatsapp, { validate_provider_config: false, sync_templates: false }],
+      'whatsapp web' => [:channel_whatsapp_web, {}],
+      'telegram bot' => [:channel_telegram, {}],
+      'telegram personal' => [:channel_telegram_personal, {}],
+      'sms' => [:channel_sms, {}],
+      'email' => [:channel_email, {}],
+      'voice' => [:channel_voice, {
+        provider: 'fonoster',
+        provider_config: {
+          number_ref: SecureRandom.uuid,
+          app_ref: SecureRandom.uuid,
+          trunk_ref: SecureRandom.uuid,
+          routing_mode: 'operator',
+          operator_agent_aor: "sip:agent-#{SecureRandom.hex(4)}@example.test"
+        }
+      }],
+      'line' => [:channel_line, {}],
+      'facebook page' => [:channel_facebook_page, {}],
+      'instagram' => [:channel_instagram, {}]
+    }
+
+    before do
+      Channel::WhatsappWeb.skip_callback(:validate, :before, :ensure_runtime_configuration)
+      Channel::WhatsappWeb.skip_callback(:commit, :after, :enqueue_provisioning)
+      Channel::FacebookPage.skip_callback(:commit, :after, :subscribe)
+      allow(Telephony::NumberBinding).to receive(:sync_from_voice_channel!).and_return(true)
+    end
+
+    after do
+      Channel::FacebookPage.set_callback(:commit, :after, :subscribe, on: :create)
+      Channel::WhatsappWeb.set_callback(:commit, :after, :enqueue_provisioning, on: :create)
+      Channel::WhatsappWeb.set_callback(:validate, :before, :ensure_runtime_configuration)
+    end
+
+    channel_factories.each do |channel_name, (factory_name, factory_options)|
+      it "routes #{channel_name} incoming messages through the buffered scheduler" do
+        channel_account = create(
+          :account,
+          custom_attributes: { plan_name: 'startups' },
+          limits: { non_web_inboxes: ChatwootApp.max_limit }
+        )
+        channel = create(factory_name, account: channel_account, **factory_options)
+        channel_inbox = channel.reload.inbox
+        channel_contact = create(:contact, account: channel_account)
+        channel_assistant = create(
+          :captain_assistant,
+          account: channel_account,
+          config: { 'message_collapse_window_seconds' => 3 }
+        )
+        scheduler = instance_double(Captain::Conversation::BufferedResponseSchedulerService, perform: true)
+
+        create(:captain_inbox, captain_assistant: channel_assistant, inbox: channel_inbox)
+        channel_conversation = create(
+          :conversation,
+          inbox: channel_inbox,
+          account: channel_account,
+          contact: channel_contact,
+          status: :pending
+        )
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+        expect(Captain::Conversation::BufferedResponseSchedulerService).to receive(:new).with(
+          conversation: channel_conversation,
+          assistant: channel_assistant,
+          message: kind_of(Message),
+          attachment_wait_time: 0.seconds
+        ).and_return(scheduler)
+
+        create(:message, conversation: channel_conversation, message_type: :incoming, account: channel_account)
+      end
+    end
+  end
+
   context 'when no captain assistant is configured' do
     before do
       CaptainInbox.where(inbox: inbox).destroy_all

@@ -16,15 +16,8 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
     pipeline = resolve_pipeline(pipeline_id: pipeline_id, pipeline_code: pipeline_code, deal: deal)
     stages = pipeline.stages.ordered
     stages = stages.active unless include_inactive_records
-    stage_deal_counts = account.crm_deals.group(:stage_id).count
     default_stage = default_stage_for(pipeline)
-    stage_payloads = stages.map do |stage|
-      stage_payload(
-        stage,
-        default_stage_id: default_stage&.id,
-        deal_count: stage_deal_counts[stage.id].to_i
-      )
-    end
+    stage_payloads = stages.map { |stage| stage_payload(stage, default_stage_id: default_stage&.id) }
     current_stage = deal&.stage if deal&.pipeline_id == pipeline.id
     previous_stage, next_stage = neighbor_stages(stages.to_a, current_stage)
 
@@ -37,12 +30,12 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
         current_deal: cast_boolean(current_deal),
         include_inactive: include_inactive_records
       }.compact,
-      pipeline: ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false),
+      pipeline: ::Crm::PayloadBuilder.pipeline(pipeline, include_stages: false).except(:deal_count),
       current_deal: current_deal_payload(deal),
       current_stage: stage_payload(current_stage),
       previous_stage: stage_payload(previous_stage),
       next_stage: stage_payload(next_stage),
-      total_count: stage_payloads.length,
+      returned_count: stage_payloads.length,
       stages: stage_payloads
     )
   rescue StandardError => e
@@ -94,12 +87,11 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
     }
   end
 
-  def stage_payload(stage, default_stage_id: nil, deal_count: nil)
+  def stage_payload(stage, default_stage_id: nil)
     return if stage.blank?
 
     payload = ::Crm::PayloadBuilder.stage(stage)
     payload[:default] = stage.id == default_stage_id unless default_stage_id.nil?
-    payload[:deal_count] = deal_count unless deal_count.nil?
     payload
   end
 

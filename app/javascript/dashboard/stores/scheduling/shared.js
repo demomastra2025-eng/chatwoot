@@ -73,14 +73,22 @@ const ERROR_KEY_BY_MESSAGE = {
 };
 
 const ERROR_FIELD_KEY_BY_NAME = {
+  amount: 'SCHEDULING.KASSA.AMOUNT',
+  base_price: 'SCHEDULING.SERVICES.BASE_PRICE',
   break_end_minute: 'SCHEDULING.EXCEPTIONS.BREAK_END',
   break_start_minute: 'SCHEDULING.EXCEPTIONS.BREAK_START',
   client_name: 'SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME',
+  compensation_percent: 'SCHEDULING.COMPENSATION.percent_value',
+  compensation_value: 'SCHEDULING.COMPENSATION.fixed_value',
+  duration_min: 'SCHEDULING.SERVICES.DURATION',
   ends_at: 'SCHEDULING.APPOINTMENT_FORM.ENDS_AT',
   from: 'SCHEDULING.KASSA.FROM',
   prepaid_amount: 'SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT',
+  price: 'SCHEDULING.SERVICES.PRICE',
   resource_id: 'SCHEDULING.APPOINTMENT_FORM.RESOURCE',
   service_amount: 'SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT',
+  settlement_amount: 'SCHEDULING.KASSA.SETTLEMENT_AMOUNT',
+  slot_duration_min: 'SCHEDULING.RESOURCES.SLOT_DURATION',
   starts_at: 'SCHEDULING.APPOINTMENT_FORM.STARTS_AT',
   to: 'SCHEDULING.KASSA.TO',
 };
@@ -237,6 +245,8 @@ export const compactPayload = payload => {
   }, {});
 };
 
+const INTEGER_NUMERIC_PATTERN = /^[+-]?\d+(?:\.0+)?$/;
+
 export const toNumeric = value => {
   if (value === '' || value === null || value === undefined) {
     return undefined;
@@ -244,4 +254,25 @@ export const toNumeric = value => {
 
   const parsed = Number(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+export const toIntegerNumeric = (value, fieldName = 'value') => {
+  if (value === '' || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      throw new Error(`${fieldName} must be an integer`);
+    }
+
+    return value;
+  }
+
+  const text = String(value).trim();
+  if (!INTEGER_NUMERIC_PATTERN.test(text)) {
+    throw new Error(`${fieldName} must be an integer`);
+  }
+
+  return Number.parseInt(text, 10);
 };

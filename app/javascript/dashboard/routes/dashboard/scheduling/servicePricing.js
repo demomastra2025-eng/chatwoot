@@ -1,12 +1,12 @@
-import { toNumeric } from 'dashboard/stores/scheduling/shared';
+import { toIntegerNumeric } from 'dashboard/stores/scheduling/shared';
 
 export const resolveDraftServicePrice = ({ active, basePrice, price }) => {
-  const numericPrice = toNumeric(price);
+  const numericPrice = toIntegerNumeric(price, 'price');
   if (!active || numericPrice !== undefined) {
     return price;
   }
 
-  const numericBasePrice = toNumeric(basePrice);
+  const numericBasePrice = toIntegerNumeric(basePrice, 'base_price');
   return numericBasePrice === undefined ? '' : numericBasePrice;
 };
 
@@ -19,10 +19,13 @@ export const buildServicePricePayload = (priceRow, basePrice) => {
 
   return {
     active: priceRow.active,
-    compensation_percent: toNumeric(priceRow.compensationPercent) || 0,
+    compensation_percent:
+      toIntegerNumeric(priceRow.compensationPercent, 'compensation_percent') ||
+      0,
     compensation_type: priceRow.compensationType,
-    compensation_value: toNumeric(priceRow.compensationValue) || 0,
-    price: toNumeric(resolvedPrice) || 0,
+    compensation_value:
+      toIntegerNumeric(priceRow.compensationValue, 'compensation_value') || 0,
+    price: toIntegerNumeric(resolvedPrice, 'price') || 0,
     resource_id: priceRow.resourceId,
   };
 };

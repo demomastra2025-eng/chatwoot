@@ -77,6 +77,35 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when mergee contact has CRM deal links' do
+      it 'moves unique deal links and deduplicates shared deal links' do
+        unique_deal = create(:crm_deal, account: account)
+        shared_deal = create(:crm_deal, account: account)
+        create(:crm_deal_contact, account: account, deal: unique_deal, contact: mergee_contact, primary: true)
+        create(:crm_deal_contact, account: account, deal: shared_deal, contact: base_contact, primary: false)
+        create(:crm_deal_contact, account: account, deal: shared_deal, contact: mergee_contact, primary: true)
+
+        contact_merge
+
+        expect(unique_deal.deal_contacts.reload.pluck(:contact_id)).to contain_exactly(base_contact.id)
+        shared_links = shared_deal.deal_contacts.reload
+        expect(shared_links.pluck(:contact_id)).to contain_exactly(base_contact.id)
+        expect(shared_links.first.primary).to be(true)
+      end
+
+      it 'keeps an existing base primary deal link when removing duplicate mergee link' do
+        shared_deal = create(:crm_deal, account: account)
+        create(:crm_deal_contact, account: account, deal: shared_deal, contact: base_contact, primary: true)
+        create(:crm_deal_contact, account: account, deal: shared_deal, contact: mergee_contact, primary: false)
+
+        contact_merge
+
+        shared_links = shared_deal.deal_contacts.reload
+        expect(shared_links.pluck(:contact_id)).to contain_exactly(base_contact.id)
+        expect(shared_links.first.primary).to be(true)
+      end
+    end
+
     context 'when mergee contact has notes' do
       it 'moves the notes to base contact' do
         expect(base_contact.notes.count).to be 0

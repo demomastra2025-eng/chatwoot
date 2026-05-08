@@ -15,18 +15,18 @@ RSpec.describe Captain::Llm::PaginatedFaqGeneratorService do
   let(:response) { instance_double(RubyLLM::Message, content: response_content) }
   let(:empty_response) { instance_double(RubyLLM::Message, content: empty_response_content) }
   let(:response_content) do
-    JSON.generate(
+    {
       'faqs' => [
         { 'question' => 'What is this document about?', 'answer' => 'It explains key concepts.' }
       ],
       'has_content' => true
-    )
+    }
   end
   let(:empty_response_content) do
-    JSON.generate(
+    {
       'faqs' => [],
       'has_content' => false
-    )
+    }
   end
 
   describe '#generate' do
@@ -41,6 +41,7 @@ RSpec.describe Captain::Llm::PaginatedFaqGeneratorService do
     context 'when generating FAQs from PDF pages' do
       before do
         allow(service).to receive(:chat).with(model: service.model).and_return(chat)
+        allow(chat).to receive(:model).and_return(service.model)
         allow(chat).to receive(:with_schema).with(Captain::Llm::Schemas::PaginatedFaqChunk).and_return(chat)
       end
 
@@ -75,6 +76,29 @@ RSpec.describe Captain::Llm::PaginatedFaqGeneratorService do
 
         expect(service.iterations_completed).to eq(20)
       end
+
+      it 'skips malformed FAQs without questions during deduplication' do
+        responses = [
+          instance_double(
+            RubyLLM::Message,
+            content: {
+              'faqs' => [
+                { 'question' => 'What is this document about?', 'answer' => 'It explains key concepts.' },
+                { 'answer' => 'Missing question should be ignored.' },
+                { 'question' => nil, 'answer' => 'Nil question should be ignored.' }
+              ],
+              'has_content' => true
+            }
+          ),
+          empty_response
+        ]
+
+        allow(service).to receive(:ask_chat) { responses.shift }
+
+        faqs = service.generate
+
+        expect(faqs.pluck('question')).to eq(['What is this document about?'])
+      end
     end
   end
 
@@ -91,6 +115,18 @@ RSpec.describe Captain::Llm::PaginatedFaqGeneratorService do
 
     it 'continues when FAQs exist and under limits' do
       expect(service.should_continue_processing?(faqs: ['faq'], has_content: true)).to be true
+    end
+  end
+
+  describe '#model' do
+    it 'resolves PDF FAQ generation through the account assistant model instead of the OpenAI PDF fallback' do
+      expect(Llm::Config).to receive(:model_for).with(
+        feature: :assistant,
+        account: document.account,
+        fallback: Llm::Config::DEFAULT_MODEL
+      ).and_return('openai/gpt-5.4')
+
+      expect(service.model).to eq('openai/gpt-5.4')
     end
   end
 

@@ -128,6 +128,88 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { conversation.messages.outgoing.count })
     end
 
+    it 'skips a bufferless stale job when a newer incoming message exists' do
+      stale_last_message_id = conversation.messages.incoming.last.id
+      create(:message, conversation: conversation, content: 'Newer incoming', message_type: :incoming)
+
+      expect(agent_runner_service).not_to receive(:generate_response)
+
+      expect do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: stale_last_message_id)
+      end.not_to(change { conversation.messages.outgoing.count })
+    end
+
+    it 'does not persist a bufferless response if a newer incoming arrives during generation' do
+      expected_last_message_id = conversation.messages.incoming.last.id
+      expect(agent_runner_service).to receive(:generate_response) do
+        create(:message, conversation: conversation, content: 'Interrupting incoming', message_type: :incoming)
+        { 'response' => 'Late stale response' }
+      end
+
+      expect do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: expected_last_message_id)
+      end.not_to(change { conversation.messages.outgoing.count })
+    end
+
+    it 'skips a buffered stale job when the latest incoming no longer matches the buffer state' do
+      buffer_token = SecureRandom.uuid
+      expected_last_message_id = conversation.messages.incoming.last.id
+      state_key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+      Redis::Alfred.set(
+        state_key,
+        {
+          token: buffer_token,
+          assistant_id: assistant.id,
+          last_message_id: expected_last_message_id
+        }.to_json,
+        ex: 10.minutes.to_i
+      )
+      create(:message, conversation: conversation, content: 'Newer incoming', message_type: :incoming)
+
+      expect(agent_runner_service).not_to receive(:generate_response)
+
+      expect do
+        described_class.perform_now(
+          conversation,
+          assistant,
+          buffer_token: buffer_token,
+          expected_last_message_id: expected_last_message_id
+        )
+      end.not_to(change { conversation.messages.outgoing.count })
+    ensure
+      Redis::Alfred.delete(state_key) if defined?(state_key)
+    end
+
+    it 'does not persist a buffered response if a newer incoming arrives during generation' do
+      buffer_token = SecureRandom.uuid
+      expected_last_message_id = conversation.messages.incoming.last.id
+      state_key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+      Redis::Alfred.set(
+        state_key,
+        {
+          token: buffer_token,
+          assistant_id: assistant.id,
+          last_message_id: expected_last_message_id
+        }.to_json,
+        ex: 10.minutes.to_i
+      )
+      expect(agent_runner_service).to receive(:generate_response) do
+        create(:message, conversation: conversation, content: 'Interrupting incoming', message_type: :incoming)
+        { 'response' => 'Late stale response' }
+      end
+
+      expect do
+        described_class.perform_now(
+          conversation,
+          assistant,
+          buffer_token: buffer_token,
+          expected_last_message_id: expected_last_message_id
+        )
+      end.not_to(change { conversation.messages.outgoing.count })
+    ensure
+      Redis::Alfred.delete(state_key) if defined?(state_key)
+    end
+
     it 'silently skips outgoing messages when the assistant cancels its own response' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {

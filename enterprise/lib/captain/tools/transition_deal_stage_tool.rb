@@ -1,10 +1,14 @@
 class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
   description 'Move the CRM deal linked to the current conversation. Use list_deal_stages first and prefer stage_id; stage_action next/previous follows current pipeline position.'
   param :stage_id, type: 'number', desc: 'Target stage ID from list_deal_stages/list_deal_pipelines', required: false
-  param :stage_name, type: 'string', desc: 'Target stage name; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided', required: false
-  param :stage_code, type: 'string', desc: 'Target stage code; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided', required: false
-  param :pipeline_id, type: 'number', desc: 'Pipeline ID used to scope stage_name/stage_code or move to that pipeline first active stage', required: false
-  param :pipeline_code, type: 'string', desc: 'Pipeline code used to scope stage_name/stage_code or move to that pipeline first active stage', required: false
+  param :stage_name, type: 'string', desc: 'Target stage name; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided',
+                     required: false
+  param :stage_code, type: 'string', desc: 'Target stage code; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided',
+                     required: false
+  param :pipeline_id, type: 'number', desc: 'Pipeline ID used to scope stage_name/stage_code or move to that pipeline first active stage',
+                      required: false
+  param :pipeline_code, type: 'string', desc: 'Pipeline code used to scope stage_name/stage_code or move to that pipeline first active stage',
+                        required: false
   param :stage_action, type: 'string', desc: 'Relative stage action: next or previous by position in the current pipeline', required: false
 
   def perform(tool_context, stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil,
@@ -20,7 +24,7 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
 
     JSON.pretty_generate(
       action: 'transition_deal_stage',
-      deal: ::Crm::PayloadBuilder.deal(deal)
+      deal: ::Crm::PayloadBuilder.ai_deal(deal)
     )
   rescue StandardError => e
     tool_failure(e)
