@@ -209,8 +209,8 @@ describe AgentBotListener do
         bot_config: bot_config
       )
     end
-    let!(:event) { Events::Base.new('message.created', Time.zone.now, message: message) }
-    let!(:message) do
+    let(:event) { Events::Base.new('message.created', Time.zone.now, message: message) }
+    let(:message) do
       create(
         :message,
         message_type: 'incoming',
@@ -223,6 +223,7 @@ describe AgentBotListener do
     end
 
     before do
+      allow(Rails.configuration.dispatcher).to receive(:dispatch)
       create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
     end
 
@@ -286,7 +287,7 @@ describe AgentBotListener do
         listener.message_created(event)
 
         state = conversation.reload.additional_attributes.dig('agent_bot_runtime', 'flow_builder', agent_bot.id.to_s)
-        expect(state['waiting_for_step_id']).to eq('menu')
+        expect(state['waiting_for_node_id']).to eq('menu')
         expect(conversation.messages.outgoing.last.content).to include('1. Sales')
 
         reply_message = create(

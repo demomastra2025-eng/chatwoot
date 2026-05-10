@@ -16,6 +16,7 @@ describe AgentBots::FlowBuilder::RunnerService do
   end
 
   before do
+    allow(Rails.configuration.dispatcher).to receive(:dispatch)
     create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
   end
 
