@@ -143,6 +143,43 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(completed, true);
 });
 
+test('VoiceApplication can establish native managed media when provider call object has no call.stream helper', async () => {
+  const stream = new FakeVoiceStream();
+  const starterCalls = [];
+  let realtimeCallbacks;
+  const call = Object.assign(new EventEmitter(), {
+    request: { callRef: 'runtime-native-only', mediaSessionRef: 'media-native-only' },
+    voice: new EventEmitter(),
+    async answer() {}
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-native-only' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'runtime-native-only', ai: { provider: 'gemini-live', first_message: 'Здравствуйте' }, tools: [] }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const app = new VoiceApplication({
+    client,
+    managedStreamStarter: async (providerCall, options) => {
+      starterCalls.push({ providerCall, options });
+      return stream;
+    },
+    realtimeFactory: () => ({ connect: async options => { realtimeCallbacks = options; }, sendAudio: () => {}, close: () => {} })
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'runtime-native-only' });
+
+  assert.equal(result.mode, 'realtime');
+  assert.equal(starterCalls[0].providerCall, call);
+  assert.equal(starterCalls[0].options.direction, 'both');
+  assert.equal(realtimeCallbacks.systemPrompt.length > 0, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication treats media stream close as an incomplete failure and preserves partial transcript', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
@@ -445,6 +482,107 @@ test('VoiceApplication paces model audio into 20ms frames and preserves buffered
   assert.equal(controls.at(-1).action, 'caller_interrupted');
   assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
   assert.equal(stream.writes.length > 1, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication sends a bounded Gemini continuation when the model stalls after a successful tool response', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-tool-stall' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-stall',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => ({ answer: 'Акуна матата' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    postToolContinuationMs: 10
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-stall' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  assert.equal(toolResult.ok, true);
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), true);
+  const stallEvent = events.find(event => event.event_type === 'post_tool_model_stall');
+  assert.ok(stallEvent);
+  assert.equal(stallEvent.payload.tool_name, 'faq_lookup');
+  assert.equal(stallEvent.payload.bridge_call_ref, 'bridge-tool-stall');
+  assert.equal(controls.some(payload => payload.action === 'post_tool_model_stall'), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication cancels post-tool stall watchdog when Gemini continues with audio', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-continues',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => ({ answer: 'Акуна матата' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    postToolContinuationMs: 30
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-continues' });
+
+  await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  realtimeCallbacks.onAudio(Buffer.alloc(960), { mimeType: 'audio/pcm;rate=24000' });
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), false);
+  assert.equal(events.some(event => event.event_type === 'post_tool_model_stall'), false);
 
   call.emit('end');
   await result.completion;

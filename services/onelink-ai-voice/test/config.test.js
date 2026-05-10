@@ -11,6 +11,7 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.language, 'ru-KZ');
   assert.equal(config.toolTimeoutMs, 3_000);
   assert.equal(config.outputMaxBufferedMs, 5_000);
+  assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
 });
 
@@ -33,6 +34,7 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
     VOICE_AGENT_ONELINK_AI_EVENT_PATH: '/custom/event',
     VOICE_AGENT_ONELINK_AI_FINALIZE_PATH: '/custom/finalize',
     VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS: '1500',
+    VOICE_AGENT_REALTIME_POST_TOOL_CONTINUATION_MS: '2500',
     VOICE_AGENT_REALTIME_VAD_PREFIX_PADDING_MS: '140',
     VOICE_AGENT_REALTIME_VAD_SILENCE_DURATION_MS: '320',
     VOICE_AGENT_REALTIME_VAD_START_SENSITIVITY: 'START_SENSITIVITY_LOW',
@@ -44,6 +46,7 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
   assert.equal(config.eventPath, '/custom/event');
   assert.equal(config.finalizePath, '/custom/finalize');
   assert.equal(config.outputMaxBufferedMs, 1500);
+  assert.equal(config.postToolContinuationMs, 2500);
   assert.equal(config.prefixPaddingMs, 140);
   assert.equal(config.silenceDurationMs, 320);
   assert.equal(config.speechStartSensitivity, 'START_SENSITIVITY_LOW');

@@ -383,11 +383,14 @@ class Telephony::InboundRoutingService
     return if existing_voice_conversation.blank?
 
     @bridge_call_ref_for_context ||= begin
-      scope = Telephony::CallSession.active
-      scope = scope.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
-      scope = scope.where.not(external_call_ref: call_ref)
-      scope = scope.where('created_at >= ?', 30.minutes.ago)
-      scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
+      recent_scope = Telephony::CallSession.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
+      recent_scope = recent_scope.where.not(external_call_ref: call_ref)
+      recent_scope = recent_scope.where('created_at >= ?', 2.minutes.ago)
+
+      active_ref = recent_scope.where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
+                               .order(created_at: :desc, id: :desc)
+                               .pick(:external_call_ref)
+      active_ref || recent_scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
     end
   end
 

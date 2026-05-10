@@ -23,6 +23,7 @@ async function main() {
     registry,
     toolTimeoutMs: config.toolTimeoutMs,
     outputMaxBufferedMs: config.outputMaxBufferedMs,
+    postToolContinuationMs: config.postToolContinuationMs,
     clearOutputOnInterrupt: config.clearAudioOnInterrupt,
     realtimeFactory: ({ context, onAudio, onTranscript, onToolCall, onInterrupt, onEvent }) => new GeminiLiveClient({
       apiKey: config.geminiApiKey,

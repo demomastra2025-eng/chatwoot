@@ -449,6 +449,60 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'keeps a recent terminal bridge call ref for the AI runtime leg correlation' do
+    caller_number = '+15550000002'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      conversation: conversation,
+      external_call_ref: 'bridge-call-terminal-recent',
+      status: 'cancelled',
+      end_reason: 'voice_stream_ended_before_app_answer',
+      created_at: 10.seconds.ago,
+      updated_at: 9.seconds.ago
+    )
+
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_app_ref: 'ai-status-aware-app-ref',
+      operator_agent_aor: 'sip:status-aware-operator@example.test',
+      fallback_mode: 'operator'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'runtime-app-leg-recent-terminal',
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number,
+             app_ref: 'ai-status-aware-app-ref'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'app',
+      'reason' => 'recursive_runtime_app_ref',
+      'bridge_call_ref' => 'bridge-call-terminal-recent'
+    )
+  end
+
   it 'routes a pending conversation to AI even when the primary routing mode remains operator' do
     caller_number = '+15551230003'
     contact = create(:contact, account: account, phone_number: caller_number)

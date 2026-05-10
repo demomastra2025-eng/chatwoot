@@ -1,5 +1,6 @@
 const { VoiceSession } = require('../sessions/voice-session');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
+const { startManagedVoiceStream } = require('../fonoster/managed-stream');
 
 const streamConstants = loadStreamConstants();
 const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
@@ -13,9 +14,11 @@ class VoiceApplication {
     realtimeFactory = null,
     fallbackResponder = new ScriptedFallbackResponder(),
     mediaStreamFactory = null,
+    managedStreamStarter = startManagedVoiceStream,
     toolTimeoutMs = 3_000,
     outputMaxBufferedMs = 5_000,
-    clearOutputOnInterrupt = false
+    clearOutputOnInterrupt = false,
+    postToolContinuationMs = 4_000
   } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
@@ -23,9 +26,11 @@ class VoiceApplication {
     this.realtimeFactory = realtimeFactory;
     this.fallbackResponder = fallbackResponder;
     this.mediaStreamFactory = mediaStreamFactory;
+    this.managedStreamStarter = managedStreamStarter;
     this.toolTimeoutMs = toolTimeoutMs;
     this.outputMaxBufferedMs = outputMaxBufferedMs;
     this.clearOutputOnInterrupt = clearOutputOnInterrupt;
+    this.postToolContinuationMs = postToolContinuationMs;
   }
 
   async handleCall(call, payload = {}) {
@@ -214,6 +219,13 @@ class VoiceApplication {
     let lastCallerTranscriptAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
+    const postToolWatchdog = createPostToolWatchdog({
+      timeoutMs: this.postToolContinuationMs,
+      session,
+      requestPayload,
+      context,
+      sendContinuation: text => realtime?.sendText?.(text)
+    });
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
@@ -262,6 +274,7 @@ class VoiceApplication {
       systemPrompt: buildSystemPrompt(context),
       tools: normalizeContextTools(context.tools),
       onAudio: (chunk, metadata = {}) => {
+        postToolWatchdog.cancel('model_audio');
         if (!outputPacer || !chunk) return;
         const data = fonosterAudioChunk(chunk, metadata);
         if (!data.length) return;
@@ -284,6 +297,7 @@ class VoiceApplication {
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         } else {
           lastAiTranscriptAt = item.at || new Date().toISOString();
+          postToolWatchdog.cancel('model_transcript');
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
@@ -293,6 +307,7 @@ class VoiceApplication {
           tool_call_id: callPayload.id
         });
         await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
+        if (shouldWatchPostToolContinuation(toolResult)) postToolWatchdog.arm(callPayload, toolResult);
         return toolResult;
       },
       onInterrupt: async (metadata = {}) => {
@@ -313,7 +328,9 @@ class VoiceApplication {
         await session.safeControl('caller_interrupted', interruptMetadata);
       },
       onEvent: event => {
+        if (event?.serverContent?.turnComplete) postToolWatchdog.cancel('turn_complete');
         if (event?.close) {
+          postToolWatchdog.cancel('provider_closed');
           const metadata = {
             provider: 'gemini-live',
             close_code: event.close.code,
@@ -322,6 +339,7 @@ class VoiceApplication {
           void session.safeEvent('provider_stream_closed', metadata);
           void completion?.finish?.('provider_stream_closed', metadata);
         } else if (event?.error) {
+          postToolWatchdog.cancel('provider_error');
           const metadata = {
             provider: 'gemini-live',
             error_message: sanitizeReason(event.error.message || event.error.reason || 'provider_error')
@@ -329,6 +347,7 @@ class VoiceApplication {
           void session.safeEvent('provider_error', metadata);
           void completion?.finish?.('provider_error', metadata);
         } else if (event?.serverContent?.interrupted) {
+          postToolWatchdog.cancel('provider_interrupted');
           void session.safeEvent('realtime_interrupted', compactPayload({
             provider: 'gemini-live',
             reason: event.serverContent.interruptionReason || event.serverContent.reason || 'vad_or_caller_speech',
@@ -363,7 +382,8 @@ class VoiceApplication {
       realtime,
       session,
       registry: this.registry,
-      stopInput: () => { acceptingInput = false; }
+      stopInput: () => { acceptingInput = false; },
+      onFinish: () => postToolWatchdog.cancel('completion')
     });
     try {
       await realtime.connect(callbacks);
@@ -397,11 +417,11 @@ class VoiceApplication {
         throw mediaStreamEstablishmentError(error?.message || 'media stream factory failed', 'mediaStreamFactory');
       }
     }
-    if (!call || typeof call.stream !== 'function') {
-      throw mediaStreamEstablishmentError('call.stream is unavailable', 'call.stream');
+    if (!call) {
+      throw mediaStreamEstablishmentError('call is unavailable', 'call');
     }
     try {
-      return await call.stream({
+      return await this.managedStreamStarter(call, {
         direction: streamConstants.bothDirection,
         format: streamConstants.wavFormat
       });
@@ -808,7 +828,72 @@ function operatorFallbackDecision(routeDecision = {}, reason = 'operator_failed'
   };
 }
 
-function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry, stopInput = null }) {
+function createPostToolWatchdog({ timeoutMs = 4_000, session, requestPayload = {}, context = {}, sendContinuation = null } = {}) {
+  let timer = null;
+  let sequence = 0;
+  const normalizedTimeout = Number.parseInt(timeoutMs, 10);
+  const enabledTimeout = Number.isFinite(normalizedTimeout) && normalizedTimeout > 0 ? normalizedTimeout : 0;
+
+  const cancel = (_reason = 'cancelled') => {
+    if (!timer) return;
+    clearTimer(timer);
+    timer = null;
+  };
+
+  const arm = (toolCall = {}, toolResult = {}) => {
+    if (!enabledTimeout || session?.closed) return;
+    cancel('rearmed');
+    const currentSequence = ++sequence;
+    const metadata = compactPayload({
+      ...correlationPayload(session, requestPayload, context),
+      provider: 'gemini-live',
+      tool_name: toolCall.name,
+      tool_call_id: toolCall.id,
+      timeout_ms: enabledTimeout,
+      tool_ok: toolResult.ok,
+      result_keys: objectKeys(toolResult.result)
+    });
+
+    timer = setTimer(() => {
+      if (currentSequence !== sequence || session?.closed) return;
+      timer = null;
+      void session.safeControl('post_tool_model_stall', metadata);
+      try {
+        sendContinuation?.(postToolContinuationPrompt(toolCall, toolResult));
+      } catch (_error) {
+        // Continuation is best effort; diagnostics above are persisted through Rails.
+      }
+    }, enabledTimeout);
+  };
+
+  return { arm, cancel };
+}
+
+function shouldWatchPostToolContinuation(toolResult = {}) {
+  if (!toolResult?.ok) return false;
+  const action = String(toolResult.result?.action || '').trim().toLowerCase();
+  return !['transfer', 'end_call', 'hangup'].includes(action);
+}
+
+function postToolContinuationPrompt(toolCall = {}, toolResult = {}) {
+  const toolName = String(toolCall.name || 'инструмента').trim();
+  const answer = summarizeToolResult(toolResult.result);
+  return `Продолжи голосовой ответ клиенту после результата ${toolName}. Не молчи, скажи коротко и естественно по-русски.${answer ? ` Учитывай результат: ${answer}` : ''}`;
+}
+
+function summarizeToolResult(result) {
+  if (!result || typeof result !== 'object') return '';
+  for (const key of ['answer', 'text', 'summary', 'message']) {
+    if (result[key]) return String(result[key]).slice(0, 240);
+  }
+  return '';
+}
+
+function objectKeys(value) {
+  return value && typeof value === 'object' ? Object.keys(value).slice(0, 20) : [];
+}
+
+function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry, stopInput = null, onFinish = null }) {
   let resolveCompletion;
   const completion = new Promise(resolve => { resolveCompletion = resolve; });
   let completed = false;
@@ -818,6 +903,12 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
     completed = true;
     const finalAction = completionAction(session, action);
     const finalMetadata = completionMetadata(session, finalAction, metadata);
+
+    try {
+      onFinish?.(finalAction, finalMetadata);
+    } catch (_error) {
+      // ignore completion hook errors
+    }
 
     try {
       stopInput?.();
