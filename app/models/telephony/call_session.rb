@@ -82,6 +82,9 @@ class Telephony::CallSession < ApplicationRecord
     'timeout' => 'no_answer',
     'session_completed' => 'completed',
     'session_failed' => 'failed',
+    'media_stream_closed' => 'failed',
+    'media_stream_not_established' => 'failed',
+    'provider_error' => 'failed',
     'unsupported_action' => 'failed'
   }.freeze
   ALLOWED_STATUSES = (CANONICAL_STATUSES + STATUS_ALIASES.keys).uniq.freeze

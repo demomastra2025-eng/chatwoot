@@ -11,6 +11,7 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.language, 'ru-KZ');
   assert.equal(config.toolTimeoutMs, 3_000);
   assert.equal(config.outputMaxBufferedMs, 5_000);
+  assert.equal(config.clearAudioOnInterrupt, false);
 });
 
 test('loadConfig prefers AI voice internal token while preserving legacy fallback', () => {

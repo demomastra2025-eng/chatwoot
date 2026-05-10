@@ -45,7 +45,7 @@ function loadConfig(env = process.env) {
     interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase()),
     startupBeeps: parseBoolean(env.VOICE_AGENT_REALTIME_STARTUP_BEEPS, false),
     outputMaxBufferedMs: parseInteger(env.VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS, 5_000),
-    clearAudioOnInterrupt: parseBoolean(env.VOICE_AGENT_CLEAR_AUDIO_ON_INTERRUPT ?? env.VOICE_AGENT_REALTIME_CLEAR_AUDIO_ON_INTERRUPT, true),
+    clearAudioOnInterrupt: parseBoolean(env.VOICE_AGENT_CLEAR_AUDIO_ON_INTERRUPT ?? env.VOICE_AGENT_REALTIME_CLEAR_AUDIO_ON_INTERRUPT, false),
     speechStartSensitivity: env.VOICE_AGENT_REALTIME_VAD_START_SENSITIVITY || env.VOICE_AGENT_REALTIME_START_SENSITIVITY || 'START_SENSITIVITY_HIGH',
     speechEndSensitivity: env.VOICE_AGENT_REALTIME_VAD_END_SENSITIVITY || env.VOICE_AGENT_REALTIME_END_SENSITIVITY || 'END_SENSITIVITY_HIGH',
     prefixPaddingMs: parseInteger(env.VOICE_AGENT_REALTIME_VAD_PREFIX_PADDING_MS || env.VOICE_AGENT_REALTIME_PREFIX_PADDING_MS, 120),

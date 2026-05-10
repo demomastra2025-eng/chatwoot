@@ -2,7 +2,7 @@ class Telephony::AiVoice::ControlService
   ALLOWED_ACTIONS = %w[
     ai_ringing ai_answered ai_speaking caller_interrupted tool_started tool_completed tool_failed
     transfer_started transfer_answered transfer_completed transfer_failed session_completed session_failed
-    caller_hangup media_stream_closed provider_stream_closed provider_error fonoster_call_closed runtime_closed
+    caller_hangup media_stream_closed media_stream_not_established provider_stream_closed provider_error fonoster_call_closed runtime_closed
     tool_requested_end_call handoff_requested close
   ].freeze
 

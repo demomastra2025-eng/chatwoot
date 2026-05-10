@@ -128,8 +128,10 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   const toolResult = await realtimeCallbacks.onToolCall({ name: 'lookup_customer', args: { phone: '+77001112233' } });
   assert.equal(toolResult.ok, true);
 
-  await realtimeCallbacks.onInterrupt();
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.reason, 'vad_or_caller_speech');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
   assert.equal(stream.cleanupCallbacks.length, 1);
 
   let completed = false;
@@ -180,8 +182,47 @@ test('VoiceApplication treats media stream close as an incomplete failure and pr
   assert.equal(finalizations.at(-1).incomplete_transcript, true);
   assert.equal(finalizations.at(-1).final_transcript[0].text, 'Хотите');
   assert.equal(finalizations.at(-1).partial_transcript[0].text, 'Хотите');
+  assert.equal(events.some(event => event.event_type === 'app_received_call'), true);
+  assert.equal(events.some(event => event.event_type === 'app_answered'), true);
+  assert.equal(events.some(event => event.event_type === 'media_stream_started'), true);
   assert.equal(events.some(event => event.event_type === 'call_ended' && event.payload.reason === 'media_stream_closed'), true);
   assert.equal(controls.some(payload => payload.action === 'session_completed'), false);
+});
+
+test('VoiceApplication fails explicitly when app leg answers but media stream is not established', async () => {
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  const hangups = [];
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return null; },
+    async hangup(payload) { hangups.push(payload); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42, number_ref: 'number-1', conversation_id: 77 }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-no-media', account_id: 42, number_ref: 'number-1', conversation_id: 77, ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => { throw new Error('realtime should not start without media'); } });
+  const result = await app.handleCall(call, { call_ref: 'call-no-media', number_ref: 'number-1' });
+
+  assert.equal(result.mode, 'failed');
+  assert.equal(result.reason, 'media_stream_not_established');
+  assert.equal(controls.at(-1).action, 'media_stream_not_established');
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'media_stream_not_established');
+  assert.equal(finalizations.at(-1).incomplete_transcript, true);
+  assert.equal(finalizations.at(-1).conversation_id, 77);
+  assert.equal(finalizations.at(-1).ai_runtime_call_ref, 'call-no-media');
+  assert.equal(events.some(event => event.event_type === 'media_stream_not_established'), true);
+  assert.deepEqual(hangups, [{ reason: 'media_stream_not_established' }]);
 });
 
 test('VoiceApplication records caller hangup without draining buffered output', async () => {
@@ -363,7 +404,7 @@ test('VoiceApplication executes AI transfer tools and finalizes the call as tran
   assert.equal(finalizations.at(-1).transfer_result.result, 'answered');
 });
 
-test('VoiceApplication paces model audio into 20ms frames and clears buffered output on caller interruption by default', async () => {
+test('VoiceApplication paces model audio into 20ms frames and preserves buffered output on caller interruption by default', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
   let realtimeCallbacks;
@@ -396,11 +437,12 @@ test('VoiceApplication paces model audio into 20ms frames and clears buffered ou
   assert.equal(stream.writes[0].data.length, 320);
   assert.equal(stream.writes[0].data.readInt16LE(2), 3);
 
-  await realtimeCallbacks.onInterrupt();
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
 
   assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(stream.writes.length, 1);
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(stream.writes.length > 1, true);
 
   call.emit('end');
   await result.completion;

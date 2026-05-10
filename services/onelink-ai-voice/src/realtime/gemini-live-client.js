@@ -234,7 +234,11 @@ class GeminiLiveClient {
     }
 
     if (serverContent.interrupted) {
-      this.onInterrupt?.();
+      this.onInterrupt?.({
+        provider: 'gemini-live',
+        source: 'serverContent.interrupted',
+        reason: serverContent.interruptionReason || serverContent.reason || 'vad_or_caller_speech'
+      });
     }
 
     const parts = serverContent.modelTurn?.parts || [];

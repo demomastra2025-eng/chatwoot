@@ -324,11 +324,19 @@ class Telephony::InboundRoutingService
   def shared_context
     return {} if number_binding.blank?
 
-    {
+    context = {
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref
     }
+
+    if existing_voice_conversation.present?
+      context[:conversation_id] = existing_voice_conversation.id
+      context[:conversation_display_id] = existing_voice_conversation.display_id
+      context[:conversation_status] = existing_voice_conversation.status
+    end
+
+    context.compact
   end
 
   def routing_policy

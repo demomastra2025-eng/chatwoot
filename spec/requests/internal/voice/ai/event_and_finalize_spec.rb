@@ -147,12 +147,44 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
   end
 
+  it 'marks media-not-established lifecycle as a failed terminal call without pretending media existed' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/control',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             action: 'media_stream_not_established',
+             metadata: {
+               reason: 'media_stream_not_established',
+               source: 'call.stream',
+               ai_runtime_call_ref: call_session.external_call_ref,
+               conversation_id: conversation.id
+             }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'failed',
+      end_reason: 'media_stream_not_established'
+    )
+    expect(call_session.metadata.dig('ai_voice', 'control_events').last).to include(
+      'action' => 'media_stream_not_established',
+      'metadata' => include('source' => 'call.stream')
+    )
+  end
+
   it 'accepts incomplete media-stream finalization with partial transcript payloads' do
     payload = {
       event_id: 'evt-finalize-media-closed-1',
       event_seq: 100,
       event_type: 'finalize',
       provider_call_id: call_session.external_call_ref,
+      bridge_call_ref: 'bridge-call-1',
+      ai_runtime_call_ref: call_session.external_call_ref,
+      provider_session_id: 'gemini-session-1',
       account_id: account.id,
       conversation_id: conversation.id,
       status: 'failed',
@@ -180,6 +212,11 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.reload).to have_attributes(
       status: 'failed',
       end_reason: 'media_stream_closed'
+    )
+    expect(call_session.metadata.dig('ai_voice', 'finalize')).to include(
+      'bridge_call_ref' => 'bridge-call-1',
+      'ai_runtime_call_ref' => call_session.external_call_ref,
+      'provider_session_id' => 'gemini-session-1'
     )
     expect(call_session.metadata.dig('ai_voice', 'finalize', 'payload')).to include(
       'incomplete_transcript' => true,

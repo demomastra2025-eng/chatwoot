@@ -15,7 +15,7 @@ class VoiceApplication {
     mediaStreamFactory = null,
     toolTimeoutMs = 3_000,
     outputMaxBufferedMs = 5_000,
-    clearOutputOnInterrupt = true
+    clearOutputOnInterrupt = false
   } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
@@ -44,6 +44,8 @@ class VoiceApplication {
 
     const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
     applyRouteScope(session, routeDecision);
+    this.registry?.update?.(callRef, { routeDecision, accountId: session.accountId, state: 'received' });
+    void session.safeEvent('app_received_call', correlationPayload(session, requestPayload, routeDecision));
     await this.safeBridgeEvent('session_started', session, requestPayload, routeDecision);
     await session.safeEvent('call_started', {
       route_action: routeDecision.action || routeDecision.mode,
@@ -58,6 +60,7 @@ class VoiceApplication {
 
     if (routeAction === 'operator') {
       await answerCall(call);
+      void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
       try {
         const dialResult = await dialOperator(call, routeDecision);
@@ -92,6 +95,7 @@ class VoiceApplication {
 
     if (routeAction === 'app' && !handleLocallyAsAi) {
       await answerCall(call);
+      void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
       await handoffToApp(call, routeDecision);
       this.registry?.update?.(callRef, { routeDecision, state: 'app' });
@@ -99,6 +103,7 @@ class VoiceApplication {
     }
 
     await answerCall(call);
+    void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
 
     const context = await session.bootstrap();
     this.registry?.update?.(callRef, { context, state: session.state });
@@ -112,7 +117,24 @@ class VoiceApplication {
     try {
       bridge = await this.startRealtimeBridge(call, session, context, requestPayload);
     } catch (error) {
-      const reason = sanitizeReason(error?.message || 'realtime_unavailable');
+      const reason = sanitizeReason(error?.reason || error?.message || 'realtime_unavailable');
+      if (isMediaStreamEstablishmentError(error)) {
+        await session.safeEvent('media_stream_not_established', {
+          reason,
+          source: error.source || 'call.stream',
+          ...correlationPayload(session, requestPayload, routeDecision)
+        });
+        await session.close('media_stream_not_established', {
+          reason: 'media_stream_not_established',
+          final_status: 'failed',
+          incomplete_transcript: true,
+          include_partial_transcript: true,
+          source: error.source || 'call.stream'
+        });
+        this.registry?.close?.(callRef, 'media_stream_not_established');
+        await hangupSafely(call, 'media_stream_not_established');
+        return { session, context, mode: 'failed', completion: Promise.resolve(), reason: 'media_stream_not_established' };
+      }
       session.state = 'fallback';
       await session.safeEvent('error', { scope: 'gemini_live', error_code: 'realtime_unavailable', error_message: reason, retryable: false });
       await session.safeControl('session_failed', { reason });
@@ -183,9 +205,14 @@ class VoiceApplication {
 
   async startRealtimeBridge(call, session, context, requestPayload = {}) {
     const mediaStream = await this.startMediaStream(call);
+    if (!mediaStream) throw mediaStreamEstablishmentError('call.stream returned no media stream', 'call.stream');
+
     let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
     let acceptingInput = true;
     let lastAudioOutLogAt = 0;
+    let lastCallerTranscriptAt = null;
+    let lastAiTranscriptAt = null;
+    let lastAiAudioAt = null;
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
@@ -195,6 +222,17 @@ class VoiceApplication {
       output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
       gemini_model: context.ai?.model
+    });
+    await session.safeEvent('media_stream_started', {
+      ...correlationPayload(session, requestPayload, context),
+      stream_ref: streamRef,
+      media_stream_id: streamRef,
+      media_session_ref: mediaSessionRef,
+      input_rate: FONOSTER_INPUT_RATE,
+      telephony_output_rate: FONOSTER_CALL_RATE,
+      gemini_output_rate: GEMINI_OUTPUT_RATE,
+      frame_ms: 20,
+      output_max_buffered_ms: this.outputMaxBufferedMs
     });
     const outputPacer = mediaStream ? new Pcm16FramePacer({
       sampleRate: FONOSTER_CALL_RATE,
@@ -227,6 +265,7 @@ class VoiceApplication {
         const data = fonosterAudioChunk(chunk, metadata);
         if (!data.length) return;
         const now = Date.now();
+        lastAiAudioAt = new Date(now).toISOString();
         if (now - lastAudioOutLogAt >= 1_000) {
           lastAudioOutLogAt = now;
           void session.safeEvent('realtime_audio_out', {
@@ -240,8 +279,10 @@ class VoiceApplication {
       onTranscript: item => {
         const speaker = normalizeSpeaker(item.speaker);
         if (speaker === 'caller') {
+          lastCallerTranscriptAt = item.at || new Date().toISOString();
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         } else {
+          lastAiTranscriptAt = item.at || new Date().toISOString();
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
@@ -253,11 +294,22 @@ class VoiceApplication {
         await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
         return toolResult;
       },
-      onInterrupt: async () => {
+      onInterrupt: async (metadata = {}) => {
+        const interruptMetadata = compactPayload({
+          provider: 'gemini-live',
+          reason: metadata.reason || metadata.source || 'vad_or_caller_speech',
+          source: metadata.source || 'provider_interruption',
+          clear_output_buffer: Boolean(this.clearOutputOnInterrupt),
+          last_caller_transcript_at: lastCallerTranscriptAt,
+          last_ai_transcript_at: lastAiTranscriptAt,
+          last_ai_audio_at: lastAiAudioAt,
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        });
         if (this.clearOutputOnInterrupt) {
           outputPacer?.clear?.();
         }
-        await session.safeControl('caller_interrupted', { provider: 'gemini-live' });
+        await session.safeControl('caller_interrupted', interruptMetadata);
       },
       onEvent: event => {
         if (event?.close) {
@@ -276,7 +328,16 @@ class VoiceApplication {
           void session.safeEvent('provider_error', metadata);
           void completion?.finish?.('provider_error', metadata);
         } else if (event?.serverContent?.interrupted) {
-          void session.safeEvent('realtime_interrupted', { provider: 'gemini-live' });
+          void session.safeEvent('realtime_interrupted', compactPayload({
+            provider: 'gemini-live',
+            reason: event.serverContent.interruptionReason || event.serverContent.reason || 'vad_or_caller_speech',
+            source: 'serverContent.interrupted',
+            last_caller_transcript_at: lastCallerTranscriptAt,
+            last_ai_transcript_at: lastAiTranscriptAt,
+            last_ai_audio_at: lastAiAudioAt,
+            stream_ref: streamRef,
+            media_session_ref: mediaSessionRef
+          }));
         }
       }
     };
@@ -329,15 +390,23 @@ class VoiceApplication {
 
   async startMediaStream(call) {
     if (this.mediaStreamFactory) {
-      return this.mediaStreamFactory(call);
+      try {
+        return await this.mediaStreamFactory(call);
+      } catch (error) {
+        throw mediaStreamEstablishmentError(error?.message || 'media stream factory failed', 'mediaStreamFactory');
+      }
     }
     if (!call || typeof call.stream !== 'function') {
-      return null;
+      throw mediaStreamEstablishmentError('call.stream is unavailable', 'call.stream');
     }
-    return call.stream({
-      direction: streamConstants.bothDirection,
-      format: streamConstants.wavFormat
-    });
+    try {
+      return await call.stream({
+        direction: streamConstants.bothDirection,
+        format: streamConstants.wavFormat
+      });
+    } catch (error) {
+      throw mediaStreamEstablishmentError(error?.message || 'call.stream failed', 'call.stream');
+    }
   }
 
   async handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall }) {
@@ -544,7 +613,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       completed = true;
       clearTimer(timeout);
       await app.safeBridgeEvent(event, session, requestPayload, routeDecision, metadata);
-      registry?.update?.(session.callRef, { state: terminalOperatorState(event), routeDecision });
+      registry?.close?.(session.callRef, terminalOperatorState(event));
       resolve();
     };
 
@@ -554,6 +623,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       clearTimer(timeout);
       try {
         await app.handleOperatorFailure(call, session, requestPayload, routeDecision, reason, event);
+        registry?.close?.(session.callRef, reason);
       } finally {
         resolve();
       }
@@ -782,7 +852,7 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
     } catch (_error) {
       // transcript/control persistence errors should not block media cleanup
     }
-    registry?.update?.(session.callRef, { state: session.state });
+    registry?.close?.(session.callRef, finalAction);
     resolveCompletion();
   };
 
@@ -842,6 +912,7 @@ function completionMetadata(session, action, metadata = {}) {
 function finalStatusForCompletionAction(action) {
   const normalized = String(action || '').toLowerCase();
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
+  if (normalized.includes('media_stream_not_established')) return 'failed';
   if (normalized.includes('media_stream_closed') || normalized.includes('provider_stream_closed') || normalized.includes('provider_error')) return 'failed';
   if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('failed')) return 'failed';
@@ -851,7 +922,7 @@ function finalStatusForCompletionAction(action) {
 
 function shouldDrainOutput(action) {
   const normalized = String(action || '').toLowerCase();
-  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('fonoster_call_closed')) return false;
+  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_not_established') || normalized.includes('fonoster_call_closed')) return false;
   if (normalized.includes('provider_error') || normalized.includes('session_failed') || normalized.includes('transfer')) return false;
   return true;
 }
@@ -1346,6 +1417,49 @@ async function handoffToApp(call, routeDecision = {}) {
   if (typeof call?.transferToApp === 'function') return call.transferToApp(payload);
   if (typeof call?.transfer === 'function') return call.transfer(payload);
   return false;
+}
+
+async function hangupSafely(call, reason) {
+  try {
+    if (typeof call?.hangup === 'function') return await call.hangup({ reason });
+    if (typeof call?.reject === 'function') return await call.reject({ reason });
+    if (typeof call?.close === 'function') return await call.close();
+  } catch (_error) {
+    // Terminal persistence is more important than propagating provider cleanup errors.
+  }
+  return false;
+}
+
+function mediaStreamEstablishmentError(message, source = 'call.stream') {
+  const error = new Error(sanitizeReason(message || 'media_stream_not_established'));
+  error.code = 'media_stream_not_established';
+  error.reason = 'media_stream_not_established';
+  error.source = source;
+  return error;
+}
+
+function isMediaStreamEstablishmentError(error) {
+  return error?.code === 'media_stream_not_established' || error?.reason === 'media_stream_not_established';
+}
+
+function correlationPayload(session, requestPayload = {}, data = {}) {
+  const source = data || {};
+  return compactPayload({
+    bridge_call_ref: requestPayload.bridge_call_ref || requestPayload.bridgeCallRef || source.bridge_call_ref || source.bridgeCallRef,
+    fonoster_call_ref: session?.callRef || requestPayload.call_ref || requestPayload.callRef,
+    ai_runtime_call_ref: session?.callRef,
+    runtime_call_ref: session?.callRef,
+    conversation_id: source.conversation_id || source.conversationId || session?.context?.conversation_id || session?.context?.conversationId,
+    conversation_display_id: source.conversation_display_id || source.conversationDisplayId,
+    inbox_id: source.inbox_id || source.inboxId || requestPayload.inbox_id || requestPayload.inboxId,
+    number_ref: session?.numberRef || source.number_ref || source.numberRef || requestPayload.number_ref || requestPayload.numberRef,
+    ai_session_id: session?.aiSessionId,
+    provider: source.provider || source.ai?.provider || 'gemini-live',
+    provider_session_id: source.provider_session_id || source.providerSessionId || session?.aiSessionId,
+    app_ref: source.app_ref || source.appRef || requestPayload.app_ref || requestPayload.appRef,
+    route_action: source.action || source.mode,
+    route_reason: source.reason
+  });
 }
 
 async function rejectCall(call, routeDecision = {}) {

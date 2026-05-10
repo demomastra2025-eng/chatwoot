@@ -75,7 +75,7 @@ class VoiceSession {
     await this.flushTranscript({ final: true });
     await this.safeControl(action, metadata);
     await this.safeFinalize(action, metadata);
-    this.state = action.includes('failed') ? 'failed' : 'completed';
+    this.state = finalStatusForAction(action) === 'failed' ? 'failed' : 'completed';
   }
 
   async safeControl(action, metadata = {}) {
@@ -97,7 +97,11 @@ class VoiceSession {
         event_seq: this.nextEventSeq(),
         event_type: 'finalize',
         provider_call_id: this.callRef,
+        bridge_call_ref: metadata.bridge_call_ref,
+        ai_runtime_call_ref: this.callRef,
+        runtime_call_ref: this.callRef,
         ai_session_id: this.aiSessionId,
+        provider_session_id: metadata.provider_session_id || this.aiSessionId,
         conversation_id: this.context?.conversation_id || this.context?.conversationId,
         status: metadata.final_status || finalStatusForAction(action),
         started_at: this.startedAt.toISOString(),
@@ -174,7 +178,7 @@ function finalStatusForAction(action) {
   const normalized = String(action || '').toLowerCase();
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
-  if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed')) return 'failed';
+  if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_not_established')) return 'failed';
   if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('operator_unavailable') || normalized.includes('operator_no_answer')) return 'operator_unavailable';
   if (normalized.includes('transfer')) return 'transferred';
