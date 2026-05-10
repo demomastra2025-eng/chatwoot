@@ -8,8 +8,12 @@ class Telephony::AiVoice::TranscriptIngestionService
   def perform
     ensure_call_session!
     normalized_items = transcript_items
-    update_call_session!(normalized_items)
-    upsert_final_message!(normalized_items) if final_transcript?(normalized_items)
+
+    call_session.with_lock do
+      call_session.reload
+      update_call_session!(normalized_items)
+      upsert_transcript_turn_messages!(normalized_items) if final_transcript?(normalized_items)
+    end
 
     {
       status: 'ok',
@@ -42,35 +46,111 @@ class Telephony::AiVoice::TranscriptIngestionService
     call_session.update!(attrs)
   end
 
-  def upsert_final_message!(items)
+  def upsert_transcript_turn_messages!(items)
     return if conversation.blank?
 
-    final_items = ((call_session.metadata.dig(TRANSCRIPT_METADATA_KEY, 'transcript', 'final_items') || []) + items.select { |item| item['final'] })
-                  .uniq { |item| item.slice('speaker', 'text', 'at') }
-    content = final_items.filter_map do |item|
+    turns = transcript_turns(final_transcript_items(items))
+    return if turns.blank?
+
+    ApplicationRecord.transaction do
+      remove_legacy_transcript_note!
+      turns.each_with_index { |turn, index| upsert_turn_message!(turn, index) }
+    end
+  end
+
+  def final_transcript_items(items)
+    stored_items = call_session.metadata.dig(TRANSCRIPT_METADATA_KEY, 'transcript', 'final_items') || []
+    (stored_items + items.select { |item| item['final'] })
+      .uniq { |item| item.slice('speaker', 'text', 'at') }
+  end
+
+  def transcript_turns(items)
+    items.each_with_object([]) do |item, turns|
+      speaker = item['speaker'].to_s
+      next unless %w[caller ai].include?(speaker)
       next if item['text'].blank?
 
-      "#{item['speaker']}: #{item['text']}"
-    end.join("\n")
-    return if content.blank?
+      if turns.last&.fetch('speaker') == speaker
+        turns.last['items'] << item
+      else
+        turns << { 'speaker' => speaker, 'items' => [item] }
+      end
+    end
+  end
 
-    message = conversation.messages.find_or_initialize_by(source_id: transcript_ref)
-    message.assign_attributes(
+  def upsert_turn_message!(turn, index)
+    message = conversation.messages.find_or_initialize_by(source_id: turn_source_id(index))
+    message.skip_send_reply = true
+    message.assign_attributes(turn_message_attributes(turn, index))
+    message.save!
+  end
+
+  def turn_message_attributes(turn, index)
+    speaker = turn['speaker']
+    {
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
-      message_type: :activity,
+      message_type: message_type_for_speaker(speaker),
       content_type: :text,
-      private: true,
-      content: content,
-      content_attributes: {
-        data: {
-          type: 'ai_voice_transcript',
-          call_ref: call_session.external_call_ref,
-          final: true
-        }
-      }
-    )
-    message.save!
+      private: false,
+      sender: sender_for_speaker(speaker),
+      content: turn_content(turn),
+      content_attributes: turn_content_attributes(turn, index)
+    }
+  end
+
+  def turn_content(turn)
+    turn['items'].filter_map { |item| item['text'].to_s.strip.presence }.join(' ')
+  end
+
+  def turn_content_attributes(turn, index)
+    {
+      data: {
+        type: 'ai_voice_transcript_turn',
+        call_ref: call_session.external_call_ref,
+        transcript_ref: transcript_ref,
+        speaker: turn['speaker'],
+        turn_index: index,
+        final: true,
+        source_item_count: turn['items'].length
+      }.compact,
+      external_created_at: turn['items'].first['at']
+    }
+  end
+
+  def remove_legacy_transcript_note!
+    legacy_message = conversation.messages.find_by(source_id: transcript_ref)
+    return unless legacy_message&.private? && legacy_message&.activity?
+    return unless legacy_message.content_attributes.to_h.dig('data', 'type') == 'ai_voice_transcript'
+
+    legacy_message.destroy!
+  end
+
+  def turn_source_id(index)
+    "ai_voice_turn:#{call_session.external_call_ref}:#{index}"
+  end
+
+  def message_type_for_speaker(speaker)
+    speaker == 'caller' ? :incoming : :outgoing
+  end
+
+  def sender_for_speaker(speaker)
+    return conversation.contact if speaker == 'caller'
+
+    voice_captain_assistant
+  end
+
+  def voice_captain_assistant
+    @voice_captain_assistant ||= begin
+      assistant = inbox_captain_assistant || call_session.number_binding&.routing_policy&.captain_assistant
+      assistant if assistant&.account_id == conversation.account_id
+    end
+  end
+
+  def inbox_captain_assistant
+    return unless defined?(CaptainInbox)
+
+    CaptainInbox.find_by(inbox_id: conversation.inbox_id)&.captain_assistant
   end
 
   def merge_items(existing_items, new_items)

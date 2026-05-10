@@ -89,7 +89,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'speaker' => 'ai',
       'text' => 'Сейчас соединю вас со специалистом.'
     )
-    expect(conversation.messages.where(source_id: "ai_voice_transcript:#{call_session.external_call_ref}")).to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).to exist
   end
 
   it 'finalizes once and returns an idempotent response for duplicate finalize payloads' do
@@ -223,6 +223,6 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'partial_transcript' => include(include('text' => 'Хотите', 'final' => false))
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
-    expect(conversation.messages.where(source_id: "ai_voice_transcript:#{call_session.external_call_ref}")).to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).to exist
   end
 end

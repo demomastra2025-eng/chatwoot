@@ -84,7 +84,7 @@ class Message < ApplicationRecord
   attr_accessor :echo_id
   # Transient flag used to skip waiting_since clearing for specific bot/system messages.
   attr_accessor :preserve_waiting_since
-  attr_accessor :skip_runtime_events
+  attr_accessor :skip_runtime_events, :skip_send_reply
 
   enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
   enum content_type: {
@@ -429,6 +429,7 @@ class Message < ApplicationRecord
 
   def send_reply
     return unless outgoing?
+    return if skip_send_reply
 
     # FIXME: Giving it few seconds for the attachment to be uploaded to the service
     # active storage attaches the file only after commit
