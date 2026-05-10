@@ -18,6 +18,10 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  usedItemIds: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['close', 'selectField']);
@@ -52,8 +56,13 @@ const loadFields = async () => {
   }
 };
 
+const usedItemIdSet = computed(() => new Set(props.usedItemIds || []));
+
 const normalizedFields = computed(() =>
-  fields.value.map(field => localizeCatalogField(field, { t, te }))
+  fields.value.map(field => ({
+    ...localizeCatalogField(field, { t, te }),
+    isUsed: usedItemIdSet.value.has(field.id),
+  }))
 );
 
 const filteredFields = computed(() => {

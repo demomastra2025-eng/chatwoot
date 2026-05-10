@@ -62,6 +62,10 @@ import {
   stripUnsupportedFormatting,
 } from 'dashboard/helper/editorHelper';
 import {
+  extractCaptainFieldReferenceIds,
+  extractCaptainToolReferenceIds,
+} from 'dashboard/helper/captainCatalog';
+import {
   hasPressedEnterAndNotCmdOrShift,
   hasPressedCommandAndEnter,
 } from 'shared/helpers/KeyboardHelpers';
@@ -246,6 +250,14 @@ const shouldShowCannedResponses = computed(() => {
     props.enableCannedResponses && showCannedMenu.value && !props.isPrivate
   );
 });
+
+const usedCaptainToolIds = computed(() =>
+  extractCaptainToolReferenceIds(props.modelValue)
+);
+
+const usedCaptainFieldIds = computed(() =>
+  extractCaptainFieldReferenceIds(props.modelValue)
+);
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -963,6 +975,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :assistant-id="captainContextAssistantId"
       :tool-access="captainToolAccess"
       :tool-scope="captainToolScope"
+      :used-item-ids="usedCaptainToolIds"
       @close="closeToolsMenu"
       @select-tool="content => insertSpecialContent('tool', content)"
     />
@@ -971,6 +984,7 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
       :search-key="fieldSearchKey"
       :assistant-id="captainContextAssistantId"
       :context-access="captainContextAccess"
+      :used-item-ids="usedCaptainFieldIds"
       @close="closeFieldsMenu"
       @select-field="content => insertSpecialContent('field', content)"
     />

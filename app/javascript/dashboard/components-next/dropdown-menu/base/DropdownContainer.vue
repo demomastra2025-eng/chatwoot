@@ -3,6 +3,13 @@ import { useToggle } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import { provideDropdownContext } from './provider.js';
 
+defineProps({
+  menuClass: {
+    type: String,
+    default: '',
+  },
+});
+
 const emit = defineEmits(['close']);
 const [isOpen, toggle] = useToggle(false);
 
@@ -27,7 +34,7 @@ provideDropdownContext({
     :class="isOpen ? 'z-[160]' : ''"
   >
     <slot name="trigger" :is-open :toggle="() => toggle()" />
-    <div v-if="isOpen" class="absolute">
+    <div v-if="isOpen" class="absolute" :class="menuClass">
       <slot />
     </div>
   </div>

@@ -3,6 +3,23 @@ const normalizeCatalogText = value =>
     .trim()
     .toLocaleLowerCase();
 
+const extractReferenceIds = (content, scheme) => {
+  const referenceRegexp = new RegExp(`${scheme}:\\/\\/([^\\s)]+)`, 'g');
+  const ids = Array.from(
+    String(content ?? '').matchAll(referenceRegexp),
+    match => {
+      const rawId = (match[1] || '').replace(/[.,;:!?]+$/g, '');
+      try {
+        return decodeURIComponent(rawId);
+      } catch {
+        return rawId;
+      }
+    }
+  ).filter(Boolean);
+
+  return Array.from(new Set(ids));
+};
+
 const FIELD_GROUP_KEY_MAP = {
   Contact: 'CONTACT',
   Conversation: 'CONVERSATION',
@@ -33,6 +50,10 @@ const TOOL_GROUP_KEY_MAP = {
   'CRM Tasks': 'CRM_TASKS',
   Scheduling: 'SCHEDULING',
   Outbound: 'OUTBOUND',
+  'Support content': 'SUPPORT_CONTENT',
+  Automation: 'AUTOMATION',
+  Operations: 'OPERATIONS',
+  Confirmations: 'CONFIRMATIONS',
   'Help center': 'HELP_CENTER',
   Integrations: 'INTEGRATIONS',
 };
@@ -78,7 +99,7 @@ const fieldGroupTranslationKey = field => {
     : null;
 };
 
-const fieldTitleTranslationKey = field => {
+const fieldBaseTranslationKey = field => {
   if (field?.field_type !== 'field') {
     return null;
   }
@@ -90,7 +111,39 @@ const fieldTitleTranslationKey = field => {
     return null;
   }
 
-  return `CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.${scopeKey}.${fieldKey}.TITLE`;
+  return `CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELDS.${scopeKey}.${fieldKey}`;
+};
+
+const fieldTitleTranslationKey = field => {
+  const baseKey = fieldBaseTranslationKey(field);
+  return baseKey ? `${baseKey}.TITLE` : null;
+};
+
+const fieldDescriptionTranslationKey = field => {
+  const baseKey = fieldBaseTranslationKey(field);
+  return baseKey ? `${baseKey}.DESCRIPTION` : null;
+};
+
+const fieldFallbackDescription = (field, { t, te }) => {
+  const scopeKey = FIELD_SCOPE_KEY_MAP[field?.table_name];
+
+  if (!scopeKey) {
+    return field?.description;
+  }
+
+  const entityKey = `CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.ENTITIES.${scopeKey}`;
+  const fieldTypeKey =
+    field?.field_type === 'custom_attribute'
+      ? 'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELD_TYPES.CUSTOM'
+      : 'CAPTAIN.ASSISTANTS.FORM.CONTEXT_ACCESS.FIELD_TYPES.DEFAULT';
+
+  if (typeof te === 'function' && te(entityKey) && te(fieldTypeKey)) {
+    // The catalog keys are derived from stable field ids at runtime.
+    // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+    return t(fieldTypeKey, { entity: t(entityKey) });
+  }
+
+  return field?.description;
 };
 
 const toolGroupTranslationKey = tool => {
@@ -116,6 +169,7 @@ export const localizeCatalogField = (field, i18n) => {
 
   const groupKey = fieldGroupTranslationKey(field);
   const titleKey = fieldTitleTranslationKey(field);
+  const descriptionKey = fieldDescriptionTranslationKey(field);
 
   return {
     ...field,
@@ -124,6 +178,13 @@ export const localizeCatalogField = (field, i18n) => {
     title: titleKey
       ? translateCatalogValue(i18n, titleKey, field.title)
       : field.title,
+    description: descriptionKey
+      ? translateCatalogValue(
+          i18n,
+          descriptionKey,
+          fieldFallbackDescription(field, i18n)
+        )
+      : fieldFallbackDescription(field, i18n),
     group_label: groupKey
       ? translateCatalogValue(
           i18n,
@@ -161,6 +222,12 @@ export const localizeCatalogTool = (tool, i18n) => {
       : tool.group_label || tool.group_name || '',
   };
 };
+
+export const extractCaptainToolReferenceIds = content =>
+  extractReferenceIds(content, 'tool');
+
+export const extractCaptainFieldReferenceIds = content =>
+  extractReferenceIds(content, 'field');
 
 export const matchesCatalogSearch = (item, search = '') => {
   const normalizedSearch = normalizeCatalogText(search);

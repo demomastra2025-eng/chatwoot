@@ -18,6 +18,7 @@ const {
   placeholderTrailingIcon,
   searchPlaceholder,
   dropdownMaxHeight,
+  dropdownPosition,
 } = defineProps({
   options: {
     type: Array,
@@ -46,6 +47,10 @@ const {
   dropdownMaxHeight: {
     type: String,
     default: 'max-h-80',
+  },
+  dropdownPosition: {
+    type: String,
+    default: '',
   },
   disableDeselect: {
     type: Boolean,
@@ -97,7 +102,7 @@ const toggleSelected = option => {
 </script>
 
 <template>
-  <DropdownContainer>
+  <DropdownContainer :menu-class="dropdownPosition">
     <template #trigger="{ toggle }">
       <Button
         v-if="selectedItem"
@@ -126,7 +131,7 @@ const toggleSelected = option => {
         }}</span>
       </Button>
     </template>
-    <DropdownBody class="top-0 min-w-56 z-[1200]" strong>
+    <DropdownBody class="min-w-56 z-[1200]" strong>
       <div v-if="!disableSearch" class="relative">
         <Icon
           class="absolute size-4 top-2 ltr:right-2 rtl:left-2"

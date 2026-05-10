@@ -141,6 +141,7 @@ export default {
           :model-value="actionNameAsSelectModel"
           :options="actionTypesAsOptions"
           :dropdown-max-height="dropdownMaxHeight"
+          dropdown-position="bottom-[calc(100%_+_0.5rem)]"
           disable-deselect
           class="flex-shrink-0"
           @update:model-value="onActionNameChange"
@@ -151,12 +152,14 @@ export default {
             v-model="action_params"
             :options="dropdownValues"
             :dropdown-max-height="dropdownMaxHeight"
+            dropdown-position="bottom-[calc(100%_+_0.5rem)]"
           />
           <MultiSelect
             v-else-if="inputType === 'multi_select'"
             v-model="action_params"
             :options="dropdownValues"
             :dropdown-max-height="dropdownMaxHeight"
+            dropdown-position="bottom-[calc(100%_+_0.5rem)]"
           />
           <NextInput
             v-else-if="inputType === 'email'"

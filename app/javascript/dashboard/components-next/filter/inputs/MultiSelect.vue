@@ -8,7 +8,7 @@ import DropdownSection from 'next/dropdown-menu/base/DropdownSection.vue';
 import DropdownBody from 'next/dropdown-menu/base/DropdownBody.vue';
 import DropdownItem from 'next/dropdown-menu/base/DropdownItem.vue';
 
-const { options, maxChips, dropdownMaxHeight } = defineProps({
+const { options, maxChips, dropdownMaxHeight, dropdownPosition } = defineProps({
   options: {
     type: Array,
     required: true,
@@ -20,6 +20,10 @@ const { options, maxChips, dropdownMaxHeight } = defineProps({
   dropdownMaxHeight: {
     type: String,
     default: 'max-h-80',
+  },
+  dropdownPosition: {
+    type: String,
+    default: '',
   },
 });
 
@@ -91,7 +95,7 @@ const toggleOption = option => {
 </script>
 
 <template>
-  <DropdownContainer>
+  <DropdownContainer :menu-class="dropdownPosition">
     <template #trigger="{ toggle }">
       <button
         v-if="hasItems"
@@ -126,7 +130,7 @@ const toggleOption = option => {
         <span class="text-n-slate-11">{{ t('COMBOBOX.PLACEHOLDER') }}</span>
       </Button>
     </template>
-    <DropdownBody class="top-0 min-w-56 z-[1200]" strong>
+    <DropdownBody class="min-w-56 z-[1200]" strong>
       <DropdownSection :height="dropdownMaxHeight">
         <DropdownItem
           v-for="option in options"

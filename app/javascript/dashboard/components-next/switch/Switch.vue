@@ -27,6 +27,7 @@ const updateValue = value => {
 <template>
   <SwitchRoot
     v-bind="$attrs"
+    type="button"
     :model-value="modelValue"
     :disabled="props.disabled"
     class="inline-flex h-[16px] w-8 shrink-0 items-center rounded-full border border-transparent bg-n-slate-6 p-0.5 shadow-sm transition-colors duration-200 ease-out outline-none focus-visible:ring-1 focus-visible:ring-n-brand focus-visible:ring-offset-2 focus-visible:ring-offset-n-slate-2 data-[state=checked]:bg-n-brand-solid disabled:cursor-not-allowed disabled:opacity-60"

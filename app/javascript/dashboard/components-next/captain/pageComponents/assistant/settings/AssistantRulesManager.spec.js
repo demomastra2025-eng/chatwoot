@@ -287,6 +287,35 @@ describe('AssistantRulesManager', () => {
     expect(systemCard.attributes('data-selectable')).toBe('false');
   });
 
+  it('keeps system prompt toggle changes local until the parent save button builds the payload', async () => {
+    const wrapper = buildWrapper({
+      assistantId: 42,
+      assistant: {
+        config: {
+          rules: systemRules,
+        },
+      },
+    });
+    dispatchMock.mockClear();
+
+    wrapper.findComponent({ name: 'RuleCard' }).vm.$emit('update', {
+      ...systemRules[0],
+      enabled: false,
+    });
+    await wrapper.vm.$nextTick();
+
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'captainAssistants/update',
+      expect.anything()
+    );
+    expect(wrapper.vm.buildPayload().assistant.config.rules).toEqual([
+      expect.objectContaining({
+        id: 'stay_within_scope',
+        enabled: false,
+      }),
+    ]);
+  });
+
   it('preserves template slots when saving template-backed system rules', async () => {
     const wrapper = buildWrapper({
       assistantId: 42,

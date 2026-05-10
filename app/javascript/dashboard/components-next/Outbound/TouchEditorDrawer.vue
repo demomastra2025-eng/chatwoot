@@ -83,6 +83,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  showAllTouchesAction: {
+    type: Boolean,
+    default: false,
+  },
   successCreatedMessage: {
     type: String,
     default: '',
@@ -117,7 +121,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['close', 'saved', 'update:modelValue']);
+const emit = defineEmits(['close', 'saved', 'update:modelValue', 'viewAll']);
 
 const { t } = useI18n();
 const currentAccountId = useMapGetter('getCurrentAccountId');
@@ -1728,13 +1732,23 @@ watch(
 
     <template #footer>
       <div class="flex items-center justify-between w-full gap-3">
-        <Button
-          size="sm"
-          color="slate"
-          variant="faded"
-          :label="$t('SCHEDULING.GENERAL.CANCEL')"
-          @click="closeDrawer"
-        />
+        <div class="flex items-center gap-2">
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            :label="$t('SCHEDULING.GENERAL.CANCEL')"
+            @click="closeDrawer"
+          />
+          <Button
+            v-if="showAllTouchesAction"
+            size="sm"
+            color="slate"
+            variant="outline"
+            :label="$t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.VIEW_ALL')"
+            @click="emit('viewAll')"
+          />
+        </div>
         <Button
           size="sm"
           :is-loading="ui.isSaving || ui.isUploadingAttachment"

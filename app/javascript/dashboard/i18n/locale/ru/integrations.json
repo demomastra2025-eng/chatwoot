@@ -606,6 +606,7 @@
           "LABEL": "Инструкция",
           "PLACEHOLDER": "Опишите, как должен работать AI-агент и в каких рамках отвечать"
         },
+        "CATALOG_ITEM_USED": "Используется",
         "FEATURES": {
           "TITLE": "Возможности",
           "ALLOW_CONVERSATION_FAQS": "Создать FAQ из решённых диалогов",
@@ -686,7 +687,7 @@
               "ID": { "TITLE": "ID сделки" },
               "TITLE": { "TITLE": "Название" },
               "DESCRIPTION": { "TITLE": "Описание" },
-              "AMOUNT_MINOR": { "TITLE": "Сумма (в минимальных единицах)" },
+              "AMOUNT": { "TITLE": "Сумма" },
               "CURRENCY": { "TITLE": "Валюта" },
               "EXPECTED_CLOSE_ON": { "TITLE": "Ожидаемая дата закрытия" },
               "WIN_PROBABILITY": { "TITLE": "Вероятность успеха" },
@@ -813,6 +814,9 @@
             "CRM_TASKS": "Задачи CRM",
             "SCHEDULING": "Запись",
             "OUTBOUND": "Исходящие",
+            "SUPPORT_CONTENT": "Шаблоны ответов",
+            "AUTOMATION": "Автоматизация",
+            "OPERATIONS": "Операции",
             "CONFIRMATIONS": "Подтверждения",
             "HELP_CENTER": "База знаний",
             "INTEGRATIONS": "Интеграции"
@@ -1005,6 +1009,134 @@
             "search_articles": {
               "TITLE": "Найти статьи",
               "DESCRIPTION": "Ищет статьи базы знаний по запросу, категории или статусу."
+            },
+            "cancel_response": {
+              "TITLE": "Остановить ответ",
+              "DESCRIPTION": "Тихо останавливает текущий ответ AI, когда клиенту не нужно отправлять сообщение."
+            },
+            "send_notification": {
+              "TITLE": "Отправить уведомление",
+              "DESCRIPTION": "Отправляет in-app уведомление сотруднику аккаунта по текущему или указанному диалогу."
+            },
+            "list_deal_pipelines": {
+              "TITLE": "Список воронок сделок",
+              "DESCRIPTION": "Показывает активные CRM-воронки, этапы и ID этапов перед созданием или перемещением сделки."
+            },
+            "list_deal_stages": {
+              "TITLE": "Список этапов сделки",
+              "DESCRIPTION": "Показывает этапы CRM-воронки для текущей сделки или выбранной воронки, включая предыдущий и следующий этап."
+            },
+            "list_channel_templates": {
+              "TITLE": "Список шаблонов канала",
+              "DESCRIPTION": "Показывает одобренные шаблоны WhatsApp/Twilio для диалога или inbox'а."
+            },
+            "cancel_touch": {
+              "TITLE": "Отменить касание",
+              "DESCRIPTION": "Отменяет одно черновое или ожидающее запланированное касание по ID."
+            },
+            "delete_touch": {
+              "TITLE": "Удалить касание",
+              "DESCRIPTION": "Удаляет черновое, ожидающее, ошибочное или отмененное запланированное касание по ID."
+            },
+            "cancel_touches": {
+              "TITLE": "Отменить касания",
+              "DESCRIPTION": "Отменяет черновые и ожидающие касания текущей сущности, опционально по дожиму."
+            },
+            "create_touch_plan": {
+              "TITLE": "Создать дожим",
+              "DESCRIPTION": "Создает переиспользуемый дожим с одним или несколькими запланированными касаниями."
+            },
+            "apply_touch_plan": {
+              "TITLE": "Применить дожим",
+              "DESCRIPTION": "Применяет существующий дожим к текущему диалогу, сделке, задаче или записи."
+            },
+            "archive_touch_plan": {
+              "TITLE": "Архивировать дожим",
+              "DESCRIPTION": "Архивирует дожим, чтобы он больше не использовался для новых касаний."
+            },
+            "send_message_to_conversation": {
+              "TITLE": "Отправить сообщение в диалог",
+              "DESCRIPTION": "Отправляет публичный ответ, приватную заметку, вложения или одобренный шаблон канала в диалог."
+            },
+            "assign_conversation": {
+              "TITLE": "Назначить диалог",
+              "DESCRIPTION": "Назначает диалог сотруднику, боту или команде."
+            },
+            "retry_failed_message": {
+              "TITLE": "Повторить ошибочное сообщение",
+              "DESCRIPTION": "Повторяет отправку неудачного исходящего сообщения в диалоге."
+            },
+            "edit_message": {
+              "TITLE": "Изменить сообщение",
+              "DESCRIPTION": "Редактирует ранее отправленное исходящее сообщение, если канал это поддерживает."
+            },
+            "translate_message": {
+              "TITLE": "Перевести сообщение",
+              "DESCRIPTION": "Переводит сообщение диалога на целевой язык."
+            },
+            "search_canned_responses": {
+              "TITLE": "Найти готовые ответы",
+              "DESCRIPTION": "Ищет готовые ответы по короткому коду или содержанию."
+            },
+            "create_canned_response": {
+              "TITLE": "Создать готовый ответ",
+              "DESCRIPTION": "Создает переиспользуемый готовый ответ."
+            },
+            "merge_contacts": {
+              "TITLE": "Объединить контакты",
+              "DESCRIPTION": "Объединяет один контакт с другим."
+            },
+            "add_appointment_payment": {
+              "TITLE": "Добавить оплату записи",
+              "DESCRIPTION": "Добавляет оплату к записи, связанной с текущим диалогом."
+            },
+            "execute_macro": {
+              "TITLE": "Выполнить макрос",
+              "DESCRIPTION": "Выполняет макрос для одного или нескольких диалогов."
+            },
+            "get_whatsapp_web_diagnostics": {
+              "TITLE": "Диагностика WhatsApp Web",
+              "DESCRIPTION": "Показывает runtime-диагностику inbox'а WhatsApp Web."
+            },
+            "reconnect_whatsapp_web": {
+              "TITLE": "Переподключить WhatsApp Web",
+              "DESCRIPTION": "Переподключает inbox WhatsApp Web."
+            },
+            "create_label": {
+              "TITLE": "Создать метку",
+              "DESCRIPTION": "Создает новую метку аккаунта."
+            },
+            "update_label": {
+              "TITLE": "Обновить метку",
+              "DESCRIPTION": "Обновляет существующую метку аккаунта."
+            },
+            "remove_label_from_conversation": {
+              "TITLE": "Убрать метку из диалога",
+              "DESCRIPTION": "Удаляет метку из текущего диалога."
+            },
+            "list_campaigns": {
+              "TITLE": "Список кампаний",
+              "DESCRIPTION": "Показывает кампании текущего аккаунта."
+            },
+            "preview_campaign": {
+              "TITLE": "Предпросмотр кампании",
+              "DESCRIPTION": "Показывает предпросмотр кампании перед отправкой."
+            },
+            "get_campaign_analytics": {
+              "TITLE": "Аналитика кампании",
+              "DESCRIPTION": "Показывает аналитику кампании."
+            },
+            "retry_failed_campaign_deliveries": {
+              "TITLE": "Повторить ошибочные доставки кампании",
+              "DESCRIPTION": "Повторяет ошибочные доставки кампании."
+            },
+            "create_webhook": {
+              "TITLE": "Создать webhook",
+              "DESCRIPTION": "Создает webhook аккаунта."
+            },
+            "update_webhook": {
+              "TITLE": "Обновить webhook",
+              "DESCRIPTION": "Обновляет существующий webhook аккаунта."
             },
             "search_linear_issues": {
               "TITLE": "Найти задачи Linear",

@@ -606,6 +606,7 @@
           "LABEL": "Instruction",
           "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow"
         },
+        "CATALOG_ITEM_USED": "Used",
         "FEATURES": {
           "TITLE": "Features",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
@@ -686,7 +687,7 @@
               "ID": { "TITLE": "Deal ID" },
               "TITLE": { "TITLE": "Title" },
               "DESCRIPTION": { "TITLE": "Description" },
-              "AMOUNT_MINOR": { "TITLE": "Amount (minor units)" },
+              "AMOUNT": { "TITLE": "Amount" },
               "CURRENCY": { "TITLE": "Currency" },
               "EXPECTED_CLOSE_ON": { "TITLE": "Expected Close Date" },
               "WIN_PROBABILITY": { "TITLE": "Win Probability" },
@@ -813,6 +814,9 @@
             "CRM_TASKS": "CRM Tasks",
             "SCHEDULING": "Scheduling",
             "OUTBOUND": "Outbound",
+            "SUPPORT_CONTENT": "Support content",
+            "AUTOMATION": "Automation",
+            "OPERATIONS": "Operations",
             "CONFIRMATIONS": "Confirmations",
             "HELP_CENTER": "Help center",
             "INTEGRATIONS": "Integrations"
@@ -1005,6 +1009,134 @@
             "search_articles": {
               "TITLE": "Search articles",
               "DESCRIPTION": "Search help center articles by query, category, or status."
+            },
+            "cancel_response": {
+              "TITLE": "Cancel response",
+              "DESCRIPTION": "Silently stop the current AI response when no customer reply should be sent."
+            },
+            "send_notification": {
+              "TITLE": "Send notification",
+              "DESCRIPTION": "Send an in-app notification to an account user about the current or specified conversation."
+            },
+            "list_deal_pipelines": {
+              "TITLE": "List deal pipelines",
+              "DESCRIPTION": "List active CRM deal pipelines with ordered stages and stage IDs before creating or moving deals."
+            },
+            "list_deal_stages": {
+              "TITLE": "List deal stages",
+              "DESCRIPTION": "List CRM deal stages for the current deal or selected pipeline, including previous and next stages."
+            },
+            "list_channel_templates": {
+              "TITLE": "List channel templates",
+              "DESCRIPTION": "List approved WhatsApp/Twilio channel templates for a conversation or inbox."
+            },
+            "cancel_touch": {
+              "TITLE": "Cancel touch",
+              "DESCRIPTION": "Cancel a single draft or pending scheduled outbound touch by ID."
+            },
+            "delete_touch": {
+              "TITLE": "Delete touch",
+              "DESCRIPTION": "Delete a draft, pending, failed, or cancelled scheduled outbound touch by ID."
+            },
+            "cancel_touches": {
+              "TITLE": "Cancel touches",
+              "DESCRIPTION": "Cancel draft and pending scheduled touches for the current entity, optionally by touch plan."
+            },
+            "create_touch_plan": {
+              "TITLE": "Create touch plan",
+              "DESCRIPTION": "Create a reusable outbound touch plan with one or more scheduled touch definitions."
+            },
+            "apply_touch_plan": {
+              "TITLE": "Apply touch plan",
+              "DESCRIPTION": "Apply an existing touch plan to the current conversation, deal, task, or appointment."
+            },
+            "archive_touch_plan": {
+              "TITLE": "Archive touch plan",
+              "DESCRIPTION": "Archive an outbound touch plan so it is no longer used for new scheduled touches."
+            },
+            "send_message_to_conversation": {
+              "TITLE": "Send message to conversation",
+              "DESCRIPTION": "Send a public reply, private note, attachments, or an approved channel template to a conversation."
+            },
+            "assign_conversation": {
+              "TITLE": "Assign conversation",
+              "DESCRIPTION": "Assign a conversation to an agent, agent bot, or team."
+            },
+            "retry_failed_message": {
+              "TITLE": "Retry failed message",
+              "DESCRIPTION": "Retry a failed outgoing message in a conversation."
+            },
+            "edit_message": {
+              "TITLE": "Edit message",
+              "DESCRIPTION": "Edit a previously sent outgoing message when the channel supports it."
+            },
+            "translate_message": {
+              "TITLE": "Translate message",
+              "DESCRIPTION": "Translate a conversation message into a target language."
+            },
+            "search_canned_responses": {
+              "TITLE": "Search canned responses",
+              "DESCRIPTION": "Search canned responses by short code or content."
+            },
+            "create_canned_response": {
+              "TITLE": "Create canned response",
+              "DESCRIPTION": "Create a reusable canned response."
+            },
+            "merge_contacts": {
+              "TITLE": "Merge contacts",
+              "DESCRIPTION": "Merge one contact into another contact."
+            },
+            "add_appointment_payment": {
+              "TITLE": "Add appointment payment",
+              "DESCRIPTION": "Add a payment to the appointment linked to the current conversation."
+            },
+            "execute_macro": {
+              "TITLE": "Execute macro",
+              "DESCRIPTION": "Execute a macro for one or more conversations."
+            },
+            "get_whatsapp_web_diagnostics": {
+              "TITLE": "Get WhatsApp Web diagnostics",
+              "DESCRIPTION": "Get runtime diagnostics for a WhatsApp Web inbox."
+            },
+            "reconnect_whatsapp_web": {
+              "TITLE": "Reconnect WhatsApp Web",
+              "DESCRIPTION": "Reconnect a WhatsApp Web inbox."
+            },
+            "create_label": {
+              "TITLE": "Create label",
+              "DESCRIPTION": "Create a new account label."
+            },
+            "update_label": {
+              "TITLE": "Update label",
+              "DESCRIPTION": "Update an existing account label."
+            },
+            "remove_label_from_conversation": {
+              "TITLE": "Remove label from conversation",
+              "DESCRIPTION": "Remove a label from the current conversation."
+            },
+            "list_campaigns": {
+              "TITLE": "List campaigns",
+              "DESCRIPTION": "List campaigns for the current account."
+            },
+            "preview_campaign": {
+              "TITLE": "Preview campaign",
+              "DESCRIPTION": "Preview a campaign before sending it."
+            },
+            "get_campaign_analytics": {
+              "TITLE": "Get campaign analytics",
+              "DESCRIPTION": "Get analytics for a campaign."
+            },
+            "retry_failed_campaign_deliveries": {
+              "TITLE": "Retry failed campaign deliveries",
+              "DESCRIPTION": "Retry failed deliveries for a campaign."
+            },
+            "create_webhook": {
+              "TITLE": "Create webhook",
+              "DESCRIPTION": "Create an account webhook."
+            },
+            "update_webhook": {
+              "TITLE": "Update webhook",
+              "DESCRIPTION": "Update an existing account webhook."
             },
             "search_linear_issues": {
               "TITLE": "Search Linear issues",

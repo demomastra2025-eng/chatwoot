@@ -1,4 +1,6 @@
 import {
+  extractCaptainFieldReferenceIds,
+  extractCaptainToolReferenceIds,
   filterAndSortCatalogItems,
   localizeCatalogField,
   localizeCatalogTool,
@@ -20,6 +22,36 @@ describe('captainCatalog helper', () => {
     expect(matchesCatalogSearch(item, 'contact fields')).toBe(true);
     expect(matchesCatalogSearch(item, 'contact.name')).toBe(true);
     expect(matchesCatalogSearch(item, 'missing')).toBe(false);
+  });
+
+  it('extracts used tool and field reference ids from instructions', () => {
+    const content = [
+      'Use [Create Deal](tool://create_deal) when needed.',
+      'Read [Phone](field://contact.phone_number) and [Status](field://conversation.status).',
+      'Plain refs: tool://handoff, field://deal.amount.',
+      'Duplicate [Create Deal](tool://create_deal).',
+    ].join('\n');
+
+    expect(extractCaptainToolReferenceIds(content)).toEqual([
+      'create_deal',
+      'handoff',
+    ]);
+    expect(extractCaptainFieldReferenceIds(content)).toEqual([
+      'contact.phone_number',
+      'conversation.status',
+      'deal.amount',
+    ]);
+  });
+
+  it('keeps used metadata while filtering catalog items', () => {
+    const items = [
+      { id: 'create_deal', title: 'Create deal', isUsed: true },
+      { id: 'handoff', title: 'Handoff', isUsed: false },
+    ];
+
+    expect(
+      filterAndSortCatalogItems(items, { search: 'deal' })[0]
+    ).toMatchObject({ id: 'create_deal', isUsed: true });
   });
 
   it('sorts items by explicit group priority before alphabetical order', () => {

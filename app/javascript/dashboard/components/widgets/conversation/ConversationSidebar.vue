@@ -1,18 +1,23 @@
 <script setup>
 import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import ContactPanel from 'dashboard/routes/dashboard/conversation/ContactPanel.vue';
-import EntityTouchesCard from 'dashboard/components-next/Outbound/EntityTouchesCard.vue';
+import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import wootConstants from 'dashboard/constants/globals';
 
-defineProps({
+const props = defineProps({
   currentChat: {
     required: true,
     type: Object,
   },
 });
+
+const router = useRouter();
+const { accountScopedRoute } = useAccount();
 
 const { uiSettings, updateUISettings } = useUISettings();
 const { width: windowWidth } = useWindowSize();
@@ -57,6 +62,29 @@ const closeSidebar = () => {
     });
   }
 };
+
+const closeTouchSidebar = () => {
+  updateUISettings({
+    is_contact_sidebar_open: false,
+    is_copilot_panel_open: false,
+    is_crm_deal_panel_open: false,
+    is_touch_sidebar_open: false,
+  });
+};
+
+const openTouchesWorkspace = () => {
+  router.push(
+    accountScopedRoute(
+      'outbound_broadcasts_personal_index',
+      {},
+      {
+        conversation_id: props.currentChat.id,
+        remindable_id: props.currentChat.id,
+        remindable_type: 'Conversation',
+      }
+    )
+  );
+};
 </script>
 
 <template>
@@ -79,13 +107,18 @@ const closeSidebar = () => {
         :conversation-id="currentChat.id"
         :inbox-id="currentChat.inbox_id"
       />
-      <div v-if="activeTab === 'touch'" class="min-w-0 flex-1 p-3">
-        <EntityTouchesCard
+      <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
+        <TouchEditorDrawer
+          :model-value="activeTab === 'touch'"
+          display-mode="sidebar"
           :conversation-id="currentChat.id"
-          :title="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
-          :description="$t('CONVERSATION.REPLYBOX.DELAYED_MESSAGE_DESCRIPTION')"
           remindable-type="Conversation"
           :remindable-id="currentChat.id"
+          show-all-touches-action
+          @close="closeTouchSidebar"
+          @saved="closeTouchSidebar"
+          @update:model-value="value => !value && closeTouchSidebar()"
+          @view-all="openTouchesWorkspace"
         />
       </div>
     </div>

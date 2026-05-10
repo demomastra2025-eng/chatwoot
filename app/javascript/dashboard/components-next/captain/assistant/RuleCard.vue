@@ -290,6 +290,8 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
             <Switch
               v-if="isStructuredMode"
               :model-value="enabled"
+              @click.stop
+              @keydown.stop
               @change="onToggleEnabled"
             />
             <template v-if="editable">

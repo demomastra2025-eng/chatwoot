@@ -22,6 +22,8 @@ const props = defineProps({
   },
 });
 
+const QUESTION_MARK_ICON = '?';
+
 const isOpen = ref(false);
 
 const popoverClasses = computed(() =>
@@ -44,11 +46,16 @@ const closePopover = () => {
   >
     <button
       type="button"
-      class="inline-flex size-5 items-center justify-center rounded-full border border-n-weak bg-n-solid-2 text-n-slate-12 shadow-sm transition-colors hover:bg-n-slate-3 hover:text-n-slate-12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-n-brand/20"
+      class="inline-flex size-4 items-center justify-center rounded text-n-slate-11 transition-colors hover:text-n-slate-12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-n-brand/20"
       :aria-expanded="isOpen"
       @click.stop="togglePopover"
     >
-      <span class="i-lucide-info size-3.5" />
+      <span
+        aria-hidden="true"
+        class="text-[10px] font-semibold leading-none text-n-slate-11"
+      >
+        {{ QUESTION_MARK_ICON }}
+      </span>
     </button>
 
     <section

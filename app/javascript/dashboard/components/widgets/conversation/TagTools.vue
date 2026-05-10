@@ -22,6 +22,10 @@ const props = defineProps({
     type: String,
     default: 'agent',
   },
+  usedItemIds: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['close', 'selectTool']);
@@ -44,8 +48,13 @@ const loadTools = async () => {
   }
 };
 
+const usedItemIdSet = computed(() => new Set(props.usedItemIds || []));
+
 const localizedTools = computed(() =>
-  tools.value.map(tool => localizeCatalogTool(tool, { t, te }))
+  tools.value.map(tool => ({
+    ...localizeCatalogTool(tool, { t, te }),
+    isUsed: usedItemIdSet.value.has(tool.id),
+  }))
 );
 
 const filteredTools = computed(() => {

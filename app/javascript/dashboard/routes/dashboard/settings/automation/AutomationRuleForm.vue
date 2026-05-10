@@ -451,7 +451,7 @@ defineExpose({ open, close });
             :key="i"
             v-model="automation.actions[i]"
             :action-types="automationActionTypes"
-            dropdown-max-height="max-h-[7.5rem]"
+            dropdown-max-height="max-h-[10rem]"
             :dropdown-values="
               getActionDropdownValues(action.action_name, eventName)
             "

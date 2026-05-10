@@ -141,13 +141,21 @@ watch(
                   :key="entry.id || entry.flatIndex"
                   :class="{
                     'bg-n-alpha-black2': entry.flatIndex === selectedIndex,
+                    'bg-n-teal-2/40 ring-1 ring-n-teal-5': entry.isUsed,
                   }"
                   class="flex cursor-pointer flex-col gap-1 rounded-md px-3 py-2 hover:bg-n-alpha-black2"
                   @click="onItemClick(entry.flatIndex)"
                 >
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium text-n-slate-12">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="min-w-0 text-sm font-medium text-n-slate-12">
                       {{ entry.title }}
+                    </span>
+                    <span
+                      v-if="entry.isUsed"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-full bg-n-teal-3 px-2 py-0.5 text-xs font-medium text-n-teal-11"
+                    >
+                      <i class="i-lucide-check size-3" />
+                      {{ t('CAPTAIN.ASSISTANTS.FORM.CATALOG_ITEM_USED') }}
                     </span>
                   </div>
                   <span
@@ -210,13 +218,21 @@ watch(
               :key="entry.id || entry.flatIndex"
               :class="{
                 'bg-n-alpha-black2': entry.flatIndex === selectedIndex,
+                'bg-n-teal-2/40 ring-1 ring-n-teal-5': entry.isUsed,
               }"
               class="flex cursor-pointer flex-col gap-1 rounded-md px-3 py-2 hover:bg-n-alpha-black2"
               @click="onItemClick(entry.flatIndex)"
             >
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-n-slate-12">
+              <div class="flex items-center justify-between gap-2">
+                <span class="min-w-0 text-sm font-medium text-n-slate-12">
                   {{ entry.title }}
+                </span>
+                <span
+                  v-if="entry.isUsed"
+                  class="inline-flex shrink-0 items-center gap-1 rounded-full bg-n-teal-3 px-2 py-0.5 text-xs font-medium text-n-teal-11"
+                >
+                  <i class="i-lucide-check size-3" />
+                  {{ t('CAPTAIN.ASSISTANTS.FORM.CATALOG_ITEM_USED') }}
                 </span>
               </div>
               <span v-if="entry.description" class="text-sm text-n-slate-11">

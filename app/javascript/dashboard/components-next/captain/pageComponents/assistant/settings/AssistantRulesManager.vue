@@ -385,6 +385,12 @@ const updateRule = async updatedRule => {
   await saveRules(nextRules);
 };
 
+const updateRuleDraft = updatedRule => {
+  orderedRules.value = orderedRules.value.map(rule =>
+    rule.id === updatedRule.id ? normalizeIncomingRule(updatedRule) : rule
+  );
+};
+
 const deleteRule = async ruleId => {
   const nextRules = orderedRules.value.filter(rule => rule.id !== ruleId);
 
@@ -571,7 +577,7 @@ defineExpose({
             :captain-context-assistant-id="assistantId"
             :captain-context-access="assistant?.config?.context_access || {}"
             :captain-tool-access="assistant?.config?.tool_access || {}"
-            @update="updateRule"
+            @update="updateRuleDraft"
           />
         </template>
       </div>
