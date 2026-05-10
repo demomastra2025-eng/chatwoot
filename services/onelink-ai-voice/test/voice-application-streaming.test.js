@@ -155,7 +155,7 @@ test('VoiceApplication treats media stream close as an incomplete failure and pr
     stream() { return stream; }
   });
   const client = {
-    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-media-closed' }),
     sendBridgeEvent: async () => ({ status: 'ok' }),
     getContext: async () => ({ call_ref: 'call-media-closed', ai: { provider: 'gemini-live' } }),
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
@@ -180,9 +180,11 @@ test('VoiceApplication treats media stream close as an incomplete failure and pr
   assert.equal(finalizations.at(-1).status, 'failed');
   assert.equal(finalizations.at(-1).reason, 'media_stream_closed');
   assert.equal(finalizations.at(-1).incomplete_transcript, true);
+  assert.equal(finalizations.at(-1).bridge_call_ref, 'bridge-media-closed');
   assert.equal(finalizations.at(-1).final_transcript[0].text, 'Хотите');
   assert.equal(finalizations.at(-1).partial_transcript[0].text, 'Хотите');
   assert.equal(events.some(event => event.event_type === 'app_received_call'), true);
+  assert.equal(events.find(event => event.event_type === 'app_received_call').payload.bridge_call_ref, 'bridge-media-closed');
   assert.equal(events.some(event => event.event_type === 'app_answered'), true);
   assert.equal(events.some(event => event.event_type === 'media_stream_started'), true);
   assert.equal(events.some(event => event.event_type === 'call_ended' && event.payload.reason === 'media_stream_closed'), true);

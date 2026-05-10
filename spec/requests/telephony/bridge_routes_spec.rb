@@ -402,13 +402,22 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     caller_number = '+15551230001'
     contact = create(:contact, account: account, phone_number: caller_number)
     contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
-    create(
+    conversation = create(
       :conversation,
       account: account,
       inbox: voice_inbox,
       contact: contact,
       contact_inbox: contact_inbox,
       status: :pending
+    )
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      conversation: conversation,
+      external_call_ref: 'bridge-call-pending',
+      status: 'in_progress'
     )
 
     number_binding.routing_policy.update!(
@@ -435,7 +444,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).to include(
       'action' => 'ai',
       'app_ref' => 'ai-status-aware-app-ref',
-      'reason' => 'pending_conversation_ai_route'
+      'reason' => 'pending_conversation_ai_route',
+      'bridge_call_ref' => 'bridge-call-pending'
     )
   end
 

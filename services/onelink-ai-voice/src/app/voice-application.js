@@ -38,6 +38,7 @@ class VoiceApplication {
       callerNumber: requestPayload.caller_number || requestPayload.from,
       numberRef: requestPayload.number_ref,
       accountId: requestPayload.account_id,
+      bridgeCallRef: bridgeCallRefCandidate(requestPayload),
       toolTimeoutMs: this.toolTimeoutMs
     });
     this.registry?.create({ callRef, context: {}, accountId: requestPayload.account_id });
@@ -1253,6 +1254,7 @@ function compactPayload(payload = {}) {
 function routePayload(requestPayload = {}, callRef) {
   return compactPayload({
     call_ref: callRef,
+    bridge_call_ref: bridgeCallRefCandidate(requestPayload),
     ingress_number: requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to_number || requestPayload.to,
     caller_number: requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from_number || requestPayload.from,
     number_ref: requestPayload.number_ref || requestPayload.numberRef,
@@ -1299,6 +1301,7 @@ function applyRouteScope(session, routeDecision = {}) {
   if (!session || !routeDecision) return;
   session.accountId = routeDecision.account_id || routeDecision.accountId || session.accountId;
   session.numberRef = routeDecision.number_ref || routeDecision.numberRef || session.numberRef;
+  session.bridgeCallRef = bridgeCallRefCandidate(routeDecision) || session.bridgeCallRef;
 }
 
 function shouldHandleAppRouteLocally(routeDecision = {}, _requestPayload = {}) {
@@ -1445,7 +1448,7 @@ function isMediaStreamEstablishmentError(error) {
 function correlationPayload(session, requestPayload = {}, data = {}) {
   const source = data || {};
   return compactPayload({
-    bridge_call_ref: requestPayload.bridge_call_ref || requestPayload.bridgeCallRef || source.bridge_call_ref || source.bridgeCallRef,
+    bridge_call_ref: session?.bridgeCallRef || bridgeCallRefCandidate(requestPayload) || bridgeCallRefCandidate(source),
     fonoster_call_ref: session?.callRef || requestPayload.call_ref || requestPayload.callRef,
     ai_runtime_call_ref: session?.callRef,
     runtime_call_ref: session?.callRef,
@@ -1475,10 +1478,18 @@ function normalizeCallPayload(call, payload = {}) {
     ...request,
     ...payload,
     call_ref: payload.call_ref || payload.callRef || request.call_ref || request.callRef,
+    bridge_call_ref: payload.bridge_call_ref || payload.bridgeCallRef || request.bridge_call_ref || request.bridgeCallRef ||
+      payload.parent_call_ref || payload.parentCallRef || request.parent_call_ref || request.parentCallRef ||
+      payload.original_call_ref || payload.originalCallRef || request.original_call_ref || request.originalCallRef,
     media_session_ref: payload.media_session_ref || payload.mediaSessionRef || request.media_session_ref || request.mediaSessionRef,
     ingress_number: payload.ingress_number || payload.to || request.ingress_number || request.to,
     caller_number: payload.caller_number || payload.from || request.caller_number || request.from
   };
+}
+
+function bridgeCallRefCandidate(payload = {}) {
+  return payload.bridge_call_ref || payload.bridgeCallRef || payload.fonoster_bridge_call_ref || payload.fonosterBridgeCallRef ||
+    payload.parent_call_ref || payload.parentCallRef || payload.original_call_ref || payload.originalCallRef;
 }
 
 function answerCall(call) {

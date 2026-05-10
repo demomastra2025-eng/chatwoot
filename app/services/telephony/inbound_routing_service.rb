@@ -327,7 +327,8 @@ class Telephony::InboundRoutingService
     context = {
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
-      number_ref: number_binding.number_ref
+      number_ref: number_binding.number_ref,
+      bridge_call_ref: bridge_call_ref_for_context
     }
 
     if existing_voice_conversation.present?
@@ -376,6 +377,18 @@ class Telephony::InboundRoutingService
 
   def existing_voice_conversation
     @existing_voice_conversation ||= conversation_from_call_ref || conversation_from_caller_number
+  end
+
+  def bridge_call_ref_for_context
+    return if existing_voice_conversation.blank?
+
+    @bridge_call_ref_for_context ||= begin
+      scope = Telephony::CallSession.active
+      scope = scope.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
+      scope = scope.where.not(external_call_ref: call_ref)
+      scope = scope.where('created_at >= ?', 30.minutes.ago)
+      scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
+    end
   end
 
   def conversation_from_call_ref

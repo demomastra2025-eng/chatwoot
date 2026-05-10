@@ -4,7 +4,7 @@ const { safeReason } = require('../utils/timeout');
 const { randomUUID } = require('node:crypto');
 
 class VoiceSession {
-  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, toolTimeoutMs = 3_000 } = {}) {
+  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, bridgeCallRef = null, toolTimeoutMs = 3_000 } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;
@@ -13,6 +13,7 @@ class VoiceSession {
     this.callerNumber = callerNumber;
     this.numberRef = numberRef;
     this.accountId = accountId;
+    this.bridgeCallRef = bridgeCallRef;
     this.aiSessionId = `ai_${randomUUID()}`;
     this.startedAt = new Date();
     this.eventSeq = 0;
@@ -97,7 +98,7 @@ class VoiceSession {
         event_seq: this.nextEventSeq(),
         event_type: 'finalize',
         provider_call_id: this.callRef,
-        bridge_call_ref: metadata.bridge_call_ref,
+        bridge_call_ref: metadata.bridge_call_ref || this.bridgeCallRef,
         ai_runtime_call_ref: this.callRef,
         runtime_call_ref: this.callRef,
         ai_session_id: this.aiSessionId,
@@ -167,6 +168,7 @@ class VoiceSession {
   scopePayload() {
     return {
       account_id: this.accountId,
+      bridge_call_ref: this.bridgeCallRef,
       number_ref: this.numberRef,
       ingress_number: this.ingressNumber,
       caller_number: this.callerNumber
