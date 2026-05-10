@@ -38,9 +38,10 @@ class Channel::WhatsappWeb < ApplicationRecord
 
   PROVIDERS = %w[evolution].freeze
   DEFAULT_IGNORE_REMOTE_JIDS = %w[status@broadcast].freeze
-  LIFECYCLE_STATES = %w[creating waiting_for_qr qr_ready reconnecting connected disconnected failed deleting].freeze
+  LIFECYCLE_STATES = %w[creating waiting_for_qr qr_ready qr_scanned reconnecting connected disconnected failed deleting].freeze
   CONNECTION_STATES = %w[open connecting reconnecting close refused unknown].freeze
   AUTH_ARTIFACT_TTL = 60.seconds
+  SCANNED_AUTH_ARTIFACT_TTL = 2.minutes
   AUTH_ARTIFACT_TYPES = {
     'qr' => 'qr',
     'code' => 'pairing_code',
@@ -67,6 +68,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     'qr_generated_at' => nil,
     'auth_artifact_type' => nil,
     'auth_artifact_expires_at' => nil,
+    'auth_artifact_scanned_at' => nil,
     'label_map' => {}
   }.freeze
   HISTORY_SYNC_REQUEST_STALE_AFTER = 30.minutes
@@ -265,11 +267,21 @@ class Channel::WhatsappWeb < ApplicationRecord
     expires_at.present? && expires_at <= at
   end
 
+  def auth_artifact_scanned_at
+    parse_auth_artifact_time(sync_state_payload['auth_artifact_scanned_at'])
+  end
+
+  def auth_artifact_scanned_recent?(at: Time.current)
+    scanned_at = auth_artifact_scanned_at
+    scanned_at.present? && scanned_at + SCANNED_AUTH_ARTIFACT_TTL > at
+  end
+
   def auth_artifact_sync_state(type:, generated_at:, expires_at:)
     sync_state_payload.merge(
       'qr_generated_at' => generated_at.iso8601,
       'auth_artifact_type' => self.class.normalize_auth_artifact_type(type),
-      'auth_artifact_expires_at' => expires_at.iso8601
+      'auth_artifact_expires_at' => expires_at.iso8601,
+      'auth_artifact_scanned_at' => nil
     )
   end
 
@@ -277,7 +289,8 @@ class Channel::WhatsappWeb < ApplicationRecord
     sync_state_payload.merge(
       'qr_generated_at' => nil,
       'auth_artifact_type' => nil,
-      'auth_artifact_expires_at' => nil
+      'auth_artifact_expires_at' => nil,
+      'auth_artifact_scanned_at' => nil
     )
   end
 

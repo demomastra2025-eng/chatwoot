@@ -829,6 +829,31 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('recovered-qr')
       end
 
+      it 'does not recover a new QR while a scanned artifact is still connecting' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
+          instance.update!(
+            lifecycle_state: 'qr_scanned',
+            connection_state: 'connecting',
+            qr_code: {},
+            sync_state: instance.sync_state_payload.merge(
+              'qr_generated_at' => nil,
+              'auth_artifact_scanned_at' => Time.current.iso8601
+            ),
+            last_synced_at: Time.current
+          )
+        end
+        expect_any_instance_of(Channel::WhatsappWeb).not_to receive(:refresh_qr!)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true, include_qr_code: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_scanned')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode')).to be_nil
+      end
+
       it 'passes explicit QR artifact type to the provider' do
         expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!)
           .with(artifact_type: 'qr') do |instance|

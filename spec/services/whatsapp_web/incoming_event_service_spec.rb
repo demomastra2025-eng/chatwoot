@@ -545,7 +545,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.qr_generated_at).to be_nil
     end
 
-    it 'preserves a fresh QR artifact when an auth-required status races after qrcode.updated' do
+    it 'preserves a fresh QR artifact when an auth-required status races before the QR is scanned' do
       freeze_time do
         generated_at = Time.current
         expires_at = generated_at + Channel::WhatsappWeb::AUTH_ARTIFACT_TTL
@@ -581,6 +581,75 @@ RSpec.describe WhatsappWeb::IncomingEventService do
         expect(channel.auth_artifact_valid?).to be true
         expect(channel.last_error).to be_nil
       end
+    end
+
+    it 'marks a valid auth artifact as scanned when Evolution reports connecting without QR' do
+      freeze_time do
+        generated_at = 10.seconds.ago
+        expires_at = generated_at + Channel::WhatsappWeb::AUTH_ARTIFACT_TTL
+        channel.update!(
+          lifecycle_state: 'qr_ready',
+          connection_state: 'connecting',
+          qr_code: {
+            'artifact_type' => 'qr',
+            'base64' => 'data:image/png;base64,abc',
+            'code' => '123456',
+            'generated_at' => generated_at.iso8601,
+            'expires_at' => expires_at.iso8601
+          },
+          sync_state: channel.auth_artifact_sync_state(type: 'qr', generated_at: generated_at, expires_at: expires_at)
+        )
+
+        described_class.new(
+          channel: channel,
+          payload: {
+            event: 'connection.update',
+            data: {
+              connection: 'connecting',
+              hasQr: false
+            }
+          }.with_indifferent_access
+        ).perform
+
+        channel.reload
+        expect(channel.lifecycle_state).to eq('qr_scanned')
+        expect(channel.connection_state).to eq('connecting')
+        expect(channel.qr_code).to eq({})
+        expect(channel.qr_generated_at).to be_nil
+        expect(channel.sync_state_payload['auth_artifact_scanned_at']).to eq(Time.current.iso8601)
+        expect(channel.last_error).to be_nil
+      end
+    end
+
+    it 'ignores automatic QR updates while a scanned artifact is still connecting' do
+      channel.update!(
+        lifecycle_state: 'qr_scanned',
+        connection_state: 'connecting',
+        qr_code: {},
+        sync_state: channel.sync_state_payload.merge(
+          'qr_generated_at' => nil,
+          'auth_artifact_scanned_at' => Time.current.iso8601
+        )
+      )
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'qrcode.updated',
+          data: {
+            qrcode: {
+              base64: 'data:image/png;base64,new-auto-qr',
+              code: 'new-auto-code'
+            }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.lifecycle_state).to eq('qr_scanned')
+      expect(channel.connection_state).to eq('connecting')
+      expect(channel.qr_code).to eq({})
+      expect(channel.qr_generated_at).to be_nil
     end
 
     it 'treats logged out status.instance events as disconnected instead of failed' do

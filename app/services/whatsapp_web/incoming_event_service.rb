@@ -70,6 +70,8 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_qrcode_update
+    return if scanned_auth_artifact_connecting?
+
     qrcode = normalized_qrcode_payload
 
     if qrcode.blank?
@@ -93,9 +95,14 @@ class WhatsappWeb::IncomingEventService
   end
 
   def process_connection_update
-    state = event_data[:state] || event_data[:status]
+    state = event_data[:state] || event_data[:status] || event_data[:connection]
     normalized_state = normalize_connection_state(state)
-    clear_auth_artifacts = %w[open reconnecting].include?(state.to_s)
+    if scanned_auth_artifact_update?(normalized_state)
+      mark_auth_artifact_scanned!
+      return
+    end
+
+    clear_auth_artifacts = %w[open reconnecting].include?(normalized_state)
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state),
@@ -324,6 +331,8 @@ class WhatsappWeb::IncomingEventService
     when 'open'
       'connected'
     when 'connecting'
+      return 'qr_scanned' if channel.lifecycle_state == 'qr_scanned' && channel.auth_artifact_scanned_recent?
+
       channel.qr_code.present? ? 'qr_ready' : 'waiting_for_qr'
     when 'reconnecting'
       'reconnecting'
@@ -342,6 +351,25 @@ class WhatsappWeb::IncomingEventService
               .slice('instance', 'pairingCode', 'pairing_code', 'code', 'base64')
               .compact
               .presence || {}
+  end
+
+  def scanned_auth_artifact_update?(normalized_state)
+    normalized_state == 'connecting' && channel.auth_artifact_valid? && event_data.key?(:hasQr) && event_data[:hasQr] == false
+  end
+
+  def scanned_auth_artifact_connecting?
+    channel.lifecycle_state == 'qr_scanned' && channel.connection_state == 'connecting' && channel.auth_artifact_scanned_recent?
+  end
+
+  def mark_auth_artifact_scanned!
+    channel.update!(
+      connection_state: 'connecting',
+      lifecycle_state: 'qr_scanned',
+      qr_code: {},
+      last_error: nil,
+      last_synced_at: Time.current,
+      sync_state: channel.cleared_auth_artifact_sync_state.merge('auth_artifact_scanned_at' => Time.current.iso8601)
+    )
   end
 
   def connection_update_error_message(normalized_state)

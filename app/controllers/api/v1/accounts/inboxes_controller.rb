@@ -397,6 +397,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     channel = @inbox.channel
     return unless channel.respond_to?(:auth_artifact_valid?) && channel.respond_to?(:refresh_qr!)
     return if channel.qr_code.present? || channel.auth_artifact_valid?
+    return if channel.lifecycle_state == 'qr_scanned' && channel.auth_artifact_scanned_recent?
     return if channel.lifecycle_state.in?(%w[connected failed deleting])
     return if channel.connection_state.in?(%w[open refused reconnecting])
 

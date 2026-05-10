@@ -318,6 +318,47 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.lifecycle_state).to eq('reconnecting')
       expect(channel.last_error).to be_nil
     end
+
+    it 'preserves a recent scanned QR lifecycle during status-only sync while still connecting' do
+      service = described_class.new(channel: channel)
+      channel.update!(
+        qr_code: {},
+        lifecycle_state: 'qr_scanned',
+        connection_state: 'connecting',
+        sync_state: channel.sync_state_payload.merge('auth_artifact_scanned_at' => Time.current.iso8601)
+      )
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'connecting' } })
+
+      service.sync_connection_state!
+
+      channel.reload
+      expect(channel.connection_state).to eq('connecting')
+      expect(channel.lifecycle_state).to eq('qr_scanned')
+      expect(channel.qr_code).to eq({})
+    end
+
+    it 'lets stale scanned QR lifecycles fall back to waiting_for_qr during status sync' do
+      service = described_class.new(channel: channel)
+      channel.update!(
+        qr_code: {},
+        lifecycle_state: 'qr_scanned',
+        connection_state: 'connecting',
+        sync_state: channel.sync_state_payload.merge('auth_artifact_scanned_at' => 5.minutes.ago.iso8601)
+      )
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'connecting' } })
+
+      service.sync_connection_state!
+
+      channel.reload
+      expect(channel.connection_state).to eq('connecting')
+      expect(channel.lifecycle_state).to eq('waiting_for_qr')
+    end
   end
 
   describe 'runtime payloads' do

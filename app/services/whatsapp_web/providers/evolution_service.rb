@@ -476,6 +476,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     when 'open'
       'connected'
     when 'connecting'
+      return 'qr_scanned' if channel.lifecycle_state == 'qr_scanned' && channel.auth_artifact_scanned_recent?
+
       qr_present ? 'qr_ready' : 'waiting_for_qr'
     when 'reconnecting'
       'reconnecting'
