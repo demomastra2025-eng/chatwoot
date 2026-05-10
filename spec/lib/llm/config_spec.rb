@@ -164,6 +164,20 @@ RSpec.describe Llm::Config do
       expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
     end
 
+    it 'prefers the direct provider default when that provider key is configured alongside OpenRouter' do
+      upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'openai-key')
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-5.4' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling image_input streaming]
+        }
+      )
+
+      expect(described_class.model_for(feature: 'assistant')).to eq('gpt-5.4')
+    end
+
     it 'prefers an account-selected model when that account has provider credentials' do
       account = create(:account)
       create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})

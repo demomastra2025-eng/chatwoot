@@ -54,8 +54,18 @@ RSpec.describe Concerns::Agentable do
       dummy_instance.agent
     end
 
-    it 'converts nil temperature to 0.0' do
+    it 'defaults missing temperature to 1.0' do
       dummy_instance.temperature = nil
+
+      expect(Captain::Runtime::Agent).to receive(:new).with(
+        hash_including(temperature: 1.0)
+      )
+
+      dummy_instance.agent
+    end
+
+    it 'preserves an explicit zero temperature' do
+      dummy_instance.temperature = 0
 
       expect(Captain::Runtime::Agent).to receive(:new).with(
         hash_including(temperature: 0.0)

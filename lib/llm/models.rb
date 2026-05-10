@@ -56,6 +56,10 @@ module Llm::Models
     def default_model_for(feature, account: nil)
       feature_key = feature.to_s
       configured_default = configured_default_model_for(feature_key)
+      configured_provider = provider_for(configured_default, account: account)
+      return configured_default if configured_provider.present? &&
+                                   configured_provider != OPENROUTER_PROVIDER &&
+                                   Llm::Config.provider_available?(configured_provider, account: account)
 
       openrouter_default = openrouter_default_model_for(feature_key, configured_default, account: account)
       return openrouter_default if openrouter_default.present?

@@ -7,7 +7,7 @@ module Concerns::Agentable
       instructions: ->(context) { agent_instructions(context) },
       tools: agent_tools,
       model: agent_model,
-      temperature: temperature.to_f || 0.7,
+      temperature: agent_temperature,
       response_schema: agent_response_schema
     )
   end
@@ -75,6 +75,10 @@ module Concerns::Agentable
 
   def agent_tools
     []  # Default implementation, override if needed
+  end
+
+  def agent_temperature
+    (temperature.presence || 1).to_f
   end
 
   def agent_model

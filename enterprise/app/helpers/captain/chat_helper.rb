@@ -86,7 +86,8 @@ module Captain::ChatHelper
   end
 
   def temperature
-    @assistant&.config&.[]('temperature').to_f || 1
+    raw_temperature = @assistant&.config&.[]('temperature')
+    (raw_temperature.presence || 1).to_f
   end
 
   def resolved_account_id

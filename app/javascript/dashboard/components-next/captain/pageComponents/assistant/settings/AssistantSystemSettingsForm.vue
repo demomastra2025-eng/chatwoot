@@ -105,13 +105,19 @@ const voiceSettingsSummary = computed(
   () => `${state.voiceSettings.model} / ${state.voiceSettings.voice}`
 );
 
+const temperatureOrDefault = value => {
+  if (value === null || value === undefined || value === '') return 1;
+
+  return value;
+};
+
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.handoffMessageEnabled = Boolean(config.handoff_message);
   state.resolutionMessageEnabled = Boolean(config.resolution_message);
   state.handoffMessage = config.handoff_message;
   state.resolutionMessage = config.resolution_message;
-  state.temperature = config.temperature || 1;
+  state.temperature = temperatureOrDefault(config.temperature);
   state.autoReplyOnLastIncoming = config.auto_reply_on_last_incoming || false;
   state.messageCollapseWindowSeconds = Number(
     config.message_collapse_window_seconds || 0
@@ -168,7 +174,7 @@ const buildPayload = async () => {
         resolution_message: state.resolutionMessageEnabled
           ? state.resolutionMessage
           : '',
-        temperature: state.temperature || 1,
+        temperature: temperatureOrDefault(state.temperature),
         auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
         message_collapse_window_seconds: normalizeNonNegativeInteger(
           state.messageCollapseWindowSeconds
