@@ -22,6 +22,12 @@ export const getters = {
   getSelectedPushFlags: $state => {
     return $state.record.selected_push_flags;
   },
+  getSelectedTelegramFlags: $state => {
+    return $state.record.selected_telegram_flags;
+  },
+  getTelegramConnection: $state => {
+    return $state.record.telegram_connection || {};
+  },
 };
 
 export const actions = {
@@ -42,7 +48,12 @@ export const actions = {
 
   update: async (
     { commit },
-    { selectedEmailFlags, selectedInboxFlags, selectedPushFlags }
+    {
+      selectedEmailFlags,
+      selectedInboxFlags,
+      selectedPushFlags,
+      selectedTelegramFlags,
+    }
   ) => {
     commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, { isUpdating: true });
     try {
@@ -51,12 +62,30 @@ export const actions = {
           selected_email_flags: selectedEmailFlags,
           selected_inbox_flags: selectedInboxFlags,
           selected_push_flags: selectedPushFlags,
+          selected_telegram_flags: selectedTelegramFlags,
         },
       });
       commit(types.default.SET_USER_NOTIFICATION, response.data);
       commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, {
         isUpdating: false,
       });
+    } catch (error) {
+      commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, {
+        isUpdating: false,
+      });
+      throw error;
+    }
+  },
+
+  disconnectTelegram: async ({ commit }) => {
+    commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, { isUpdating: true });
+    try {
+      const response = await UserNotificationSettings.disconnectTelegram();
+      commit(types.default.SET_USER_NOTIFICATION, response.data);
+      commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, {
+        isUpdating: false,
+      });
+      return response.data;
     } catch (error) {
       commit(types.default.SET_USER_NOTIFICATION_UI_FLAG, {
         isUpdating: false,

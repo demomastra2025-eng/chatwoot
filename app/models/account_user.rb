@@ -47,6 +47,7 @@ class AccountUser < ApplicationRecord
     setting.selected_email_flags = []
     setting.selected_inbox_flags = NotificationSetting.default_inbox_flag_names
     setting.selected_push_flags = [:push_conversation_assignment]
+    setting.selected_telegram_flags = []
     setting.save!
   end
 

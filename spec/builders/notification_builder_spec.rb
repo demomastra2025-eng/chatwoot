@@ -26,6 +26,23 @@ describe NotificationBuilder do
       end.to change { user.notifications.count }.by(1)
     end
 
+    it 'creates a notification when only telegram notification is enabled' do
+      notification_setting = user.notification_settings.find_by(account_id: account.id)
+      notification_setting.selected_email_flags = []
+      notification_setting.selected_push_flags = []
+      notification_setting.selected_telegram_flags = [:telegram_conversation_creation]
+      notification_setting.save!
+
+      expect do
+        described_class.new(
+          notification_type: 'conversation_creation',
+          user: user,
+          account: account,
+          primary_actor: primary_actor
+        ).perform
+      end.to change { user.notifications.count }.by(1)
+    end
+
     it 'stores a render snapshot for resilient notification rendering' do
       described_class.new(
         notification_type: 'conversation_creation',

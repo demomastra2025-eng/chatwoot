@@ -9,6 +9,10 @@ class UserNotificationSettings extends ApiClient {
   update(params) {
     return axios.patch(`${this.url}`, params);
   }
+
+  disconnectTelegram() {
+    return axios.delete(`${this.url}/disconnect_telegram`);
+  }
 }
 
 export default new UserNotificationSettings();

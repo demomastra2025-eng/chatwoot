@@ -137,6 +137,7 @@ class Notification < ApplicationRecord
 
   def process_notification_delivery
     Notification::PushNotificationJob.perform_later(self) if user_subscribed_to_notification?('push')
+    Notification::TelegramNotificationJob.perform_later(self) if user_subscribed_to_notification?('telegram')
 
     # Should we do something about the case where user subscribed to both push and email ?
     # In future, we could probably add condition here to enqueue the job for 30 seconds later

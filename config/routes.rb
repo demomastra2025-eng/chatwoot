@@ -420,7 +420,9 @@ Rails.application.routes.draw do
               post :unread
             end
           end
-          resource :notification_settings, only: [:show, :update]
+          resource :notification_settings, only: [:show, :update] do
+            delete :disconnect_telegram
+          end
 
           resources :teams do
             resources :team_members, only: [:index, :create] do
@@ -753,6 +755,7 @@ Rails.application.routes.draw do
   post 'webhooks/twitter', to: 'api/v1/webhooks#twitter_events'
   post 'webhooks/line/:line_channel_id', to: 'webhooks/line#process_payload'
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
+  post 'webhooks/telegram_notifications/:webhook_secret', to: 'webhooks/telegram_notifications#process_payload'
   post 'webhooks/telegram_personal/:webhook_identifier', to: 'webhooks/telegram_personal#process_payload'
   post 'webhooks/weixin/:webhook_identifier', to: 'webhooks/weixin#process_payload'
   post 'webhooks/vk/:callback_id', to: 'webhooks/vk#process_payload'

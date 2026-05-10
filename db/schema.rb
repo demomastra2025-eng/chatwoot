@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_05_093000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_10_232000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1558,6 +1558,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_05_093000) do
     t.datetime "updated_at", null: false
     t.integer "push_flags", default: 0, null: false
     t.integer "inbox_flags", default: 0, null: false
+    t.integer "telegram_flags", default: 0, null: false
     t.index ["account_id", "user_id"], name: "by_account_user", unique: true
   end
 
@@ -2052,6 +2053,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_05_093000) do
     t.index ["name", "account_id"], name: "index_teams_on_name_and_account_id", unique: true
   end
 
+  create_table "telegram_notification_bindings", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "telegram_user_id"
+    t.string "telegram_chat_id"
+    t.string "username"
+    t.string "first_name"
+    t.string "last_name"
+    t.datetime "verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["telegram_user_id"], name: "index_telegram_notification_bindings_on_telegram_user_id", unique: true, where: "(telegram_user_id IS NOT NULL)"
+    t.index ["user_id"], name: "index_telegram_notification_bindings_on_user_id", unique: true
+  end
+
   create_table "telephony_agent_bindings", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "user_id", null: false
@@ -2346,6 +2361,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_05_093000) do
   add_foreign_key "scheduling_work_rules", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_workday_overrides", "accounts"
   add_foreign_key "scheduling_workday_overrides", "scheduling_resources", column: "resource_id"
+  add_foreign_key "telegram_notification_bindings", "users"
   add_foreign_key "telephony_agent_bindings", "accounts"
   add_foreign_key "telephony_agent_bindings", "users"
   add_foreign_key "telephony_call_sessions", "accounts"

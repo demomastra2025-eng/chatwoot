@@ -115,6 +115,7 @@ class User < ApplicationRecord
   has_many :notes, dependent: :nullify
   has_many :notification_settings, dependent: :destroy_async
   has_many :notification_subscriptions, dependent: :destroy_async
+  has_one :telegram_notification_binding, dependent: :destroy
   has_many :notifications, dependent: :destroy_async
   has_many :team_members, dependent: :destroy_async
   has_many :teams, through: :team_members

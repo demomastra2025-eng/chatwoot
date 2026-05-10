@@ -170,7 +170,18 @@
           "SLA_MISSED_NEXT_RESPONSE": "A conversation misses next response SLA",
           "SLA_MISSED_RESOLUTION": "A conversation misses resolution SLA"
         },
-        "BROWSER_PERMISSION": "Enable push notifications for your browser so you’re able to receive them"
+        "BROWSER_PERMISSION": "Enable push notifications for your browser so you’re able to receive them",
+        "TELEGRAM": "Telegram",
+        "TELEGRAM_SETUP_TITLE": "Telegram notifications",
+        "TELEGRAM_CONNECTED_AS": "Connected as",
+        "TELEGRAM_PENDING": "Waiting for Telegram confirmation. Send your profile access token to the bot, then check the status.",
+        "TELEGRAM_NOT_CONNECTED": "Connect Telegram before enabling this channel.",
+        "TELEGRAM_CHECK_STATUS": "Check status",
+        "TELEGRAM_DISCONNECT": "Disconnect",
+        "TELEGRAM_TOKEN_HELP": "Open the Telegram bot, send /start, then send your OneLink profile access token.",
+        "TELEGRAM_OPEN_BOT": "Open bot",
+        "TELEGRAM_CONNECTED": "Telegram is connected",
+        "TELEGRAM_DISCONNECTED": "Telegram is disconnected"
       },
       "API": {
         "UPDATE_SUCCESS": "Your notification preferences are updated successfully",

@@ -40,6 +40,7 @@ export const NOTIFICATION_CHANNELS = [
   { key: 'inbox', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.INBOX' },
   { key: 'email', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.EMAIL' },
   { key: 'push', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.PUSH' },
+  { key: 'telegram', label: 'PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM' },
 ];
 
 export const EVENT_TYPES = {

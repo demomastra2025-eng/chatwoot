@@ -159,7 +159,7 @@
         "TYPE_TITLE": "Тип уведомления",
         "INBOX": "Мои входящие",
         "EMAIL": "Эл. почта",
-        "PUSH": "Push-уведомления",
+        "PUSH": "Push-уведомл.",
         "TYPES": {
           "CONVERSATION_CREATED": "Новый диалог создан",
           "CONVERSATION_ASSIGNED": "Вам назначен диалог",
@@ -170,7 +170,18 @@
           "SLA_MISSED_NEXT_RESPONSE": "Диалог не соответствует SLA по следующему ответу",
           "SLA_MISSED_RESOLUTION": "Диалог не соответствует SLA по разрешению"
         },
-        "BROWSER_PERMISSION": "Включите push-уведомления для вашего браузера, чтобы вы могли их получать"
+        "BROWSER_PERMISSION": "Включите push-уведомления для вашего браузера, чтобы вы могли их получать",
+        "TELEGRAM": "Telegram",
+        "TELEGRAM_SETUP_TITLE": "Уведомления в Telegram",
+        "TELEGRAM_CONNECTED_AS": "Подключено как",
+        "TELEGRAM_PENDING": "Ожидаем подтверждение в Telegram. Отправьте боту токен доступа из профиля, затем проверьте статус.",
+        "TELEGRAM_NOT_CONNECTED": "Подключите Telegram перед включением этого канала.",
+        "TELEGRAM_CHECK_STATUS": "Проверить статус",
+        "TELEGRAM_DISCONNECT": "Отключить",
+        "TELEGRAM_TOKEN_HELP": "Откройте Telegram-бота, отправьте /start, затем отправьте токен доступа из профиля OneLink.",
+        "TELEGRAM_OPEN_BOT": "Открыть бота",
+        "TELEGRAM_CONNECTED": "Telegram подключён",
+        "TELEGRAM_DISCONNECTED": "Telegram отключён"
       },
       "API": {
         "UPDATE_SUCCESS": "Настройки уведомлений сохранены",

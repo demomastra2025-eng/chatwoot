@@ -7,3 +7,6 @@ json.all_inbox_flags @notification_setting.all_inbox_flags
 json.selected_inbox_flags @notification_setting.selected_inbox_flags
 json.all_push_flags @notification_setting.all_push_flags
 json.selected_push_flags @notification_setting.selected_push_flags
+json.all_telegram_flags @notification_setting.all_telegram_flags
+json.selected_telegram_flags @notification_setting.selected_telegram_flags
+json.telegram_connection @telegram_notification_binding.status_payload
