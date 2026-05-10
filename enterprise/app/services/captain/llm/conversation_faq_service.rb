@@ -28,7 +28,40 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
   attr_reader :content, :conversation, :assistant
 
   def no_human_interaction?
-    conversation.first_reply_created_at.nil?
+    conversation.first_reply_created_at.nil? && !voice_transcript_interaction?
+  end
+
+  def voice_transcript_interaction?
+    voice_message_transcript_interaction? || call_session_transcript_interaction?
+  end
+
+  def voice_message_transcript_interaction?
+    conversation.messages.voice_calls.any? do |message|
+      data = message.content_attributes.to_h['data'] || {}
+      voice_transcript_has_caller_turn?(data['transcript_items']) || transcript_text_has_caller_label?(data['transcript'])
+    end
+  end
+
+  def transcript_text_has_caller_label?(transcript)
+    transcript.to_s.match?(/(^|\n)\s*(Клиент|Пользователь|User|Caller|Customer|Contact)\s*:/i)
+  end
+
+  def call_session_transcript_interaction?
+    conversation.telephony_call_sessions.any? do |call_session|
+      voice_transcript_has_caller_turn?(call_session_transcript_items(call_session))
+    end
+  end
+
+  def call_session_transcript_items(call_session)
+    call_session.metadata&.dig('ai_voice', 'transcript', 'final_items') ||
+      call_session.metadata&.dig('ai_voice', 'final_transcript')
+  end
+
+  def voice_transcript_has_caller_turn?(items)
+    Array(items).any? do |item|
+      item = item.to_h
+      item['text'].present? && item['speaker'].to_s.in?(%w[caller customer contact user])
+    end
   end
 
   def find_and_separate_duplicates(faqs)

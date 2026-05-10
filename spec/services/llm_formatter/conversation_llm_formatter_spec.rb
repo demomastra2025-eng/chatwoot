@@ -57,6 +57,62 @@ RSpec.describe LlmFormatter::ConversationLlmFormatter do
       end
     end
 
+    context 'when conversation has a voice call transcript' do
+      it 'formats the transcript as voice-specific LLM context instead of a normal chat message' do
+        create(
+          :message,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          message_type: :incoming,
+          content_type: :voice_call,
+          content: 'Voice Call',
+          content_attributes: {
+            data: {
+              call_sid: 'voice-call-llm-1',
+              transcript_items: [
+                { speaker: 'caller', text: 'Хочу узнать тариф', final: true },
+                { speaker: 'ai', text: 'Тариф начинается от 1000 тенге', final: true }
+              ]
+            }
+          }
+        )
+
+        output = formatter.format
+
+        expect(output).to include('Voice Call Transcripts:')
+        expect(output).to include('Call voice-call-llm-1:')
+        expect(output).to include('User: Хочу узнать тариф')
+        expect(output).to include('AI Voice Agent: Тариф начинается от 1000 тенге')
+        expect(output).not_to include('User: Voice Call')
+      end
+
+      it 'formats transcript from call-session metadata when no voice bubble exists yet' do
+        create(
+          :telephony_call_session,
+          account: account,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          external_call_ref: 'voice-call-metadata-1',
+          metadata: {
+            'ai_voice' => {
+              'transcript' => {
+                'final_items' => [
+                  { 'speaker' => 'caller', 'text' => 'Можно доставку завтра?' },
+                  { 'speaker' => 'ai', 'text' => 'Да, оформим доставку на завтра.' }
+                ]
+              }
+            }
+          }
+        )
+
+        output = formatter.format
+
+        expect(output).to include('Call voice-call-metadata-1:')
+        expect(output).to include('User: Можно доставку завтра?')
+        expect(output).to include('AI Voice Agent: Да, оформим доставку на завтра.')
+      end
+    end
+
     context 'when include_contact_details is true' do
       it 'includes contact details' do
         expected_output = [

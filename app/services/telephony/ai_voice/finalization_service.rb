@@ -32,7 +32,10 @@ class Telephony::AiVoice::FinalizationService
     end
 
     persist_finalize_event!
-    ingest_final_transcript! unless already_finalized
+    unless already_finalized
+      ingest_final_transcript!
+      run_post_call_captain_features!
+    end
     sync_conversation!
     response_payload(already_finalized: already_finalized)
   end
@@ -111,6 +114,10 @@ class Telephony::AiVoice::FinalizationService
         'items' => final_transcript.map { |item| item.merge('final' => true) }
       }
     ).perform
+  end
+
+  def run_post_call_captain_features!
+    Telephony::AiVoice::PostCallCaptainFeaturesService.new(call_session: call_session).perform
   end
 
   def sync_conversation!

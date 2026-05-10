@@ -89,7 +89,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'speaker' => 'ai',
       'text' => 'Сейчас соединю вас со специалистом.'
     )
-    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
   end
 
   it 'finalizes once and returns an idempotent response for duplicate finalize payloads' do
@@ -145,6 +145,64 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('speaker')).to include('caller', 'assistant')
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
+  end
+
+  it 'runs enabled Captain post-call memory and FAQ once with the voice transcript context' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
+    faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
+
+    payload = {
+      event_id: 'evt-finalize-captain-features-1',
+      event_type: 'finalize',
+      provider_call_id: call_session.external_call_ref,
+      account_id: account.id,
+      conversation_id: conversation.id,
+      status: 'completed',
+      reason: 'user_requested_end_call',
+      final_transcript: [
+        { speaker: 'caller', text: 'Запомните, что я люблю доставку утром', at: Time.current.iso8601 },
+        { speaker: 'assistant', text: 'Запомнила. Добавлю это в заметки.', at: Time.current.iso8601 }
+      ]
+    }
+
+    voice_token = 'test'
+
+    2.times do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: voice_token) do
+        post '/internal/voice/ai/finalize',
+             params: payload,
+             headers: {
+               'Authorization' => "Bearer #{voice_token}",
+               'X-Idempotency-Key' => 'evt-finalize-captain-features-1'
+             },
+             as: :json
+      end
+      expect(response).to have_http_status(:ok)
+    end
+
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(faq_service).to have_received(:generate_and_deduplicate).once
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
+      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
+      'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+    )
   end
 
   it 'marks media-not-established lifecycle as a failed terminal call without pretending media existed' do
@@ -223,6 +281,6 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'partial_transcript' => include(include('text' => 'Хотите', 'final' => false))
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
-    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
   end
 end

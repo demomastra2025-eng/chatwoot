@@ -63,6 +63,36 @@ RSpec.describe Captain::Llm::ConversationFaqService do
         expect(RubyLLM).not_to receive(:chat)
         service.generate_and_deduplicate
       end
+
+      context 'when the conversation has a finalized voice transcript only in call-session metadata' do
+        before do
+          allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
+          allow(captain_assistant.responses).to receive(:nearest_neighbors).and_return([])
+          create(
+            :telephony_call_session,
+            account: conversation.account,
+            conversation: conversation,
+            inbox: conversation.inbox,
+            external_call_ref: 'voice-faq-metadata-call-1',
+            metadata: {
+              'ai_voice' => {
+                'transcript' => {
+                  'final_items' => [
+                    { 'speaker' => 'caller', 'text' => 'Можно ли оплатить картой?' },
+                    { 'speaker' => 'ai', 'text' => 'Да, оплатить картой можно.' }
+                  ]
+                }
+              }
+            }
+          )
+        end
+
+        it 'treats the metadata transcript as human interaction and generates FAQs' do
+          expect do
+            service.generate_and_deduplicate
+          end.to change(captain_assistant.responses, :count).by(2)
+        end
+      end
     end
 
     context 'when finding duplicates' do
