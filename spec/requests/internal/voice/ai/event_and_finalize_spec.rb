@@ -205,6 +205,47 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'inherits enabled Captain post-call memory and FAQ from the routing-policy assistant without a Captain inbox link' do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+    voice_inbox.telephony_number_binding.routing_policy.update!(captain_assistant: assistant)
+    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
+    faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/finalize',
+           params: {
+             event_id: 'evt-finalize-routing-policy-captain-features-1',
+             event_type: 'finalize',
+             provider_call_id: call_session.external_call_ref,
+             account_id: account.id,
+             conversation_id: conversation.id,
+             status: 'completed',
+             final_transcript: [
+               { speaker: 'caller', text: 'Запомните, что мне нужна утренняя доставка', at: Time.current.iso8601 },
+               { speaker: 'assistant', text: 'Хорошо, учту это.', at: Time.current.iso8601 }
+             ]
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Idempotency-Key' => 'evt-finalize-routing-policy-captain-features-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(faq_service).to have_received(:generate_and_deduplicate).once
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
+      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
+      'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+    )
+  end
+
   it 'marks media-not-established lifecycle as a failed terminal call without pretending media existed' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/control',

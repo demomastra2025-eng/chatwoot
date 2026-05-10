@@ -17,7 +17,8 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
   attr_reader :call_session
 
   def ready_to_run?
-    call_session.present? && conversation.present? && captain_enabled? && captain_assistant.present? && voice_transcript_present?
+    call_session.present? && conversation.present? && captain_assistant.present? &&
+      captain_usage_available? && voice_transcript_present?
   end
 
   def run_enabled_features
@@ -73,10 +74,10 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
     ActiveModel::Type::Boolean.new.cast(captain_assistant.config&.dig(key))
   end
 
-  def captain_enabled?
-    return false unless conversation.inbox.respond_to?(:captain_active?)
+  def captain_usage_available?
+    return true unless call_session.account.respond_to?(:captain_quota_available?)
 
-    conversation.inbox.captain_active?
+    call_session.account.captain_quota_available?
   end
 
   def voice_transcript_present?
@@ -92,9 +93,19 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
 
   def captain_assistant
     @captain_assistant ||= begin
-      assistant = conversation.inbox.captain_assistant if conversation.inbox.respond_to?(:captain_assistant)
+      assistant = inbox_captain_assistant || routing_policy&.captain_assistant
       assistant if assistant&.account_id == call_session.account_id
     end
+  end
+
+  def inbox_captain_assistant
+    return unless conversation.inbox.respond_to?(:captain_assistant)
+
+    conversation.inbox.captain_assistant
+  end
+
+  def routing_policy
+    @routing_policy ||= call_session.number_binding&.routing_policy
   end
 
   def conversation
