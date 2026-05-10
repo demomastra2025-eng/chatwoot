@@ -354,7 +354,14 @@ class WhatsappWeb::IncomingEventService
   end
 
   def scanned_auth_artifact_update?(normalized_state)
-    normalized_state == 'connecting' && channel.auth_artifact_valid? && event_data.key?(:hasQr) && event_data[:hasQr] == false
+    return false unless channel.auth_artifact_valid?
+    return false unless event_data.key?(:hasQr) && event_data[:hasQr] == false
+
+    normalized_state == 'connecting' || (connection_state_missing? && channel.connection_state == 'connecting')
+  end
+
+  def connection_state_missing?
+    event_data[:state].blank? && event_data[:status].blank? && event_data[:connection].blank?
   end
 
   def scanned_auth_artifact_connecting?
