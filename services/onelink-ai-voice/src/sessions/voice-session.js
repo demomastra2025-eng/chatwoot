@@ -91,6 +91,7 @@ class VoiceSession {
     if (typeof this.client.finalizeCall !== 'function') return;
 
     try {
+      const includePartialTranscript = Boolean(metadata.include_partial_transcript || metadata.incomplete_transcript);
       await this.client.finalizeCall(this.scopedPayload({
         event_id: `finalize:${this.callRef}:${action}`,
         event_seq: this.nextEventSeq(),
@@ -103,10 +104,15 @@ class VoiceSession {
         reason: metadata.reason || action,
         ended_at: new Date().toISOString(),
         duration_ms: Math.max(0, Date.now() - this.startedAt.getTime()),
-        final_transcript: this.transcripts.finalItems(),
+        final_transcript: includePartialTranscript ? this.transcripts.allItems() : this.transcripts.finalItems(),
+        partial_transcript: this.transcripts.allItems().filter(item => item.final === false),
+        incomplete_transcript: includePartialTranscript || undefined,
         summary: metadata.summary,
         transfer_result: metadata.transfer_result,
         recording_url: metadata.recording_url,
+        source: metadata.source,
+        close_code: metadata.close_code,
+        close_reason: metadata.close_reason,
         error_code: metadata.error_code,
         error_message: metadata.error_message || metadata.reason
       }));
@@ -168,6 +174,8 @@ function finalStatusForAction(action) {
   const normalized = String(action || '').toLowerCase();
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
+  if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed')) return 'failed';
+  if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('operator_unavailable') || normalized.includes('operator_no_answer')) return 'operator_unavailable';
   if (normalized.includes('transfer')) return 'transferred';
   return 'completed';

@@ -96,6 +96,7 @@ class GeminiLiveClient {
       });
 
       this.socket.once('error', error => {
+        this.emitEvent({ error: { message: error?.message || 'Gemini Live websocket error' } });
         finish(reject, error);
       });
 

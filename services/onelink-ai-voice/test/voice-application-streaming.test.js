@@ -141,6 +141,127 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(completed, true);
 });
 
+test('VoiceApplication treats media stream close as an incomplete failure and preserves partial transcript', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-media-closed', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-media-closed' });
+  realtimeCallbacks.onTranscript({ speaker: 'ai', text: 'Хотите', final: false });
+
+  stream.emit('close');
+  await result.completion;
+
+  assert.equal(controls.at(-1).action, 'media_stream_closed');
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'media_stream_closed');
+  assert.equal(finalizations.at(-1).incomplete_transcript, true);
+  assert.equal(finalizations.at(-1).final_transcript[0].text, 'Хотите');
+  assert.equal(finalizations.at(-1).partial_transcript[0].text, 'Хотите');
+  assert.equal(events.some(event => event.event_type === 'call_ended' && event.payload.reason === 'media_stream_closed'), true);
+  assert.equal(controls.some(payload => payload.action === 'session_completed'), false);
+});
+
+test('VoiceApplication records caller hangup without draining buffered output', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const finalizations = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-caller-hangup', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-caller-hangup' });
+  const geminiPcm24 = Buffer.alloc(1920);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+
+  call.emit('end');
+  await result.completion;
+
+  assert.equal(controls.at(-1).action, 'caller_hangup');
+  assert.equal(finalizations.at(-1).status, 'caller_hung_up');
+  assert.equal(finalizations.at(-1).reason, 'caller_hangup');
+  assert.equal(stream.writes.length, 1);
+});
+
+test('VoiceApplication records provider websocket close as provider_stream_closed', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-provider-closed', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-provider-closed' });
+
+  realtimeCallbacks.onEvent({ close: { code: 1006, reason: 'abnormal close' } });
+  await result.completion;
+
+  assert.equal(controls.at(-1).action, 'provider_stream_closed');
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'provider_stream_closed');
+  assert.equal(finalizations.at(-1).close_code, 1006);
+  assert.equal(events.some(event => event.event_type === 'provider_stream_closed'), true);
+});
+
 test('VoiceApplication passes configured tool timeout into realtime tool execution', async () => {
   const controls = [];
   let realtimeCallbacks;

@@ -146,4 +146,46 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('speaker')).to include('caller', 'assistant')
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
   end
+
+  it 'accepts incomplete media-stream finalization with partial transcript payloads' do
+    payload = {
+      event_id: 'evt-finalize-media-closed-1',
+      event_seq: 100,
+      event_type: 'finalize',
+      provider_call_id: call_session.external_call_ref,
+      account_id: account.id,
+      conversation_id: conversation.id,
+      status: 'failed',
+      reason: 'media_stream_closed',
+      incomplete_transcript: true,
+      final_transcript: [
+        { speaker: 'ai', text: 'Хотите', final: false, at: Time.current.iso8601 }
+      ],
+      partial_transcript: [
+        { speaker: 'ai', text: 'Хотите', final: false, at: Time.current.iso8601 }
+      ]
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/finalize',
+           params: payload,
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Idempotency-Key' => 'evt-finalize-media-closed-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'failed',
+      end_reason: 'media_stream_closed'
+    )
+    expect(call_session.metadata.dig('ai_voice', 'finalize', 'payload')).to include(
+      'incomplete_transcript' => true,
+      'partial_transcript' => include(include('text' => 'Хотите', 'final' => false))
+    )
+    expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
+    expect(conversation.messages.where(source_id: "ai_voice_transcript:#{call_session.external_call_ref}")).to exist
+  end
 end

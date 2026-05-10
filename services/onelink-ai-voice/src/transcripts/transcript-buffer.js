@@ -32,6 +32,10 @@ class TranscriptBuffer {
     return this.items.filter((item) => item.final !== false);
   }
 
+  allItems() {
+    return [...this.items];
+  }
+
   async addAndMaybeFlush(item) {
     const normalized = this.add(item);
     if (this.pending.length >= this.flushSize) {

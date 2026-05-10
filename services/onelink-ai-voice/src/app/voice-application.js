@@ -14,7 +14,7 @@ class VoiceApplication {
     fallbackResponder = new ScriptedFallbackResponder(),
     mediaStreamFactory = null,
     toolTimeoutMs = 3_000,
-    outputMaxBufferedMs = 1_500,
+    outputMaxBufferedMs = 5_000,
     clearOutputOnInterrupt = true
   } = {}) {
     if (!client) throw new Error('client is required');
@@ -184,6 +184,8 @@ class VoiceApplication {
   async startRealtimeBridge(call, session, context, requestPayload = {}) {
     const mediaStream = await this.startMediaStream(call);
     let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
+    let acceptingInput = true;
+    let lastAudioOutLogAt = 0;
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
@@ -198,6 +200,13 @@ class VoiceApplication {
       sampleRate: FONOSTER_CALL_RATE,
       frameMs: 20,
       maxBufferedMs: this.outputMaxBufferedMs,
+      onDrop: payload => {
+        void session.safeEvent('pacer_drop', {
+          ...payload,
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef
+        });
+      },
       onFrame: data => {
         mediaStream.write({
           mediaSessionRef,
@@ -208,6 +217,7 @@ class VoiceApplication {
         });
       }
     }) : null;
+    let completion = null;
 
     const callbacks = {
       systemPrompt: buildSystemPrompt(context),
@@ -216,6 +226,15 @@ class VoiceApplication {
         if (!outputPacer || !chunk) return;
         const data = fonosterAudioChunk(chunk, metadata);
         if (!data.length) return;
+        const now = Date.now();
+        if (now - lastAudioOutLogAt >= 1_000) {
+          lastAudioOutLogAt = now;
+          void session.safeEvent('realtime_audio_out', {
+            provider: metadata.provider || 'gemini-live',
+            bytes: data.length,
+            mime_type: metadata.mimeType
+          });
+        }
         outputPacer.push(data);
       },
       onTranscript: item => {
@@ -239,6 +258,26 @@ class VoiceApplication {
           outputPacer?.clear?.();
         }
         await session.safeControl('caller_interrupted', { provider: 'gemini-live' });
+      },
+      onEvent: event => {
+        if (event?.close) {
+          const metadata = {
+            provider: 'gemini-live',
+            close_code: event.close.code,
+            close_reason: event.close.reason
+          };
+          void session.safeEvent('provider_stream_closed', metadata);
+          void completion?.finish?.('provider_stream_closed', metadata);
+        } else if (event?.error) {
+          const metadata = {
+            provider: 'gemini-live',
+            error_message: sanitizeReason(event.error.message || event.error.reason || 'provider_error')
+          };
+          void session.safeEvent('provider_error', metadata);
+          void completion?.finish?.('provider_error', metadata);
+        } else if (event?.serverContent?.interrupted) {
+          void session.safeEvent('realtime_interrupted', { provider: 'gemini-live' });
+        }
       }
     };
 
@@ -248,14 +287,22 @@ class VoiceApplication {
     }
 
     wireMediaInput(mediaStream, payload => {
-      if (!payload || !payload.data || !isAudioIn(payload.type)) return;
+      if (!acceptingInput || !payload || !payload.data || !isAudioIn(payload.type)) return;
       streamRef = payload.streamRef || streamRef;
       realtime.sendAudio(Buffer.from(payload.data), {
         mimeType: mimeTypeForStreamPayload(payload)
       });
     });
 
-    const completion = buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry: this.registry });
+    completion = buildCompletion({
+      call,
+      mediaStream,
+      outputPacer,
+      realtime,
+      session,
+      registry: this.registry,
+      stopInput: () => { acceptingInput = false; }
+    });
     try {
       await realtime.connect(callbacks);
       sendInitialGreeting(realtime, context);
@@ -690,65 +737,96 @@ function operatorFallbackDecision(routeDecision = {}, reason = 'operator_failed'
   };
 }
 
-function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry }) {
-  return new Promise(resolve => {
-    let completed = false;
-    const finish = async action => {
-      if (completed) return;
-      completed = true;
-      try {
-        outputPacer?.close?.();
-      } catch (_error) {
-        // ignore pacer cleanup errors
-      }
-      try {
-        realtime?.close?.();
-      } catch (_error) {
-        // ignore close errors
-      }
-      try {
-        await session.safeEvent('call_ended', { reason: action || 'session_completed' });
-      } catch (_error) {
-        // event persistence errors should not block media cleanup
-      }
-      try {
-        await session.close(completionAction(session, action), completionMetadata(session, action));
-      } catch (_error) {
-        // transcript/control persistence errors should not block media cleanup
-      }
-      registry?.update?.(session.callRef, { state: session.state });
-      resolve();
-    };
+function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry, stopInput = null }) {
+  let resolveCompletion;
+  const completion = new Promise(resolve => { resolveCompletion = resolve; });
+  let completed = false;
 
-    let registered = false;
-    registered = registerCallCompletion(call, finish) || registered;
+  const finish = async (action = 'session_completed', metadata = {}) => {
+    if (completed) return;
+    completed = true;
+    const finalAction = completionAction(session, action);
+    const finalMetadata = completionMetadata(session, finalAction, metadata);
 
-    if (mediaStream) {
-      if (typeof mediaStream.cleanup === 'function') {
-        mediaStream.cleanup(() => { void finish('session_completed'); });
-        registered = true;
-      }
+    try {
+      stopInput?.();
+    } catch (_error) {
+      // ignore input-gate cleanup errors
+    }
 
-      if (typeof mediaStream.on === 'function' || typeof mediaStream.once === 'function') {
-        registered = registerStreamCompletion(mediaStream, finish) || registered;
+    if (shouldDrainOutput(finalAction)) {
+      try {
+        await outputPacer?.drain?.({ timeoutMs: 2_000 });
+      } catch (_error) {
+        // Fall through to close; preserving lifecycle beats drain failures.
       }
     }
 
-    if (!registered) {
-      resolve();
+    try {
+      outputPacer?.close?.();
+    } catch (_error) {
+      // ignore pacer cleanup errors
     }
-  });
+    try {
+      realtime?.close?.();
+    } catch (_error) {
+      // ignore close errors
+    }
+    try {
+      await session.safeEvent('call_ended', { reason: finalAction, ...finalMetadata });
+    } catch (_error) {
+      // event persistence errors should not block media cleanup
+    }
+    try {
+      await session.close(finalAction, finalMetadata);
+    } catch (_error) {
+      // transcript/control persistence errors should not block media cleanup
+    }
+    registry?.update?.(session.callRef, { state: session.state });
+    resolveCompletion();
+  };
+
+  completion.finish = finish;
+
+  let registered = false;
+  registered = registerCallCompletion(call, finish) || registered;
+
+  if (mediaStream) {
+    if (typeof mediaStream.cleanup === 'function') {
+      mediaStream.cleanup(() => { void finish('media_stream_closed', { source: 'mediaStream.cleanup' }); });
+      registered = true;
+    }
+
+    if (typeof mediaStream.on === 'function' || typeof mediaStream.once === 'function') {
+      registered = registerStreamCompletion(mediaStream, finish) || registered;
+    }
+  }
+
+  if (!registered) {
+    resolveCompletion();
+  }
+
+  return completion;
 }
 
 function completionAction(session, action) {
-  if (session?.transferState?.connected && action === 'session_completed') return 'transfer_completed';
+  if (session?.transferState?.connected && ['session_completed', 'caller_hangup', 'fonoster_call_closed'].includes(action)) return 'transfer_completed';
   return action || 'session_completed';
 }
 
-function completionMetadata(session, action) {
-  if (!session?.transferState?.connected || action !== 'session_completed') return {};
+function completionMetadata(session, action, metadata = {}) {
+  const base = {
+    ...metadata,
+    reason: metadata.reason || action,
+    incomplete_transcript: action !== 'session_completed' && action !== 'transfer_completed',
+    include_partial_transcript: action !== 'session_completed' && action !== 'transfer_completed',
+    final_status: metadata.final_status || finalStatusForCompletionAction(action)
+  };
+
+  if (!session?.transferState?.connected || action !== 'transfer_completed') return base;
 
   return {
+    ...base,
     final_status: 'transferred',
     reason: 'operator_completed',
     transfer_result: {
@@ -761,15 +839,32 @@ function completionMetadata(session, action) {
   };
 }
 
+function finalStatusForCompletionAction(action) {
+  const normalized = String(action || '').toLowerCase();
+  if (normalized.includes('caller_hangup')) return 'caller_hung_up';
+  if (normalized.includes('media_stream_closed') || normalized.includes('provider_stream_closed') || normalized.includes('provider_error')) return 'failed';
+  if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
+  if (normalized.includes('failed')) return 'failed';
+  if (normalized.includes('transfer')) return 'transferred';
+  return 'completed';
+}
+
+function shouldDrainOutput(action) {
+  const normalized = String(action || '').toLowerCase();
+  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('fonoster_call_closed')) return false;
+  if (normalized.includes('provider_error') || normalized.includes('session_failed') || normalized.includes('transfer')) return false;
+  return true;
+}
+
 function registerCallCompletion(call, finish) {
   const targets = [call, call?.voice].filter(Boolean);
   let registered = false;
   for (const target of targets) {
     for (const eventName of callEndEvents()) {
-      registered = registerOnce(target, eventName, () => { void finish('session_completed'); }) || registered;
+      registered = registerOnce(target, eventName, () => { void finish(callCompletionAction(eventName), { source: `call.${eventName}` }); }) || registered;
     }
     for (const eventName of callErrorEvents()) {
-      registered = registerOnce(target, eventName, () => { void finish('session_failed'); }) || registered;
+      registered = registerOnce(target, eventName, () => { void finish('session_failed', { source: `call.${eventName}` }); }) || registered;
     }
   }
   return registered;
@@ -778,12 +873,18 @@ function registerCallCompletion(call, finish) {
 function registerStreamCompletion(mediaStream, finish) {
   let registered = false;
   for (const eventName of ['end', 'close', 'END', 'CLOSE']) {
-    registered = registerOnce(mediaStream, eventName, () => { void finish('session_completed'); }) || registered;
+    registered = registerOnce(mediaStream, eventName, () => { void finish('media_stream_closed', { source: `mediaStream.${eventName}` }); }) || registered;
   }
   for (const eventName of ['error', 'ERROR']) {
-    registered = registerOnce(mediaStream, eventName, () => { void finish('session_failed'); }) || registered;
+    registered = registerOnce(mediaStream, eventName, () => { void finish('session_failed', { source: `mediaStream.${eventName}` }); }) || registered;
   }
   return registered;
+}
+
+function callCompletionAction(eventName) {
+  const normalized = String(eventName || '').toLowerCase();
+  if (normalized.includes('hangup') || normalized === 'end' || normalized === 'close') return 'caller_hangup';
+  return 'fonoster_call_closed';
 }
 
 function registerOnce(target, eventName, handler) {
@@ -974,13 +1075,15 @@ function clampPcm16(value) {
 }
 
 class Pcm16FramePacer {
-  constructor({ sampleRate, frameMs = 20, maxBufferedMs = 15_000, onFrame }) {
+  constructor({ sampleRate, frameMs = 20, maxBufferedMs = 15_000, onFrame, onDrop = null }) {
     this.sampleRate = Number(sampleRate) || 8_000;
     this.frameMs = Number(frameMs) || 20;
     this.frameBytes = Math.max(2, Math.round((this.sampleRate * this.frameMs * 2) / 1000));
     if (this.frameBytes % 2 !== 0) this.frameBytes += 1;
-    this.maxBufferedBytes = Math.max(this.frameBytes, Math.round((this.sampleRate * 2 * maxBufferedMs) / 1000));
+    this.maxBufferedMs = Number(maxBufferedMs) || 15_000;
+    this.maxBufferedBytes = Math.max(this.frameBytes, Math.round((this.sampleRate * 2 * this.maxBufferedMs) / 1000));
     this.onFrame = onFrame;
+    this.onDrop = onDrop;
     this.buffer = Buffer.alloc(0);
     this.timer = null;
     this.closed = false;
@@ -995,7 +1098,14 @@ class Pcm16FramePacer {
     if (this.buffer.length > this.maxBufferedBytes) {
       const overflow = this.buffer.length - this.maxBufferedBytes;
       const alignedOverflow = overflow % 2 === 0 ? overflow : overflow + 1;
-      this.buffer = this.buffer.subarray(Math.min(alignedOverflow, this.buffer.length));
+      const droppedBytes = Math.min(alignedOverflow, this.buffer.length);
+      this.buffer = this.buffer.subarray(droppedBytes);
+      this.onDrop?.({
+        reason: 'overflow',
+        dropped_bytes: droppedBytes,
+        buffered_bytes: this.buffer.length,
+        max_buffered_ms: this.maxBufferedMs
+      });
     }
     this.start();
   }
@@ -1012,6 +1122,43 @@ class Pcm16FramePacer {
     const frame = this.buffer.subarray(0, this.frameBytes);
     this.buffer = this.buffer.subarray(this.frameBytes);
     this.onFrame?.(frame);
+  }
+
+  drain({ timeoutMs = 2_000 } = {}) {
+    if (this.closed || this.buffer.length === 0) return Promise.resolve({ drained: true });
+    this.start();
+    return new Promise(resolve => {
+      const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+      const check = setInterval(() => {
+        if (this.closed) {
+          clearInterval(check);
+          resolve({ drained: false, reason: 'closed' });
+          return;
+        }
+        if (this.buffer.length > 0 && this.buffer.length < this.frameBytes) {
+          const frame = Buffer.alloc(this.frameBytes);
+          this.buffer.copy(frame);
+          this.buffer = Buffer.alloc(0);
+          this.onFrame?.(frame);
+        }
+        if (this.buffer.length === 0) {
+          clearInterval(check);
+          resolve({ drained: true });
+          return;
+        }
+        if (Date.now() >= deadline) {
+          clearInterval(check);
+          this.onDrop?.({
+            reason: 'drain_timeout',
+            dropped_bytes: this.buffer.length,
+            buffered_bytes: this.buffer.length,
+            max_buffered_ms: this.maxBufferedMs
+          });
+          resolve({ drained: false, reason: 'timeout', dropped_bytes: this.buffer.length });
+        }
+      }, this.frameMs);
+      check.unref?.();
+    });
   }
 
   clear() {
