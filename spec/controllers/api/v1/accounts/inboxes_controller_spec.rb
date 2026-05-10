@@ -801,6 +801,34 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('large-qr-payload')
       end
 
+      it 'recovers a missing QR artifact during setup status polling when QR payload is requested' do
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:sync_connection_state!) do |instance|
+          instance.update!(
+            lifecycle_state: 'waiting_for_qr',
+            connection_state: 'connecting',
+            qr_code: {},
+            last_synced_at: Time.current
+          )
+        end
+        expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!).with(artifact_type: 'qr') do |instance|
+          instance.update!(
+            lifecycle_state: 'qr_ready',
+            connection_state: 'connecting',
+            qr_code: { 'artifact_type' => 'qr', 'base64' => 'recovered-qr', 'code' => 'recovered-code' },
+            last_synced_at: Time.current
+          )
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/refresh_whatsapp_web_qr",
+             headers: admin.create_new_auth_token,
+             params: { status_only: true, include_qr_code: true },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_ready')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('recovered-qr')
+      end
+
       it 'passes explicit QR artifact type to the provider' do
         expect_any_instance_of(Channel::WhatsappWeb).to receive(:refresh_qr!)
           .with(artifact_type: 'qr') do |instance|

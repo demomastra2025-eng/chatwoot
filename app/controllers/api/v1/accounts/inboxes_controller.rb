@@ -112,6 +112,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def refresh_whatsapp_web_qr
     if truthy_param?(:status_only)
       @inbox.channel.sync_connection_state!
+      recover_whatsapp_web_auth_artifact_if_needed!
       render_whatsapp_web_inbox(include_qr_code: truthy_param?(:include_qr_code) == true)
     else
       @inbox.channel.refresh_qr!(artifact_type: params[:artifact_type].presence || 'qr')
@@ -388,6 +389,18 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     return unless @inbox.deleting?
 
     render json: { deleting: true }, status: :accepted
+  end
+
+  def recover_whatsapp_web_auth_artifact_if_needed!
+    return unless truthy_param?(:include_qr_code)
+
+    channel = @inbox.channel
+    return unless channel.respond_to?(:auth_artifact_valid?) && channel.respond_to?(:refresh_qr!)
+    return if channel.qr_code.present? || channel.auth_artifact_valid?
+    return if channel.lifecycle_state.in?(%w[connected failed deleting])
+    return if channel.connection_state.in?(%w[open refused reconnecting])
+
+    channel.refresh_qr!(artifact_type: params[:artifact_type].presence || channel.auth_artifact_type || 'qr')
   end
 
   def truthy_param?(key)

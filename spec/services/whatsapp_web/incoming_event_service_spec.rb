@@ -545,6 +545,44 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.qr_generated_at).to be_nil
     end
 
+    it 'preserves a fresh QR artifact when an auth-required status races after qrcode.updated' do
+      freeze_time do
+        generated_at = Time.current
+        expires_at = generated_at + Channel::WhatsappWeb::AUTH_ARTIFACT_TTL
+        channel.update!(
+          lifecycle_state: 'qr_ready',
+          connection_state: 'connecting',
+          qr_code: {
+            'artifact_type' => 'qr',
+            'base64' => 'data:image/png;base64,abc',
+            'code' => '123456',
+            'generated_at' => generated_at.iso8601,
+            'expires_at' => expires_at.iso8601
+          },
+          sync_state: channel.auth_artifact_sync_state(type: 'qr', generated_at: generated_at, expires_at: expires_at)
+        )
+
+        described_class.new(
+          channel: channel,
+          payload: {
+            event: 'status.instance',
+            data: {
+              status: 'reauth_required',
+              message: 'Authentication artifacts were not generated after reconnect',
+              disconnectionReasonCode: 428
+            }
+          }.with_indifferent_access
+        ).perform
+
+        channel.reload
+        expect(channel.lifecycle_state).to eq('qr_ready')
+        expect(channel.connection_state).to eq('close')
+        expect(channel.qr_code).to include('code' => '123456')
+        expect(channel.auth_artifact_valid?).to be true
+        expect(channel.last_error).to be_nil
+      end
+    end
+
     it 'treats logged out status.instance events as disconnected instead of failed' do
       described_class.new(
         channel: channel,

@@ -115,6 +115,16 @@ class WhatsappWeb::IncomingEventService
   def process_status_instance
     normalized_state = status_instance_connection_state
 
+    if normalized_state == 'close' && channel.auth_artifact_valid?
+      channel.update!(
+        connection_state: normalized_state,
+        lifecycle_state: 'qr_ready',
+        last_error: nil,
+        last_synced_at: Time.current
+      )
+      return
+    end
+
     channel.update!(
       connection_state: normalized_state,
       lifecycle_state: normalized_state == 'refused' ? 'failed' : 'disconnected',
