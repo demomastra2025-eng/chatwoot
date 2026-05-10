@@ -21,6 +21,7 @@ class VoiceSession {
     this.context = null;
     this.state = 'new';
     this.transcripts = new TranscriptBuffer({ client, callRef, scopeProvider: () => this.scopePayload() });
+    this.transcriptFlushPromise = Promise.resolve();
     this.tools = new ToolExecutor({
       client,
       callRef,
@@ -55,11 +56,21 @@ class VoiceSession {
   }
 
   recordCallerTranscript(text, options = {}) {
-    return this.transcripts.add({ speaker: 'caller', text, ...options });
+    return this.recordTranscript({ speaker: 'caller', text, ...options });
   }
 
   recordAiTranscript(text, options = {}) {
-    return this.transcripts.add({ speaker: 'ai', text, ...options });
+    return this.recordTranscript({ speaker: 'ai', text, ...options });
+  }
+
+  recordTranscript(item) {
+    const normalized = this.transcripts.add(item);
+    if (!normalized) return null;
+
+    this.transcriptFlushPromise = this.transcriptFlushPromise
+      .then(() => this.transcripts.flush({ final: Boolean(normalized.final) }))
+      .catch(() => ({ status: 'failed', accepted: 0 }));
+    return normalized;
   }
 
   flushTranscript(options = {}) {
@@ -73,6 +84,7 @@ class VoiceSession {
   async close(action = 'session_completed', metadata = {}) {
     if (this.closed) return;
     this.closed = true;
+    await this.transcriptFlushPromise;
     await this.flushTranscript({ final: true });
     await this.safeControl(action, metadata);
     await this.safeFinalize(action, metadata);

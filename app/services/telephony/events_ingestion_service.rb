@@ -402,6 +402,9 @@ class Telephony::EventsIngestionService
       data['data']['meta'] = existing_meta.merge(voice_meta)
     end
     data['data']['status'] = call_session.status
+    data['data']['ai_voice'] = voice_ai_message_state(call_session)
+    tools = voice_ai_tool_events(call_session)
+    data['data']['tools'] = tools if tools.present?
     data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
     data['data']['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     transcript = payload_value('transcript')
@@ -425,6 +428,78 @@ class Telephony::EventsIngestionService
     )
     meta['operator_claim'] = metadata['operator_claim'] if metadata['operator_claim'].present?
     meta.compact
+  end
+
+  def voice_ai_message_state(call_session)
+    latest_ai_event = latest_ai_event(call_session)
+    ai_answered = call_session.answered_by == 'ai_agent' || ai_answered_leg?(call_session)
+    enabled = ai_answered || latest_ai_event.present? || call_session.metadata.to_h['ai_voice'].present?
+    return {} unless enabled
+
+    {
+      'enabled' => true,
+      'answered' => ai_answered,
+      'state' => voice_ai_state(call_session, latest_ai_event),
+      'latest_event' => latest_ai_event&.event_type,
+      'updated_at' => latest_ai_event&.created_at&.iso8601 || call_session.last_event_at&.iso8601,
+      'answered_by' => call_session.answered_by
+    }.compact
+  end
+
+  def latest_ai_event(call_session)
+    call_session.events.where(event_type: ai_voice_event_types).order(created_at: :desc, id: :desc).first
+  end
+
+  def ai_answered_leg?(call_session)
+    call_session.legs.to_a.any? do |leg|
+      leg.is_a?(Hash) && leg['event_type'] == 'ai_answered'
+    end
+  end
+
+  def voice_ai_state(call_session, latest_ai_event)
+    return 'completed' if call_session.terminal?
+    return 'speaking' if latest_ai_event&.event_type.in?(%w[ai_speaking realtime_audio_out])
+    return 'using_tool' if latest_ai_event&.event_type.in?(%w[tool_started])
+    return 'answered' if call_session.status == 'in_progress'
+
+    call_session.status
+  end
+
+  def voice_ai_tool_events(call_session)
+    call_session.events.where(event_type: %w[tool_started tool_completed tool_failed]).order(:created_at, :id).last(20).filter_map do |event|
+      event_payload = event.payload.to_h.deep_stringify_keys
+      tool_payload = event_payload['payload'].is_a?(Hash) ? event_payload['payload'].deep_stringify_keys : {}
+      metadata_payload = event_payload['metadata'].is_a?(Hash) ? event_payload['metadata'].deep_stringify_keys : {}
+      tool_name = tool_payload['tool_name'] || metadata_payload['tool_name'] || event_payload['tool_name']
+      next if tool_name.blank?
+
+      {
+        'event' => event.event_type,
+        'name' => tool_name,
+        'status' => tool_status(event.event_type),
+        'ok' => tool_payload.key?('ok') ? tool_payload['ok'] : metadata_payload['ok'],
+        'error' => tool_payload['error'] || metadata_payload['error'],
+        'at' => parse_time(event_payload['occurred_at'] || event_payload['occurredAt'])&.iso8601 || event.created_at.iso8601
+      }.compact
+    end
+  end
+
+  def ai_voice_event_types
+    %w[
+      app_answered ai_ringing ai_answered media_stream_started realtime_audio_out ai_speaking caller_interrupted
+      tool_started tool_completed tool_failed
+    ]
+  end
+
+  def tool_status(event_type)
+    case event_type
+    when 'tool_started'
+      'running'
+    when 'tool_completed'
+      'completed'
+    when 'tool_failed'
+      'failed'
+    end
   end
 
   def resolve_existing_conversation(account, call_session)
@@ -546,7 +621,8 @@ class Telephony::EventsIngestionService
 
   def leg_name
     event_name = resolved_event_type.to_s
-    return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name == 'caller_interrupted'
+    ai_event_names = %w[caller_interrupted realtime_audio_out media_stream_started provider_stream_closed provider_error]
+    return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name.in?(ai_event_names)
     return 'operator' if event_name.start_with?('transfer_', 'operator_')
 
     nil

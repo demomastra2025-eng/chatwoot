@@ -12,7 +12,8 @@ class Telephony::AiVoice::TranscriptIngestionService
     call_session.with_lock do
       call_session.reload
       update_call_session!(normalized_items)
-      upsert_transcript_turn_messages!(normalized_items) if final_transcript?(normalized_items)
+      sync_voice_message_transcript!
+      remove_legacy_transcript_messages!
     end
 
     {
@@ -46,22 +47,34 @@ class Telephony::AiVoice::TranscriptIngestionService
     call_session.update!(attrs)
   end
 
-  def upsert_transcript_turn_messages!(items)
-    return if conversation.blank?
+  def sync_voice_message_transcript!
+    message = call_session.latest_voice_message
+    return if message.blank?
 
-    turns = transcript_turns(final_transcript_items(items))
-    return if turns.blank?
-
-    ApplicationRecord.transaction do
-      remove_legacy_transcript_note!
-      turns.each_with_index { |turn, index| upsert_turn_message!(turn, index) }
-    end
+    data = (message.content_attributes || {}).deep_dup
+    data['data'] ||= {}
+    transcript_items = voice_message_transcript_items
+    data['data']['transcript_ref'] = transcript_ref if final_transcript?(transcript_items)
+    data['data']['transcript_items'] = transcript_items
+    data['data']['transcript'] = transcript_text(transcript_items)
+    data['data']['ai_voice'] = (data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}).merge(
+      'enabled' => true,
+      'transcript_updated_at' => Time.current.iso8601,
+      'transcript_final' => transcript_items.any? { |item| item['final'] }
+    )
+    message.update!(content_attributes: data)
   end
 
-  def final_transcript_items(items)
-    stored_items = call_session.metadata.dig(TRANSCRIPT_METADATA_KEY, 'transcript', 'final_items') || []
-    (stored_items + items.select { |item| item['final'] })
-      .uniq { |item| item.slice('speaker', 'text', 'at') }
+  def voice_message_transcript_items
+    transcript = call_session.metadata.dig(TRANSCRIPT_METADATA_KEY, 'transcript') || {}
+    items = Array.wrap(transcript['final_items']) + Array.wrap(transcript['partial_items'])
+    items.uniq { |item| item.slice('speaker', 'text', 'at', 'final') }.last(200)
+  end
+
+  def transcript_text(items)
+    transcript_turns(items.select { |item| item['final'] }).map do |turn|
+      "#{speaker_label(turn['speaker'])}: #{turn_content(turn)}"
+    end.join("\n")
   end
 
   def transcript_turns(items)
@@ -78,79 +91,25 @@ class Telephony::AiVoice::TranscriptIngestionService
     end
   end
 
-  def upsert_turn_message!(turn, index)
-    message = conversation.messages.find_or_initialize_by(source_id: turn_source_id(index))
-    message.skip_send_reply = true
-    message.assign_attributes(turn_message_attributes(turn, index))
-    message.save!
-  end
-
-  def turn_message_attributes(turn, index)
-    speaker = turn['speaker']
-    {
-      account_id: conversation.account_id,
-      inbox_id: conversation.inbox_id,
-      message_type: message_type_for_speaker(speaker),
-      content_type: :text,
-      private: false,
-      sender: sender_for_speaker(speaker),
-      content: turn_content(turn),
-      content_attributes: turn_content_attributes(turn, index)
-    }
-  end
-
   def turn_content(turn)
     turn['items'].filter_map { |item| item['text'].to_s.strip.presence }.join(' ')
   end
 
-  def turn_content_attributes(turn, index)
-    {
-      data: {
-        type: 'ai_voice_transcript_turn',
-        call_ref: call_session.external_call_ref,
-        transcript_ref: transcript_ref,
-        speaker: turn['speaker'],
-        turn_index: index,
-        final: true,
-        source_item_count: turn['items'].length
-      }.compact,
-      external_created_at: turn['items'].first['at']
-    }
+  def speaker_label(speaker)
+    speaker == 'ai' ? 'ИИ' : 'Клиент'
   end
 
-  def remove_legacy_transcript_note!
-    legacy_message = conversation.messages.find_by(source_id: transcript_ref)
-    return unless legacy_message&.private? && legacy_message&.activity?
-    return unless legacy_message.content_attributes.to_h.dig('data', 'type') == 'ai_voice_transcript'
+  def remove_legacy_transcript_messages!
+    return if conversation.blank?
 
-    legacy_message.destroy!
-  end
+    conversation.messages.where(source_id: transcript_ref).find_each do |message|
+      next unless message.private? && message.activity?
+      next unless message.content_attributes.to_h.dig('data', 'type') == 'ai_voice_transcript'
 
-  def turn_source_id(index)
-    "ai_voice_turn:#{call_session.external_call_ref}:#{index}"
-  end
-
-  def message_type_for_speaker(speaker)
-    speaker == 'caller' ? :incoming : :outgoing
-  end
-
-  def sender_for_speaker(speaker)
-    return conversation.contact if speaker == 'caller'
-
-    voice_captain_assistant
-  end
-
-  def voice_captain_assistant
-    @voice_captain_assistant ||= begin
-      assistant = inbox_captain_assistant || call_session.number_binding&.routing_policy&.captain_assistant
-      assistant if assistant&.account_id == conversation.account_id
+      message.destroy!
     end
-  end
-
-  def inbox_captain_assistant
-    return unless defined?(CaptainInbox)
-
-    CaptainInbox.find_by(inbox_id: conversation.inbox_id)&.captain_assistant
+    legacy_turn_source = "ai_voice_turn:#{ActiveRecord::Base.sanitize_sql_like(call_session.external_call_ref)}:%"
+    conversation.messages.where('source_id LIKE ?', legacy_turn_source).find_each(&:destroy!)
   end
 
   def merge_items(existing_items, new_items)

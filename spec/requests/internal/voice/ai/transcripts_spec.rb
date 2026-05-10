@@ -43,10 +43,30 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
     expect(call_session.reload.metadata.dig('ai_voice', 'transcript', 'partial_items').last['text']).to eq('алло')
   end
 
-  it 'persists final transcript idempotently as native chat turn messages and call metadata' do
-    assistant = create(:captain_assistant, account: account, name: 'Voice Captain')
-    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+  it 'persists final transcript idempotently on the voice call message without public text turns' do
     now = Time.current
+    voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+    legacy_public_turn = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      message_type: :outgoing,
+      content_type: :text,
+      private: false,
+      source_id: "ai_voice_turn:#{call_session.external_call_ref}:0",
+      content: 'legacy public voice transcript',
+      content_attributes: { data: { type: 'ai_voice_transcript_turn' } }
+    )
     payload = {
       call_ref: call_session.external_call_ref,
       account_id: account.id,
@@ -73,20 +93,14 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
 
     expect(SendReplyJob).not_to have_received(:perform_later)
     expect(conversation.messages.where(source_id: "ai_voice_transcript:#{call_session.external_call_ref}")).not_to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
+    expect(Message.exists?(legacy_public_turn.id)).to be(false)
 
-    transcript_messages = conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%").reorder(:created_at,
-                                                                                                                                       :id)
-    expect(transcript_messages.count).to eq(3)
-    expect(transcript_messages.map(&:message_type)).to eq(%w[incoming outgoing incoming])
-    expect(transcript_messages.map(&:private)).to all(be(false))
-    expect(transcript_messages.map(&:content)).to eq([
-                                                       'Здравствуйте',
-                                                       'Здравствуйте, чем могу помочь?',
-                                                       'Нужен оператор'
-                                                     ])
-    expect(transcript_messages.first.sender).to eq(conversation.contact)
-    expect(transcript_messages.second.sender).to eq(assistant)
-    expect(transcript_messages.map { |message| message.content_attributes.dig('data', 'type') }).to all(eq('ai_voice_transcript_turn'))
+    data = voice_message.reload.content_attributes['data']
+    expect(data['transcript_ref']).to eq("ai_voice_transcript:#{call_session.external_call_ref}")
+    expect(data['transcript']).to eq("Клиент: Здравствуйте\nИИ: Здравствуйте, чем могу помочь?\nКлиент: Нужен оператор")
+    expect(data['transcript_items'].pluck('text')).to include('Здравствуйте', 'могу помочь?', 'Нужен оператор')
+    expect(data.dig('ai_voice', 'transcript_updated_at')).to be_present
     expect(call_session.reload.transcript_ref).to eq("ai_voice_transcript:#{call_session.external_call_ref}")
     expect(call_session.metadata.dig('ai_voice', 'transcript', 'final_items').pluck('text')).to include('Здравствуйте')
   end
@@ -131,7 +145,7 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(target_session.reload.metadata.dig('ai_voice', 'transcript', 'final_items').pluck('text')).to include('Tenant scoped transcript')
     expect(other_session.reload.metadata.dig('ai_voice', 'transcript')).to be_blank
-    expect(target_conversation.messages.where('source_id LIKE ?', 'ai_voice_turn:shared-transcript-call-ref:%')).to exist
+    expect(target_conversation.messages.where('source_id LIKE ?', 'ai_voice_turn:shared-transcript-call-ref:%')).not_to exist
     expect(target_conversation.messages.where(source_id: 'ai_voice_transcript:shared-transcript-call-ref')).not_to exist
     expect(other_conversation.messages.where('source_id LIKE ?', 'ai_voice_turn:shared-transcript-call-ref:%')).not_to exist
   end

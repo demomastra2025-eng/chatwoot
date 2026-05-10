@@ -35,6 +35,13 @@ RSpec.describe MessageTemplates::HookExecutionService do
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
       end
+
+      it 'does not schedule captain response for voice_call bubble updates' do
+        expect(Captain::Conversation::TypingIndicatorService).not_to receive(:turn_on)
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, content_type: :voice_call, account: account)
+      end
     end
 
     context 'when outside business hours' do

@@ -40,6 +40,26 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
   assert.ok(calls.filter(([kind]) => kind === 'control').every(([, payload]) => payload.account_id === 42));
 });
 
+test('VoiceSession flushes every transcript turn during the live call', async () => {
+  const transcripts = [];
+  const client = {
+    getContext: async () => ({ call_ref: 'call-live', account_id: 42, ai: { provider: 'gemini-live' } }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async (payload) => { transcripts.push(payload); return { status: 'ok', accepted: payload.items.length }; }
+  };
+
+  const session = new VoiceSession({ client, callRef: 'call-live' });
+  await session.bootstrap();
+  session.recordCallerTranscript('алло', { final: true, at: 't1' });
+  await session.transcriptFlushPromise;
+  session.recordAiTranscript('слушаю вас', { final: true, at: 't2' });
+  await session.transcriptFlushPromise;
+
+  assert.equal(transcripts.length, 2);
+  assert.deepEqual(transcripts.map(payload => payload.items[0].text), ['алло', 'слушаю вас']);
+  assert.ok(transcripts.every(payload => payload.final === true));
+});
+
 test('VoiceSession enters safe fallback when context is unavailable', async () => {
   const controls = [];
   const client = {

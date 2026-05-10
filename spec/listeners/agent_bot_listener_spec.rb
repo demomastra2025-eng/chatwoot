@@ -44,6 +44,22 @@ describe AgentBotListener do
         listener.message_created(event)
       end
 
+      it 'does not send voice call messages to normal agent bot text flow' do
+        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
+        voice_message = create(
+          :message,
+          message_type: 'incoming',
+          content_type: 'voice_call',
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+        voice_event = Events::Base.new(event_name, Time.zone.now, message: voice_message)
+
+        expect(AgentBots::WebhookJob).not_to receive(:perform_later)
+        listener.message_created(voice_event)
+      end
+
       context 'when conversation has a different assignee agent bot' do
         let!(:conversation_bot) { create(:agent_bot) }
 
@@ -67,6 +83,26 @@ describe AgentBotListener do
           listener.message_created(event)
         end
       end
+    end
+  end
+
+  describe '#message_updated' do
+    let(:event_name) { 'message.updated' }
+
+    it 'does not run normal agent bot flow for voice call bubble updates' do
+      create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
+      voice_message = create(
+        :message,
+        message_type: 'incoming',
+        content_type: 'voice_call',
+        account: account,
+        inbox: inbox,
+        conversation: conversation
+      )
+      event = Events::Base.new(event_name, Time.zone.now, message: voice_message)
+
+      expect(AgentBots::WebhookJob).not_to receive(:perform_later)
+      listener.message_updated(event)
     end
   end
 

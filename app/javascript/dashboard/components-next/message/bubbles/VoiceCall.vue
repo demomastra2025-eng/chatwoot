@@ -53,8 +53,17 @@ const callId = computed(() => data.value?.callId);
 const acceptedBy = computed(() => data.value?.acceptedBy);
 const recordingUrl = computed(() => data.value?.recordingUrl);
 const transcript = computed(() => data.value?.transcript);
+const transcriptItems = computed(() => data.value?.transcriptItems || []);
+const aiVoice = computed(() => data.value?.aiVoice || {});
+const tools = computed(() => data.value?.tools || []);
+const isAiVoice = computed(() => Boolean(aiVoice.value?.enabled));
+const aiVoiceState = computed(() => aiVoice.value?.state?.toString());
+const showTranscriptBlock = computed(
+  () => Boolean(transcript.value) || transcriptItems.value.length > 0
+);
+const showTools = computed(() => tools.value.length > 0);
 const isJoining = ref(false);
-const showTranscript = ref(false);
+const showTranscript = ref(true);
 const timeLabel = computed(() => messageTimestamp(createdAt.value, 'HH:mm'));
 
 const durationInSeconds = computed(() => {
@@ -123,6 +132,18 @@ const labelKey = computed(() => {
 });
 
 const subtextKey = computed(() => {
+  if (isAiVoice.value) {
+    if (aiVoiceState.value === 'speaking') {
+      return 'CONVERSATION.VOICE_CALL.AI_AGENT_SPEAKING';
+    }
+    if (aiVoiceState.value === 'using_tool') {
+      return 'CONVERSATION.VOICE_CALL.AI_AGENT_USING_TOOL';
+    }
+    if (aiVoice.value?.answered) {
+      return 'CONVERSATION.VOICE_CALL.AI_AGENT_ANSWERED';
+    }
+  }
+
   if (
     acceptedBy.value?.name &&
     [VOICE_CALL_STATUS.IN_PROGRESS, VOICE_CALL_STATUS.COMPLETED].includes(
@@ -154,6 +175,27 @@ const iconName = computed(() => {
 });
 
 const bgColor = computed(() => BG_COLOR_MAP[status.value] || 'bg-n-teal-9');
+
+const toolStatusClass = tool => {
+  if (tool.status === 'failed') return 'text-n-ruby-11';
+  if (tool.status === 'completed') return 'text-n-teal-11';
+  return 'text-n-amber-11';
+};
+
+const toolStatusKey = tool => {
+  if (tool.status === 'failed') return 'CONVERSATION.VOICE_CALL.TOOL_FAILED';
+  if (tool.status === 'completed') {
+    return 'CONVERSATION.VOICE_CALL.TOOL_COMPLETED';
+  }
+  return 'CONVERSATION.VOICE_CALL.TOOL_RUNNING';
+};
+
+const transcriptFallback = computed(() => {
+  if (transcript.value) return transcript.value;
+  return transcriptItems.value
+    .map(item => `${item.speaker === 'ai' ? 'ИИ' : 'Клиент'}: ${item.text}`)
+    .join('\n');
+});
 
 const handleJoinCall = async () => {
   if (isJoining.value) return;
@@ -207,9 +249,19 @@ const handleJoinCall = async () => {
               })
             }}
           </span>
-          <span v-else-if="subtextKey" class="text-xs text-n-slate-11">
+          <span
+            v-else-if="subtextKey && !isAiVoice"
+            class="text-xs text-n-slate-11"
+          >
             {{ $t(subtextKey) }}
           </span>
+          <div
+            v-if="isAiVoice"
+            class="flex gap-1 items-center mt-1 text-xs font-medium text-n-teal-11"
+          >
+            <i class="i-ph-robot-bold text-sm" />
+            <span>{{ $t(subtextKey) }}</span>
+          </div>
           <div
             v-if="timeLabel || formattedDuration"
             class="flex gap-1 items-center mt-1 text-xs tabular-nums text-n-slate-11/90"
@@ -245,10 +297,27 @@ const handleJoinCall = async () => {
         </audio>
       </div>
 
-      <div
-        v-if="transcript && status === VOICE_CALL_STATUS.COMPLETED"
-        class="px-3 pb-3"
-      >
+      <div v-if="showTools" class="px-3 pb-3">
+        <div class="mb-1 text-xs font-medium text-n-slate-11">
+          {{ $t('CONVERSATION.VOICE_CALL.TOOLS_USED') }}
+        </div>
+        <div class="flex flex-col gap-1">
+          <div
+            v-for="(tool, index) in tools"
+            :key="`${tool.name}-${tool.event}-${tool.at}-${index}`"
+            class="flex items-center justify-between gap-2 rounded-md bg-n-alpha-2 px-2 py-1 text-xs"
+          >
+            <span class="font-mono text-n-slate-12 truncate">
+              {{ tool.name }}
+            </span>
+            <span class="shrink-0" :class="toolStatusClass(tool)">
+              {{ $t(toolStatusKey(tool)) }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="showTranscriptBlock" class="px-3 pb-3">
         <button
           class="flex items-center gap-1 text-xs text-n-slate-11 hover:text-n-slate-12 transition-colors"
           @click="showTranscript = !showTranscript"
@@ -265,7 +334,7 @@ const handleJoinCall = async () => {
           v-if="showTranscript"
           class="mt-1 text-xs leading-relaxed text-n-slate-11 whitespace-pre-wrap"
         >
-          {{ transcript }}
+          {{ transcriptFallback }}
         </p>
       </div>
     </div>

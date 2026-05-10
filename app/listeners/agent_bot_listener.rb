@@ -36,6 +36,7 @@ class AgentBotListener < BaseListener
   def message_created(event)
     message = extract_message_and_account(event)[0]
     inbox = message.inbox
+    return if voice_call_message?(message)
     return unless message.webhook_sendable?
 
     method_name = __method__.to_s
@@ -45,6 +46,7 @@ class AgentBotListener < BaseListener
   def message_updated(event)
     message = extract_message_and_account(event)[0]
     inbox = message.inbox
+    return if voice_call_message?(message)
     return unless message.webhook_sendable?
 
     method_name = __method__.to_s
@@ -83,6 +85,10 @@ class AgentBotListener < BaseListener
       payload = message.webhook_data.merge(event: method_name)
       process_webhook_bot_event(agent_bot, payload)
     end
+  end
+
+  def voice_call_message?(message)
+    message.respond_to?(:voice_call?) && message.voice_call?
   end
 
   def process_webhook_bot_event(agent_bot, payload)

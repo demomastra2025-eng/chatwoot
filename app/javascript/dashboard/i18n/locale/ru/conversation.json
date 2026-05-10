@@ -91,7 +91,19 @@
       "CALL_ENDED": "Звонок завершен",
       "NOT_ANSWERED_YET": "Пока нет ответа",
       "THEY_ANSWERED": "Они ответили",
-      "YOU_ANSWERED": "Вы ответили"
+      "YOU_ANSWERED": "Вы ответили",
+      "ANSWERED_BY": "Ответил {name}",
+      "ACCEPT_CALL": "Принять",
+      "JOIN_CALL": "Подключиться",
+      "TRANSCRIPT": "Транскрипт",
+      "AUDIO_NOT_SUPPORTED": "Ваш браузер не поддерживает воспроизведение аудио.",
+      "AI_AGENT_ANSWERED": "ИИ-агент взял трубку и общается",
+      "AI_AGENT_SPEAKING": "ИИ-агент говорит",
+      "AI_AGENT_USING_TOOL": "ИИ-агент использует инструмент",
+      "TOOLS_USED": "Инструменты ИИ",
+      "TOOL_RUNNING": "выполняется",
+      "TOOL_COMPLETED": "готово",
+      "TOOL_FAILED": "ошибка"
     },
     "HEADER": {
       "RESOLVE_ACTION": "Завершить",

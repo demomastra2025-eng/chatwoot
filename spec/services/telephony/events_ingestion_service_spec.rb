@@ -227,8 +227,16 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-stale-ringing-1')).to be_processed
     end
 
-    it 'maps AI voice lifecycle events to native call status and AI leg audit' do
+    it 'maps AI voice lifecycle events to native call status, AI leg audit and voice bubble state' do
       occurred_at = Time.zone.parse(30.seconds.ago.iso8601)
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'ringing' } }
+      )
 
       result = described_class.new(
         payload: payload.merge(
@@ -253,9 +261,23 @@ RSpec.describe Telephony::EventsIngestionService do
           'answered_by' => 'ai_agent'
         )
       )
+      expect(result.latest_voice_message.content_attributes.dig('data', 'ai_voice')).to include(
+        'enabled' => true,
+        'answered' => true,
+        'state' => 'answered',
+        'latest_event' => 'ai_answered'
+      )
     end
 
-    it 'keeps caller interruptions and tool events non-terminal while preserving audit legs' do
+    it 'keeps caller interruptions and tool events non-terminal while preserving audit legs and voice bubble tools' do
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'in_progress' } }
+      )
       existing_call_session.update!(status: 'in_progress')
 
       %w[caller_interrupted tool_started tool_completed tool_failed ai_speaking].each do |event_name|
@@ -263,13 +285,18 @@ RSpec.describe Telephony::EventsIngestionService do
           payload: payload.merge(
             event_key: "evt-#{event_name}",
             event: event_name,
-            occurred_at: Time.current.iso8601
+            occurred_at: Time.current.iso8601,
+            payload: { tool_name: 'faq_lookup', ok: event_name == 'tool_completed' }
           )
         ).perform
 
         expect(result.reload.status).to eq('in_progress')
         expect(result.legs.last['event_type']).to eq(event_name)
       end
+
+      tools = existing_call_session.latest_voice_message.reload.content_attributes.dig('data', 'tools')
+      expect(tools.map { |tool| tool['event'] }).to include('tool_started', 'tool_completed', 'tool_failed')
+      expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
     end
 
     it 'maps transfer lifecycle events without losing the AI call session' do
