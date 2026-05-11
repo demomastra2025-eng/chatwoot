@@ -324,6 +324,8 @@ defineExpose({
         v-if="showDescriptionField"
         v-model="state.description"
         override-line-breaks
+        auto-height
+        :editor-key="`captain:assistant:${assistant?.id || 'new'}:basic-description`"
         :label="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.LABEL')"
         :placeholder="t('CAPTAIN.ASSISTANTS.FORM.INSTRUCTION.PLACEHOLDER')"
         :max-length="descriptionMaxLength"

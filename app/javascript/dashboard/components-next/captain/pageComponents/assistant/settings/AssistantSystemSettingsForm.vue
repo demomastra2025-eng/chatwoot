@@ -258,6 +258,8 @@ defineExpose({
           v-if="state.handoffMessageEnabled"
           v-model="state.handoffMessage"
           override-line-breaks
+          auto-height
+          :editor-key="`captain:assistant:${assistant?.id || 'new'}:system-handoff-message`"
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
           "
@@ -301,6 +303,8 @@ defineExpose({
           v-if="state.resolutionMessageEnabled"
           v-model="state.resolutionMessage"
           override-line-breaks
+          auto-height
+          :editor-key="`captain:assistant:${assistant?.id || 'new'}:system-resolution-message`"
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
           "
@@ -497,6 +501,8 @@ defineExpose({
           <Editor
             v-model="state.voiceSettings.systemPrompt"
             override-line-breaks
+            auto-height
+            :editor-key="`captain:assistant:${assistant?.id || 'new'}:voice-system-prompt`"
             :placeholder="
               t(
                 'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SYSTEM_PROMPT_PLACEHOLDER'

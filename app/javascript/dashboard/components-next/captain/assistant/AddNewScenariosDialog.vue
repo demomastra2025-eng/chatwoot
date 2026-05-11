@@ -138,6 +138,8 @@ const onClickCancel = () => {
         <Editor
           v-model="state.instruction"
           override-line-breaks
+          auto-height
+          editor-key="captain:add-new-scenario:instruction"
           :label="
             t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.FORM.INSTRUCTION.LABEL')
           "

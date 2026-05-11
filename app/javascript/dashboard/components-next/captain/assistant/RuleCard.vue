@@ -352,6 +352,8 @@ const typeBadge = computed(() => props.typeBadgeMap[props.type] || {});
           <Editor
             v-model="localRule.content"
             override-line-breaks
+            auto-height
+            :editor-key="`captain:rule:${id}`"
             focus-on-mount
             :show-character-count="false"
             :enable-captain-tools="enableCaptainTools"

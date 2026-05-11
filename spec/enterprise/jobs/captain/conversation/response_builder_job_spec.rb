@@ -330,6 +330,28 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
     end
 
+    it 'stores the scenario title in the existing agentName display field while preserving the runtime agent_name key' do
+      scenario = create(
+        :captain_scenario,
+        assistant: assistant,
+        account: account,
+        title: 'Andalusiya Premium Reception Scenario'
+      )
+
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Handled by scenario',
+          'agent_name' => scenario.handoff_key
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      attrs = conversation.reload.messages.outgoing.last.additional_attributes
+      expect(attrs['agent_name']).to eq(scenario.handoff_key)
+      expect(attrs['agentName']).to eq('Andalusiya Premium Reception Scenario')
+    end
+
     it 'sends the text response without attachment when an artifact id expired' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {

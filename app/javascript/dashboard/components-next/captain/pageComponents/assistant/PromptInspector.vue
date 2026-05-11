@@ -1,10 +1,11 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import { normalizePromptPreviewText } from 'dashboard/helper/captainPromptPreview';
 import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
 
 const props = defineProps({
@@ -32,9 +33,18 @@ const props = defineProps({
 
 const { t } = useI18n();
 
+const PROMPT_HEIGHT_STORAGE_PREFIX = 'captain:prompt-preview-height:';
+const DEFAULT_PROMPT_HEIGHT = 360;
+const MIN_PROMPT_HEIGHT = 192;
+const MAX_PROMPT_HEIGHT = 1400;
+
 const preview = ref(null);
 const isLoading = ref(false);
 const loadError = ref(false);
+const promptHeights = ref({});
+const resizingPrompt = ref(null);
+const resizeStartY = ref(0);
+const resizeStartHeight = ref(DEFAULT_PROMPT_HEIGHT);
 
 const assistantPreview = computed(() =>
   props.showAssistantSection ? preview.value?.assistant : null
@@ -61,6 +71,98 @@ const hasCopilotUsedMetadata = computed(
     copilotPreview.value?.used_field_ids?.length
 );
 
+const clampPromptHeight = height =>
+  Math.min(
+    Math.max(Number(height) || DEFAULT_PROMPT_HEIGHT, MIN_PROMPT_HEIGHT),
+    MAX_PROMPT_HEIGHT
+  );
+
+const promptStorageKey = key =>
+  `${PROMPT_HEIGHT_STORAGE_PREFIX}${props.assistantId || 'new'}:${key}`;
+
+const readStoredPromptHeight = key => {
+  try {
+    return window.localStorage.getItem(promptStorageKey(key));
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredPromptHeight = (key, height) => {
+  try {
+    window.localStorage.setItem(promptStorageKey(key), String(height));
+  } catch {
+    // Storage can be unavailable in private/locked-down browser contexts.
+  }
+};
+
+const removeStoredPromptHeight = key => {
+  try {
+    window.localStorage.removeItem(promptStorageKey(key));
+  } catch {
+    // Storage can be unavailable in private/locked-down browser contexts.
+  }
+};
+
+const getPromptHeight = key => {
+  if (!promptHeights.value[key]) {
+    promptHeights.value[key] = clampPromptHeight(
+      readStoredPromptHeight(key) || DEFAULT_PROMPT_HEIGHT
+    );
+  }
+  return promptHeights.value[key];
+};
+
+const promptPreviewStyle = key => ({
+  height: `${getPromptHeight(key)}px`,
+});
+
+const getClientY = event => event.touches?.[0]?.clientY || event.clientY;
+
+const clearResizeStyles = () => {
+  Object.assign(document.body.style, { cursor: '', userSelect: '' });
+};
+
+const startPromptResize = (event, key) => {
+  resizingPrompt.value = key;
+  resizeStartY.value = getClientY(event);
+  resizeStartHeight.value = getPromptHeight(key);
+  Object.assign(document.body.style, {
+    cursor: 'row-resize',
+    userSelect: 'none',
+  });
+};
+
+const onPromptResizeMove = event => {
+  if (!resizingPrompt.value) return;
+  if (event.touches) event.preventDefault();
+
+  const nextHeight = clampPromptHeight(
+    resizeStartHeight.value + getClientY(event) - resizeStartY.value
+  );
+  promptHeights.value = {
+    ...promptHeights.value,
+    [resizingPrompt.value]: nextHeight,
+  };
+};
+
+const onPromptResizeEnd = () => {
+  if (!resizingPrompt.value) return;
+
+  const key = resizingPrompt.value;
+  writeStoredPromptHeight(key, getPromptHeight(key));
+  resizingPrompt.value = null;
+  clearResizeStyles();
+};
+
+const resetPromptHeight = key => {
+  promptHeights.value = {
+    ...promptHeights.value,
+    [key]: DEFAULT_PROMPT_HEIGHT,
+  };
+  removeStoredPromptHeight(key);
+};
+
 const loadPreview = async () => {
   if (!props.assistantId) {
     preview.value = null;
@@ -84,10 +186,28 @@ const loadPreview = async () => {
 watch(
   () => [props.assistantId, props.assistant?.updated_at],
   () => {
+    promptHeights.value = {};
     loadPreview();
   },
   { immediate: true }
 );
+
+onMounted(() => {
+  window.addEventListener('mousemove', onPromptResizeMove);
+  window.addEventListener('mouseup', onPromptResizeEnd);
+  window.addEventListener('touchmove', onPromptResizeMove, { passive: false });
+  window.addEventListener('touchend', onPromptResizeEnd);
+  window.addEventListener('touchcancel', onPromptResizeEnd);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onPromptResizeMove);
+  window.removeEventListener('mouseup', onPromptResizeEnd);
+  window.removeEventListener('touchmove', onPromptResizeMove);
+  window.removeEventListener('touchend', onPromptResizeEnd);
+  window.removeEventListener('touchcancel', onPromptResizeEnd);
+  clearResizeStyles();
+});
 </script>
 
 <template>
@@ -224,9 +344,26 @@ watch(
                 )
               }}
             </span>
-            <pre
-              class="max-h-[19rem] overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-2.5 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
-            ><code>{{ assistantPreview.compiled_prompt }}</code></pre>
+            <div
+              class="flex min-h-[12rem] flex-col overflow-hidden rounded-xl border border-n-weak bg-n-alpha-2"
+              :style="promptPreviewStyle('assistant')"
+            >
+              <pre
+                class="min-h-0 flex-1 overflow-auto p-2.5 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
+              ><code>{{ normalizePromptPreviewText(assistantPreview.compiled_prompt) }}</code></pre>
+              <div
+                class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
+                :class="{
+                  'bg-n-alpha-2 text-n-slate-11':
+                    resizingPrompt === 'assistant',
+                }"
+                @mousedown="startPromptResize($event, 'assistant')"
+                @touchstart.prevent="startPromptResize($event, 'assistant')"
+                @dblclick="resetPromptHeight('assistant')"
+              >
+                <div class="h-0.5 w-10 rounded-full bg-current opacity-60" />
+              </div>
+            </div>
           </div>
 
           <div
@@ -343,9 +480,32 @@ watch(
                         )
                       }}
                     </span>
-                    <pre
-                      class="max-h-80 overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
-                    ><code>{{ scenario.compiled_prompt }}</code></pre>
+                    <div
+                      class="flex min-h-[12rem] flex-col overflow-hidden rounded-xl border border-n-weak bg-n-alpha-2"
+                      :style="promptPreviewStyle(`scenario-${scenario.id}`)"
+                    >
+                      <pre
+                        class="min-h-0 flex-1 overflow-auto p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
+                      ><code>{{ normalizePromptPreviewText(scenario.compiled_prompt) }}</code></pre>
+                      <div
+                        class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
+                        :class="{
+                          'bg-n-alpha-2 text-n-slate-11':
+                            resizingPrompt === `scenario-${scenario.id}`,
+                        }"
+                        @mousedown="
+                          startPromptResize($event, `scenario-${scenario.id}`)
+                        "
+                        @touchstart.prevent="
+                          startPromptResize($event, `scenario-${scenario.id}`)
+                        "
+                        @dblclick="resetPromptHeight(`scenario-${scenario.id}`)"
+                      >
+                        <div
+                          class="h-0.5 w-10 rounded-full bg-current opacity-60"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </details>
@@ -454,9 +614,25 @@ watch(
                 )
               }}
             </span>
-            <pre
-              class="max-h-96 overflow-auto rounded-xl border border-n-weak bg-n-alpha-2 p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
-            ><code>{{ copilotPreview.compiled_prompt }}</code></pre>
+            <div
+              class="flex min-h-[12rem] flex-col overflow-hidden rounded-xl border border-n-weak bg-n-alpha-2"
+              :style="promptPreviewStyle('copilot')"
+            >
+              <pre
+                class="min-h-0 flex-1 overflow-auto p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
+              ><code>{{ normalizePromptPreviewText(copilotPreview.compiled_prompt) }}</code></pre>
+              <div
+                class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
+                :class="{
+                  'bg-n-alpha-2 text-n-slate-11': resizingPrompt === 'copilot',
+                }"
+                @mousedown="startPromptResize($event, 'copilot')"
+                @touchstart.prevent="startPromptResize($event, 'copilot')"
+                @dblclick="resetPromptHeight('copilot')"
+              >
+                <div class="h-0.5 w-10 rounded-full bg-current opacity-60" />
+              </div>
+            </div>
           </div>
         </div>
       </section>

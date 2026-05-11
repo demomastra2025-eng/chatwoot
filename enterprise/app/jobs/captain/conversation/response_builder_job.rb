@@ -367,7 +367,11 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false, attachment_ids: [])
     additional_attrs = {}
-    additional_attrs[:agent_name] = agent_name if agent_name.present?
+    if agent_name.present?
+      additional_attrs[:agent_name] = agent_name
+      display_agent_name = display_agent_name_for(agent_name)
+      additional_attrs[:agentName] = display_agent_name if display_agent_name.present?
+    end
     additional_attrs[:captain_trace] = @response['captain_trace'] if @response&.dig('captain_trace').present?
 
     message = @conversation.messages.build(
@@ -479,6 +483,10 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless message.sender_type == 'Captain::Assistant'
 
     inferred_agent_name_from_trace(message.additional_attributes&.dig('captain_trace'))
+  end
+
+  def display_agent_name_for(agent_name)
+    @assistant.scenarios.find { |scenario| scenario.handoff_key == agent_name }&.title
   end
 
   def inferred_agent_name_from_trace(trace_payload)

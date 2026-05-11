@@ -124,6 +124,18 @@ describe('MessageMeta', () => {
     expect(wrapper.text()).not.toContain('scenario_35_andalusiya_agent');
   });
 
+  it('keeps spaces and Cyrillic characters in the existing agentName field', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.READ),
+      additionalAttributes: ref({ agentName: 'AI менеджер' }),
+      contentAttributes: ref({}),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('AI менеджер');
+  });
+
   it('does not show a sending status for native AI voice transcript messages', () => {
     useMessageContextMock.mockReturnValue({
       ...baseMessageContext(MESSAGE_STATUS.SENT),

@@ -394,6 +394,8 @@ watch(
           v-if="state.handoffMessageEnabled"
           v-model="state.handoffMessage"
           override-line-breaks
+          auto-height
+          :editor-key="`captain:assistant:${assistant?.id || mode}:handoff-message`"
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
           "
@@ -439,6 +441,8 @@ watch(
           v-if="state.resolutionMessageEnabled"
           v-model="state.resolutionMessage"
           override-line-breaks
+          auto-height
+          :editor-key="`captain:assistant:${assistant?.id || mode}:resolution-message`"
           :placeholder="
             t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
           "

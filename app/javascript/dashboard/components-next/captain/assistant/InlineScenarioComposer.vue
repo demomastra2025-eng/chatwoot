@@ -128,6 +128,8 @@ const onClickCancel = () => {
       <Editor
         v-model="state.instruction"
         override-line-breaks
+        auto-height
+        editor-key="captain:inline-scenario:instruction"
         focus-on-mount
         :label="
           t('CAPTAIN.ASSISTANTS.SCENARIOS.ADD.NEW.FORM.INSTRUCTION.LABEL')

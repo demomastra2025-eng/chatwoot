@@ -1099,9 +1099,21 @@ useEmitter(BUS_EVENTS.INSERT_INTO_RICH_EDITOR, insertContentIntoEditor);
 }
 
 .ProseMirror-woot-style:not(
-    :where(.resizable-editor-wrapper .ProseMirror-woot-style)
+    :where(
+        .resizable-editor-wrapper .ProseMirror-woot-style,
+        .auto-height-editor-wrapper .ProseMirror-woot-style
+      )
   ) {
   @apply min-h-[4.5rem] max-h-[7.5rem];
+}
+
+.auto-height-editor-wrapper {
+  .ProseMirror-woot-style {
+    height: var(--editor-height, 15rem);
+    min-height: var(--editor-min-height, 10rem);
+    max-height: none;
+    @apply overflow-auto;
+  }
 }
 
 // Resizable editor wrapper styles

@@ -202,6 +202,8 @@ const onClickCancel = () => {
         v-if="isStructuredMode"
         v-model="state.content"
         override-line-breaks
+        auto-height
+        editor-key="captain:add-new-rule:structured"
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"
@@ -216,6 +218,8 @@ const onClickCancel = () => {
         v-else
         v-model="modelValue"
         override-line-breaks
+        auto-height
+        editor-key="captain:add-new-rule:legacy"
         focus-on-mount
         :placeholder="placeholder"
         :show-character-count="false"
