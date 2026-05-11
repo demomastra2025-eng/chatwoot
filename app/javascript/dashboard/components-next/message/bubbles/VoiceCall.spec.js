@@ -99,4 +99,31 @@ describe('VoiceCall bubble', () => {
 
     expect(wrapper.text()).toContain('00:01');
   });
+
+  it('normalizes Rails voice call statuses before rendering labels', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'in_progress',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain(
+      'CONVERSATION.VOICE_CALL.CALL_IN_PROGRESS'
+    );
+  });
+
+  it('normalizes Rails no_answer status before rendering missed call state', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'no_answer',
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
+    expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
+  });
 });

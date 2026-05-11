@@ -32,11 +32,9 @@ class Telephony::AiVoice::FinalizationService
     end
 
     persist_finalize_event!
-    unless already_finalized
-      ingest_final_transcript!
-      run_post_call_captain_features!
-    end
-    sync_conversation!
+    ingest_final_transcript! unless already_finalized
+    run_post_call_captain_features!
+    sync_conversation!(already_finalized: already_finalized)
     response_payload(already_finalized: already_finalized)
   end
 
@@ -120,7 +118,7 @@ class Telephony::AiVoice::FinalizationService
     Telephony::AiVoice::PostCallCaptainFeaturesService.new(call_session: call_session).perform
   end
 
-  def sync_conversation!
+  def sync_conversation!(already_finalized: false)
     return if conversation.blank?
 
     attrs = (conversation.additional_attributes || {}).deep_dup
@@ -128,8 +126,14 @@ class Telephony::AiVoice::FinalizationService
     attrs['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
-    attrs['ai_voice_final_status'] = final_status
+    attrs['ai_voice_final_status'] = conversation_final_status(already_finalized: already_finalized)
     conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
+  end
+
+  def conversation_final_status(already_finalized:)
+    return final_status unless already_finalized
+
+    finalized_metadata&.dig('status').presence || final_status
   end
 
   def response_payload(already_finalized:)

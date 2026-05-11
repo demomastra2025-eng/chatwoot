@@ -40,7 +40,26 @@ function startFonosterVoiceServer(options = {}) {
 
 function buildApplicationHandler(app) {
   if (!app || typeof app.handleCall !== 'function') return null;
-  return async (request, voice) => app.handleCall(voice, request || {});
+  return async (request, voice) => app.handleCall(buildCallFacade(request, voice), request || {});
+}
+
+function buildCallFacade(request, voice) {
+  if (!voice || typeof voice !== 'object') {
+    return { request: request || {}, voice };
+  }
+
+  return new Proxy(voice, {
+    get(target, prop, receiver) {
+      if (prop === 'request') return request || {};
+      if (prop === 'voice') return target;
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(target, prop, value, receiver) {
+      if (prop === 'request' || prop === 'voice') return true;
+      return Reflect.set(target, prop, value, receiver);
+    },
+  });
 }
 
 module.exports = { createFonosterVoiceServer, startFonosterVoiceServer };

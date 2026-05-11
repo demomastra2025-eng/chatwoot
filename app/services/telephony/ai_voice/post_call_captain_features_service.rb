@@ -1,6 +1,7 @@
 class Telephony::AiVoice::PostCallCaptainFeaturesService
   FEATURE_MEMORY = 'memory'.freeze
   FEATURE_FAQ = 'faq'.freeze
+  FEATURE_START_LEASE_DURATION = 15.minutes
 
   def initialize(call_session:)
     @call_session = call_session
@@ -39,7 +40,7 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
   end
 
   def run_feature(feature_name)
-    return if feature_completed?(feature_name)
+    return unless mark_feature_started!(feature_name)
 
     yield
     record_feature_result!(feature_name, 'completed_at' => Time.current.iso8601)
@@ -53,8 +54,40 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
     ChatwootExceptionTracker.new(e, account: call_session.account).capture_exception
   end
 
-  def feature_completed?(feature_name)
-    call_session.reload.metadata&.dig('ai_voice', 'post_call_captain_features', feature_name, 'completed_at').present?
+  def mark_feature_started!(feature_name)
+    call_session.with_lock do
+      metadata = (call_session.reload.metadata || {}).deep_dup
+      ai_voice = metadata['ai_voice'] ||= {}
+      features = ai_voice['post_call_captain_features'] ||= {}
+      current_result = features[feature_name] || {}
+      next false if feature_active?(current_result)
+
+      features[feature_name] = started_feature_result(current_result)
+      call_session.update!(metadata: metadata)
+      true
+    end
+  end
+
+  def feature_active?(result)
+    return true if result['completed_at'].present?
+    return false if result['failed_at'].present?
+
+    started_at = feature_started_at(result)
+    started_at.present? && started_at > FEATURE_START_LEASE_DURATION.ago
+  end
+
+  def feature_started_at(result)
+    Time.zone.parse(result['started_at'].to_s) if result['started_at'].present?
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  def started_feature_result(current_result)
+    current_result.merge(
+      'assistant_id' => captain_assistant.id,
+      'call_ref' => call_session.external_call_ref,
+      'started_at' => Time.current.iso8601
+    ).except('failed_at', 'error_class', 'error_message')
   end
 
   def record_feature_result!(feature_name, attrs)
@@ -62,7 +95,9 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
       metadata = (call_session.reload.metadata || {}).deep_dup
       ai_voice = metadata['ai_voice'] ||= {}
       features = ai_voice['post_call_captain_features'] ||= {}
-      features[feature_name] = (features[feature_name] || {}).merge(
+      existing_result = features[feature_name] || {}
+      existing_result = existing_result.except('failed_at', 'error_class', 'error_message') if attrs['completed_at'].present?
+      features[feature_name] = existing_result.merge(
         'assistant_id' => captain_assistant.id,
         'call_ref' => call_session.external_call_ref
       ).merge(attrs)

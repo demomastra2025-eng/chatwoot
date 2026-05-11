@@ -147,6 +147,45 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
   end
 
+  it 'keeps conversation final status aligned with the stored finalize when a conflicting duplicate arrives' do
+    first_payload = {
+      event_id: 'evt-finalize-conflict-original-1',
+      event_type: 'finalize',
+      provider_call_id: call_session.external_call_ref,
+      account_id: account.id,
+      conversation_id: conversation.id,
+      status: 'completed',
+      reason: 'normal_clearing',
+      final_transcript: [
+        { speaker: 'caller', text: 'Спасибо', at: Time.current.iso8601 },
+        { speaker: 'assistant', text: 'До свидания.', at: Time.current.iso8601 }
+      ]
+    }
+    conflicting_payload = first_payload.merge(
+      event_id: 'evt-finalize-conflict-late-1',
+      status: 'failed',
+      reason: 'provider_error'
+    )
+
+    [first_payload, conflicting_payload].each do |payload|
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/finalize',
+             params: payload,
+             headers: {
+               'Authorization' => 'Bearer voice-secret',
+               'X-Idempotency-Key' => payload[:event_id]
+             },
+             as: :json
+      end
+      expect(response).to have_http_status(:ok)
+    end
+
+    expect(call_session.reload.status).to eq('completed')
+    expect(call_session.metadata.dig('ai_voice', 'finalize')).to include('status' => 'completed')
+    expect(call_session.metadata.dig('ai_voice', 'finalize_conflicts').last).to include('status' => 'failed')
+    expect(conversation.reload.additional_attributes['ai_voice_final_status']).to eq('completed')
+  end
+
   it 'runs enabled Captain post-call memory and FAQ once with the voice transcript context' do
     assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
     create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
@@ -202,6 +241,70 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
       'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
       'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+    )
+  end
+
+  it 'retries failed Captain post-call features on a duplicate finalize without rerunning completed features', :aggregate_failures do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_memory' => true, 'feature_faq' => true })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+    contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
+    failed_faq_service = instance_double(Captain::Llm::ConversationFaqService)
+    successful_faq_service = instance_double(Captain::Llm::ConversationFaqService)
+    exception_tracker = instance_double(ChatwootExceptionTracker, capture_exception: nil)
+
+    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
+    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(failed_faq_service, successful_faq_service)
+    allow(failed_faq_service).to receive(:generate_and_deduplicate).and_raise(StandardError, 'temporary faq failure')
+    allow(successful_faq_service).to receive(:generate_and_deduplicate).and_return([])
+    allow(ChatwootExceptionTracker).to receive(:new).and_return(exception_tracker)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-retry-1'))
+
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(contact_notes_service).to have_received(:generate_and_update_notes).once
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).twice.with(assistant, conversation)
+    expect(failed_faq_service).to have_received(:generate_and_deduplicate).once
+    expect(successful_faq_service).to have_received(:generate_and_deduplicate).once
+    expect(exception_tracker).to have_received(:capture_exception).once
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
+      'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
+      'faq' => include('completed_at' => be_present, 'assistant_id' => assistant.id)
+    )
+    expect(call_session.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).not_to include(
+      'failed_at', 'error_class', 'error_message'
+    )
+  end
+
+  it 'retries a Captain post-call feature left with a stale started marker', :aggregate_failures do
+    assistant = create(:captain_assistant, account: account, config: { 'feature_faq' => true })
+    create(:captain_inbox, inbox: voice_inbox, captain_assistant: assistant)
+    create_voice_call_message!
+    call_session.update!(
+      metadata: {
+        'ai_voice' => {
+          'post_call_captain_features' => {
+            'faq' => {
+              'assistant_id' => assistant.id,
+              'call_ref' => call_session.external_call_ref,
+              'started_at' => 20.minutes.ago.iso8601
+            }
+          }
+        }
+      }
+    )
+    faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
+
+    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
+
+    post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-stale-start-1'))
+
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(faq_service).to have_received(:generate_and_deduplicate).once
+    expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).to include(
+      'completed_at' => be_present,
+      'assistant_id' => assistant.id,
+      'call_ref' => call_session.external_call_ref
     )
   end
 
@@ -323,5 +426,49 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
     expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
+  end
+
+  def create_voice_call_message!
+    create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+  end
+
+  def finalize_payload_for(event_id)
+    {
+      event_id: event_id,
+      event_type: 'finalize',
+      provider_call_id: call_session.external_call_ref,
+      account_id: account.id,
+      conversation_id: conversation.id,
+      status: 'completed',
+      reason: 'user_requested_end_call',
+      final_transcript: [
+        { speaker: 'caller', text: 'Запомните мой вопрос про гарантию', at: Time.current.iso8601 },
+        { speaker: 'assistant', text: 'Да, зафиксирую после звонка.', at: Time.current.iso8601 }
+      ]
+    }
+  end
+
+  def post_finalize_twice(payload)
+    2.times do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/finalize',
+             params: payload,
+             headers: {
+               'Authorization' => 'Bearer voice-secret',
+               'X-Idempotency-Key' => payload[:event_id]
+             },
+             as: :json
+      end
+      expect(response).to have_http_status(:ok)
+    end
   end
 end

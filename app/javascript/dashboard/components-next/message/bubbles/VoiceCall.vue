@@ -38,8 +38,15 @@ const { contentAttributes, messageType, createdAt } = useMessageContext();
 
 // NOTE: contentAttributes.data keys are camelCase because MessageList.vue
 // applies useCamelCase(messages, { deep: true }) before rendering.
+const normalizeVoiceCallStatus = value => {
+  const rawStatus = value?.toString();
+  if (rawStatus === 'in_progress') return VOICE_CALL_STATUS.IN_PROGRESS;
+  if (rawStatus === 'no_answer') return VOICE_CALL_STATUS.NO_ANSWER;
+  return rawStatus;
+};
+
 const data = computed(() => contentAttributes.value?.data);
-const status = computed(() => data.value?.status?.toString());
+const status = computed(() => normalizeVoiceCallStatus(data.value?.status));
 const meta = computed(() => data.value?.meta || {});
 
 const isOutbound = computed(() => messageType.value === MESSAGE_TYPES.OUTGOING);

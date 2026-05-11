@@ -2,6 +2,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { startFonosterVoiceServer } = require('../src/fonoster/server');
 
+class FakeVoice {
+  #answerResult = 'answered';
+
+  constructor(id) {
+    this.id = id;
+  }
+
+  get answered() {
+    return this.#answerResult;
+  }
+
+  async answer() {
+    return this.#answerResult;
+  }
+}
+
 class FakeVoiceServer {
   static instances = [];
 
@@ -23,8 +39,8 @@ test('startFonosterVoiceServer wires the real Fonoster listen(handler) shape and
   let handledCall = null;
   let completionResolved = false;
   const app = {
-    async handleCall(voice, request) {
-      handledCall = { voice, request };
+    async handleCall(call, request) {
+      handledCall = { call, request };
       return {
         completion: new Promise(resolve => {
           setImmediate(() => {
@@ -53,9 +69,14 @@ test('startFonosterVoiceServer wires the real Fonoster listen(handler) shape and
   assert.equal(typeof server.handler, 'function');
 
   const request = { appRef: 'voice-app', callRef: 'call-1' };
-  const voice = { id: 'voice-response' };
+  const voice = new FakeVoice('voice-response');
   await server.handler(request, voice);
 
-  assert.deepEqual(handledCall, { voice, request });
+  assert.equal(handledCall.request, request);
+  assert.equal(handledCall.call.voice, voice);
+  assert.equal(handledCall.call.request, request);
+  assert.equal(handledCall.call.id, 'voice-response');
+  assert.equal(handledCall.call.answered, 'answered');
+  assert.equal(await handledCall.call.answer(), 'answered');
   assert.equal(completionResolved, true);
 });
