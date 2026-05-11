@@ -54,6 +54,45 @@ RSpec.describe DeleteObjectJob, type: :job do
         )
       end
 
+      it 'detaches conversation-scoped touches and CRM records before destroying an inbox' do
+        conversation = create(:conversation, account: account, inbox: inbox)
+        reminder = create(:reminder, account: account, touch_conversation: conversation)
+        delivery_message = create(:message, account: account, inbox: inbox, conversation: conversation)
+        resolved_message = create(:message, account: account, inbox: inbox, conversation: conversation)
+        confirmation_request = create(
+          :confirmation_request,
+          account: account,
+          conversation: conversation,
+          inbox: inbox,
+          delivery_message: delivery_message,
+          resolved_message: resolved_message
+        )
+        deal = create(:crm_deal, account: account, originating_conversation: conversation)
+        task = create(:crm_task, account: account, originating_conversation: conversation)
+        appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+
+        described_class.perform_now(inbox)
+
+        expect { conversation.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect(reminder.reload).to have_attributes(
+          conversation_id: nil,
+          target_conversation_id: nil,
+          target_inbox_id: nil,
+          target_contact_inbox_id: nil,
+          remindable_id: nil,
+          remindable_type: nil
+        )
+        expect(confirmation_request.reload).to have_attributes(
+          conversation_id: nil,
+          delivery_message_id: nil,
+          inbox_id: nil,
+          resolved_message_id: nil
+        )
+        expect(deal.reload.originating_conversation_id).to be_nil
+        expect(task.reload.originating_conversation_id).to be_nil
+        expect(appointment.reload.conversation_id).to be_nil
+      end
+
       it 'removes a voice inbox while preserving telephony call sessions and events as audit records' do
         voice_channel = create(:channel_voice, :fonoster, account: account, phone_number: '+15551239999')
         voice_inbox = voice_channel.inbox
@@ -116,12 +155,58 @@ RSpec.describe DeleteObjectJob, type: :job do
           contact_id: conversation.contact_id
         )
       end
+
+      it 'detaches conversation-scoped dependencies before destroying the conversation' do
+        reminder = create(:reminder, account: account, touch_conversation: conversation)
+        delivery_message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation)
+        resolved_message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation)
+        confirmation_request = create(
+          :confirmation_request,
+          account: account,
+          conversation: conversation,
+          inbox: conversation.inbox,
+          delivery_message: delivery_message,
+          resolved_message: resolved_message
+        )
+        deal = create(:crm_deal, account: account, originating_conversation: conversation)
+        task = create(:crm_task, account: account, originating_conversation: conversation)
+        appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
+
+        described_class.perform_now(conversation)
+
+        expect { conversation.reload }.to raise_error(ActiveRecord::RecordNotFound)
+        expect(reminder.reload).to have_attributes(
+          conversation_id: nil,
+          target_conversation_id: nil,
+          remindable_id: nil,
+          remindable_type: nil
+        )
+        expect(confirmation_request.reload).to have_attributes(
+          conversation_id: nil,
+          delivery_message_id: nil,
+          inbox_id: conversation.inbox_id,
+          resolved_message_id: nil
+        )
+        expect(deal.reload.originating_conversation_id).to be_nil
+        expect(task.reload.originating_conversation_id).to be_nil
+        expect(appointment.reload.conversation_id).to be_nil
+      end
     end
 
     context 'when object is a WhatsApp Web inbox' do
       let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_whatsapp_web, account: account) }
       let!(:inbox) { channel.inbox }
+
+      around do |example|
+        with_modified_env(
+          'EVOLUTION_API_URL' => 'https://evolution.example.com',
+          'EVOLUTION_API_KEY' => 'test-api-key',
+          'FRONTEND_URL' => 'https://app.example.com'
+        ) do
+          example.run
+        end
+      end
 
       it 'tears down the remote instance before destroying local records' do
         teardown_started = false

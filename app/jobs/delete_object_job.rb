@@ -61,8 +61,10 @@ class DeleteObjectJob < ApplicationJob
   def prepare_telephony_dependencies(object)
     case object
     when Inbox
+      prepare_inbox_conversation_dependencies(object)
       prepare_inbox_telephony_dependencies(object)
     when Conversation
+      prepare_conversation_dependencies(object.id)
       nullify_telephony_call_sessions(conversation_id: object.id)
     end
   end
@@ -76,6 +78,35 @@ class DeleteObjectJob < ApplicationJob
     nullify_telephony_call_sessions(conversation_id: conversation_ids)
     nullify_telephony_call_sessions(inbox_id: inbox.id)
     nullify_telephony_call_sessions(number_binding_id: number_binding_ids)
+  end
+
+  def prepare_inbox_conversation_dependencies(inbox)
+    prepare_conversation_dependencies(inbox.conversations.select(:id))
+    nullify_records(Reminder.where(target_inbox_id: inbox.id), target_inbox_id: nil)
+    nullify_records(Reminder.where(target_contact_inbox_id: inbox.contact_inboxes.select(:id)), target_contact_inbox_id: nil)
+    nullify_records(ConfirmationRequest.where(inbox_id: inbox.id), inbox_id: nil)
+  end
+
+  def prepare_conversation_dependencies(conversation_ids)
+    message_ids = Message.where(conversation_id: conversation_ids).select(:id)
+
+    nullify_records(Reminder.where(conversation_id: conversation_ids), conversation_id: nil)
+    nullify_records(Reminder.where(target_conversation_id: conversation_ids), target_conversation_id: nil)
+    nullify_records(Reminder.where(remindable_type: 'Conversation', remindable_id: conversation_ids), remindable_type: nil, remindable_id: nil)
+    nullify_records(ConfirmationRequest.where(conversation_id: conversation_ids), conversation_id: nil)
+    nullify_records(ConfirmationRequest.where(delivery_message_id: message_ids), delivery_message_id: nil)
+    nullify_records(ConfirmationRequest.where(resolved_message_id: message_ids), resolved_message_id: nil)
+    nullify_records(Crm::Deal.where(originating_conversation_id: conversation_ids), originating_conversation_id: nil)
+    nullify_records(Crm::Task.where(originating_conversation_id: conversation_ids), originating_conversation_id: nil)
+    nullify_records(Scheduling::Appointment.where(conversation_id: conversation_ids), conversation_id: nil)
+  end
+
+  def nullify_records(relation, assignments)
+    attributes = assignments.merge(updated_at: Time.current)
+
+    relation.in_batches(of: BATCH_SIZE) do |batch|
+      batch.update_all(attributes) # rubocop:disable Rails/SkipsModelValidations
+    end
   end
 
   def nullify_telephony_call_sessions(filters)
