@@ -18,6 +18,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CaptainPaywall from 'dashboard/components-next/captain/pageComponents/Paywall.vue';
 import RelatedResponses from 'dashboard/components-next/captain/pageComponents/document/RelatedResponses.vue';
 import CreateDocumentDialog from 'dashboard/components-next/captain/pageComponents/document/CreateDocumentDialog.vue';
+import SourceTextDialog from 'dashboard/components-next/captain/pageComponents/document/SourceTextDialog.vue';
 import DocumentPageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/DocumentPageEmptyState.vue';
 import FeatureSpotlightPopover from 'dashboard/components-next/feature-spotlight/FeatureSpotlightPopover.vue';
 import LimitBanner from 'dashboard/components-next/captain/pageComponents/document/LimitBanner.vue';
@@ -48,13 +49,34 @@ const handleDelete = () => {
 
 const showRelatedResponses = ref(false);
 const showCreateDialog = ref(false);
+const showSourceTextDialog = ref(false);
 const createDocumentDialog = ref(null);
 const relationQuestionDialog = ref(null);
+const sourceTextDialog = ref(null);
+const sourceTextDocument = ref({});
 
 const handleShowRelatedDocument = () => {
   showRelatedResponses.value = true;
   nextTick(() => relationQuestionDialog.value.dialogRef.open());
 };
+
+const handleShowSourceText = async id => {
+  showSourceTextDialog.value = true;
+  sourceTextDocument.value = selectedDocument.value || {};
+  nextTick(() => sourceTextDialog.value.dialogRef.open());
+  try {
+    sourceTextDocument.value = await store.dispatch(
+      'captainDocuments/sourceText',
+      id
+    );
+  } catch (error) {
+    useAlert(
+      parseAPIErrorResponse(error) ||
+        t('CAPTAIN.DOCUMENTS.SOURCE_TEXT.ERROR_MESSAGE')
+    );
+  }
+};
+
 const handleCreateDocument = () => {
   showCreateDialog.value = true;
   nextTick(() => createDocumentDialog.value.dialogRef.open());
@@ -62,6 +84,11 @@ const handleCreateDocument = () => {
 
 const handleRelatedResponseClose = () => {
   showRelatedResponses.value = false;
+};
+
+const handleSourceTextClose = () => {
+  showSourceTextDialog.value = false;
+  sourceTextDocument.value = {};
 };
 
 const handleCreateDialogClose = () => {
@@ -126,6 +153,8 @@ const handleAction = ({ action, id }) => {
       handleDelete();
     } else if (action === 'viewRelatedQuestions') {
       handleShowRelatedDocument();
+    } else if (action === 'viewSourceText') {
+      handleShowSourceText(id);
     } else if (action === 'resync') {
       handleResync(id);
     } else if (action === 'refreshChangedOnly') {
@@ -310,6 +339,13 @@ watch(
       ref="createDocumentDialog"
       :assistant-id="selectedAssistantId"
       @close="handleCreateDialogClose"
+    />
+    <SourceTextDialog
+      v-if="showSourceTextDialog"
+      ref="sourceTextDialog"
+      :document="sourceTextDocument"
+      :is-loading="uiFlags.fetchingSourceText"
+      @close="handleSourceTextClose"
     />
     <DeleteDialog
       v-if="selectedDocument"

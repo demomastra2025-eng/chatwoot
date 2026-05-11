@@ -20,7 +20,7 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel']);
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 40 * 1024 * 1024;
 const UPLOADABLE_FILE_EXTENSIONS = [
   'pdf',
   'docx',
@@ -29,6 +29,31 @@ const UPLOADABLE_FILE_EXTENSIONS = [
   'rtf',
   'xlsx',
   'xls',
+  'csv',
+  'txt',
+  'md',
+  'markdown',
+  'html',
+  'htm',
+  'xml',
+  'json',
+  'yaml',
+  'yml',
+  'pptx',
+  'ppt',
+  'odp',
+  'ods',
+  'epub',
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'gif',
+  'heic',
+  'heif',
+  'tiff',
+  'tif',
+  'bmp',
 ];
 const DEFAULT_IMPORT_PROFILE = {
   sitemap: 'include',
@@ -570,7 +595,7 @@ const handleSubmit = async () => {
         <input
           ref="fileInputRef"
           type="file"
-          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls"
+          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls,.csv,.txt,.md,.markdown,.html,.htm,.xml,.json,.yaml,.yml,.pptx,.ppt,.odp,.ods,.epub,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.tiff,.tif,.bmp"
           class="hidden"
           @change="handleFileChange"
         />

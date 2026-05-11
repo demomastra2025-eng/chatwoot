@@ -30,7 +30,12 @@ class Captain::Document < ApplicationRecord
   DEFAULT_SOURCE_MODE = 'legacy_url'.freeze
   FILE_PREFIX = 'FILE:'.freeze
   PDF_PREFIX = 'PDF:'.freeze
-  SUPPORTED_REMOTE_FILE_EXTENSIONS = %w[docx doc odt rtf xlsx xls].freeze
+  MAX_UPLOAD_SIZE = 40.megabytes
+  SUPPORTED_REMOTE_FILE_EXTENSIONS = %w[
+    docx doc odt rtf xlsx xls csv txt md markdown html htm xml json yaml yml pptx ppt odp ods epub
+  ].freeze
+  SUPPORTED_IMAGE_EXTENSIONS = %w[jpg jpeg png webp gif heic heif tiff tif bmp].freeze
+  SUPPORTED_UPLOAD_EXTENSIONS = (SUPPORTED_REMOTE_FILE_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS).freeze
 
   belongs_to :assistant, class_name: 'Captain::Assistant'
   has_many :responses, class_name: 'Captain::AssistantResponse', dependent: :destroy, as: :documentable
@@ -83,6 +88,10 @@ class Captain::Document < ApplicationRecord
 
   def file_upload?
     source_file.attached?
+  end
+
+  def image_upload?
+    source_file.attached? && SUPPORTED_IMAGE_EXTENSIONS.include?(uploaded_source_extension)
   end
 
   def remote_pdf_url?
@@ -459,7 +468,7 @@ class Captain::Document < ApplicationRecord
   def validate_pdf_attachment_size
     return unless pdf_file.attached?
 
-    return unless pdf_file.blob.byte_size > 10.megabytes
+    return unless pdf_file.blob.byte_size > MAX_UPLOAD_SIZE
 
     errors.add(:pdf_file, I18n.t('captain.documents.pdf_size_error'))
   end
@@ -467,14 +476,14 @@ class Captain::Document < ApplicationRecord
   def validate_uploaded_source_file_format
     return unless source_file.attached?
 
-    return if SUPPORTED_REMOTE_FILE_EXTENSIONS.include?(uploaded_source_extension)
+    return if SUPPORTED_UPLOAD_EXTENSIONS.include?(uploaded_source_extension)
 
     errors.add(:source_file, I18n.t('captain.documents.file_upload_format_error'))
   end
 
   def validate_uploaded_source_file_size
     return unless source_file.attached?
-    return unless source_file.blob.byte_size > 10.megabytes
+    return unless source_file.blob.byte_size > MAX_UPLOAD_SIZE
 
     errors.add(:source_file, I18n.t('captain.documents.file_size_error'))
   end

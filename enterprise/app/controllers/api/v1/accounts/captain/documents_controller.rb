@@ -4,7 +4,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   before_action :set_current_page, only: [:index]
   before_action :set_documents, except: [:create, :preview]
-  before_action :set_document, only: [:show, :destroy, :resync, :refresh_changed_only, :retry_failed]
+  before_action :set_document, only: [:show, :destroy, :resync, :refresh_changed_only, :retry_failed, :source_text]
   before_action :set_assistant, only: [:create, :preview]
   RESULTS_PER_PAGE = 25
 
@@ -17,6 +17,17 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def show; end
+
+  def source_text
+    render json: {
+      id: @document.id,
+      name: @document.name,
+      source_text: @document.source_text.to_s,
+      source_text_available: @document.source_text.present?,
+      source_text_bytes: @document.source_text.to_s.bytesize,
+      content: @document.content.to_s
+    }
+  end
 
   def create
     return render_could_not_create_error(I18n.t('captain.documents.missing_assistant')) if @assistant.nil?
@@ -232,7 +243,17 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def firecrawl_required_for_mode?(source_mode)
+    return false if source_mode.to_s == 'file_upload' && uploaded_source_image?
+
     %w[pdf_url file_url file_upload].include?(source_mode.to_s) && !Captain::Tools::FirecrawlService.configured?
+  end
+
+  def uploaded_source_image?
+    source_file = document_creation_params[:source_file]
+    return false if source_file.blank?
+
+    extension = source_file.original_filename.to_s.split('.').last.to_s.downcase
+    Captain::Document::SUPPORTED_IMAGE_EXTENSIONS.include?(extension)
   end
 
   def missing_firecrawl_error

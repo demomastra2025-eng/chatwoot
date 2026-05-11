@@ -98,6 +98,12 @@ const modelValue = computed({
 const menuItems = computed(() => {
   const allOptions = [
     {
+      label: t('CAPTAIN.DOCUMENTS.OPTIONS.VIEW_SOURCE_TEXT'),
+      value: 'viewSourceText',
+      action: 'viewSourceText',
+      icon: 'i-lucide-file-text',
+    },
+    {
       label: t('CAPTAIN.DOCUMENTS.OPTIONS.VIEW_RELATED_RESPONSES'),
       value: 'viewRelatedQuestions',
       action: 'viewRelatedQuestions',

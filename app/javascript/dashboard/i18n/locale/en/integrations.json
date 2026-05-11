@@ -1590,7 +1590,15 @@
         "TITLE": "Related FAQs",
         "DESCRIPTION": "These FAQs are generated directly from the document."
       },
-      "FORM_DESCRIPTION": "Choose how you want to import knowledge for your AI agent. You can add a single page, crawl a site, pick specific pages, import a file by URL, or upload a PDF.",
+      "SOURCE_TEXT": {
+        "TITLE": "Parsed text",
+        "DESCRIPTION": "Text extracted from the document",
+        "SIZE": "Text size: {size}",
+        "EMPTY_TITLE": "No text was extracted",
+        "EMPTY_DESCRIPTION": "Images are stored as document attachments without OCR. For some files, text appears after processing finishes.",
+        "ERROR_MESSAGE": "Could not load parsed text"
+      },
+      "FORM_DESCRIPTION": "Choose how you want to import knowledge for your AI agent. You can add a page, crawl a site, pick pages, import a file by URL, or upload a file.",
       "CREATE": {
         "TITLE": "Add a document",
         "SUCCESS_MESSAGE": "The import has been started successfully",
@@ -1648,38 +1656,38 @@
           "SITE_IMPORT": "Crawl a documentation site or help center and sync it as a knowledge source.",
           "SELECTED_PAGES": "Preview the discovered URLs first and import only the pages you choose.",
           "PDF_URL": "Import a PDF file that is available by URL.",
-          "FILE_URL": "Import a supported document file by URL. Firecrawl can parse Word and Excel files into markdown for AI Agents.",
-          "FILE_UPLOAD": "Upload a PDF, Word, or Excel file directly from your computer. PDFs are processed natively; Office files use Firecrawl.",
+          "FILE_URL": "Import a supported document file by URL. Firecrawl parses popular text and office formats into markdown for AI Agents.",
+          "FILE_UPLOAD": "Upload a PDF, office file, text file, or image. Text files are parsed; images are stored as documents without OCR.",
           "PDF_UPLOAD": "Upload a PDF file directly from your computer."
         },
         "MODE_HINTS": {
           "PDF_URL": "Requires Firecrawl to be configured and a direct PDF file URL.",
-          "FILE_URL": "Requires Firecrawl to be configured. Supported file URLs: DOCX, DOC, ODT, RTF, XLSX, XLS.",
-          "FILE_UPLOAD": "PDF uploads are processed directly. DOCX, DOC, ODT, RTF, XLSX, and XLS uploads require Firecrawl."
+          "FILE_URL": "Requires Firecrawl to be configured. Popular office and text formats are supported.",
+          "FILE_UPLOAD": "PDF uploads are processed directly, text and office files use Firecrawl, and images are stored without OCR."
         },
         "URL": {
           "LABEL": "URL",
           "PLACEHOLDER": "Enter the URL of the document",
           "PDF_PLACEHOLDER": "Enter the URL of the PDF file",
           "FILE_PLACEHOLDER": "Enter the URL of the DOCX, XLSX, or other supported file",
-          "FILE_HELP": "Supports DOCX, DOC, ODT, RTF, XLSX, and XLS URLs. Use PDF URL for PDFs.",
+          "FILE_HELP": "Supports popular office and text file URLs. Use PDF URL for PDFs.",
           "ERROR": "Please provide a valid URL for the document"
         },
         "PDF_FILE": {
           "LABEL": "PDF File",
           "CHOOSE_FILE": "Choose PDF file",
           "ERROR": "Please select a PDF file",
-          "HELP_TEXT": "Maximum file size: 10MB",
+          "HELP_TEXT": "Maximum file size: 40MB",
           "INVALID_TYPE": "Please select a valid PDF file",
-          "TOO_LARGE": "File size exceeds 10MB limit"
+          "TOO_LARGE": "File size exceeds 40MB limit"
         },
         "UPLOAD_FILE": {
           "LABEL": "File",
           "CHOOSE_FILE": "Choose file",
           "ERROR": "Please select a supported file",
-          "HELP_TEXT": "Supported formats: PDF, DOCX, DOC, ODT, RTF, XLSX, XLS. Maximum file size: 10MB",
-          "INVALID_TYPE": "Please select a supported file: PDF, DOCX, DOC, ODT, RTF, XLSX, or XLS",
-          "TOO_LARGE": "File size exceeds 10MB limit"
+          "HELP_TEXT": "Supported formats: PDF, office files, text files, and images. Maximum file size: 40MB",
+          "INVALID_TYPE": "Please select a supported file, document, or image",
+          "TOO_LARGE": "File size exceeds 40MB limit"
         },
         "NAME": {
           "LABEL": "Document Name (Optional)",
@@ -1720,6 +1728,7 @@
         "ERROR_MESSAGE": "There was an error deleting the document, please try again."
       },
       "OPTIONS": {
+        "VIEW_SOURCE_TEXT": "View parsed text",
         "VIEW_RELATED_RESPONSES": "View Related Responses",
         "RESYNC_DOCUMENT": "Re-sync document",
         "REFRESH_CHANGED_ONLY": "Refresh changed only",

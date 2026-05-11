@@ -56,9 +56,25 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_uploaded_file_import(document)
+    return mark_uploaded_image_available(document) if document.image_upload?
+
     raise I18n.t('captain.documents.file_upload_requires_firecrawl') unless Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_scrape(document, target_url: document.display_url)
+  end
+
+  def mark_uploaded_image_available(document)
+    document.update!(
+      status: :available,
+      metadata: (document.metadata || {}).deep_merge(
+        'source_text' => {
+          'provider' => 'attachment',
+          'status' => 'skipped',
+          'reason' => 'image_upload',
+          'extracted_at' => Time.current.iso8601
+        }
+      )
+    )
   end
 
   def perform_selected_pages_import(document)

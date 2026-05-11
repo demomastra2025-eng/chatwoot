@@ -24,6 +24,15 @@ export default createStore({
         commit(mutationTypes.SET_UI_FLAG, { updatingItem: false });
       }
     },
+    async sourceText({ commit }, id) {
+      commit(mutationTypes.SET_UI_FLAG, { fetchingSourceText: true });
+      try {
+        const response = await CaptainDocumentAPI.sourceText(id);
+        return response.data;
+      } finally {
+        commit(mutationTypes.SET_UI_FLAG, { fetchingSourceText: false });
+      }
+    },
     async refreshChangedOnly({ commit }, id) {
       commit(mutationTypes.SET_UI_FLAG, { updatingItem: true });
       try {

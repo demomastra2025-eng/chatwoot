@@ -20,6 +20,10 @@ class CaptainDocument extends ApiClient {
     return axios.post(`${this.url}/preview`, data);
   }
 
+  sourceText(id) {
+    return axios.get(`${this.url}/${id}/source_text`);
+  }
+
   resync(id) {
     return axios.post(`${this.url}/${id}/resync`);
   }

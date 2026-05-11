@@ -118,6 +118,7 @@ Rails.application.routes.draw do
                 post :preview
               end
               member do
+                get :source_text
                 post :resync
                 post :refresh_changed_only
                 post :retry_failed
