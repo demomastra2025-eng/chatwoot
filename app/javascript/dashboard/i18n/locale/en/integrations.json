@@ -1026,6 +1026,18 @@
               "TITLE": "List deal stages",
               "DESCRIPTION": "List CRM deal stages for the current deal or selected pipeline, including previous and next stages."
             },
+            "list_deal_custom_fields": {
+              "TITLE": "List deal custom fields",
+              "DESCRIPTION": "List allowed CRM deal custom fields with key, label, type, required flag, and select options."
+            },
+            "list_task_custom_fields": {
+              "TITLE": "List task custom fields",
+              "DESCRIPTION": "List allowed CRM task custom fields with key, label, type, required flag, and select options."
+            },
+            "list_appointment_custom_fields": {
+              "TITLE": "List appointment custom fields",
+              "DESCRIPTION": "List allowed appointment custom fields with key, label, type, required flag, and select options."
+            },
             "list_channel_templates": {
               "TITLE": "List channel templates",
               "DESCRIPTION": "List approved WhatsApp/Twilio channel templates for a conversation or inbox."

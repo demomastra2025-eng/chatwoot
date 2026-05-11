@@ -41,7 +41,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
         resource_id: new_resource.id,
         service_id: follow_up.id,
         starts_at: updated_start.iso8601,
-        custom_attributes: { 'source' => 'captain', 'rescheduled_by' => 'agent' }
+        custom_attributes: { source: 'captain', rescheduled_by: 'agent' }.to_json
       )
 
       appointment.reload

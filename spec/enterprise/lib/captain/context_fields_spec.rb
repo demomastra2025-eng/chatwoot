@@ -37,7 +37,14 @@ RSpec.describe Captain::ContextFields do
       account: account,
       entity_kind: 'deal',
       key: 'sales_region',
-      label: 'Sales Region'
+      label: 'Sales Region',
+      field_type: 'select',
+      required: true,
+      default_value: 'EMEA',
+      options: [
+        { label: 'EMEA', value: 'EMEA' },
+        { label: 'APAC', value: 'APAC' }
+      ]
     )
   end
   let!(:task_field_definition) do
@@ -253,6 +260,27 @@ RSpec.describe Captain::ContextFields do
         deal: { 'sales_region' => 'Sales Region' },
         task: { 'follow_up_channel' => 'Follow Up Channel' },
         appointment: { 'visit_room' => 'Visit Room' }
+      )
+    end
+  end
+
+  describe '.definitions_for' do
+    it 'enriches managed CRM custom fields with type, required flag, options, and defaults' do
+      field = described_class.definitions_for(account).find do |definition|
+        definition[:id] == 'deal.custom_attributes.sales_region'
+      end
+
+      expect(field).to include(
+        field_key: 'sales_region',
+        field_type: 'custom_attribute',
+        value_type: 'select',
+        required: true,
+        default_value: 'EMEA',
+        crm_managed: true,
+        options: [
+          { label: 'EMEA', value: 'EMEA' },
+          { label: 'APAC', value: 'APAC' }
+        ]
       )
     end
   end

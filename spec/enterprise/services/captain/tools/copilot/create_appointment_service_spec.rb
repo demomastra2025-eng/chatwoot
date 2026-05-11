@@ -24,7 +24,7 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
         starts_at: starts_at.iso8601,
         service_id: consultation.id,
         client_comment: 'Needs a morning slot',
-        custom_attributes: { 'source' => 'captain', 'channel' => 'telegram' }
+        custom_attributes: { source: 'captain', channel: 'telegram' }.to_json
       )
 
       appointment = account.scheduling_appointments.order(:id).last

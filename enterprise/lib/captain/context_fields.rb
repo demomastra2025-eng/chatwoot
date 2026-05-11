@@ -516,7 +516,26 @@ class Captain::ContextFields
           group_name: GROUP_NAMES.fetch("#{scope}_custom_attributes"),
           table_name: scope,
           field_type: 'custom_attribute',
-          field_key: definition.key
+          field_key: definition.key,
+          value_type: definition.field_type,
+          required: definition.required,
+          options: managed_custom_attribute_options(definition),
+          default_value: definition.default_value,
+          rules: definition.rules.presence,
+          crm_managed: true
+        }
+      end
+    end
+
+    def managed_custom_attribute_options(definition)
+      return [] unless %w[select multiselect].include?(definition.field_type)
+
+      Array(definition.options).map do |option|
+        normalized = option.is_a?(Hash) ? option.with_indifferent_access : { label: option, value: option }
+
+        {
+          label: normalized[:label].to_s,
+          value: normalized[:value].to_s
         }
       end
     end

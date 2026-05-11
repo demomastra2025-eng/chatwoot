@@ -23,8 +23,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
   end
 
   describe '#execute' do
-    it 'updates the current deal using object custom_attributes' do
-      service.execute(title: 'Renewal won', custom_attributes: { 'lead_source' => 'captain', 'segment' => 'enterprise' })
+    it 'updates the current deal using JSON custom_attributes' do
+      service.execute(title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
 
       deal.reload
 
@@ -72,7 +72,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       pipeline = deal.pipeline
       won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won', code: 'won', color: '#333333')
 
-      result = service.execute(stage_id: won_stage.id, custom_attributes: { 'decision_maker' => 'Aruzhan' })
+      result = service.execute(stage_id: won_stage.id, custom_attributes: { decision_maker: 'Aruzhan' }.to_json)
 
       deal.reload
       expect(deal.stage_id).to eq(won_stage.id)

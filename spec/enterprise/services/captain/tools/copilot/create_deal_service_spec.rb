@@ -17,12 +17,12 @@ RSpec.describe Captain::Tools::Copilot::CreateDealService do
   end
 
   describe '#execute' do
-    it 'creates a deal using object custom_attributes' do
+    it 'creates a deal using JSON custom_attributes' do
       service.execute(
         title: 'Enterprise expansion',
         currency: 'USD',
         amount: '2500',
-        custom_attributes: { 'lead_source' => 'captain', 'priority_band' => 'high' }
+        custom_attributes: { lead_source: 'captain', priority_band: 'high' }.to_json
       )
 
       deal = account.crm_deals.order(:id).last

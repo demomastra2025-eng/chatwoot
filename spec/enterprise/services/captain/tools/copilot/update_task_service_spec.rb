@@ -23,8 +23,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateTaskService do
   end
 
   describe '#execute' do
-    it 'updates the current task using object custom_attributes' do
-      service.execute(priority: 'urgent', custom_attributes: { 'source' => 'captain', 'playbook' => 'recovery' })
+    it 'updates the current task using JSON custom_attributes' do
+      service.execute(priority: 'urgent', custom_attributes: { source: 'captain', playbook: 'recovery' }.to_json)
 
       task.reload
 

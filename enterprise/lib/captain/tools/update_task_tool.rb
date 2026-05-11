@@ -6,9 +6,9 @@ class Captain::Tools::UpdateTaskTool < Captain::Tools::BasePublicTool
   param :start_at, type: 'string', desc: 'Updated start datetime', required: false
   param :due_at, type: 'string', desc: 'Updated due datetime', required: false
   param :custom_attributes,
-        type: 'object',
-        desc: 'Custom attributes object. Use the matching list_*_custom_fields tool first; only returned keys are accepted, ' \
-              'and select/multiselect values must match option.value exactly.',
+        type: 'string',
+        desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \
+              'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
   def perform(tool_context, title: nil, description: nil, priority: nil, start_at: nil, due_at: nil, custom_attributes: nil)

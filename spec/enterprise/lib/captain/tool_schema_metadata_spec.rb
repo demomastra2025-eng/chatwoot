@@ -50,6 +50,26 @@ RSpec.describe 'Captain tool schema metadata' do
     expect(search_resources[:search_by].description).to eq('Search mode: name, specialty, or all')
   end
 
+  it 'exposes CRM custom_attributes as JSON strings so models can pass dynamic CRM field keys' do
+    tool_pairs = [
+      [Captain::Tools::CreateDealTool, Captain::Tools::Copilot::CreateDealService],
+      [Captain::Tools::UpdateDealTool, Captain::Tools::Copilot::UpdateDealService],
+      [Captain::Tools::CreateTaskTool, Captain::Tools::Copilot::CreateTaskService],
+      [Captain::Tools::UpdateTaskTool, Captain::Tools::Copilot::UpdateTaskService],
+      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+    ]
+
+    tool_pairs.each do |public_tool, assistant_tool|
+      expect(public_tool.parameters[:custom_attributes].type).to eq('string')
+      expect(assistant_tool.parameters[:custom_attributes].type).to eq(:string)
+      custom_attributes_schema = public_tool.new(Captain::Assistant.new).params_schema.dig(
+        'properties', 'custom_attributes'
+      )
+      expect(custom_attributes_schema['type']).to eq('string')
+    end
+  end
+
   it 'keeps registry descriptions aligned with runtime descriptions for representative built-in tools' do
     expect(Captain::ToolRegistry.definition_for('create_touch').description).to eq(
       Captain::Tools::CreateTouchTool.description

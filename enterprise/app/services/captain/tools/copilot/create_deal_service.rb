@@ -19,9 +19,9 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
   param :expected_close_on, type: :string, desc: 'Expected close date in YYYY-MM-DD format', required: false
   param :win_probability, type: :number, desc: 'Win probability from 0 to 100', required: false
   param :custom_attributes,
-        type: :object,
-        desc: 'Custom attributes object. Use the matching list_*_custom_fields tool first; only returned keys are accepted, ' \
-              'and select/multiselect values must match option.value exactly.',
+        type: :string,
+        desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \
+              'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
   def execute(title:, description: nil, amount: nil, currency: nil, expected_close_on: nil,

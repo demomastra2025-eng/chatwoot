@@ -17,11 +17,11 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
   end
 
   describe '#execute' do
-    it 'creates a task using object custom_attributes' do
+    it 'creates a task using JSON custom_attributes' do
       service.execute(
         title: 'Call back tomorrow',
         priority: 'high',
-        custom_attributes: { 'source' => 'captain', 'channel' => 'telegram' }
+        custom_attributes: { source: 'captain', channel: 'telegram' }.to_json
       )
 
       task = account.crm_tasks.order(:id).last

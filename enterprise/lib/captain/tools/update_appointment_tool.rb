@@ -8,9 +8,9 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
   param :appointment_type, type: 'string', desc: 'Updated appointment type', required: false
   param :client_comment, type: 'string', desc: 'Updated client comment', required: false
   param :custom_attributes,
-        type: 'object',
-        desc: 'Custom attributes object. Use the matching list_*_custom_fields tool first; only returned keys are accepted, ' \
-              'and select/multiselect values must match option.value exactly.',
+        type: 'string',
+        desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \
+              'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
   def perform(tool_context, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
