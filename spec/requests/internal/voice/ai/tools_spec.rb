@@ -163,6 +163,41 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body.dig('result', 'result')).to include("\"display_id\": #{conversation.display_id}")
   end
 
+  it 'runs faq_lookup through lexical-only mode for realtime voice calls' do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    create(:captain_assistant_response, assistant: assistant, account: account, question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/faq_lookup',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             arguments: { query: 'refund' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    result = JSON.parse(response.parsed_body.dig('result', 'result'))
+    expect(result).to include('lookup_strategy' => 'lexical', 'total_count' => 1)
+    expect(result['matches'].first).to include('answer' => 'Refund in 14 days')
+  end
+
   it 'scopes tool writes by account_id when call_ref collides across accounts' do
     other_account = create(:account)
     other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889003')

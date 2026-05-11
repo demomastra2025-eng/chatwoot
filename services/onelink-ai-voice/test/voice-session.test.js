@@ -76,3 +76,26 @@ test('VoiceSession enters safe fallback when context is unavailable', async () =
   assert.equal(controls[0].action, 'session_failed');
   assert.equal(controls[0].metadata.reason, 'context_unavailable');
 });
+
+test('VoiceSession applies timeout_ms from Rails tool catalog', async () => {
+  const callOptions = [];
+  const controls = [];
+  const client = {
+    getContext: async () => ({
+      call_ref: 'call-faq',
+      ai: { provider: 'gemini-live' },
+      tools: [{ name: 'faq_lookup', enabled: true, timeout_ms: 6_000 }]
+    }),
+    sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (_name, _payload, options) => { callOptions.push(options); return { matches: [] }; }
+  };
+
+  const session = new VoiceSession({ client, callRef: 'call-faq', toolTimeoutMs: 3_000 });
+  await session.bootstrap();
+  const result = await session.executeTool('faq_lookup', { query: 'refund' });
+
+  assert.equal(result.ok, true);
+  assert.equal(callOptions[0].timeoutMs, 6_000);
+  assert.equal(controls.find(payload => payload.action === 'tool_started').metadata.timeout_ms, 6_000);
+});

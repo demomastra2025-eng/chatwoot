@@ -2,11 +2,11 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: 'string', desc: 'The question or topic to search for in the FAQ database'
 
-  def perform(_tool_context, query:)
+  def perform(_tool_context, query:, semantic: true)
     log_tool_usage('searching', { query: query })
 
-    responses = semantic_responses(query)
-    lookup_strategy = 'semantic'
+    responses = semantic ? semantic_responses(query) : Captain::AssistantResponse.none
+    lookup_strategy = semantic ? 'semantic' : 'lexical'
 
     if responses.blank?
       responses = lexical_fallback_responses(query)

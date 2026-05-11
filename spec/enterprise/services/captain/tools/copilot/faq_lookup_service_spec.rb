@@ -63,4 +63,18 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
       'answer' => 'Refund in 14 days'
     )
   end
+
+  it 'can skip translation and semantic lookup for realtime voice fallback' do
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    payload = JSON.parse(service.execute(query: 'refund', semantic: false))
+
+    expect(payload).to include(
+      'query' => 'refund',
+      'translated_query' => 'refund',
+      'total_count' => 1,
+      'lookup_strategy' => 'lexical'
+    )
+  end
 end

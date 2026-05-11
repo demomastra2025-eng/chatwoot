@@ -179,6 +179,33 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(booking_tool.dig('parameters', 'properties', 'booking_code', 'type')).to eq('string')
   end
 
+  it 'returns a longer timeout for realtime FAQ lookup in the tool catalog' do
+    faq_assistant = create(
+      :captain_assistant,
+      account: account,
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: faq_assistant, inbox: voice_inbox)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
+    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 6000)
+  end
+
   it 'does not resolve context from an unscoped call_ref even when it is globally unique' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       get '/internal/voice/ai/context',

@@ -41,3 +41,24 @@ test('ToolExecutor converts timeout/errors into bounded fallback results and emi
   assert.match(result.error, /timed out/);
   assert.deepEqual(controls.map((event) => event.action), ['tool_started', 'tool_failed']);
 });
+
+test('ToolExecutor uses per-tool timeout when catalog provides one', async () => {
+  const controls = [];
+  const callOptions = [];
+  const client = {
+    sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    callTool: async (_name, _payload, options) => { callOptions.push(options); return { ok: true }; }
+  };
+  const executor = new ToolExecutor({
+    client,
+    callRef: 'call-1',
+    timeoutMs: 3_000,
+    timeoutProvider: toolName => (toolName === 'faq_lookup' ? 6_000 : null)
+  });
+
+  const result = await executor.execute('faq_lookup', { query: 'refund' });
+
+  assert.equal(result.ok, true);
+  assert.equal(callOptions[0].timeoutMs, 6_000);
+  assert.equal(controls[0].metadata.timeout_ms, 6_000);
+});

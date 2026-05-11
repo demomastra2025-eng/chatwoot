@@ -82,6 +82,8 @@ class Telephony::AiVoice::ToolDispatchService
   TOOL_CATALOG = VOICE_TOOL_CATALOG.freeze
 
   def self.catalog(policy: nil, captain_assistant: nil)
+    _policy = policy # Reserved for future policy-aware filtering; keep keyword for interface compatibility.
+
     voice_tools = VOICE_TOOL_CATALOG.map do |tool|
       tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
     end
@@ -105,7 +107,7 @@ class Telephony::AiVoice::ToolDispatchService
         scope: Captain::ToolAccess::SCOPE_AGENT,
         enabled: true,
         realtime_safe: true,
-        timeout_ms: 1_000,
+        timeout_ms: tool_id == 'faq_lookup' ? 6_000 : 1_000,
         risk_level: tool[:risk_level],
         parameters: captain_tool_parameters(captain_assistant, tool)
       }.compact.deep_stringify_keys
@@ -317,7 +319,9 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_tool_arguments
-    arguments.to_h.transform_keys(&:to_sym)
+    tool_arguments = arguments.to_h.transform_keys(&:to_sym)
+    tool_arguments[:semantic] = false if tool_name == 'faq_lookup'
+    tool_arguments
   end
 
   def captain_assistant
@@ -329,7 +333,7 @@ class Telephony::AiVoice::ToolDispatchService
 
   def inbox_captain_assistant
     inbox = call_session&.inbox || conversation&.inbox
-    return unless inbox&.respond_to?(:captain_assistant)
+    return unless inbox.respond_to?(:captain_assistant)
 
     inbox.captain_assistant
   end

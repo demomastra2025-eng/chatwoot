@@ -26,6 +26,7 @@ class VoiceSession {
       client,
       callRef,
       timeoutMs: toolTimeoutMs,
+      timeoutProvider: toolName => this.toolTimeoutFor(toolName),
       scopeProvider: () => this.scopePayload(),
       eventSender: (action, metadata) => this.safeEvent(action, metadata)
     });
@@ -79,6 +80,15 @@ class VoiceSession {
 
   executeTool(name, args = {}, metadata = {}) {
     return this.tools.execute(name, args, metadata);
+  }
+
+  toolTimeoutFor(name) {
+    const normalizedName = String(name || '').trim();
+    const tool = Array.isArray(this.context?.tools)
+      ? this.context.tools.find(candidate => String(candidate?.name || '').trim() === normalizedName)
+      : null;
+    const parsed = Number.parseInt(tool?.timeout_ms ?? tool?.timeoutMs, 10);
+    return parsed > 0 ? parsed : null;
   }
 
   async close(action = 'session_completed', metadata = {}) {

@@ -6,9 +6,9 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   description 'Search FAQ responses using semantic similarity to find relevant answers'
   param :query, type: :string, desc: 'The question or topic to search for in the FAQ database', required: true
 
-  def execute(query:)
-    translated_query = translated_query_for(query)
-    responses, lookup_strategy = lookup_responses(translated_query, query)
+  def execute(query:, semantic: true)
+    translated_query = semantic ? translated_query_for(query) : query
+    responses, lookup_strategy = lookup_responses(translated_query, query, semantic: semantic)
 
     faq_result_payload(query: query, translated_query: translated_query, responses: responses, lookup_strategy: lookup_strategy)
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError => e
@@ -37,12 +37,20 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       .translate(query, target_language: account.locale_english_name)
   end
 
-  def lookup_responses(query, fallback_query = nil)
-    responses = semantic_responses(query)
-    return [responses, 'semantic'] if responses.any?
+  def lookup_responses(query, fallback_query = nil, semantic: true)
+    if semantic
+      responses = semantic_responses(query)
+      return [responses, 'semantic'] if responses.any?
+    end
 
     responses = lexical_fallback_responses(query, fallback_query)
-    [responses, responses.any? ? 'lexical' : 'semantic']
+    [responses, fallback_lookup_strategy(responses, semantic: semantic)]
+  end
+
+  def fallback_lookup_strategy(responses, semantic: true)
+    return 'lexical' if responses.any?
+
+    semantic ? 'semantic' : 'lexical'
   end
 
   def faq_result_payload(query:, translated_query:, responses:, lookup_strategy:, error: nil)

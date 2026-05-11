@@ -53,4 +53,16 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     )
     expect(payload).not_to have_key('error')
   end
+
+  it 'can skip semantic lookup for realtime voice calls' do
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'reset password', semantic: false))
+
+    expect(payload).to include(
+      'query' => 'reset password',
+      'total_count' => 1,
+      'lookup_strategy' => 'lexical'
+    )
+  end
 end
