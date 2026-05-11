@@ -4,6 +4,32 @@ RSpec.describe Captain::Document, type: :model do
   let(:account) { create(:account) }
   let(:assistant) { create(:captain_assistant, account: account) }
 
+  describe 'FAQ generation settings' do
+    it 'defaults FAQ generation to enabled' do
+      expect(described_class.new.faq_generation_enabled).to be true
+    end
+
+    it 'uses source_text before preview content for FAQ generation' do
+      document = build(:captain_document, source_text: 'Full extracted text', content: 'Preview text')
+
+      expect(document.faq_generation_text).to eq('Full extracted text')
+    end
+
+    it 'marks available uploaded files as sendable' do
+      document = build(:captain_document, assistant: assistant, account: account, status: :available, external_link: nil)
+      document.source_file.attach(
+        io: StringIO.new('Spreadsheet content'),
+        filename: 'report.xlsx',
+        content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      )
+      document.save!
+
+      expect(document).to be_sendable_file
+      expect(document.sendable_filename).to eq('report.xlsx')
+      expect(document.sendable_file_signed_id).to be_present
+    end
+  end
+
   describe 'URL normalization' do
     it 'removes a trailing slash before validation' do
       document = create(:captain_document,
@@ -187,9 +213,31 @@ RSpec.describe Captain::Document, type: :model do
         end.to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
       end
 
-      it 'does not enqueue when created available without content' do
+      it 'does not enqueue when created available without content or source text' do
         expect do
-          create(:captain_document, assistant: assistant, account: account, status: :available, content: nil)
+          create(:captain_document, assistant: assistant, account: account, status: :available, content: nil, source_text: nil)
+        end.not_to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
+      end
+
+      it 'enqueues when created available with source text only' do
+        expect do
+          create(:captain_document, assistant: assistant, account: account, status: :available, content: nil, source_text: 'Full extracted text')
+        end.to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
+      end
+
+      it 'does not enqueue or delete FAQ when FAQ generation is disabled' do
+        document = create(
+          :captain_document,
+          assistant: assistant,
+          account: account,
+          status: :available,
+          content: 'Initial content',
+          faq_generation_enabled: false
+        )
+        clear_enqueued_jobs
+
+        expect do
+          document.update!(source_text: 'Fresh full text')
         end.not_to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
       end
 
@@ -313,14 +361,14 @@ RSpec.describe Captain::Document, type: :model do
         end.to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
       end
 
-      it 'does not enqueue when content updates without status change' do
+      it 'enqueues when extracted source text updates on an available PDF' do
         document = build_pdf_document(status: :available, content: nil)
         document.save!
         clear_enqueued_jobs
 
         expect do
-          document.update!(content: 'Extracted PDF text')
-        end.not_to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
+          document.update!(source_text: 'Extracted PDF text')
+        end.to have_enqueued_job(Captain::Documents::ResponseBuilderJob)
       end
     end
 

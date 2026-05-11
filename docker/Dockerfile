@@ -128,6 +128,7 @@ RUN apk update && apk add --no-cache \
   openssl \
   tzdata \
   postgresql-client \
+  poppler-utils \
   imagemagick \
   ffmpeg \
   git \

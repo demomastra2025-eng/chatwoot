@@ -118,7 +118,8 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
     document.update!(
       name: metadata[:title].presence || document.name,
-      content: data[:markdown].to_s[0..199_999],
+      source_text: data[:markdown].to_s,
+      content: Captain::Documents::SourceTextExtractor.preview(data[:markdown]),
       status: :available,
       metadata: (document.metadata || {}).deep_merge(
         'firecrawl' => document.firecrawl_metadata.deep_merge(
@@ -147,13 +148,13 @@ class Captain::Documents::CrawlJob < ApplicationJob
     document.mark_import_processing!
 
     response = Captain::Tools::FirecrawlService
-      .new
-      .crawl(
-        document.external_link,
-        firecrawl_webhook_url(document),
-        crawl_limit,
-        firecrawl_options(document).merge(change_tracking_options(document))
-      )
+               .new
+               .crawl(
+                 document.external_link,
+                 firecrawl_webhook_url(document),
+                 crawl_limit,
+                 firecrawl_options(document).merge(change_tracking_options(document))
+               )
     document.mark_import_started!(job_id: response.parsed_response['id'])
   end
 
@@ -161,12 +162,12 @@ class Captain::Documents::CrawlJob < ApplicationJob
     document.mark_import_started!(pages_total: selected_urls.count)
 
     response = Captain::Tools::FirecrawlService
-      .new
-      .batch_scrape(
-        selected_urls,
-        firecrawl_webhook_url(document),
-        firecrawl_options(document).merge(change_tracking_options(document))
-      )
+               .new
+               .batch_scrape(
+                 selected_urls,
+                 firecrawl_webhook_url(document),
+                 firecrawl_options(document).merge(change_tracking_options(document))
+               )
 
     document.mark_import_started!(job_id: response.parsed_response['id'], pages_total: selected_urls.count)
   end
@@ -197,7 +198,8 @@ class Captain::Documents::CrawlJob < ApplicationJob
   def firecrawl_webhook_url(document)
     webhook_url = Rails.application.routes.url_helpers.enterprise_webhooks_firecrawl_url
 
-    "#{webhook_url}?assistant_id=#{document.assistant_id}&document_id=#{document.id}&token=#{generate_firecrawl_token(document.assistant_id, document.account_id)}"
+    "#{webhook_url}?assistant_id=#{document.assistant_id}&document_id=#{document.id}&token=#{generate_firecrawl_token(document.assistant_id,
+                                                                                                                      document.account_id)}"
   end
 
   def effective_crawl_limit(document)

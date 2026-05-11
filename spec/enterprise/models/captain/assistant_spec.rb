@@ -300,6 +300,23 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.send(:agent_tools).map(&:name)).to match_array(expected_tool_ids)
     end
 
+    it 'adds the Captain document catalog companion for message tools with artifact attachments' do
+      assistant.update!(
+        description: 'Use [@Send Message to Conversation](tool://send_message_to_conversation) when the customer asks for a file.',
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to include('send_message_to_conversation', 'list_captain_documents')
+    end
+
     it 'adds CRM custom-field catalog companions for task and appointment write tools' do
       account.enable_features!('crm_tasks', 'scheduling')
 

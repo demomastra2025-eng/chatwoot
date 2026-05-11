@@ -74,6 +74,8 @@ class Captain::Assistant < ApplicationRecord
     task: %w[get_task search_tasks create_task update_task],
     appointment: %w[get_appointment search_appointments create_appointment update_appointment]
   }.freeze
+  DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS = %w[list_captain_documents].freeze
+  DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS = %w[send_message_to_conversation create_touch create_touch_plan].freeze
   SYSTEM_TEMPLATE_SLOT_LABELS = {
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT => 'Assistant system context',
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY => 'Assistant identity',
@@ -1134,6 +1136,8 @@ class Captain::Assistant < ApplicationRecord
 
       expanded_tool_ids << CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY.fetch(entity_kind)
     end
+
+    expanded_tool_ids.concat(DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS) if normalized_tool_ids.intersect?(DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS)
 
     expanded_tool_ids.uniq
   end

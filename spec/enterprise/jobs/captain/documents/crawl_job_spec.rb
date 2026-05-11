@@ -23,12 +23,14 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         end
 
         it 'uses FirecrawlService with the correct crawl limit' do
-          expect(firecrawl_service).to receive(:crawl).with(
-            document.external_link,
-            "#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=#{token}",
-            20,
-            anything
-          )
+          expect(firecrawl_service).to receive(:crawl) do |url, callback_url, limit, options|
+            expect(url).to eq(document.external_link)
+            expect(callback_url).to start_with("#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=")
+            expect(callback_url.split('token=').last).to be_present
+            expect(limit).to eq(20)
+            expect(options).to be_a(Hash)
+            double(parsed_response: { 'id' => 'crawl-job-1' })
+          end
 
           described_class.perform_now(document)
         end
@@ -43,12 +45,14 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
             }
           )
 
-          expect(firecrawl_service).to receive(:crawl).with(
-            document.external_link,
-            "#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=#{token}",
-            20,
-            hash_including(change_tracking: true, change_tracking_tag: "captain-document-#{document.id}")
-          )
+          expect(firecrawl_service).to receive(:crawl) do |url, callback_url, limit, options|
+            expect(url).to eq(document.external_link)
+            expect(callback_url).to start_with("#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=")
+            expect(callback_url.split('token=').last).to be_present
+            expect(limit).to eq(20)
+            expect(options).to include(change_tracking: true, change_tracking_tag: "captain-document-#{document.id}")
+            double(parsed_response: { 'id' => 'crawl-job-1' })
+          end
 
           described_class.perform_now(document)
         end
@@ -60,12 +64,14 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         end
 
         it 'caps the crawl limit at 500' do
-          expect(firecrawl_service).to receive(:crawl).with(
-            document.external_link,
-            "#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=#{token}",
-            500,
-            anything
-          )
+          expect(firecrawl_service).to receive(:crawl) do |url, callback_url, limit, options|
+            expect(url).to eq(document.external_link)
+            expect(callback_url).to start_with("#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=")
+            expect(callback_url.split('token=').last).to be_present
+            expect(limit).to eq(500)
+            expect(options).to be_a(Hash)
+            double(parsed_response: { 'id' => 'crawl-job-1' })
+          end
 
           described_class.perform_now(document)
         end
@@ -77,12 +83,14 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         end
 
         it 'uses default crawl limit of 10' do
-          expect(firecrawl_service).to receive(:crawl).with(
-            document.external_link,
-            "#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=#{token}",
-            10,
-            anything
-          )
+          expect(firecrawl_service).to receive(:crawl) do |url, callback_url, limit, options|
+            expect(url).to eq(document.external_link)
+            expect(callback_url).to start_with("#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=")
+            expect(callback_url.split('token=').last).to be_present
+            expect(limit).to eq(10)
+            expect(options).to be_a(Hash)
+            double(parsed_response: { 'id' => 'crawl-job-1' })
+          end
 
           described_class.perform_now(document)
         end
@@ -111,11 +119,13 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
       end
 
       it 'uses batch scrape for failed urls' do
-        expect(firecrawl_service).to receive(:batch_scrape).with(
-          ['https://example.com/page-1', 'https://example.com/page-2'],
-          "#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=#{token}",
-          anything
-        )
+        expect(firecrawl_service).to receive(:batch_scrape) do |urls, callback_url, options|
+          expect(urls).to eq(['https://example.com/page-1', 'https://example.com/page-2'])
+          expect(callback_url).to start_with("#{webhook_url}?assistant_id=#{assistant_id}&document_id=#{document.id}&token=")
+          expect(callback_url.split('token=').last).to be_present
+          expect(options).to be_a(Hash)
+          double(parsed_response: { 'id' => 'batch-job-1' })
+        end
 
         described_class.perform_now(document)
       end
@@ -162,6 +172,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         )
         expect(file_document.reload).to be_available
         expect(file_document.name).to eq('Q1 report')
+        expect(file_document.source_text).to eq('## Q1 report')
         expect(file_document.content).to eq('## Q1 report')
       end
     end
@@ -209,6 +220,7 @@ RSpec.describe Captain::Documents::CrawlJob, type: :job do
         )
         expect(file_document.reload).to be_available
         expect(file_document.name).to eq('Uploaded report')
+        expect(file_document.source_text).to eq('## Uploaded report')
         expect(file_document.content).to eq('## Uploaded report')
       end
     end

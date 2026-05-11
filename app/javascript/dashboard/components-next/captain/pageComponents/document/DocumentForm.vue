@@ -21,7 +21,15 @@ const props = defineProps({
 const emit = defineEmits(['submit', 'cancel']);
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const UPLOADABLE_FILE_EXTENSIONS = ['pdf', 'docx', 'doc', 'odt', 'rtf', 'xlsx', 'xls'];
+const UPLOADABLE_FILE_EXTENSIONS = [
+  'pdf',
+  'docx',
+  'doc',
+  'odt',
+  'rtf',
+  'xlsx',
+  'xls',
+];
 const DEFAULT_IMPORT_PROFILE = {
   sitemap: 'include',
   includePaths: '',
@@ -48,6 +56,7 @@ const initialState = {
   importProfile: { ...DEFAULT_IMPORT_PROFILE },
   previewLinks: [],
   selectedUrls: [],
+  faqGenerationEnabled: true,
 };
 
 const state = reactive({ ...initialState });
@@ -295,7 +304,8 @@ const handlePreviewSelectedPages = async () => {
 const prepareDocumentDetails = () => {
   if (state.documentType === 'file_upload') {
     const formData = new FormData();
-    const extension = state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
+    const extension =
+      state.uploadedFile?.name.split('.').pop()?.toLowerCase() || '';
     formData.append('document[assistant_id]', props.assistantId);
     if (extension === 'pdf') {
       formData.append('document[pdf_file]', state.uploadedFile);
@@ -307,6 +317,10 @@ const prepareDocumentDetails = () => {
       'document[name]',
       state.name || state.uploadedFile.name.replace(/\.[^.]+$/i, '')
     );
+    formData.append(
+      'document[faq_generation_enabled]',
+      state.faqGenerationEnabled
+    );
     return formData;
   }
 
@@ -317,6 +331,7 @@ const prepareDocumentDetails = () => {
       external_link: state.url,
       source_mode: state.documentType,
       import_profile: buildImportProfile(),
+      faq_generation_enabled: state.faqGenerationEnabled,
       ...(state.documentType === 'selected_pages'
         ? { selected_urls: state.selectedUrls }
         : {}),
@@ -434,7 +449,9 @@ const handleSubmit = async () => {
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+        <div
+          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+        >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
               {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.ALLOW_SUBDOMAINS') }}
@@ -442,17 +459,19 @@ const handleSubmit = async () => {
           </div>
           <Switch v-model="state.importProfile.allowSubdomains" />
         </div>
-        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+        <div
+          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+        >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
-              {{
-                t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.IGNORE_QUERY_PARAMETERS')
-              }}
+              {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.IGNORE_QUERY_PARAMETERS') }}
             </p>
           </div>
           <Switch v-model="state.importProfile.ignoreQueryParameters" />
         </div>
-        <div class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3">
+        <div
+          class="flex items-center justify-between rounded-lg bg-n-alpha-2 p-3"
+        >
           <div>
             <p class="m-0 text-sm font-medium text-n-slate-12">
               {{ t('CAPTAIN.DOCUMENTS.FORM.ADVANCED.ONLY_MAIN_CONTENT') }}
@@ -531,13 +550,19 @@ const handleSubmit = async () => {
           </label>
         </div>
 
-        <p v-if="formErrors.selectedPages" class="mt-3 mb-0 text-xs text-n-ruby-9">
+        <p
+          v-if="formErrors.selectedPages"
+          class="mt-3 mb-0 text-xs text-n-ruby-9"
+        >
           {{ formErrors.selectedPages }}
         </p>
       </div>
     </div>
 
-    <div v-if="state.documentType === 'file_upload'" class="flex flex-col gap-2">
+    <div
+      v-if="state.documentType === 'file_upload'"
+      class="flex flex-col gap-2"
+    >
       <label class="text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.DOCUMENTS.FORM.UPLOAD_FILE.LABEL') }}
       </label>
@@ -594,6 +619,20 @@ const handleSubmit = async () => {
       :label="t('CAPTAIN.DOCUMENTS.FORM.NAME.LABEL')"
       :placeholder="t('CAPTAIN.DOCUMENTS.FORM.NAME.PLACEHOLDER')"
     />
+
+    <div
+      class="flex items-start justify-between gap-3 rounded-xl bg-n-alpha-2 p-4"
+    >
+      <div class="min-w-0">
+        <p class="m-0 text-sm font-medium text-n-slate-12">
+          {{ t('CAPTAIN.DOCUMENTS.FORM.FAQ_GENERATION.LABEL') }}
+        </p>
+        <p class="mt-1 mb-0 text-xs text-n-slate-11">
+          {{ t('CAPTAIN.DOCUMENTS.FORM.FAQ_GENERATION.HELP_TEXT') }}
+        </p>
+      </div>
+      <Switch v-model="state.faqGenerationEnabled" />
+    </div>
 
     <div class="flex w-full items-center justify-between gap-3">
       <Button

@@ -203,6 +203,25 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(response).to have_http_status(:success)
           expect(json_response[:name]).to eq('Test Document')
           expect(json_response[:external_link]).to eq('https://example.com/doc')
+          expect(json_response[:faq_generation_enabled]).to be true
+        end
+
+        it 'creates a document with FAQ generation disabled' do
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   name: 'Manual only',
+                   external_link: 'https://example.com/manual-only',
+                   assistant_id: assistant.id,
+                   faq_generation_enabled: false
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:faq_generation_enabled]).to be false
+          expect(Captain::Document.last.faq_generation_enabled).to be false
         end
 
         it 'creates a supported remote file url import' do
@@ -233,10 +252,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           tempfile.write('Spreadsheet content')
           tempfile.rewind
 
-          uploaded_file = ActionDispatch::Http::UploadedFile.new(
-            tempfile: tempfile,
-            filename: 'report.xlsx',
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          uploaded_file = Rack::Test::UploadedFile.new(
+            tempfile.path,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            true,
+            original_filename: 'report.xlsx'
           )
 
           post "/api/v1/accounts/#{account.id}/captain/documents",
@@ -245,6 +265,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
                    name: 'Uploaded Spreadsheet',
                    assistant_id: assistant.id,
                    source_mode: 'file_upload',
+                   faq_generation_enabled: false,
                    source_file: uploaded_file
                  }
                },
@@ -253,6 +274,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
           expect(response).to have_http_status(:success)
           expect(json_response[:source_mode]).to eq('file_upload')
           expect(Captain::Document.last.metadata.dig('firecrawl', 'mode')).to eq('file_upload')
+          expect(Captain::Document.last.faq_generation_enabled).to be false
           expect(Captain::Document.last.source_file).to be_attached
         ensure
           tempfile.close!
@@ -404,6 +426,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
 
   describe 'POST /api/v1/accounts/:account_id/captain/documents/:id/resync' do
     it 're-queues an existing document import for admins' do
+      document
       allow(Captain::Documents::CrawlJob).to receive(:perform_later)
 
       post "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/resync",

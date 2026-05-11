@@ -826,6 +826,10 @@
               "TITLE": "Search documentation",
               "DESCRIPTION": "Search and retrieve materials from the knowledge base."
             },
+            "list_captain_documents": {
+              "TITLE": "List Captain documents",
+              "DESCRIPTION": "List available documents and safe artifact IDs for sending files in messages."
+            },
             "faq_lookup": {
               "TITLE": "FAQ lookup",
               "DESCRIPTION": "Find matching FAQ answers using semantic similarity."
@@ -1680,6 +1684,10 @@
         "NAME": {
           "LABEL": "Document Name (Optional)",
           "PLACEHOLDER": "Enter a name for the document"
+        },
+        "FAQ_GENERATION": {
+          "LABEL": "Create FAQ from this document",
+          "HELP_TEXT": "Enabled by default. When disabled, the document is stored without generating new FAQs or deleting existing ones."
         },
         "ADVANCED": {
           "TITLE": "Advanced import settings",

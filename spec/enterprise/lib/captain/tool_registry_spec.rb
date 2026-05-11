@@ -9,6 +9,7 @@ RSpec.describe Captain::ToolRegistry do
       expect(agent_tool_ids - assistant_tool_ids).to be_empty
       expect(assistant_tool_ids).to include(
         'search_documentation',
+        'list_captain_documents',
         'faq_lookup',
         'create_deal',
         'list_deal_pipelines',
@@ -60,7 +61,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(74)
+      expect(agent_tool_ids.size).to eq(75)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do

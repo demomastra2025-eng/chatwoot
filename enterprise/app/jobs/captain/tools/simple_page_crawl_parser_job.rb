@@ -34,12 +34,14 @@ class Captain::Tools::SimplePageCrawlParserJob < ApplicationJob
     attrs = {
       external_link: normalized_link,
       name: page_title[0..254],
+      source_text: content,
       content: content[0..14_999],
       status: source_document&.id == document.id ? document.status : :available
     }
 
     return attrs if source_document.blank? || source_document.id == document.id
 
+    attrs[:faq_generation_enabled] = source_document.faq_generation_enabled
     attrs[:metadata] = (document.metadata || {}).deep_merge(
       'firecrawl' => {
         'provider' => 'simple_crawl',

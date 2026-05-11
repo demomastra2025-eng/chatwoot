@@ -13,7 +13,7 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
 
   before do
     allow(Captain::Llm::FaqGeneratorService).to receive(:new)
-      .with(document.content, document.account.locale_english_name, account_id: document.account_id)
+      .with(document.faq_generation_text, document.account.locale_english_name, account_id: document.account_id)
       .and_return(faq_generator)
     allow(faq_generator).to receive(:generate).and_return(faqs)
   end
@@ -26,6 +26,16 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
         described_class.new.perform(document)
 
         expect { existing_response.reload }.to raise_error(ActiveRecord::RecordNotFound)
+      end
+
+      it 'skips generation without deleting existing responses when FAQ generation is disabled' do
+        document.update!(faq_generation_enabled: false)
+        existing_response = create(:captain_assistant_response, documentable: document)
+
+        described_class.new.perform(document)
+
+        expect(existing_response.reload).to be_present
+        expect(Captain::Llm::FaqGeneratorService).not_to have_received(:new)
       end
 
       it 'creates new responses for each FAQ' do
@@ -87,10 +97,23 @@ RSpec.describe Captain::Documents::ResponseBuilderJob, type: :job do
         allow(paginated_service).to receive(:iterations_completed).and_return(1)
       end
 
-      it 'uses paginated FAQ generator for PDFs' do
+      it 'uses paginated FAQ generator for PDFs without extracted source text' do
         expect(Captain::Llm::PaginatedFaqGeneratorService).to receive(:new).with(pdf_document, anything)
 
         described_class.new.perform(pdf_document)
+      end
+
+      it 'uses extracted PDF source text when present' do
+        allow(pdf_document).to receive(:source_text).and_return('Extracted PDF text')
+        allow(Captain::Llm::FaqGeneratorService).to receive(:new)
+          .with('Extracted PDF text', pdf_document.account.locale_english_name, account_id: pdf_document.account_id)
+          .and_return(faq_generator)
+
+        described_class.new.perform(pdf_document)
+
+        expect(Captain::Llm::PaginatedFaqGeneratorService).not_to have_received(:new)
+        expect(Captain::Llm::FaqGeneratorService).to have_received(:new)
+          .with('Extracted PDF text', pdf_document.account.locale_english_name, account_id: pdf_document.account_id)
       end
 
       it 'stores pagination metadata' do

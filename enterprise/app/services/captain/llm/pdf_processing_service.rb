@@ -14,12 +14,31 @@ class Captain::Llm::PdfProcessingService
       end
     end
 
+    store_extracted_source_text
     true
   end
 
   private
 
   attr_reader :document
+
+  def store_extracted_source_text
+    source_text = Captain::Documents::SourceTextExtractor.new(document).extract_pdf_text
+    return if source_text.blank?
+
+    document.update!(
+      source_text: source_text,
+      content: Captain::Documents::SourceTextExtractor.preview(source_text),
+      metadata: (document.metadata || {}).deep_merge(
+        'source_text' => {
+          'provider' => 'pdftotext',
+          'status' => 'completed',
+          'bytes' => source_text.bytesize,
+          'extracted_at' => Time.current.iso8601
+        }
+      )
+    )
+  end
 
   def instrument_file_prepare(&)
     return yield unless ChatwootApp.otel_enabled?

@@ -65,7 +65,8 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
 
   def refresh_changed_only
     return render_could_not_create_error(I18n.t('captain.documents.derived_document_sync_error')) if @document.derived_document?
-    return render_could_not_create_error(I18n.t('captain.documents.delta_refresh_uploaded_file_error')) if %w[pdf_upload file_upload].include?(@document.source_mode)
+    return render_could_not_create_error(I18n.t('captain.documents.delta_refresh_uploaded_file_error')) if %w[pdf_upload
+                                                                                                              file_upload].include?(@document.source_mode)
     return render_could_not_create_error(missing_firecrawl_error) if firecrawl_required_for_mode?(@document.source_mode)
 
     @document.prepare_for_resync!(refresh_mode: 'delta')
@@ -119,7 +120,7 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
   end
 
   def base_document_params
-    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file)
+    document_creation_params.slice(:name, :external_link, :assistant_id, :pdf_file, :source_file, :faq_generation_enabled)
   end
 
   def document_creation_params
@@ -130,7 +131,9 @@ class Api::V1::Accounts::Captain::DocumentsController < Api::V1::Accounts::BaseC
       :pdf_file,
       :source_file,
       :source_mode,
-      import_profile: [:sitemap, :max_pages, :max_discovery_depth, :allow_subdomains, :ignore_query_parameters, :only_main_content, { include_paths: [], exclude_paths: [] }],
+      :faq_generation_enabled,
+      import_profile: [:sitemap, :max_pages, :max_discovery_depth, :allow_subdomains, :ignore_query_parameters, :only_main_content,
+                       { include_paths: [], exclude_paths: [] }],
       selected_urls: []
     )
   end

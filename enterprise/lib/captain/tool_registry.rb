@@ -85,6 +85,17 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'list_captain_documents',
+          title: 'List Captain Documents',
+          description: 'List Captain knowledge documents and safe artifact IDs for files that can be attached to messages',
+          group_name: 'Knowledge',
+          icon: 'document',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::ListCaptainDocumentsService,
+          risk_level: 'low'
+        ),
+        definition(
           id: 'faq_lookup',
           title: 'FAQ Lookup',
           description: 'Search FAQ responses using semantic similarity to find relevant answers',

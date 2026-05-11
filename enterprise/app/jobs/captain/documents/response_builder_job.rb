@@ -1,7 +1,12 @@
 class Captain::Documents::ResponseBuilderJob < ApplicationJob
   queue_as :low
 
+  TEXT_CHUNK_SIZE = 50_000
+  MAX_TEXT_CHUNKS = 20
+
   def perform(document, options = {})
+    return unless document.faq_generation_enabled?
+
     reset_previous_responses(document)
 
     faqs = generate_faqs(document, options)
@@ -14,7 +19,7 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     if should_use_pagination?(document)
       generate_paginated_faqs(document, options)
     else
-      generate_standard_faqs(document)
+      generate_text_faqs(document)
     end
   end
 
@@ -25,8 +30,32 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     faqs
   end
 
-  def generate_standard_faqs(document)
-    Captain::Llm::FaqGeneratorService.new(document.content, document.account.locale_english_name, account_id: document.account_id).generate
+  def generate_text_faqs(document)
+    chunks = text_chunks(document.faq_generation_text)
+    return [] if chunks.blank?
+
+    faqs = chunks.flat_map do |chunk|
+      Captain::Llm::FaqGeneratorService.new(chunk, document.account.locale_english_name, account_id: document.account_id).generate
+    end
+    store_text_generation_metadata(document, chunks) if chunks.many?
+    deduplicate_faqs(faqs)
+  end
+
+  def text_chunks(text)
+    text.to_s.scan(/.{1,#{TEXT_CHUNK_SIZE}}/mo).first(MAX_TEXT_CHUNKS)
+  end
+
+  def store_text_generation_metadata(document, chunks)
+    document.update!(
+      metadata: (document.metadata || {}).merge(
+        'faq_generation' => {
+          'method' => 'text_chunks',
+          'chunks_processed' => chunks.size,
+          'source_text_bytes' => document.faq_generation_text.to_s.bytesize,
+          'timestamp' => Time.current.iso8601
+        }
+      )
+    )
   end
 
   def build_paginated_service(document, options)
@@ -55,8 +84,16 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
     faqs.each { |faq| create_response(faq, document) }
   end
 
+  def deduplicate_faqs(faqs)
+    Array(faqs).select { |faq| faq_question(faq).present? }.uniq { |faq| faq_question(faq).downcase }
+  end
+
+  def faq_question(faq)
+    faq.to_h.with_indifferent_access[:question].to_s.strip
+  end
+
   def should_use_pagination?(document)
-    document.pdf_document?
+    document.pdf_document? && document.source_text.blank?
   end
 
   def reset_previous_responses(response_document)
@@ -64,9 +101,10 @@ class Captain::Documents::ResponseBuilderJob < ApplicationJob
   end
 
   def create_response(faq, document)
+    normalized = faq.to_h.with_indifferent_access
     document.responses.create!(
-      question: faq['question'],
-      answer: faq['answer'],
+      question: normalized[:question],
+      answer: normalized[:answer],
       assistant: document.assistant,
       documentable: document
     )

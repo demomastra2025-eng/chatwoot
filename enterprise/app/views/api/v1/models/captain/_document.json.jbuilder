@@ -4,6 +4,9 @@ json.assistant do
 end
 json.content resource.content
 json.content_type resource.content_type
+json.faq_generation_enabled resource.faq_generation_enabled
+json.source_text_available resource.source_text.present?
+json.source_text_bytes resource.source_text.to_s.bytesize if resource.source_text.present?
 json.created_at resource.created_at.to_i
 json.external_link resource.external_link
 json.display_url resource.display_url

@@ -2,16 +2,18 @@
 #
 # Table name: captain_documents
 #
-#  id            :bigint           not null, primary key
-#  content       :text
-#  external_link :string           not null
-#  metadata      :jsonb
-#  name          :string
-#  status        :integer          default("in_progress"), not null
-#  created_at    :datetime         not null
-#  updated_at    :datetime         not null
-#  account_id    :bigint           not null
-#  assistant_id  :bigint           not null
+#  id                     :bigint           not null, primary key
+#  content                :text
+#  external_link          :string           not null
+#  faq_generation_enabled :boolean          default(TRUE), not null
+#  metadata               :jsonb
+#  name                   :string
+#  source_text            :text
+#  status                 :integer          default("in_progress"), not null
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
+#  account_id             :bigint           not null
+#  assistant_id           :bigint           not null
 #
 # Indexes
 #
@@ -106,6 +108,42 @@ class Captain::Document < ApplicationRecord
 
   def file_size
     uploaded_file_attachment&.blob&.byte_size
+  end
+
+  def sendable_file?
+    available? && uploaded_file_attachment.present? && uploaded_file_attachment.attached?
+  end
+
+  def sendable_filename
+    uploaded_file_attachment&.blob&.filename&.to_s
+  end
+
+  def sendable_file_signed_id
+    return unless sendable_file?
+
+    uploaded_file_attachment.blob.signed_id
+  end
+
+  def sendable_file_blob_id
+    return unless sendable_file?
+
+    uploaded_file_attachment.blob_id
+  end
+
+  def artifact_fingerprint
+    updated_at&.to_i&.to_s
+  end
+
+  def faq_generation_text
+    source_text.presence || content
+  end
+
+  def faq_generation_text_present?
+    faq_generation_text.present?
+  end
+
+  def source_text_metadata
+    metadata&.dig('source_text') || {}
   end
 
   def firecrawl_metadata
@@ -348,7 +386,7 @@ class Captain::Document < ApplicationRecord
   end
 
   def display_url
-    return Rails.application.routes.url_helpers.rails_blob_url(uploaded_file_attachment, only_path: false) if uploaded_file_attached?
+    return Rails.application.routes.url_helpers.rails_blob_url(uploaded_file_attachment.blob, only_path: false) if uploaded_file_attached?
 
     external_link
   end
@@ -391,10 +429,12 @@ class Captain::Document < ApplicationRecord
   def should_enqueue_response_builder?
     return false if destroyed?
     return false unless available?
+    return false unless faq_generation_enabled?
 
-    return saved_change_to_status? if pdf_upload?
+    return saved_change_to_status? || saved_change_to_source_text? || saved_change_to_faq_generation_enabled? if pdf_upload?
+    return false unless faq_generation_text_present?
 
-    (saved_change_to_status? || saved_change_to_content?) && content.present?
+    saved_change_to_status? || saved_change_to_content? || saved_change_to_source_text? || saved_change_to_faq_generation_enabled?
   end
 
   def update_document_usage

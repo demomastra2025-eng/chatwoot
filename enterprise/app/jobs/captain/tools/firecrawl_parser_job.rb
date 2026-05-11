@@ -42,13 +42,15 @@ class Captain::Tools::FirecrawlParserJob < ApplicationJob
   def document_attributes(payload, metadata, source_document, document, canonical_url)
     attrs = {
       external_link: canonical_url,
-      content: payload.with_indifferent_access[:markdown].to_s[0..199_999],
+      source_text: payload.with_indifferent_access[:markdown].to_s,
+      content: Captain::Documents::SourceTextExtractor.preview(payload.with_indifferent_access[:markdown]),
       name: metadata['title'].to_s[0..254],
       status: source_document&.id == document.id ? document.status : :available
     }
 
     return attrs if source_document.blank? || source_document.id == document.id
 
+    attrs[:faq_generation_enabled] = source_document.faq_generation_enabled
     attrs[:metadata] = (document.metadata || {}).deep_merge(
       'firecrawl' => {
         'provider' => 'firecrawl',

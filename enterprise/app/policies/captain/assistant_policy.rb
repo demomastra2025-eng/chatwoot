@@ -38,4 +38,20 @@ class Captain::AssistantPolicy < ApplicationPolicy
   def prompt_preview?
     true
   end
+
+  def preview?
+    update?
+  end
+
+  def resync?
+    update?
+  end
+
+  def refresh_changed_only?
+    update?
+  end
+
+  def retry_failed?
+    update?
+  end
 end
