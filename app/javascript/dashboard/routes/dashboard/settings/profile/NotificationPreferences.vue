@@ -411,7 +411,7 @@ export default {
           <span class="text-heading-3 text-n-slate-12">
             {{ $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_SETUP_TITLE') }}
           </span>
-          <span class="text-body-small text-n-slate-11">
+          <span class="text-sm font-medium text-n-slate-11">
             <template v-if="isTelegramConnected">
               {{
                 $t('PROFILE_SETTINGS.FORM.NOTIFICATIONS.TELEGRAM_CONNECTED_AS')
