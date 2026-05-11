@@ -8,6 +8,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
+  DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
+    '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
+    '((документ|файл|pdf|пдф).{0,80}(отправ|пришл|вышл|скин|прикреп))|' \
+    '((send|share|attach).{0,80}(document|file|pdf))|' \
+    '((document|file|pdf).{0,80}(send|share|attach))',
+    Regexp::IGNORECASE
+  )
   RECEIPT_ATTACHMENT_CONTEXT = 'The user sent an image after being asked to share a payment receipt/proof. ' \
                                'Treat the image as the requested receipt/payment confirmation unless it clearly shows otherwise; ' \
                                'acknowledge the receipt and continue the active booking/confirmation flow.'.freeze
@@ -405,7 +412,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return [] if artifact_ids.blank?
 
     attachment_resolver.resolve(artifact_ids: artifact_ids)
-  rescue Captain::Tools::HttpArtifactToken::InvalidToken,
+  rescue Captain::Tools::DocumentArtifactToken::InvalidToken,
+         Captain::Tools::HttpArtifactToken::InvalidToken,
          Captain::Tools::HttpArtifactMaterializer::DownloadError,
          AccountLimits::StorageUsageService::LimitExceeded,
          ArgumentError => e
@@ -430,17 +438,35 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def response_artifact_ids
-    raw_artifact_ids = @response&.dig('artifact_ids')
-    ids = case raw_artifact_ids
-          when Array
-            raw_artifact_ids
-          when String
-            parse_artifact_ids_string(raw_artifact_ids)
-          else
-            []
-          end
+    ids = explicit_response_artifact_ids
+    ids = inferred_document_artifact_ids if ids.blank?
 
     ids.filter_map { |artifact_id| artifact_id.to_s.strip.presence }.uniq.first(MAX_RESPONSE_ARTIFACT_ATTACHMENTS)
+  end
+
+  def explicit_response_artifact_ids
+    raw_artifact_ids = @response&.dig('artifact_ids')
+    case raw_artifact_ids
+    when Array
+      raw_artifact_ids
+    when String
+      parse_artifact_ids_string(raw_artifact_ids)
+    else
+      []
+    end
+  end
+
+  def inferred_document_artifact_ids
+    return [] unless document_delivery_requested?
+
+    artifact_ids = listed_sendable_document_artifact_ids
+    return [] unless artifact_ids.one?
+
+    Rails.logger.info(
+      '[CAPTAIN][DOCUMENT_ARTIFACT] Auto-attaching the only listed sendable document ' \
+      "conversation_id=#{@conversation.id} assistant_id=#{@assistant.id} account_id=#{account.id}"
+    )
+    artifact_ids
   end
 
   def parse_artifact_ids_string(raw_artifact_ids)
@@ -453,6 +479,50 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     [artifact_ids]
   rescue JSON::ParserError
     artifact_ids.split(/[,\s]+/)
+  end
+
+  def document_delivery_requested?
+    latest_incoming_message_content.to_s.match?(DOCUMENT_DELIVERY_REQUEST_PATTERN) ||
+      @response&.dig('response').to_s.match?(DOCUMENT_DELIVERY_REQUEST_PATTERN)
+  end
+
+  def latest_incoming_message_content
+    @conversation.messages.incoming.order(created_at: :desc, id: :desc).pick(:content)
+  end
+
+  def listed_sendable_document_artifact_ids
+    tool_steps = @response&.dig('captain_trace', 'tool_steps') || @response&.dig('captain_trace', :tool_steps)
+    Array(tool_steps).flat_map { |step| document_artifact_ids_from_tool_step(step) }.uniq
+  end
+
+  def document_artifact_ids_from_tool_step(step)
+    return [] unless step.respond_to?(:[])
+    return [] unless (step['event'] || step[:event]).to_s == 'finish'
+    return [] unless (step['tool_name'] || step[:tool_name]).to_s == 'list_captain_documents'
+
+    payload = document_tool_payload(step['output'] || step[:output])
+    return [] unless payload.respond_to?(:[])
+
+    Array(payload['documents'] || payload[:documents]).filter_map do |document|
+      next unless document.respond_to?(:[])
+
+      sendable = ActiveModel::Type::Boolean.new.cast(document['sendable'] || document[:sendable])
+      artifact_id = document['artifact_id'] || document[:artifact_id]
+      artifact_id.to_s if sendable && artifact_id.to_s.start_with?(Captain::Tools::DocumentArtifactToken::PREFIX)
+    end
+  end
+
+  def document_tool_payload(output)
+    normalized_output = output.respond_to?(:to_h) ? output.to_h : {}
+    message = normalized_output['message'] || normalized_output[:message]
+    data = normalized_output['data'] || normalized_output[:data]
+    data_hash = data.respond_to?(:to_h) ? data.to_h : nil
+    return data_hash if data_hash.present? && (data_hash['documents'] || data_hash[:documents]).present?
+
+    parsed_message = JSON.parse(message.to_s)
+    parsed_message.respond_to?(:to_h) ? parsed_message.to_h : {}
+  rescue JSON::ParserError
+    {}
   end
 
   def attachment_resolver

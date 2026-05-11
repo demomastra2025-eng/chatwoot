@@ -18,6 +18,61 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
     end
 
+    def create_sendable_document(name: 'Price list', filename: 'price-list.pdf')
+      build(:captain_document, assistant: assistant, account: account, name: name, external_link: nil, status: :available).tap do |document|
+        document.pdf_file.attach(
+          io: StringIO.new('%PDF-1.4 file'),
+          filename: filename,
+          content_type: 'application/pdf'
+        )
+        document.save!
+      end
+    end
+
+    def document_artifact_payload(document)
+      document.reload
+
+      Captain::Tools::DocumentArtifactToken.encode(
+        account_id: account.id,
+        assistant_id: assistant.id,
+        document_id: document.id,
+        blob_id: document.sendable_file_blob_id,
+        status: document.status,
+        document_fingerprint: document.artifact_fingerprint
+      )
+    end
+
+    def list_documents_trace(*documents)
+      {
+        'version' => 1,
+        'tool_steps' => [
+          {
+            'event' => 'finish',
+            'tool_name' => 'list_captain_documents',
+            'output' => {
+              'success' => true,
+              'message' => JSON.generate(
+                'action' => 'list_captain_documents',
+                'documents' => documents.map do |document|
+                  {
+                    'document_id' => document.id,
+                    'name' => document.name,
+                    'source_mode' => document.source_mode,
+                    'status' => document.status,
+                    'content_type' => document.content_type,
+                    'file_size' => document.file_size,
+                    'sendable' => true,
+                    'filename' => document.sendable_filename,
+                    'artifact_id' => document_artifact_payload(document)
+                  }
+                end
+              )
+            }
+          }
+        ]
+      }
+    end
+
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,
@@ -350,6 +405,63 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       attrs = conversation.reload.messages.outgoing.last.additional_attributes
       expect(attrs['agent_name']).to eq(scenario.handoff_key)
       expect(attrs['agentName']).to eq('Andalusiya Premium Reception Scenario')
+    end
+
+    it 'auto-attaches the only listed sendable Captain document when the final response omitted artifact_ids' do
+      conversation.messages.incoming.last.update!(content: 'вышли мне документ')
+      document = create_sendable_document(name: 'КП MACRO', filename: 'macro.pdf')
+
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Да, отправляю документ.',
+          'artifact_ids' => [],
+          'captain_trace' => list_documents_trace(document)
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      public_message = conversation.reload.messages.outgoing.where(private: false).last
+      expect(public_message.content).to eq('Да, отправляю документ.')
+      expect(public_message.attachments.size).to eq(1)
+      expect(public_message.attachments.first.file.filename.to_s).to eq('macro.pdf')
+    end
+
+    it 'does not auto-attach a listed document when document delivery was not requested' do
+      conversation.messages.incoming.last.update!(content: 'что внутри документа?')
+      document = create_sendable_document(name: 'КП MACRO', filename: 'macro.pdf')
+
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'В документе описано коммерческое предложение.',
+          'captain_trace' => list_documents_trace(document)
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      public_message = conversation.reload.messages.outgoing.where(private: false).last
+      expect(public_message.content).to eq('В документе описано коммерческое предложение.')
+      expect(public_message.attachments).to be_empty
+    end
+
+    it 'does not auto-attach when several sendable documents were listed and the model omitted artifact_ids' do
+      conversation.messages.incoming.last.update!(content: 'вышли мне документ')
+      first_document = create_sendable_document(name: 'First', filename: 'first.pdf')
+      second_document = create_sendable_document(name: 'Second', filename: 'second.pdf')
+
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Уточните, какой документ отправить.',
+          'captain_trace' => list_documents_trace(first_document, second_document)
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      public_message = conversation.reload.messages.outgoing.where(private: false).last
+      expect(public_message.content).to eq('Уточните, какой документ отправить.')
+      expect(public_message.attachments).to be_empty
     end
 
     it 'sends the text response without attachment when an artifact id expired' do
