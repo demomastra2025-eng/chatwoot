@@ -3,27 +3,30 @@ class Telephony::AiVoice::ConversationTimelineService
   EVENT_SOURCE_PREFIX = 'ai_voice_event'.freeze
   TRANSCRIPT_TYPE = 'ai_voice_transcript_turn'.freeze
   EVENT_TYPE = 'ai_voice_event'.freeze
-  TOOL_ACTIONS = %w[tool_started tool_completed tool_failed].freeze
+  TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed].freeze
   TOOL_EVENTS = {
     'tool_started' => 'start',
-    'tool_completed' => 'complete',
+    'tool_progress' => 'progress',
+    'tool_completed' => 'finish',
     'tool_failed' => 'failed'
   }.freeze
   TOOL_CONTENT = {
     'start' => 'Using %<tool_name>s',
-    'complete' => 'Completed %<tool_name>s',
+    'progress' => 'Running %<tool_name>s',
+    'finish' => 'Completed %<tool_name>s',
     'failed' => 'Failed %<tool_name>s'
   }.freeze
   TOOL_TRACE_STATUSES = {
-    'start' => 'running',
-    'complete' => 'completed',
+    'start' => 'start',
+    'progress' => 'progress',
+    'finish' => 'finish',
     'failed' => 'failed'
   }.freeze
   SYSTEM_CONTENT = {
-    'ai_ringing' => 'AI-принимает звонок',
-    'ai_answered' => 'AI-принимает звонок',
-    'ai_speaking' => 'ИИ отвечает клиенту',
-    'caller_interrupted' => 'Клиент перебил ответ ИИ',
+    'ai_ringing' => 'AI-агент принимает звонок',
+    'ai_answered' => 'AI-агент ответил на звонок',
+    'ai_speaking' => 'AI-агент отвечает клиенту',
+    'caller_interrupted' => 'Клиент перебил ответ AI-агента',
     'transfer_started' => 'Начат перевод звонка оператору',
     'transfer_answered' => 'Оператор ответил на перевод',
     'transfer_completed' => 'Звонок переведен оператору',
@@ -38,9 +41,9 @@ class Telephony::AiVoice::ConversationTimelineService
     'fonoster_call_closed' => 'Fonoster закрыл звонок',
     'runtime_closed' => 'Voice runtime закрыл сессию',
     'tool_requested_end_call' => 'Инструмент запросил завершение звонка',
-    'handoff_requested' => 'ИИ запросил передачу оператору',
+    'handoff_requested' => 'AI-агент запросил передачу оператору',
     'close' => 'AI-сессия закрыта',
-    'post_tool_model_stall' => 'ИИ не продолжил ответ после инструмента'
+    'post_tool_model_stall' => 'AI-агент не продолжил ответ после инструмента'
   }.freeze
 
   def initialize(call_session:)
@@ -225,31 +228,45 @@ class Telephony::AiVoice::ConversationTimelineService
   end
 
   def captain_trace_payload
-    steps = tool_control_events.filter_map.with_index do |event, index|
-      metadata = event['metadata'].is_a?(Hash) ? event['metadata'].deep_stringify_keys : {}
-      trace_event = TOOL_EVENTS[event['action'].to_s]
-      tool_name = metadata['tool_name'].presence
-      next if trace_event.blank? || tool_name.blank?
-
-      content = format(TOOL_CONTENT.fetch(trace_event), tool_name: tool_name)
-      content = "#{content}: #{metadata['error']}" if trace_event == 'failed' && metadata['error'].present?
-      {
-        'id' => "#{tool_name}:#{trace_event}:#{metadata['tool_call_id'].presence || index}",
-        'tool_name' => tool_name,
-        'event' => trace_event,
-        'status' => tool_trace_status(trace_event),
-        'content' => content
-      }
-    end
+    steps = tool_control_events.filter_map.with_index { |event, index| tool_trace_step(event, index) }
     return if steps.blank?
 
-    { 'version' => 1, 'tool_steps' => steps.last(20) }
+    Captain::ToolTraceBuilder.payload(steps.last(20))
+  end
+
+  def tool_trace_step(event, index)
+    metadata = event['metadata'].is_a?(Hash) ? event['metadata'].deep_stringify_keys : {}
+    trace_event = TOOL_EVENTS[event['action'].to_s]
+    tool_name = metadata['tool_name'].presence
+    return if trace_event.blank? || tool_name.blank?
+
+    Captain::ToolTraceBuilder.step(
+      tool_name: tool_name,
+      event: trace_event,
+      sequence: index,
+      tool_call_id: metadata['tool_call_id'].presence,
+      input: metadata['input'].presence,
+      output: tool_trace_output(trace_event, metadata),
+      error: metadata['error'].presence,
+      message: tool_trace_content(trace_event, tool_name, metadata)
+    )
+  end
+
+  def tool_trace_output(trace_event, metadata)
+    return metadata['output'] if metadata['output'].present?
+    return { error: metadata['error'] } if trace_event == 'failed' && metadata['error'].present?
   end
 
   def tool_control_events
     Array.wrap(call_session.metadata.to_h.dig('ai_voice', 'control_events')).select do |event|
       TOOL_ACTIONS.include?(event['action'].to_s)
     end
+  end
+
+  def tool_trace_content(event, tool_name, metadata)
+    content = format(TOOL_CONTENT.fetch(event), tool_name: tool_name)
+    content = "#{content}: #{metadata['error']}" if event == 'failed' && metadata['error'].present?
+    content
   end
 
   def tool_trace_status(event)

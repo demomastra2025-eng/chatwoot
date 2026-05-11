@@ -55,6 +55,10 @@ watch(
         :key="copilotMessage.id"
         :content="copilotMessage.message.content"
         :reasoning="copilotMessage.message.reasoning"
+        :tool-name="copilotMessage.message.toolName"
+        :status="copilotMessage.message.status"
+        :input="copilotMessage.message.input"
+        :output="copilotMessage.message.output"
       />
     </div>
   </div>

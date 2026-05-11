@@ -368,8 +368,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       job = described_class.new
       callbacks, tool_trace_steps = job.send(:build_tool_trace_callbacks)
 
-      callbacks[:on_tool_start].call('search_documentation', {}, nil)
-      callbacks[:on_tool_complete].call('search_documentation', { results: [] }, nil)
+      callbacks[:on_tool_start].call('search_documentation', { query: 'pricing', api_token: 'x' }, nil)
+      callbacks[:on_tool_progress].call('search_documentation', { phase: 'searching' }, nil)
+      callbacks[:on_tool_complete].call('search_documentation', Captain::ToolResult.success(message: 'Found 2 docs', data: { ids: [1, 2] }), nil)
 
       response = { 'response' => 'Hey, welcome to Captain V2' }
       job.instance_variable_set(:@response, response)
@@ -380,12 +381,20 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                                             Captain::ToolTraceBuilder.step(
                                               tool_name: 'search_documentation',
                                               event: 'start',
-                                              sequence: 1
+                                              sequence: 1,
+                                              input: { query: 'pricing', api_token: 'x' }
                                             ),
                                             Captain::ToolTraceBuilder.step(
                                               tool_name: 'search_documentation',
-                                              event: 'complete',
-                                              sequence: 2
+                                              event: 'progress',
+                                              sequence: 2,
+                                              output: { phase: 'searching' }
+                                            ),
+                                            Captain::ToolTraceBuilder.step(
+                                              tool_name: 'search_documentation',
+                                              event: 'finish',
+                                              sequence: 3,
+                                              output: { success: true, message: 'Found 2 docs', data: { ids: [1, 2] } }
                                             )
                                           ])
       )

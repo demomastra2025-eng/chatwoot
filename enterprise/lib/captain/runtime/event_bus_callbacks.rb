@@ -49,6 +49,17 @@ class Captain::Runtime::EventBusCallbacks
     )
   end
 
+  def on_tool_progress(tool_name, details, context_wrapper)
+    publish(
+      'tool.progress',
+      context_wrapper,
+      tool_name: tool_name,
+      progress_type: payload_type(details),
+      progress_size: payload_size(details),
+      progress_preview: preview_payload(details)
+    )
+  end
+
   def on_tool_complete(tool_name, result, context_wrapper)
     normalized_result = Captain::ToolResult.normalize(result)
 

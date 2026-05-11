@@ -525,27 +525,62 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       on_agent_thinking: lambda { |_agent_name, *_args|
         maintain_typing_indicator
       },
-      on_tool_start: lambda { |tool_name, *_args|
-        maintain_typing_indicator
-        tool_trace_sequence += 1
-        tool_trace_steps << Captain::ToolTraceBuilder.step(
-          tool_name: tool_name,
-          event: 'start',
-          sequence: tool_trace_sequence
-        )
+      on_tool_start: lambda { |tool_name, args = nil, *_rest|
+        tool_trace_sequence = append_tool_start_trace(tool_trace_steps, tool_trace_sequence, tool_name, args)
       },
-      on_tool_complete: lambda { |tool_name, *_args|
-        maintain_typing_indicator
-        tool_trace_sequence += 1
-        tool_trace_steps << Captain::ToolTraceBuilder.step(
-          tool_name: tool_name,
-          event: 'complete',
-          sequence: tool_trace_sequence
-        )
+      on_tool_progress: lambda { |tool_name, details = nil, *_rest|
+        tool_trace_sequence = append_tool_progress_trace(tool_trace_steps, tool_trace_sequence, tool_name, details)
+      },
+      on_tool_complete: lambda { |tool_name, result = nil, *_rest|
+        tool_trace_sequence = append_tool_completion_trace(tool_trace_steps, tool_trace_sequence, tool_name, result)
       }
     }
 
     [callbacks, tool_trace_steps]
+  end
+
+  def append_tool_start_trace(tool_trace_steps, sequence, tool_name, args)
+    maintain_typing_indicator
+    sequence += 1
+    append_runtime_tool_trace_step(
+      tool_trace_steps,
+      tool_name: tool_name,
+      event: 'start',
+      sequence: sequence,
+      input: args
+    )
+    sequence
+  end
+
+  def append_tool_progress_trace(tool_trace_steps, sequence, tool_name, details)
+    maintain_typing_indicator
+    sequence += 1
+    append_runtime_tool_trace_step(
+      tool_trace_steps,
+      tool_name: tool_name,
+      event: 'progress',
+      sequence: sequence,
+      output: details
+    )
+    sequence
+  end
+
+  def append_tool_completion_trace(tool_trace_steps, sequence, tool_name, result)
+    maintain_typing_indicator
+    normalized_result = Captain::ToolResult.normalize(result)
+    sequence += 1
+    append_runtime_tool_trace_step(
+      tool_trace_steps,
+      tool_name: tool_name,
+      event: Captain::ToolResult.error?(normalized_result) ? 'failed' : 'finish',
+      sequence: sequence,
+      output: normalized_result
+    )
+    sequence
+  end
+
+  def append_runtime_tool_trace_step(tool_trace_steps, **)
+    tool_trace_steps << Captain::ToolTraceBuilder.step(**)
   end
 
   def maintain_typing_indicator

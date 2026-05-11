@@ -90,13 +90,15 @@ module Captain::ChatResponseHelper
     parsed_response['captain_trace'] = payload if payload.present?
   end
 
-  def append_tool_trace_step(tool_name, event)
+  def append_tool_trace_step(tool_name, event, input: nil, output: nil)
     @tool_trace_steps ||= []
     @tool_trace_sequence = @tool_trace_sequence.to_i + 1
     @tool_trace_steps << Captain::ToolTraceBuilder.step(
       tool_name: tool_name,
       event: event,
-      sequence: @tool_trace_sequence
+      sequence: @tool_trace_sequence,
+      input: input,
+      output: output
     )
   end
 end

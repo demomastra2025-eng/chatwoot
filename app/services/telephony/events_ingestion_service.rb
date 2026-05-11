@@ -29,6 +29,7 @@ class Telephony::EventsIngestionService
     'transfer_requested' => nil,
     'transfer_result' => nil,
     'tool_started' => nil,
+    'tool_progress' => nil,
     'tool_completed' => nil,
     'tool_failed' => nil,
     'ai_speaking' => nil,
@@ -468,7 +469,9 @@ class Telephony::EventsIngestionService
   end
 
   def voice_ai_tool_events(call_session)
-    call_session.events.where(event_type: %w[tool_started tool_completed tool_failed]).order(:created_at, :id).last(20).filter_map do |event|
+    tool_event_types = %w[tool_started tool_progress tool_completed tool_failed]
+
+    call_session.events.where(event_type: tool_event_types).order(:created_at, :id).last(20).filter_map do |event|
       event_payload = event.payload.to_h.deep_stringify_keys
       tool_payload = event_payload['payload'].is_a?(Hash) ? event_payload['payload'].deep_stringify_keys : {}
       metadata_payload = event_payload['metadata'].is_a?(Hash) ? event_payload['metadata'].deep_stringify_keys : {}
@@ -489,13 +492,13 @@ class Telephony::EventsIngestionService
   def ai_voice_event_types
     %w[
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out ai_speaking caller_interrupted
-      tool_started tool_completed tool_failed
+      tool_started tool_progress tool_completed tool_failed
     ]
   end
 
   def tool_status(event_type)
     case event_type
-    when 'tool_started'
+    when 'tool_started', 'tool_progress'
       'running'
     when 'tool_completed'
       'completed'

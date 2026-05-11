@@ -387,7 +387,8 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(ai_message.reload.additional_attributes.dig('captain_trace', 'tool_steps').last).to include(
       'tool_name' => 'faq_lookup',
       'event' => 'start',
-      'status' => 'running'
+      'status' => 'start',
+      'type' => 'captain_tool_event'
     )
   end
 

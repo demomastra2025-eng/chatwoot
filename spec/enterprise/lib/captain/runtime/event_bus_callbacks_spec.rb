@@ -57,6 +57,7 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     callbacks.on_chat_created(chat, 'assistant_agent', 'gpt-4.1-mini', context_wrapper)
     callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, context_wrapper)
     callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
+    callbacks.on_tool_progress('lookup_contact', { phase: 'querying' }, context_wrapper)
     callbacks.on_tool_complete('lookup_contact', { status: 'ok' }, context_wrapper)
     callbacks.on_agent_handoff('assistant_agent', 'scenario_agent', 'handoff', context_wrapper)
     callbacks.on_run_complete('scenario_agent', result, context_wrapper)
@@ -65,6 +66,7 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'llm.run.start',
       'llm.chat.complete',
       'llm.tool.execute',
+      'llm.tool.progress',
       'llm.tool.complete',
       'llm.agent.handoff',
       'llm.run.complete'
