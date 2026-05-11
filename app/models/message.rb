@@ -288,6 +288,10 @@ class Message < ApplicationRecord
     '[Attachment]' if attachments.any?
   end
 
+  def ai_voice_transcript_turn?
+    content_attributes.to_h.dig('data', 'type') == 'ai_voice_transcript_turn'
+  end
+
   private
 
   def prevent_message_flooding

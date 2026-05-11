@@ -402,7 +402,8 @@ class Telephony::EventsIngestionService
       data['data']['meta'] = existing_meta.merge(voice_meta)
     end
     data['data']['status'] = call_session.status
-    data['data']['ai_voice'] = voice_ai_message_state(call_session)
+    existing_ai_voice = data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}
+    data['data']['ai_voice'] = existing_ai_voice.merge(voice_ai_message_state(call_session))
     tools = voice_ai_tool_events(call_session)
     data['data']['tools'] = tools if tools.present?
     data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
@@ -442,7 +443,8 @@ class Telephony::EventsIngestionService
       'state' => voice_ai_state(call_session, latest_ai_event),
       'latest_event' => latest_ai_event&.event_type,
       'updated_at' => latest_ai_event&.created_at&.iso8601 || call_session.last_event_at&.iso8601,
-      'answered_by' => call_session.answered_by
+      'answered_by' => call_session.answered_by,
+      'timeline_messages_enabled' => true
     }.compact
   end
 

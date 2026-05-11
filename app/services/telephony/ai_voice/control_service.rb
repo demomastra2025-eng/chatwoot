@@ -14,6 +14,7 @@ class Telephony::AiVoice::ControlService
     ensure_call_session!
     ensure_allowed_action!
     record_control_event!
+    sync_conversation_timeline_event!
     ingest_lifecycle_event! if lifecycle_action?
 
     { status: 'ok', action: action }
@@ -24,16 +25,29 @@ class Telephony::AiVoice::ControlService
   attr_reader :payload
 
   def record_control_event!
-    metadata = (call_session.metadata || {}).deep_dup
-    ai_voice = metadata['ai_voice'] ||= {}
-    ai_voice['control_events'] ||= []
-    ai_voice['control_events'] << {
-      'action' => action,
-      'metadata' => payload['metadata'].is_a?(Hash) ? payload['metadata'] : {},
-      'at' => Time.current.iso8601
-    }
-    ai_voice['control_events'] = ai_voice['control_events'].last(100)
-    call_session.update!(metadata: metadata)
+    call_session.with_lock do
+      metadata = (call_session.metadata || {}).deep_dup
+      ai_voice = metadata['ai_voice'] ||= {}
+      ai_voice['control_event_sequence'] = ai_voice['control_event_sequence'].to_i + 1
+      @control_event_sequence = ai_voice['control_event_sequence']
+      ai_voice['control_events'] ||= []
+      ai_voice['control_events'] << {
+        'action' => action,
+        'metadata' => payload['metadata'].is_a?(Hash) ? payload['metadata'] : {},
+        'sequence' => @control_event_sequence,
+        'at' => Time.current.iso8601
+      }
+      ai_voice['control_events'] = ai_voice['control_events'].last(100)
+      call_session.update!(metadata: metadata)
+    end
+  end
+
+  def sync_conversation_timeline_event!
+    Telephony::AiVoice::ConversationTimelineService.new(call_session: call_session).record_control_event!(
+      action: action,
+      metadata: payload['metadata'].is_a?(Hash) ? payload['metadata'] : {},
+      sequence: @control_event_sequence
+    )
   end
 
   def ingest_lifecycle_event!

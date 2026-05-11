@@ -126,4 +126,24 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.MISSED_CALL');
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
+
+  it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          transcript: 'Клиент: привет',
+          transcriptItems: [{ speaker: 'caller', text: 'привет' }],
+          tools: [{ name: 'faq_lookup', status: 'completed' }],
+          aiVoice: {
+            enabled: true,
+            timelineMessagesEnabled: true,
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.text()).not.toContain('Клиент: привет');
+    expect(wrapper.text()).not.toContain('faq_lookup');
+  });
 });

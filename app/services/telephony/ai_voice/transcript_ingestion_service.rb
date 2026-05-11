@@ -14,6 +14,7 @@ class Telephony::AiVoice::TranscriptIngestionService
       update_call_session!(normalized_items)
       sync_voice_message_transcript!
       remove_legacy_transcript_messages!
+      sync_conversation_timeline!
     end
 
     {
@@ -60,7 +61,8 @@ class Telephony::AiVoice::TranscriptIngestionService
     data['data']['ai_voice'] = (data['data']['ai_voice'].is_a?(Hash) ? data['data']['ai_voice'] : {}).merge(
       'enabled' => true,
       'transcript_updated_at' => Time.current.iso8601,
-      'transcript_final' => transcript_items.any? { |item| item['final'] }
+      'transcript_final' => transcript_items.any? { |item| item['final'] },
+      'timeline_messages_enabled' => true
     )
     message.update!(content_attributes: data)
   end
@@ -109,7 +111,14 @@ class Telephony::AiVoice::TranscriptIngestionService
       message.destroy!
     end
     legacy_turn_source = "ai_voice_turn:#{ActiveRecord::Base.sanitize_sql_like(call_session.external_call_ref)}:%"
-    conversation.messages.where('source_id LIKE ?', legacy_turn_source).find_each(&:destroy!)
+    legacy_turn_pattern = /\Aai_voice_turn:#{Regexp.escape(call_session.external_call_ref)}:\d+\z/
+    conversation.messages.where('source_id LIKE ?', legacy_turn_source).find_each do |message|
+      message.destroy! if message.source_id.to_s.match?(legacy_turn_pattern)
+    end
+  end
+
+  def sync_conversation_timeline!
+    Telephony::AiVoice::ConversationTimelineService.new(call_session: call_session).sync_transcript_turns!
   end
 
   def merge_items(existing_items, new_items)

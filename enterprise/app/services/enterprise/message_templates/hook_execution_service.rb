@@ -66,7 +66,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def should_process_captain_response?
-    conversation.pending? && message.incoming? && !message.voice_call? && inbox.captain_assistant.present?
+    conversation.pending? && message.incoming? && !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
   end
 
   def perform_handoff

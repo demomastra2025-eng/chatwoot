@@ -89,7 +89,8 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'speaker' => 'ai',
       'text' => 'Сейчас соединю вас со специалистом.'
     )
-    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
+    transcript_message = conversation.messages.find_by!(source_id: "ai_voice_turn:#{call_session.external_call_ref}:0:ai")
+    expect(transcript_message).to have_attributes(message_type: 'outgoing', content: 'Сейчас соединю вас со специалистом.')
   end
 
   it 'finalizes once and returns an idempotent response for duplicate finalize payloads' do
@@ -349,6 +350,78 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'stores voice control events as native activity messages and attaches tool trace to the latest AI message' do
+    ai_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :text,
+      message_type: :outgoing,
+      content: 'Сейчас проверю информацию.',
+      source_id: "ai_voice_turn:#{call_session.external_call_ref}:1:ai",
+      content_attributes: { data: { type: 'ai_voice_transcript_turn', call_ref: call_session.external_call_ref, speaker: 'ai' } }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/control',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             action: 'tool_started',
+             metadata: {
+               tool_name: 'faq_lookup',
+               tool_call_id: 'tool-call-1',
+               provider: 'gemini-live',
+               timeout_ms: 6000
+             }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    activity_message = conversation.messages.activity.find_by!(source_id: "ai_voice_event:#{call_session.external_call_ref}:tool_started:tool-call-1")
+    expect(activity_message.content).to eq('Инструмент faq_lookup запущен')
+    expect(activity_message.content_attributes.dig('data', 'metadata')).to include('tool_name' => 'faq_lookup', 'tool_call_id' => 'tool-call-1')
+    expect(ai_message.reload.additional_attributes.dig('captain_trace', 'tool_steps').last).to include(
+      'tool_name' => 'faq_lookup',
+      'event' => 'start',
+      'status' => 'running'
+    )
+  end
+
+  it 'keeps native activity source ids monotonic after control event history is trimmed' do
+    metadata = call_session.metadata.deep_dup
+    metadata['ai_voice'] = {
+      'control_event_sequence' => 100,
+      'control_events' => Array.new(100) { |index| { 'action' => 'ai_speaking', 'sequence' => index + 1 } }
+    }
+    call_session.update!(metadata: metadata)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      2.times do
+        post '/internal/voice/ai/control',
+             params: {
+               call_ref: call_session.external_call_ref,
+               account_id: account.id,
+               action: 'ai_speaking',
+               metadata: { source: 'regression' }
+             },
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    expect(call_session.reload.metadata.dig('ai_voice', 'control_event_sequence')).to eq(102)
+    source_ids = [
+      "ai_voice_event:#{call_session.external_call_ref}:ai_speaking:101",
+      "ai_voice_event:#{call_session.external_call_ref}:ai_speaking:102"
+    ]
+    expect(conversation.messages.activity.where(source_id: source_ids).count).to eq(2)
+  end
+
   it 'marks media-not-established lifecycle as a failed terminal call without pretending media existed' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/control',
@@ -425,7 +498,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'partial_transcript' => include(include('text' => 'Хотите', 'final' => false))
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('text')).to include('Хотите')
-    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%")).not_to exist
+    expect(conversation.messages.where('source_id LIKE ?', "ai_voice_turn:#{call_session.external_call_ref}:%").pluck(:content)).to include('Хотите')
   end
 
   def create_voice_call_message!

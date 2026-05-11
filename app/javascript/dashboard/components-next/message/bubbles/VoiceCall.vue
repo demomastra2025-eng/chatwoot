@@ -65,10 +65,17 @@ const aiVoice = computed(() => data.value?.aiVoice || {});
 const tools = computed(() => data.value?.tools || []);
 const isAiVoice = computed(() => Boolean(aiVoice.value?.enabled));
 const aiVoiceState = computed(() => aiVoice.value?.state?.toString());
-const showTranscriptBlock = computed(
-  () => Boolean(transcript.value) || transcriptItems.value.length > 0
+const timelineMessagesEnabled = computed(
+  () => isAiVoice.value && Boolean(aiVoice.value?.timelineMessagesEnabled)
 );
-const showTools = computed(() => tools.value.length > 0);
+const showTranscriptBlock = computed(
+  () =>
+    !timelineMessagesEnabled.value &&
+    (Boolean(transcript.value) || transcriptItems.value.length > 0)
+);
+const showTools = computed(
+  () => !timelineMessagesEnabled.value && tools.value.length > 0
+);
 const isJoining = ref(false);
 const showTranscript = ref(true);
 const timeLabel = computed(() => messageTimestamp(createdAt.value, 'HH:mm'));
