@@ -59,6 +59,35 @@ RSpec.describe CampaignRun do
       expect(campaign_run.skipped_count).to eq(1)
       expect(campaign_run.error_message).to eq('No deliveries succeeded')
     end
+
+    it 'does not count pending deliveries without created messages as successful' do
+      create(:campaign_delivery, campaign: campaign, campaign_run: campaign_run, account: campaign.account, inbox: campaign.inbox, status: :pending)
+
+      campaign_run.complete_from_deliveries!(audience_size: 1)
+
+      expect(campaign_run.reload.failed?).to be(true)
+      expect(campaign_run.processed_count).to eq(0)
+      expect(campaign_run.successful_count).to eq(0)
+      expect(campaign_run.error_message).to eq('No deliveries succeeded')
+    end
+
+    it 'counts pending deliveries with created messages as successfully queued' do
+      create(
+        :campaign_delivery,
+        campaign: campaign,
+        campaign_run: campaign_run,
+        account: campaign.account,
+        inbox: campaign.inbox,
+        status: :pending,
+        metadata: { message_id: 123 }
+      )
+
+      campaign_run.complete_from_deliveries!(audience_size: 1)
+
+      expect(campaign_run.reload.completed?).to be(true)
+      expect(campaign_run.processed_count).to eq(1)
+      expect(campaign_run.successful_count).to eq(1)
+    end
   end
 
   describe '#fail!' do

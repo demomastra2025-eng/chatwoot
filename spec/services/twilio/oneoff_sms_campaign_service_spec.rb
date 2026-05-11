@@ -38,24 +38,25 @@ describe Twilio::OneoffSmsCampaignService do
       contact_with_label1.update_labels([label1.title])
       contact_with_label2.update_labels([label2.title])
       contact_with_both_labels.update_labels([label1.title, label2.title])
+      twilio_message = instance_double(Twilio::REST::Api::V2010::AccountContext::MessageInstance, sid: 'SM123')
       expect(twilio_messages).to receive(:create).with(
         body: campaign.message,
         messaging_service_sid: twilio_sms.messaging_service_sid,
         to: contact_with_label1.phone_number,
         status_callback: 'http://localhost:3000/twilio/delivery_status'
-      ).once
+      ).and_return(twilio_message)
       expect(twilio_messages).to receive(:create).with(
         body: campaign.message,
         messaging_service_sid: twilio_sms.messaging_service_sid,
         to: contact_with_label2.phone_number,
         status_callback: 'http://localhost:3000/twilio/delivery_status'
-      ).once
+      ).and_return(twilio_message)
       expect(twilio_messages).to receive(:create).with(
         body: campaign.message,
         messaging_service_sid: twilio_sms.messaging_service_sid,
         to: contact_with_both_labels.phone_number,
         status_callback: 'http://localhost:3000/twilio/delivery_status'
-      ).once
+      ).and_return(twilio_message)
 
       sms_campaign_service.perform
       expect(campaign.reload.completed?).to be true
@@ -80,7 +81,7 @@ describe Twilio::OneoffSmsCampaignService do
 
       error = Twilio::REST::TwilioError.new("The 'To' number #{contact_error.phone_number} is not a valid phone number.")
 
-      allow(twilio_messages).to receive(:create).and_return(nil)
+      twilio_message = instance_double(Twilio::REST::Api::V2010::AccountContext::MessageInstance, sid: 'SM456')
 
       expect(twilio_messages).to receive(:create).with(
         body: campaign.message,
@@ -94,7 +95,7 @@ describe Twilio::OneoffSmsCampaignService do
         messaging_service_sid: twilio_sms.messaging_service_sid,
         to: contact_success.phone_number,
         status_callback: 'http://localhost:3000/twilio/delivery_status'
-      ).once
+      ).and_return(twilio_message)
 
       expect(Rails.logger).to receive(:error).with(
         "[Twilio Campaign #{campaign.id}] Failed to send to #{contact_error.phone_number}: #{error.message}"

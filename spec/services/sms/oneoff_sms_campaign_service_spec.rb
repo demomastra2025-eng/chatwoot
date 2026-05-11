@@ -80,7 +80,7 @@ describe Sms::OneoffSmsCampaignService do
       error_message = 'SMS provider error'
 
       expect(sms_channel).to receive(:send_text_message).with(contact_error.phone_number, anything).and_raise(StandardError, error_message)
-      expect(sms_channel).to receive(:send_text_message).with(contact_success.phone_number, anything).and_return(nil)
+      expect(sms_channel).to receive(:send_text_message).with(contact_success.phone_number, anything).and_return('sms-message-id')
 
       expect(Rails.logger).to receive(:error).with("[SMS Campaign #{campaign.id}] Failed to send to #{contact_error.phone_number}: #{error_message}")
 

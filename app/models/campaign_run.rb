@@ -34,7 +34,7 @@
 #  fk_rails_...  (inbox_id => inboxes.id)
 #
 class CampaignRun < ApplicationRecord
-  SUCCESSFUL_DELIVERY_STATUSES = %w[pending submitted sent delivered read].freeze
+  SUCCESSFUL_DELIVERY_STATUSES = %w[submitted sent delivered read].freeze
 
   belongs_to :account
   belongs_to :campaign
@@ -127,6 +127,7 @@ class CampaignRun < ApplicationRecord
     end
 
     successful_count = SUCCESSFUL_DELIVERY_STATUSES.sum { |status| grouped_statuses[status] || 0 }
+    successful_count += queued_pending_delivery_count
     failed_count = grouped_statuses['failed'] || 0
     skipped_count = grouped_statuses['skipped'] || 0
 
@@ -137,6 +138,10 @@ class CampaignRun < ApplicationRecord
       failed_count: failed_count,
       skipped_count: skipped_count
     }
+  end
+
+  def queued_pending_delivery_count
+    campaign_deliveries.pending.where("metadata ? 'message_id'").count
   end
 
   def terminal_status_for_snapshot(snapshot)
