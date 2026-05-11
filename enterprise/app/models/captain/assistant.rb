@@ -64,6 +64,16 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
+  CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY = {
+    deal: 'list_deal_custom_fields',
+    task: 'list_task_custom_fields',
+    appointment: 'list_appointment_custom_fields'
+  }.freeze
+  CRM_CUSTOM_FIELD_AWARE_TOOL_IDS_BY_ENTITY = {
+    deal: %w[get_deal search_deals create_deal update_deal],
+    task: %w[get_task search_tasks create_task update_task],
+    appointment: %w[get_appointment search_appointments create_appointment update_appointment]
+  }.freeze
   SYSTEM_TEMPLATE_SLOT_LABELS = {
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT => 'Assistant system context',
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY => 'Assistant identity',
@@ -1114,9 +1124,18 @@ class Captain::Assistant < ApplicationRecord
 
   def companion_expanded_tool_ids(tool_ids)
     normalized_tool_ids = Array(tool_ids).map(&:to_s).uniq
-    return normalized_tool_ids if (normalized_tool_ids & CRM_DEAL_PIPELINE_AWARE_TOOL_IDS).empty?
+    expanded_tool_ids = normalized_tool_ids.dup
 
-    (normalized_tool_ids + CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS).uniq
+    deal_pipeline_tools_selected = normalized_tool_ids.intersect?(CRM_DEAL_PIPELINE_AWARE_TOOL_IDS)
+    expanded_tool_ids.concat(CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS) if deal_pipeline_tools_selected
+
+    CRM_CUSTOM_FIELD_AWARE_TOOL_IDS_BY_ENTITY.each do |entity_kind, aware_tool_ids|
+      next unless normalized_tool_ids.intersect?(aware_tool_ids)
+
+      expanded_tool_ids << CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY.fetch(entity_kind)
+    end
+
+    expanded_tool_ids.uniq
   end
 
   def tool_scope_enabled?(scope_name)

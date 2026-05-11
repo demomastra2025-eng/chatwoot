@@ -13,6 +13,9 @@ RSpec.describe Captain::ToolRegistry do
         'create_deal',
         'list_deal_pipelines',
         'list_deal_stages',
+        'list_deal_custom_fields',
+        'list_task_custom_fields',
+        'list_appointment_custom_fields',
         'create_appointment',
         'create_touch',
         'cancel_touch',
@@ -57,7 +60,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(71)
+      expect(agent_tool_ids.size).to eq(74)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -81,6 +84,7 @@ RSpec.describe Captain::ToolRegistry do
 
       list_pipelines = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'list_deal_pipelines' }
       list_stages = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'list_deal_stages' }
+      list_deal_fields = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'list_deal_custom_fields' }
 
       expect(list_pipelines).to include(
         id: 'list_deal_pipelines',
@@ -91,6 +95,13 @@ RSpec.describe Captain::ToolRegistry do
       )
       expect(list_stages).to include(
         id: 'list_deal_stages',
+        risk_level: 'low',
+        idempotent: true,
+        required_features: ['crm_deals'],
+        required_permissions: %w[crm_deal_view crm_deal_manage]
+      )
+      expect(list_deal_fields).to include(
+        id: 'list_deal_custom_fields',
         risk_level: 'low',
         idempotent: true,
         required_features: ['crm_deals'],

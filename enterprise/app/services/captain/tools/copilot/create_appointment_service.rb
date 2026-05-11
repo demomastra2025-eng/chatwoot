@@ -11,7 +11,11 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
   param :service_id, type: :number, desc: 'Optional service ID used to derive duration and pricing', required: false
   param :appointment_type, type: :string, desc: 'Appointment type', required: false
   param :client_comment, type: :string, desc: 'Client comment', required: false
-  param :custom_attributes, type: :object, desc: 'Optional custom attributes object', required: false
+  param :custom_attributes,
+        type: :object,
+        desc: 'Custom attributes object. Use the matching list_*_custom_fields tool first; only returned keys are accepted, ' \
+              'and select/multiselect values must match option.value exactly.',
+        required: false
 
   def execute(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
               custom_attributes: nil)

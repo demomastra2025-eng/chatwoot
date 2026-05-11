@@ -771,8 +771,10 @@ RSpec.describe Captain::Scenario, type: :model do
         instruction: 'Use [@Create Deal](tool://create_deal)'
       )
 
-      expect(scenario.runtime_tool_ids).to eq(%w[handoff create_deal list_deal_pipelines list_deal_stages])
-      expect(scenario.send(:agent_tools).map(&:name)).to contain_exactly('handoff', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
+      expected_tool_ids = %w[handoff create_deal list_deal_pipelines list_deal_stages list_deal_custom_fields]
+
+      expect(scenario.runtime_tool_ids).to eq(expected_tool_ids)
+      expect(scenario.send(:agent_tools).map(&:name)).to match_array(expected_tool_ids)
     end
   end
 end

@@ -391,6 +391,20 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'list_deal_custom_fields',
+          title: 'List Deal Custom Fields',
+          description: 'List active allowed CRM custom fields for deal custom_attributes with key, label, type, required flag, and select options',
+          group_name: 'CRM Deals',
+          icon: 'custom-field',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::ListDealCustomFieldsTool,
+          assistant_tool_class: Captain::Tools::Copilot::ListDealCustomFieldsService,
+          required_features: %w[crm_deals],
+          required_permissions: %w[crm_deal_view crm_deal_manage],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'get_deal_timeline',
           title: 'Get Deal Timeline',
           description: 'Get the timeline for a CRM deal',
@@ -481,6 +495,20 @@ class Captain::ToolRegistry
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
           risk_level: 'low'
+        ),
+        definition(
+          id: 'list_task_custom_fields',
+          title: 'List Task Custom Fields',
+          description: 'List active allowed CRM custom fields for task custom_attributes with key, label, type, required flag, and select options',
+          group_name: 'CRM Tasks',
+          icon: 'custom-field',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::ListTaskCustomFieldsTool,
+          assistant_tool_class: Captain::Tools::Copilot::ListTaskCustomFieldsService,
+          required_features: %w[crm_tasks],
+          required_permissions: %w[crm_task_view crm_task_manage],
+          risk_level: 'low',
+          idempotent: true
         ),
         definition(
           id: 'get_task_timeline',
@@ -695,6 +723,20 @@ class Captain::ToolRegistry
           assistant_tool_class: Captain::Tools::Copilot::SearchAppointmentsService,
           required_features: %w[scheduling],
           risk_level: 'low'
+        ),
+        definition(
+          id: 'list_appointment_custom_fields',
+          title: 'List Appointment Custom Fields',
+          description: 'List active allowed CRM custom fields for appointment custom_attributes with key, label, type, ' \
+                       'required flag, and select options',
+          group_name: 'Scheduling',
+          icon: 'custom-field',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::ListAppointmentCustomFieldsTool,
+          assistant_tool_class: Captain::Tools::Copilot::ListAppointmentCustomFieldsService,
+          required_features: %w[scheduling],
+          risk_level: 'low',
+          idempotent: true
         ),
         definition(
           id: 'list_scheduling_resources',

@@ -293,9 +293,35 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
-      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
-      expect(assistant.send(:agent_tools).map(&:name)).to contain_exactly('faq_lookup', 'create_deal', 'list_deal_pipelines', 'list_deal_stages')
+      expected_tool_ids = %w[faq_lookup create_deal list_deal_pipelines list_deal_stages list_deal_custom_fields]
+
+      expect(assistant.allowed_agent_tool_ids).to match_array(expected_tool_ids)
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to match_array(expected_tool_ids)
+      expect(assistant.send(:agent_tools).map(&:name)).to match_array(expected_tool_ids)
+    end
+
+    it 'adds CRM custom-field catalog companions for task and appointment write tools' do
+      account.enable_features!('crm_tasks', 'scheduling')
+
+      assistant.update!(
+        description: 'Use [@Create Task](tool://create_task) and [@Create Appointment](tool://create_appointment) when needed.',
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'agent' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+
+      expect(assistant.allowed_agent_tool_ids).to include(
+        'create_task',
+        'list_task_custom_fields',
+        'create_appointment',
+        'list_appointment_custom_fields'
+      )
     end
 
     it 'does not expose scenario-only template tool references in the root assistant prompt' do
