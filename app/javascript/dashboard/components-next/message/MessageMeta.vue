@@ -67,9 +67,13 @@ const subagentName = computed(
     formatAgentName(additionalAttributes.value?.agentName) ||
     formatAgentName(additionalAttributes.value?.agent_name)
 );
+const isAiVoiceTranscriptTurn = computed(
+  () => contentAttributes.value?.data?.type === 'ai_voice_transcript_turn'
+);
 
 const showStatusIndicator = computed(() => {
   if (isPrivate.value) return false;
+  if (isAiVoiceTranscriptTurn.value) return false;
   // Don't show status for failed messages, we already show error message
   if (status.value === MESSAGE_STATUS.FAILED) return false;
   // Don't show status for deleted messages

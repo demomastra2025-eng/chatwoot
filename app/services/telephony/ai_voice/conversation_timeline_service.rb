@@ -20,8 +20,8 @@ class Telephony::AiVoice::ConversationTimelineService
     'failed' => 'failed'
   }.freeze
   SYSTEM_CONTENT = {
-    'ai_ringing' => 'ИИ принимает звонок',
-    'ai_answered' => 'ИИ ответил на звонок',
+    'ai_ringing' => 'AI-принимает звонок',
+    'ai_answered' => 'AI-принимает звонок',
     'ai_speaking' => 'ИИ отвечает клиенту',
     'caller_interrupted' => 'Клиент перебил ответ ИИ',
     'transfer_started' => 'Начат перевод звонка оператору',

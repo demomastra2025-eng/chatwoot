@@ -123,4 +123,22 @@ describe('MessageMeta', () => {
     expect(wrapper.text()).toContain('Andalusiya');
     expect(wrapper.text()).not.toContain('scenario_35_andalusiya_agent');
   });
+
+  it('does not show a sending status for native AI voice transcript messages', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      contentAttributes: ref({
+        data: {
+          type: 'ai_voice_transcript_turn',
+          speaker: 'ai',
+        },
+      }),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'MessageStatus' }).exists()).toBe(
+      false
+    );
+  });
 });

@@ -54,6 +54,7 @@ const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'auto_reply_on_last_incoming',
   'message_collapse_window_seconds',
   'history_message_limit',
+  'voice_settings',
 ]);
 
 watch(
