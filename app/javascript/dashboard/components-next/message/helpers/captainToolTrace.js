@@ -13,6 +13,36 @@ const STATUS_BY_EVENT = {
   error: 'failed',
 };
 
+const parseStructuredString = value => {
+  if (typeof value !== 'string') return value;
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+const normalizeStructuredValue = value => {
+  const parsedValue = parseStructuredString(value);
+
+  if (Array.isArray(parsedValue)) {
+    return parsedValue.map(item => normalizeStructuredValue(item));
+  }
+
+  if (parsedValue && typeof parsedValue === 'object') {
+    return Object.entries(parsedValue).reduce((acc, [key, childValue]) => {
+      acc[key] = normalizeStructuredValue(childValue);
+      return acc;
+    }, {});
+  }
+
+  return parsedValue;
+};
+
 const redactValue = value => {
   if (Array.isArray(value)) {
     return value.map(item => redactValue(item));
@@ -44,7 +74,8 @@ const formatDetail = value => {
     return undefined;
   }
 
-  const redacted = redactValue(value);
+  const normalized = normalizeStructuredValue(value);
+  const redacted = redactValue(normalized);
 
   if (typeof redacted === 'string') {
     return redacted;

@@ -52,6 +52,49 @@ describe('buildCaptainToolTraceMessages', () => {
     ]);
   });
 
+  it('normalizes JSON strings inside tool details for readable panels', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captainTrace: {
+        toolSteps: [
+          {
+            id: 'crm:finish:1',
+            toolName: 'list_deal_custom_fields',
+            status: 'finish',
+            content: 'Completed list_deal_custom_fields',
+            output: {
+              message:
+                '{\n  "action": "list_deal_custom_fields",\n  "entity_kind": "deal",\n  "returned_count": 2,\n  "fields": [{"key":"source","label":"Источник"}]\n}',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(message.output).toContain('"message": {');
+    expect(message.output).toContain('"action": "list_deal_custom_fields"');
+    expect(message.output).toContain('"fields": [');
+    expect(message.output).not.toContain('\\n  \\"action\\"');
+  });
+
+  it('keeps malformed JSON-like strings readable as plain strings', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captainTrace: {
+        toolSteps: [
+          {
+            content: 'Failed malformed payload tool',
+            output: {
+              message: '{not valid json',
+              apiToken: 'x',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(message.output).toContain('"message": "{not valid json"');
+    expect(message.output).toContain('"apiToken": "[REDACTED]"');
+  });
+
   it('normalizes legacy status values from stored traces', () => {
     expect(
       buildCaptainToolTraceMessages({
