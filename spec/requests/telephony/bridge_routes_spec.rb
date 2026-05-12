@@ -51,6 +51,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'inbox_id' => voice_inbox.id,
       'account_id' => account.id
     )
+    expect(response.parsed_body).not_to have_key('fallback_mode')
+    expect(response.parsed_body).not_to have_key('fallback_app_ref')
   end
 
   it 'returns a registered operator pool for inbox members and excludes offline or busy bindings' do
@@ -141,7 +143,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'falls back when a SIP operator AOR is configured without a registration binding' do
+  it 'rejects operator-mode calls when a SIP operator AOR has no registration binding' do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: 'sip:unregistered@example.test',
@@ -163,14 +165,14 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'app',
-      'app_ref' => number_binding.configured_app_ref,
+      'action' => 'reject',
       'reason' => 'operator_unavailable'
     )
     expect(response.parsed_body).not_to have_key('agent_aor')
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'routes to AI before app fallback when the operator target is missing and the Captain side is enabled' do
+  it 'does not fall back from operator mode to AI when the operator target is missing' do
     number_binding.routing_policy.assign_attributes(
       mode: 'operator',
       operator_agent_ref: nil,
@@ -197,10 +199,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'ai',
-      'app_ref' => 'captain-ai-app-ref',
+      'action' => 'reject',
       'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
   it 'creates an idempotent native call lifecycle during route lookup' do
@@ -327,7 +329,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'falls back to the primary app when the operator is disabled' do
+  it 'rejects operator-mode calls when the operator is disabled instead of app fallback' do
     agent_binding = create(
       :telephony_agent_binding,
       account: account,
@@ -356,13 +358,13 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'app',
-      'app_ref' => number_binding.configured_app_ref,
+      'action' => 'reject',
       'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'falls back to ai when the operator is disabled and ai fallback is configured' do
+  it 'rejects operator-mode calls when the operator is disabled instead of AI fallback' do
     agent_binding = create(
       :telephony_agent_binding,
       account: account,
@@ -392,10 +394,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'ai',
-      'app_ref' => 'ai-fallback-app-ref',
+      'action' => 'reject',
       'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
   it 'routes an existing pending voice conversation to AI when AI routing is enabled' do
@@ -503,7 +505,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
-  it 'routes a pending conversation to AI even when the primary routing mode remains operator' do
+  it 'does not route a pending conversation to AI when the primary routing mode remains operator' do
     caller_number = '+15551230003'
     contact = create(:contact, account: account, phone_number: caller_number)
     contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
@@ -538,13 +540,13 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'ai',
-      'app_ref' => 'ai-status-aware-app-ref',
-      'reason' => 'pending_conversation_ai_route'
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'routes pending conversations to AI when the AI side is enabled and app remains the operator fallback' do
+  it 'does not route pending conversations to AI when operator mode has AI enabled only as fallback' do
     caller_number = '+15550000004'
     contact = create(:contact, account: account, phone_number: caller_number)
     contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
@@ -582,15 +584,13 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response).to have_http_status(:ok)
     expect(number_binding.routing_policy.reload.ai_enabled).to be(true)
     expect(response.parsed_body).to include(
-      'action' => 'ai',
-      'ai_mode' => 'onelink_managed',
-      'app_ref' => 'onelink-ai-status-aware-app-ref',
-      'reason' => 'pending_conversation_ai_route'
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'routes every existing non-pending voice conversation status to a registered operator ' \
-     'when AI routing is enabled' do
+  it 'keeps AI-mode calls on AI for every existing non-pending voice conversation status' do
     agent_binding = create(
       :telephony_agent_binding,
       :registered,
@@ -635,9 +635,9 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       aggregate_failures(status) do
         expect(response).to have_http_status(:ok)
         expect(response.parsed_body).to include(
-          'action' => 'operator',
-          'agent_aor' => 'sip:status-aware-operator@example.test',
-          'reason' => 'non_pending_conversation_operator_route'
+          'action' => 'ai',
+          'app_ref' => 'ai-status-aware-app-ref',
+          'reason' => 'ai_route'
         )
       end
     end
@@ -711,7 +711,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     number_binding.routing_policy.update!(
       mode: 'operator',
       operator_agent_aor: 'sip:1003@example.test',
-      fallback_mode: 'reject',
+      fallback_mode: 'ai',
+      ai_app_ref: 'out-of-office-ai-app',
       fallback_message: 'Fallback reject'
     )
     voice_inbox.update!(
@@ -749,6 +750,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'message' => 'We are closed now',
       'reason' => 'out_of_office'
     )
+    expect(response.parsed_body).not_to have_key('app_ref')
   end
 
   it 'rejects recursive runtime app routes instead of returning the ingress runtime app ref' do

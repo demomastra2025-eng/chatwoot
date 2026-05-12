@@ -27,9 +27,15 @@ class Telephony::InboundRoutingService
     status_decision = status_aware_conversation_decision
     return status_decision if status_decision.present?
 
-    return fallback_decision(reason: 'out_of_office', prefer_out_of_office_message: true) if inbox&.out_of_office?
+    return out_of_office_decision if inbox&.out_of_office?
 
     primary_decision
+  end
+
+  def out_of_office_decision
+    return reject_decision(reason: 'out_of_office', prefer_out_of_office_message: true) if routing_policy.operator_mode?
+
+    fallback_decision(reason: 'out_of_office', prefer_out_of_office_message: true)
   end
 
   def primary_decision
@@ -37,7 +43,7 @@ class Telephony::InboundRoutingService
     when 'operator'
       return operator_decision(reason: 'operator_route') if operator_routable?
 
-      fallback_decision(reason: 'operator_unavailable', prefer_ai: ai_routing_enabled?)
+      reject_decision(reason: 'operator_unavailable')
     when 'app'
       return app_decision(reason: 'app_route') if resolved_primary_app_ref.present?
 
@@ -54,28 +60,16 @@ class Telephony::InboundRoutingService
   end
 
   def status_aware_conversation_decision
-    return unless ai_routing_enabled?
+    return unless routing_policy.ai_mode?
     return if existing_voice_conversation.blank?
 
     return pending_conversation_ai_decision if existing_voice_conversation.pending?
-
-    non_pending_conversation_operator_decision
   end
 
   def pending_conversation_ai_decision
     return ai_decision(reason: 'pending_conversation_ai_route') if resolved_ai_app_ref.present?
 
     fallback_decision(reason: ai_app_failure_reason)
-  end
-
-  def non_pending_conversation_operator_decision
-    return operator_decision(reason: 'non_pending_conversation_operator_route') if operator_routable?
-
-    fallback_decision(reason: 'operator_unavailable', prefer_ai: true)
-  end
-
-  def ai_routing_enabled?
-    routing_policy.ai_enabled? || routing_policy.ai_mode? || routing_policy.fallback_mode == 'ai'
   end
 
   def ensure_route_lifecycle!(decision)
@@ -189,7 +183,7 @@ class Telephony::InboundRoutingService
     {
       action: 'operator',
       reason: reason
-    }.merge(operator_target_payload).merge(operator_runtime_fallback_payload).merge(shared_context)
+    }.merge(operator_target_payload).merge(shared_context)
   end
 
   def operator_target_payload
@@ -264,17 +258,6 @@ class Telephony::InboundRoutingService
       user_id: binding.user_id,
       name: binding.user&.name
     }.compact
-  end
-
-  def operator_runtime_fallback_payload
-    case fallback_order.find { |mode| mode != 'operator' && fallback_target_available?(mode) }
-    when 'ai'
-      { fallback_mode: 'ai', fallback_app_ref: resolved_ai_app_ref }
-    when 'app'
-      { fallback_mode: 'app', fallback_app_ref: resolved_primary_app_ref }
-    else
-      {}
-    end
   end
 
   def fallback_target_available?(mode)
