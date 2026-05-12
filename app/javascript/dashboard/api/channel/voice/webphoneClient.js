@@ -6,6 +6,7 @@ const FORWARDED_EVENTS = [
   'call:disconnected',
   'call:incoming',
   'call:registered',
+  'call:unregistered',
 ];
 
 const looksLikeTwilioSession = response => {
@@ -44,6 +45,7 @@ class WebphoneClient extends EventTarget {
     FORWARDED_EVENTS.forEach(eventName => {
       Object.entries(this.clients).forEach(([provider, client]) => {
         client.addEventListener(eventName, event => {
+          this.updateProviderRegistration(provider, eventName);
           this.dispatchEvent(
             new CustomEvent(eventName, {
               detail: {
@@ -71,6 +73,15 @@ class WebphoneClient extends EventTarget {
 
   getSession(provider = this.activeProvider) {
     return this.providerSessions[provider] || null;
+  }
+
+  updateProviderRegistration(provider, eventName) {
+    if (!provider || !this.providerSessions[provider]) return;
+    if (eventName === 'call:registered') {
+      this.providerSessions[provider].registered = true;
+    } else if (eventName === 'call:unregistered') {
+      this.providerSessions[provider].registered = false;
+    }
   }
 
   supportsBrowserCalling(provider, { callDirection = null } = {}) {

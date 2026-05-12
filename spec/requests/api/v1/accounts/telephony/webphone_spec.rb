@@ -366,6 +366,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'terminates an operator call when the browser phone cannot decline the SIP leg' do
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
     call_session = create(
       :telephony_call_session,
       account: account,
@@ -374,7 +375,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       metadata: {
         'metadata' => {
           'route_action' => 'operator',
-          'operator_candidate_user_ids' => [administrator.id]
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [agent_binding.agent_ref]
         }
       }
     )
@@ -426,5 +428,65 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       ended_by: "user:#{administrator.id}",
       end_reason: 'browser_webphone_not_ready'
     )
+  end
+
+  it 'rejects browser release attempts from unregistered operators before a claim' do
+    agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-unregistered-1',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [agent_binding.agent_ref]
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, reason: 'operator_rejected_from_browser' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body['code']).to eq('OPERATOR_NOT_CANDIDATE')
+    expect(call_session.reload.status).to eq('ringing')
+  end
+
+  it 'does not let a second operator release a call claimed by someone else' do
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    loser_user = create(:user, account: account, role: :agent)
+    loser_headers = loser_user.create_new_auth_token
+    loser = create(:telephony_agent_binding, :registered, account: account, user: loser_user, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-claimed-other-1',
+      status: 'connecting',
+      agent_binding: winner,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id, loser_user.id],
+          'operator_candidate_agent_refs' => [winner.agent_ref, loser.agent_ref]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'agent_binding_id' => winner.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'no_answer', reason: 'browser_webphone_not_ready' },
+         headers: loser_headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
+    expect(call_session.reload.status).to eq('connecting')
   end
 end

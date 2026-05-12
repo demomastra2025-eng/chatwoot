@@ -149,5 +149,13 @@ describe('webphoneClient', () => {
         callDirection: 'inbound',
       })
     ).toBe(false);
+
+    WebphoneClient.updateProviderRegistration('fonoster', 'call:registered');
+
+    expect(
+      WebphoneClient.supportsBrowserCalling('fonoster', {
+        callDirection: 'inbound',
+      })
+    ).toBe(true);
   });
 });

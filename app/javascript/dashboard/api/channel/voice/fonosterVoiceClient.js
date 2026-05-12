@@ -10,6 +10,9 @@ const createCallIncomingEvent = detail =>
 const createCallRegisteredEvent = detail =>
   new CustomEvent('call:registered', { detail });
 
+const createCallUnregisteredEvent = detail =>
+  new CustomEvent('call:unregistered', { detail });
+
 class FonosterVoiceClient extends EventTarget {
   constructor() {
     super();
@@ -123,6 +126,9 @@ class FonosterVoiceClient extends EventTarget {
       onUnregistered: () => {
         this.registered = false;
         FonosterVoiceClient.reportPresence(false);
+        this.dispatchEvent(
+          createCallUnregisteredEvent({ provider: 'fonoster' })
+        );
       },
       onServerConnect: () => {
         this.connected = true;
