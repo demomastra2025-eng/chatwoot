@@ -11,6 +11,7 @@ class Captain::Assistant::AgentRunnerService
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
+  MAX_BLANK_RESPONSE_RETRIES = 1
 
   class BlankResponseError < StandardError; end
 
@@ -30,17 +31,7 @@ class Captain::Assistant::AgentRunnerService
       input_moderation_response = moderate_input(message_to_process, context)
       return input_moderation_response if input_moderation_response
 
-      result = runner.run(
-        message_to_process,
-        context: context,
-        max_turns: MAX_RUNTIME_TURNS,
-        runtime_options: {
-          llm_context: llm_context_for_run,
-          account: @assistant.account
-        }
-      )
-
-      process_agent_result(result)
+      run_agent_with_blank_response_retries(message_to_process, context)
     end
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
@@ -52,6 +43,76 @@ class Captain::Assistant::AgentRunnerService
   end
 
   private
+
+  def run_agent_with_blank_response_retries(message_to_process, context)
+    attempts = 0
+    blank_response_retried = false
+
+    loop do
+      result = run_agent(message_to_process, context)
+      response = process_agent_result(result)
+      return retry_annotated_response(response, blank_response_retried) unless retry_blank_response?(response, result, attempts)
+
+      attempts += 1
+      blank_response_retried = true
+      publish_blank_response_retry(result, attempts)
+    end
+  end
+
+  def retry_annotated_response(response, blank_response_retried)
+    return response unless blank_response_retried
+
+    response.merge('blank_response_retry' => true)
+  end
+
+  def run_agent(message_to_process, context)
+    runner.run(
+      message_to_process,
+      context: context,
+      max_turns: MAX_RUNTIME_TURNS,
+      runtime_options: {
+        llm_context: llm_context_for_run,
+        account: @assistant.account
+      }
+    )
+  end
+
+  def retry_blank_response?(response, result, attempts)
+    return false unless blank_response_error_payload?(response)
+    return false unless attempts < MAX_BLANK_RESPONSE_RETRIES
+
+    retry_safe_completed_tools?(result.context)
+  end
+
+  def blank_response_error_payload?(response)
+    response['error_class'] == BlankResponseError.name && response['error_message'] == blank_response_error.message
+  end
+
+  def retry_safe_completed_tools?(context)
+    completed_tool_names = Array(context&.dig(:captain_v2_completed_tool_names)).map(&:to_s)
+    completed_tool_names.all? { |tool_name| handoff_tool_name?(tool_name) }
+  end
+
+  def handoff_tool_name?(tool_name)
+    tool_name.start_with?(Captain::HandoffNaming::TOOL_PREFIX)
+  end
+
+  def publish_blank_response_retry(result, attempt)
+    current_agent = result.context&.dig(:current_agent)
+    Rails.logger.warn(
+      "[Captain V2] Retrying blank assistant response for assistant=#{@assistant.id} " \
+      "conversation=#{@conversation&.id} agent=#{current_agent} attempt=#{attempt}"
+    )
+    Llm::EventBus.publish(
+      'run.retry',
+      current_agent: current_agent,
+      status: 'retrying',
+      reason: 'blank_response',
+      error: true,
+      attempt: attempt,
+      max_attempts: MAX_BLANK_RESPONSE_RETRIES
+    )
+  end
 
   def process_agent_result(result)
     Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
@@ -277,8 +338,9 @@ class Captain::Assistant::AgentRunnerService
   def add_usage_metadata_callback(runner)
     handoff_tool_name = Captain::Tools::HandoffTool.new(@assistant).name
 
-    # This callback feeds ResponseBuilderJob even when OTEL is disabled.
+    # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, _tool_result, context_wrapper|
+      track_completed_tool_usage(tool_name, context_wrapper)
       track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
     end
 
@@ -288,6 +350,13 @@ class Captain::Assistant::AgentRunnerService
       end
     end
     runner
+  end
+
+  def track_completed_tool_usage(tool_name, context_wrapper)
+    return unless context_wrapper&.context
+
+    context_wrapper.context[:captain_v2_completed_tool_names] ||= []
+    context_wrapper.context[:captain_v2_completed_tool_names] << tool_name.to_s
   end
 
   def track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)

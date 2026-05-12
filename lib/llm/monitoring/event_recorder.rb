@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
-
 class Llm::Monitoring::EventRecorder
   PERSISTED_EVENTS = Set.new(
     %w[
@@ -11,6 +9,7 @@ class Llm::Monitoring::EventRecorder
       llm.moderation.complete
       llm.moderation.unavailable
       llm.run.complete
+      llm.run.retry
       llm.safety.blocked
       llm.schema.invalid
       llm.schema.repair_requested
@@ -85,7 +84,7 @@ class Llm::Monitoring::EventRecorder
       total_tokens: total_tokens,
       duration_ms: duration_ms,
       credit_multiplier: Llm::Models.credit_multiplier_for(model_name),
-      estimated_cost: estimated_cost(model_name, prompt_tokens:, completion_tokens:),
+      estimated_cost: estimated_cost(model_name, prompt_tokens: prompt_tokens, completion_tokens: completion_tokens),
       blocked: blocked?,
       moderation_skipped: moderation_skipped?,
       schema_invalid: schema_invalid?,

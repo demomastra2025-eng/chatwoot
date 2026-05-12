@@ -252,18 +252,47 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(response['handoff_tool_called']).to be true
     end
 
-    it 'converts blank structured agent output into a provider-error handoff payload' do
+    it 'retries once when structured agent output is blank before falling back' do
+      blank_result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => '', 'handoff_message' => '' },
+        context: { current_agent: 'scenario_agent', captain_v2_completed_tool_names: ['handoff_to_scenario_agent'] },
+        error: nil
+      )
+      recovered_result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'Recovered answer' },
+        context: { current_agent: 'scenario_agent' },
+        error: nil
+      )
+      allow(mock_runner).to receive(:run).and_return(blank_result, recovered_result)
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).twice
+      expect(result).to eq(
+        {
+          'response' => 'Recovered answer',
+          'agent_name' => 'scenario_agent',
+          'handoff_tool_called' => false,
+          'blank_response_retry' => true
+        }
+      )
+    end
+
+    it 'does not retry blank structured output after non-handoff tools completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
           output: { 'response' => '', 'handoff_message' => '' },
-          context: { current_agent: 'scenario_agent' },
+          context: { current_agent: 'scenario_agent', captain_v2_completed_tool_names: ['create_deal'] },
           error: nil
         )
       )
 
       result = service.generate_response(message_history: message_history)
 
+      expect(mock_runner).to have_received(:run).once
       expect(result).to eq(
         {
           'response' => described_class::PROVIDER_ERROR_RESPONSE,
@@ -859,6 +888,9 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       tool_complete_callback.call(Captain::Tools::HandoffTool.new(assistant).name, 'ok', context_wrapper)
 
+      expect(context_wrapper.context[:captain_v2_completed_tool_names]).to eq(
+        [Captain::Tools::HandoffTool.new(assistant).name]
+      )
       expect(root_span).to receive(:set_attribute).with('langfuse.trace.metadata.credit_used', 'false')
       run_complete_callback.call('assistant', nil, context_wrapper)
     end

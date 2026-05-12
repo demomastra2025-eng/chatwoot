@@ -70,6 +70,36 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.reason).to eq('provider_not_configured')
     end
 
+    it 'persists runtime retry events for blank-response recovery' do
+      described_class.record_notification(
+        event_name: 'llm.run.retry',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'runtime_mode' => 'captain_runtime',
+          'reason' => 'blank_response',
+          'status' => 'retrying',
+          'error' => true,
+          'attempt' => 1,
+          'max_attempts' => 1
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.run.retry',
+        account_id: account.id,
+        feature: 'assistant',
+        runtime_mode: 'captain_runtime',
+        reason: 'blank_response',
+        status: 'retrying',
+        error: true
+      )
+      expect(event.payload).to include('attempt' => 1, 'max_attempts' => 1)
+    end
+
     it 'sanitizes persisted payload details before storing them in llm_events' do
       described_class.record_notification(
         event_name: 'llm.chat.complete',
