@@ -202,7 +202,7 @@ function finalStatusForAction(action) {
   const normalized = String(action || '').toLowerCase();
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
-  if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_not_established')) return 'failed';
+  if (normalized.includes('provider_error') || normalized.includes('provider_stream_closed') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('media_stream_not_established')) return 'failed';
   if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('operator_unavailable') || normalized.includes('operator_no_answer')) return 'operator_unavailable';
   if (normalized.includes('transfer')) return 'transferred';

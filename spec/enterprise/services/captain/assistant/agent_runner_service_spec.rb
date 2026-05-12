@@ -252,11 +252,22 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(response['handoff_tool_called']).to be true
     end
 
-    it 'retries once when structured agent output is blank before falling back' do
+    it 'retries once from the post-handoff context when structured agent output is blank' do
+      retry_history = [
+        { role: :user, content: 'I need help with my account' },
+        { role: :assistant, content: '', agent_name: 'assistant_agent', tool_calls: [{ name: 'handoff_to_scenario_agent' }] },
+        { role: :tool, content: 'Transferred to scenario', tool_call_id: 'call_1' }
+      ]
+      blank_context = {
+        current_agent: 'scenario_agent',
+        conversation_history: retry_history,
+        captain_v2_handoff_tool_called: true,
+        captain_v2_completed_tool_names: ['handoff_to_scenario_agent']
+      }
       blank_result = instance_double(
         Captain::Runtime::Result,
         output: { 'response' => '', 'handoff_message' => '' },
-        context: { current_agent: 'scenario_agent', captain_v2_completed_tool_names: ['handoff_to_scenario_agent'] },
+        context: blank_context,
         error: nil
       )
       recovered_result = instance_double(
@@ -265,11 +276,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         context: { current_agent: 'scenario_agent' },
         error: nil
       )
-      allow(mock_runner).to receive(:run).and_return(blank_result, recovered_result)
+      run_contexts = []
+      allow(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
+        run_contexts << context
+        run_contexts.one? ? blank_result : recovered_result
+      end
 
       result = service.generate_response(message_history: message_history)
 
       expect(mock_runner).to have_received(:run).twice
+      expect(run_contexts.second).to include(
+        current_agent: 'scenario_agent',
+        conversation_history: retry_history
+      )
+      expect(run_contexts.second).not_to have_key(:captain_v2_handoff_tool_called)
+      expect(run_contexts.second).not_to have_key(:captain_v2_completed_tool_names)
       expect(result).to eq(
         {
           'response' => 'Recovered answer',

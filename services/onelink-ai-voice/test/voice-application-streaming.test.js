@@ -93,7 +93,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(result.mode, 'realtime');
   assert.equal(call.answerCount, 1);
   assert.equal(call.streamOptions.direction, 'both');
-  assert.equal(call.streamOptions.format, 'wav');
+  assert.equal(call.streamOptions.format, 'WAV');
   assert.equal(realtimeCallbacks.systemPrompt.includes('Здравствуйте'), true);
   assert.equal(realtimeCallbacks.systemPrompt.includes('Кайрат Сатыбалды'), true);
   assert.equal(realtimeCallbacks.systemPrompt.includes('Работай по инструкциям капитана.'), true);
@@ -119,6 +119,7 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(stream.writes[0].data.readInt16LE(0), 0);
   assert.equal(stream.writes[0].data.readInt16LE(2), 3);
   assert.equal(stream.writes[0].streamRef, 'stream-1');
+  assert.equal(stream.writes[0].format, 'WAV');
   assert.equal(stream.writes[0].mimeType, undefined);
 
   realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'нужен оператор', final: true });
@@ -226,6 +227,52 @@ test('VoiceApplication treats media stream close as an incomplete failure and pr
   assert.equal(events.some(event => event.event_type === 'media_stream_started'), true);
   assert.equal(events.some(event => event.event_type === 'call_ended' && event.payload.reason === 'media_stream_closed'), true);
   assert.equal(controls.some(payload => payload.action === 'session_completed'), false);
+});
+
+test('VoiceApplication classifies media writer byte errors as framing failures', async () => {
+  const stream = new FakeVoiceStream();
+  stream.write = () => {
+    throw new Error('Read wrong number of bytes (478/1121) for payload');
+  };
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-framing-error' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-framing-error', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-framing-error' });
+  const geminiPcm24 = Buffer.alloc(960);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
+
+  await result.completion;
+
+  assert.equal(controls.at(-1).action, 'media_stream_framing_error');
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'media_stream_framing_error');
+  assert.equal(events.some(event => event.event_type === 'media_stream_framing_error'), true);
+  const framingEvent = events.find(event => event.event_type === 'media_stream_framing_error');
+  assert.equal(framingEvent.payload.expected_frame_bytes, 320);
+  assert.equal(framingEvent.payload.output_encoding, 'pcm_s16le');
+  assert.equal(framingEvent.payload.error_message, 'Read wrong number of bytes (478/1121) for payload');
 });
 
 test('VoiceApplication fails explicitly when app leg answers but media stream is not established', async () => {

@@ -227,6 +227,7 @@ class VoiceApplication {
       sendContinuation: text => realtime?.sendText?.(text)
     });
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
+    const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
       media_session_ref: mediaSessionRef,
@@ -234,7 +235,11 @@ class VoiceApplication {
       input_rate: FONOSTER_INPUT_RATE,
       output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
-      gemini_model: context.ai?.model
+      gemini_model: context.ai?.model,
+      output_format: streamConstants.wavFormat,
+      output_encoding: 'pcm_s16le',
+      frame_ms: 20,
+      expected_frame_bytes: mediaFrameBytes
     });
     await session.safeEvent('media_stream_started', {
       ...correlationPayload(session, requestPayload, context),
@@ -244,9 +249,31 @@ class VoiceApplication {
       input_rate: FONOSTER_INPUT_RATE,
       telephony_output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
+      output_format: streamConstants.wavFormat,
+      output_encoding: 'pcm_s16le',
       frame_ms: 20,
+      expected_frame_bytes: mediaFrameBytes,
       output_max_buffered_ms: this.outputMaxBufferedMs
     });
+    let mediaWriterStarted = false;
+    let mediaWriteFailed = false;
+    const failMediaWrite = (reason, metadata = {}) => {
+      if (mediaWriteFailed) return;
+      mediaWriteFailed = true;
+      const payload = compactPayload({
+        reason,
+        output_format: streamConstants.wavFormat,
+        output_encoding: 'pcm_s16le',
+        telephony_output_rate: FONOSTER_CALL_RATE,
+        frame_ms: 20,
+        expected_frame_bytes: mediaFrameBytes,
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef,
+        ...metadata
+      });
+      void session.safeEvent('media_stream_framing_error', payload);
+      void completion?.finish?.('media_stream_framing_error', payload);
+    };
     const outputPacer = mediaStream ? new Pcm16FramePacer({
       sampleRate: FONOSTER_CALL_RATE,
       frameMs: 20,
@@ -259,13 +286,46 @@ class VoiceApplication {
         });
       },
       onFrame: data => {
-        mediaStream.write({
-          mediaSessionRef,
-          streamRef,
-          format: streamConstants.wavFormat,
-          type: streamConstants.audioOut,
-          data
-        });
+        const frame = Buffer.from(data);
+        const validationError = validatePcm16Frame(frame, mediaFrameBytes);
+        if (validationError) {
+          failMediaWrite(validationError, { actual_frame_bytes: frame.length });
+          return;
+        }
+        if (!mediaWriterStarted) {
+          mediaWriterStarted = true;
+          void session.safeEvent('media_writer_started', {
+            stream_ref: streamRef,
+            media_session_ref: mediaSessionRef,
+            output_format: streamConstants.wavFormat,
+            output_encoding: 'pcm_s16le',
+            telephony_output_rate: FONOSTER_CALL_RATE,
+            frame_ms: 20,
+            frame_bytes: frame.length
+          });
+        }
+        try {
+          const writeResult = mediaStream.write({
+            mediaSessionRef,
+            streamRef,
+            format: streamConstants.wavFormat,
+            type: streamConstants.audioOut,
+            data: frame
+          });
+          if (writeResult && typeof writeResult.then === 'function') {
+            writeResult.catch(error => {
+              const reason = mediaWriteFailureReason(error, 'media_writer_rejected');
+              failMediaWrite(reason, {
+                error_message: sanitizeReason(error?.message || error?.reason || reason)
+              });
+            });
+          }
+        } catch (error) {
+          const reason = mediaWriteFailureReason(error, 'media_writer_failed');
+          failMediaWrite(reason, {
+            error_message: sanitizeReason(error?.message || error?.reason || reason)
+          });
+        }
       }
     }) : null;
     let completion = null;
@@ -1005,7 +1065,7 @@ function finalStatusForCompletionAction(action) {
   const normalized = String(action || '').toLowerCase();
   if (normalized.includes('caller_hangup')) return 'caller_hung_up';
   if (normalized.includes('media_stream_not_established')) return 'failed';
-  if (normalized.includes('media_stream_closed') || normalized.includes('provider_stream_closed') || normalized.includes('provider_error')) return 'failed';
+  if (normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('provider_stream_closed') || normalized.includes('provider_error')) return 'failed';
   if (normalized.includes('fonoster_call_closed') || normalized.includes('runtime_closed')) return 'cancelled';
   if (normalized.includes('failed')) return 'failed';
   if (normalized.includes('transfer')) return 'transferred';
@@ -1014,7 +1074,7 @@ function finalStatusForCompletionAction(action) {
 
 function shouldDrainOutput(action) {
   const normalized = String(action || '').toLowerCase();
-  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_not_established') || normalized.includes('fonoster_call_closed')) return false;
+  if (normalized.includes('caller_hangup') || normalized.includes('media_stream_closed') || normalized.includes('media_stream_framing_error') || normalized.includes('media_stream_not_established') || normalized.includes('fonoster_call_closed')) return false;
   if (normalized.includes('provider_error') || normalized.includes('session_failed') || normalized.includes('transfer')) return false;
   return true;
 }
@@ -1039,9 +1099,28 @@ function registerStreamCompletion(mediaStream, finish) {
     registered = registerOnce(mediaStream, eventName, () => { void finish('media_stream_closed', { source: `mediaStream.${eventName}` }); }) || registered;
   }
   for (const eventName of ['error', 'ERROR']) {
-    registered = registerOnce(mediaStream, eventName, () => { void finish('session_failed', { source: `mediaStream.${eventName}` }); }) || registered;
+    registered = registerOnce(mediaStream, eventName, error => {
+      const action = mediaStreamErrorAction(error);
+      void finish(action, compactPayload({
+        source: `mediaStream.${eventName}`,
+        error_message: sanitizeReason(error?.message || error?.reason || action),
+        error_code: error?.code
+      }));
+    }) || registered;
   }
   return registered;
+}
+
+function mediaStreamErrorAction(error) {
+  const message = String(error?.message || error?.reason || error?.code || '').toLowerCase();
+  if (message.includes('wrong number of bytes') || message.includes('payload') || message.includes('frame')) {
+    return 'media_stream_framing_error';
+  }
+  return 'session_failed';
+}
+
+function mediaWriteFailureReason(error, fallback) {
+  return mediaStreamErrorAction(error) === 'media_stream_framing_error' ? 'media_stream_framing_error' : fallback;
 }
 
 function callCompletionAction(eventName) {
@@ -1198,6 +1277,25 @@ function fonosterAudioChunk(chunk, metadata = {}) {
   return resamplePcm16(buffer, sourceRate, FONOSTER_CALL_RATE);
 }
 
+function pcm16FrameBytes(sampleRate, frameMs) {
+  const bytes = Math.max(2, Math.round((Number(sampleRate || 0) * Number(frameMs || 0) * 2) / 1000));
+  return bytes % 2 === 0 ? bytes : bytes + 1;
+}
+
+function validatePcm16Frame(frame, expectedFrameBytes) {
+  if (!Buffer.isBuffer(frame)) return 'media_frame_not_buffer';
+  if (frame.length !== expectedFrameBytes) return 'media_frame_size_mismatch';
+  if (frame.length % 2 !== 0) return 'media_frame_unaligned_pcm16';
+  if (looksLikeWavHeader(frame)) return 'media_frame_contains_wav_header';
+  return null;
+}
+
+function looksLikeWavHeader(buffer) {
+  return buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WAVE';
+}
+
 function audioRateFromMimeType(mimeType) {
   const match = String(mimeType || '').match(/rate\s*=\s*(\d+)/i);
   if (!match) return null;
@@ -1282,7 +1380,7 @@ class Pcm16FramePacer {
 
   tick() {
     if (this.closed || this.buffer.length < this.frameBytes) return;
-    const frame = this.buffer.subarray(0, this.frameBytes);
+    const frame = Buffer.from(this.buffer.subarray(0, this.frameBytes));
     this.buffer = this.buffer.subarray(this.frameBytes);
     this.onFrame?.(frame);
   }
@@ -1598,14 +1696,14 @@ function loadStreamConstants() {
     return {
       audioIn: common.StreamMessageType?.AUDIO_IN || 'audio_in',
       audioOut: common.StreamMessageType?.AUDIO_OUT || 'audio_out',
-      wavFormat: common.StreamAudioFormat?.WAV || 'wav',
+      wavFormat: common.StreamAudioFormat?.WAV || 'WAV',
       bothDirection: common.StreamDirection?.BOTH || 'both'
     };
   } catch (_error) {
     return {
       audioIn: 'audio_in',
       audioOut: 'audio_out',
-      wavFormat: 'wav',
+      wavFormat: 'WAV',
       bothDirection: 'both'
     };
   }

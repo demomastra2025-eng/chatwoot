@@ -48,6 +48,9 @@ class Captain::Runtime::AgentRunner
   end
 
   def determine_conversation_agent(context)
+    current_agent_name = context[:current_agent] || context['current_agent']
+    return @registry[current_agent_name] if @registry[current_agent_name]
+
     history = context[:conversation_history] || []
     return @default_agent if history.empty?
 

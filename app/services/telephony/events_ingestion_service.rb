@@ -20,6 +20,8 @@ class Telephony::EventsIngestionService
     'media_stream_started' => 'in_progress',
     'media_stream_closed' => 'failed',
     'media_stream_not_established' => 'failed',
+    'media_stream_framing_error' => 'failed',
+    'media_writer_started' => nil,
     'app_received_call' => 'ringing',
     'app_answered' => 'in_progress',
     'ai_ringing' => 'ringing',
@@ -492,7 +494,7 @@ class Telephony::EventsIngestionService
   def ai_voice_event_types
     %w[
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out ai_speaking caller_interrupted
-      tool_started tool_progress tool_completed tool_failed
+      media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed
     ]
   end
 

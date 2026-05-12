@@ -15,27 +15,29 @@ RSpec.describe Captain::Runtime::AgentRunner do
       expect(runtime_runner).to receive(:run).with(
         scenario_agent,
         'continue',
-        context: {
-          conversation_history: [
-            { 'role' => 'assistant', 'agent_name' => 'scenario_agent', 'content' => 'Handled by scenario' }
-          ]
-        },
-        registry: {
-          'assistant_agent' => assistant_agent,
-          'scenario_agent' => scenario_agent
-        },
-        max_turns: Captain::Runtime::Runner::DEFAULT_MAX_TURNS,
-        callbacks: {
-          run_start: [],
-          run_complete: [],
-          agent_complete: [],
-          tool_start: [],
-          tool_complete: [],
-          agent_thinking: [],
-          agent_handoff: [],
-          llm_call_complete: [],
-          chat_created: []
-        }
+        hash_including(
+          context: {
+            conversation_history: [
+              { 'role' => 'assistant', 'agent_name' => 'scenario_agent', 'content' => 'Handled by scenario' }
+            ]
+          },
+          registry: {
+            'assistant_agent' => assistant_agent,
+            'scenario_agent' => scenario_agent
+          },
+          max_turns: Captain::Runtime::Runner::DEFAULT_MAX_TURNS,
+          callbacks: hash_including(
+            run_start: [],
+            run_complete: [],
+            agent_complete: [],
+            tool_start: [],
+            tool_complete: [],
+            agent_thinking: [],
+            agent_handoff: [],
+            llm_call_complete: [],
+            chat_created: []
+          )
+        )
       ).and_return(:ok)
 
       expect(
@@ -44,6 +46,36 @@ RSpec.describe Captain::Runtime::AgentRunner do
           context: {
             conversation_history: [
               { 'role' => 'assistant', 'agent_name' => 'scenario_agent', 'content' => 'Handled by scenario' }
+            ]
+          }
+        )
+      ).to eq(:ok)
+    end
+
+    it 'prefers explicit current_agent from retry context over older history' do
+      runtime_runner = instance_double(Captain::Runtime::Runner, run: :ok)
+      allow(Captain::Runtime::Runner).to receive(:new).and_return(runtime_runner)
+
+      expect(runtime_runner).to receive(:run).with(
+        scenario_agent,
+        'continue',
+        hash_including(
+          context: hash_including(
+            current_agent: 'scenario_agent',
+            conversation_history: [
+              { role: :assistant, agent_name: 'assistant_agent', content: '', tool_calls: [{ name: 'handoff_to_scenario_agent' }] }
+            ]
+          )
+        )
+      ).and_return(:ok)
+
+      expect(
+        runner.run(
+          'continue',
+          context: {
+            current_agent: 'scenario_agent',
+            conversation_history: [
+              { role: :assistant, agent_name: 'assistant_agent', content: '', tool_calls: [{ name: 'handoff_to_scenario_agent' }] }
             ]
           }
         )

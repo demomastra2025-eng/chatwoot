@@ -47,15 +47,24 @@ class Captain::Assistant::AgentRunnerService
   def run_agent_with_blank_response_retries(message_to_process, context)
     attempts = 0
     blank_response_retried = false
+    retry_context = context
 
     loop do
-      result = run_agent(message_to_process, context)
+      result = run_agent(message_to_process, retry_context)
       response = process_agent_result(result)
       return retry_annotated_response(response, blank_response_retried) unless retry_blank_response?(response, result, attempts)
 
       attempts += 1
       blank_response_retried = true
+      retry_context = context_for_blank_response_retry(result.context)
       publish_blank_response_retry(result, attempts)
+    end
+  end
+
+  def context_for_blank_response_retry(context)
+    context.deep_dup.tap do |retry_context|
+      retry_context.delete(:captain_v2_handoff_tool_called)
+      retry_context.delete(:captain_v2_completed_tool_names)
     end
   end
 

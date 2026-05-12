@@ -138,10 +138,10 @@ function loadStreamConstants() {
   try {
     const common = require('@fonoster/common');
     return {
-      wavFormat: common.StreamAudioFormat?.WAV || 'wav'
+      wavFormat: common.StreamAudioFormat?.WAV || 'WAV'
     };
   } catch (_error) {
-    return { wavFormat: 'wav' };
+    return { wavFormat: 'WAV' };
   }
 }
 
