@@ -79,6 +79,7 @@ class WebphoneClient extends EventTarget {
 
     const session = this.getSession(provider);
     if (session?.callingSupported === false) return false;
+    if (provider === 'fonoster' && session?.registered === false) return false;
 
     return provider === 'twilio' || provider === 'fonoster';
   }

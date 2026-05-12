@@ -25,6 +25,18 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     )
   end
 
+  def reject
+    render_payload(
+      Telephony::OperatorCallRejectService.new(
+        account: Current.account,
+        user: Current.user,
+        call_ref: params.require(:call_ref),
+        status: params[:status],
+        reason: params[:reason]
+      ).perform
+    )
+  end
+
   private
 
   def webphone_service

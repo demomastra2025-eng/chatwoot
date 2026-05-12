@@ -400,6 +400,7 @@ Rails.application.routes.draw do
             post 'webphone/token', to: 'webphone#create'
             post 'webphone/presence', to: 'webphone#presence'
             post 'webphone/claim', to: 'webphone#claim'
+            post 'webphone/reject', to: 'webphone#reject'
           end
 
           resources :inbox_members, only: [:create, :show], param: :inbox_id do

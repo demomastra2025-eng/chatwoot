@@ -75,6 +75,21 @@ export function useCallSession() {
     }
   };
 
+  const releaseFonosterIncomingCall = async (
+    callSid,
+    { status = 'rejected', reason = 'operator_rejected_from_browser' } = {}
+  ) => {
+    if (!callSid) return null;
+
+    try {
+      return await VoiceAPI.rejectIncomingCall(callSid, { status, reason });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to release incoming call:', error);
+      return null;
+    }
+  };
+
   const joinCall = async ({
     conversationId,
     inboxId,
@@ -129,7 +144,12 @@ export function useCallSession() {
         });
 
         if (!joinResult) {
+          await releaseFonosterIncomingCall(callSid, {
+            status: 'no_answer',
+            reason: 'browser_webphone_not_ready',
+          });
           callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
+          callsStore.dismissCall(callSid);
           return {
             provider: 'fonoster',
             joinSupported: false,
@@ -191,7 +211,13 @@ export function useCallSession() {
     const provider = resolveCallProvider(call);
 
     if (provider === 'fonoster') {
-      await WebphoneClient.rejectIncomingCall(provider);
+      const clientResult = await WebphoneClient.rejectIncomingCall(provider);
+      if (!clientResult) {
+        await releaseFonosterIncomingCall(call?.callSid, {
+          status: 'rejected',
+          reason: 'operator_rejected_from_browser',
+        });
+      }
     } else {
       await WebphoneClient.endClientCall(provider);
     }

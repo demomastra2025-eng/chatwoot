@@ -136,4 +136,18 @@ describe('webphoneClient', () => {
       })
     ).toBe(true);
   });
+
+  it('does not advertise fonoster browser calling while SIP registration is not ready', () => {
+    WebphoneClient.providerSessions.fonoster = {
+      provider: 'fonoster',
+      callingSupported: true,
+      registered: false,
+    };
+
+    expect(
+      WebphoneClient.supportsBrowserCalling('fonoster', {
+        callDirection: 'inbound',
+      })
+    ).toBe(false);
+  });
 });

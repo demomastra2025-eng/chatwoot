@@ -364,4 +364,67 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body['code']).to eq('OPERATOR_NOT_CANDIDATE')
     expect(call_session.reload.agent_binding_id).to be_nil
   end
+
+  it 'terminates an operator call when the browser phone cannot decline the SIP leg' do
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-reject-1',
+      status: 'ringing',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id]
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, reason: 'operator_rejected_from_browser' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('rejected')
+    expect(call_session.reload).to have_attributes(
+      status: 'rejected',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'operator_rejected_from_browser'
+    )
+    expect(call_session.ended_at).to be_present
+  end
+
+  it 'marks an operator call as no-answer when claim succeeded but browser SIP had no pending call' do
+    agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-no-answer-1',
+      status: 'connecting',
+      agent_binding: agent_binding,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'agent_binding_id' => agent_binding.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'no_answer', reason: 'browser_webphone_not_ready' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('no_answer')
+    expect(call_session.reload).to have_attributes(
+      status: 'no_answer',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'browser_webphone_not_ready'
+    )
+  end
 end
