@@ -135,9 +135,15 @@ class FonosterVoiceClient extends EventTarget {
       },
       onServerDisconnect: () => {
         const hadCall = this.pendingIncomingCall || this.hasActiveCall;
+        const wasRegistered = this.registered;
         this.connected = false;
         this.registered = false;
         FonosterVoiceClient.reportPresence(false);
+        if (wasRegistered) {
+          this.dispatchEvent(
+            createCallUnregisteredEvent({ provider: 'fonoster' })
+          );
+        }
         this.pendingIncomingCall = false;
         this.hasActiveCall = false;
         if (hadCall) {

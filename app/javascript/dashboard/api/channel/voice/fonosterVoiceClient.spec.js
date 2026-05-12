@@ -104,4 +104,30 @@ describe('fonosterVoiceClient', () => {
     expect(updateWebphonePresenceMock).toHaveBeenCalledWith(false);
     expect(client.sessionState().registered).toBe(false);
   });
+
+  it('notifies aggregators that registration is unavailable after server disconnect', async () => {
+    registerMock.mockImplementation(() => {
+      simpleUserConstructorMock.mock.calls[0][1].delegate.onRegistered();
+      return Promise.resolve();
+    });
+    simpleUserConstructorMock.mockImplementation(() => ({
+      connect: connectMock,
+      disconnect: disconnectMock,
+      register: registerMock,
+      unregister: unregisterMock,
+      isConnected: () => true,
+    }));
+
+    const client = await importClient();
+    const listener = vi.fn();
+    client.addEventListener('call:unregistered', listener);
+    await client.initializeDevice(completeSessionConfig);
+    listener.mockClear();
+
+    simpleUserConstructorMock.mock.calls[0][1].delegate.onServerDisconnect();
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { provider: 'fonoster' } })
+    );
+  });
 });

@@ -489,4 +489,38 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
     expect(call_session.reload.status).to eq('connecting')
   end
+
+  it 'does not let stale operator claim metadata override a different claimed binding' do
+    winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'fonoster')
+    stale_metadata_user = create(:user, account: account, role: :agent)
+    stale_headers = stale_metadata_user.create_new_auth_token
+    stale_binding = create(:telephony_agent_binding, :registered, account: account, user: stale_metadata_user, provider: 'fonoster')
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-stale-claim-1',
+      status: 'connecting',
+      agent_binding: winner,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id, stale_metadata_user.id],
+          'operator_candidate_agent_refs' => [winner.agent_ref, stale_binding.agent_ref]
+        },
+        'operator_claim' => {
+          'user_id' => stale_metadata_user.id,
+          'agent_binding_id' => stale_binding.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'no_answer', reason: 'browser_webphone_not_ready' },
+         headers: stale_headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
+    expect(call_session.reload.status).to eq('connecting')
+  end
 end

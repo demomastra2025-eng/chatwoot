@@ -104,7 +104,9 @@ class Telephony::OperatorCallRejectService
   end
 
   def claimed_by_current_user?
-    call_session.agent_binding_id == agent_binding&.id || operator_claim_user_id == user.id
+    return call_session.agent_binding_id == agent_binding&.id if call_session.agent_binding_id.present?
+
+    operator_claim_user_id == user.id
   end
 
   def operator_claim_user_id
