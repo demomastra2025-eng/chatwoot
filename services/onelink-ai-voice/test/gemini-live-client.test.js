@@ -114,6 +114,34 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.deepEqual(socket.sent.at(-1).toolResponse.functionResponses[0].response, { ok: true, result: { found: true } });
 });
 
+test('GeminiLiveClient buffers streaming transcription chunks until the provider marks them complete', async () => {
+  FakeSocket.instances = [];
+  const transcripts = [];
+
+  const client = new GeminiLiveClient({
+    apiKey: 'secret-token-123',
+    model: 'gemini-live-test',
+    WebSocketImpl: FakeSocket,
+    onTranscript: item => transcripts.push(item)
+  });
+
+  const connectPromise = client.connect();
+  const socket = FakeSocket.instances[0];
+  socket.open();
+  socket.receive({ setupComplete: {} });
+  await connectPromise;
+
+  socket.receive({ serverContent: { outputTranscription: { text: 'Здравствуйте! Чем', finished: false } } });
+  socket.receive({ serverContent: { outputTranscription: { text: ' могу помочь?', finished: true } } });
+  socket.receive({ serverContent: { inputTranscription: { text: 'Какой у вас ', finished: false } } });
+  socket.receive({ serverContent: { inputTranscription: { text: 'слоган?', finished: false }, turnComplete: true } });
+
+  assert.deepEqual(transcripts.map(item => [item.speaker, item.text, item.final]), [
+    ['ai', 'Здравствуйте! Чем могу помочь?', true],
+    ['caller', 'Какой у вас слоган?', true]
+  ]);
+});
+
 test('buildGeminiLiveUrl uses the base websocket endpoint and never includes API key or model query', () => {
   const url = buildGeminiLiveUrl('gemini-live-test', 'do-not-leak');
   assert.equal(url.includes('do-not-leak'), false);

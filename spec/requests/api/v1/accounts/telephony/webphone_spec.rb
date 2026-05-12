@@ -50,6 +50,55 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'agent_ref')).to eq('fonoster-agent-42')
   end
 
+  it 'normalizes test-grade bridge SIP identity to the current operator binding' do
+    create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'fonoster',
+      agent_ref: 'fonoster-agent-1001',
+      agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+    )
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
+    ) do
+      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
+        .with(
+          body: hash_including(
+            agent_ref: 'fonoster-agent-1001',
+            agent_aor: 'sip:1001@operator.cloud.vconsult.kz'
+          ),
+          headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s }
+        )
+        .to_return(
+          status: 200,
+          body: {
+            token: 'test-token',
+            username: 'internal',
+            domain: 'internal',
+            displayName: 'Test Call Agent',
+            signalingServer: 'wss://bridge.example/ws',
+            targetAor: 'sip:voice@default'
+          }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      post path,
+           params: { inbox_id: voice_inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
+    expect(response.parsed_body.dig('payload', 'username')).to eq('1001')
+    expect(response.parsed_body.dig('payload', 'domain')).to eq('operator.cloud.vconsult.kz')
+    expect(response.parsed_body.dig('payload', 'targetAor')).to eq('sip:1001@operator.cloud.vconsult.kz')
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+  end
+
   it 'records browser registration presence on the agent binding' do
     agent_binding = create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
 

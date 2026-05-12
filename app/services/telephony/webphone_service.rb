@@ -11,6 +11,7 @@ class Telephony::WebphoneService
     response = response.deep_dup
     response['provider'] ||= fallback_provider(inbox, agent_binding)
     response['agent_ref'] ||= agent_binding&.agent_ref
+    apply_agent_binding_identity(response, agent_binding)
     apply_signaling_server_override(response)
     response['calling_supported'] = agent_binding_usable?(agent_binding) && bridge_calling_supported?(response)
     response
@@ -30,6 +31,7 @@ class Telephony::WebphoneService
     {
       chatwoot_user_id: user.id,
       agent_ref: agent_binding&.agent_ref,
+      agent_aor: agent_binding&.agent_aor,
       inbox_id: inbox&.id,
       number_ref: inbox&.telephony_number_binding&.number_ref
     }.compact
@@ -53,6 +55,43 @@ class Telephony::WebphoneService
     response['signalingServer'] = signaling_server_url
     response.delete('signaling_server')
     response.delete(:signaling_server)
+  end
+
+  def apply_agent_binding_identity(response, agent_binding)
+    return unless apply_agent_binding_identity?(response, agent_binding)
+
+    username, domain = sip_aor_parts(agent_binding.agent_aor)
+    response['username'] = username if username.present?
+    response['domain'] = domain if domain.present?
+    response['targetAor'] = agent_binding.agent_aor
+    response.delete('target_aor')
+    response.delete(:target_aor)
+    response.delete('aor')
+    response.delete(:aor)
+  end
+
+  def apply_agent_binding_identity?(response, agent_binding)
+    return false if agent_binding&.agent_aor.blank?
+
+    provider = response_value(response, 'provider').presence || agent_binding.provider
+    provider == 'fonoster' && bridge_identity_needs_binding_fallback?(response)
+  end
+
+  def bridge_identity_needs_binding_fallback?(response)
+    target_aor = response_value(response, 'targetAor', 'target_aor', 'aor').to_s.strip
+    username = response_value(response, 'username').to_s.strip
+    domain = response_value(response, 'domain').to_s.strip
+
+    target_aor.blank? ||
+      target_aor == 'sip:voice@default' ||
+      username.blank? ||
+      username == 'internal' ||
+      domain.blank? ||
+      domain == 'internal'
+  end
+
+  def sip_aor_parts(agent_aor)
+    agent_aor.to_s.sub(/\Asip:/i, '').split('@', 2)
   end
 
   def bridge_calling_supported?(response)

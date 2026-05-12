@@ -46,6 +46,7 @@ class GeminiLiveClient {
     this.setupComplete = false;
     this.closed = false;
     this.pending = [];
+    this.transcriptChunks = { caller: [], ai: [] };
   }
 
   connect(options = {}) {
@@ -55,6 +56,7 @@ class GeminiLiveClient {
     this.socketOpen = false;
     this.setupComplete = false;
     this.pending = [];
+    this.transcriptChunks = { caller: [], ai: [] };
     this.socket = new WebSocket(this.url, {
       headers: this.apiKey ? { 'x-goog-api-key': this.apiKey } : {}
     });
@@ -104,6 +106,7 @@ class GeminiLiveClient {
         this.closed = true;
         this.socketOpen = false;
         this.setupComplete = false;
+        this.flushTranscriptBuffers({ final: false });
         if (!settled) {
           finish(reject, new Error(`Gemini Live connection closed before setup complete (${code || 'unknown'})`));
         }
@@ -223,14 +226,11 @@ class GeminiLiveClient {
   }
 
   handleServerContent(serverContent) {
-    const inputText = trimText(serverContent.inputTranscription?.text);
-    if (inputText) {
-      this.onTranscript?.({ speaker: 'caller', text: inputText, provider: 'gemini-live', final: true });
-    }
+    this.handleTranscriptionChunk('caller', serverContent.inputTranscription);
+    this.handleTranscriptionChunk('ai', serverContent.outputTranscription);
 
-    const outputText = trimText(serverContent.outputTranscription?.text);
-    if (outputText) {
-      this.onTranscript?.({ speaker: 'ai', text: outputText, provider: 'gemini-live', final: true });
+    if (serverContent.turnComplete) {
+      this.flushTranscriptBuffers({ final: true });
     }
 
     if (serverContent.interrupted) {
@@ -250,6 +250,45 @@ class GeminiLiveClient {
       if (!String(mimeType).startsWith('audio/pcm')) continue;
       this.onAudio?.(Buffer.from(data, 'base64'), { mimeType, provider: 'gemini-live' });
     }
+  }
+
+  handleTranscriptionChunk(speaker, transcription) {
+    const rawText = String(transcription?.text || '');
+    if (!rawText) return;
+
+    const finished = transcription.finished || transcription.isFinal || transcription.final;
+    const streaming = transcription.finished === false || transcription.isFinal === false || transcription.final === false;
+    if (streaming) {
+      this.transcriptChunks[speaker].push(rawText);
+      return;
+    }
+
+    if (this.transcriptChunks[speaker].length) {
+      this.transcriptChunks[speaker].push(rawText);
+      this.flushTranscriptBuffer(speaker, { final: true });
+      return;
+    }
+
+    const text = trimText(rawText);
+    if (text) {
+      this.onTranscript?.({ speaker, text, provider: 'gemini-live', final: finished !== false });
+    }
+  }
+
+  flushTranscriptBuffers({ final = true } = {}) {
+    this.flushTranscriptBuffer('caller', { final });
+    this.flushTranscriptBuffer('ai', { final });
+  }
+
+  flushTranscriptBuffer(speaker, { final = true } = {}) {
+    const chunks = this.transcriptChunks[speaker];
+    if (!chunks?.length) return;
+
+    const text = trimText(chunks.join(''));
+    this.transcriptChunks[speaker] = [];
+    if (!text) return;
+
+    this.onTranscript?.({ speaker, text, provider: 'gemini-live', final });
   }
 
   async handleToolCall(toolCall) {
