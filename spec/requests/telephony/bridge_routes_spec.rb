@@ -55,6 +55,173 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('fallback_app_ref')
   end
 
+  it 'does not persist route lifecycle or voice-call bubble for diagnostic audit probes' do
+    caller_number = '+15550001010'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :open
+    )
+
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      expect do
+        post path,
+             params: {
+               call_ref: 'audit-call',
+               ingress_number: voice_channel.phone_number,
+               caller_number: caller_number,
+               diagnostic: true
+             },
+             headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+             as: :json
+      end.not_to change(Telephony::CallSession, :count)
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'reason' => 'operator_route'
+    )
+    expect(Message.voice_calls.where(source_id: 'voice_call:audit-call')).not_to exist
+  end
+
+  it 'rejects operator-mode calls when the browser registration is stale' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true,
+      last_synced_at: 3.minutes.ago,
+      metadata: {
+        registration_state: 'registered',
+        registered: true,
+        last_presence_event_at: 3.minutes.ago.iso8601
+      }
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-stale-browser-registration',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****0103'
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
+  it 'rejects operator-mode calls while browser registration is still flapping' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true,
+      last_synced_at: 20.seconds.ago,
+      metadata: {
+        registration_state: 'registered',
+        registered: true,
+        last_presence_event_at: 20.seconds.ago.iso8601,
+        last_unregistered_event_at: 2.seconds.ago.iso8601
+      }
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-flapping-browser-registration',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****0104'
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'operator_unavailable'
+    )
+    expect(response.parsed_body).not_to have_key('agent_aor')
+  end
+
+  it 'routes operator-mode calls after browser re-registers following a disconnect' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      agent_aor: 'sip:1001@example.test',
+      enabled: true,
+      last_synced_at: Time.current,
+      metadata: {
+        registration_state: 'registered',
+        registered: true,
+        last_presence_event_at: Time.current.iso8601,
+        last_unregistered_event_at: 2.seconds.ago.iso8601
+      }
+    )
+    number_binding.routing_policy.update!(
+      mode: 'operator',
+      operator_agent_ref: agent_binding.agent_ref,
+      operator_agent_aor: agent_binding.agent_aor,
+      fallback_mode: 'reject'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-after-browser-reregister',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****0105'
+           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'operator',
+      'agent_aor' => agent_binding.agent_aor
+    )
+  end
+
   it 'returns a registered operator pool for inbox members and excludes offline or busy bindings' do
     primary_user = create(:user, account: account, role: :agent)
     secondary_user = create(:user, account: account, role: :agent)
@@ -275,6 +442,63 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
     expect(response.parsed_body).not_to have_key('agent_aor')
     expect(response.parsed_body).not_to have_key('destination')
+  end
+
+  it 'persists a voice-call timeline item for a rejected route on an existing conversation' do
+    caller_number = '+15550000000'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :open
+    )
+
+    number_binding.routing_policy.update!(mode: 'operator', fallback_mode: 'reject')
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      expect do
+        post path,
+             params: {
+               call_ref: 'existing-conversation-rejected-route',
+               ingress_number: voice_channel.phone_number,
+               caller_number: caller_number
+             },
+             headers: {
+               'X-Bridge-Secret' => 'bridge-secret'
+             },
+             as: :json
+      end.to change(Message, :count).by(1)
+
+      post '/internal/voice/inbound/event',
+           params: {
+             call_ref: 'existing-conversation-rejected-route',
+             event: 'rejected',
+             account_id: account.id,
+             inbox_id: voice_inbox.id,
+             number_ref: number_binding.number_ref,
+             caller_number: caller_number,
+             status: 'rejected',
+             terminal: true
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'existing-conversation-rejected-route')
+    expect(call_session.reload).to have_attributes(
+      conversation_id: conversation.id,
+      status: 'rejected'
+    )
+    voice_message = conversation.messages.voice_calls.find_by!(source_id: 'voice_call:existing-conversation-rejected-route')
+    expect(voice_message.content_attributes.dig('data', 'status')).to eq('rejected')
+    expect(voice_message.content_attributes.dig('data', 'call_sid')).to eq('existing-conversation-rejected-route')
   end
 
   it 'accepts bearer token authentication for inbound route lookups' do

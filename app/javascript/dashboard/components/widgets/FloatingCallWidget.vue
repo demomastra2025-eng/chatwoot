@@ -21,7 +21,6 @@ const {
   joinCall,
   endCall: endCallSession,
   rejectIncomingCall,
-  dismissCall,
   formattedCallDuration,
 } = useCallSession();
 
@@ -175,7 +174,7 @@ watch(
           <div class="flex shrink-0 gap-2">
             <button
               class="flex justify-center items-center w-10 h-10 bg-n-ruby-9 hover:bg-n-ruby-10 rounded-full transition-colors"
-              @click="dismissCall(call.callSid)"
+              @click="rejectIncomingCall(call)"
             >
               <i class="text-lg text-white i-ph-phone-x-bold" />
             </button>

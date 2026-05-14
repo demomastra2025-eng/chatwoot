@@ -394,10 +394,10 @@ class Telephony::EventsIngestionService
   end
 
   def sync_voice_message!(call_session)
-    message = call_session.latest_voice_message
+    message = voice_message_for(call_session) || build_voice_message!(call_session)
     return unless message
 
-    data = (message.content_attributes || {}).deep_dup
+    data = (message.content_attributes || {}).deep_dup.deep_stringify_keys
     data['data'] ||= {}
     voice_meta = voice_message_meta(call_session)
     if voice_meta.present?
@@ -416,6 +416,71 @@ class Telephony::EventsIngestionService
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.update!(content_attributes: data)
+  end
+
+  def voice_message_for(call_session)
+    return if call_session.conversation.blank?
+
+    source_id = "voice_call:#{call_session.external_call_ref}"
+    call_session.conversation.messages.voice_calls.find_by(source_id: source_id) ||
+      voice_message_with_call_ref(call_session) ||
+      single_legacy_voice_message(call_session) ||
+      legacy_current_call_message(call_session)
+  end
+
+  def single_legacy_voice_message(call_session)
+    voice_messages = call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc)
+    return unless voice_messages.limit(2).count == 1
+
+    message = voice_messages.first
+    data = voice_message_data(message)
+    return message if data['call_sid'].blank? && message.source_id.blank?
+  end
+
+  def voice_message_with_call_ref(call_session)
+    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+      voice_message_data(message)['call_sid'] == call_session.external_call_ref
+    end
+  end
+
+  def legacy_current_call_message(call_session)
+    return unless call_session.conversation.identifier == call_session.external_call_ref
+
+    call_session.latest_voice_message
+  end
+
+  def voice_message_data(message)
+    data = message.content_attributes.to_h['data'] || message.content_attributes.to_h[:data]
+    data.is_a?(Hash) ? data.deep_stringify_keys : {}
+  end
+
+  def build_voice_message!(call_session)
+    conversation = call_session.conversation
+    return if conversation.blank?
+
+    timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
+    conversation.messages.create!(
+      account: conversation.account,
+      inbox: conversation.inbox,
+      sender: conversation.contact,
+      message_type: :incoming,
+      content: 'Voice Call',
+      content_type: :voice_call,
+      source_id: "voice_call:#{call_session.external_call_ref}",
+      content_attributes: {
+        'data' => {
+          'call_sid' => call_session.external_call_ref,
+          'status' => call_session.status,
+          'call_direction' => call_session.direction,
+          'from_number' => call_session.from_number,
+          'to_number' => call_session.to_number,
+          'meta' => {
+            'created_at' => timestamp,
+            'ringing_at' => timestamp
+          }
+        }.compact
+      }
+    )
   end
 
   def voice_message_meta(call_session)

@@ -13,6 +13,10 @@ const createCallRegisteredEvent = detail =>
 const createCallUnregisteredEvent = detail =>
   new CustomEvent('call:unregistered', { detail });
 
+const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
+const WEBPHONE_INCOMING_CALL_WAIT_MS = 7_000;
+const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
+
 class FonosterVoiceClient extends EventTarget {
   constructor() {
     super();
@@ -27,6 +31,7 @@ class FonosterVoiceClient extends EventTarget {
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
     this.registrationPromise = null;
+    this.presenceHeartbeatTimer = null;
   }
 
   static normalizeSessionConfig(sessionConfig = {}) {
@@ -69,7 +74,6 @@ class FonosterVoiceClient extends EventTarget {
     }
 
     const signature = JSON.stringify({
-      token: normalized.token,
       username: normalized.username,
       domain: normalized.domain,
       signalingServer: normalized.signalingServer,
@@ -119,12 +123,12 @@ class FonosterVoiceClient extends EventTarget {
         }
       },
       onRegistered: () => {
-        this.registered = true;
-        FonosterVoiceClient.reportPresence(true);
+        this.markRegistered();
         this.dispatchEvent(createCallRegisteredEvent({ provider: 'fonoster' }));
       },
       onUnregistered: () => {
         this.registered = false;
+        this.stopPresenceHeartbeat();
         FonosterVoiceClient.reportPresence(false);
         this.dispatchEvent(
           createCallUnregisteredEvent({ provider: 'fonoster' })
@@ -138,6 +142,7 @@ class FonosterVoiceClient extends EventTarget {
         const wasRegistered = this.registered;
         this.connected = false;
         this.registered = false;
+        this.stopPresenceHeartbeat();
         FonosterVoiceClient.reportPresence(false);
         if (wasRegistered) {
           this.dispatchEvent(
@@ -166,6 +171,9 @@ class FonosterVoiceClient extends EventTarget {
         authorizationUsername: normalized.username,
         authorizationPassword: normalized.token,
         allowLegacyNotifications: false,
+        logBuiltinEnabled: false,
+        logConfiguration: false,
+        logLevel: 'error',
         transportOptions: {
           server: normalized.signalingServer,
           keepAliveInterval: 15,
@@ -176,6 +184,7 @@ class FonosterVoiceClient extends EventTarget {
     await this.simpleUser.connect();
     this.connected = true;
     await this.register();
+    this.markRegistered();
     this.initialized = true;
 
     return this.sessionState(normalized);
@@ -227,6 +236,28 @@ class FonosterVoiceClient extends EventTarget {
     VoiceAPI.updateWebphonePresence(registered).catch(() => {});
   }
 
+  markRegistered() {
+    this.registered = true;
+    FonosterVoiceClient.reportPresence(true);
+    this.startPresenceHeartbeat();
+  }
+
+  startPresenceHeartbeat() {
+    this.stopPresenceHeartbeat();
+    this.presenceHeartbeatTimer = window.setInterval(() => {
+      if (this.registered) {
+        FonosterVoiceClient.reportPresence(true);
+      }
+    }, WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS);
+  }
+
+  stopPresenceHeartbeat() {
+    if (!this.presenceHeartbeatTimer) return;
+
+    window.clearInterval(this.presenceHeartbeatTimer);
+    this.presenceHeartbeatTimer = null;
+  }
+
   async ensureConnectedAndRegistered() {
     if (!this.simpleUser) return;
     if (!this.simpleUser.isConnected()) {
@@ -235,7 +266,22 @@ class FonosterVoiceClient extends EventTarget {
     }
     if (!this.registered) {
       await this.register();
+      this.markRegistered();
     }
+  }
+
+  async waitForPendingIncomingCall(timeoutMs = WEBPHONE_INCOMING_CALL_WAIT_MS) {
+    if (this.pendingIncomingCall) return true;
+
+    const deadline = Date.now() + timeoutMs;
+    while (!this.pendingIncomingCall && Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(resolve => {
+        window.setTimeout(resolve, WEBPHONE_INCOMING_CALL_POLL_MS);
+      });
+    }
+
+    return this.pendingIncomingCall;
   }
 
   async joinClientCall() {
@@ -243,7 +289,8 @@ class FonosterVoiceClient extends EventTarget {
 
     await this.ensureConnectedAndRegistered();
 
-    if (!this.pendingIncomingCall) {
+    const hasIncomingCall = await this.waitForPendingIncomingCall();
+    if (!hasIncomingCall) {
       return null;
     }
 
@@ -283,6 +330,7 @@ class FonosterVoiceClient extends EventTarget {
     this.initialized = false;
     this.connected = false;
     this.registered = false;
+    this.stopPresenceHeartbeat();
     FonosterVoiceClient.reportPresence(false);
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;

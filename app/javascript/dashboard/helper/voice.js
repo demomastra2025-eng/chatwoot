@@ -68,6 +68,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
 
   const {
     callSid,
+    status,
     callDirection,
     conversationId,
     inboxId,
@@ -76,6 +77,11 @@ export function handleVoiceCallCreated(message, currentUserId) {
   } = extractCallData(message);
 
   if (shouldSkipCall(callDirection, senderId, currentUserId)) return;
+  if (TERMINAL_STATUSES.includes(status)) {
+    const callsStore = useCallsStore();
+    callsStore.handleCallStatusChanged({ callSid, status, conversationId });
+    return;
+  }
 
   const callsStore = useCallsStore();
   callsStore.addCall({

@@ -43,13 +43,23 @@ class Telephony::OperatorCallClaimService
     return false unless operator_route?
     return false unless agent_binding&.enabled? && agent_binding.registered_for_routing?
     return false unless inbox_member?
+    return false unless candidate_binding_id?
+    return false unless candidate_agent_ref?
 
+    candidate_user_id?
+  end
+
+  def candidate_binding_id?
     candidate_binding_ids = operator_candidate_binding_ids
-    return false if candidate_binding_ids.present? && !candidate_binding_ids.include?(agent_binding.id)
+    candidate_binding_ids.blank? || candidate_binding_ids.include?(agent_binding&.id)
+  end
 
+  def candidate_agent_ref?
     candidate_agent_refs = operator_candidate_agent_refs
-    return false if candidate_agent_refs.present? && !candidate_agent_refs.include?(agent_binding.agent_ref)
+    candidate_agent_refs.blank? || candidate_agent_refs.include?(agent_binding&.agent_ref)
+  end
 
+  def candidate_user_id?
     candidate_user_ids = operator_candidate_user_ids
     candidate_user_ids.blank? || candidate_user_ids.include?(user.id)
   end
@@ -108,8 +118,45 @@ class Telephony::OperatorCallClaimService
     raise Telephony::Error.new(
       code: 'OPERATOR_NOT_CANDIDATE',
       message: 'Current user is not an available operator candidate for this call',
-      status: :forbidden
+      status: :forbidden,
+      details: not_candidate_details
     )
+  end
+
+  def not_candidate_details
+    base = {
+      reason: not_candidate_reason,
+      user_id: user.id,
+      agent_binding_id: agent_binding&.id,
+      agent_ref: agent_binding&.agent_ref,
+      registered_for_routing: agent_binding&.registered_for_routing?,
+      inbox_id: call_session.inbox_id
+    }
+
+    base.merge(registration_details).compact
+  end
+
+  def not_candidate_reason
+    return 'call_not_operator_route' unless operator_route?
+    return 'operator_binding_missing' if agent_binding.blank?
+    return 'operator_binding_disabled' unless agent_binding.enabled?
+    return 'operator_not_registered' unless agent_binding.registered_for_routing?
+    return 'operator_not_in_inbox' unless inbox_member?
+    return 'operator_binding_not_in_candidate_pool' unless candidate_binding_id?
+    return 'operator_agent_ref_not_in_candidate_pool' unless candidate_agent_ref?
+    return 'operator_user_not_in_candidate_pool' unless candidate_user_id?
+
+    'operator_not_candidate'
+  end
+
+  def registration_details
+    telephony = agent_binding&.to_telephony_h || {}
+    {
+      registration_state: telephony[:registration_state],
+      last_presence_source: telephony[:last_presence_source],
+      last_presence_event_at: telephony[:last_presence_event_at],
+      last_synced_at: telephony[:last_synced_at]&.iso8601
+    }
   end
 
   def claim_call!

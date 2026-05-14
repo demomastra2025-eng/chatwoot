@@ -75,6 +75,7 @@ class Telephony::InboundRoutingService
   def ensure_route_lifecycle!(decision)
     return if number_binding.blank?
     return if call_ref.blank? || caller_number.blank?
+    return if diagnostic_route_probe?
 
     Telephony::EventsIngestionService.new(payload: route_lifecycle_payload(decision)).perform
   end
@@ -125,6 +126,17 @@ class Telephony::InboundRoutingService
 
   def operator_decision?(decision)
     (decision[:action] || decision['action']).to_s == 'operator'
+  end
+
+  def diagnostic_route_probe?
+    truthy_payload?('diagnostic', 'diagnostic_call', 'test', 'test_call')
+  end
+
+  def truthy_payload?(*keys)
+    keys.any? do |key|
+      value = payload_value(key, key.to_s.camelize(:lower))
+      ActiveModel::Type::Boolean.new.cast(value)
+    end
   end
 
   def route_lifecycle_event_key

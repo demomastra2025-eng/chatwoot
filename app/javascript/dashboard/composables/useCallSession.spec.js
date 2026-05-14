@@ -93,7 +93,28 @@ describe('useCallSession', () => {
     mountedApps = [];
   });
 
-  it('falls back to backend reject when the Fonoster SIP client has no pending call to decline', async () => {
+  it('always asks the backend to reject Fonoster calls after the local SIP decline attempt', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-server-side-reject',
+      provider: 'fonoster',
+    });
+    const callSession = mountUseCallSession();
+
+    await callSession.rejectIncomingCall(callsStore.calls[0]);
+
+    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-server-side-reject',
+      {
+        reason: 'operator_declined',
+        status: 'rejected',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('still asks the backend to reject when the Fonoster SIP client has no pending call to decline', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-no-sip-decline',
@@ -106,10 +127,31 @@ describe('useCallSession', () => {
 
     expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-no-sip-decline', {
-      reason: 'operator_rejected_from_browser',
+      reason: 'operator_declined',
       status: 'rejected',
     });
     expect(callsStore.calls).toEqual([]);
+  });
+
+  it('keeps a Fonoster call visible when backend release fails', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-release-failed',
+      provider: 'fonoster',
+    });
+    rejectBackendCallMock.mockRejectedValue(new Error('backend unavailable'));
+    const callSession = mountUseCallSession();
+
+    await callSession.rejectIncomingCall(callsStore.calls[0]);
+
+    expect(rejectClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith('call-release-failed', {
+      reason: 'operator_declined',
+      status: 'rejected',
+    });
+    expect(callsStore.calls).toMatchObject([
+      { callSid: 'call-release-failed' },
+    ]);
   });
 
   it('releases the backend call when claim succeeds but no SIP incoming call is available to answer', async () => {
@@ -137,5 +179,43 @@ describe('useCallSession', () => {
       status: 'no_answer',
     });
     expect(callsStore.calls).toEqual([]);
+  });
+
+  it('keeps the call visible as browser-unsupported when backend claim says the operator is not registered', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-operator-not-registered',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+    VoiceAPI.claimIncomingCall.mockRejectedValue({
+      response: {
+        data: {
+          code: 'OPERATOR_NOT_CANDIDATE',
+          details: { reason: 'operator_not_registered' },
+        },
+      },
+    });
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      callSid: 'call-operator-not-registered',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'operator_not_registered',
+    });
+    expect(rejectClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'call-operator-not-registered',
+        browserJoinSupported: false,
+      },
+    ]);
   });
 });

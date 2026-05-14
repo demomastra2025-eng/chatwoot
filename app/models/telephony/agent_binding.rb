@@ -69,20 +69,67 @@ class Telephony::AgentBinding < ApplicationRecord
     registration_metadata['available'] = registered
     registration_metadata['last_presence_source'] = 'browser_webphone'
     registration_metadata['last_presence_event_at'] = occurred_at.iso8601
+    registration_metadata['last_unregistered_event_at'] = occurred_at.iso8601 unless registered
 
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
+
+  DEFAULT_REGISTRATION_TTL = 2.minutes
+  DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
 
   def registered_for_routing?
     return false unless enabled?
 
     registration_state = metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
-    return truthy_metadata?('registered', 'online', 'available') if registration_state.blank?
+    registered = if registration_state.blank?
+                   truthy_metadata?('registered', 'online', 'available')
+                 else
+                   %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
+                 end
 
-    %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
+    registered && registration_fresh? && registration_stable?
   end
 
   private
+
+  def registration_fresh?
+    timestamp = registration_timestamp
+    return false if timestamp.blank?
+
+    timestamp >= registration_ttl.seconds.ago
+  end
+
+  def registration_stable?
+    last_unregistered_at = parsed_metadata_time('last_unregistered_event_at', 'lastUnregisteredEventAt')
+    return true if last_unregistered_at.blank?
+
+    last_registered_at = registration_timestamp
+    return true if last_registered_at.present? && last_unregistered_at <= last_registered_at
+
+    last_unregistered_at < registration_stability_window.seconds.ago
+  end
+
+  def registration_timestamp
+    parsed_metadata_time('last_presence_event_at', 'lastPresenceEventAt') || last_synced_at
+  end
+
+  def parsed_metadata_time(*keys)
+    raw_timestamp = metadata_value(*keys)
+    return if raw_timestamp.blank?
+    return raw_timestamp.to_time if raw_timestamp.respond_to?(:to_time)
+
+    Time.zone.parse(raw_timestamp.to_s)
+  rescue ArgumentError, TypeError
+    nil
+  end
+
+  def registration_ttl
+    ENV.fetch('TELEPHONY_WEBPHONE_REGISTRATION_TTL_SECONDS', DEFAULT_REGISTRATION_TTL.to_i).to_i
+  end
+
+  def registration_stability_window
+    ENV.fetch('TELEPHONY_WEBPHONE_REGISTRATION_STABILITY_SECONDS', DEFAULT_REGISTRATION_STABILITY_WINDOW.to_i).to_i
+  end
 
   def metadata_value(*keys)
     source = metadata || {}

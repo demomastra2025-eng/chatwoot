@@ -54,6 +54,58 @@ describe('voice helper', () => {
     ]);
   });
 
+  it('does not add terminal voice call messages as active browser calls', () => {
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'completed-call-123',
+            call_direction: 'inbound',
+            provider: 'fonoster',
+            status: 'completed',
+          },
+        },
+      },
+      99
+    );
+
+    const callsStore = useCallsStore();
+
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('removes an existing call when a terminal voice call message is created', () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'completed-call-123',
+      callDirection: 'inbound',
+    });
+
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'completed-call-123',
+            call_direction: 'inbound',
+            provider: 'fonoster',
+            status: 'completed',
+          },
+        },
+      },
+      99
+    );
+
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('resolves inbox details from metadata when a ringing update creates the call', () => {
     const commit = vi.fn();
 

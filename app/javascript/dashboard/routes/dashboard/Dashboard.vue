@@ -191,7 +191,7 @@ export default {
           @update:model-value="handleCrmDealPanelModelUpdate"
         />
         <CopilotContainer />
-        <FloatingCallWidget v-if="hasActiveCall || hasIncomingCall" />
+        <FloatingCallWidget />
         <WhatsappCallWidget v-if="hasWhatsappCall" />
       </template>
       <AddAccountModal

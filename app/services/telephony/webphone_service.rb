@@ -1,3 +1,5 @@
+require 'base64'
+
 class Telephony::WebphoneService
   def initialize(account:, bridge_client: nil)
     @account = account
@@ -13,7 +15,11 @@ class Telephony::WebphoneService
     response['agent_ref'] ||= agent_binding&.agent_ref
     apply_agent_binding_identity(response, agent_binding)
     apply_signaling_server_override(response)
-    response['calling_supported'] = agent_binding_usable?(agent_binding) && bridge_calling_supported?(response)
+    diagnostics = token_identity_diagnostics(response)
+    response['diagnostics'] = response_diagnostics(response, diagnostics)
+    response['calling_supported'] = agent_binding_usable?(agent_binding) &&
+                                    bridge_calling_supported?(response) &&
+                                    !diagnostics['token_identity_mismatch']
     response
   end
 
@@ -92,6 +98,65 @@ class Telephony::WebphoneService
 
   def sip_aor_parts(agent_aor)
     agent_aor.to_s.sub(/\Asip:/i, '').split('@', 2)
+  end
+
+  def response_diagnostics(response, token_diagnostics)
+    diagnostics = response['diagnostics'].is_a?(Hash) ? response['diagnostics'].deep_dup : {}
+    diagnostics.merge(token_diagnostics).compact
+  end
+
+  def token_identity_diagnostics(response)
+    claims = decoded_token_claims(response_value(response, 'token'))
+    return {} if claims.blank?
+
+    expected = expected_token_identity(response)
+    actual = actual_token_identity(claims)
+    mismatch = expected.any? { |key, value| value.present? && actual[key].present? && actual[key] != value }
+    mismatch ||= token_test_grade_identity?(actual)
+
+    return {} unless mismatch
+
+    {
+      'token_identity_mismatch' => true,
+      'expected_token_identity' => expected.compact,
+      'actual_token_identity' => actual.compact
+    }
+  end
+
+  def decoded_token_claims(token)
+    parts = token.to_s.split('.')
+    return {} unless parts.length >= 2
+
+    payload = parts[1]
+    payload += '=' * ((4 - (payload.length % 4)) % 4)
+    JSON.parse(Base64.urlsafe_decode64(payload))
+  rescue ArgumentError, JSON::ParserError
+    {}
+  end
+
+  def expected_token_identity(response)
+    {
+      'username' => response_value(response, 'username').to_s.presence,
+      'domain' => response_value(response, 'domain').to_s.presence,
+      'targetAor' => response_value(response, 'targetAor', 'target_aor', 'aor').to_s.presence
+    }
+  end
+
+  def actual_token_identity(claims)
+    {
+      'username' => claims['username'].to_s.presence,
+      'domain' => claims['domain'].to_s.presence,
+      'targetAor' => claims['targetAor'].to_s.presence || claims['target_aor'].to_s.presence,
+      'aorLink' => claims['aorLink'].to_s.presence || claims['aor_link'].to_s.presence,
+      'allowedMethods' => Array.wrap(claims['allowedMethods'] || claims['allowed_methods'])
+    }
+  end
+
+  def token_test_grade_identity?(identity)
+    identity['username'] == 'internal' ||
+      identity['domain'] == 'internal' ||
+      identity['targetAor'] == 'sip:voice@default' ||
+      identity['aorLink'] == 'sip:voice@default'
   end
 
   def bridge_calling_supported?(response)

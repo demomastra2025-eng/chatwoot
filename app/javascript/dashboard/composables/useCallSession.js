@@ -64,20 +64,28 @@ export function useCallSession() {
     callsStore.clearActiveCall();
   };
 
+  const claimErrorPayload = error => error?.response?.data || {};
+
   const claimFonosterIncomingCall = async callSid => {
     try {
       await VoiceAPI.claimIncomingCall(callSid);
-      return true;
+      return { claimed: true };
     } catch (error) {
+      const payload = claimErrorPayload(error);
       // eslint-disable-next-line no-console
       console.warn('Failed to claim incoming call:', error);
-      return false;
+      return {
+        claimed: false,
+        code: payload.code,
+        reason: payload.details?.reason,
+        details: payload.details,
+      };
     }
   };
 
   const releaseFonosterIncomingCall = async (
     callSid,
-    { status = 'rejected', reason = 'operator_rejected_from_browser' } = {}
+    { status = 'rejected', reason = 'operator_declined' } = {}
   ) => {
     if (!callSid) return null;
 
@@ -126,14 +134,13 @@ export function useCallSession() {
       }
 
       if (resolvedProvider === 'fonoster') {
-        const claimed = await claimFonosterIncomingCall(callSid);
-        if (!claimed) {
-          await WebphoneClient.rejectIncomingCall('fonoster');
-          callsStore.dismissCall(callSid);
+        const claimResult = await claimFonosterIncomingCall(callSid);
+        if (!claimResult.claimed) {
+          callsStore.markBrowserJoinUnsupported(callSid, 'fonoster');
           return {
             provider: 'fonoster',
             joinSupported: false,
-            alreadyClaimed: true,
+            reason: claimResult.reason || claimResult.code,
           };
         }
 
@@ -211,13 +218,12 @@ export function useCallSession() {
     const provider = resolveCallProvider(call);
 
     if (provider === 'fonoster') {
-      const clientResult = await WebphoneClient.rejectIncomingCall(provider);
-      if (!clientResult) {
-        await releaseFonosterIncomingCall(call?.callSid, {
-          status: 'rejected',
-          reason: 'operator_rejected_from_browser',
-        });
-      }
+      await WebphoneClient.rejectIncomingCall(provider);
+      const releaseResult = await releaseFonosterIncomingCall(call?.callSid, {
+        status: 'rejected',
+        reason: 'operator_declined',
+      });
+      if (!releaseResult) return;
     } else {
       await WebphoneClient.endClientCall(provider);
     }

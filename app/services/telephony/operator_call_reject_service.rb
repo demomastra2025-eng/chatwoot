@@ -12,6 +12,8 @@ class Telephony::OperatorCallRejectService
     @call_ref = call_ref.to_s.strip
     @status = Telephony::CallSession.normalize_status(status.presence || 'rejected') || 'rejected'
     @reason = reason.presence || default_reason
+    @bridge_client = Telephony::BridgeClient.new(account_id: account.id)
+    @bridge_termination_error = nil
   end
 
   def perform
@@ -20,16 +22,18 @@ class Telephony::OperatorCallRejectService
     raise_invalid_status! unless TERMINAL_STATUS_EVENT_TYPES.key?(status)
 
     needs_ingestion = false
+    should_terminate_remote = false
     call_session.with_lock do
-      raise_not_candidate! unless rejectable_by_user?
-      raise_claimed_by_other! if claimed_by_other?
-      raise_not_candidate! unless candidate_agent?
+      validate_release!
 
       unless call_session.terminal?
+        should_terminate_remote = true
         apply_terminal_state!
         needs_ingestion = true
       end
     end
+
+    request_bridge_termination! if should_terminate_remote
 
     if needs_ingestion
       ingested_session = Telephony::EventsIngestionService.new(payload: reject_event_payload).perform
@@ -41,7 +45,7 @@ class Telephony::OperatorCallRejectService
 
   private
 
-  attr_reader :account, :user, :call_ref, :reason, :status
+  attr_reader :account, :bridge_client, :bridge_termination_error, :user, :call_ref, :reason, :status
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
@@ -53,6 +57,12 @@ class Telephony::OperatorCallRejectService
 
   def rejectable_by_user?
     operator_route? && inbox_member? && candidate_binding? && candidate_agent_ref? && candidate_user?
+  end
+
+  def validate_release!
+    raise_not_candidate! unless rejectable_by_user?
+    raise_claimed_by_other! if claimed_by_other?
+    raise_not_candidate! unless candidate_agent?
   end
 
   def operator_route?
@@ -143,6 +153,30 @@ class Telephony::OperatorCallRejectService
     )
   end
 
+  def request_bridge_termination!
+    bridge_client.post(
+      "/telephony/webphone/calls/#{ERB::Util.url_encode(call_ref)}/reject",
+      {
+        reason: bridge_reason,
+        agent_aor: agent_binding&.agent_aor,
+        actor: 'operator'
+      }.compact
+    )
+  rescue Telephony::Error => e
+    @bridge_termination_error = e.code
+    Rails.logger.warn(
+      'TELEPHONY_OPERATOR_REJECT_BRIDGE_TERMINATION_FAILED ' \
+      "account_id=#{account.id} call_ref=#{call_ref} error_code=#{e.code} message=#{e.message}"
+    )
+    nil
+  end
+
+  def bridge_reason
+    return 'operator_declined' if status == 'rejected' && reason == 'operator_rejected_from_browser'
+
+    reason
+  end
+
   def reject_event_payload
     now = Time.current.iso8601
     {
@@ -170,7 +204,8 @@ class Telephony::OperatorCallRejectService
       route_action: route_metadata['route_action'],
       webphone_action: 'operator_release',
       release_status: status,
-      release_reason: reason
+      release_reason: reason,
+      bridge_termination_error: bridge_termination_error
     }.compact
   end
 

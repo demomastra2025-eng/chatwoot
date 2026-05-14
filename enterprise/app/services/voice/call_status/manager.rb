@@ -44,10 +44,7 @@ class Voice::CallStatus::Manager
   end
 
   def update_message(status)
-    message = conversation.messages
-                          .where(content_type: 'voice_call')
-                          .order(created_at: :desc)
-                          .first
+    message = voice_message_for_call
     return unless message
 
     data = (message.content_attributes || {}).dup
@@ -55,6 +52,22 @@ class Voice::CallStatus::Manager
     data['data']['status'] = status
 
     message.update!(content_attributes: data)
+  end
+
+  def voice_message_for_call
+    return if call_sid.blank?
+
+    source_id = "voice_call:#{call_sid}"
+    voice_messages = conversation.messages.where(content_type: 'voice_call')
+    voice_messages.find_by(source_id: source_id) ||
+      voice_messages.order(created_at: :desc, id: :desc).detect { |message| voice_message_call_sid(message) == call_sid }
+  end
+
+  def voice_message_call_sid(message)
+    data = message.content_attributes.to_h['data'] || message.content_attributes.to_h[:data]
+    return unless data.is_a?(Hash)
+
+    data['call_sid'] || data[:call_sid] || data['callSid'] || data[:callSid]
   end
 
   def now_seconds
