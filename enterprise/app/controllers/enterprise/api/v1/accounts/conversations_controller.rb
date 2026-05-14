@@ -62,14 +62,8 @@ module Enterprise::Api::V1::Accounts::ConversationsController
   end
 
   def should_auto_reply_with_captain?(previous_status)
-    return false unless Current.user.is_a?(User)
-    return false unless params[:status] == 'pending'
-    return false if previous_status == 'pending'
-    return false unless @conversation.pending?
-
-    assistant = @conversation.inbox&.captain_assistant
-    return false unless assistant&.auto_reply_on_last_incoming_enabled?
-    return false unless @conversation.inbox&.captain_active?
+    return false unless user_reopened_pending_conversation?(previous_status)
+    return false unless captain_available_for_auto_reply?
 
     latest_public_message&.incoming?
   end
@@ -90,6 +84,20 @@ module Enterprise::Api::V1::Accounts::ConversationsController
     return unless message&.incoming?
 
     message
+  end
+
+  def user_reopened_pending_conversation?(previous_status)
+    Current.user.is_a?(User) &&
+      params[:status] == 'pending' &&
+      previous_status != 'pending' &&
+      @conversation.pending?
+  end
+
+  def captain_available_for_auto_reply?
+    assistant = @conversation.inbox&.captain_assistant
+    assistant&.auto_reply_on_last_incoming_enabled? &&
+      @conversation.inbox&.captain_active? &&
+      @conversation.inbox&.captain_auto_reply_allowed?
   end
 
   def latest_public_message

@@ -2488,6 +2488,19 @@
       "HEADER": "Подключённые каналы",
       "ADD_NEW": "Подключить новый канал",
       "CONNECTED_TO": "Подключён к: {assistantName}",
+      "AUTO_REPLY_MODE": {
+        "LABEL": "Автоответ",
+        "OPTIONS": {
+          "ALWAYS": "Всегда",
+          "WORKING_HOURS": "В рабочее время",
+          "OUTSIDE_WORKING_HOURS": "В нерабочее время",
+          "NEVER": "Никогда"
+        },
+        "UPDATE": {
+          "SUCCESS_MESSAGE": "Режим автоответа обновлён.",
+          "ERROR_MESSAGE": "Не удалось обновить режим автоответа. Попробуйте ещё раз."
+        }
+      },
       "OPTIONS": {
         "DISCONNECT": "Отключиться"
       },

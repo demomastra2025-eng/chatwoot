@@ -4,6 +4,7 @@ module Enterprise::MessageTemplates::HookExecutionService
   def trigger_templates
     super
     return unless should_process_captain_response?
+    return unless inbox.captain_auto_reply_allowed?
     return perform_handoff unless inbox.captain_active?
 
     schedule_captain_response
@@ -31,28 +32,14 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def schedule_captain_response
     assistant = conversation.inbox.captain_assistant
-    Captain::Conversation::TypingIndicatorService.turn_on(
-      conversation: conversation,
-      assistant: assistant
-    )
-    job_args = [conversation, assistant]
     attachment_wait_time = message.attachments.blank? ? 0.seconds : calculate_attachment_wait_time
 
+    turn_on_captain_typing_indicator(assistant)
+
     if assistant.message_collapse_window_seconds_value.zero?
-      if attachment_wait_time.zero?
-        Captain::Conversation::ResponseBuilderJob.perform_later(*job_args, expected_last_message_id: message.id)
-      else
-        Captain::Conversation::ResponseBuilderJob
-          .set(wait: attachment_wait_time)
-          .perform_later(*job_args, expected_last_message_id: message.id)
-      end
+      schedule_response_builder(assistant, attachment_wait_time)
     else
-      Captain::Conversation::BufferedResponseSchedulerService.new(
-        conversation: conversation,
-        assistant: assistant,
-        message: message,
-        attachment_wait_time: attachment_wait_time
-      ).perform
+      schedule_buffered_response(assistant, attachment_wait_time)
     end
   end
 
@@ -63,6 +50,36 @@ module Enterprise::MessageTemplates::HookExecutionService
     # Wait longer for more attachments or larger files
     additional_wait = [attachment_count * 1, MAX_ATTACHMENT_WAIT_SECONDS].min.seconds
     base_wait + additional_wait
+  end
+
+  def turn_on_captain_typing_indicator(assistant)
+    Captain::Conversation::TypingIndicatorService.turn_on(
+      conversation: conversation,
+      assistant: assistant
+    )
+  end
+
+  def schedule_response_builder(assistant, attachment_wait_time)
+    job_args = [conversation, assistant]
+    if attachment_wait_time.zero?
+      return Captain::Conversation::ResponseBuilderJob.perform_later(
+        *job_args,
+        expected_last_message_id: message.id
+      )
+    end
+
+    Captain::Conversation::ResponseBuilderJob
+      .set(wait: attachment_wait_time)
+      .perform_later(*job_args, expected_last_message_id: message.id)
+  end
+
+  def schedule_buffered_response(assistant, attachment_wait_time)
+    Captain::Conversation::BufferedResponseSchedulerService.new(
+      conversation: conversation,
+      assistant: assistant,
+      message: message,
+      attachment_wait_time: attachment_wait_time
+    ).perform
   end
 
   def should_process_captain_response?
@@ -92,6 +109,9 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def captain_handling_conversation?
-    conversation.pending? && inbox.respond_to?(:captain_assistant) && inbox.captain_assistant.present?
+    conversation.pending? &&
+      inbox.respond_to?(:captain_assistant) &&
+      inbox.captain_assistant.present? &&
+      inbox.captain_auto_reply_allowed?
   end
 end

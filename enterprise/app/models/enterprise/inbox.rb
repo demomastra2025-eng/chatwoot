@@ -16,6 +16,10 @@ module Enterprise::Inbox
     captain_assistant.present? && captain_usage_available?
   end
 
+  def captain_auto_reply_allowed?
+    captain_inbox&.auto_reply_allowed_now? || false
+  end
+
   private
 
   def captain_usage_available?

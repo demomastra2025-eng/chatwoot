@@ -3,6 +3,7 @@
 # Table name: captain_inboxes
 #
 #  id                   :bigint           not null, primary key
+#  auto_reply_mode      :string           default("always"), not null
 #  created_at           :datetime         not null
 #  updated_at           :datetime         not null
 #  captain_assistant_id :bigint           not null
@@ -15,10 +16,25 @@
 #  index_captain_inboxes_on_inbox_id                           (inbox_id)
 #
 class CaptainInbox < ApplicationRecord
+  AUTO_REPLY_ALWAYS = 'always'.freeze
+  AUTO_REPLY_WORKING_HOURS = 'working_hours'.freeze
+  AUTO_REPLY_OUTSIDE_WORKING_HOURS = 'outside_working_hours'.freeze
+  AUTO_REPLY_NEVER = 'never'.freeze
+  AUTO_REPLY_MODES = [
+    AUTO_REPLY_ALWAYS,
+    AUTO_REPLY_WORKING_HOURS,
+    AUTO_REPLY_OUTSIDE_WORKING_HOURS,
+    AUTO_REPLY_NEVER
+  ].freeze
+  DEFAULT_AUTO_REPLY_MODE = AUTO_REPLY_ALWAYS
+
   belongs_to :captain_assistant, class_name: 'Captain::Assistant'
   belongs_to :inbox
 
   validates :inbox_id, uniqueness: true
+  validates :auto_reply_mode, inclusion: { in: AUTO_REPLY_MODES }
+
+  before_validation :set_default_auto_reply_mode
 
   after_commit :invalidate_inbox_cache, on: %i[create update destroy]
   after_commit :sync_voice_routing_policy!, on: %i[create update]
@@ -26,6 +42,14 @@ class CaptainInbox < ApplicationRecord
 
   def self.sync_voice_routing_policies!
     includes(inbox: :channel).find_each(&:sync_voice_routing_policy!)
+  end
+
+  def auto_reply_allowed_now?
+    {
+      AUTO_REPLY_ALWAYS => true,
+      AUTO_REPLY_WORKING_HOURS => inbox&.working_now?,
+      AUTO_REPLY_OUTSIDE_WORKING_HOURS => inbox&.out_of_office?
+    }.fetch(auto_reply_mode, false) || false
   end
 
   def sync_voice_routing_policy!
@@ -44,6 +68,10 @@ class CaptainInbox < ApplicationRecord
   end
 
   private
+
+  def set_default_auto_reply_mode
+    self.auto_reply_mode = DEFAULT_AUTO_REPLY_MODE if auto_reply_mode.blank?
+  end
 
   def invalidate_inbox_cache
     return if Current.suppress_runtime_events

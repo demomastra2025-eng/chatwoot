@@ -10,6 +10,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Policy from 'dashboard/components/policy.vue';
 import { INBOX_TYPES, getInboxIconByType } from 'dashboard/helper/inbox';
 import InboxPageEmptyState from 'dashboard/components-next/captain/pageComponents/emptyStates/InboxPageEmptyState.vue';
@@ -32,7 +33,29 @@ const isInternalAssistant = computed(
 
 const inboxes = useMapGetter('inboxes/getInboxes');
 const connectionStateByInboxId = reactive({});
+const autoReplyModeByInboxId = reactive({});
 const isUpdatingByInboxId = reactive({});
+const isUpdatingModeByInboxId = reactive({});
+
+const DEFAULT_AUTO_REPLY_MODE = 'always';
+const autoReplyModeOptions = computed(() => [
+  {
+    value: 'always',
+    label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.ALWAYS'),
+  },
+  {
+    value: 'working_hours',
+    label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.WORKING_HOURS'),
+  },
+  {
+    value: 'outside_working_hours',
+    label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.OUTSIDE_WORKING_HOURS'),
+  },
+  {
+    value: 'never',
+    label: t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.OPTIONS.NEVER'),
+  },
+]);
 
 const inboxName = inbox => {
   if (!inbox?.name) {
@@ -64,6 +87,10 @@ const isConnectedToCurrentAssistant = inbox => {
   return inbox?.captain_assistant?.id === assistantId.value;
 };
 
+const autoReplyMode = inbox => {
+  return inbox?.captain_auto_reply_mode || DEFAULT_AUTO_REPLY_MODE;
+};
+
 const isLockedToAnotherAssistant = inbox => {
   return (
     inbox?.captain_assistant?.id &&
@@ -87,6 +114,9 @@ watch(
         return;
       }
       connectionStateByInboxId[inbox.id] = isConnectedToCurrentAssistant(inbox);
+      if (!isUpdatingModeByInboxId[inbox.id]) {
+        autoReplyModeByInboxId[inbox.id] = autoReplyMode(inbox);
+      }
     });
   },
   { immediate: true }
@@ -121,6 +151,8 @@ const toggleInboxConnection = async (inbox, nextValue) => {
       await store.dispatch('captainInboxes/create', {
         assistantId: assistantId.value,
         inboxId: inbox.id,
+        autoReplyMode:
+          autoReplyModeByInboxId[inbox.id] || DEFAULT_AUTO_REPLY_MODE,
       });
       useAlert(t('CAPTAIN.INBOXES.CREATE.SUCCESS_MESSAGE'));
     } else {
@@ -144,8 +176,44 @@ const toggleInboxConnection = async (inbox, nextValue) => {
   }
 };
 
+const updateAutoReplyMode = async (inbox, event) => {
+  const nextMode = event?.target?.value;
+  if (!inbox?.id || !nextMode || !isConnectedToCurrentAssistant(inbox)) {
+    return;
+  }
+
+  const previousMode = autoReplyModeByInboxId[inbox.id] || autoReplyMode(inbox);
+  isUpdatingModeByInboxId[inbox.id] = true;
+
+  try {
+    await store.dispatch('captainInboxes/create', {
+      assistantId: assistantId.value,
+      inboxId: inbox.id,
+      autoReplyMode: nextMode,
+    });
+    useAlert(t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'));
+    await store.dispatch('inboxes/get');
+  } catch (error) {
+    autoReplyModeByInboxId[inbox.id] = previousMode;
+    useAlert(
+      error?.message ||
+        t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.ERROR_MESSAGE')
+    );
+  } finally {
+    isUpdatingModeByInboxId[inbox.id] = false;
+  }
+};
+
 const toggleDisabled = inbox => {
   return isLockedToAnotherAssistant(inbox) || isUpdatingByInboxId[inbox.id];
+};
+
+const autoReplyModeDisabled = inbox => {
+  return (
+    !isConnectedToCurrentAssistant(inbox) ||
+    isUpdatingModeByInboxId[inbox.id] ||
+    isUpdatingByInboxId[inbox.id]
+  );
 };
 </script>
 
@@ -208,7 +276,30 @@ const toggleDisabled = inbox => {
             </div>
 
             <div class="flex items-center gap-3 shrink-0">
-              <Policy :permissions="['administrator']">
+              <Policy
+                :permissions="['administrator']"
+                class="flex items-center gap-3"
+              >
+                <div
+                  v-if="isConnectedToCurrentAssistant(inbox)"
+                  class="flex flex-col gap-1 min-w-[15rem]"
+                >
+                  <label
+                    class="text-xs font-medium text-n-slate-11"
+                    :for="`captain-auto-reply-mode-${inbox.id}`"
+                  >
+                    {{ t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.LABEL') }}
+                  </label>
+                  <Select
+                    :id="`captain-auto-reply-mode-${inbox.id}`"
+                    v-model="autoReplyModeByInboxId[inbox.id]"
+                    :options="autoReplyModeOptions"
+                    :disabled="autoReplyModeDisabled(inbox)"
+                    class="w-full"
+                    @change="event => updateAutoReplyMode(inbox, event)"
+                  />
+                </div>
+
                 <Switch
                   v-model="connectionStateByInboxId[inbox.id]"
                   :disabled="toggleDisabled(inbox)"

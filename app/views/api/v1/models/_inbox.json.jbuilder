@@ -29,6 +29,7 @@ if resource.respond_to?(:captain_assistant) && resource.captain_assistant.presen
     json.id resource.captain_assistant.id
     json.name resource.captain_assistant.name
   end
+  json.captain_auto_reply_mode resource.captain_inbox.auto_reply_mode
 end
 
 if resource.portal.present?

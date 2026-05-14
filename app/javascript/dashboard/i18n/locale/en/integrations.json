@@ -2488,6 +2488,19 @@
       "HEADER": "Connected Inboxes",
       "ADD_NEW": "Connect a new inbox",
       "CONNECTED_TO": "Connected to: {assistantName}",
+      "AUTO_REPLY_MODE": {
+        "LABEL": "Auto-reply",
+        "OPTIONS": {
+          "ALWAYS": "Always",
+          "WORKING_HOURS": "During working hours",
+          "OUTSIDE_WORKING_HOURS": "Outside working hours",
+          "NEVER": "Never"
+        },
+        "UPDATE": {
+          "SUCCESS_MESSAGE": "Auto-reply mode was updated.",
+          "ERROR_MESSAGE": "There was an error updating auto-reply mode. Please try again."
+        }
+      },
       "OPTIONS": {
         "DISCONNECT": "Disconnect"
       },

@@ -6,9 +6,9 @@ RSpec.describe MessageTemplates::HookExecutionService do
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, inbox: inbox, account: account, contact: contact, status: :pending) }
   let(:assistant) { create(:captain_assistant, account: account) }
+  let!(:captain_inbox) { create(:captain_inbox, captain_assistant: assistant, inbox: inbox) }
 
   before do
-    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
     allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_on)
   end
 
@@ -36,6 +36,26 @@ RSpec.describe MessageTemplates::HookExecutionService do
         create(:message, conversation: conversation, message_type: :incoming, account: account)
       end
 
+      it 'schedules captain response within business hours when auto-reply mode is working_hours' do
+        captain_inbox.update!(auto_reply_mode: 'working_hours')
+
+        expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
+          conversation,
+          assistant,
+          hash_including(expected_last_message_id: kind_of(Integer))
+        )
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'does not schedule captain response within business hours when auto-reply mode is outside_working_hours' do
+        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
       it 'does not schedule captain response for voice_call bubble updates' do
         expect(Captain::Conversation::TypingIndicatorService).not_to receive(:turn_on)
         expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
@@ -56,7 +76,9 @@ RSpec.describe MessageTemplates::HookExecutionService do
         )
       end
 
-      it 'schedules captain response job outside business hours (Captain always responds when configured)' do
+      it 'schedules captain response job outside business hours when auto-reply mode is always' do
+        captain_inbox.update!(auto_reply_mode: 'always')
+
         expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
           conversation,
           assistant,
@@ -64,6 +86,44 @@ RSpec.describe MessageTemplates::HookExecutionService do
         )
 
         create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'does not schedule captain response outside business hours when auto-reply mode is working_hours' do
+        captain_inbox.update!(auto_reply_mode: 'working_hours')
+        out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
+        allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
+        allow(out_of_office_service).to receive(:perform).and_return(true)
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
+      end
+
+      it 'schedules captain response outside business hours when auto-reply mode is outside_working_hours' do
+        captain_inbox.update!(auto_reply_mode: 'outside_working_hours')
+
+        expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_later).with(
+          conversation,
+          assistant,
+          hash_including(expected_last_message_id: kind_of(Integer))
+        )
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+      end
+
+      it 'does not schedule captain response when auto-reply mode is never' do
+        captain_inbox.update!(auto_reply_mode: 'never')
+        out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
+        allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
+        allow(out_of_office_service).to receive(:perform).and_return(true)
+
+        expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_later)
+
+        create(:message, conversation: conversation, message_type: :incoming, account: account)
+
+        expect(MessageTemplates::Template::OutOfOffice).to have_received(:new)
       end
 
       it 'performs captain handoff when quota is exceeded (OOO template will kick in after handoff)' do

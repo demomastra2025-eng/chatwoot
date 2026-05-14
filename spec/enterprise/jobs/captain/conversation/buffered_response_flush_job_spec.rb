@@ -80,4 +80,25 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
 
     expect(Redis::Alfred.get(state_key)).to be_nil
   end
+
+  it 'clears the current buffer state without answering when captain auto-reply is no longer allowed' do
+    latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
+    latest_token = SecureRandom.uuid
+    inbox.captain_inbox.update!(auto_reply_mode: 'never')
+    Redis::Alfred.set(
+      state_key,
+      {
+        token: latest_token,
+        assistant_id: assistant.id,
+        last_message_id: latest_message.id
+      }.to_json,
+      ex: 10.minutes.to_i
+    )
+
+    expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_now)
+
+    described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id, token: latest_token)
+
+    expect(Redis::Alfred.get(state_key)).to be_nil
+  end
 end

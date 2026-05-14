@@ -6,14 +6,14 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
   def perform(conversation_id:, assistant_id:, token:)
     with_lock(lock_key(conversation_id)) do
       state = buffer_state(conversation_id)
-      return unless valid_state?(state, assistant_id, token)
+      next unless valid_state?(state, assistant_id, token)
 
       conversation = Conversation.find_by(id: conversation_id)
       assistant = Captain::Assistant.find_by(id: assistant_id)
 
       unless conversation.present? && assistant.present? && should_generate_response?(conversation, assistant)
         clear_state(conversation_id, token)
-        return
+        next
       end
 
       Captain::Conversation::ResponseBuilderJob.perform_now(
@@ -45,6 +45,7 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
   def should_generate_response?(conversation, assistant)
     conversation.pending? &&
       conversation.inbox.captain_active? &&
+      conversation.inbox.captain_auto_reply_allowed? &&
       conversation.inbox.captain_assistant&.id == assistant.id
   end
 
