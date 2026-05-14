@@ -11,6 +11,7 @@ class Captain::ToolRegistry
       agent_tool_class
       assistant_tool_class
       required_features
+      required_integrations
       required_permissions
       risk_level
       requires_confirmation
@@ -32,6 +33,7 @@ class Captain::ToolRegistry
       @agent_tool_class = attributes[:agent_tool_class]
       @assistant_tool_class = attributes[:assistant_tool_class]
       @required_features = Array(attributes[:required_features]).map(&:to_s).freeze
+      @required_integrations = Array(attributes[:required_integrations]).map(&:to_s).freeze
       @required_permissions = Array(attributes[:required_permissions]).map(&:to_s).freeze
       @risk_level = attributes[:risk_level].presence || 'medium'
       @requires_confirmation = ActiveModel::Type::Boolean.new.cast(attributes[:requires_confirmation])
@@ -61,6 +63,7 @@ class Captain::ToolRegistry
         allowed_scopes: allowed_scopes,
         capability_tool: capability_tool,
         required_features: required_features,
+        required_integrations: required_integrations,
         required_permissions: required_permissions,
         risk_level: risk_level,
         requires_confirmation: requires_confirmation,
@@ -1022,6 +1025,119 @@ class Captain::ToolRegistry
           required_features: %w[scheduling scheduling_finance],
           risk_level: 'high',
           requires_confirmation: true
+        ),
+        definition(
+          id: 'get_kaspi_pay_integration_status',
+          title: 'Get Kaspi Pay Integration Status',
+          description: 'Check whether Kaspi Pay is connected for this account without exposing tokens or secrets',
+          group_name: 'Payments',
+          icon: 'credit-card',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayIntegrationStatusService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'start_kaspi_pay_connection',
+          title: 'Start Kaspi Pay Connection',
+          description: 'Start the administrator-only Kaspi Pay merchant connection flow',
+          group_name: 'Payments',
+          icon: 'plug',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::StartKaspiPayConnectionService,
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'send_kaspi_pay_phone',
+          title: 'Send Kaspi Pay Phone',
+          description: 'Send a Kaspi Pay cashier/POS operator phone number during administrator-only connection flow',
+          group_name: 'Payments',
+          icon: 'phone',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SendKaspiPayPhoneService,
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'verify_kaspi_pay_otp',
+          title: 'Verify Kaspi Pay OTP',
+          description: 'Verify Kaspi Pay OTP and connect the merchant account without exposing session tokens',
+          group_name: 'Payments',
+          icon: 'shield-check',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::VerifyKaspiPayOtpService,
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'disconnect_kaspi_pay',
+          title: 'Disconnect Kaspi Pay',
+          description: 'Disconnect Kaspi Pay from this account',
+          group_name: 'Payments',
+          icon: 'plug-off',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DisconnectKaspiPayService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'create_kaspi_pay_payment',
+          title: 'Create Kaspi Pay Payment',
+          description: 'Create a Kaspi Pay QR payment link. Customer-facing agent scope is limited to the current conversation; assistant scope is account-admin only.',
+          group_name: 'Payments',
+          icon: 'qr-code',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::CreateKaspiPayPaymentTool,
+          assistant_tool_class: Captain::Tools::Copilot::CreateKaspiPayPaymentService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'get_kaspi_pay_payment_status',
+          title: 'Get Kaspi Pay Payment Status',
+          description: 'Get or verify Kaspi Pay payment status for the current customer conversation only',
+          group_name: 'Payments',
+          icon: 'activity',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::GetKaspiPayPaymentStatusTool,
+          assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayPaymentStatusService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'search_kaspi_pay_payments',
+          title: 'Search Kaspi Pay Payments',
+          description: 'Search Kaspi Pay payments within the current account',
+          group_name: 'Payments',
+          icon: 'search',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SearchKaspiPayPaymentsService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_kaspi_pay_payment',
+          title: 'Get Kaspi Pay Payment',
+          description: 'Get one Kaspi Pay payment within the current account, optionally syncing latest provider status',
+          group_name: 'Payments',
+          icon: 'file-text',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayPaymentService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'sync_kaspi_pay_payment_status',
+          title: 'Sync Kaspi Pay Payment Status',
+          description: 'Ask Kaspi Pay for the latest status of one account payment and update the local record',
+          group_name: 'Payments',
+          icon: 'refresh',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'medium'
         ),
         definition(
           id: 'execute_macro',

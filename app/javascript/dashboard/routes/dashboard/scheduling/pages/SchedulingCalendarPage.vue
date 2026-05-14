@@ -28,6 +28,7 @@ import SchedulingResourceFilter from 'dashboard/components-next/Scheduling/Sched
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
+import PaymentActionButton from 'dashboard/components/widgets/PaymentActionButton.vue';
 import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_VALUES,
@@ -181,6 +182,21 @@ const pageTitle = computed(() =>
     calendarStore.anchorDate,
     locale.value
   )
+);
+
+const appointmentRemainingAmount = appointment => {
+  if (!appointment) return Number(formStore.form.serviceAmount || 0);
+
+  return Math.max(
+    Number(appointment.serviceAmount || 0) -
+      Number(appointment.prepaidAmount || 0) -
+      Number(appointment.settlementAmount || 0),
+    0
+  );
+};
+
+const appointmentPaymentAmount = computed(() =>
+  appointmentRemainingAmount(formStore.selectedAppointment)
 );
 
 const filterableResources = computed(() =>
@@ -1430,6 +1446,14 @@ onMounted(async () => {
               :is-loading="formStore.ui.isSaving"
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
               @click="handleAppointmentCancel"
+            />
+            <PaymentActionButton
+              v-if="formStore.mode === 'edit'"
+              :appointment-id="formStore.recordId"
+              :default-amount="appointmentPaymentAmount"
+              :require-amount-input="false"
+              delivery-mode="copy"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.KASPI_PAYMENT_LINK')"
             />
             <Button
               v-if="

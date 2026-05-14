@@ -45,13 +45,41 @@ class IntegrationsAPI extends ApiClient {
   }
 
   runHookSync(hookId) {
-    return axios.post(`${this.baseUrl()}/integrations/hooks/${hookId}/run_sync`);
+    return axios.post(
+      `${this.baseUrl()}/integrations/hooks/${hookId}/run_sync`
+    );
   }
 
   connectShopify({ shopDomain }) {
     return axios.post(`${this.baseUrl()}/integrations/shopify/auth`, {
       shop_domain: shopDomain,
     });
+  }
+
+  initKaspiPayAuth() {
+    return axios.post(`${this.baseUrl()}/integrations/kaspi_pay/auth/init`);
+  }
+
+  sendKaspiPayPhone({ processId, phoneNumber }) {
+    return axios.post(
+      `${this.baseUrl()}/integrations/kaspi_pay/auth/send_phone`,
+      {
+        process_id: processId,
+        phone_number: phoneNumber,
+      }
+    );
+  }
+
+  verifyKaspiPayOtp({ processId, phoneNumber, otp, settings }) {
+    return axios.post(
+      `${this.baseUrl()}/integrations/kaspi_pay/auth/verify_otp`,
+      {
+        process_id: processId,
+        phone_number: phoneNumber,
+        otp,
+        settings,
+      }
+    );
   }
 }
 

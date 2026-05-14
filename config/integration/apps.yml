@@ -342,6 +342,28 @@ leadsquared:
       'transcript_activity_score',
     ]
 
+kaspi_pay:
+  id: kaspi_pay
+  logo: kaspi_pay.png
+  i18n_key: kaspi_pay
+  action: /kaspi_pay
+  hook_type: account
+  allow_multiple_hooks: false
+  access_token_required: true
+  settings_json_schema:
+    {
+      'type': 'object',
+      'properties':
+        {
+          'default_payment_type': { 'type': 'string', 'enum': ['qr'] },
+          'latitude': { 'type': ['number', 'string'] },
+          'longitude': { 'type': ['number', 'string'] },
+        },
+      'required': ['default_payment_type'],
+      'additionalProperties': false,
+    }
+  visible_properties: ['default_payment_type', 'latitude', 'longitude']
+
 macrocrm:
   id: macrocrm
   logo: Official_Macro.png

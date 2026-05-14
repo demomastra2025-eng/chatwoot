@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_11_153319) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_14_071000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1392,6 +1392,35 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_11_153319) do
     t.jsonb "settings", default: {}
   end
 
+  create_table "kaspi_pay_payments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "integration_hook_id", null: false
+    t.string "source_type"
+    t.bigint "source_id"
+    t.string "payment_type", null: false
+    t.integer "amount", null: false
+    t.string "currency", default: "KZT", null: false
+    t.string "kaspi_operation_id"
+    t.string "kaspi_order_number"
+    t.string "status", default: "pending", null: false
+    t.string "status_description"
+    t.text "qr_token"
+    t.string "receipt_url"
+    t.datetime "expires_at"
+    t.datetime "paid_at"
+    t.datetime "failed_at"
+    t.string "idempotency_key"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "index_kaspi_pay_payments_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "kaspi_operation_id"], name: "index_kaspi_pay_payments_on_account_id_and_kaspi_operation_id", unique: true, where: "(kaspi_operation_id IS NOT NULL)"
+    t.index ["account_id", "status"], name: "index_kaspi_pay_payments_on_account_id_and_status"
+    t.index ["account_id"], name: "index_kaspi_pay_payments_on_account_id"
+    t.index ["integration_hook_id"], name: "index_kaspi_pay_payments_on_integration_hook_id"
+    t.index ["source_type", "source_id"], name: "index_kaspi_pay_payments_on_source"
+  end
+
   create_table "labels", force: :cascade do |t|
     t.string "title"
     t.text "description"
@@ -2320,6 +2349,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_11_153319) do
   add_foreign_key "crm_tasks", "users", column: "assignee_id"
   add_foreign_key "crm_tasks", "users", column: "creator_id"
   add_foreign_key "inboxes", "portals"
+  add_foreign_key "kaspi_pay_payments", "accounts"
+  add_foreign_key "kaspi_pay_payments", "integrations_hooks", column: "integration_hook_id"
   add_foreign_key "llm_event_annotations", "accounts"
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"

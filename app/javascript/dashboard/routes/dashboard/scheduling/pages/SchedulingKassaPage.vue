@@ -19,6 +19,7 @@ import SchedulingRecordTable from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingResourceFilter from 'dashboard/components-next/Scheduling/SchedulingResourceFilter.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import SchedulingSectionCard from 'dashboard/components-next/Scheduling/SchedulingSectionCard.vue';
+import PaymentActionButton from 'dashboard/components/widgets/PaymentActionButton.vue';
 import {
   EXPENSE_STATUS_VALUES,
   PAYMENT_KIND_VALUES,
@@ -797,6 +798,14 @@ onMounted(async () => {
                       @click="openAppointmentPaymentDrawer(appointment)"
                     />
 
+                    <PaymentActionButton
+                      :appointment-id="Number(appointment.id)"
+                      :default-amount="appointment.remainingAmount"
+                      :require-amount-input="false"
+                      delivery-mode="copy"
+                      :label="$t('SCHEDULING.KASSA.KASPI_PAYMENT_LINK')"
+                    />
+
                     <Button
                       v-if="
                         appointment.receivedAmount > 0 &&
@@ -1019,6 +1028,19 @@ onMounted(async () => {
             :options="paymentMethodOptions"
             :placeholder="$t('SCHEDULING.KASSA.PAYMENT_METHOD')"
             @update:model-value="paymentForm.paymentMethod = $event"
+          />
+        </div>
+        <div class="flex justify-end">
+          <PaymentActionButton
+            v-if="paymentForm.appointmentId"
+            :appointment-id="Number(paymentForm.appointmentId)"
+            :default-amount="
+              selectedPaymentAppointmentDetails?.remainingAmount ||
+              paymentForm.amount
+            "
+            :require-amount-input="false"
+            delivery-mode="copy"
+            :label="$t('SCHEDULING.KASSA.KASPI_PAYMENT_LINK')"
           />
         </div>
       </SchedulingFormFieldGroup>

@@ -49,6 +49,27 @@ FactoryBot.define do
       end
     end
 
+    trait :kaspi_pay do
+      app_id { 'kaspi_pay' }
+      settings do
+        {
+          'default_payment_type' => 'qr',
+          'latitude' => 43.238949,
+          'longitude' => 76.889709
+        }
+      end
+      access_token do
+        {
+          token_sn: 'token-sn',
+          vtoken_secret: 'encrypted-secret',
+          profile_id: 'profile-1',
+          organization_id: 'org-1',
+          org_name: 'Test Merchant',
+          phone_number: '77001234567'
+        }.to_json
+      end
+    end
+
     trait :medelement do
       app_id { 'medelement' }
       access_token do

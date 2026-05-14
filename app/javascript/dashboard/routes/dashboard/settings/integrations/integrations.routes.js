@@ -9,6 +9,7 @@ const Slack = () => import('./Slack.vue');
 const Linear = () => import('./Linear.vue');
 const Notion = () => import('./Notion.vue');
 const Shopify = () => import('./Shopify.vue');
+const KaspiPay = () => import('./KaspiPay.vue');
 export default {
   routes: [
     {
@@ -86,6 +87,15 @@ export default {
             permissions: ['administrator'],
           },
           props: route => ({ error: route.query.error }),
+        },
+        {
+          path: 'kaspi_pay',
+          name: 'settings_integrations_kaspi_pay',
+          component: KaspiPay,
+          meta: {
+            featureFlag: FEATURE_FLAGS.INTEGRATIONS,
+            permissions: ['administrator'],
+          },
         },
         {
           path: ':integration_id',

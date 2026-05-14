@@ -2,12 +2,12 @@ require 'rails_helper'
 require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 
 RSpec.describe Integrations::Hook do
-  it_behaves_like 'reauthorizable'
-
   before do
     allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:sync!).and_return(true)
     allow_any_instance_of(Integrations::Medelement::CronScheduleService).to receive(:destroy!).and_return(true)
   end
+
+  it_behaves_like 'reauthorizable'
 
   context 'with validations' do
     it { is_expected.to validate_presence_of(:app_id) }
@@ -39,6 +39,26 @@ RSpec.describe Integrations::Hook do
       expect(hook).not_to be_valid
       expect(hook.errors[:access_token].join).to include('company_login')
       expect(hook.errors[:access_token].join).to include('password')
+    end
+
+    it 'requires Kaspi Pay session secrets for enabled hooks' do
+      hook = build(:integrations_hook,
+                   :kaspi_pay,
+                   account: create(:account),
+                   access_token: { token_sn: 'token-sn' }.to_json)
+
+      expect(hook).not_to be_valid
+      expect(hook.errors[:access_token]).to include('is missing required Kaspi Pay credentials: vtoken_secret, profile_id')
+    end
+
+    it 'allows disabled Kaspi Pay hooks without retained session secrets' do
+      hook = build(:integrations_hook,
+                   :kaspi_pay,
+                   account: create(:account),
+                   status: 'disabled',
+                   access_token: nil)
+
+      expect(hook).to be_valid
     end
 
     it 'generates a webhook key for macrocrm hooks' do

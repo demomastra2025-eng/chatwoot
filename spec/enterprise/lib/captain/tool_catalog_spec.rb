@@ -1,7 +1,11 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ToolCatalog do
-  let(:account) { create(:account) }
+  let(:account) do
+    create(:account).tap do |account|
+      account.enable_features!('crm_deals', 'crm_tasks', 'scheduling', 'scheduling_finance')
+    end
+  end
   let(:assistant) { create(:captain_assistant, account: account) }
 
   describe '.available_tools_for' do
@@ -32,6 +36,37 @@ RSpec.describe Captain::ToolCatalog do
       expect(agent_tool_ids).not_to include(other_tool.slug)
       expect(assistant_tool_ids).to include(own_tool.slug)
       expect(assistant_tool_ids).not_to include(other_tool.slug)
+    end
+
+    it 'hides Kaspi Pay payment tools until this account has an enabled Kaspi Pay integration' do
+      create(:integrations_hook, :kaspi_pay, account: create(:account))
+      create(:integrations_hook, :kaspi_pay, account: account, status: 'disabled')
+
+      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+
+      expect(agent_tool_ids).not_to include(*kaspi_pay_agent_payment_tool_ids)
+      expect(assistant_tool_ids).not_to include(*kaspi_pay_connected_tool_ids)
+      expect(assistant_tool_ids).to include(
+        'get_kaspi_pay_integration_status',
+        'start_kaspi_pay_connection',
+        'send_kaspi_pay_phone',
+        'verify_kaspi_pay_otp'
+      )
+    end
+
+    it 'exposes Kaspi Pay payment tools only for the account with an enabled Kaspi Pay integration' do
+      other_account = create(:account)
+      other_assistant = create(:captain_assistant, account: other_account)
+      create(:integrations_hook, :kaspi_pay, account: account)
+
+      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+      other_assistant_tool_ids = described_class.available_tools_for(other_assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+
+      expect(agent_tool_ids).to include(*kaspi_pay_agent_payment_tool_ids)
+      expect(assistant_tool_ids).to include(*kaspi_pay_connected_tool_ids)
+      expect(other_assistant_tool_ids).not_to include(*kaspi_pay_connected_tool_ids)
     end
 
     it 'includes discovered MCP tools for the requested scope' do
@@ -173,5 +208,21 @@ RSpec.describe Captain::ToolCatalog do
 
       expect(summary).to eq("- faq_lookup: Search FAQ responses\n- handoff: Hand off the conversation")
     end
+  end
+
+  def kaspi_pay_agent_payment_tool_ids
+    %w[
+      create_kaspi_pay_payment
+      get_kaspi_pay_payment_status
+    ]
+  end
+
+  def kaspi_pay_connected_tool_ids
+    kaspi_pay_agent_payment_tool_ids + %w[
+      disconnect_kaspi_pay
+      search_kaspi_pay_payments
+      get_kaspi_pay_payment
+      sync_kaspi_pay_payment_status
+    ]
   end
 end

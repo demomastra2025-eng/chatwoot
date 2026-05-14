@@ -3,7 +3,7 @@
 class Captain::ToolCatalog
   class << self
     def available_tools_for(assistant, scope_name)
-      (built_in_tools_for(scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name))
+      (built_in_tools_for(assistant, scope_name) + custom_tools_for(assistant, scope_name) + mcp_tools_for(assistant, scope_name))
         .map(&:dup)
         .uniq { |tool_definition| tool_definition[:id] }
     end
@@ -52,8 +52,19 @@ class Captain::ToolCatalog
 
     private
 
-    def built_in_tools_for(scope_name)
-      Captain::ToolRegistry.tools_for_scope(scope_name)
+    def built_in_tools_for(assistant, scope_name)
+      Captain::ToolRegistry.tools_for_scope(scope_name).select do |tool_definition|
+        required_integrations_available?(assistant, tool_definition)
+      end
+    end
+
+    def required_integrations_available?(assistant, tool_definition)
+      required_integrations = Array(tool_definition[:required_integrations]).map(&:to_s)
+      return true if assistant.blank? || required_integrations.blank?
+
+      required_integrations.all? do |app_id|
+        assistant.account.hooks.exists?(app_id: app_id, status: Integrations::Hook.statuses[:enabled])
+      end
     end
 
     def custom_tools_for(assistant, scope_name)

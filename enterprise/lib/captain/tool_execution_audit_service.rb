@@ -1,5 +1,6 @@
 class Captain::ToolExecutionAuditService
   MAX_RESULT_PREVIEW_LENGTH = 1000
+  SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session)/i
 
   class << self
     def record(...)
@@ -74,7 +75,7 @@ class Captain::ToolExecutionAuditService
   def serializable_value(value)
     serializable = value.respond_to?(:as_json) ? value.as_json : value
 
-    Captain::EncodingNormalizer.utf8(serializable)
+    Captain::EncodingNormalizer.utf8(redact_sensitive(serializable))
   rescue StandardError
     Captain::EncodingNormalizer.string(value.to_s)
   end
@@ -85,7 +86,7 @@ class Captain::ToolExecutionAuditService
     preview =
       case value
       when String
-        Captain::EncodingNormalizer.string(value)
+        redacted_string_preview(value)
       else
         JSON.generate(serializable_value(value))
       end
@@ -93,5 +94,29 @@ class Captain::ToolExecutionAuditService
     preview.truncate(MAX_RESULT_PREVIEW_LENGTH)
   rescue StandardError
     value.to_s.truncate(MAX_RESULT_PREVIEW_LENGTH)
+  end
+
+  def redacted_string_preview(value)
+    parsed = JSON.parse(value)
+    JSON.generate(redact_sensitive(parsed))
+  rescue JSON::ParserError
+    Captain::EncodingNormalizer.string(value)
+  end
+
+  def redact_sensitive(value)
+    case value
+    when Hash
+      value.each_with_object({}) do |(key, item), redacted|
+        redacted[key] = sensitive_key?(key) ? '[FILTERED]' : redact_sensitive(item)
+      end
+    when Array
+      value.map { |item| redact_sensitive(item) }
+    else
+      value
+    end
+  end
+
+  def sensitive_key?(key)
+    key.to_s.match?(SENSITIVE_KEY_PATTERN)
   end
 end

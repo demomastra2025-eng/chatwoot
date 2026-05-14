@@ -247,6 +247,21 @@
       "START_AUDIO_RECORDING": "Начать запись аудио",
       "STOP_AUDIO_RECORDING": "Остановить запись аудио",
       "": "",
+      "PAYMENTS": {
+        "TOOLTIP": "Платежи",
+        "KASPI_QR_LINK": "Kaspi QR / ссылка на оплату",
+        "INVOICE_SOON": "Счёт (скоро)",
+        "AMOUNT_PROMPT": "Введите сумму оплаты в KZT",
+        "AMOUNT_LABEL": "Сумма в KZT",
+        "AMOUNT_PLACEHOLDER": "15000",
+        "CREATE_LINK": "Создать ссылку",
+        "CANCEL": "Отмена",
+        "INVALID_AMOUNT": "Введите корректную сумму оплаты",
+        "CREATED": "Ссылка на оплату добавлена в ответ",
+        "CREATED_COPY": "Ссылка на оплату скопирована",
+        "CREATE_ERROR": "Не удалось создать ссылку на оплату",
+        "KASPI_PAYMENT_TEXT": "Ссылка для оплаты Kaspi: {link}\nСумма: {amount} {currency}"
+      },
       "EMAIL_HEAD": {
         "TO": "ДО",
         "ADD_BCC": "Добавить bcc",

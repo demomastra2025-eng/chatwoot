@@ -9,6 +9,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 import VideoCallButton from '../VideoCallButton.vue';
+import PaymentActionButton from '../PaymentActionButton.vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { mapGetters } from 'vuex';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -16,7 +17,7 @@ import wootConstants from 'dashboard/constants/globals';
 
 export default {
   name: 'ReplyBottomPanel',
-  components: { NextButton, FileUpload, VideoCallButton },
+  components: { NextButton, FileUpload, PaymentActionButton, VideoCallButton },
   mixins: [inboxMixin],
   props: {
     isNote: {
@@ -457,6 +458,11 @@ export default {
         sm
         :aria-pressed="quotedReplyEnabled"
         @click="$emit('toggleQuotedReply')"
+      />
+      <PaymentActionButton
+        v-if="!isOnPrivateNote && !isEditorDisabled"
+        :conversation-id="conversationId"
+        @replace-text="replaceText"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"

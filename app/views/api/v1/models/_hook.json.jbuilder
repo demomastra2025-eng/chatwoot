@@ -38,6 +38,10 @@ if Current.account_user&.administrator?
     metadata[:webhook_url] = resource.macrocrm_manager_changed_webhook_url
   end
 
+  if resource.kaspi_pay?
+    metadata.merge!(resource.kaspi_pay_metadata)
+  end
+
   if metadata.present?
     json.metadata do
       metadata.each do |key, value|

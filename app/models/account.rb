@@ -118,6 +118,7 @@ class Account < ApplicationRecord
   has_many :scheduling_expenses, dependent: :destroy_async, class_name: 'Scheduling::Expense'
   has_many :scheduling_holidays, dependent: :destroy_async, class_name: 'Scheduling::Holiday'
   has_many :scheduling_payments, dependent: :destroy_async, class_name: 'Scheduling::Payment'
+  has_many :kaspi_pay_payments, dependent: :destroy_async, class_name: 'KaspiPay::Payment'
   has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
   has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
   has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'

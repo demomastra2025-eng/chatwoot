@@ -38,6 +38,16 @@ RSpec.describe Captain::ToolRegistry do
         'create_canned_response',
         'merge_contacts',
         'add_appointment_payment',
+        'get_kaspi_pay_integration_status',
+        'start_kaspi_pay_connection',
+        'send_kaspi_pay_phone',
+        'verify_kaspi_pay_otp',
+        'disconnect_kaspi_pay',
+        'create_kaspi_pay_payment',
+        'get_kaspi_pay_payment_status',
+        'search_kaspi_pay_payments',
+        'get_kaspi_pay_payment',
+        'sync_kaspi_pay_payment_status',
         'execute_macro',
         'get_whatsapp_web_diagnostics',
         'reconnect_whatsapp_web',
@@ -61,7 +71,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(75)
+      expect(agent_tool_ids.size).to eq(77)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -164,6 +174,14 @@ RSpec.describe Captain::ToolRegistry do
   def assistant_only_admin_tool_ids
     %w[
       add_appointment_payment
+      get_kaspi_pay_integration_status
+      start_kaspi_pay_connection
+      send_kaspi_pay_phone
+      verify_kaspi_pay_otp
+      disconnect_kaspi_pay
+      search_kaspi_pay_payments
+      get_kaspi_pay_payment
+      sync_kaspi_pay_payment_status
       execute_macro
       get_whatsapp_web_diagnostics
       reconnect_whatsapp_web

@@ -35,6 +35,7 @@ services:
       - CW_AUTO_PREPARE_DB=${CW_AUTO_PREPARE_DB:-true}
       - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
       - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
+      - KASPI_PAY_ADAPTER_URL=${KASPI_PAY_ADAPTER_URL:-http://kaspi_pay_adapter:4077}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
     networks:
@@ -57,6 +58,7 @@ services:
       - CW_AUTO_PREPARE_DB=false
       - TELEGRAM_PERSONAL_GATEWAY_URL=${TELEGRAM_PERSONAL_GATEWAY_URL:-http://telegram-personal-gateway:8000}
       - TELEGRAM_PERSONAL_GATEWAY_TOKEN=${TELEGRAM_PERSONAL_GATEWAY_TOKEN:-replace_with_strong_shared_gateway_token}
+      - KASPI_PAY_ADAPTER_URL=${KASPI_PAY_ADAPTER_URL:-http://kaspi_pay_adapter:4077}
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
     networks:
@@ -83,6 +85,21 @@ services:
       - default
       - shared-services
     restart: always
+
+  kaspi_pay_adapter:
+    image: node:20-alpine
+    working_dir: /app
+    command: ['sh', '-c', 'npm ci --omit=dev && npm start']
+    restart: always
+    env_file: .env
+    environment:
+      - PORT=4077
+      - KASPI_PAY_ADAPTER_STATE_DIR=/data/kaspi-pay-adapter
+    volumes:
+      - ./services/kaspi-pay-adapter:/app
+      - kaspi_pay_adapter_data:/data/kaspi-pay-adapter
+    networks:
+      - default
 
   telegram-personal-gateway:
     build:
@@ -154,6 +171,7 @@ volumes:
   postgres_data:
   redis_data:
   telegram_personal_gateway_data:
+  kaspi_pay_adapter_data:
 
 networks:
   shared-services:

@@ -251,6 +251,12 @@ kk:
         busy_video_call: 'Telegram video call with %{contact_name} was busy'
         completed_voice_call: 'Telegram call with %{contact_name} ended'
         completed_video_call: 'Telegram video call with %{contact_name} ended'
+      kaspi_pay:
+        created: 'Kaspi Pay payment link created for %{amount} %{currency}'
+        paid: 'Kaspi Pay payment received: %{amount} %{currency}'
+        expired: 'Kaspi Pay payment link expired: %{amount} %{currency}'
+        failed: 'Kaspi Pay payment failed: %{amount} %{currency}'
+        cancelled: 'Kaspi Pay payment cancelled: %{amount} %{currency}'
       csat:
         not_sent_due_to_messaging_window: CSAT survey not sent due to outgoing message restrictions
       auto_resolve:
@@ -322,6 +328,10 @@ kk:
       name: Shopify
       short_description: Access order details and customer data from your Shopify store.
       description: Connect your Shopify store to access order details, customer information, and product data directly within your conversations and helps your support team provide faster, more contextual assistance to your customers.
+    kaspi_pay:
+      name: Kaspi Pay
+      short_description: Create Kaspi QR payments directly from OneLink.
+      description: Connect Kaspi Pay to generate QR payment links from OneLink and record successful payments in scheduling finance automatically.
     leadsquared:
       name: LeadSquared
       short_description: Sync your contacts and conversations with LeadSquared CRM.
