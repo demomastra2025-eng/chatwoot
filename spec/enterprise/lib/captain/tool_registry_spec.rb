@@ -49,6 +49,11 @@ RSpec.describe Captain::ToolRegistry do
         'get_kaspi_pay_payment',
         'sync_kaspi_pay_payment_status',
         'execute_macro',
+        'get_account_health',
+        'get_recent_account_errors',
+        'trace_ai_response',
+        'trace_message_delivery',
+        'get_channel_health',
         'get_whatsapp_web_diagnostics',
         'reconnect_whatsapp_web',
         'retry_failed_message',
@@ -183,6 +188,11 @@ RSpec.describe Captain::ToolRegistry do
       get_kaspi_pay_payment
       sync_kaspi_pay_payment_status
       execute_macro
+      get_account_health
+      get_recent_account_errors
+      trace_ai_response
+      trace_message_delivery
+      get_channel_health
       get_whatsapp_web_diagnostics
       reconnect_whatsapp_web
       create_label

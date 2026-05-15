@@ -1151,6 +1151,66 @@ class Captain::ToolRegistry
           requires_confirmation: true
         ),
         definition(
+          id: 'get_account_health',
+          title: 'Get Account Health',
+          description: 'Get an account-scoped health snapshot for Captain, channels, and message delivery without exposing raw logs or secrets',
+          group_name: 'Operations',
+          icon: 'activity',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetAccountHealthService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_recent_account_errors',
+          title: 'Get Recent Account Errors',
+          description: 'List recent account-scoped AI/tool errors with sanitized payload details',
+          group_name: 'Operations',
+          icon: 'alert-triangle',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetRecentAccountErrorsService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'trace_ai_response',
+          title: 'Trace AI Response',
+          description: 'Trace an account-scoped Captain/LLM response by trace, request, session, or conversation identifier',
+          group_name: 'Operations',
+          icon: 'route',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::TraceAiResponseService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'trace_message_delivery',
+          title: 'Trace Message Delivery',
+          description: 'Trace outbound and incoming message delivery for one permissible account conversation',
+          group_name: 'Operations',
+          icon: 'send',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::TraceMessageDeliveryService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_channel_health',
+          title: 'Get Channel Health',
+          description: 'Get account-scoped inbox/channel health from messages and delivery failures without exposing provider secrets',
+          group_name: 'Operations',
+          icon: 'inbox',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetChannelHealthService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'get_whatsapp_web_diagnostics',
           title: 'Get WhatsApp Web Diagnostics',
           description: 'Get runtime diagnostics for a WhatsApp Web inbox',
