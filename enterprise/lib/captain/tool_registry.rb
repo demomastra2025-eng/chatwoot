@@ -1226,6 +1226,17 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'get_tool_execution_log',
+          title: 'Get Tool Execution Log',
+          description: 'List sanitized account-scoped Captain assistant tool execution events for RCA and debugging',
+          group_name: 'Operations',
+          icon: 'list-checks',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetToolExecutionLogService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'trace_ai_response',
           title: 'Trace AI Response',
           description: 'Trace an account-scoped Captain/LLM response by trace, request, session, or conversation identifier',

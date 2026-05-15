@@ -15,6 +15,7 @@ RSpec.describe 'Captain assistant account observability tools' do
       expect(assistant_ids).to include(
         'get_account_health',
         'get_recent_account_errors',
+        'get_tool_execution_log',
         'trace_ai_response',
         'trace_message_delivery',
         'get_channel_health'
@@ -22,6 +23,7 @@ RSpec.describe 'Captain assistant account observability tools' do
       expect(agent_ids).not_to include(
         'get_account_health',
         'get_recent_account_errors',
+        'get_tool_execution_log',
         'trace_ai_response',
         'trace_message_delivery',
         'get_channel_health'
@@ -40,13 +42,28 @@ RSpec.describe 'Captain assistant account observability tools' do
     it 'returns an account-scoped health snapshot without leaking other accounts' do
       create(:llm_event, account: account, event_name: 'llm.chat.complete', status: 'completed', total_tokens: 100)
       create(:llm_event, account: account, event_name: 'llm.tool.complete', status: 'failed', error: true, tool_failure: true)
+      create(
+        :llm_event,
+        account: account,
+        event_name: 'llm.tool.complete',
+        status: 'failed',
+        error: true,
+        tool_failure: true,
+        tool_name: 'send_message_to_conversation',
+        payload: { result_success: false, arguments_keys: %w[conversation_id] }
+      )
       create(:llm_event, account: other_account, event_name: 'llm.chat.complete', status: 'completed')
 
       payload = JSON.parse(service.execute(since: 2.hours.ago.iso8601))
 
       expect(payload).to include('account_id' => account.id, 'status' => 'degraded')
-      expect(payload.fetch('snapshot')).to include('total_events' => 2, 'request_count' => 1, 'error_count' => 1, 'tool_failure_count' => 1)
-      expect(payload.fetch('recommendations')).to include(a_string_matching(/recent failed/i))
+      expect(payload.fetch('snapshot')).to include('total_events' => 3, 'request_count' => 1, 'error_count' => 2, 'tool_failure_count' => 2)
+      expect(payload.fetch('tool_execution_log')).to include(
+        'total_executions' => 2,
+        'failed_executions' => 2,
+        'recent_failed_tools' => include('send_message_to_conversation')
+      )
+      expect(payload.fetch('recommendations')).to include(a_string_matching(/recent failed/i), a_string_matching(/tool execution/i))
     end
   end
 
@@ -73,6 +90,48 @@ RSpec.describe 'Captain assistant account observability tools' do
       expect(payload.fetch('total_count')).to eq(1)
       expect(payload.fetch('events').first).to include('id' => error_event.id, 'tool_name' => 'search_documentation')
       expect(payload.fetch('events').first.fetch('details')).to include('message' => 'boom', 'api_token' => '[REDACTED]')
+    end
+  end
+
+  describe Captain::Tools::Copilot::GetToolExecutionLogService do
+    let(:service) { described_class.new(assistant, user: admin) }
+
+    it 'returns sanitized account-scoped assistant tool event entries without raw arguments or result bodies' do
+      event = create(
+        :llm_event,
+        account: account,
+        event_name: 'llm.tool.complete',
+        feature: 'assistant',
+        status: 'failed',
+        error: true,
+        tool_failure: true,
+        tool_name: 'send_message_to_conversation',
+        conversation_display_id: 501,
+        trace_id: 'trace-tool-1',
+        payload: {
+          arguments_keys: %w[conversation_id content],
+          arguments_preview: { content: 'customer private text' }.to_json,
+          result_success: false,
+          result_error_preview: 'provider token=secret failed',
+          result_preview: { access_key: 'result-secret' }.to_json
+        }
+      )
+      create(:llm_event, account: other_account, event_name: 'llm.tool.complete', tool_name: 'send_message_to_conversation', error: true)
+
+      payload = JSON.parse(service.execute(tool_id: 'send_message_to_conversation', failed_only: true, limit: 10))
+      entry = payload.fetch('entries').first
+
+      expect(payload.fetch('total_count')).to eq(1)
+      expect(entry).to include(
+        'id' => event.id,
+        'tool_id' => 'send_message_to_conversation',
+        'conversation_display_id' => 501,
+        'result_success' => false,
+        'error_summary' => '[REDACTED]'
+      )
+      expect(entry.fetch('arguments_keys')).to eq(%w[conversation_id content])
+      expect(entry).not_to have_key('arguments_preview')
+      expect(entry).not_to have_key('result_preview')
     end
   end
 

@@ -53,6 +53,7 @@ RSpec.describe Captain::ToolRegistry do
         'execute_macro',
         'get_account_health',
         'get_recent_account_errors',
+        'get_tool_execution_log',
         'trace_ai_response',
         'trace_message_delivery',
         'get_channel_health',
@@ -192,8 +193,11 @@ RSpec.describe Captain::ToolRegistry do
       execute_macro
       create_contact
       complete_task
+      list_account_users
+      list_teams
       get_account_health
       get_recent_account_errors
+      get_tool_execution_log
       trace_ai_response
       trace_message_delivery
       get_channel_health

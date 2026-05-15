@@ -117,7 +117,49 @@ class Captain::Tools::Copilot::BaseObservabilityService < Captain::Tools::Copilo
     account.messages.outgoing.failed.where(created_at: range)
   end
 
+  def tool_execution_events(range)
+    event_scope(range).for_event_name('llm.tool.complete')
+  end
+
+  def failed_tool_events(scope)
+    scope.where('llm_events.error = ? OR llm_events.tool_failure = ? OR llm_events.status = ?', true, true, 'failed')
+  end
+
+  def serialize_tool_execution_event(event)
+    details = sanitized_payload(event.payload || {}).with_indifferent_access
+
+    {
+      id: event.id,
+      created_at: event.created_at&.iso8601,
+      tool_id: event.tool_name,
+      status: event.status,
+      error: event.error,
+      tool_failure: event.tool_failure,
+      result_success: details[:result_success],
+      result_retryable: details[:result_retryable],
+      result_type: details[:result_type],
+      result_size: details[:result_size],
+      arguments_keys: details[:arguments_keys],
+      arguments_size: details[:arguments_size],
+      error_summary: safe_error_summary(details[:result_error_preview]),
+      request_id: event.request_id,
+      trace_id: event.trace_id.presence || event.payload['trace_id'],
+      session_id: event.session_id,
+      assistant_id: event.assistant_id,
+      conversation_id: event.conversation_id,
+      conversation_display_id: event.conversation_display_id,
+      current_agent: event.current_agent,
+      source: event.source
+    }.compact
+  end
+
   def external_error_for(message)
     redact_error_string(message.content_attributes&.dig('external_error') || message.content_attributes&.dig(:external_error))
+  end
+
+  def safe_error_summary(value)
+    return if value.blank?
+
+    redact_error_string(value).to_s.truncate(300)
   end
 end
