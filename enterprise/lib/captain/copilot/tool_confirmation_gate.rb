@@ -15,7 +15,8 @@ class Captain::Copilot::ToolConfirmationGate
   MAX_ARGUMENT_PREVIEW_LENGTH = 1000
   SENSITIVE_KEY_PATTERN = /
     (otp|token|secret|password|credential|authorization|process_?id|session|
-     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact)
+     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|
+     auth_?config|template|param_?schema|fixed_?value)
   /ix
   KNOWLEDGE_ENTRY_TOOL_IDS = %w[
     create_captain_knowledge_entry
@@ -171,7 +172,13 @@ class Captain::Copilot::ToolConfirmationGate
     normalized_arguments = Captain::EncodingNormalizer.utf8(redacted_arguments)
     @arguments_preview ||= JSON.generate(normalized_arguments).truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
   rescue StandardError
-    @arguments.to_s.truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
+    fallback_arguments_preview
+  end
+
+  def fallback_arguments_preview
+    redact_sensitive_string(Captain::EncodingNormalizer.string(@arguments.to_s)).truncate(MAX_ARGUMENT_PREVIEW_LENGTH)
+  rescue StandardError
+    '[FILTERED]'
   end
 
   def confirmation_token(request)

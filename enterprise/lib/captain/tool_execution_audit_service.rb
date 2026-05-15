@@ -2,7 +2,8 @@ class Captain::ToolExecutionAuditService
   MAX_RESULT_PREVIEW_LENGTH = 1000
   SENSITIVE_KEY_PATTERN = /
     (otp|token|secret|password|credential|authorization|process_?id|session|
-     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact)
+     api_?key|access_?key|refresh|url|link|webhook|metadata|source_?text|content|artifact|
+     auth_?config|template|param_?schema|fixed_?value)
   /ix
   SENSITIVE_VALUE_PATTERN = %r{
     https?://|
@@ -100,7 +101,7 @@ class Captain::ToolExecutionAuditService
 
     Captain::EncodingNormalizer.utf8(redact_sensitive(serializable))
   rescue StandardError
-    Captain::EncodingNormalizer.string(value.to_s)
+    fallback_redacted_string(value)
   end
 
   def serialized_preview(value)
@@ -116,7 +117,13 @@ class Captain::ToolExecutionAuditService
 
     preview.truncate(MAX_RESULT_PREVIEW_LENGTH)
   rescue StandardError
-    value.to_s.truncate(MAX_RESULT_PREVIEW_LENGTH)
+    fallback_redacted_string(value).truncate(MAX_RESULT_PREVIEW_LENGTH)
+  end
+
+  def fallback_redacted_string(value)
+    redact_sensitive_string(Captain::EncodingNormalizer.string(value.to_s))
+  rescue StandardError
+    '[FILTERED]'
   end
 
   def redacted_string_preview(value)

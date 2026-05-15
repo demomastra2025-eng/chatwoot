@@ -329,6 +329,74 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'list_captain_custom_tools',
+          title: 'List Captain Custom Tools',
+          description: 'List account-scoped Captain custom HTTP tools for AI Admin operations',
+          group_name: 'AI Admin',
+          icon: 'plug',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListCaptainCustomToolsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_captain_custom_tool',
+          title: 'Get Captain Custom Tool',
+          description: 'Get one account-scoped Captain custom HTTP tool with sensitive config redacted',
+          group_name: 'AI Admin',
+          icon: 'plug',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCaptainCustomToolService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'create_captain_custom_tool',
+          title: 'Create Captain Custom Tool',
+          description: 'Create a Captain custom HTTP tool after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'plug-add',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainCustomToolService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_captain_custom_tool',
+          title: 'Update Captain Custom Tool',
+          description: 'Update a Captain custom HTTP tool after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainCustomToolService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'set_captain_custom_tool_status',
+          title: 'Set Captain Custom Tool Status',
+          description: 'Enable or disable a Captain custom HTTP tool after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'toggle-on',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SetCaptainCustomToolStatusService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_captain_custom_tool',
+          title: 'Delete Captain Custom Tool',
+          description: 'Delete a Captain custom HTTP tool after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'delete',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainCustomToolService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'list_captain_documents',
           title: 'List Captain Documents',
           description: 'List Captain knowledge documents and safe artifact IDs for files that can be attached to messages',

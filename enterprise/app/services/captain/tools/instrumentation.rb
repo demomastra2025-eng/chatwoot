@@ -3,7 +3,7 @@ module Captain::Tools::Instrumentation
   include Integrations::LlmInstrumentation
 
   def execute(**args)
-    instrument_tool_call(name, args, tool_instrumentation_params(args)) do
+    instrument_tool_call(name, tool_trace_arguments(args), tool_instrumentation_params(args)) do
       confirmation_result = enforce_tool_confirmation(args)
       if confirmation_result.present?
         audit_tool_execution(arguments: args, result: confirmation_result)
@@ -36,6 +36,10 @@ module Captain::Tools::Instrumentation
   end
 
   private
+
+  def tool_trace_arguments(arguments)
+    Captain::ToolTraceRedactor.call(arguments)
+  end
 
   def audit_tool_execution(arguments:, result: nil, error: nil)
     Captain::ToolExecutionAuditService.record(
