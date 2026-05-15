@@ -100,6 +100,23 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(payload.dig('data', 'arguments_digest')).to be_present
   end
 
+  it 'redacts sensitive values inside JSON string arguments in confirmation previews' do
+    service = Captain::Tools::Copilot::CreateAutomationRuleService.new(
+      assistant,
+      user: user,
+      copilot_thread: copilot_thread
+    )
+    actions_json = [{ action_name: 'send_webhook_event', action_params: ['https://secret.example/webhook?token=abc'] }].to_json
+
+    payload = JSON.parse(service.execute(name: 'Webhook rule', event_name: 'conversation_created', actions_json: actions_json))
+    preview = payload.dig('data', 'arguments_preview')
+
+    expect(preview).to include('[FILTERED]')
+    expect(preview).not_to include('secret.example')
+    expect(preview).not_to include('token=abc')
+    expect(payload.dig('data', 'arguments_digest')).to be_present
+  end
+
   it 'expires stale confirmation requests' do
     service = Captain::Tools::Copilot::SendMessageToConversationService.new(
       assistant,

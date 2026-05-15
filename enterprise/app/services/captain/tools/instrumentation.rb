@@ -52,6 +52,7 @@ module Captain::Tools::Instrumentation
 
   def enforce_tool_confirmation(arguments)
     return unless tool_scope_name == Captain::ToolAccess::SCOPE_ASSISTANT
+    return inactive_tool_result if runtime_confirmation_required?(tool_definition) && !active?
 
     Captain::Copilot::ToolConfirmationGate.new(
       copilot_thread: @copilot_thread,
@@ -59,6 +60,11 @@ module Captain::Tools::Instrumentation
       arguments: arguments,
       user: @user
     ).call
+  end
+
+  def inactive_tool_result
+    message = account_administrator? ? 'Tool is not available for the current operator' : 'Account administrator permission is required'
+    tool_failure(ArgumentError.new(message))
   end
 
   def tool_instrumentation_params(arguments)

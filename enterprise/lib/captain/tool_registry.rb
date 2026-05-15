@@ -1432,6 +1432,76 @@ class Captain::ToolRegistry
           requires_confirmation: true
         ),
         definition(
+          id: 'list_automation_rules',
+          title: 'List Automation Rules',
+          description: 'List account automation rules with safe metadata and redacted action details',
+          group_name: 'Automation',
+          icon: 'list-checks',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListAutomationRulesService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_automation_rule',
+          title: 'Get Automation Rule',
+          description: 'Get one account automation rule with redacted conditions/actions and supported fields',
+          group_name: 'Automation',
+          icon: 'workflow',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetAutomationRuleService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'create_automation_rule',
+          title: 'Create Automation Rule',
+          description: 'Create an account automation rule from explicit event, conditions JSON, and actions JSON',
+          group_name: 'Automation',
+          icon: 'plus-circle',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateAutomationRuleService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_automation_rule',
+          title: 'Update Automation Rule',
+          description: 'Update an account automation rule metadata, event, conditions, actions, or active status',
+          group_name: 'Automation',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateAutomationRuleService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'set_automation_rule_status',
+          title: 'Set Automation Rule Status',
+          description: 'Pause or resume an account automation rule by setting its active flag',
+          group_name: 'Automation',
+          icon: 'power',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SetAutomationRuleStatusService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_automation_rule',
+          title: 'Delete Automation Rule',
+          description: 'Delete an account automation rule so it no longer runs',
+          group_name: 'Automation',
+          icon: 'trash',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteAutomationRuleService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'get_account_health',
           title: 'Get Account Health',
           description: 'Get an account-scoped health snapshot for Captain, channels, and message delivery without exposing raw logs or secrets',
