@@ -1019,6 +1019,66 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'get_inbox_settings',
+          title: 'Get Inbox Settings',
+          description: 'Get safe account inbox settings, working hours, members, assignment policy, and Captain metadata',
+          group_name: 'Account',
+          icon: 'settings',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetInboxSettingsService,
+          risk_level: 'low',
+          selected_by_default: false,
+          idempotent: true
+        ),
+        definition(
+          id: 'update_inbox_settings',
+          title: 'Update Inbox Settings',
+          description: 'Update safe account inbox settings such as name, timezone, auto-assignment, and working-hours toggle',
+          group_name: 'Account',
+          icon: 'settings',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateInboxSettingsService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_inbox_working_hours',
+          title: 'Update Inbox Working Hours',
+          description: 'Update weekly working hours for one account inbox using a JSON array of day schedules',
+          group_name: 'Account',
+          icon: 'clock',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateInboxWorkingHoursService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'add_inbox_members',
+          title: 'Add Inbox Members',
+          description: 'Add one or more account users as inbox members',
+          group_name: 'Account',
+          icon: 'user-plus',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::AddInboxMembersService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'remove_inbox_members',
+          title: 'Remove Inbox Members',
+          description: 'Remove one or more account users from an inbox membership list',
+          group_name: 'Account',
+          icon: 'user-minus',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RemoveInboxMembersService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'update_captain_inbox_auto_reply_mode',
           title: 'Update Captain Inbox Auto Reply Mode',
           description: 'Update the AI auto-reply mode for an account inbox already connected to Captain',
