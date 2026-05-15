@@ -1274,13 +1274,49 @@ class Captain::ToolRegistry
         definition(
           id: 'create_canned_response',
           title: 'Create Canned Response',
-          description: 'Create a reusable canned response',
+          description: 'Create a reusable canned response in the current account',
           group_name: 'Support content',
           icon: 'note-add',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::CreateCannedResponseService,
-          risk_level: 'medium'
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'get_canned_response',
+          title: 'Get Canned Response',
+          description: 'Get one canned response in the current account',
+          group_name: 'Support content',
+          icon: 'file-text',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCannedResponseService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'update_canned_response',
+          title: 'Update Canned Response',
+          description: 'Update a canned response short code or content in the current account',
+          group_name: 'Support content',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCannedResponseService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_canned_response',
+          title: 'Delete Canned Response',
+          description: 'Delete a canned response from the current account',
+          group_name: 'Support content',
+          icon: 'trash',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteCannedResponseService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
         ),
         definition(
           id: 'merge_contacts',
@@ -1419,6 +1455,64 @@ class Captain::ToolRegistry
           assistant_tool_class: Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService,
           required_integrations: %w[kaspi_pay],
           risk_level: 'medium'
+        ),
+        definition(
+          id: 'list_macros',
+          title: 'List Macros',
+          description: 'List account macros with safe metadata and optionally redacted action details',
+          group_name: 'Automation',
+          icon: 'list',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListMacrosService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_macro',
+          title: 'Get Macro',
+          description: 'Get one account macro with redacted action details and supported actions',
+          group_name: 'Automation',
+          icon: 'file-text',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetMacroService,
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'create_macro',
+          title: 'Create Macro',
+          description: 'Create an account macro from explicit actions JSON',
+          group_name: 'Automation',
+          icon: 'plus-circle',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateMacroService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_macro',
+          title: 'Update Macro',
+          description: 'Update an account macro name, visibility, or actions JSON',
+          group_name: 'Automation',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateMacroService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_macro',
+          title: 'Delete Macro',
+          description: 'Delete a macro from the current account',
+          group_name: 'Automation',
+          icon: 'trash',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteMacroService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
         ),
         definition(
           id: 'execute_macro',

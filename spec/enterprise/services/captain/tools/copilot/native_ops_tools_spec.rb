@@ -16,6 +16,11 @@ RSpec.describe 'Captain native ops tools' do
     )
   end
 
+  before do
+    confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
+    allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
+  end
+
   describe Captain::Tools::Copilot::SendMessageToConversationService do
     it 'sends a message to the target conversation' do
       service = described_class.new(assistant, user: user, conversation: conversation)

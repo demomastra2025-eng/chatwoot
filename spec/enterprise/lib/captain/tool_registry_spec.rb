@@ -36,6 +36,9 @@ RSpec.describe Captain::ToolRegistry do
         'assign_conversation',
         'search_canned_responses',
         'create_canned_response',
+        'get_canned_response',
+        'update_canned_response',
+        'delete_canned_response',
         'create_contact',
         'complete_task',
         'merge_contacts',
@@ -50,6 +53,11 @@ RSpec.describe Captain::ToolRegistry do
         'search_kaspi_pay_payments',
         'get_kaspi_pay_payment',
         'sync_kaspi_pay_payment_status',
+        'list_macros',
+        'get_macro',
+        'create_macro',
+        'update_macro',
+        'delete_macro',
         'execute_macro',
         'get_account_health',
         'get_recent_account_errors',
@@ -79,7 +87,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(77)
+      expect(agent_tool_ids.size).to eq(76)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -190,9 +198,43 @@ RSpec.describe Captain::ToolRegistry do
       search_kaspi_pay_payments
       get_kaspi_pay_payment
       sync_kaspi_pay_payment_status
+      create_canned_response
+      get_canned_response
+      update_canned_response
+      delete_canned_response
+      list_macros
+      get_macro
+      create_macro
+      update_macro
+      delete_macro
       execute_macro
       create_contact
       complete_task
+      create_user_invite
+      update_user_role
+      update_user_availability
+      deactivate_user
+      reactivate_user
+      assign_user_to_team
+      remove_user_from_team
+      create_team
+      update_team
+      archive_team
+      list_inboxes
+      list_assignment_policies
+      set_inbox_assignment_policy
+      get_inbox_settings
+      update_inbox_settings
+      update_inbox_working_hours
+      add_inbox_members
+      remove_inbox_members
+      update_captain_inbox_auto_reply_mode
+      list_automation_rules
+      get_automation_rule
+      create_automation_rule
+      update_automation_rule
+      set_automation_rule_status
+      delete_automation_rule
       list_account_users
       list_teams
       get_account_health
