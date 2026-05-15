@@ -53,12 +53,17 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     definition = registry_definition ? registry_definition.to_h : {}
     definition[:id] ||= name
     definition[:title] ||= name.to_s.humanize
+    definition[:requires_confirmation] = true if runtime_confirmation_required?(definition)
     definition
   end
 
   def registry_definition
     Captain::ToolRegistry.definition_for_class(self.class, scope_name: tool_scope_name) ||
       Captain::ToolRegistry.definition_for(name)
+  end
+
+  def runtime_confirmation_required?(definition)
+    Captain::ToolCatalog.requires_confirmation_for_scope?(definition, tool_scope_name)
   end
 
   def tool_runtime_context

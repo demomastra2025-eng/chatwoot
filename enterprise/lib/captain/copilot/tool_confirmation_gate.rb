@@ -24,6 +24,7 @@ class Captain::Copilot::ToolConfirmationGate
 
   def call
     return unless requires_confirmation?
+    return missing_thread_result if @copilot_thread.blank?
     return if confirmed_pending_request?
 
     request = pending_request || create_pending_request
@@ -47,7 +48,24 @@ class Captain::Copilot::ToolConfirmationGate
   private
 
   def requires_confirmation?
-    @copilot_thread.present? && ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
+    ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
+  end
+
+  def missing_thread_result
+    Captain::ToolResult.success_output(
+      message: 'Operator confirmation is required, but no copilot thread is available to store the confirmation request. ' \
+               'Retry from a copilot thread.',
+      data: {
+        action: 'confirmation_required',
+        confirmation_required: true,
+        confirmation_unavailable: true,
+        tool_id: tool_id,
+        tool_title: @tool_definition[:title],
+        risk_level: @tool_definition[:risk_level],
+        arguments_digest: arguments_digest,
+        arguments_preview: arguments_preview
+      }.compact
+    )
   end
 
   def confirmed_pending_request?

@@ -130,6 +130,37 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(conversation.reload.messages.outgoing.where(content: 'Expired confirmation body')).to be_empty
   end
 
+  it 'blocks confirmation-required tools when no copilot thread can store the request' do
+    service = Captain::Tools::Copilot::SendMessageToConversationService.new(
+      assistant,
+      user: user,
+      conversation: conversation,
+      copilot_thread: nil
+    )
+
+    payload = JSON.parse(service.execute(conversation_id: conversation.display_id, content: 'No thread send'))
+
+    expect(payload.dig('data', 'confirmation_required')).to be(true)
+    expect(payload.dig('data', 'confirmation_unavailable')).to be(true)
+    expect(conversation.reload.messages.outgoing.where(content: 'No thread send')).to be_empty
+  end
+
+  it 'blocks high-risk built-in assistant tools without an explicit registry confirmation flag' do
+    account.enable_features!('crm_deals')
+    service = Captain::Tools::Copilot::CreateDealService.new(
+      assistant,
+      user: user,
+      conversation: conversation,
+      copilot_thread: nil
+    )
+
+    payload = JSON.parse(service.execute(title: 'Unconfirmed deal'))
+
+    expect(payload.dig('data', 'confirmation_required')).to be(true)
+    expect(payload.dig('data', 'confirmation_unavailable')).to be(true)
+    expect(account.crm_deals.where(title: 'Unconfirmed deal')).to be_empty
+  end
+
   it 'does not gate non-confirmation tools' do
     service = Captain::Tools::Copilot::SearchContactsService.new(
       assistant,

@@ -15,6 +15,19 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool_ids).to include('faq_lookup', 'handoff', 'create_deal')
     end
 
+    it 'marks high-risk built-in assistant tools as confirmation-required without changing agent scope' do
+      assistant_create_deal = described_class
+                              .available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+                              .find { |tool| tool[:id] == 'create_deal' }
+      agent_create_deal = described_class
+                          .available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
+                          .find { |tool| tool[:id] == 'create_deal' }
+
+      expect(assistant_create_deal[:risk_level]).to eq('high')
+      expect(assistant_create_deal[:requires_confirmation]).to be(true)
+      expect(agent_create_deal[:requires_confirmation]).to be_falsey
+    end
+
     it 'includes enabled custom tools for the requested scope' do
       custom_tool = create(:captain_custom_tool, account: account)
 

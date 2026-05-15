@@ -65,12 +65,19 @@ class Captain::ToolCatalog
       metadata
     end
 
+    def requires_confirmation_for_scope?(tool_definition, scope_name, include_missing_idempotency: false)
+      assistant_scope?(scope_name) && tool_requires_confirmation?(
+        tool_definition,
+        include_missing_idempotency: include_missing_idempotency
+      )
+    end
+
     private
 
     def built_in_tools_for(assistant, scope_name)
-      Captain::ToolRegistry.tools_for_scope(scope_name).select do |tool_definition|
-        required_integrations_available?(assistant, tool_definition)
-      end
+      Captain::ToolRegistry.tools_for_scope(scope_name)
+                           .select { |tool_definition| required_integrations_available?(assistant, tool_definition) }
+                           .map { |tool_definition| require_assistant_confirmation(tool_definition, scope_name) }
     end
 
     def required_integrations_available?(assistant, tool_definition)
@@ -91,20 +98,31 @@ class Captain::ToolCatalog
 
     def mcp_tools_for(assistant, scope_name)
       Captain::Mcp::ToolCatalog.available_tools_for(assistant, scope_name).map do |tool|
-        next tool unless assistant_scope?(scope_name)
-        next tool unless mcp_tool_requires_confirmation?(tool)
-
-        tool.merge(requires_confirmation: true)
+        require_assistant_confirmation(tool, scope_name, include_missing_idempotency: true)
       end
+    end
+
+    def require_assistant_confirmation(tool, scope_name, include_missing_idempotency: false)
+      return tool unless requires_confirmation_for_scope?(
+        tool,
+        scope_name,
+        include_missing_idempotency: include_missing_idempotency
+      )
+
+      tool.merge(requires_confirmation: true)
     end
 
     def assistant_scope?(scope_name)
       scope_name.to_s == Captain::ToolAccess::SCOPE_ASSISTANT
     end
 
-    def mcp_tool_requires_confirmation?(tool)
+    def tool_requires_confirmation?(tool, include_missing_idempotency: false)
       definition = tool.with_indifferent_access
-      %w[high custom].include?(definition[:risk_level].to_s) || !ActiveModel::Type::Boolean.new.cast(definition[:idempotent])
+      return true if ActiveModel::Type::Boolean.new.cast(definition[:requires_confirmation])
+      return true if %w[high custom].include?(definition[:risk_level].to_s)
+      return false unless include_missing_idempotency
+
+      !ActiveModel::Type::Boolean.new.cast(definition[:idempotent])
     end
 
     def build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:, copilot_thread:)
