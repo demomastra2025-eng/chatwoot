@@ -1,6 +1,8 @@
 class Captain::ToolExecutionAuditService
   MAX_RESULT_PREVIEW_LENGTH = 1000
-  SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session)/i
+  SENSITIVE_KEY_PATTERN = /
+    (otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh)
+  /ix
 
   class << self
     def record(...)
@@ -21,7 +23,7 @@ class Captain::ToolExecutionAuditService
 
   def record
     return if assistant.blank?
-    return unless assistant.account.feature_enabled?(:audit_logs)
+    return unless audit_logs_enabled? || confirmation_required?
 
     Enterprise::AuditLog.create(
       auditable: assistant,
@@ -70,6 +72,14 @@ class Captain::ToolExecutionAuditService
 
   def tool_id
     @tool_definition[:id].presence || 'unknown_tool'
+  end
+
+  def audit_logs_enabled?
+    assistant.account.feature_enabled?(:audit_logs)
+  end
+
+  def confirmation_required?
+    ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
   end
 
   def serializable_value(value)

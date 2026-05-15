@@ -35,5 +35,11 @@ class Captain::Tools::Copilot::McpTool < Captain::Tools::BaseTool
 
   private
 
-  attr_reader :tool_definition
+  def tool_definition
+    confirmation_required = %w[high custom].include?(@tool_definition[:risk_level].to_s) ||
+                            !ActiveModel::Type::Boolean.new.cast(@tool_definition[:idempotent])
+    return @tool_definition unless confirmation_required
+
+    @tool_definition.merge(requires_confirmation: true)
+  end
 end

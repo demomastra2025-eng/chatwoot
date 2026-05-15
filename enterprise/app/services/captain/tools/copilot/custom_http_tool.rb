@@ -33,7 +33,7 @@ class Captain::Tools::Copilot::CustomHttpTool < Captain::Tools::BaseTool
   private
 
   def tool_definition
-    @custom_tool.to_tool_metadata
+    @custom_tool.to_tool_metadata.merge(requires_confirmation: true)
   end
 
   def build_state

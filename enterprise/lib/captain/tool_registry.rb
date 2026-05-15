@@ -16,6 +16,7 @@ class Captain::ToolRegistry
       risk_level
       requires_confirmation
       idempotent
+      selected_by_default
     ].freeze
 
     attr_reader(*ATTRIBUTES)
@@ -38,6 +39,11 @@ class Captain::ToolRegistry
       @risk_level = attributes[:risk_level].presence || 'medium'
       @requires_confirmation = ActiveModel::Type::Boolean.new.cast(attributes[:requires_confirmation])
       @idempotent = ActiveModel::Type::Boolean.new.cast(attributes[:idempotent])
+      @selected_by_default = if attributes.key?(:selected_by_default)
+                               ActiveModel::Type::Boolean.new.cast(attributes[:selected_by_default])
+                             else
+                               true
+                             end
     end
 
     def supports_scope?(scope_name)
@@ -68,6 +74,7 @@ class Captain::ToolRegistry
         risk_level: risk_level,
         requires_confirmation: requires_confirmation,
         idempotent: idempotent,
+        selected_by_default: selected_by_default,
         custom: false
       }
     end
@@ -961,7 +968,8 @@ class Captain::ToolRegistry
           icon: 'users',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::ListAccountUsersService,
-          risk_level: 'low'
+          risk_level: 'low',
+          selected_by_default: false
         ),
         definition(
           id: 'list_teams',
@@ -971,7 +979,8 @@ class Captain::ToolRegistry
           icon: 'people-team',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::ListTeamsService,
-          risk_level: 'low'
+          risk_level: 'low',
+          selected_by_default: false
         ),
         definition(
           id: 'retry_failed_message',

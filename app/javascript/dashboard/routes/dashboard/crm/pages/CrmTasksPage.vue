@@ -161,6 +161,7 @@ const ui = reactive({
   isSavingComment: false,
   isTimelineLoading: false,
 });
+const taskUiActionQueryInFlight = ref(false);
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
@@ -926,6 +927,8 @@ const buildPayload = () => {
 };
 
 const saveTask = async () => {
+  if (!canManageTasks.value) return;
+
   ui.isSaving = true;
 
   try {
@@ -1059,6 +1062,11 @@ const clearTaskPrefillQuery = async () => {
 
 const consumeTaskPrefillQuery = async () => {
   if (queryValue('action') !== 'new') return;
+
+  if (!canManageTasks.value) {
+    await clearTaskPrefillQuery();
+    return;
+  }
 
   await openCreateDrawer({
     assigneeId: numericQueryValue('assigneeId'),
@@ -1592,6 +1600,19 @@ const jumpCalendarToToday = async () => {
   await loadTasks();
 };
 
+const handleTaskUiActionQuery = async () => {
+  if (!hasRestoredPreferences.value || !canViewTasks.value) return;
+  if (taskUiActionQueryInFlight.value) return;
+
+  taskUiActionQueryInFlight.value = true;
+  try {
+    if (await consumeTaskOpenQuery()) return;
+    await consumeTaskPrefillQuery();
+  } finally {
+    taskUiActionQueryInFlight.value = false;
+  }
+};
+
 onMounted(async () => {
   if (!canViewTasks.value) return;
 
@@ -1614,9 +1635,28 @@ onMounted(async () => {
   hasRestoredPreferences.value = true;
   persistTasksPreferences();
   await loadTasks();
-  if (await consumeTaskOpenQuery()) return;
-  await consumeTaskPrefillQuery();
+  await handleTaskUiActionQuery();
 });
+
+watch(
+  () => [
+    route.query?.taskId,
+    route.query?.action,
+    route.query?.source,
+    route.query?.title,
+    route.query?.description,
+    route.query?.dueAt,
+    route.query?.startAt,
+    route.query?.priority,
+    route.query?.dealId,
+    route.query?.statusId,
+    route.query?.assigneeId,
+    route.query?.teamId,
+    route.query?.conversationDisplayId,
+    route.query?.originatingConversationId,
+  ],
+  handleTaskUiActionQuery
+);
 </script>
 
 <template>

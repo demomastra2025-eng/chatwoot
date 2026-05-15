@@ -38,6 +38,7 @@ const companyQuery = computed(() => route.query?.company || '');
 const searchValue = ref(searchQuery.value || '');
 const companyFilterValue = ref(companyQuery.value || '');
 const pageNumber = computed(() => Number(route.query?.page) || 1);
+const contactUiActionQueriesReady = ref(false);
 // For infinite scroll in search, track page internally
 const searchPageNumber = ref(1);
 const contactsListLayoutRef = ref(null);
@@ -536,11 +537,13 @@ onMounted(async () => {
         clearSelection: false,
       });
       await consumeContactPrefillQuery();
+      contactUiActionQueriesReady.value = true;
       return;
     }
     if (isActiveView.value) {
       await fetchActiveContacts(pageNumber.value);
       await consumeContactPrefillQuery();
+      contactUiActionQueriesReady.value = true;
       return;
     }
     await fetchContacts(pageNumber.value);
@@ -552,7 +555,23 @@ onMounted(async () => {
   }
 
   await consumeContactPrefillQuery();
+  contactUiActionQueriesReady.value = true;
 });
+
+watch(
+  () => [
+    route.query?.action,
+    route.query?.source,
+    route.query?.name,
+    route.query?.email,
+    route.query?.phoneNumber,
+    route.query?.companyName,
+  ],
+  async () => {
+    if (!contactUiActionQueriesReady.value) return;
+    await consumeContactPrefillQuery();
+  }
+);
 </script>
 
 <template>

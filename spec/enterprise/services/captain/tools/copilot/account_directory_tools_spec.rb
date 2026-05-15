@@ -39,6 +39,20 @@ RSpec.describe 'Captain account directory copilot tools' do
 
       expect(described_class.new(assistant, user: viewer).active?).to be(false)
     end
+
+    it 'is hidden from default non-admin agents without an explicit people-directory permission' do
+      agent = create(:user, account: account)
+
+      expect(described_class.new(assistant, user: agent).active?).to be(false)
+    end
+
+    it 'is visible to custom-role operators with assignment-management permissions' do
+      manager = create(:user, account: account)
+      custom_role = create(:custom_role, account: account, permissions: ['crm_task_manage'])
+      AccountUser.find_by!(account: account, user: manager).update!(custom_role: custom_role)
+
+      expect(described_class.new(assistant, user: manager).active?).to be(true)
+    end
   end
 
   describe Captain::Tools::Copilot::ListTeamsService do
@@ -72,6 +86,12 @@ RSpec.describe 'Captain account directory copilot tools' do
 
       expect(payload['teams'].first).not_to have_key('members')
     end
+
+    it 'is hidden from default non-admin agents without an explicit people-directory permission' do
+      agent = create(:user, account: account)
+
+      expect(described_class.new(assistant, user: agent).active?).to be(false)
+    end
   end
 
   describe 'registry exposure' do
@@ -83,6 +103,8 @@ RSpec.describe 'Captain account directory copilot tools' do
       expect(teams_definition.allowed_scopes).to eq([Captain::ToolAccess::SCOPE_ASSISTANT])
       expect(Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)).not_to include('list_account_users', 'list_teams')
       expect(Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)).to include('list_account_users', 'list_teams')
+      expect(account_user_definition.to_h[:selected_by_default]).to be(false)
+      expect(teams_definition.to_h[:selected_by_default]).to be(false)
     end
   end
 end

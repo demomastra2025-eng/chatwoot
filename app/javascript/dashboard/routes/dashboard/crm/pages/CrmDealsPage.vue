@@ -237,6 +237,7 @@ const archiveTooltip = computed(() =>
     ? t('CRM.GENERAL.UNARCHIVE')
     : t('CRM.GENERAL.ARCHIVE')
 );
+const dealUiActionQueryInFlight = ref(false);
 
 const activePipelines = computed(() =>
   referencesStore.pipelines.filter(pipeline => pipeline.active !== false)
@@ -1290,6 +1291,8 @@ const buildPayload = () => {
 };
 
 const saveDeal = async () => {
+  if (!canManageDeals.value) return;
+
   ui.isSaving = true;
 
   try {
@@ -1786,6 +1789,11 @@ const clearDealPrefillQuery = async () => {
 const consumeDealPrefillQuery = async () => {
   if (queryValue('action') !== 'new') return;
 
+  if (!canManageDeals.value) {
+    await clearDealPrefillQuery();
+    return;
+  }
+
   const contactId = numericQueryValue('contactId');
   const companyId = numericQueryValue('companyId');
 
@@ -1961,6 +1969,19 @@ onBeforeUnmount(() => {
   scheduleDealsReload.cancel?.();
 });
 
+const handleDealUiActionQuery = async () => {
+  if (!hasRestoredPreferences.value || !canViewDeals.value) return;
+  if (dealUiActionQueryInFlight.value) return;
+
+  dealUiActionQueryInFlight.value = true;
+  try {
+    if (await consumeDealOpenQuery()) return;
+    await consumeDealPrefillQuery();
+  } finally {
+    dealUiActionQueryInFlight.value = false;
+  }
+};
+
 onMounted(async () => {
   if (!canViewDeals.value) return;
 
@@ -1984,9 +2005,31 @@ onMounted(async () => {
   hasRestoredPreferences.value = true;
   persistDealsPreferences();
   await loadDeals();
-  if (await consumeDealOpenQuery()) return;
-  await consumeDealPrefillQuery();
+  await handleDealUiActionQuery();
 });
+
+watch(
+  () => [
+    route.query?.dealId,
+    route.query?.action,
+    route.query?.source,
+    route.query?.title,
+    route.query?.description,
+    route.query?.amount,
+    route.query?.currency,
+    route.query?.expectedCloseOn,
+    route.query?.contactId,
+    route.query?.companyId,
+    route.query?.ownerId,
+    route.query?.teamId,
+    route.query?.pipelineId,
+    route.query?.stageId,
+    route.query?.winProbability,
+    route.query?.conversationDisplayId,
+    route.query?.originatingConversationId,
+  ],
+  handleDealUiActionQuery
+);
 </script>
 
 <template>

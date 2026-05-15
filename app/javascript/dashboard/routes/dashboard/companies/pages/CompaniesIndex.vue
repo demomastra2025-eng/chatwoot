@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue';
+import { ref, computed, onMounted, reactive, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
@@ -35,6 +35,7 @@ const uiFlags = computed(() => companiesStore.getUIFlags);
 const searchQuery = computed(() => route.query?.search || '');
 const searchValue = ref(searchQuery.value);
 const pageNumber = computed(() => Number(route.query?.page) || 1);
+const companyUiActionQueriesReady = ref(false);
 
 const parseSortSettings = (sortString = '') => {
   const hasDescending = sortString.startsWith('-');
@@ -234,9 +235,27 @@ const consumeCompanyOpenQuery = async () => {
 onMounted(async () => {
   searchValue.value = searchQuery.value;
   await fetchCompanies();
-  if (await consumeCompanyOpenQuery()) return;
-  await consumeCompanyPrefillQuery();
+  if (!(await consumeCompanyOpenQuery())) {
+    await consumeCompanyPrefillQuery();
+  }
+  companyUiActionQueriesReady.value = true;
 });
+
+watch(
+  () => [
+    route.query?.companyId,
+    route.query?.action,
+    route.query?.source,
+    route.query?.name,
+    route.query?.domain,
+    route.query?.description,
+  ],
+  async () => {
+    if (!companyUiActionQueriesReady.value) return;
+    if (await consumeCompanyOpenQuery()) return;
+    await consumeCompanyPrefillQuery();
+  }
+);
 </script>
 
 <template>

@@ -34,14 +34,19 @@ class Captain::Tools::Copilot::ListTeamsService < Captain::Tools::Copilot::BaseA
   private
 
   def operator_can_view_account_people?
-    account_administrator? ||
-      user_has_permission('conversation_manage') ||
-      user_has_permission('conversation_unassigned_manage') ||
-      user_has_permission('conversation_participating_manage') ||
-      user_has_permission('crm_deal_view') ||
-      user_has_permission('crm_deal_manage') ||
-      user_has_permission('crm_task_view') ||
-      user_has_permission('crm_task_manage')
+    account_administrator? || account_people_directory_permission?
+  end
+
+  def account_people_directory_permission?
+    permissions = Array(current_account_user&.custom_role&.permissions)
+    permissions.any? do |permission|
+      %w[
+        conversation_manage
+        crm_deal_manage
+        crm_task_manage
+        crm_settings_manage
+      ].include?(permission)
+    end
   end
 
   def team_payload(team, include_members:)

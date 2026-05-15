@@ -23,6 +23,10 @@ RSpec.describe Captain::ToolCatalog do
 
       expect(agent_tool_ids).to include(custom_tool.slug)
       expect(assistant_tool_ids).to include(custom_tool.slug)
+      expect(
+        described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+                       .find { |tool| tool[:id] == custom_tool.slug }[:requires_confirmation]
+      ).to be(true)
     end
 
     it 'does not expose account-private custom tools from a different account' do
@@ -87,6 +91,28 @@ RSpec.describe Captain::ToolCatalog do
       tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
 
       expect(tool_ids).to include('mcp__github_mcp__list_issues')
+    end
+
+    it 'marks non-idempotent assistant MCP tools as confirmation-required' do
+      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
+        .with(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+        .and_return([
+                      {
+                        id: 'mcp__github_mcp__delete_issue',
+                        title: 'Delete issue',
+                        description: 'Delete repository issue',
+                        provider: 'mcp',
+                        risk_level: 'high',
+                        idempotent: false,
+                        mcp_server_id: 123,
+                        mcp_tool_name: 'delete_issue'
+                      }
+                    ])
+
+      tool = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+                            .find { |definition| definition[:id] == 'mcp__github_mcp__delete_issue' }
+
+      expect(tool[:requires_confirmation]).to be(true)
     end
 
     it 'deduplicates tool definitions by id' do

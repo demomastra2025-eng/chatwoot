@@ -86,10 +86,25 @@ class Captain::ToolCatalog
       assistant.account.captain_custom_tools.enabled
                .map(&:to_tool_metadata)
                .select { |tool| Array(tool[:allowed_scopes]).map(&:to_s).include?(scope_name.to_s) }
+               .map { |tool| assistant_scope?(scope_name) ? tool.merge(requires_confirmation: true) : tool }
     end
 
     def mcp_tools_for(assistant, scope_name)
-      Captain::Mcp::ToolCatalog.available_tools_for(assistant, scope_name)
+      Captain::Mcp::ToolCatalog.available_tools_for(assistant, scope_name).map do |tool|
+        next tool unless assistant_scope?(scope_name)
+        next tool unless mcp_tool_requires_confirmation?(tool)
+
+        tool.merge(requires_confirmation: true)
+      end
+    end
+
+    def assistant_scope?(scope_name)
+      scope_name.to_s == Captain::ToolAccess::SCOPE_ASSISTANT
+    end
+
+    def mcp_tool_requires_confirmation?(tool)
+      definition = tool.with_indifferent_access
+      %w[high custom].include?(definition[:risk_level].to_s) || !ActiveModel::Type::Boolean.new.cast(definition[:idempotent])
     end
 
     def build_registered_tool(tool_id, assistant:, scope_name:, user:, conversation:, copilot_thread:)
