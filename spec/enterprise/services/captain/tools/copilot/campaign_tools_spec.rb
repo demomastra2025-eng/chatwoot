@@ -8,8 +8,6 @@ RSpec.describe 'Captain campaign copilot tools' do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:admin) { create(:user) }
   let(:agent) { create(:user) }
-  let!(:admin_membership) { create(:account_user, account: account, user: admin, role: :administrator) }
-  let!(:agent_membership) { create(:account_user, account: account, user: agent, role: :agent) }
   let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: admin, assistant: assistant) }
   let(:sms_inbox) { create(:inbox, account: account, channel: create(:channel_sms, account: account)) }
   let(:label) { create(:label, account: account, title: 'VIP') }
@@ -17,6 +15,9 @@ RSpec.describe 'Captain campaign copilot tools' do
   let(:audience_json) { audience.to_json }
 
   before do
+    create(:account_user, account: account, user: admin, role: :administrator)
+    create(:account_user, account: account, user: agent, role: :agent)
+
     confirmation_gate = instance_double(Captain::Copilot::ToolConfirmationGate, call: nil)
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_return(confirmation_gate)
   end
@@ -116,7 +117,10 @@ RSpec.describe 'Captain campaign copilot tools' do
       expect(service.execute(title: 'Bad inbox', inbox_id: other_inbox.id, audience_json: audience_json, message: 'Hi')).to start_with(
         'ERROR: ActiveRecord::RecordNotFound'
       )
-      expect(service.execute(title: 'Bad sender', inbox_id: sms_inbox.id, audience_json: audience_json, message: 'Hi', sender_id: other_user.id)).to start_with(
+      result = service.execute(
+        title: 'Bad sender', inbox_id: sms_inbox.id, audience_json: audience_json, message: 'Hi', sender_id: other_user.id
+      )
+      expect(result).to start_with(
         'ERROR: ActiveRecord::RecordNotFound'
       )
     end
@@ -198,6 +202,70 @@ RSpec.describe 'Captain campaign copilot tools' do
 
       expect(payload['message']).to include('Operator confirmation is required')
       expect(Campaigns::TriggerOneoffCampaignJob).not_to have_received(:perform_later)
+    end
+  end
+
+  describe Captain::Tools::Copilot::TestSendCampaignService do
+    it 'sends one explicit SMS test recipient without campaign run/status mutation' do
+      contact = create(:contact, account: account, phone_number: '+1555010199')
+      campaign = create(:campaign, account: account, inbox: sms_inbox, audience: audience, message: 'Test {{contact.name}}')
+      stub_request(:post, %r{https://messaging\.bandwidth\.com/api/v2/users/.*/messages})
+        .to_return(status: 200, body: { id: 'provider-test-1' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      payload = JSON.parse(described_class.new(assistant, user: admin).execute(campaign_id: campaign.display_id, contact_id: contact.id))
+
+      expect(payload['action']).to eq('test_send_campaign')
+      expect(payload.dig('result', 'test_send')).to be(true)
+      expect(payload.dig('result', 'provider_message_id')).to eq('provider-test-1')
+      expect(campaign.reload.active?).to be(true)
+      expect(campaign.campaign_runs.count).to eq(0)
+      expect(campaign.campaign_deliveries.count).to eq(0)
+    end
+
+    it 'does not send without backend confirmation' do
+      allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
+      contact = create(:contact, account: account, phone_number: '+1555010200')
+      campaign = create(:campaign, account: account, inbox: sms_inbox, audience: audience, message: 'No send')
+      service = described_class.new(assistant, user: admin, copilot_thread: copilot_thread)
+
+      payload = JSON.parse(service.execute(campaign_id: campaign.display_id, contact_id: contact.id))
+
+      expect(payload['message']).to include('Operator confirmation is required')
+      expect(a_request(:post, %r{https://messaging\.bandwidth\.com/api/v2/users/.*/messages})).not_to have_been_made
+      expect(campaign.reload.active?).to be(true)
+      expect(campaign.campaign_runs.count).to eq(0)
+      expect(campaign.campaign_deliveries.count).to eq(0)
+    end
+
+    it 'creates a test-send conversation message for conversation-backed channels without campaign runs', :aggregate_failures do
+      email_inbox = create(:inbox, :with_email, account: account)
+      contact = create(:contact, account: account, email: 'test-recipient@example.com')
+      campaign = create(:campaign, account: account, inbox: email_inbox, audience: audience, message: 'Email test')
+
+      payload = JSON.parse(described_class.new(assistant, user: admin).execute(campaign_id: campaign.display_id, contact_id: contact.id))
+      message = Message.find(payload.dig('result', 'message_id'))
+
+      expect(payload['action']).to eq('test_send_campaign')
+      expect(message.additional_attributes['campaign_test_send']).to be(true)
+      expect(message.additional_attributes['campaign_id']).to eq(campaign.id)
+      expect(message.additional_attributes['campaign_run_id']).to be_blank
+      analytics = Campaigns::AnalyticsService.new(campaign: campaign.reload).call
+      expect(campaign.active?).to be(true)
+      expect(campaign.campaign_runs.count).to eq(0)
+      expect(campaign.campaign_deliveries.count).to eq(0)
+      expect(analytics[:delivery_attempts_count]).to eq(0)
+      expect(analytics[:processed_contacts_count]).to eq(0)
+    end
+
+    it 'rejects cross-account contacts and non-admin direct execution' do
+      contact = create(:contact, account: create(:account), phone_number: '+1555010201')
+      campaign = create(:campaign, account: account, inbox: sms_inbox, audience: audience, message: 'Bad target')
+      service = described_class.new(assistant, user: admin)
+
+      expect(service.execute(campaign_id: campaign.display_id, contact_id: contact.id)).to start_with('ERROR: ActiveRecord::RecordNotFound')
+      expect(described_class.new(assistant, user: agent).execute(campaign_id: campaign.display_id, contact_id: contact.id)).to include(
+        'Account administrator permission is required'
+      )
     end
   end
 
@@ -301,7 +369,7 @@ RSpec.describe 'Captain campaign copilot tools' do
       agent_tool_ids = Captain::ToolRegistry.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
       campaign_tool_ids = %w[
         list_campaigns get_campaign preview_campaign get_campaign_analytics create_campaign update_campaign delete_campaign
-        launch_campaign cancel_campaign restart_campaign resume_campaign retry_failed_campaign_deliveries
+        launch_campaign test_send_campaign cancel_campaign restart_campaign resume_campaign retry_failed_campaign_deliveries
       ]
       high_risk_tool_ids = campaign_tool_ids - %w[list_campaigns get_campaign preview_campaign get_campaign_analytics]
 

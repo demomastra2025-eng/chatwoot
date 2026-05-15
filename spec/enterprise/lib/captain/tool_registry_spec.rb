@@ -81,6 +81,7 @@ RSpec.describe Captain::ToolRegistry do
         'update_campaign',
         'delete_campaign',
         'launch_campaign',
+        'test_send_campaign',
         'cancel_campaign',
         'restart_campaign',
         'resume_campaign',
@@ -261,6 +262,7 @@ RSpec.describe Captain::ToolRegistry do
       update_campaign
       delete_campaign
       launch_campaign
+      test_send_campaign
       cancel_campaign
       restart_campaign
       resume_campaign

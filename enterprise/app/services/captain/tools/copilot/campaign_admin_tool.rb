@@ -8,7 +8,9 @@ class Captain::Tools::Copilot::CampaignAdminTool < Captain::Tools::Copilot::Base
   private
 
   def find_campaign!(campaign_id)
-    account.campaigns.includes(:inbox, :sender, :captain_assistant, :campaign_runs).find_by(display_id: campaign_id) || account.campaigns.find(campaign_id)
+    account.campaigns
+           .includes(:inbox, :sender, :captain_assistant, :campaign_runs)
+           .find_by(display_id: campaign_id) || account.campaigns.find(campaign_id)
   end
 
   def inbox!(inbox_id)
@@ -17,6 +19,10 @@ class Captain::Tools::Copilot::CampaignAdminTool < Captain::Tools::Copilot::Base
 
   def user!(user_id)
     account.users.find(user_id)
+  end
+
+  def contact!(contact_id)
+    account.contacts.find(contact_id)
   end
 
   def captain_assistant!(captain_assistant_id)
@@ -151,6 +157,8 @@ class Captain::Tools::Copilot::CampaignAdminTool < Captain::Tools::Copilot::Base
     raise ArgumentError, 'Campaign must be active before launch' unless campaign.active?
     raise ArgumentError, 'Campaign audience is empty' if audience_size.to_i.zero?
     raise ArgumentError, 'Campaign has no deliverable recipients' if deliverable_count.to_i.zero?
+
+    Campaigns::TemplateParamsValidator.validate!(inbox: campaign.inbox, template_params: campaign.template_params)
   end
 
   def save_campaign!(campaign)

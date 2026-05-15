@@ -1812,6 +1812,18 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'test_send_campaign',
+          title: 'Test Send Campaign',
+          description: 'Send a campaign test message to one explicit account contact without launching the campaign',
+          group_name: 'Outbound',
+          icon: 'send-copy',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::TestSendCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'cancel_campaign',
           title: 'Cancel Campaign',
           description: 'Cancel an active or running one-off campaign',

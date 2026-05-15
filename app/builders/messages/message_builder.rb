@@ -144,6 +144,7 @@ class Messages::MessageBuilder
     attrs = {}
     attrs[:campaign_id] = campaign_id if campaign_id.present?
     attrs[:campaign_run_id] = campaign_run_id if campaign_run_id.present?
+    attrs[:campaign_test_send] = true if ActiveModel::Type::Boolean.new.cast(@params[:campaign_test_send])
     attrs[:template_params] = template_params if template_params.present?
     attrs[:delivery_policy] = delivery_policy if delivery_policy.present?
     attrs.presence

@@ -241,7 +241,11 @@ class Campaign < ApplicationRecord
     return unless one_off?
     return if account.blank?
     return unless inbox&.channel.is_a?(Channel::Whatsapp)
-    return if campaign_channel_template?
+
+    if campaign_channel_template?
+      validate_channel_template_params
+      return
+    end
 
     preview = Campaigns::PreviewService.new(
       account: account,
@@ -260,6 +264,12 @@ class Campaign < ApplicationRecord
 
   def campaign_channel_template?
     template_params.present?
+  end
+
+  def validate_channel_template_params
+    Campaigns::TemplateParamsValidator.validate!(inbox: inbox, template_params: template_params)
+  rescue ArgumentError => e
+    errors.add(:template_params, e.message)
   end
 
   def assign_captain_assistant_from_inbox
