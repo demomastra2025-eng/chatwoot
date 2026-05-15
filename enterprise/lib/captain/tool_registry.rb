@@ -292,6 +292,18 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'create_contact',
+          title: 'Create Contact',
+          description: 'Create a new account contact by email, phone number, or identifier',
+          group_name: 'Contacts',
+          icon: 'user-add',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateContactService,
+          required_permissions: %w[contact_manage],
+          risk_level: 'medium',
+          idempotent: true
+        ),
+        definition(
           id: 'update_contact',
           title: 'Update Contact',
           description: 'Update the current conversation contact',

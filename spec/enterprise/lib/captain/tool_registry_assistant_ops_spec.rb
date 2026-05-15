@@ -12,6 +12,7 @@ RSpec.describe 'Captain assistant ops tool registry' do
       'translate_message',
       'search_canned_responses',
       'create_canned_response',
+      'create_contact',
       'merge_contacts',
       'add_appointment_payment',
       'execute_macro',
