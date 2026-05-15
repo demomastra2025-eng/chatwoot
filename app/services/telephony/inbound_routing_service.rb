@@ -60,10 +60,16 @@ class Telephony::InboundRoutingService
   end
 
   def status_aware_conversation_decision
-    return unless routing_policy.ai_mode?
+    return unless status_aware_ai_route_enabled?
     return if existing_voice_conversation.blank?
 
     return pending_conversation_ai_decision if existing_voice_conversation.pending?
+  end
+
+  def status_aware_ai_route_enabled?
+    return true if routing_policy.ai_mode?
+
+    routing_policy.ai_enabled? && routing_policy.captain_assistant_id.present?
   end
 
   def pending_conversation_ai_decision

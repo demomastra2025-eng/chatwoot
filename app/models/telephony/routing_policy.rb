@@ -93,10 +93,14 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   def effective_ai_app_ref
+    ai_app_ref_candidates.detect(&:present?)
+  end
+
+  def ai_app_ref_candidates
     if ai_deployment_mode == AI_DEPLOYMENT_ONELINK_MANAGED
-      onelink_ai_app_ref.presence || ai_app_ref.presence || fonoster_ai_app_ref.presence || fallback_ai_app_ref.presence
+      [onelink_ai_app_ref, ai_app_ref, fonoster_ai_app_ref, fallback_ai_app_ref, ENV.fetch('ONELINK_AI_VOICE_APP_REF', nil)]
     else
-      fonoster_ai_app_ref.presence || ai_app_ref.presence || fallback_ai_app_ref.presence
+      [fonoster_ai_app_ref, ai_app_ref, fallback_ai_app_ref]
     end
   end
 
