@@ -70,6 +70,17 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   open_captain_prompts: 'captain_assistants_prompts_index',
 };
 
+const QUERY_TARGET_ROUTE_ACTIONS = {
+  open_company: {
+    name: 'companies_dashboard_index',
+    queryParam: 'companyId',
+  },
+  open_deal: {
+    name: 'crm_deals_index',
+    queryParam: 'dealId',
+  },
+};
+
 const CREATE_ACTION_ROUTES = {
   create_contact: 'contacts_dashboard_index',
   create_company: 'companies_dashboard_index',
@@ -139,6 +150,7 @@ const SUPPORTED_ACTION_TYPES = new Set([
   ...Object.keys(SIMPLE_ROUTE_ACTIONS),
   ...Object.keys(TARGET_ROUTE_ACTIONS),
   ...Object.keys(CAPTAIN_ASSISTANT_ROUTE_ACTIONS),
+  ...Object.keys(QUERY_TARGET_ROUTE_ACTIONS),
   ...Object.keys(CREATE_ACTION_ROUTES),
   'open_task',
 ]);
@@ -151,6 +163,8 @@ const DEFAULT_LABELS = {
   open_team_conversations: 'Open team conversations',
   open_label_conversations: 'Open label conversations',
   open_contact: 'Open contact',
+  open_company: 'Open company',
+  open_deal: 'Open deal',
   open_task: 'Open task',
   open_contacts: 'Open contacts',
   open_companies: 'Open companies',
@@ -214,6 +228,10 @@ const actionTargetId = action =>
   action.conversationId ??
   action.contact_id ??
   action.contactId ??
+  action.company_id ??
+  action.companyId ??
+  action.deal_id ??
+  action.dealId ??
   action.task_id ??
   action.taskId ??
   action.inbox_id ??
@@ -318,6 +336,17 @@ const createActionRoute = (action, accountId) => ({
   }),
 });
 
+const queryTargetRoute = (action, accountId, routeConfig) => {
+  const targetId = action.targetId || actionTargetId(action).toString().trim();
+  if (!targetId) return null;
+
+  return {
+    name: routeConfig.name,
+    params: { accountId },
+    query: { [routeConfig.queryParam]: targetId, source: 'captain_ui_action' },
+  };
+};
+
 export const routeForCaptainUiAction = (action, accountId) => {
   if (SIMPLE_ROUTE_ACTIONS[action.type]) {
     return simpleRoute(SIMPLE_ROUTE_ACTIONS[action.type], accountId);
@@ -334,6 +363,14 @@ export const routeForCaptainUiAction = (action, accountId) => {
       name: CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type],
       params: { accountId, assistantId: action.targetId },
     };
+  }
+
+  if (QUERY_TARGET_ROUTE_ACTIONS[action.type]) {
+    return queryTargetRoute(
+      action,
+      accountId,
+      QUERY_TARGET_ROUTE_ACTIONS[action.type]
+    );
   }
 
   if (CREATE_ACTION_ROUTES[action.type]) {

@@ -65,12 +65,16 @@ RSpec.describe Captain::Llm::SystemPromptsService do
       )
 
       expect(prompt).to include('ui_actions')
-      expect(prompt).to include('open_contact')
-      expect(prompt).to include('open_captain_documents')
-      expect(prompt).to include('open_automation_rules')
-      expect(prompt).to include('create_task')
-      expect(prompt).to include('prepared create/edit forms')
-      expect(prompt).to include('Never invent DOM selectors')
+      expect(prompt).to include(
+        'open_contact',
+        'open_company',
+        'open_deal',
+        'open_captain_documents',
+        'open_automation_rules',
+        'create_task',
+        'prepared create/edit forms',
+        'Never invent DOM selectors'
+      )
     end
   end
 

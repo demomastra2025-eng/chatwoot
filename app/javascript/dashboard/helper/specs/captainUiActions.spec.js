@@ -29,6 +29,8 @@ describe('captainUiActions helper', () => {
         'open_team_conversations',
         'open_label_conversations',
         'open_companies',
+        'open_company',
+        'open_deal',
         'open_outbound',
         'open_touch_plans',
         'open_automation_rules',
@@ -61,6 +63,22 @@ describe('captainUiActions helper', () => {
     ).toEqual({
       name: 'contacts_edit',
       params: { accountId: 1, contactId: '42' },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_company', targetId: '88' }, 1)
+    ).toEqual({
+      name: 'companies_dashboard_index',
+      params: { accountId: 1 },
+      query: { companyId: '88', source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_deal', deal_id: 55 }, 1)
+    ).toEqual({
+      name: 'crm_deals_index',
+      params: { accountId: 1 },
+      query: { dealId: '55', source: 'captain_ui_action' },
     });
 
     expect(
@@ -198,6 +216,12 @@ describe('captainUiActions helper', () => {
   it('rejects entity actions without required target IDs', () => {
     expect(
       routeForCaptainUiAction({ type: 'open_contact', targetId: '' }, 1)
+    ).toBe(null);
+    expect(
+      routeForCaptainUiAction({ type: 'open_company', targetId: '' }, 1)
+    ).toBe(null);
+    expect(
+      routeForCaptainUiAction({ type: 'open_deal', targetId: '' }, 1)
     ).toBe(null);
     expect(
       routeForCaptainUiAction(

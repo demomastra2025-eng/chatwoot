@@ -178,8 +178,14 @@ const queryValue = key => {
   return Array.isArray(value) ? value[0] : value;
 };
 
+const numericQueryValue = key => {
+  const value = Number(queryValue(key));
+  return Number.isFinite(value) && value > 0 ? value : '';
+};
+
 const companyPrefillKeys = [
   'action',
+  'companyId',
   'description',
   'domain',
   'name',
@@ -206,9 +212,29 @@ const consumeCompanyPrefillQuery = async () => {
   await clearCompanyPrefillQuery();
 };
 
+const consumeCompanyOpenQuery = async () => {
+  const companyId = numericQueryValue('companyId');
+  if (!companyId) return false;
+
+  try {
+    if (!companies.value.some(company => Number(company.id) === companyId)) {
+      await companiesStore.show(companyId);
+    }
+
+    expandedCompanyId.value = companyId;
+  } catch {
+    useAlert(t('COMPANIES.FORM.ERROR.UPDATE'));
+  } finally {
+    await clearCompanyPrefillQuery();
+  }
+
+  return true;
+};
+
 onMounted(async () => {
   searchValue.value = searchQuery.value;
   await fetchCompanies();
+  if (await consumeCompanyOpenQuery()) return;
   await consumeCompanyPrefillQuery();
 });
 </script>

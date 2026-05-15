@@ -922,6 +922,7 @@ const crmPrefillKeys = [
   'contactName',
   'conversationDisplayId',
   'currency',
+  'dealId',
   'description',
   'expectedCloseOn',
   'originatingConversationId',
@@ -1839,6 +1840,28 @@ const consumeDealPrefillQuery = async () => {
   await clearDealPrefillQuery();
 };
 
+const consumeDealOpenQuery = async () => {
+  const dealId = numericQueryValue('dealId');
+  if (!dealId) return false;
+
+  try {
+    let deal = deals.value.find(record => Number(record.id) === Number(dealId));
+    if (!deal) {
+      const { data } = await CrmDealsAPI.show(dealId);
+      deal = normalizePayload(data);
+      upsertDeal(deal);
+    }
+
+    await openEditDrawer(deal);
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    await clearDealPrefillQuery();
+  }
+
+  return true;
+};
+
 watch(
   dealFieldDefinitions,
   definitions => {
@@ -1961,6 +1984,7 @@ onMounted(async () => {
   hasRestoredPreferences.value = true;
   persistDealsPreferences();
   await loadDeals();
+  if (await consumeDealOpenQuery()) return;
   await consumeDealPrefillQuery();
 });
 </script>
