@@ -18,9 +18,15 @@ class Integrations::Macrocrm::Client
   REQUEST_TIMEOUT = 20
   MAX_RETRYABLE_ATTEMPTS = 2
   RETRY_DELAY_SECONDS = 0.25
+  CONTACTS_FIND_ENDPOINT = '/contacts/find'.freeze
+  CONTACT_NOT_FOUND_MESSAGE = 'No contacts found'.freeze
+  CONTACT_NOT_FOUND_RESPONSE = {
+    'error' => true,
+    'message' => CONTACT_NOT_FOUND_MESSAGE
+  }.freeze
   TRANSIENT_STATUS_CODES = [408, 429, 500, 502, 503, 504].freeze
   RETRYABLE_POST_ENDPOINTS = [
-    '/contacts/find',
+    CONTACTS_FIND_ENDPOINT,
     '/estateBuy/find',
     '/estateBuy/list'
   ].freeze
@@ -30,7 +36,7 @@ class Integrations::Macrocrm::Client
   end
 
   def find_contact(phone:)
-    post('/contacts/find', { phone: phone })
+    post(CONTACTS_FIND_ENDPOINT, { phone: phone })
   end
 
   def find_estate_buy(contact_id:)
@@ -133,8 +139,10 @@ class Integrations::Macrocrm::Client
     )
   end
 
-  def handle_unsuccessful_response(endpoint, response, _parsed_response, retryable)
+  def handle_unsuccessful_response(endpoint, response, parsed_response, retryable)
     status = response.code.to_i
+    return CONTACT_NOT_FOUND_RESPONSE.dup if contact_not_found_response?(endpoint, status, parsed_response)
+
     message = "MacroCRM request failed for #{endpoint}: HTTP #{status}"
 
     if transient_status?(status)
@@ -149,6 +157,20 @@ class Integrations::Macrocrm::Client
     end
 
     raise PermanentError.new(message, endpoint: endpoint, status: status, retryable: false)
+  end
+
+  def contact_not_found_response?(endpoint, status, parsed_response)
+    endpoint == CONTACTS_FIND_ENDPOINT && status == 404 && contact_not_found_message?(parsed_response)
+  end
+
+  def contact_not_found_message?(parsed_response)
+    return parsed_response.strip == CONTACT_NOT_FOUND_MESSAGE if parsed_response.is_a?(String)
+
+    return false unless parsed_response.is_a?(Hash)
+
+    [parsed_response['message'], parsed_response[:message]].compact.any? do |value|
+      value.to_s.strip == CONTACT_NOT_FOUND_MESSAGE
+    end
   end
 
   def transport_error(endpoint, error, retryable)
