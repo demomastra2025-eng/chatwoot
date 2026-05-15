@@ -33,11 +33,21 @@ RSpec.describe Captain::ToolCatalog do
       agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
 
       expect(assistant_tools.find { |tool| tool[:id] == 'list_inboxes' }).to include(risk_level: 'low')
+      expect(assistant_tools.find { |tool| tool[:id] == 'list_assignment_policies' }).to include(risk_level: 'low')
+      expect(assistant_tools.find { |tool| tool[:id] == 'set_inbox_assignment_policy' }).to include(
+        risk_level: 'high',
+        requires_confirmation: true
+      )
       expect(assistant_tools.find { |tool| tool[:id] == 'update_captain_inbox_auto_reply_mode' }).to include(
         risk_level: 'high',
         requires_confirmation: true
       )
-      expect(agent_tool_ids).not_to include('list_inboxes', 'update_captain_inbox_auto_reply_mode')
+      expect(agent_tool_ids).not_to include(
+        'list_inboxes',
+        'list_assignment_policies',
+        'set_inbox_assignment_policy',
+        'update_captain_inbox_auto_reply_mode'
+      )
     end
 
     it 'includes enabled custom tools for the requested scope' do

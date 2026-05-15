@@ -18,6 +18,8 @@ RSpec.describe 'Captain assistant ops tool registry' do
       'list_account_users',
       'list_teams',
       'list_inboxes',
+      'list_assignment_policies',
+      'set_inbox_assignment_policy',
       'update_captain_inbox_auto_reply_mode',
       'add_appointment_payment',
       'execute_macro',

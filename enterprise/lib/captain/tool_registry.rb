@@ -995,6 +995,30 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'list_assignment_policies',
+          title: 'List Assignment Policies',
+          description: 'List account assignment policies with routing settings and attached inbox IDs',
+          group_name: 'Account',
+          icon: 'routing',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListAssignmentPoliciesService,
+          risk_level: 'low',
+          selected_by_default: false,
+          idempotent: true
+        ),
+        definition(
+          id: 'set_inbox_assignment_policy',
+          title: 'Set Inbox Assignment Policy',
+          description: 'Attach or replace the assignment policy for one account inbox',
+          group_name: 'Account',
+          icon: 'routing',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SetInboxAssignmentPolicyService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'update_captain_inbox_auto_reply_mode',
           title: 'Update Captain Inbox Auto Reply Mode',
           description: 'Update the AI auto-reply mode for an account inbox already connected to Captain',
