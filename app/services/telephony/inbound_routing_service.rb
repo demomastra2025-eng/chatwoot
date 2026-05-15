@@ -69,7 +69,7 @@ class Telephony::InboundRoutingService
   def status_aware_ai_route_enabled?
     return true if routing_policy.ai_mode?
 
-    routing_policy.ai_enabled? && routing_policy.captain_assistant_id.present?
+    routing_policy.ai_enabled? && routing_policy.captain_assistant.present?
   end
 
   def pending_conversation_ai_decision

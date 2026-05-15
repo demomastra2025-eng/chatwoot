@@ -819,7 +819,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response.parsed_body).not_to have_key('app_ref')
   end
 
-  it 'routes an existing pending voice conversation to Captain AI when operator mode is Captain-linked' do
+  it 'routes an existing pending voice conversation to Captain AI using the managed app ref fallback' do
     caller_number = '+15550000005'
     contact = create(:contact, account: account, phone_number: caller_number)
     contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
@@ -846,26 +846,27 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       mode: 'operator',
       ai_enabled: true,
       ai_deployment_mode: 'onelink_managed',
-      onelink_ai_app_ref: 'onelink-captain-ai-status-aware-app-ref',
       captain_assistant: assistant,
       operator_agent_aor: 'sip:status-aware-operator@example.test',
       fallback_mode: 'app'
     )
 
-    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+    with_modified_env(
+      TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret',
+      ONELINK_AI_VOICE_APP_REF: 'onelink-captain-ai-status-aware-app-ref'
+    ) do
       post path,
            params: {
              call_ref: 'inbound-route-captain-linked-operator-primary-pending',
              ingress_number: voice_channel.phone_number,
              caller_number: caller_number
            },
-           headers: {
-             'X-Bridge-Secret' => 'bridge-secret'
-           },
+           headers: { 'X-Bridge-Secret' => 'bridge-secret' },
            as: :json
     end
 
     expect(response).to have_http_status(:ok)
+    expect(number_binding.routing_policy.reload.onelink_ai_app_ref).to be_nil
     expect(response.parsed_body).to include(
       'action' => 'ai',
       'app_ref' => 'onelink-captain-ai-status-aware-app-ref',
