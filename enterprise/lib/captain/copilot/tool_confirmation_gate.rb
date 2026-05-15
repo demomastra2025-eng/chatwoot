@@ -14,7 +14,12 @@ class Captain::Copilot::ToolConfirmationGate
   CONFIRMATION_TTL = 30.minutes
   MAX_ARGUMENT_PREVIEW_LENGTH = 1000
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
-  SENSITIVE_VALUE_PATTERN = %r{https?://|bearer\s+|token=|api[_-]?key=|secret=}i
+  SENSITIVE_VALUE_PATTERN = %r{
+    https?://|
+    bearer\s+|
+    authorization\s*[:=]|
+    (?:token|api[_\s-]?key|secret|password|credential|session|webhook)\s*[:=]
+  }ix
 
   def initialize(copilot_thread:, tool_definition:, arguments:, user: nil)
     @copilot_thread = copilot_thread

@@ -12,6 +12,12 @@ RSpec.describe Captain::ToolRegistry do
         'get_captain_assistant',
         'preview_captain_assistant_prompt',
         'update_captain_assistant',
+        'list_captain_scenarios',
+        'get_captain_scenario',
+        'create_captain_scenario',
+        'update_captain_scenario',
+        'set_captain_scenario_status',
+        'delete_captain_scenario',
         'search_documentation',
         'list_captain_documents',
         'faq_lookup',
@@ -206,6 +212,12 @@ RSpec.describe Captain::ToolRegistry do
       get_captain_assistant
       preview_captain_assistant_prompt
       update_captain_assistant
+      list_captain_scenarios
+      get_captain_scenario
+      create_captain_scenario
+      update_captain_scenario
+      set_captain_scenario_status
+      delete_captain_scenario
       add_appointment_payment
       get_kaspi_pay_integration_status
       start_kaspi_pay_connection

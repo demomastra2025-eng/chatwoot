@@ -11,7 +11,7 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
   let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
 
-  it 'blocks confirmation-required assistant tools until the operator confirms the same arguments' do
+  it 'blocks confirmation-required assistant tools until the operator confirms the same arguments', :aggregate_failures do
     service = Captain::Tools::Copilot::SendMessageToConversationService.new(
       assistant,
       user: user,
@@ -115,6 +115,31 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(preview).not_to include('secret.example')
     expect(preview).not_to include('token=abc')
     expect(payload.dig('data', 'arguments_digest')).to be_present
+  end
+
+  it 'redacts secret-like instruction values from confirmation previews' do
+    service = Captain::Tools::Copilot::CreateCaptainScenarioService.new(
+      assistant,
+      user: user,
+      copilot_thread: copilot_thread
+    )
+
+    payload = JSON.parse(
+      service.execute(
+        assistant_id: assistant.id,
+        title: 'Sensitive Scenario',
+        description: 'Preview should be redacted',
+        instruction: 'Use session=abc, password: p4ss, authorization: Basic aaa and webhook_secret=xyz'
+      )
+    )
+    preview = payload.dig('data', 'arguments_preview')
+
+    expect(preview).to include('[FILTERED]')
+    expect(preview).not_to include('session=abc')
+    expect(preview).not_to include('password: p4ss')
+    expect(preview).not_to include('authorization: Basic aaa')
+    expect(preview).not_to include('webhook_secret=xyz')
+    expect(Captain::Scenario.where(account: account, title: 'Sensitive Scenario')).not_to exist
   end
 
   it 'expires stale confirmation requests' do

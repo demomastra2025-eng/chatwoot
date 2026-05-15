@@ -8,7 +8,12 @@ class Captain::Tools::Copilot::CaptainAssistantAdminTool < Captain::Tools::Copil
     context_access tool_access voice_settings rules
   ].freeze
   SENSITIVE_KEY_PATTERN = /(otp|token|secret|password|credential|authorization|process_?id|session|api_?key|access_?key|refresh|url|webhook)/i
-  SENSITIVE_VALUE_PATTERN = %r{https?://|bearer\s+|token=|api[_-]?key=|secret=}i
+  SENSITIVE_VALUE_PATTERN = %r{
+    https?://|
+    bearer\s+|
+    authorization\s*[:=]|
+    (?:token|api[_\s-]?key|secret|password|credential|session|webhook)\s*[:=]
+  }ix
 
   def active?
     account_administrator?

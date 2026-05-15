@@ -137,6 +137,74 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'list_captain_scenarios',
+          title: 'List Captain Scenarios',
+          description: 'List Captain scenarios in the current account for AI Admin operations',
+          group_name: 'AI Admin',
+          icon: 'bot',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListCaptainScenariosService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_captain_scenario',
+          title: 'Get Captain Scenario',
+          description: 'Get one Captain scenario, instructions, and tool references with safe redaction',
+          group_name: 'AI Admin',
+          icon: 'bot',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCaptainScenarioService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'create_captain_scenario',
+          title: 'Create Captain Scenario',
+          description: 'Create a Captain scenario and optional managed tool references after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'bot-add',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateCaptainScenarioService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_captain_scenario',
+          title: 'Update Captain Scenario',
+          description: 'Update Captain scenario instructions, tool references, and enabled status after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'edit',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainScenarioService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'set_captain_scenario_status',
+          title: 'Set Captain Scenario Status',
+          description: 'Enable or disable a Captain scenario after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'toggle-on',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::SetCaptainScenarioStatusService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_captain_scenario',
+          title: 'Delete Captain Scenario',
+          description: 'Delete a Captain scenario after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'delete',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteCaptainScenarioService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'list_captain_documents',
           title: 'List Captain Documents',
           description: 'List Captain knowledge documents and safe artifact IDs for files that can be attached to messages',
