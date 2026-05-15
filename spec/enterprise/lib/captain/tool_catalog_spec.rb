@@ -198,15 +198,25 @@ RSpec.describe Captain::ToolCatalog do
   end
 
   describe '.summary_for' do
-    it 'formats tool summaries consistently' do
+    it 'formats tool summaries consistently and includes confirmation metadata when provided' do
       summary = described_class.summary_for(
         [
           { id: 'faq_lookup', description: 'Search FAQ responses' },
-          { id: 'handoff', description: 'Hand off the conversation' }
+          { id: 'handoff', description: 'Hand off the conversation' },
+          {
+            id: 'send_message_to_conversation',
+            description: 'Send a public reply',
+            risk_level: 'high',
+            requires_confirmation: true
+          }
         ]
       )
 
-      expect(summary).to eq("- faq_lookup: Search FAQ responses\n- handoff: Hand off the conversation")
+      expect(summary).to eq(
+        "- faq_lookup: Search FAQ responses\n" \
+        "- handoff: Hand off the conversation\n" \
+        '- send_message_to_conversation: Send a public reply (risk: high, requires operator confirmation)'
+      )
     end
   end
 

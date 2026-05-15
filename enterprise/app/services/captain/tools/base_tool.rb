@@ -19,10 +19,11 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     end
   end
 
-  def initialize(assistant, user: nil, conversation: nil)
+  def initialize(assistant, user: nil, conversation: nil, copilot_thread: nil)
     @assistant = assistant
     @user = user
     @conversation = conversation
+    @copilot_thread = copilot_thread
     super()
   end
 

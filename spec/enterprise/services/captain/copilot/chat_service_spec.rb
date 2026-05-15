@@ -97,6 +97,26 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(tool_classes).to contain_exactly(Captain::Tools::SearchDocumentationService)
     end
 
+    it 'marks confirmation-required tools in the copilot system prompt' do
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['send_message_to_conversation']
+            }
+          }
+        }
+      )
+
+      service = described_class.new(assistant, config)
+      system_prompt = service.messages.first[:content]
+
+      expect(system_prompt).to include('- send_message_to_conversation:')
+      expect(system_prompt).to include('risk: high, requires operator confirmation')
+    end
+
     it 'instantiates selected custom assistant tools through the native copilot wrapper' do
       custom_tool = create(:captain_custom_tool, account: account)
 

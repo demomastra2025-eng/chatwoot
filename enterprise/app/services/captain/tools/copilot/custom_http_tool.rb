@@ -1,9 +1,9 @@
 class Captain::Tools::Copilot::CustomHttpTool < Captain::Tools::BaseTool
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
 
-  def initialize(assistant, custom_tool, user: nil, conversation: nil)
+  def initialize(assistant, custom_tool, user: nil, conversation: nil, copilot_thread: nil)
     @custom_tool = custom_tool
-    super(assistant, user: user, conversation: conversation)
+    super(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
   end
 
   def name
@@ -44,11 +44,17 @@ class Captain::Tools::Copilot::CustomHttpTool < Captain::Tools::BaseTool
     return state unless @conversation
 
     state[:conversation] = @conversation.attributes.symbolize_keys.slice(*Captain::ContextFields::CONVERSATION_STATE_ATTRIBUTES)
-    state[:contact] = @conversation.contact&.attributes&.symbolize_keys&.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES) if @conversation.contact
+    if @conversation.contact
+      state[:contact] =
+        @conversation.contact&.attributes&.symbolize_keys&.slice(*Captain::ContextFields::CONTACT_STATE_ATTRIBUTES)
+    end
     state[:deal] = Captain::ContextFields.deal_state_for(account: assistant.account, conversation: @conversation)
     state[:task] = Captain::ContextFields.task_state_for(account: assistant.account, conversation: @conversation)
     state[:appointment] = Captain::ContextFields.appointment_state_for(account: assistant.account, conversation: @conversation)
-    state[:contact_inbox] = @conversation.contact_inbox&.attributes&.symbolize_keys&.slice(*CONTACT_INBOX_STATE_ATTRIBUTES) if @conversation.contact_inbox
+    if @conversation.contact_inbox
+      state[:contact_inbox] =
+        @conversation.contact_inbox&.attributes&.symbolize_keys&.slice(*CONTACT_INBOX_STATE_ATTRIBUTES)
+    end
     state.compact!
     state[:prompt_context] = assistant.prompt_context_state(state)
     state

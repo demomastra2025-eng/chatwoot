@@ -69,14 +69,21 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def build_tools
+    @active_tool_definitions = []
+
     @assistant.allowed_assistant_tools.filter_map do |tool_definition|
-      Captain::Copilot::ToolCatalog.build_tool(
+      tool = Captain::Copilot::ToolCatalog.build_tool(
         tool_definition,
         assistant: @assistant,
         user: @user,
-        conversation: @conversation
+        conversation: @conversation,
+        copilot_thread: @copilot_thread
       )
-    end.select(&:active?)
+      next unless tool&.active?
+
+      @active_tool_definitions << tool_definition
+      tool
+    end
   end
 
   def system_message
@@ -92,9 +99,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def tools_summary
-    Captain::ToolCatalog.summary_for(
-      @tools.map { |tool| { id: tool.name, description: tool.description } }
-    )
+    Captain::ToolCatalog.summary_for(@active_tool_definitions || [])
   end
 
   def account_context_message

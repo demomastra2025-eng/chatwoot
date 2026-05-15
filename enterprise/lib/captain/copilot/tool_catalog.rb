@@ -8,13 +8,14 @@ class Captain::Copilot::ToolCatalog
       Captain::ToolCatalog.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
     end
 
-    def build_tool(tool_definition, assistant:, user: nil, conversation: nil)
+    def build_tool(tool_definition, assistant:, user: nil, conversation: nil, copilot_thread: nil)
       Captain::ToolCatalog.build_tool(
         tool_definition,
         assistant: assistant,
         scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
         user: user,
-        conversation: conversation
+        conversation: conversation,
+        copilot_thread: copilot_thread
       )
     end
   end

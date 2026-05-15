@@ -4,6 +4,12 @@ module Captain::Tools::Instrumentation
 
   def execute(**args)
     instrument_tool_call(name, args, tool_instrumentation_params(args)) do
+      confirmation_result = enforce_tool_confirmation(args)
+      if confirmation_result.present?
+        audit_tool_execution(arguments: args, result: confirmation_result)
+        return confirmation_result
+      end
+
       Captain::ToolSafety.check_arguments!(
         feature: tool_safety_feature,
         arguments: args,
@@ -42,6 +48,17 @@ module Captain::Tools::Instrumentation
       user: @user,
       runtime_context: tool_runtime_context
     )
+  end
+
+  def enforce_tool_confirmation(arguments)
+    return unless tool_scope_name == Captain::ToolAccess::SCOPE_ASSISTANT
+
+    Captain::Copilot::ToolConfirmationGate.new(
+      copilot_thread: @copilot_thread,
+      tool_definition: tool_definition,
+      arguments: arguments,
+      user: @user
+    ).call
   end
 
   def tool_instrumentation_params(arguments)

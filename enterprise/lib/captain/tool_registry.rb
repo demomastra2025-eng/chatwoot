@@ -954,6 +954,26 @@ class Captain::ToolRegistry
           risk_level: 'medium'
         ),
         definition(
+          id: 'list_account_users',
+          title: 'List Account Users',
+          description: 'List account users with IDs, roles, availability, and team membership for assignment, notifications, and ownership fields',
+          group_name: 'Account',
+          icon: 'users',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListAccountUsersService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'list_teams',
+          title: 'List Teams',
+          description: 'List account teams and optional members for assignment and routing decisions',
+          group_name: 'Account',
+          icon: 'people-team',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListTeamsService,
+          risk_level: 'low'
+        ),
+        definition(
           id: 'retry_failed_message',
           title: 'Retry Failed Message',
           description: 'Retry a failed outgoing message in a conversation',

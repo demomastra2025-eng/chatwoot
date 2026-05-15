@@ -34,12 +34,13 @@ module Concerns::Toolable
     tool_class.new(assistant, self, **)
   end
 
-  def copilot_tool(assistant, user: nil, conversation: nil)
+  def copilot_tool(assistant, user: nil, conversation: nil, copilot_thread: nil)
     Captain::Tools::Copilot::CustomHttpTool.new(
       assistant,
       self,
       user: user,
-      conversation: conversation
+      conversation: conversation,
+      copilot_thread: copilot_thread
     )
   end
 

@@ -1,8 +1,8 @@
 class Captain::Tools::Copilot::McpTool < Captain::Tools::BaseTool
-  def initialize(assistant, mcp_server, tool_definition, user: nil, conversation: nil)
+  def initialize(assistant, mcp_server, tool_definition, user: nil, conversation: nil, copilot_thread: nil)
     @mcp_server = mcp_server
     @tool_definition = tool_definition.with_indifferent_access
-    super(assistant, user: user, conversation: conversation)
+    super(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
   end
 
   def name
@@ -35,7 +35,5 @@ class Captain::Tools::Copilot::McpTool < Captain::Tools::BaseTool
 
   private
 
-  def tool_definition
-    @tool_definition
-  end
+  attr_reader :tool_definition
 end

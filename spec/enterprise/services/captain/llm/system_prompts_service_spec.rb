@@ -73,6 +73,7 @@ RSpec.describe Captain::Llm::SystemPromptsService do
         'open_automation_rules',
         'create_task',
         'prepared create/edit forms',
+        'requires operator confirmation',
         'Never invent DOM selectors'
       )
     end
