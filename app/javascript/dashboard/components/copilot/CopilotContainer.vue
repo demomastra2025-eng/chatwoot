@@ -190,6 +190,7 @@ const handleUiAction = async action => {
     await executeCaptainUiAction(action, {
       router,
       accountId: currentAccountId.value,
+      showConfirmation: useAlert,
     });
   } catch (error) {
     useAlert(error.message);
