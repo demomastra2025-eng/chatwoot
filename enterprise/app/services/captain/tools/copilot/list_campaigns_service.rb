@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'list_campaigns'
   end
@@ -10,6 +10,8 @@ class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::B
   param :limit, type: :integer, desc: 'Maximum number of campaigns to return', required: false
 
   def execute(campaign_status: nil, campaign_type: nil, inbox_id: nil, limit: nil)
+    ensure_account_administrator!
+
     campaigns = filtered_campaigns(campaign_status: campaign_status, campaign_type: campaign_type, inbox_id: inbox_id)
 
     formatted_payload(
@@ -19,8 +21,10 @@ class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::B
         inbox_id: inbox_id
       }.compact,
       total_count: campaigns.count,
-      campaigns: campaigns.limit(parse_limit(limit)).map { |campaign| campaign_payload(campaign) }
+      campaigns: campaigns.limit(parse_limit(limit)).map { |campaign| campaign_payload(campaign, include_config: true) }
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?
@@ -43,37 +47,5 @@ class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::B
 
   def valid_campaign_type?(value)
     value.present? && ::Campaign.campaign_types.key?(value)
-  end
-
-  def campaign_payload(campaign)
-    latest_run = campaign.latest_campaign_run
-    {
-      id: campaign.display_id,
-      title: campaign.title,
-      description: campaign.description,
-      inbox_id: campaign.inbox_id,
-      inbox_name: campaign.inbox&.name,
-      sender_id: campaign.sender_id,
-      sender_name: campaign.sender&.name,
-      campaign_status: campaign.campaign_status,
-      campaign_type: campaign.campaign_type,
-      enabled: campaign.enabled,
-      message: campaign.message,
-      instructions: campaign.instructions,
-      text_mode: campaign.text_mode,
-      scheduled_at: campaign.scheduled_at&.iso8601,
-      updated_at: campaign.updated_at&.iso8601,
-      latest_run: if latest_run.present?
-                    {
-                      id: latest_run.id,
-                      status: latest_run.status,
-                      total_count: latest_run.total_count,
-                      processed_count: latest_run.processed_count,
-                      successful_count: latest_run.successful_count,
-                      failed_count: latest_run.failed_count,
-                      created_at: latest_run.created_at&.iso8601
-                    }
-                  end
-    }
   end
 end

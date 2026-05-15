@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'retry_failed_campaign_deliveries'
   end
@@ -7,6 +7,8 @@ class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::T
   param :campaign_id, type: :integer, desc: 'Campaign display ID', required: true
 
   def execute(campaign_id:)
+    ensure_account_administrator!
+
     campaign = find_campaign!(campaign_id)
     ::Campaigns::RetryFailedDeliveriesService.new(campaign: campaign).perform
 

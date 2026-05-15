@@ -74,8 +74,16 @@ RSpec.describe Captain::ToolRegistry do
         'update_label',
         'remove_label_from_conversation',
         'list_campaigns',
+        'get_campaign',
         'preview_campaign',
         'get_campaign_analytics',
+        'create_campaign',
+        'update_campaign',
+        'delete_campaign',
+        'launch_campaign',
+        'cancel_campaign',
+        'restart_campaign',
+        'resume_campaign',
         'retry_failed_campaign_deliveries',
         'create_webhook',
         'update_webhook'
@@ -87,7 +95,7 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
       expect(agent_tool_ids).not_to include(*assistant_only_admin_tool_ids)
-      expect(agent_tool_ids.size).to eq(76)
+      expect(agent_tool_ids.size).to eq(73)
     end
 
     it 'keeps explicit admin, finance, automation, and operational tools assistant-only' do
@@ -245,9 +253,20 @@ RSpec.describe Captain::ToolRegistry do
       get_channel_health
       get_whatsapp_web_diagnostics
       reconnect_whatsapp_web
+      list_campaigns
+      get_campaign
+      preview_campaign
+      get_campaign_analytics
+      create_campaign
+      update_campaign
+      delete_campaign
+      launch_campaign
+      cancel_campaign
+      restart_campaign
+      resume_campaign
+      retry_failed_campaign_deliveries
       create_label
       update_label
-      retry_failed_campaign_deliveries
       create_webhook
       update_webhook
     ]

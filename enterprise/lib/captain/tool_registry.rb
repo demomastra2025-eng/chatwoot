@@ -1729,9 +1729,18 @@ class Captain::ToolRegistry
           description: 'List campaigns for the current account',
           group_name: 'Outbound',
           icon: 'megaphone',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::ListCampaignsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_campaign',
+          title: 'Get Campaign',
+          description: 'Get one campaign with configuration and latest run state',
+          group_name: 'Outbound',
+          icon: 'megaphone',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCampaignService,
           risk_level: 'low'
         ),
         definition(
@@ -1740,8 +1749,7 @@ class Captain::ToolRegistry
           description: 'Preview a campaign before sending it',
           group_name: 'Outbound',
           icon: 'eye',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::PreviewCampaignService,
           risk_level: 'low'
         ),
@@ -1751,10 +1759,93 @@ class Captain::ToolRegistry
           description: 'Get analytics for a campaign',
           group_name: 'Outbound',
           icon: 'chart',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetCampaignAnalyticsService,
           risk_level: 'low'
+        ),
+        definition(
+          id: 'create_campaign',
+          title: 'Create Campaign',
+          description: 'Create an outbound campaign in the current account',
+          group_name: 'Outbound',
+          icon: 'megaphone',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CreateCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'update_campaign',
+          title: 'Update Campaign',
+          description: 'Update an editable campaign in the current account',
+          group_name: 'Outbound',
+          icon: 'megaphone',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'delete_campaign',
+          title: 'Delete Campaign',
+          description: 'Delete a campaign in the current account',
+          group_name: 'Outbound',
+          icon: 'trash',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::DeleteCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'launch_campaign',
+          title: 'Launch Campaign',
+          description: 'Launch an active one-off campaign after preview checks',
+          group_name: 'Outbound',
+          icon: 'send',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::LaunchCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'cancel_campaign',
+          title: 'Cancel Campaign',
+          description: 'Cancel an active or running one-off campaign',
+          group_name: 'Outbound',
+          icon: 'dismiss-circle',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CancelCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'restart_campaign',
+          title: 'Restart Campaign',
+          description: 'Restart a failed or cancelled one-off campaign from latest run',
+          group_name: 'Outbound',
+          icon: 'refresh',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RestartCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'resume_campaign',
+          title: 'Resume Campaign',
+          description: 'Resume remaining recipients for a failed or cancelled campaign',
+          group_name: 'Outbound',
+          icon: 'play',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ResumeCampaignService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
         ),
         definition(
           id: 'retry_failed_campaign_deliveries',
@@ -1765,7 +1856,8 @@ class Captain::ToolRegistry
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService,
           risk_level: 'high',
-          requires_confirmation: true
+          requires_confirmation: true,
+          selected_by_default: false
         ),
         definition(
           id: 'create_webhook',

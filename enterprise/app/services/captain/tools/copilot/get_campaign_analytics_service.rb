@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'get_campaign_analytics'
   end
@@ -7,6 +7,8 @@ class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Cop
   param :campaign_id, type: :integer, desc: 'Campaign display ID', required: true
 
   def execute(campaign_id:)
+    ensure_account_administrator!
+
     campaign = find_campaign!(campaign_id)
     formatted_payload(::Campaigns::AnalyticsService.new(campaign: campaign).call)
   rescue StandardError => e

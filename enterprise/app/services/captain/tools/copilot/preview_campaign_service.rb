@@ -1,4 +1,4 @@
-class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot::BaseAccountTool
+class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'preview_campaign'
   end
@@ -12,17 +12,19 @@ class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot:
   param :template_params, type: :object, desc: 'Optional template params object', required: false
   param :scheduled_at, type: :string, desc: 'Optional planned campaign send datetime used for WhatsApp official 24-hour policy', required: false
 
-  def execute(inbox_id:, audience:, message: nil, instructions: nil, text_mode: nil, template_params: nil, scheduled_at: nil)
+  def execute(inbox_id:, audience:, **kwargs)
+    ensure_account_administrator!
+
     inbox = account.inboxes.find(inbox_id)
     preview = ::Campaigns::PreviewService.new(
       account: account,
       inbox: inbox,
       audience: audience,
-      message: message,
-      instructions: instructions,
-      text_mode: text_mode,
-      template_params: template_params || {},
-      scheduled_at: scheduled_at
+      message: kwargs[:message],
+      instructions: kwargs[:instructions],
+      text_mode: kwargs[:text_mode],
+      template_params: kwargs[:template_params] || {},
+      scheduled_at: kwargs[:scheduled_at]
     ).call
 
     formatted_payload(preview)
