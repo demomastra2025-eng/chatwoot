@@ -240,6 +240,12 @@ RSpec.describe Captain::ToolRegistry do
       create_captain_knowledge_entry
       update_captain_knowledge_entry
       delete_captain_knowledge_entry
+      list_captain_custom_tools
+      get_captain_custom_tool
+      create_captain_custom_tool
+      update_captain_custom_tool
+      set_captain_custom_tool_status
+      delete_captain_custom_tool
       add_appointment_payment
       get_kaspi_pay_integration_status
       start_kaspi_pay_connection
