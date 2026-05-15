@@ -115,6 +115,37 @@ describe('captainUiActions helper', () => {
     });
   });
 
+  it('sanitizes target route params and query IDs before routing', () => {
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_contact', targetId: '<b>42</b>\n' },
+        1
+      )
+    ).toEqual({
+      name: 'contacts_edit',
+      params: { accountId: 1, contactId: '42' },
+    });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_deal', targetId: '<i>55</i>' }, 1)
+    ).toEqual({
+      name: 'crm_deals_index',
+      params: { accountId: 1 },
+      query: { dealId: '55', source: 'captain_ui_action' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_task', targetId: '<span>99</span>' },
+        1
+      )
+    ).toEqual({
+      name: 'crm_tasks_index',
+      params: { accountId: 1 },
+      query: { taskId: '99', source: 'captain_ui_action' },
+    });
+  });
+
   it('normalizes and routes safe create-form UI actions with prefill data', () => {
     const [action] = normalizeCaptainUiActions([
       {
@@ -129,7 +160,7 @@ describe('captainUiActions helper', () => {
       type: 'create_task',
       label: 'Create task',
       targetId:
-        '{"title":"Follow up","description":"<i>Call client</i>","due_at":"2026-05-20T10:00","ignored":"#danger"}',
+        '{"title":"Follow up","description":"Call client","due_at":"2026-05-20T10:00","ignored":"#danger"}',
       prefill: {
         title: 'Follow up',
         description: 'Call client',

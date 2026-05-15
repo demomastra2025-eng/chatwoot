@@ -56,7 +56,7 @@ module Captain::Tools::Instrumentation
 
   def enforce_tool_confirmation(arguments)
     return unless tool_scope_name == Captain::ToolAccess::SCOPE_ASSISTANT
-    return inactive_tool_result if runtime_confirmation_required?(tool_definition) && !active?
+    return inactive_tool_result unless active?
 
     Captain::Copilot::ToolConfirmationGate.new(
       copilot_thread: @copilot_thread,

@@ -302,7 +302,7 @@ const normalizedActionPayload = action => {
       0,
       80
     ),
-    targetId: actionTargetId(action).toString().trim(),
+    targetId: safeString(actionTargetId(action)),
   };
 
   const prefill = actionPrefill(action);
@@ -330,11 +330,12 @@ const simpleRoute = (name, accountId) => ({
 });
 
 const targetRoute = (action, accountId, routeConfig) => {
-  if (!action.targetId) return null;
+  const targetId = safeString(action.targetId);
+  if (!targetId) return null;
 
   return {
     name: routeConfig.name,
-    params: { accountId, [routeConfig.paramName]: action.targetId },
+    params: { accountId, [routeConfig.paramName]: targetId },
   };
 };
 
@@ -357,7 +358,7 @@ const createActionRoute = (action, accountId) => ({
 });
 
 const queryTargetRoute = (action, accountId, routeConfig) => {
-  const targetId = action.targetId || actionTargetId(action).toString().trim();
+  const targetId = safeString(action.targetId || actionTargetId(action));
   if (!targetId) return null;
 
   return {
@@ -472,12 +473,13 @@ export const routeForCaptainUiAction = (action, accountId) => {
   }
 
   if (action.type === 'open_task') {
-    if (!action.targetId) return null;
+    const targetId = safeString(action.targetId);
+    if (!targetId) return null;
 
     return {
       name: 'crm_tasks_index',
       params: { accountId },
-      query: { taskId: action.targetId, source: 'captain_ui_action' },
+      query: { taskId: targetId, source: 'captain_ui_action' },
     };
   }
 

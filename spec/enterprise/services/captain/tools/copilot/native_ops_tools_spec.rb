@@ -257,6 +257,16 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('label', 'title')).to eq('vip')
       expect(account.labels.find_by(title: 'vip')).to be_present
     end
+
+    it 'blocks non-admin execution before mutating labels' do
+      agent = create(:user, account: account)
+      service = described_class.new(assistant, user: agent, conversation: conversation)
+
+      result = service.execute(title: 'VIP', color: '#ff0000')
+
+      expect(result).to include('Account administrator permission is required')
+      expect(account.labels.find_by(title: 'vip')).to be_blank
+    end
   end
 
   describe Captain::Tools::Copilot::UpdateLabelService do
@@ -364,7 +374,10 @@ RSpec.describe 'Captain native ops tools' do
                            ))
 
       expect(payload['action']).to eq('create_webhook')
-      expect(payload.dig('webhook', 'url')).to eq('https://example.com/hook')
+      expect(payload.dig('webhook', 'url_configured')).to be(true)
+      expect(payload.dig('webhook', 'secret_configured')).to be(true)
+      expect(payload.dig('webhook', 'url')).to be_nil
+      expect(payload.dig('webhook', 'secret')).to be_nil
       expect(account.webhooks.find_by(url: 'https://example.com/hook')).to be_present
     end
   end
@@ -381,7 +394,10 @@ RSpec.describe 'Captain native ops tools' do
                            ))
 
       expect(payload['action']).to eq('update_webhook')
-      expect(payload.dig('webhook', 'url')).to eq('https://new.example.com')
+      expect(payload.dig('webhook', 'url_configured')).to be(true)
+      expect(payload.dig('webhook', 'secret_configured')).to be(true)
+      expect(payload.dig('webhook', 'url')).to be_nil
+      expect(payload.dig('webhook', 'secret')).to be_nil
       expect(webhook.reload.url).to eq('https://new.example.com')
     end
   end
