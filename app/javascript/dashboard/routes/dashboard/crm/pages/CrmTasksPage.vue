@@ -744,10 +744,17 @@ const crmPrefillKeys = [
   'assigneeId',
   'contactName',
   'conversationDisplayId',
+  'dealId',
+  'description',
+  'dueAt',
   'originatingConversationId',
+  'priority',
   'source',
+  'startAt',
+  'statusId',
   'taskId',
   'teamId',
+  'title',
 ];
 
 const queryValue = key => {
@@ -1055,12 +1062,18 @@ const consumeTaskPrefillQuery = async () => {
 
   await openCreateDrawer({
     assigneeId: numericQueryValue('assigneeId'),
+    dealId: numericQueryValue('dealId'),
+    description: queryValue('description') || '',
+    dueAt: queryValue('dueAt') || '',
     originatingConversationDisplayId: queryValue('conversationDisplayId')
       ? `#${queryValue('conversationDisplayId')}`
       : '',
     originatingConversationId: numericQueryValue('originatingConversationId'),
+    priority: queryValue('priority') || 'medium',
+    startAt: queryValue('startAt') || '',
+    statusId: numericQueryValue('statusId') || form.statusId,
     teamId: numericQueryValue('teamId'),
-    title: buildPrefillTaskTitle(),
+    title: queryValue('title') || buildPrefillTaskTitle(),
   });
   await clearTaskPrefillQuery();
 };

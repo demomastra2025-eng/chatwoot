@@ -71,8 +71,8 @@ const hasActiveSegments = computed(
 );
 const activeSegmentName = computed(() => props.activeSegment?.name);
 
-const openCreateNewContactDialog = () => {
-  createNewContactDialogRef.value?.dialogRef.open();
+const openCreateNewContactDialog = prefill => {
+  createNewContactDialogRef.value?.openWithPrefill(prefill || null);
 };
 const openContactImportDialog = () =>
   contactImportDialogRef.value?.dialogRef.open();
@@ -270,6 +270,7 @@ const onToggleFilters = () => {
 
 defineExpose({
   onToggleFilters,
+  openCreateNewContactDialog,
 });
 </script>
 

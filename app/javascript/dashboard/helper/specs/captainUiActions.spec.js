@@ -40,6 +40,10 @@ describe('captainUiActions helper', () => {
         'open_captain_documents',
         'open_captain_tools',
         'open_captain_observability',
+        'create_contact',
+        'create_company',
+        'create_task',
+        'create_deal',
       ])
     );
   });
@@ -82,6 +86,80 @@ describe('captainUiActions helper', () => {
     ).toEqual({
       name: 'label_conversations',
       params: { accountId: 1, label: 'vip' },
+    });
+  });
+
+  it('normalizes and routes safe create-form UI actions with prefill data', () => {
+    const [action] = normalizeCaptainUiActions([
+      {
+        type: 'create_task',
+        label: '<b>Create task</b>',
+        target_id:
+          '{"title":"Follow up","description":"<i>Call client</i>","due_at":"2026-05-20T10:00","ignored":"#danger"}',
+      },
+    ]);
+
+    expect(action).toEqual({
+      type: 'create_task',
+      label: 'Create task',
+      targetId:
+        '{"title":"Follow up","description":"<i>Call client</i>","due_at":"2026-05-20T10:00","ignored":"#danger"}',
+      prefill: {
+        title: 'Follow up',
+        description: 'Call client',
+        dueAt: '2026-05-20T10:00',
+      },
+    });
+
+    expect(routeForCaptainUiAction(action, 7)).toEqual({
+      name: 'crm_tasks_index',
+      params: { accountId: 7 },
+      query: {
+        action: 'new',
+        source: 'captain_ui_action',
+        title: 'Follow up',
+        description: 'Call client',
+        dueAt: '2026-05-20T10:00',
+      },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        {
+          type: 'create_deal',
+          prefill: { title: 'New deal', contactId: '42', amount: '25000' },
+        },
+        7
+      )
+    ).toEqual({
+      name: 'crm_deals_index',
+      params: { accountId: 7 },
+      query: {
+        action: 'new',
+        source: 'captain_ui_action',
+        title: 'New deal',
+        contactId: '42',
+        amount: '25000',
+      },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        {
+          type: 'create_contact',
+          prefill: { name: 'Aruzhan', phoneNumber: '+7' },
+        },
+        7
+      )
+    ).toEqual({
+      name: 'contacts_dashboard_index',
+      params: { accountId: 7 },
+      query: {
+        action: 'new',
+        source: 'captain_ui_action',
+        name: 'Aruzhan',
+        phoneNumber: '+7',
+      },
     });
   });
 

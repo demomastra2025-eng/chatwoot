@@ -915,15 +915,23 @@ const formatDate = value => {
 
 const crmPrefillKeys = [
   'action',
+  'amount',
   'companyId',
   'companyName',
   'contactId',
   'contactName',
   'conversationDisplayId',
+  'currency',
+  'description',
+  'expectedCloseOn',
   'originatingConversationId',
   'ownerId',
+  'pipelineId',
   'source',
+  'stageId',
   'teamId',
+  'title',
+  'winProbability',
 ];
 
 const queryValue = key => {
@@ -934,6 +942,11 @@ const queryValue = key => {
 const numericQueryValue = key => {
   const value = Number(queryValue(key));
   return Number.isFinite(value) && value > 0 ? value : '';
+};
+
+const decimalQueryValue = key => {
+  const value = Number(queryValue(key));
+  return Number.isFinite(value) && value >= 0 ? value : '';
 };
 
 const buildPrefillDealTitle = () => {
@@ -1776,16 +1789,23 @@ const consumeDealPrefillQuery = async () => {
   const companyId = numericQueryValue('companyId');
 
   await openCreateDrawer({
+    amount: decimalQueryValue('amount') || 0,
     companyId,
     contactIds: contactId ? [contactId] : [],
+    currency: queryValue('currency') || defaultDealCurrency,
+    description: queryValue('description') || '',
+    expectedCloseOn: queryValue('expectedCloseOn') || '',
     originatingConversationDisplayId: queryValue('conversationDisplayId')
       ? `#${queryValue('conversationDisplayId')}`
       : '',
     originatingConversationId: numericQueryValue('originatingConversationId'),
     ownerId: numericQueryValue('ownerId'),
+    pipelineId: numericQueryValue('pipelineId') || form.pipelineId,
     primaryContactId: contactId,
+    stageId: numericQueryValue('stageId') || form.stageId,
     teamId: numericQueryValue('teamId'),
-    title: buildPrefillDealTitle(),
+    title: queryValue('title') || buildPrefillDealTitle(),
+    winProbability: decimalQueryValue('winProbability'),
   });
 
   if (

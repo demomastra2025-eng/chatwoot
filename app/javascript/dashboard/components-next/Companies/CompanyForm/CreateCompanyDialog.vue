@@ -15,6 +15,7 @@ const companiesStore = useCompaniesStore();
 const dialogRef = ref(null);
 const companyFormRef = ref(null);
 const company = ref(null);
+const companyData = ref(null);
 
 const uiFlags = computed(() => companiesStore.getUIFlags);
 const isCreatingCompany = computed(() => uiFlags.value.creatingItem);
@@ -30,20 +31,29 @@ const handleDialogConfirm = async () => {
 
 const onSuccess = () => {
   companyFormRef.value?.resetForm();
+  company.value = null;
+  companyData.value = null;
   dialogRef.value?.close();
+};
+
+const openWithPrefill = prefill => {
+  companyData.value = prefill || null;
+  company.value = prefill || null;
+  dialogRef.value?.open();
 };
 
 const closeDialog = () => {
   dialogRef.value?.close();
 };
 
-defineExpose({ dialogRef, companyFormRef, onSuccess });
+defineExpose({ dialogRef, companyFormRef, onSuccess, openWithPrefill });
 </script>
 
 <template>
   <Dialog ref="dialogRef" width="xl" @confirm="handleDialogConfirm">
     <CompanyForm
       ref="companyFormRef"
+      :company-data="companyData"
       is-new-company
       @update="createNewCompany"
     />

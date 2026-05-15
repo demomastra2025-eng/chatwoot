@@ -44,7 +44,13 @@ const syncState = company => {
 };
 
 watch(
-  () => [props.companyData?.id, props.companyData?.updatedAt],
+  () => [
+    props.companyData?.id,
+    props.companyData?.updatedAt,
+    props.companyData?.name,
+    props.companyData?.domain,
+    props.companyData?.description,
+  ],
   () => {
     if (!props.companyData && props.isNewCompany) {
       Object.assign(state, defaultState);

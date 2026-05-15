@@ -14,6 +14,7 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 const contactsFormRef = ref(null);
 const contact = ref(null);
+const contactData = ref(null);
 
 const uiFlags = useMapGetter('contacts/getUIFlags');
 const isCreatingContact = computed(() => uiFlags.value.isCreating);
@@ -29,14 +30,22 @@ const handleDialogConfirm = async () => {
 
 const onSuccess = () => {
   contactsFormRef.value?.resetForm();
+  contact.value = null;
+  contactData.value = null;
   dialogRef.value.close();
+};
+
+const openWithPrefill = prefill => {
+  contactData.value = prefill || null;
+  contact.value = prefill || null;
+  dialogRef.value?.open();
 };
 
 const closeDialog = () => {
   dialogRef.value.close();
 };
 
-defineExpose({ dialogRef, contactsFormRef, onSuccess });
+defineExpose({ dialogRef, contactsFormRef, onSuccess, openWithPrefill });
 </script>
 
 <template>
@@ -48,6 +57,7 @@ defineExpose({ dialogRef, contactsFormRef, onSuccess });
   >
     <ContactsForm
       ref="contactsFormRef"
+      :contact-data="contactData"
       is-new-contact
       @update="createNewContact"
     />

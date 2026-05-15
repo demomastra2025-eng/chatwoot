@@ -70,12 +70,20 @@ const openFilter = () => {
   contactListHeaderWrapper.value?.onToggleFilters();
 };
 
+const openCreateNewContactDialog = prefill => {
+  contactListHeaderWrapper.value?.openCreateNewContactDialog(prefill);
+};
+
 const showLoadMore = computed(() => {
   return props.useInfiniteScroll && props.hasMore;
 });
 
 const showPagination = computed(() => {
   return !props.useInfiniteScroll && props.showPaginationFooter;
+});
+
+defineExpose({
+  openCreateNewContactDialog,
 });
 </script>
 

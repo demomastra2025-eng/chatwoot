@@ -49,9 +49,10 @@ module Captain
       end
 
       class CopilotUiAction < RubyLLM::Schema
-        string :type, description: 'Whitelisted dashboard navigation action type such as open_contact or open_captain_documents'
+        string :type, description: 'Whitelisted dashboard UI action type such as open_contact, create_task, or open_captain_documents'
         string :label, description: 'Short button label for the support agent'
-        string :target_id, description: 'Entity ID as a string, or an empty string for list/settings navigation'
+        string :target_id,
+               description: 'Entity ID string, empty for list/settings pages, or compact JSON prefill for create_* form actions'
       end
 
       class CopilotResponse < RubyLLM::Schema

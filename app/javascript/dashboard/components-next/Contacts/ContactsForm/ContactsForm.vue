@@ -86,18 +86,14 @@ const v$ = useVuelidate(validationRules, state);
 
 const isFormInvalid = computed(() => v$.value.$invalid);
 
-const prepareStateBasedOnProps = () => {
-  if (props.isNewContact) {
-    return; // Added to prevent state update for new contact form
-  }
-
+const syncStateFromContact = contactData => {
   const {
-    id,
+    id = 0,
     name = '',
-    email: emailAddress,
-    phoneNumber,
+    email: emailAddress = '',
+    phoneNumber = '',
     additionalAttributes = {},
-  } = props.contactData || {};
+  } = contactData || {};
   const { firstName, lastName } = splitName(name || '');
   const {
     description = '',
@@ -131,6 +127,15 @@ const prepareStateBasedOnProps = () => {
       },
     },
   });
+};
+
+const prepareStateBasedOnProps = () => {
+  if (props.isNewContact && !props.contactData) {
+    Object.assign(state, defaultState);
+    return;
+  }
+
+  syncStateFromContact(props.contactData);
 };
 
 const countryOptions = computed(() =>
@@ -230,9 +235,15 @@ const resetForm = () => {
 };
 
 watch(
-  () => props.contactData?.id,
-  id => {
-    if (id) prepareStateBasedOnProps();
+  () => [
+    props.contactData?.id,
+    props.contactData?.name,
+    props.contactData?.email,
+    props.contactData?.phoneNumber,
+    props.contactData?.additionalAttributes?.companyName,
+  ],
+  () => {
+    prepareStateBasedOnProps();
   },
   { immediate: true }
 );

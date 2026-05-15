@@ -40,6 +40,7 @@ const companyFilterValue = ref(companyQuery.value || '');
 const pageNumber = computed(() => Number(route.query?.page) || 1);
 // For infinite scroll in search, track page internally
 const searchPageNumber = ref(1);
+const contactsListLayoutRef = ref(null);
 const isLoadingMore = ref(false);
 
 const parseSortSettings = (sortString = '') => {
@@ -437,6 +438,47 @@ const handleSort = async ({ sort, order }) => {
     : fetchContacts());
 };
 
+const queryValue = key => {
+  const value = route.query[key];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const contactPrefillKeys = [
+  'action',
+  'companyName',
+  'email',
+  'name',
+  'phoneNumber',
+  'source',
+];
+
+const clearContactPrefillQuery = async () => {
+  const nextQuery = { ...route.query };
+  contactPrefillKeys.forEach(key => {
+    delete nextQuery[key];
+  });
+
+  await router.replace({ query: nextQuery });
+};
+
+const buildContactPrefill = () => ({
+  name: queryValue('name') || '',
+  email: queryValue('email') || '',
+  phoneNumber: queryValue('phoneNumber') || '',
+  additionalAttributes: {
+    companyName: queryValue('companyName') || '',
+  },
+});
+
+const consumeContactPrefillQuery = async () => {
+  if (queryValue('action') !== 'new') return;
+
+  contactsListLayoutRef.value?.openCreateNewContactDialog(
+    buildContactPrefill()
+  );
+  await clearContactPrefillQuery();
+};
+
 const createContact = async contact => {
   await store.dispatch('contacts/create', contact);
 };
@@ -493,10 +535,12 @@ onMounted(async () => {
       await searchContacts(searchQuery.value, pageNumber.value, false, {
         clearSelection: false,
       });
+      await consumeContactPrefillQuery();
       return;
     }
     if (isActiveView.value) {
       await fetchActiveContacts(pageNumber.value);
+      await consumeContactPrefillQuery();
       return;
     }
     await fetchContacts(pageNumber.value);
@@ -506,6 +550,8 @@ onMounted(async () => {
       pageNumber.value
     );
   }
+
+  await consumeContactPrefillQuery();
 });
 </script>
 
@@ -514,6 +560,7 @@ onMounted(async () => {
     class="flex flex-col justify-between flex-1 h-full m-0 overflow-auto bg-n-surface-1"
   >
     <ContactsListLayout
+      ref="contactsListLayoutRef"
       :search-value="searchValue"
       :company-filter-value="companyFilterValue"
       :company-filter-options="companyFilterOptions"

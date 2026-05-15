@@ -120,8 +120,8 @@ const onPageChange = page => {
   fetchCompanies(page, searchValue.value, sortParam.value);
 };
 
-const openCreateCompanyDialog = () => {
-  createCompanyDialogRef.value?.dialogRef?.open();
+const openCreateCompanyDialog = prefill => {
+  createCompanyDialogRef.value?.openWithPrefill(prefill || null);
 };
 
 const toggleCompany = companyId => {
@@ -173,9 +173,43 @@ const handleSort = async ({ sort, order }) => {
   fetchCompanies(1, searchValue.value, buildSortAttr());
 };
 
-onMounted(() => {
+const queryValue = key => {
+  const value = route.query[key];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const companyPrefillKeys = [
+  'action',
+  'description',
+  'domain',
+  'name',
+  'source',
+];
+
+const clearCompanyPrefillQuery = async () => {
+  const nextQuery = { ...route.query };
+  companyPrefillKeys.forEach(key => {
+    delete nextQuery[key];
+  });
+
+  await router.replace({ query: nextQuery });
+};
+
+const consumeCompanyPrefillQuery = async () => {
+  if (queryValue('action') !== 'new') return;
+
+  openCreateCompanyDialog({
+    name: queryValue('name') || '',
+    domain: queryValue('domain') || '',
+    description: queryValue('description') || '',
+  });
+  await clearCompanyPrefillQuery();
+};
+
+onMounted(async () => {
   searchValue.value = searchQuery.value;
-  fetchCompanies();
+  await fetchCompanies();
+  await consumeCompanyPrefillQuery();
 });
 </script>
 

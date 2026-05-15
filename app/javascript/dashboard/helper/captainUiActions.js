@@ -70,10 +70,76 @@ const CAPTAIN_ASSISTANT_ROUTE_ACTIONS = {
   open_captain_prompts: 'captain_assistants_prompts_index',
 };
 
+const CREATE_ACTION_ROUTES = {
+  create_contact: 'contacts_dashboard_index',
+  create_company: 'companies_dashboard_index',
+  create_task: 'crm_tasks_index',
+  create_deal: 'crm_deals_index',
+};
+
+const CREATE_ACTION_QUERY_FIELDS = {
+  create_contact: [
+    ['name', ['name']],
+    ['email', ['email']],
+    ['phoneNumber', ['phoneNumber', 'phone_number', 'phone']],
+    ['companyName', ['companyName', 'company_name']],
+  ],
+  create_company: [
+    ['name', ['name']],
+    ['domain', ['domain']],
+    ['description', ['description']],
+  ],
+  create_task: [
+    ['title', ['title']],
+    ['description', ['description']],
+    ['dueAt', ['dueAt', 'due_at']],
+    ['startAt', ['startAt', 'start_at']],
+    ['priority', ['priority']],
+    ['dealId', ['dealId', 'deal_id']],
+    ['statusId', ['statusId', 'status_id']],
+    ['assigneeId', ['assigneeId', 'assignee_id']],
+    ['teamId', ['teamId', 'team_id']],
+    [
+      'conversationDisplayId',
+      ['conversationDisplayId', 'conversation_display_id'],
+    ],
+    [
+      'originatingConversationId',
+      ['originatingConversationId', 'originating_conversation_id'],
+    ],
+    ['contactName', ['contactName', 'contact_name']],
+  ],
+  create_deal: [
+    ['title', ['title']],
+    ['description', ['description']],
+    ['amount', ['amount']],
+    ['currency', ['currency']],
+    ['expectedCloseOn', ['expectedCloseOn', 'expected_close_on']],
+    ['contactId', ['contactId', 'contact_id']],
+    ['contactName', ['contactName', 'contact_name']],
+    ['companyId', ['companyId', 'company_id']],
+    ['companyName', ['companyName', 'company_name']],
+    ['ownerId', ['ownerId', 'owner_id']],
+    ['teamId', ['teamId', 'team_id']],
+    ['pipelineId', ['pipelineId', 'pipeline_id']],
+    ['stageId', ['stageId', 'stage_id']],
+    ['winProbability', ['winProbability', 'win_probability']],
+    [
+      'conversationDisplayId',
+      ['conversationDisplayId', 'conversation_display_id'],
+    ],
+    [
+      'originatingConversationId',
+      ['originatingConversationId', 'originating_conversation_id'],
+    ],
+  ],
+};
+
 const SUPPORTED_ACTION_TYPES = new Set([
   ...Object.keys(SIMPLE_ROUTE_ACTIONS),
   ...Object.keys(TARGET_ROUTE_ACTIONS),
   ...Object.keys(CAPTAIN_ASSISTANT_ROUTE_ACTIONS),
+  ...Object.keys(CREATE_ACTION_ROUTES),
   'open_task',
 ]);
 
@@ -124,6 +190,10 @@ const DEFAULT_LABELS = {
   open_captain_assistant_settings: 'Open assistant settings',
   open_captain_prompts: 'Open assistant prompts',
   open_captain_observability: 'Open Captain observability',
+  create_contact: 'Create contact',
+  create_company: 'Create company',
+  create_task: 'Create task',
+  create_deal: 'Create deal',
 };
 
 export const supportedCaptainUiActionTypes = [...SUPPORTED_ACTION_TYPES];
@@ -154,22 +224,65 @@ const actionTargetId = action =>
   action.assistantId ??
   '';
 
+const safeString = value => stripMarkup(value ?? '').slice(0, 500);
+
+const parseTargetPrefill = action => {
+  const rawTarget = actionTargetId(action).toString().trim();
+  if (!rawTarget.startsWith('{')) return {};
+
+  try {
+    const parsed = JSON.parse(rawTarget);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const actionPrefill = action => {
+  const parsedTarget = parseTargetPrefill(action);
+  const fields = CREATE_ACTION_QUERY_FIELDS[action.type] || [];
+
+  return fields.reduce((result, [queryKey, sourceKeys]) => {
+    const value = sourceKeys
+      .map(key => action[key] ?? parsedTarget[key])
+      .find(item => item !== undefined && item !== null && item !== '');
+
+    if (value !== undefined && value !== null && value !== '') {
+      result[queryKey] = safeString(value);
+    }
+
+    return result;
+  }, {});
+};
+
+const normalizedActionPayload = action => {
+  const normalized = {
+    type: action.type,
+    label: stripMarkup(action.label || DEFAULT_LABELS[action.type]).slice(
+      0,
+      80
+    ),
+    targetId: actionTargetId(action).toString().trim(),
+  };
+
+  const prefill = actionPrefill(action);
+  if (Object.keys(prefill).length) {
+    normalized.prefill = prefill;
+  }
+
+  normalized.label = normalized.label || DEFAULT_LABELS[action.type];
+  return normalized;
+};
+
 export const normalizeCaptainUiActions = actions => {
   if (!Array.isArray(actions)) return [];
 
   return actions
     .filter(action => action && SUPPORTED_ACTION_TYPES.has(action.type))
     .slice(0, 5)
-    .map(action => {
-      const defaultLabel = DEFAULT_LABELS[action.type];
-      const label = stripMarkup(action.label || defaultLabel).slice(0, 80);
-
-      return {
-        type: action.type,
-        label: label || defaultLabel,
-        targetId: actionTargetId(action).toString().trim(),
-      };
-    })
+    .map(normalizedActionPayload)
     .filter(action => action.label);
 };
 
@@ -187,6 +300,24 @@ const targetRoute = (action, accountId, routeConfig) => {
   };
 };
 
+const compactQuery = query =>
+  Object.entries(query).reduce((result, [key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      result[key] = value.toString();
+    }
+    return result;
+  }, {});
+
+const createActionRoute = (action, accountId) => ({
+  name: CREATE_ACTION_ROUTES[action.type],
+  params: { accountId },
+  query: compactQuery({
+    action: 'new',
+    source: 'captain_ui_action',
+    ...(action.prefill || actionPrefill(action)),
+  }),
+});
+
 export const routeForCaptainUiAction = (action, accountId) => {
   if (SIMPLE_ROUTE_ACTIONS[action.type]) {
     return simpleRoute(SIMPLE_ROUTE_ACTIONS[action.type], accountId);
@@ -203,6 +334,10 @@ export const routeForCaptainUiAction = (action, accountId) => {
       name: CAPTAIN_ASSISTANT_ROUTE_ACTIONS[action.type],
       params: { accountId, assistantId: action.targetId },
     };
+  }
+
+  if (CREATE_ACTION_ROUTES[action.type]) {
+    return createActionRoute(action, accountId);
   }
 
   if (action.type === 'open_task') {
