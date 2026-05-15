@@ -9,19 +9,30 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
   param :priority, type: :string, desc: 'Task priority: low, medium, high, or urgent', required: false
   param :start_at, type: :string, desc: 'Task start datetime', required: false
   param :due_at, type: :string, desc: 'Task due datetime', required: false
+  param :deal_id, type: :number, desc: 'Optional account CRM deal ID to link', required: false
+  param :originating_conversation_id, type: :number, desc: 'Optional account conversation display ID or internal ID to link', required: false
+  param :status_id, type: :number, desc: 'Optional account CRM task status ID', required: false
+  param :assignee_id, type: :number, desc: 'Optional account user ID to assign', required: false
+  param :team_id, type: :number, desc: 'Optional account team ID to assign', required: false
   param :custom_attributes,
         type: :string,
         desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \
               'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
-  def execute(title:, description: nil, priority: nil, start_at: nil, due_at: nil, custom_attributes: nil)
+  def execute(title:, description: nil, priority: nil, start_at: nil, due_at: nil, deal_id: nil, originating_conversation_id: nil,
+              status_id: nil, assignee_id: nil, team_id: nil, custom_attributes: nil)
     task = task_operations.create_task(
       title: title,
       description: description,
       priority: priority,
       start_at: start_at,
       due_at: due_at,
+      deal_id: deal_id,
+      originating_conversation_id: originating_conversation_id,
+      status_id: status_id,
+      assignee_id: assignee_id,
+      team_id: team_id,
       custom_attributes: custom_attributes
     )
     formatted_record(task)

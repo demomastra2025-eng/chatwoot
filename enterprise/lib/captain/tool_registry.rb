@@ -133,7 +133,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_private_note',
           title: 'Add Private Note',
-          description: 'Add a private note to the current conversation',
+          description: 'Add a private note to the current or specified account conversation',
           group_name: 'Conversations',
           icon: 'eye-off',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -150,7 +150,7 @@ class Captain::ToolRegistry
         definition(
           id: 'add_label_to_conversation',
           title: 'Add Label to Conversation',
-          description: 'Add an existing label to the current conversation',
+          description: 'Add an existing label to the current or specified account conversation',
           group_name: 'Conversations',
           icon: 'tag',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -559,7 +559,7 @@ class Captain::ToolRegistry
         definition(
           id: 'create_task',
           title: 'Create Task',
-          description: 'Create a CRM task from the current conversation context',
+          description: 'Create a CRM task from the current context or explicit account deal/conversation/team/assignee IDs',
           group_name: 'CRM Tasks',
           icon: 'checklist',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1318,7 +1318,7 @@ class Captain::ToolRegistry
         definition(
           id: 'remove_label_from_conversation',
           title: 'Remove Label from Conversation',
-          description: 'Remove a label from the current conversation',
+          description: 'Remove a label from the current or specified account conversation',
           group_name: 'Conversations',
           icon: 'tag',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

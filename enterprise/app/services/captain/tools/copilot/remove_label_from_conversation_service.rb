@@ -3,11 +3,12 @@ class Captain::Tools::Copilot::RemoveLabelFromConversationService < Captain::Too
     'remove_label_from_conversation'
   end
 
-  description 'Remove a label from the current conversation'
+  description 'Remove a label from the current or specified account conversation'
+  param :conversation_id, type: :integer, desc: 'Optional conversation display ID or internal ID', required: false
   param :label_name, type: :string, desc: 'The label name to remove', required: true
 
-  def execute(label_name:)
-    conversation = conversation_operations.remove_label(label_name: label_name)
+  def execute(label_name:, conversation_id: nil)
+    conversation = conversation_operations.remove_label(label_name: label_name, conversation_id: conversation_id)
 
     formatted_payload(
       action: 'remove_label_from_conversation',
@@ -20,10 +21,9 @@ class Captain::Tools::Copilot::RemoveLabelFromConversationService < Captain::Too
   end
 
   def active?
-    current_conversation.present? &&
-      (user_has_permission('conversation_manage') ||
-       user_has_permission('conversation_unassigned_manage') ||
-       user_has_permission('conversation_participating_manage'))
+    user_has_permission('conversation_manage') ||
+      user_has_permission('conversation_unassigned_manage') ||
+      user_has_permission('conversation_participating_manage')
   end
 
   private

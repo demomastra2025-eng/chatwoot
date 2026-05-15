@@ -277,6 +277,19 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload['action']).to eq('remove_label_from_conversation')
       expect(conversation.reload.label_list).to eq(['support'])
     end
+
+    it 'removes a label from a specified account conversation' do
+      target_conversation = create(:conversation, account: account)
+      conversation.add_labels(%w[vip support])
+      target_conversation.add_labels(%w[vip escalated])
+      service = described_class.new(assistant, user: user, conversation: conversation)
+
+      payload = JSON.parse(service.execute(conversation_id: target_conversation.display_id, label_name: 'vip'))
+
+      expect(payload['action']).to eq('remove_label_from_conversation')
+      expect(target_conversation.reload.label_list).to eq(['escalated'])
+      expect(conversation.reload.label_list).to include('vip', 'support')
+    end
   end
 
   describe Captain::Tools::Copilot::ListCampaignsService do

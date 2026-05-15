@@ -3,15 +3,17 @@ class Captain::Tools::Copilot::AddPrivateNoteService < Captain::Tools::Copilot::
     'add_private_note'
   end
 
-  description 'Add a private note to the current conversation'
+  description 'Add a private note to the current or specified account conversation'
+  param :conversation_id, type: :integer, desc: 'Optional conversation display ID or internal ID', required: false
   param :note, type: :string, desc: 'The private note content', required: true
 
-  def execute(note:)
-    message = conversation_operations.add_private_note(note: note)
+  def execute(note:, conversation_id: nil)
+    message = conversation_operations.add_private_note(note: note, conversation_id: conversation_id)
+    target_conversation = message.conversation
     formatted_payload(
       action: 'add_private_note',
-      conversation_id: current_conversation.id,
-      conversation_display_id: current_conversation.display_id,
+      conversation_id: target_conversation.id,
+      conversation_display_id: target_conversation.display_id,
       message_id: message.id,
       note: message.content,
       created_at: message.created_at&.iso8601
@@ -21,10 +23,9 @@ class Captain::Tools::Copilot::AddPrivateNoteService < Captain::Tools::Copilot::
   end
 
   def active?
-    current_conversation.present? &&
-      (user_has_permission('conversation_manage') ||
-       user_has_permission('conversation_unassigned_manage') ||
-       user_has_permission('conversation_participating_manage'))
+    user_has_permission('conversation_manage') ||
+      user_has_permission('conversation_unassigned_manage') ||
+      user_has_permission('conversation_participating_manage')
   end
 
   private

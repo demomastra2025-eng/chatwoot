@@ -6,34 +6,37 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     current_contact.notes.create!(content: note.to_s.strip)
   end
 
-  def add_label(label_name:)
+  def add_label(label_name:, conversation_id: nil)
     raise ArgumentError, 'A label name is required' if label_name.blank?
-    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+
+    target_conversation = resolve_conversation!(conversation_id)
 
     label = account.labels.find_by(title: label_name.to_s.strip.downcase)
     raise ArgumentError, 'Label not found' if label.blank?
 
-    conversation.add_labels(label.title)
-    conversation.reload
+    target_conversation.add_labels(label.title)
+    target_conversation.reload
   end
 
-  def remove_label(label_name:)
+  def remove_label(label_name:, conversation_id: nil)
     raise ArgumentError, 'A label name is required' if label_name.blank?
-    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+
+    target_conversation = resolve_conversation!(conversation_id)
 
     normalized_label = label_name.to_s.strip.downcase
-    labels = conversation.label_list.to_a - [normalized_label]
-    conversation.update!(label_list: labels)
-    conversation.reload
+    labels = target_conversation.label_list.to_a - [normalized_label]
+    target_conversation.update!(label_list: labels)
+    target_conversation.reload
   end
 
-  def add_private_note(note:)
+  def add_private_note(note:, conversation_id: nil)
     raise ArgumentError, 'A private note is required' if note.blank?
-    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
-    conversation.messages.create!(
+    target_conversation = resolve_conversation!(conversation_id)
+
+    target_conversation.messages.create!(
       account: account,
-      inbox: conversation.inbox,
+      inbox: target_conversation.inbox,
       sender: assistant,
       message_type: :outgoing,
       content: note.to_s.strip,
@@ -214,6 +217,13 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     permissible_conversations.find_by(display_id: conversation_id) ||
       permissible_conversations.find_by(id: conversation_id) ||
       raise(ActiveRecord::RecordNotFound, 'Conversation not found')
+  end
+
+  def resolve_conversation!(conversation_id = nil)
+    return find_permissible_conversation!(conversation_id) if conversation_id.present?
+    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+
+    conversation
   end
 
   def find_permissible_message!(message_id)
