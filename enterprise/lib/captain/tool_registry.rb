@@ -95,6 +95,48 @@ class Captain::ToolRegistry
           risk_level: 'low'
         ),
         definition(
+          id: 'list_captain_assistants',
+          title: 'List Captain Assistants',
+          description: 'List Captain assistants in the current account for AI Admin operations',
+          group_name: 'AI Admin',
+          icon: 'bot',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListCaptainAssistantsService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'get_captain_assistant',
+          title: 'Get Captain Assistant',
+          description: 'Get one Captain assistant profile, config, rules, selected tools, and context access',
+          group_name: 'AI Admin',
+          icon: 'bot',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetCaptainAssistantService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'preview_captain_assistant_prompt',
+          title: 'Preview Captain Assistant Prompt',
+          description: 'Preview the compiled prompt/configuration for one Captain assistant',
+          group_name: 'AI Admin',
+          icon: 'preview-link',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::PreviewCaptainAssistantPromptService,
+          risk_level: 'low'
+        ),
+        definition(
+          id: 'update_captain_assistant',
+          title: 'Update Captain Assistant',
+          description: 'Update Captain assistant prompt, rules, tool access, context access, and feature config after operator confirmation',
+          group_name: 'AI Admin',
+          icon: 'bot-add',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainAssistantService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'list_captain_documents',
           title: 'List Captain Documents',
           description: 'List Captain knowledge documents and safe artifact IDs for files that can be attached to messages',

@@ -8,6 +8,10 @@ RSpec.describe Captain::ToolRegistry do
 
       expect(agent_tool_ids - assistant_tool_ids).to be_empty
       expect(assistant_tool_ids).to include(
+        'list_captain_assistants',
+        'get_captain_assistant',
+        'preview_captain_assistant_prompt',
+        'update_captain_assistant',
         'search_documentation',
         'list_captain_documents',
         'faq_lookup',
@@ -198,6 +202,10 @@ RSpec.describe Captain::ToolRegistry do
 
   def assistant_only_admin_tool_ids
     %w[
+      list_captain_assistants
+      get_captain_assistant
+      preview_captain_assistant_prompt
+      update_captain_assistant
       add_appointment_payment
       get_kaspi_pay_integration_status
       start_kaspi_pay_connection
