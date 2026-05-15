@@ -13,13 +13,17 @@ Correct production shape:
 
 ```text
 Fonoster server
-  PSTN/SIP, Asterisk/Routr/RTP, app refs, call routing execution, media bridge
+  PSTN/SIP, Asterisk/Routr/RTP, app refs, telecom execution, call routing,
+  media handoff, technical lifecycle
 
 Onelink server
-  Rails CRM, business state, AI config, prompts, tools, transcripts, finalization
+  Rails CRM, business state, AI config, prompts, tools, transcripts, recording
+  metadata, permissions, signed playback/download URLs, retention, audit, UI
 
-onelink-ai-voice
-  separate Node service next to Rails, owns Fonoster VoiceServer and Gemini Live realtime audio loop
+OneLink voice runtimes
+  separate Node services next to Rails; own media path for recordable calls,
+  recording writer/upload/lifecycle, and role-specific media logic:
+  onelink-ai-voice, onelink-operator-voice, onelink-app-voice
 ```
 
 Rails receives JSON/context/tools/transcript/events/finalize only. Rails must never receive every audio frame.
@@ -274,7 +278,7 @@ ONELINK_CRM_GEMINI_SYNC_HANDOFF.md
 ## Final Architecture Rule
 
 ```text
-Fonoster = telephony and media bridge
-onelink-ai-voice = realtime Gemini Live voice loop
-Rails = CRM truth, context, tools, transcript, routing, finalization
+Fonoster = telecom execution, routing, media handoff, technical lifecycle
+OneLink voice runtimes = media ownership for recording, writer, upload, recording lifecycle
+Rails/Chatwoot = CRM truth, metadata, permissions, signed URLs, UI, audit
 ```

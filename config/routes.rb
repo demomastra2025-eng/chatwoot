@@ -380,6 +380,10 @@ Rails.application.routes.draw do
 
           namespace :telephony do
             resources :calls, only: [:index, :show], param: :call_ref do
+              member do
+                get :recording
+              end
+
               collection do
                 post :outbound
               end

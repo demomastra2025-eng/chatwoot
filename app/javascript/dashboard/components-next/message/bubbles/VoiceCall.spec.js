@@ -127,6 +127,40 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
 
+  it('renders native audio playback for completed calls with an authorized recording URL', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recordingUrl: '/api/v1/accounts/1/telephony/calls/call-1/recording',
+        },
+      }),
+    });
+
+    const audio = wrapper.find('audio');
+    expect(audio.exists()).toBe(true);
+    expect(audio.attributes('src')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-1/recording'
+    );
+  });
+
+  it('renders native audio playback when Rails sends snake_case recording_url', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recording_url: '/api/v1/accounts/1/telephony/calls/call-2/recording',
+        },
+      }),
+    });
+
+    const audio = wrapper.find('audio');
+    expect(audio.exists()).toBe(true);
+    expect(audio.attributes('src')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-2/recording'
+    );
+  });
+
   it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({

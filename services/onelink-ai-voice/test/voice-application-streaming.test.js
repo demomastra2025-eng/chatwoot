@@ -144,6 +144,148 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   assert.equal(completed, true);
 });
 
+test('VoiceApplication keeps OneLink recording writer anchored in the realtime media path when enabled', async () => {
+  const stream = new FakeVoiceStream();
+  let realtimeCallbacks;
+  const writes = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream: () => stream
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-recording-path',
+      account_id: 42,
+      number_ref: 'num-42',
+      recording: { enabled: true },
+      ai: { provider: 'gemini-live', first_message: 'Здравствуйте' },
+      tools: []
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' })
+  };
+  const recordingWriter = {
+    start: async metadata => { writes.push(['start', metadata]); return true; },
+    writeInbound: async (chunk, metadata) => { writes.push(['inbound', Buffer.from(chunk), metadata]); return true; },
+    writeOutbound: async (chunk, metadata) => { writes.push(['outbound', Buffer.from(chunk), metadata]); return true; },
+    close: async () => { writes.push(['close']); return {}; }
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async options => { realtimeCallbacks = options; },
+      sendText: () => {},
+      sendAudio: () => {},
+      close: () => {}
+    }),
+    recordingWriterFactory: options => {
+      assert.equal(options.callRef, 'call-recording-path');
+      assert.equal(options.accountId, 42);
+      assert.equal(options.numberRef, 'num-42');
+      return recordingWriter;
+    }
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-recording-path' });
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1' });
+  const geminiPcm24 = Buffer.alloc(960);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
+  call.emit('end');
+  await result.completion;
+
+  assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
+});
+
+test('VoiceApplication passively records operator-routed calls through the OneLink media path', async () => {
+  const stream = new FakeVoiceStream();
+  const dialLeg = new EventEmitter();
+  const writes = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async dial() { return dialLeg; }
+  });
+  const client = {
+    routeInbound: async () => ({
+      action: 'operator',
+      reason: 'operator_route',
+      account_id: 42,
+      number_ref: 'num-42',
+      agent_aor: 'sip:1001@example.test',
+      recording: { enabled: true }
+    }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' })
+  };
+  const recordingWriter = {
+    start: async metadata => { writes.push(['start', metadata]); return true; },
+    writeInbound: async chunk => { writes.push(['inbound', Buffer.from(chunk)]); return true; },
+    writeOutbound: async chunk => { writes.push(['outbound', Buffer.from(chunk)]); return true; },
+    close: async () => { writes.push(['close']); return {}; }
+  };
+
+  const app = new VoiceApplication({
+    client,
+    managedStreamStarter: async () => stream,
+    recordingWriterFactory: () => recordingWriter
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'operator-recording-call' });
+  assert.equal(result.mode, 'operator');
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-operator' });
+  stream.emitPayload({ type: 'audio_out', data: Buffer.from([3, 4]), streamRef: 'stream-operator' });
+  dialLeg.emit('answered');
+  dialLeg.emit('end');
+  await result.completion;
+
+  assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
+});
+
+test('VoiceApplication passively records app-routed calls until the provider call ends', async () => {
+  const stream = new FakeVoiceStream();
+  const writes = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    async run() {}
+  });
+  const client = {
+    routeInbound: async () => ({
+      action: 'app',
+      reason: 'app_route',
+      app_ref: 'business-app-ref',
+      account_id: 42,
+      number_ref: 'num-42',
+      recording: { enabled: true }
+    }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' })
+  };
+  const recordingWriter = {
+    start: async metadata => { writes.push(['start', metadata]); return true; },
+    writeInbound: async chunk => { writes.push(['inbound', Buffer.from(chunk)]); return true; },
+    writeOutbound: async chunk => { writes.push(['outbound', Buffer.from(chunk)]); return true; },
+    close: async () => { writes.push(['close']); return {}; }
+  };
+
+  const app = new VoiceApplication({
+    client,
+    managedStreamStarter: async () => stream,
+    recordingWriterFactory: () => recordingWriter
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'app-recording-call' });
+  assert.equal(result.mode, 'app');
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-app' });
+  stream.emitPayload({ type: 'audio_out', data: Buffer.from([3, 4]), streamRef: 'stream-app' });
+  call.emit('end');
+  await result.completion;
+
+  assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
+});
+
 test('VoiceApplication can establish native managed media when provider call object has no call.stream helper', async () => {
   const stream = new FakeVoiceStream();
   const starterCalls = [];
@@ -956,8 +1098,8 @@ test('VoiceApplication hands app route decisions to the target app without AI bo
 
   const result = await app.handleCall(call, {
     call_ref: 'call-app-1',
-    from: '+15554321001',
-    to: '+15554567001',
+    from: '+155****1001',
+    to: '+155****7001',
     number_ref: 'number-1'
   });
 
@@ -965,6 +1107,41 @@ test('VoiceApplication hands app route decisions to the target app without AI bo
   assert.equal(call.answerCount, 1);
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'app_routing']);
   assert.equal(handoffs[0].app_ref, 'target-app-1');
+});
+
+test('VoiceApplication closes passive recording when app handoff fails', async () => {
+  const stream = new FakeVoiceStream();
+  const bridgeEvents = [];
+  const writes = [];
+  const hangups = [];
+  const client = {
+    routeInbound: async () => ({ action: 'app', app_ref: 'target-app-1', reason: 'app_route', recording: { enabled: true } }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    getContext: async () => { throw new Error('AI context should not be loaded for app routes'); }
+  };
+  const call = {
+    async answer() {},
+    async transferToApp() { throw new Error('provider app handoff failed'); },
+    async hangup(payload) { hangups.push(payload); }
+  };
+  const recordingWriter = {
+    start: async metadata => { writes.push(['start', metadata]); return true; },
+    close: async () => { writes.push(['close']); return {}; }
+  };
+  const app = new VoiceApplication({
+    client,
+    managedStreamStarter: async () => stream,
+    recordingWriterFactory: () => recordingWriter
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-app-fail' });
+  await result.completion;
+
+  assert.equal(result.mode, 'app_failed');
+  assert.equal(stream.closed, true);
+  assert.deepEqual(writes.map(([kind]) => kind), ['start', 'close']);
+  assert.equal(hangups[0].reason, 'provider app handoff failed');
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started', 'app_routing', 'session_failed']);
 });
 
 test('VoiceApplication rejects the call safely when Rails route lookup fails', async () => {

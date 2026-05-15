@@ -323,7 +323,8 @@ class Telephony::InboundRoutingService
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
-      bridge_call_ref: bridge_call_ref_for_context
+      bridge_call_ref: bridge_call_ref_for_context,
+      recording: recording_payload
     }
 
     if existing_voice_conversation.present?
@@ -333,6 +334,21 @@ class Telephony::InboundRoutingService
     end
 
     context.compact
+  end
+
+  def recording_payload
+    {
+      enabled: recording_enabled?,
+      source: 'onelink_runtime',
+      storage_provider: 'onelink_storage'
+    }
+  end
+
+  def recording_enabled?
+    settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
+    return ActiveModel::Type::Boolean.new.cast(settings['recording_enabled']) if settings.key?('recording_enabled')
+
+    true
   end
 
   def routing_policy

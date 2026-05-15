@@ -91,12 +91,15 @@ class Telephony::CallsService
 
   def outbound_payload(number_binding, inbox, contact, user, conversation, agent_binding)
     app_ref = number_binding.effective_app_ref
+    recording_enabled = recording_enabled?(number_binding.routing_policy)
 
     {
       from_number_ref: number_binding.number_ref,
       to: contact.phone_number,
       app_ref: app_ref,
       appRef: app_ref,
+      recording_enabled: recording_enabled,
+      recordingEnabled: recording_enabled,
       conversation_id: conversation.id,
       contact_id: contact.id,
       metadata: {
@@ -106,9 +109,17 @@ class Telephony::CallsService
         chatwoot_conversation_id: conversation.id,
         chatwoot_conversation_display_id: conversation.display_id,
         chatwoot_user_id: user.id,
-        fonoster_agent_ref: agent_binding&.agent_ref
+        fonoster_agent_ref: agent_binding&.agent_ref,
+        recording_enabled: recording_enabled
       }.compact
     }.compact
+  end
+
+  def recording_enabled?(routing_policy)
+    settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
+    return ActiveModel::Type::Boolean.new.cast(settings['recording_enabled']) if settings.key?('recording_enabled')
+
+    true
   end
 
   def extract_call_ref(response)

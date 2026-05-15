@@ -299,6 +299,112 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
     end
 
+    it 'stores OneLink runtime recording_ready metadata without changing terminal call state' do
+      existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed' } }
+      )
+
+      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: false)
+      account.enable_features!('captain_integration')
+
+      result = nil
+
+      expect do
+        result = described_class.new(
+          payload: payload.merge(
+            event_key: 'evt-recording-ready-1',
+            event: 'recording_ready',
+            occurred_at: Time.current.iso8601,
+            payload: {
+              recording_ref: 'recordings/accounts/1/calls/call-retry-1.wav',
+              storage_key: 'voice-recordings/1/call-retry-1.wav',
+              byte_size: 12_345,
+              content_type: 'audio/wav',
+              sha256: 'abc123',
+              duration_ms: 90_000
+            },
+            metadata: {
+              recording: {
+                writer: 'onelink-ai-voice',
+                storage_provider: 'local'
+              }
+            }
+          )
+        ).perform
+
+        expect(result.reload).to have_attributes(
+          status: 'completed',
+          recording_ref: 'recordings/accounts/1/calls/call-retry-1.wav',
+          duration_seconds: 90
+        )
+        expect(result.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+        expect(result.metadata.dig('recording', 'byte_size')).to eq(12_345)
+        expect(result.metadata.dig('recording', 'source')).to eq('onelink_runtime')
+        expect(result.metadata.dig('recording', 'transcription', 'status')).to eq('queued')
+        expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
+        expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+        expect(message.reload.content_attributes.dig('data', 'recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+        expect(message.content_attributes.dig('data', 'recording_url')).to eq(
+          "/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording"
+        )
+        expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+      end.to have_enqueued_job(Telephony::CallRecordingTranscriptionJob).with(existing_call_session.id)
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        recording_ref: 'recordings/accounts/1/calls/call-retry-1.wav',
+        duration_seconds: 90
+      )
+      expect(result.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+      expect(result.metadata.dig('recording', 'byte_size')).to eq(12_345)
+      expect(result.metadata.dig('recording', 'source')).to eq('onelink_runtime')
+      expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
+      expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+      expect(message.reload.content_attributes.dig('data', 'recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
+      expect(message.content_attributes.dig('data', 'recording_url')).to eq(
+        "/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording"
+      )
+      expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+    end
+
+    it 'stores recording scoped errors as recording metadata without failing the live call' do
+      existing_call_session.update!(status: 'in_progress', last_event_at: 1.minute.ago)
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'in_progress' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-recording-error-1',
+          event: 'error',
+          occurred_at: Time.current.iso8601,
+          payload: {
+            scope: 'recording',
+            error_code: 'upload_failed',
+            error_message: 'storage temporarily unavailable'
+          }
+        )
+      ).perform
+
+      expect(result.reload.status).to eq('in_progress')
+      expect(result.metadata.dig('recording', 'error', 'code')).to eq('upload_failed')
+      expect(result.metadata.dig('recording', 'error', 'scope')).to eq('recording')
+      expect(result.latest_voice_message.content_attributes.dig('data', 'recording', 'error', 'code')).to eq('upload_failed')
+    end
+
     it 'maps transfer lifecycle events without losing the AI call session' do
       existing_call_session.update!(status: 'in_progress')
 

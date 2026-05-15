@@ -13,17 +13,21 @@ contract remains `ONELINK_FONOSTER_VOICE_CONTRACT.md`.
 
 ```text
 Fonoster
-  Executes calls: PSTN/SIP, numbers, trunks, app refs, voice.stream,
-  dial/transfer, hangup, recording, technical events.
+  Executes telecom: PSTN/SIP, numbers, trunks, app refs, voice.stream,
+  dial/transfer, hangup, routing to selected OneLink runtime, and technical
+  events. Fonoster does not own OneLink recording storage.
 
-onelink-ai-voice
-  Runs next to Onelink Rails. Owns Gemini Live websocket, realtime audio loop,
-  resampling, interruption/barge-in, Gemini tool calls, and low-level call
-  actions only after Rails authorizes them.
+OneLink voice runtimes
+  Run next to Onelink Rails. Own media path for recordable calls, recording
+  writer/upload, recording lifecycle, and role-specific media logic:
+  `onelink-ai-voice`, `onelink-operator-voice`, `onelink-app-voice`.
+  These roles may initially be one shared runtime/codebase with different modes
+  and app refs.
 
-Onelink Rails
+Onelink Rails / Chatwoot
   Owns CRM truth: context, prompts, tools, routing/fallback policy, contact and
-  conversation state, transcript storage, final call status, summaries, and
+  conversation state, transcript storage, recording metadata, permissions,
+  signed playback/download URLs, retention, audit, UI, final call status, and
   business decisions.
 ```
 

@@ -31,7 +31,9 @@ RSpec.describe 'Telephony Calls API', type: :request do
           expect(body['to']).to eq(contact.phone_number)
           expect(body['app_ref']).to eq('ai-app-ref')
           expect(body['appRef']).to eq('ai-app-ref')
+          expect(body['recording_enabled']).to be(true)
           expect(body.dig('metadata', 'chatwoot_inbox_id')).to eq(voice_inbox.id)
+          expect(body.dig('metadata', 'recording_enabled')).to be(true)
           true
         end
         .to_return(
@@ -65,5 +67,82 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(call_session.conversation.identifier).to eq('call-123')
     expect(call_session.metadata['fonoster_call_ref']).to eq('call-123')
     expect(call_session.conversation.additional_attributes['fonoster_call_ref']).to eq('call-123')
+  end
+
+  it 'streams a stored OneLink runtime recording through an account-scoped route' do
+    call_session = create_recorded_call_session('recording-call-1')
+    recording_path = Rails.root.join('storage', call_session.metadata.dig('recording', 'storage_key'))
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.binwrite(recording_path, "RIFF\x24\x00\x00\x00WAVEfmt ")
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/wav')
+    expect(response.body).to start_with('RIFF')
+  ensure
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
+  it 'does not expose another account recording for the same call ref' do
+    other_account = create(:account)
+    create(:telephony_call_session, account: other_account, external_call_ref: 'other-recording-call', metadata: recording_metadata)
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/other-recording-call/recording", headers: headers
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it 'rejects recording storage keys outside the OneLink recording root' do
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'unsafe-recording-call',
+      metadata: { 'recording' => recording_metadata.merge('storage_key' => '../secrets.wav') }
+    )
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it 'rejects recording storage keys that resolve through symlinks outside storage' do
+    call_session = create_recorded_call_session('symlink-recording-call')
+    outside_path = Rails.root.join('tmp/recording-secret.wav')
+    symlink_path = Rails.root.join('storage', call_session.metadata.dig('recording', 'storage_key'))
+    FileUtils.mkdir_p(symlink_path.dirname)
+    File.binwrite(outside_path, 'secret audio')
+    FileUtils.ln_s(outside_path, symlink_path)
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
+
+    expect(response).to have_http_status(:not_found)
+  ensure
+    FileUtils.rm_f(symlink_path) if defined?(symlink_path) && symlink_path.present?
+    FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
+  end
+
+  def create_recorded_call_session(call_ref)
+    conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
+    create(
+      :telephony_call_session,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      contact: contact,
+      number_binding: voice_inbox.telephony_number_binding,
+      external_call_ref: call_ref,
+      recording_ref: recording_metadata['storage_key'],
+      metadata: { 'recording' => recording_metadata }
+    )
+  end
+
+  def recording_metadata
+    {
+      'storage_key' => 'voice-recordings/1/recording-call-1/recording.wav',
+      'content_type' => 'audio/wav',
+      'byte_size' => 16,
+      'source' => 'onelink_runtime'
+    }
   end
 end

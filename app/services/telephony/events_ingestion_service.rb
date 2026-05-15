@@ -142,6 +142,7 @@ class Telephony::EventsIngestionService
     ensure_conversation!(call_session, account)
     apply_call_status!(call_session)
     sync_voice_message!(call_session)
+    enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
   rescue StandardError => e
     event.update(status: 'failed', error_message: e.message)
     Rails.logger.error(
@@ -373,21 +374,24 @@ class Telephony::EventsIngestionService
 
   def apply_call_status!(call_session)
     conversation = call_session.conversation
-    return unless conversation.present? && resolved_status.present?
+    return if conversation.blank?
 
-    timestamp = call_session.ended_at&.to_i || call_session.started_at&.to_i
-    Voice::CallStatus::Manager.new(
-      conversation: conversation,
-      call_sid: call_session.external_call_ref
-    ).process_status_update(
-      call_session.status,
-      duration: call_session.duration_seconds,
-      timestamp: timestamp
-    )
+    if resolved_status.present?
+      timestamp = call_session.ended_at&.to_i || call_session.started_at&.to_i
+      Voice::CallStatus::Manager.new(
+        conversation: conversation,
+        call_sid: call_session.external_call_ref
+      ).process_status_update(
+        call_session.status,
+        duration: call_session.duration_seconds,
+        timestamp: timestamp
+      )
+    end
 
     attrs = (conversation.additional_attributes || {}).deep_dup
     attrs['telephony_provider'] = call_session.provider
     attrs['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
+    attrs['recording'] = call_recording_metadata(call_session) if call_recording_metadata(call_session).present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
@@ -409,13 +413,41 @@ class Telephony::EventsIngestionService
     data['data']['ai_voice'] = existing_ai_voice.merge(voice_ai_message_state(call_session))
     tools = voice_ai_tool_events(call_session)
     data['data']['tools'] = tools if tools.present?
-    data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
+    recording_metadata = call_recording_metadata(call_session)
+    if recording_metadata.present?
+      data['data']['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
+      data['data']['recording'] = recording_metadata
+      data['data']['recording_url'] = recording_url(call_session)
+    end
     data['data']['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     transcript = payload_value('transcript')
     data['data']['transcript'] = transcript if transcript.present?
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.update!(content_attributes: data)
+  end
+
+  def enqueue_call_recording_transcription(call_session)
+    return unless call_session.account.feature_enabled?('captain_integration')
+    return unless call_session.account.captain_audio_transcription_enabled?
+    return if call_recording_metadata(call_session)['storage_key'].blank?
+
+    enqueue_job = false
+    call_session.with_lock do
+      metadata = (call_session.reload.metadata || {}).deep_dup
+      recording = metadata['recording'] ||= {}
+      transcription = recording['transcription'] ||= {}
+      next if %w[queued completed].include?(transcription['status'])
+
+      transcription['status'] = 'queued'
+      transcription['queued_at'] = Time.current.iso8601
+      call_session.update!(metadata: metadata)
+      enqueue_job = true
+    end
+
+    return unless enqueue_job
+
+    Telephony::CallRecordingTranscriptionJob.perform_later(call_session.id)
   end
 
   def voice_message_for(call_session)
@@ -707,7 +739,69 @@ class Telephony::EventsIngestionService
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
       base['metadata'] = existing_metadata.deep_merge(metadata)
     end
+    if recording_event_metadata.present?
+      existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
+      base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
+    end
     base.compact
+  end
+
+  def call_recording_metadata(call_session)
+    recording = call_session.metadata.to_h['recording']
+    return {} unless recording.is_a?(Hash)
+
+    recording.deep_stringify_keys.merge('recording_ref' => call_session.recording_ref).compact
+  end
+
+  def recording_url(call_session)
+    Rails.application.routes.url_helpers.recording_api_v1_account_telephony_call_path(
+      account_id: call_session.account_id,
+      call_ref: call_session.external_call_ref
+    )
+  end
+
+  def recording_event_metadata
+    return recording_ready_metadata if resolved_event_type == 'recording_ready'
+    return recording_error_metadata if recording_error_event?
+
+    {}
+  end
+
+  def recording_ready_metadata
+    {
+      'source' => 'onelink_runtime',
+      'ready_at' => (resolved_occurred_at || Time.current).iso8601,
+      'recording_ref' => recording_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl'),
+      'storage_key' => recording_payload_value('storage_key', 'storageKey'),
+      'byte_size' => recording_payload_value('byte_size', 'byteSize', 'file_size', 'fileSize')&.to_i,
+      'content_type' => recording_payload_value('content_type', 'contentType', 'mime_type', 'mimeType'),
+      'sha256' => recording_payload_value('sha256', 'checksum'),
+      'duration_ms' => recording_payload_value('duration_ms', 'durationMs')&.to_i,
+      'duration_seconds' => recording_payload_value('duration_seconds', 'durationSeconds', 'duration')&.to_i,
+      'writer' => metadata.dig('recording', 'writer'),
+      'storage_provider' => metadata.dig('recording', 'storage_provider') || metadata.dig('recording', 'storageProvider')
+    }.compact
+  end
+
+  def recording_error_metadata
+    {
+      'source' => 'onelink_runtime',
+      'error' => {
+        'scope' => recording_payload_value('scope'),
+        'code' => recording_payload_value('error_code', 'errorCode', 'code'),
+        'message' => recording_payload_value('error_message', 'errorMessage', 'message'),
+        'retryable' => recording_payload_value('retryable'),
+        'occurred_at' => (resolved_occurred_at || Time.current).iso8601
+      }.compact
+    }.compact
+  end
+
+  def recording_error_event?
+    resolved_event_type == 'error' && recording_payload_value('scope') == 'recording'
+  end
+
+  def recording_payload_value(*keys)
+    payload_value(*keys) || nested_payload_value(*keys)
   end
 
   def find_or_create_event!(account)

@@ -37,6 +37,7 @@ class Telephony::AiVoice::ContextBuilder
       ai: ai_payload,
       captain: captain_payload,
       transfer: transfer_payload,
+      recording: recording_payload,
       tools: Telephony::AiVoice::ToolDispatchService.catalog(policy: routing_policy, captain_assistant: captain_assistant)
     }.compact
   end
@@ -69,7 +70,11 @@ class Telephony::AiVoice::ContextBuilder
       number_binding: number_binding,
       metadata: { 'ai_voice' => { 'context_created' => true } }
     )
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+  rescue ActiveRecord::RecordNotUnique
+    account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless uniqueness_conflict?(e.record, :external_call_ref)
+
     account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   end
 
@@ -134,6 +139,24 @@ class Telephony::AiVoice::ContextBuilder
       operator_agent_aor: operator_aor,
       message: ai_settings['transfer_message'].presence || 'Сейчас соединю вас со специалистом.'
     }.compact
+  end
+
+  def recording_payload
+    {
+      enabled: recording_enabled?,
+      source: 'onelink_runtime',
+      storage_provider: 'onelink_storage'
+    }
+  end
+
+  def recording_enabled?
+    return ActiveModel::Type::Boolean.new.cast(ai_settings['recording_enabled']) if ai_settings.key?('recording_enabled')
+
+    true
+  end
+
+  def uniqueness_conflict?(record, attribute)
+    record&.errors&.of_kind?(attribute, :taken)
   end
 
   def system_prompt

@@ -1,6 +1,7 @@
 const { VoiceSession } = require('../sessions/voice-session');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
 const { startManagedVoiceStream } = require('../fonoster/managed-stream');
+const { RecordingWriter } = require('../recordings/recording-writer');
 
 const streamConstants = loadStreamConstants();
 const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
@@ -15,6 +16,8 @@ class VoiceApplication {
     fallbackResponder = new ScriptedFallbackResponder(),
     mediaStreamFactory = null,
     managedStreamStarter = startManagedVoiceStream,
+    recordingWriterFactory = null,
+    recordingEnabled = envFlag('VOICE_AGENT_RECORDING_ENABLED'),
     toolTimeoutMs = 3_000,
     outputMaxBufferedMs = 5_000,
     clearOutputOnInterrupt = false,
@@ -27,6 +30,8 @@ class VoiceApplication {
     this.fallbackResponder = fallbackResponder;
     this.mediaStreamFactory = mediaStreamFactory;
     this.managedStreamStarter = managedStreamStarter;
+    this.recordingWriterFactory = recordingWriterFactory;
+    this.recordingEnabled = recordingEnabled;
     this.toolTimeoutMs = toolTimeoutMs;
     this.outputMaxBufferedMs = outputMaxBufferedMs;
     this.clearOutputOnInterrupt = clearOutputOnInterrupt;
@@ -68,9 +73,11 @@ class VoiceApplication {
       await answerCall(call);
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
+      const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
       try {
         const dialResult = await dialOperator(call, routeDecision);
         if (dialResult === false) {
+          await closePassiveRecording(passiveRecording);
           const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, 'operator_dial_unavailable');
           return { session, decision: routeDecision, mode: 'operator', completion };
         }
@@ -82,10 +89,12 @@ class VoiceApplication {
           requestPayload,
           routeDecision,
           app: this,
-          registry: this.registry
+          registry: this.registry,
+          passiveRecording
         });
         return { session, decision: routeDecision, mode: 'operator', completion };
       } catch (error) {
+        await closePassiveRecording(passiveRecording);
         const reason = sanitizeReason(error?.message || 'operator_dial_failed');
         const completion = this.handleOperatorFailure(call, session, requestPayload, routeDecision, reason);
         return { session, decision: routeDecision, mode: 'operator', completion, reason };
@@ -103,9 +112,20 @@ class VoiceApplication {
       await answerCall(call);
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
-      await handoffToApp(call, routeDecision);
-      this.registry?.update?.(callRef, { routeDecision, state: 'app' });
-      return { session, decision: routeDecision, mode: 'app', completion: Promise.resolve() };
+      const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
+      try {
+        await handoffToApp(call, routeDecision);
+        this.registry?.update?.(callRef, { routeDecision, state: 'app' });
+        const completion = passiveRecording ? buildPassiveRecordingCompletion({ call, passiveRecording }) : Promise.resolve();
+        return { session, decision: routeDecision, mode: 'app', completion };
+      } catch (error) {
+        await closePassiveRecording(passiveRecording);
+        const reason = sanitizeReason(error?.message || 'app_handoff_failed');
+        await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, { reason, original_reason: 'app_handoff_failed' });
+        await hangupSafely(call, reason);
+        this.registry?.update?.(callRef, { routeDecision, state: 'failed' });
+        return { session, decision: routeDecision, mode: 'app_failed', completion: Promise.resolve(), reason };
+      }
     }
 
     await answerCall(call);
@@ -228,10 +248,14 @@ class VoiceApplication {
     });
     const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
+    const recordingWriter = this.createRecordingWriter(session, requestPayload, context);
+    if (recordingWriter) {
+      void recordingWriter.start({ sampleRate: FONOSTER_CALL_RATE });
+    }
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
       media_session_ref: mediaSessionRef,
-      direction: 'BOTH',
+      direction: streamConstants.bothDirection,
       input_rate: FONOSTER_INPUT_RATE,
       output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
@@ -304,6 +328,11 @@ class VoiceApplication {
             frame_bytes: frame.length
           });
         }
+        void recordingWriter?.writeOutbound?.(frame, {
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef,
+          source: 'media_writer'
+        });
         try {
           const writeResult = mediaStream.write({
             mediaSessionRef,
@@ -430,6 +459,16 @@ class VoiceApplication {
     wireMediaInput(mediaStream, payload => {
       if (!acceptingInput || !payload || !payload.data || !isAudioIn(payload.type)) return;
       streamRef = payload.streamRef || streamRef;
+      const recordingInput = resamplePcm16(
+        Buffer.from(payload.data),
+        audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE,
+        FONOSTER_CALL_RATE
+      );
+      void recordingWriter?.writeInbound?.(recordingInput, {
+        ...payload,
+        stream_ref: payload.streamRef || streamRef,
+        media_session_ref: mediaSessionRef
+      });
       realtime.sendAudio(Buffer.from(payload.data), {
         mimeType: mimeTypeForStreamPayload(payload)
       });
@@ -441,6 +480,7 @@ class VoiceApplication {
       outputPacer,
       realtime,
       session,
+      recordingWriter,
       registry: this.registry,
       stopInput: () => { acceptingInput = false; },
       onFinish: () => postToolWatchdog.cancel('completion')
@@ -488,6 +528,45 @@ class VoiceApplication {
     } catch (error) {
       throw mediaStreamEstablishmentError(error?.message || 'call.stream failed', 'call.stream');
     }
+  }
+
+  async startPassiveRecording(call, session, requestPayload = {}, routeContext = {}) {
+    const recordingWriter = this.createRecordingWriter(session, requestPayload, routeContext);
+    if (!recordingWriter) return null;
+
+    try {
+      const mediaStream = await this.startMediaStream(call);
+      if (!mediaStream) return null;
+
+      const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
+      await recordingWriter.start({ sampleRate: FONOSTER_CALL_RATE });
+      wirePassiveRecording(mediaStream, recordingWriter, { mediaSessionRef });
+      return { mediaStream, recordingWriter };
+    } catch (error) {
+      await session.safeEvent('recording_unavailable', {
+        reason: sanitizeReason(error?.message || 'recording_stream_unavailable'),
+        ...correlationPayload(session, requestPayload, routeContext)
+      });
+      return null;
+    }
+  }
+
+  createRecordingWriter(session, requestPayload = {}, context = {}) {
+    const contextRecording = context?.recording || {};
+    const explicitlyEnabled = truthy(contextRecording.enabled) || truthy(requestPayload.recording_enabled) || truthy(requestPayload.recordingEnabled);
+    if (!this.recordingEnabled && !explicitlyEnabled) return null;
+
+    const options = {
+      client: this.client,
+      callRef: session.callRef,
+      accountId: session.accountId,
+      numberRef: session.numberRef,
+      bridgeCallRef: session.bridgeCallRef,
+      rootDir: contextRecording.root_dir || contextRecording.rootDir || process.env.VOICE_AGENT_RECORDING_ROOT
+    };
+
+    if (this.recordingWriterFactory) return this.recordingWriterFactory(options);
+    return new RecordingWriter(options);
   }
 
   async handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall }) {
@@ -678,7 +757,67 @@ function wireMediaInput(mediaStream, handler) {
   }
 }
 
-function buildOperatorCompletion({ call, dialResult, session, requestPayload, routeDecision, app, registry }) {
+function wirePassiveRecording(mediaStream, recordingWriter, { mediaSessionRef } = {}) {
+  wireMediaInput(mediaStream, payload => {
+    if (!payload?.data) return;
+
+    const streamRef = payload.streamRef || payload.stream_ref || mediaStream?.streamRef;
+    const metadata = {
+      ...payload,
+      stream_ref: streamRef,
+      media_session_ref: payload.mediaSessionRef || payload.media_session_ref || mediaSessionRef
+    };
+    const chunk = recordingChunkForPayload(payload);
+    if (chunk.length === 0) return;
+
+    if (isAudioIn(payload.type)) {
+      void recordingWriter?.writeInbound?.(chunk, metadata);
+    } else if (isAudioOut(payload.type)) {
+      void recordingWriter?.writeOutbound?.(chunk, metadata);
+    }
+  });
+}
+
+function recordingChunkForPayload(payload = {}) {
+  const buffer = Buffer.from(payload.data || []);
+  const sourceRate = audioRateFromMimeType(payload.mimeType) || (isAudioOut(payload.type) ? FONOSTER_CALL_RATE : FONOSTER_INPUT_RATE);
+  return resamplePcm16(buffer, sourceRate, FONOSTER_CALL_RATE);
+}
+
+async function closePassiveRecording(passiveRecording) {
+  if (!passiveRecording) return;
+  try {
+    await passiveRecording.recordingWriter?.close?.({ endedAt: new Date() });
+  } catch (_error) {
+    // Recording finalization is best effort and must not block call cleanup.
+  }
+  try {
+    passiveRecording.mediaStream?.close?.();
+  } catch (_error) {
+    // ignore media stream cleanup errors
+  }
+}
+
+function buildPassiveRecordingCompletion({ call, passiveRecording }) {
+  if (!passiveRecording || !call || typeof call.on !== 'function') return Promise.resolve();
+
+  return new Promise(resolve => {
+    let completed = false;
+    const finish = async () => {
+      if (completed) return;
+      completed = true;
+      try {
+        await closePassiveRecording(passiveRecording);
+      } finally {
+        resolve();
+      }
+    };
+
+    for (const eventName of callEndEvents()) registerOnce(call, eventName, () => { void finish(); });
+  });
+}
+
+function buildOperatorCompletion({ call, dialResult, session, requestPayload, routeDecision, app, registry, passiveRecording = null }) {
   return new Promise(resolve => {
     let completed = false;
     let connected = false;
@@ -693,6 +832,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       if (completed) return;
       completed = true;
       clearTimer(timeout);
+      await closePassiveRecording(passiveRecording);
       await app.safeBridgeEvent(event, session, requestPayload, routeDecision, metadata);
       registry?.close?.(session.callRef, terminalOperatorState(event));
       resolve();
@@ -703,6 +843,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
       completed = true;
       clearTimer(timeout);
       try {
+        await closePassiveRecording(passiveRecording);
         await app.handleOperatorFailure(call, session, requestPayload, routeDecision, reason, event);
         registry?.close?.(session.callRef, reason);
       } finally {
@@ -735,7 +876,7 @@ function buildOperatorCompletion({ call, dialResult, session, requestPayload, ro
     };
 
     if (sources.length === 0) {
-      resolve();
+      void closePassiveRecording(passiveRecording).finally(resolve);
       return;
     }
 
@@ -953,7 +1094,7 @@ function objectKeys(value) {
   return value && typeof value === 'object' ? Object.keys(value).slice(0, 20) : [];
 }
 
-function buildCompletion({ call, mediaStream, outputPacer, realtime, session, registry, stopInput = null, onFinish = null }) {
+function buildCompletion({ call, mediaStream, outputPacer, realtime, session, recordingWriter = null, registry, stopInput = null, onFinish = null }) {
   let resolveCompletion;
   const completion = new Promise(resolve => { resolveCompletion = resolve; });
   let completed = false;
@@ -993,6 +1134,11 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
       realtime?.close?.();
     } catch (_error) {
       // ignore close errors
+    }
+    try {
+      await recordingWriter?.close?.({ endedAt: new Date() });
+    } catch (_error) {
+      // recording_ready/error reporting is best effort and must not block call cleanup
     }
     try {
       await session.safeEvent('call_ended', { reason: finalAction, ...finalMetadata });
@@ -1265,6 +1411,10 @@ function isAudioIn(type) {
   return [streamConstants.audioIn, 'audio_in', 'AUDIO_IN', 'in'].includes(type);
 }
 
+function isAudioOut(type) {
+  return [streamConstants.audioOut, 'audio_out', 'AUDIO_OUT', 'out'].includes(type);
+}
+
 function mimeTypeForStreamPayload(payload) {
   if (payload.mimeType) return payload.mimeType;
   return `audio/pcm;rate=${FONOSTER_INPUT_RATE}`;
@@ -1306,6 +1456,16 @@ function audioRateFromMimeType(mimeType) {
 function parseStreamRate(value, fallback) {
   const rate = Number.parseInt(value, 10);
   return Number.isFinite(rate) && rate > 0 ? rate : fallback;
+}
+
+function envFlag(name) {
+  return truthy(process.env[name]);
+}
+
+function truthy(value) {
+  if (value === true) return true;
+  if (value === false || value === undefined || value === null) return false;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(value).trim().toLowerCase());
 }
 
 function resamplePcm16(buffer, sourceRate, targetRate) {
@@ -1694,10 +1854,10 @@ function loadStreamConstants() {
   try {
     const common = require('@fonoster/common');
     return {
-      audioIn: common.StreamMessageType?.AUDIO_IN || 'audio_in',
-      audioOut: common.StreamMessageType?.AUDIO_OUT || 'audio_out',
+      audioIn: 'audio_in',
+      audioOut: 'audio_out',
       wavFormat: common.StreamAudioFormat?.WAV || 'WAV',
-      bothDirection: common.StreamDirection?.BOTH || 'both'
+      bothDirection: 'both'
     };
   } catch (_error) {
     return {

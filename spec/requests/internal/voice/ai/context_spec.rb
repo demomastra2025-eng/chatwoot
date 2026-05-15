@@ -95,7 +95,28 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body.dig('captain', 'assistant_id')).to eq(assistant.id)
     expect(body.dig('captain', 'system_prompt')).to include('Answer callers using OneLink account context.')
     expect(body.dig('transfer', 'operator_agent_aor')).to eq('sip:1001@example.test')
+    expect(body['recording']).to include(
+      'enabled' => true,
+      'source' => 'onelink_runtime',
+      'storage_provider' => 'onelink_storage'
+    )
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
+  end
+
+  it 'allows voice recording to be disabled explicitly for a route' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(recording_enabled: false)
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('recording', 'enabled')).to eq(false)
   end
 
   it 'uses the inbox Captain assistant as the voice brain and preserves voice default tools' do

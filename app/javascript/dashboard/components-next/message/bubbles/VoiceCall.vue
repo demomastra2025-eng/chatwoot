@@ -58,7 +58,9 @@ const isFailed = computed(() =>
 const isWhatsappCall = computed(() => data.value?.callSource === 'whatsapp');
 const callId = computed(() => data.value?.callId);
 const acceptedBy = computed(() => data.value?.acceptedBy);
-const recordingUrl = computed(() => data.value?.recordingUrl);
+const recordingUrl = computed(
+  () => data.value?.recordingUrl || data.value?.recording_url
+);
 const transcript = computed(() => data.value?.transcript);
 const transcriptItems = computed(() => data.value?.transcriptItems || []);
 const aiVoice = computed(() => data.value?.aiVoice || {});

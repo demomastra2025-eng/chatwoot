@@ -1,9 +1,9 @@
 # Onelink Fonoster Voice Contract
 
-Canonical sync document for Onelink, Fonoster, and the Onelink AI Voice Service.
-Last updated: 2026-05-03.
+Canonical sync document for Onelink, Fonoster, and OneLink-owned voice runtimes.
+Last updated: 2026-05-15.
 
-Use this document as the source of truth for the production voice/call contract.
+Use this document as the source of truth for the production voice/call/recording contract.
 
 ## Active Documents
 
@@ -20,44 +20,59 @@ Everything else in `fonoster-docs/` is historical background unless explicitly c
 
 ```text
 Fonoster
-  owns PSTN/SIP, inbound call delivery, outbound createCall execution,
-  bidirectional media bridge, dial/transfer execution, hangup, recording,
-  technical call events, app refs, trunks, numbers, domains, agents.
+  executes telecom: PSTN/SIP, inbound call delivery, outbound createCall,
+  routing to the selected OneLink runtime, media handoff, dial/transfer,
+  hangup, technical lifecycle, app refs, trunks, numbers, domains, agents.
 
-Onelink AI Voice Service
-  runs next to Onelink as a separate Node service.
-  owns Fonoster VoiceServer endpoint, one Gemini Live websocket per active call,
-  realtime audio loop, resampling, barge-in, audio buffering, Gemini tool calls,
-  transcript buffering, and low-level call actions after Rails authorizes them.
+OneLink voice runtimes
+  own the media path for recordable calls. They receive both audio directions,
+  write OneLink-owned recordings, upload to OneLink storage, emit recording
+  lifecycle events, and run role-specific media logic.
 
-Onelink Rails
-  owns CRM state, contacts, conversations, routing policy, AI config, prompts,
-  tools, operator selection policy, fallback policy, transcript storage,
-  summaries, final business status, and audit state.
+  Roles:
+    onelink-ai-voice       -> AI/Gemini Live calls
+    onelink-operator-voice -> operator calls
+    onelink-app-voice      -> app-flow calls
+
+  These roles may initially be one shared runtime/codebase with different modes
+  and app refs. Architecturally they are separate responsibilities.
+
+Onelink Rails / Chatwoot
+  owns CRM truth: contacts, conversations, routing policy, AI config, prompts,
+  tools, operator selection policy, fallback policy, recording metadata,
+  retention, permissions, signed playback/download URLs, UI, audit, summaries,
+  transcripts, and final business status.
 ```
 
 Rails must not receive realtime audio frames. Rails receives JSON only.
+
+Main rule: for any call requiring OneLink-owned recording, the media path must pass through the selected OneLink voice runtime. Fonoster must not direct-bridge around the OneLink runtime for recordable calls.
 
 ## What Fonoster Team Needs
 
 Give Fonoster team only:
 
-- private `onelink-ai-voice` endpoint reachable from Fonoster: `<private-host>:50061`
-- optional private health endpoint if exposed: `<private-host>:8081`
-- Fonoster `EXTERNAL` application ref pointing to that endpoint, or permission to create/update it
-- technical routing requirement: inbound AI route must use the Onelink AI app ref
+- private OneLink runtime endpoints reachable from Fonoster:
+  - `onelink-ai-voice`: `<private-host>:50061` or configured AI app endpoint
+  - `onelink-operator-voice`: `<private-host>:<operator-runtime-port>` or configured operator app endpoint
+  - `onelink-app-voice`: `<private-host>:<app-runtime-port>` or configured app endpoint
+- optional private health endpoints if exposed
+- Fonoster `EXTERNAL` app refs pointing to those endpoints, or permission to create/update them
+- technical routing requirement: `ai`, `operator`, `app`, and `transfer` routes must target the corresponding OneLink runtime when recording is required
 - technical fallback rule if the selected app endpoint cannot be reached
 - event identity/retry/finalization rules from this document
-- requirement that the Fonoster image supports bidirectional stream `AUDIO_IN` and `AUDIO_OUT`
+- requirement that the Fonoster image/media topology supports distinguishable `audio_in` and `audio_out` directions, stable `stream_ref`, and `media_session_ref`
 
 Do not give Fonoster team:
 
 - Gemini API keys
 - Rails internal auth secret
+- storage credentials
 - CRM database access
 - prompt templates
 - customer context rules
 - CRM tool implementation
+- retention, permission, signed-URL, or audit policy
 - operator selection/business policy beyond executable route and transfer targets returned by Onelink
 
 ## Secrets Boundary
@@ -72,7 +87,7 @@ Remove these from the Fonoster server when the Onelink-hosted app is active:
 - prompt/customer/tool config for the AI agent
 - local `test-voiceapp` as the production target
 
-Fonoster keeps only technical execution config: app refs, bridge URL/secret, trunks, numbers, SIP resources, and technical fallback targets.
+Fonoster keeps only technical execution config: app refs, bridge URL/secret, trunks, numbers, SIP resources, and technical fallback targets. Recording files, storage credentials, retention logic, permanent playback URLs, and audit policy stay on the OneLink side.
 
 ## Network Boundary
 
@@ -99,33 +114,54 @@ Inbound AI call:
 ```text
 PSTN/SIP
 -> Fonoster number
--> Fonoster runtime/bridge asks Onelink for route
--> Onelink returns action=ai with onelink_ai_app_ref
--> Fonoster connects call to Onelink AI Voice Service
--> Onelink AI Voice Service opens Gemini Live
--> caller audio -> Gemini
--> Gemini audio -> caller
--> events/transcripts/finalize -> Rails JSON endpoints
+-> Fonoster asks OneLink for route
+-> OneLink returns action=ai with onelink_ai_app_ref
+-> Fonoster connects call to onelink-ai-voice
+-> onelink-ai-voice opens Gemini Live
+-> caller/local audio -> Gemini
+-> Gemini audio -> caller/local
+-> OneLink runtime writes/uploads recording when enabled
+-> events/transcripts/finalize/recording lifecycle -> Rails JSON endpoints
 ```
 
-Outbound AI call:
+Inbound operator route:
+
+```text
+PSTN/SIP
+-> Fonoster number
+-> Fonoster asks OneLink for route
+-> OneLink returns action=operator with onelink_operator_app_ref/agent_aor
+-> Fonoster connects call to onelink-operator-voice
+-> onelink-operator-voice dials/bridges operator target
+-> caller/local audio and operator/remote audio stay visible to OneLink runtime
+-> OneLink runtime writes/uploads recording when enabled
+-> telecom + recording lifecycle -> Rails JSON endpoints
+```
+
+Inbound app route:
+
+```text
+PSTN/SIP
+-> Fonoster number
+-> Fonoster asks OneLink for route
+-> OneLink returns action=app with onelink_app_ref/app target metadata
+-> Fonoster connects call to onelink-app-voice
+-> onelink-app-voice executes or hands to the app flow while staying in the media path
+-> caller/local audio and app/remote audio stay visible to OneLink runtime
+-> OneLink runtime writes/uploads recording when enabled
+-> telecom + recording lifecycle -> Rails JSON endpoints
+```
+
+Outbound calls:
 
 ```text
 Onelink Rails
--> Fonoster bridge POST /telephony/calls/outbound
--> Fonoster Calls.createCall with appRef = onelink_ai_app_ref
--> Fonoster connects call to Onelink AI Voice Service
--> Gemini Live voice loop
--> events/transcripts/finalize -> Rails JSON endpoints
-```
-
-Operator route:
-
-```text
-Fonoster inbound call
--> Onelink route decision action=operator
--> Fonoster dials agent_aor
--> answer/no-answer/busy/failed events -> Rails
+-> Fonoster bridge POST /telephony/calls/outbound with selected app ref/mode
+-> Fonoster Calls.createCall
+-> Fonoster connects call to selected OneLink runtime
+-> selected runtime connects AI/operator/app target while staying in the media path
+-> OneLink runtime writes/uploads recording when enabled
+-> events/transcripts/finalize/recording lifecycle -> Rails JSON endpoints
 ```
 
 AI transfer to operator:
@@ -134,22 +170,32 @@ AI transfer to operator:
 Gemini tool_call
 -> onelink-ai-voice
 -> Rails /internal/voice/ai/tools/:name
--> Rails returns action=transfer and operator_agent_aor
--> onelink-ai-voice executes voice.dial(...)
+-> Rails returns action=transfer and operator_agent_aor/runtime target
+-> transfer continues through the agreed OneLink runtime when recording must continue
 -> transfer_requested and transfer_result events -> Rails
+-> recording continues or closes according to the agreed transfer policy
 -> finalize as transferred or operator_unavailable
+```
+
+Direct bridge rule:
+
+```text
+For recordable calls, Fonoster must not bridge caller <-> operator/app directly
+in a way that removes the OneLink runtime from the media path.
 ```
 
 ## Required Fonoster Core Capability
 
-The active Fonoster image must support bidirectional voice streams:
+The active Fonoster image and media topology must support recordable bidirectional voice streams:
 
-- caller audio to app as `StreamMessageType.AUDIO_IN`
-- app audio to caller as `StreamMessageType.AUDIO_OUT`
-- stable `streamRef`
-- cleanup on `StopStream` and `StasisEnd`
+- caller/local audio to the selected OneLink runtime as `audio_in` / `StreamMessageType.AUDIO_IN`
+- remote audio from AI/operator/app to the selected OneLink runtime as `audio_out` / `StreamMessageType.AUDIO_OUT`, or an equivalent separately identifiable direction
+- stable `stream_ref` when available
+- stable `media_session_ref` when available
+- direction (`inbound`/`outbound`) and routing mode (`ai`/`operator`/`app`/`transfer`) in the technical context
+- cleanup on `StopStream`, `StasisEnd`, hangup, failed, no-answer, busy, and transfer terminal events
 
-If only `AUDIO_IN` works, Gemini will hear the caller but the caller will not hear Gemini.
+If a mode does not expose both audio directions to the OneLink runtime, OneLink-owned stereo recording for that mode is impossible until media topology is changed. This is a Fonoster media-topology gap, not a reason to move recording ownership/storage into Fonoster.
 
 ## Identifiers
 
@@ -164,6 +210,15 @@ provider_call_id
 
 media_session_ref
   Fonoster media/channel/stream session reference, useful for debugging.
+
+stream_ref
+  Fonoster stream reference when available.
+
+mode / routing_mode
+  Selected runtime mode: ai, operator, app, or transfer.
+
+direction
+  Call direction: inbound or outbound.
 
 ai_session_id
   Onelink AI Voice Service session id. One active Gemini websocket per active call.
@@ -255,7 +310,7 @@ POST /internal/voice/inbound/event
 POST /telephony/internal/events
 ```
 
-AI runtime callbacks from `onelink-ai-voice`:
+AI/runtime callbacks from OneLink voice runtimes:
 
 ```text
 POST /internal/voice/ai/context
@@ -266,7 +321,13 @@ POST /internal/voice/ai/event
 POST /internal/voice/ai/finalize
 ```
 
-`/event` and `/finalize` are compatibility adapter endpoints and must stay idempotent.
+Recording playback/download from Chatwoot UI:
+
+```text
+GET /api/v1/accounts/:account_id/telephony/calls/:call_ref/recording
+```
+
+`/event` and `/finalize` are compatibility adapter endpoints and must stay idempotent. Recording playback/download URLs must be signed short-lived URLs generated by Rails/Chatwoot; permanent `recording_url` is not durable state.
 
 ## Inbound Route Decision
 
@@ -403,6 +464,11 @@ Response:
   "operator": {
     "agent_aor": "sip:1001@operator.cloud.vconsult.kz",
     "timeout": 30
+  },
+  "recording": {
+    "enabled": true,
+    "source": "onelink_runtime",
+    "storage_provider": "onelink_storage"
   }
 }
 ```
@@ -447,11 +513,16 @@ Response:
 }
 ```
 
-Required AI event types:
+Required runtime/AI event types:
 
 ```text
+session_started
 call_started
 stream_started
+app_routing
+app_answered
+operator_ringing
+operator_answered
 transcript_delta
 tool_started
 tool_completed
@@ -459,9 +530,14 @@ tool_failed
 transfer_requested
 transfer_result
 recording_ready
+recording_unavailable
 error
 call_ended
+session_completed
+session_failed
 ```
+
+Telecom/technical lifecycle events are sent by Fonoster/bridge. Recording lifecycle events (`recording_ready`, `recording_unavailable`, `error scope=recording`) are sent by the OneLink runtime that owns the recording writer/upload.
 
 Transfer results:
 
@@ -546,7 +622,15 @@ Request:
     "answered_at": "2026-05-03T12:01:18.000Z",
     "duration_ms": 8000
   },
-  "recording_url": null,
+  "recording": {
+    "recording_ref": "rec_123",
+    "storage_key": "voice-recordings/2026/05/15/call_123/rec.wav",
+    "duration_ms": 120000,
+    "format": "wav",
+    "channels": 2,
+    "sample_rate": 8000,
+    "channel_layout": "caller_left_remote_right"
+  },
   "error_code": null,
   "error_message": null,
   "attempt": 1
@@ -730,35 +814,96 @@ finalize failed if no fallback exists
 Recording failure:
 
 ```text
-emit error scope=recording
-finalize must not wait for recording
-recording_ready may update the call after terminal state
+OneLink runtime emits error scope=recording
+finalize must not wait for recording/upload
+recording_ready may update metadata after terminal state
+late recording_ready must not change terminal call status
 ```
 
-## Recording Rules
+## OneLink-Owned Recording Rules
 
-Recording is a technical artifact from Fonoster.
+Recording is a OneLink-owned media/storage artifact. Fonoster executes telecom and provides media topology; it is not the source of truth for recordings.
 
-Rules:
+Runtime rules:
 
-- recording may arrive after finalize
-- `recording_ready` must update the existing call row
-- missing recording must not block finalize
-- recording failure must be an `error` event, not a broken call finalization
+- recording happens inside the selected OneLink voice runtime
+- write stereo WAV
+- left channel = caller/local side
+- right channel = remote side: AI/operator/app
+- channels must be time-aligned
+- write silence frames when one side is silent
+- resample both directions to a common call rate
+- writer must be append-only and non-blocking for realtime audio
+- upload is asynchronous and must not block call completion
+- recording/upload errors must not break the call flow
 
-Recommended payload:
+Rails/Chatwoot durable fields:
+
+```text
+recording_ref
+storage_key
+duration_ms
+format
+channels
+channel_layout
+sample_rate
+encoding
+mode
+direction
+metadata
+```
+
+Rails/Chatwoot owns:
+
+```text
+storage credentials
+permissions
+retention
+audit/compliance
+signed short-lived playback/download URLs
+UI playback/download
+```
+
+Do not store a permanent `recording_url` as durable source of truth. Store `storage_key` and generate signed short-lived URLs at playback/download time.
+
+Recording lifecycle events sent by OneLink runtime:
+
+```text
+recording_ready
+recording_unavailable
+error scope=recording
+```
+
+Recommended `recording_ready` payload:
 
 ```json
 {
   "event_type": "recording_ready",
+  "event_id": "evt_rec_01JZ...",
   "provider_call_id": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
-  "call_id": "call_123",
+  "call_ref": "8411db93-f9fb-4e29-9209-6a2fddf8df95",
+  "media_session_ref": "media-session-ref",
+  "stream_ref": "stream-ref",
+  "mode": "operator",
+  "direction": "inbound",
   "recording_ref": "rec_123",
-  "recording_url": "https://recordings.example/call_123.wav",
+  "storage_key": "voice-recordings/2026/05/15/call_123/rec.wav",
   "duration_ms": 120000,
-  "format": "wav"
+  "format": "wav",
+  "channels": 2,
+  "channel_layout": "caller_left_remote_right",
+  "sample_rate": 8000,
+  "encoding": "pcm_s16le",
+  "source": "onelink-operator-voice"
 }
 ```
+
+Acceptance rules:
+
+- for each enabled mode (`ai`, `operator`, `app`) and direction (`inbound`, `outbound`), OneLink runtime must see both audio directions
+- if one mode cannot expose both audio directions, stereo recording for that mode is blocked until Fonoster media topology is fixed
+- duplicate `recording_ready` must not create duplicate recordings/messages
+- late `recording_ready` updates metadata only and must not change terminal call status
 
 ## Production Readiness Checklist
 
@@ -766,25 +911,30 @@ Code/contract readiness:
 
 1. Rails exposes `/internal/voice/ai/event`.
 2. Rails exposes `/internal/voice/ai/finalize`.
-3. `finalize` is idempotent.
-4. Rails deduplicates events by `event_id` or compatible idempotency key.
-5. `onelink-ai-voice` emits `event_seq`.
-6. Transfer emits `transfer_requested` and `transfer_result`.
-7. Recording can update after finalize.
-8. No raw audio reaches Rails.
+3. Rails exposes account-scoped recording playback/download endpoint.
+4. `finalize` is idempotent.
+5. Rails deduplicates events by `event_id` or compatible idempotency key.
+6. OneLink runtime emits stable `event_seq`.
+7. Transfer emits `transfer_requested` and `transfer_result`.
+8. OneLink runtime emits `recording_ready`, `recording_unavailable`, and `error scope=recording`.
+9. Recording can update metadata after finalize without changing terminal status.
+10. No raw audio reaches Rails.
+11. No permanent recording URL is stored as durable source of truth.
 
-Deployment readiness:
+Deployment/media readiness:
 
-1. Fonoster app endpoint points to `onelink-ai-voice`, not local `test-voiceapp`.
-2. TCP `50061` is reachable from Fonoster and private from the public internet.
-3. Running Fonoster image has bidirectional stream support.
-4. Gemini keys exist only on the Onelink side.
-5. Rails and `onelink-ai-voice` use the same internal voice token.
-6. Outbound AI calls use the Onelink AI app ref.
-7. Gemini outage fallback is tested.
-8. Onelink AI Voice Service outage fallback is tested.
-9. Operator no-answer path finalizes `operator_unavailable`.
-10. One inbound and one outbound live smoke call pass end to end.
+1. Fonoster app refs point to selected OneLink runtimes, not local `test-voiceapp`.
+2. Runtime gRPC ports are reachable from Fonoster and private from the public internet.
+3. Running Fonoster image/media topology exposes both audio directions for each recordable mode.
+4. Gemini keys exist only on the OneLink side.
+5. Storage credentials exist only on the OneLink side.
+6. Rails and OneLink runtimes use the same internal voice token.
+7. Outbound calls use the selected OneLink runtime app ref.
+8. Gemini outage fallback is tested.
+9. OneLink runtime outage fallback is tested.
+10. Operator no-answer path finalizes `operator_unavailable`.
+11. Live smoke calls pass end to end for inbound/outbound and app/ai/operator.
+12. Recording upload failure does not break a live call.
 
 ## Values To Fill For Fonoster Sync
 
@@ -795,16 +945,47 @@ onelink_ai_voice_private_host=<private host or IP reachable from Fonoster>
 onelink_ai_voice_grpc_endpoint=<private host>:50061
 onelink_ai_voice_health_endpoint=<private host>:8081, optional
 fonoster_onelink_ai_app_ref=<Fonoster EXTERNAL app ref pointing to onelink-ai-voice>
+
+onelink_operator_voice_grpc_endpoint=<private host>:<operator-runtime-port>
+fonoster_onelink_operator_app_ref=<Fonoster EXTERNAL app ref pointing to onelink-operator-voice>
+
+onelink_app_voice_grpc_endpoint=<private host>:<app-runtime-port>
+fonoster_onelink_app_ref=<Fonoster EXTERNAL app ref pointing to onelink-app-voice>
+
 operator_agent_aor=<production SIP AOR for fallback/transfer>
 technical_fallback=<operator|reject|fallback_app_ref>
 ```
 
+## E2E Recording Scenarios
+
+Jointly test before production rollout:
+
+1. `inbound -> AI` creates recording.
+2. `inbound -> operator` creates recording.
+3. `inbound -> app` creates recording.
+4. `outbound -> AI/operator/app` creates recording.
+5. `AI -> transfer to operator` either continues recording or closes it according to the agreed scenario.
+6. `app/operator handoff failure` terminates call/session correctly and closes writer.
+7. `recording upload failure` does not break the live call.
+8. duplicate `recording_ready` does not create duplicates.
+9. late `recording_ready` after terminal call status updates metadata only.
+
+## Performance Requirements
+
+- place OneLink runtime near the Fonoster media region
+- avoid unnecessary transcoding
+- keep recording writer non-blocking
+- upload asynchronously
+- pre-warm runtime workers where possible
+- do not wait on Rails/storage in the realtime audio path
+- measure latency, jitter, packet loss, writer lag, and handoff setup time
+
 ## Final Rule
 
 ```text
-Fonoster executes calls.
-Onelink AI Voice Service runs Gemini Live realtime audio.
-Onelink Rails owns business truth.
+Fonoster = telecom execution, routing, media handoff, technical lifecycle.
+OneLink runtime = media ownership for recording, writer, upload, recording lifecycle.
+Rails/Chatwoot = CRM truth, metadata, permissions, signed URLs, UI, audit.
 ```
 
-This is the native, reliable, scalable split for production voice agents.
+This is the native, reliable, scalable split for production voice agents and OneLink-owned call recording.

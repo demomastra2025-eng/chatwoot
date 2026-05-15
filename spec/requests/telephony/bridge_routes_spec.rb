@@ -51,6 +51,11 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'inbox_id' => voice_inbox.id,
       'account_id' => account.id
     )
+    expect(response.parsed_body['recording']).to include(
+      'enabled' => true,
+      'source' => 'onelink_runtime',
+      'storage_provider' => 'onelink_storage'
+    )
     expect(response.parsed_body).not_to have_key('fallback_mode')
     expect(response.parsed_body).not_to have_key('fallback_app_ref')
   end
