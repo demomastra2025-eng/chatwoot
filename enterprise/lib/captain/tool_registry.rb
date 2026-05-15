@@ -983,6 +983,30 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'list_inboxes',
+          title: 'List Inboxes',
+          description: 'List account inboxes with safe channel, assignment, working-hours, and Captain auto-reply metadata',
+          group_name: 'Account',
+          icon: 'inbox',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListInboxesService,
+          risk_level: 'low',
+          selected_by_default: false,
+          idempotent: true
+        ),
+        definition(
+          id: 'update_captain_inbox_auto_reply_mode',
+          title: 'Update Captain Inbox Auto Reply Mode',
+          description: 'Update the AI auto-reply mode for an account inbox already connected to Captain',
+          group_name: 'Account',
+          icon: 'bot',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'retry_failed_message',
           title: 'Retry Failed Message',
           description: 'Retry a failed outgoing message in a conversation',
