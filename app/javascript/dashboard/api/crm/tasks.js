@@ -10,6 +10,10 @@ class CrmTasksAPI extends ApiClient {
     return axios.get(this.url, { params });
   }
 
+  show(id) {
+    return axios.get(`${this.url}/${id}`);
+  }
+
   changeStatus(id, data) {
     return axios.post(`${this.url}/${id}/change_status`, data);
   }

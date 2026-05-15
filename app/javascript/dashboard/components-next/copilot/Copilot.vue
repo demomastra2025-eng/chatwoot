@@ -33,7 +33,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['sendMessage', 'reset', 'setAssistant']);
+const emit = defineEmits(['sendMessage', 'reset', 'setAssistant', 'uiAction']);
 
 const { t } = useI18n();
 
@@ -149,6 +149,7 @@ watch(
             :message="item.message"
             :is-last-message="index === groupedMessages.length - 1"
             :conversation-inbox-type="conversationInboxType"
+            @ui-action="$event => emit('uiAction', $event)"
           />
           <CopilotThinkingGroup
             v-else

@@ -746,6 +746,7 @@ const crmPrefillKeys = [
   'conversationDisplayId',
   'originatingConversationId',
   'source',
+  'taskId',
   'teamId',
 ];
 
@@ -1062,6 +1063,28 @@ const consumeTaskPrefillQuery = async () => {
     title: buildPrefillTaskTitle(),
   });
   await clearTaskPrefillQuery();
+};
+
+const consumeTaskOpenQuery = async () => {
+  const taskId = numericQueryValue('taskId');
+  if (!taskId) return false;
+
+  try {
+    let task = tasks.value.find(record => Number(record.id) === Number(taskId));
+    if (!task) {
+      const { data } = await CrmTasksAPI.show(taskId);
+      task = normalizePayload(data);
+      upsertTask(task);
+    }
+
+    await openEditDrawer(task);
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    await clearTaskPrefillQuery();
+  }
+
+  return true;
 };
 
 const handlePresentationChange = async presentation => {
@@ -1578,6 +1601,7 @@ onMounted(async () => {
   hasRestoredPreferences.value = true;
   persistTasksPreferences();
   await loadTasks();
+  if (await consumeTaskOpenQuery()) return;
   await consumeTaskPrefillQuery();
 });
 </script>

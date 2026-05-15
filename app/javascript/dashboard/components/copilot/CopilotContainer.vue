@@ -8,8 +8,9 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { executeCaptainUiAction } from 'dashboard/helper/captainUiActions';
 import wootConstants from 'dashboard/constants/globals';
 
 defineProps({
@@ -21,6 +22,7 @@ defineProps({
 
 const store = useStore();
 const route = useRoute();
+const router = useRouter();
 const { uiSettings, updateUISettings } = useUISettings();
 const { isEnterprise } = useConfig();
 const { width: windowWidth } = useWindowSize();
@@ -183,6 +185,17 @@ const sendMessage = async message => {
   }
 };
 
+const handleUiAction = async action => {
+  try {
+    await executeCaptainUiAction(action, {
+      router,
+      accountId: currentAccountId.value,
+    });
+  } catch (error) {
+    useAlert(error.message);
+  }
+};
+
 onMounted(() => {
   if (isEnterprise) {
     store.dispatch('captainAssistants/get');
@@ -218,6 +231,7 @@ watch(
       :active-assistant="activeAssistant"
       @set-assistant="setAssistant"
       @send-message="sendMessage"
+      @ui-action="handleUiAction"
       @reset="handleReset"
     />
   </div>

@@ -48,10 +48,19 @@ module Captain
         string :description, description: 'High-level assistant persona and business scope'
       end
 
+      class CopilotUiAction < RubyLLM::Schema
+        string :type, description: 'One of: open_conversation, open_contact, open_task, open_contacts, open_tasks, open_deals, open_captain_settings'
+        string :label, description: 'Short button label for the support agent'
+        string :target_id, description: 'Entity ID as a string, or an empty string for list/settings navigation'
+      end
+
       class CopilotResponse < RubyLLM::Schema
         string :reasoning, description: 'Why the copilot chose this response'
         string :content, description: 'The response content for the operator'
         boolean :reply_suggestion, description: 'Whether this content is a suggested reply to send to the customer'
+        array :ui_actions,
+              of: CopilotUiAction,
+              description: 'Safe dashboard navigation actions for the operator. Return [] when no UI navigation is needed.'
       end
     end
   end

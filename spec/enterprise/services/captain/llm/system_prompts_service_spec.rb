@@ -55,6 +55,19 @@ RSpec.describe Captain::Llm::SystemPromptsService do
       expect(prompt).to include('[Global System Instructions]')
       expect(prompt).to include('Never expose internal-only notes to end customers.')
     end
+
+    it 'renders typed UI action guidance for safe dashboard navigation' do
+      prompt = described_class.copilot_response_generator(
+        'Captain',
+        'Handle workspace setup and billing support.',
+        '- get_contact',
+        {}
+      )
+
+      expect(prompt).to include('ui_actions')
+      expect(prompt).to include('open_contact')
+      expect(prompt).to include('Never invent DOM selectors')
+    end
   end
 
   describe '.copilot_account_context' do

@@ -171,11 +171,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
   end
 
   def blocked_response_payload(reason)
-    {
-      'content' => "I can't help with that request.",
-      'reasoning' => reason,
-      'reply_suggestion' => false
-    }
+    { 'content' => "I can't help with that request.", 'reasoning' => reason, 'reply_suggestion' => false, 'ui_actions' => [] }
   end
 
   def request_event_context
@@ -205,7 +201,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     {
       'content' => "I couldn't generate a reliable copilot response. Please try again.",
       'reasoning' => 'Copilot structured output validation failed',
-      'reply_suggestion' => false
+      'reply_suggestion' => false,
+      'ui_actions' => []
     }
   end
 end

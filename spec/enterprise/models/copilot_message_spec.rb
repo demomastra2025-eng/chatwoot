@@ -72,7 +72,8 @@ RSpec.describe CopilotMessage, type: :model do
           'tool_calls' => [{ 'id' => 'call_1', 'name' => 'faq_lookup', 'arguments' => { 'query' => 'refund' } }],
           'usage' => { 'total_tokens' => 12 },
           'captain_trace' => { 'steps' => [] },
-          'thinking' => 'Used FAQ search first'
+          'thinking' => 'Used FAQ search first',
+          'ui_actions' => [{ 'type' => 'open_contact', 'label' => 'Open contact', 'target_id' => '42' }]
         }
       )
 

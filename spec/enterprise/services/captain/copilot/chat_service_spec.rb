@@ -27,7 +27,8 @@ RSpec.describe Captain::Copilot::ChatService do
       content: {
         'content' => 'Hey',
         'reasoning' => 'Test reasoning',
-        'reply_suggestion' => false
+        'reply_suggestion' => false,
+        'ui_actions' => []
       },
       input_tokens: 20,
       output_tokens: 10
@@ -189,6 +190,7 @@ RSpec.describe Captain::Copilot::ChatService do
           'content' => 'Hey',
           'reasoning' => 'Test reasoning',
           'reply_suggestion' => false,
+          'ui_actions' => [],
           'usage' => {
             'prompt_tokens' => 20,
             'completion_tokens' => 10,
@@ -213,7 +215,8 @@ RSpec.describe Captain::Copilot::ChatService do
         {
           'content' => "I can't help with that request.",
           'reasoning' => 'Copilot input blocked by moderation policy',
-          'reply_suggestion' => false
+          'reply_suggestion' => false,
+          'ui_actions' => []
         }
       )
     end
@@ -227,7 +230,8 @@ RSpec.describe Captain::Copilot::ChatService do
         {
           'content' => "I can't help with that request.",
           'reasoning' => 'Copilot input blocked because moderation policy is unavailable',
-          'reply_suggestion' => false
+          'reply_suggestion' => false,
+          'ui_actions' => []
         }
       )
     end
@@ -252,7 +256,8 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(persisted_message).to include(
         'content' => 'Hey',
         'reasoning' => 'Test reasoning',
-        'reply_suggestion' => false
+        'reply_suggestion' => false,
+        'ui_actions' => []
       )
       expect(persisted_message).not_to have_key('usage')
     end

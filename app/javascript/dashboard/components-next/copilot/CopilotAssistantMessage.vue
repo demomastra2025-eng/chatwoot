@@ -7,6 +7,7 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { COPILOT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import MessageFormatter from 'shared/helpers/MessageFormatter.js';
+import { normalizeCaptainUiActions } from 'dashboard/helper/captainUiActions';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 
@@ -24,6 +25,8 @@ const props = defineProps({
     required: true,
   },
 });
+
+const emit = defineEmits(['uiAction']);
 const hasEmptyMessageContent = computed(() => !props.message?.content);
 
 const showUseButton = computed(() => {
@@ -38,6 +41,16 @@ const messageContent = computed(() => {
   const formatter = new MessageFormatter(props.message.content);
   return formatter.formattedMessage;
 });
+
+const uiActions = computed(() =>
+  normalizeCaptainUiActions(
+    props.message?.ui_actions || props.message?.uiActions
+  )
+);
+
+const handleUiAction = action => {
+  emit('uiAction', action);
+};
 
 const insertIntoRichEditor = computed(() => {
   return [INBOX_TYPES.WEB, INBOX_TYPES.EMAIL].includes(
@@ -66,7 +79,7 @@ const useCopilotResponse = () => {
       v-dompurify-html="messageContent"
       class="prose-sm break-words"
     />
-    <div class="flex flex-row mt-1">
+    <div class="flex flex-row mt-1 gap-2 flex-wrap">
       <Button
         v-if="showUseButton"
         :label="$t('CAPTAIN.COPILOT.USE')"
@@ -74,6 +87,15 @@ const useCopilotResponse = () => {
         sm
         slate
         @click="useCopilotResponse"
+      />
+      <Button
+        v-for="action in uiActions"
+        :key="`${action.type}-${action.targetId}`"
+        :label="action.label"
+        faded
+        sm
+        slate
+        @click="handleUiAction(action)"
       />
     </div>
   </div>
