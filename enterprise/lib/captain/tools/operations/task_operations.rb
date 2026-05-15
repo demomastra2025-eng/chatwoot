@@ -56,19 +56,34 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
       lock_version: current_task.lock_version
     }
     params[:title] = title if title.present?
-    params[:description] = description if !description.nil?
-    params[:priority] = priority if !priority.nil?
-    params[:start_at] = start_at if !start_at.nil?
-    params[:due_at] = due_at if !due_at.nil?
+    params[:description] = description unless description.nil?
+    params[:priority] = priority unless priority.nil?
+    params[:start_at] = start_at unless start_at.nil?
+    params[:due_at] = due_at unless due_at.nil?
 
-    if custom_attributes.present?
-      params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes')
-    end
+    params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
     ::Crm::Tasks::UpsertService.new(
       account: account,
       params: params,
       task: current_task,
+      actor: actor
+    ).perform
+  end
+
+  def complete_task(task_id:)
+    ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
+
+    task = account.crm_tasks.kept.find_by(id: task_id)
+    raise ArgumentError, 'Task not found' if task.blank?
+
+    ::Crm::Tasks::StatusTransitionService.new(
+      account: account,
+      task: task,
+      params: {
+        status_id: resolve_done_status.id,
+        lock_version: task.lock_version
+      },
       actor: actor
     ).perform
   end
@@ -81,5 +96,11 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     return account.crm_task_statuses.find_by!(name: status_name.to_s.strip) if status_name.present?
 
     raise ArgumentError, 'One of status_id, status_name, or status_code is required'
+  end
+
+  def resolve_done_status
+    account.crm_task_statuses.active.find_by(code: 'done') ||
+      account.crm_task_statuses.active.where(category: 'done').ordered.first ||
+      raise(ArgumentError, 'Done task status not found')
   end
 end

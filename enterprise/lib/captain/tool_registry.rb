@@ -714,6 +714,18 @@ class Captain::ToolRegistry
           risk_level: 'high'
         ),
         definition(
+          id: 'complete_task',
+          title: 'Complete Task',
+          description: 'Mark an account CRM task as complete by task ID',
+          group_name: 'CRM Tasks',
+          icon: 'check',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CompleteTaskService,
+          required_features: %w[crm_tasks],
+          required_permissions: %w[crm_task_manage],
+          risk_level: 'medium'
+        ),
+        definition(
           id: 'add_task_comment',
           title: 'Add Task Comment',
           description: 'Add a comment to the CRM task linked to the current conversation',

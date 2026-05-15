@@ -37,6 +37,7 @@ RSpec.describe Captain::ToolRegistry do
         'search_canned_responses',
         'create_canned_response',
         'create_contact',
+        'complete_task',
         'merge_contacts',
         'add_appointment_payment',
         'get_kaspi_pay_integration_status',
@@ -190,6 +191,7 @@ RSpec.describe Captain::ToolRegistry do
       sync_kaspi_pay_payment_status
       execute_macro
       create_contact
+      complete_task
       get_account_health
       get_recent_account_errors
       trace_ai_response
