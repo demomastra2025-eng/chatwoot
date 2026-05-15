@@ -4,6 +4,7 @@ import {
   executeCaptainUiAction,
   normalizeCaptainUiActions,
   routeForCaptainUiAction,
+  supportedCaptainUiActionTypes,
 } from '../captainUiActions';
 
 describe('captainUiActions helper', () => {
@@ -18,6 +19,29 @@ describe('captainUiActions helper', () => {
       { type: 'open_contact', label: 'Open Aruzhan', targetId: '42' },
       { type: 'open_tasks', label: 'Tasks', targetId: '' },
     ]);
+  });
+
+  it('exposes the broader dashboard navigation whitelist', () => {
+    expect(supportedCaptainUiActionTypes).toEqual(
+      expect.arrayContaining([
+        'open_inbox',
+        'open_inbox_settings',
+        'open_team_conversations',
+        'open_label_conversations',
+        'open_companies',
+        'open_outbound',
+        'open_touch_plans',
+        'open_automation_rules',
+        'open_inboxes_settings',
+        'open_agents_settings',
+        'open_integrations',
+        'open_reports',
+        'open_help_center',
+        'open_captain_documents',
+        'open_captain_tools',
+        'open_captain_observability',
+      ])
+    );
   });
 
   it('builds router targets for supported entity navigation actions', () => {
@@ -42,6 +66,67 @@ describe('captainUiActions helper', () => {
       params: { accountId: 1 },
       query: { taskId: '99', source: 'captain_ui_action' },
     });
+
+    expect(
+      routeForCaptainUiAction({ type: 'open_inbox_settings', targetId: '5' }, 1)
+    ).toEqual({
+      name: 'settings_inbox_show',
+      params: { accountId: 1, inboxId: '5' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_label_conversations', targetId: 'vip' },
+        1
+      )
+    ).toEqual({
+      name: 'label_conversations',
+      params: { accountId: 1, label: 'vip' },
+    });
+  });
+
+  it('builds router targets for assistant and settings pages', () => {
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_captain_documents', targetId: '12' },
+        1
+      )
+    ).toEqual({
+      name: 'captain_assistants_documents_index',
+      params: { accountId: 1, assistantId: '12' },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_automation_rules', targetId: '' },
+        1
+      )
+    ).toEqual({
+      name: 'automation_list',
+      params: { accountId: 1 },
+    });
+
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_kaspi_pay_settings', targetId: '' },
+        1
+      )
+    ).toEqual({
+      name: 'settings_integrations_kaspi_pay',
+      params: { accountId: 1 },
+    });
+  });
+
+  it('rejects entity actions without required target IDs', () => {
+    expect(
+      routeForCaptainUiAction({ type: 'open_contact', targetId: '' }, 1)
+    ).toBe(null);
+    expect(
+      routeForCaptainUiAction(
+        { type: 'open_captain_documents', targetId: '' },
+        1
+      )
+    ).toBe(null);
   });
 
   it('executes actions through router instead of direct DOM manipulation', async () => {

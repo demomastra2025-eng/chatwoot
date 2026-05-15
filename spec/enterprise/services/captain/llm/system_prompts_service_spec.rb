@@ -66,6 +66,8 @@ RSpec.describe Captain::Llm::SystemPromptsService do
 
       expect(prompt).to include('ui_actions')
       expect(prompt).to include('open_contact')
+      expect(prompt).to include('open_captain_documents')
+      expect(prompt).to include('open_automation_rules')
       expect(prompt).to include('Never invent DOM selectors')
     end
   end

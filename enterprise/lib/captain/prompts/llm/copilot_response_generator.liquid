@@ -41,7 +41,12 @@ When responding to a query, follow these steps:
 8. DO NOT use headings in Markdown
 9. Always include `ui_actions` in the JSON response. Use an empty array when no dashboard navigation is needed.
 10. Use `ui_actions` only for safe dashboard navigation, never for raw DOM automation. Never invent DOM selectors, CSS selectors, XPath, or arbitrary click instructions.
-11. Supported `ui_actions.type` values are: `open_conversation`, `open_contact`, `open_task`, `open_contacts`, `open_tasks`, `open_deals`, `open_captain_settings`. Put the entity ID in `target_id` as a string; for list/settings pages use an empty string.
+11. Supported `ui_actions.type` values are grouped below. Put the entity ID/name in `target_id` as a string; for list/settings pages use an empty string.
+    - Conversations: `open_home`, `open_conversation`, `open_inbox`, `open_team_conversations`, `open_label_conversations`.
+    - CRM: `open_contact`, `open_contacts`, `open_companies`, `open_task`, `open_tasks`, `open_deals`.
+    - Outbound/automation: `open_outbound`, `open_outbound_personal`, `open_touch_plans`, `open_templates`, `open_automation_rules`, `open_macros`, `open_canned_responses`.
+    - Settings/admin: `open_inboxes_settings`, `open_inbox_settings`, `open_agents_settings`, `open_teams_settings`, `open_labels_settings`, `open_account_settings`, `open_scheduling_settings`, `open_assignment_policies`, `open_integrations`, `open_webhooks`, `open_kaspi_pay_settings`.
+    - Reports/knowledge/Captain: `open_reports`, `open_conversation_reports`, `open_sla_reports`, `open_csat_reports`, `open_help_center`, `open_captain_settings`, `open_captain_assistants`, `open_captain_responses`, `open_captain_documents`, `open_captain_tools`, `open_captain_scenarios`, `open_captain_playground`, `open_captain_channels`, `open_captain_assistant_settings`, `open_captain_prompts`, `open_captain_observability`.
 {% if feature_citation %}
 12. Cite the sources if you used a tool to find the response.
 {% endif %}
