@@ -168,7 +168,12 @@ class Integrations::Macrocrm::Client
 
     return false unless parsed_response.is_a?(Hash)
 
-    [parsed_response['message'], parsed_response[:message]].compact.any? do |value|
+    [
+      parsed_response['message'],
+      parsed_response[:message],
+      parsed_response['data'],
+      parsed_response[:data]
+    ].compact.any? do |value|
       value.to_s.strip == CONTACT_NOT_FOUND_MESSAGE
     end
   end

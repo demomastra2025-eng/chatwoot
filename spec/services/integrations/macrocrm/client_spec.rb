@@ -41,6 +41,17 @@ RSpec.describe Integrations::Macrocrm::Client do
       expect(HTTParty).to have_received(:post).once
     end
 
+    it 'normalizes MacroCRM contact-not-found 404 data hashes as a missing contact' do
+      allow(HTTParty).to receive(:post)
+        .and_return(response(404, { 'data' => 'No contacts found' }))
+
+      expect(client.find_contact(phone: '+770****4567')).to eq(
+        'error' => true,
+        'message' => 'No contacts found'
+      )
+      expect(HTTParty).to have_received(:post).once
+    end
+
     it 'keeps unrelated 404 responses as permanent errors' do
       allow(HTTParty).to receive(:post)
         .and_return(response(404, { 'message' => 'Endpoint not found' }))

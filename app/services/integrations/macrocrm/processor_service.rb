@@ -11,6 +11,8 @@ class Integrations::Macrocrm::ProcessorService
     return unless event_name == 'message.created'
     return unless eligible_message?
 
+    sync_existing_estate and return if stored_estate_id.present?
+
     contact = find_contact
     estate = find_last_estate(contact)
     sync_chat_manager_from_estate(estate) if estate.present?
@@ -95,8 +97,32 @@ class Integrations::Macrocrm::ProcessorService
     }
 
     response = client.create_estate_buy(**payload)
-    response.dig('estate', 'id').presence ||
+    extract_estate_id(response).presence ||
       raise(Integrations::Macrocrm::Client::PermanentError, 'MacroCRM estate id missing in create response')
+  end
+
+  def extract_estate_id(response)
+    return unless response.is_a?(Hash)
+
+    [
+      response_value(response, :estate, :id),
+      response_value(response, :data, :id),
+      response_value(response, :estate_buy, :id),
+      response_value(response, :buy, :id),
+      response_value(response, :id)
+    ].find(&:present?)
+  end
+
+  def response_value(response, *keys)
+    current = response
+
+    keys.each do |key|
+      return unless current.is_a?(Hash)
+
+      current = current[key.to_s] || current[key.to_sym]
+    end
+
+    current
   end
 
   def note
@@ -114,6 +140,17 @@ class Integrations::Macrocrm::ProcessorService
         Integrations::Macrocrm::ConversationAttributeKeys::ESTATE_ID => estate_id.to_s
       )
     )
+  end
+
+  def sync_existing_estate
+    client.add_note(estate_id: stored_estate_id, note: note)
+    true
+  end
+
+  def stored_estate_id
+    @stored_estate_id ||= message.conversation.custom_attributes.to_h[
+      Integrations::Macrocrm::ConversationAttributeKeys::ESTATE_ID
+    ].presence
   end
 
   def direction_prefix

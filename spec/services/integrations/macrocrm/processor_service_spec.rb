@@ -68,6 +68,26 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
     end
   end
 
+  context 'when the conversation already has a MacroCRM estate reference' do
+    before do
+      conversation.update!(custom_attributes: { 'macrocrm_estate_id' => '7777' })
+      allow(client).to receive(:find_contact)
+      allow(client).to receive(:create_estate_buy)
+      allow(client).to receive(:add_note)
+    end
+
+    it 'adds a note to the stored estate without creating another deal' do
+      perform
+
+      expect(client).not_to have_received(:find_contact)
+      expect(client).not_to have_received(:create_estate_buy)
+      expect(client).to have_received(:add_note).with(
+        estate_id: '7777',
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+  end
+
   context 'when the existing MacroCRM deal manager is mapped to a local agent' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
     let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
@@ -460,6 +480,38 @@ RSpec.describe Integrations::Macrocrm::ProcessorService do
 
       expect(client).to have_received(:add_note).with(
         estate_id: 4321,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+
+    it 'accepts a top-level id from MacroCRM create response' do
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'error' => true, 'message' => 'No contacts found' }
+      )
+      allow(client).to receive(:create_estate_buy).and_return({ 'id' => 9876 })
+      allow(client).to receive(:add_note)
+
+      perform
+
+      expect(conversation.reload.custom_attributes['macrocrm_estate_id']).to eq('9876')
+      expect(client).to have_received(:add_note).with(
+        estate_id: 9876,
+        note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
+      )
+    end
+
+    it 'accepts a nested data id from MacroCRM create response' do
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'error' => true, 'message' => 'No contacts found' }
+      )
+      allow(client).to receive(:create_estate_buy).and_return({ 'data' => { 'id' => 6789 } })
+      allow(client).to receive(:add_note)
+
+      perform
+
+      expect(conversation.reload.custom_attributes['macrocrm_estate_id']).to eq('6789')
+      expect(client).to have_received(:add_note).with(
+        estate_id: 6789,
         note: '[Входящее WhatsApp] Здравствуйте, хочу узнать о квартирах'
       )
     end
