@@ -13,6 +13,8 @@ class Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService < Captain:
         required: true
 
   def execute(inbox_id:, auto_reply_mode:)
+    ensure_account_administrator!
+
     inbox = account.inboxes.active.find(inbox_id)
     captain_inbox = captain_inbox_for!(inbox)
 

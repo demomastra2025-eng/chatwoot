@@ -19,6 +19,7 @@ RSpec.describe 'Captain assistant ops tool registry' do
       'list_teams',
       'create_user_invite',
       'update_user_role',
+      'update_user_availability',
       'deactivate_user',
       'reactivate_user',
       'assign_user_to_team',

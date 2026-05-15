@@ -14,6 +14,8 @@ class Captain::Tools::Copilot::UpdateInboxWorkingHoursService < Captain::Tools::
   param :working_hours_enabled, type: :boolean, desc: 'Optional working-hours toggle for the inbox', required: false
 
   def execute(inbox_id:, working_hours_json:, working_hours_enabled: nil)
+    ensure_account_administrator!
+
     inbox = account.inboxes.active.find(inbox_id)
     entries = parse_working_hours!(working_hours_json)
 

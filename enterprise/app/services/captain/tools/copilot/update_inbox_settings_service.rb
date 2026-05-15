@@ -15,6 +15,8 @@ class Captain::Tools::Copilot::UpdateInboxSettingsService < Captain::Tools::Copi
   param :allow_messages_after_resolved, type: :boolean, desc: 'Optional setting for messages after resolved conversations', required: false
 
   def execute(inbox_id:, **kwargs)
+    ensure_account_administrator!
+
     inbox = account.inboxes.active.find(inbox_id)
     attributes = inbox_update_attributes(kwargs)
     raise ArgumentError, 'No supported inbox settings were provided' if attributes.blank?

@@ -48,6 +48,28 @@ RSpec.describe Captain::Tools::Copilot::UpdateInboxWorkingHoursService do
     expect(result).to include('working_hours_json must be valid JSON')
   end
 
+  it 'rejects inboxes outside the assistant account' do
+    other_inbox = create(:inbox, account: create(:account), working_hours_enabled: false)
+    schedule = [{ day_of_week: 1, open_hour: 10, open_minutes: 0, close_hour: 18, close_minutes: 0 }]
+
+    result = service.execute(inbox_id: other_inbox.id, working_hours_json: schedule.to_json, working_hours_enabled: true)
+
+    expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
+    expect(other_inbox.reload.working_hours_enabled).to be(false)
+  end
+
+  it 'rejects direct non-admin execution as defense in depth' do
+    agent = create(:user, account: account)
+    service = described_class.new(assistant, user: agent)
+    inbox = create(:inbox, account: account, working_hours_enabled: false)
+    schedule = [{ day_of_week: 1, open_hour: 10, open_minutes: 0, close_hour: 18, close_minutes: 0 }]
+
+    result = service.execute(inbox_id: inbox.id, working_hours_json: schedule.to_json, working_hours_enabled: true)
+
+    expect(result).to include('Account administrator permission is required')
+    expect(inbox.reload.working_hours_enabled).to be(false)
+  end
+
   it 'does not mutate until the backend confirmation gate permits execution' do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
     inbox = create(:inbox, account: account, working_hours_enabled: false)

@@ -1007,6 +1007,18 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'update_user_availability',
+          title: 'Update User Availability',
+          description: 'Update an account user availability and optional auto-offline routing setting',
+          group_name: 'Account',
+          icon: 'presence-available',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::UpdateUserAvailabilityService,
+          risk_level: 'high',
+          requires_confirmation: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'deactivate_user',
           title: 'Deactivate User',
           description: 'Deactivate an account user by removing their account membership, team memberships, and inbox memberships',

@@ -12,26 +12,10 @@ class Captain::Tools::Copilot::ListAccountUsersService < Captain::Tools::Copilot
   param :limit, type: :number, desc: 'Maximum number of users to return', required: false
 
   def execute(query: nil, role: nil, availability: nil, limit: nil)
-    account_users = account.account_users.includes(:user, :custom_role).order(:role, :user_id)
-    if query.present?
-      account_users = account_users.joins(:user).where('LOWER(users.name) ILIKE :query OR LOWER(users.email) ILIKE :query',
-                                                       query: "%#{query.to_s.downcase}%")
-    end
-    account_users = account_users.where(role: role) if role.present?
-    account_users = account_users.where(availability: availability) if availability.present?
-
-    total_count = account_users.count
+    account_users = filtered_account_users(query: query, role: role, availability: availability)
     records = account_users.limit(parse_limit(limit)).map { |account_user| user_payload(account_user) }
 
-    formatted_payload(
-      filters: {
-        query: query,
-        role: role,
-        availability: availability
-      }.compact,
-      total_count: total_count,
-      users: records
-    )
+    formatted_payload(filters: { query: query, role: role, availability: availability }.compact, total_count: account_users.count, users: records)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -44,6 +28,19 @@ class Captain::Tools::Copilot::ListAccountUsersService < Captain::Tools::Copilot
 
   def operator_can_view_account_people?
     account_administrator? || account_people_directory_permission?
+  end
+
+  def filtered_account_users(query:, role:, availability:)
+    scope = account.account_users.includes(:user, :custom_role).order(:role, :user_id)
+    if query.present?
+      scope = scope.joins(:user).where(
+        'LOWER(users.name) ILIKE :query OR LOWER(users.email) ILIKE :query',
+        query: "%#{query.to_s.downcase}%"
+      )
+    end
+    scope = scope.where(role: role) if role.present?
+    scope = scope.where(availability: availability) if availability.present?
+    scope
   end
 
   def account_people_directory_permission?
@@ -68,6 +65,7 @@ class Captain::Tools::Copilot::ListAccountUsersService < Captain::Tools::Copilot
       email: user.email,
       role: account_user.role,
       availability: account_user.availability,
+      auto_offline: account_user.auto_offline,
       custom_role_id: account_user.custom_role_id,
       custom_role_name: account_user.custom_role&.name,
       team_ids: team_ids_for(user.id),

@@ -59,6 +59,18 @@ RSpec.describe Captain::Tools::Copilot::UpdateCaptainInboxAutoReplyModeService d
     expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
   end
 
+  it 'rejects direct non-admin execution as defense in depth' do
+    agent = create(:user, account: account)
+    service = described_class.new(assistant, user: agent)
+    inbox = create(:inbox, account: account)
+    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant, auto_reply_mode: CaptainInbox::AUTO_REPLY_ALWAYS)
+
+    result = service.execute(inbox_id: inbox.id, auto_reply_mode: CaptainInbox::AUTO_REPLY_NEVER)
+
+    expect(result).to include('Account administrator permission is required')
+    expect(captain_inbox.reload.auto_reply_mode).to eq(CaptainInbox::AUTO_REPLY_ALWAYS)
+  end
+
   it 'does not mutate until the backend confirmation gate permits execution' do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
     inbox = create(:inbox, account: account)

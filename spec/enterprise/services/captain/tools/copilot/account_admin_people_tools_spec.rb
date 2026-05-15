@@ -59,6 +59,50 @@ RSpec.describe 'Captain account admin people copilot tools' do
     end
   end
 
+  describe Captain::Tools::Copilot::UpdateUserAvailabilityService do
+    let(:service) { described_class.new(assistant, user: admin) }
+
+    it 'updates an account user availability and auto-offline setting' do
+      operator = create(:user, account: account)
+
+      payload = JSON.parse(service.execute(user_id: operator.id, availability: 'busy', auto_offline: false))
+
+      expect(payload['action']).to eq('update_user_availability')
+      expect(payload['updated_fields']).to contain_exactly('availability', 'auto_offline')
+      expect(payload['user']).to include('id' => operator.id, 'availability' => 'busy', 'auto_offline' => false)
+      expect(AccountUser.find_by!(account: account, user: operator)).to have_attributes(availability: 'busy', auto_offline: false)
+    end
+
+    it 'rejects users outside the assistant account' do
+      other_user = create(:user, account: create(:account))
+
+      result = service.execute(user_id: other_user.id, availability: 'offline')
+
+      expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
+    end
+
+    it 'rejects direct non-admin execution as defense in depth' do
+      agent = create(:user, account: account)
+      service = described_class.new(assistant, user: agent)
+      operator = create(:user, account: account)
+
+      result = service.execute(user_id: operator.id, availability: 'busy')
+
+      expect(result).to include('Account administrator permission is required')
+      expect(AccountUser.find_by!(account: account, user: operator).availability).to eq('online')
+    end
+
+    it 'does not mutate until the backend confirmation gate permits execution' do
+      allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
+      operator = create(:user, account: account)
+
+      payload = JSON.parse(service.execute(user_id: operator.id, availability: 'offline'))
+
+      expect(payload['message']).to include('Operator confirmation is required')
+      expect(AccountUser.find_by!(account: account, user: operator).availability).to eq('online')
+    end
+  end
+
   describe Captain::Tools::Copilot::DeactivateUserService do
     let(:service) { described_class.new(assistant, user: admin) }
 
@@ -243,7 +287,7 @@ RSpec.describe 'Captain account admin people copilot tools' do
 
     it 'registers write tools as assistant-only high-risk confirmation tools' do
       tool_ids = %w[
-        create_user_invite update_user_role deactivate_user reactivate_user
+        create_user_invite update_user_role update_user_availability deactivate_user reactivate_user
         assign_user_to_team remove_user_from_team create_team update_team archive_team
       ]
 

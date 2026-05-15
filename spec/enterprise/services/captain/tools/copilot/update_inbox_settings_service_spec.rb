@@ -46,6 +46,17 @@ RSpec.describe Captain::Tools::Copilot::UpdateInboxSettingsService do
     expect(result).to start_with('ERROR: ActiveRecord::RecordNotFound')
   end
 
+  it 'rejects direct non-admin execution as defense in depth' do
+    agent = create(:user, account: account)
+    service = described_class.new(assistant, user: agent)
+    inbox = create(:inbox, account: account, name: 'Old')
+
+    result = service.execute(inbox_id: inbox.id, name: 'New')
+
+    expect(result).to include('Account administrator permission is required')
+    expect(inbox.reload.name).to eq('Old')
+  end
+
   it 'does not mutate until the backend confirmation gate permits execution' do
     allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
     inbox = create(:inbox, account: account, name: 'Old')

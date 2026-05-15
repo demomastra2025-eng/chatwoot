@@ -29,6 +29,7 @@ class Captain::Tools::Copilot::AccountAdminPeopleTool < Captain::Tools::Copilot:
       email: user.email,
       role: account_user.role,
       availability: account_user.availability,
+      auto_offline: account_user.auto_offline,
       custom_role_id: account_user.custom_role_id,
       custom_role_name: account_user.custom_role&.name,
       team_ids: team_ids_for(user.id),
