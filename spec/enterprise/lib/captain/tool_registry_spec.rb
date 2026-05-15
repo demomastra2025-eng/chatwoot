@@ -18,6 +18,17 @@ RSpec.describe Captain::ToolRegistry do
         'update_captain_scenario',
         'set_captain_scenario_status',
         'delete_captain_scenario',
+        'list_captain_knowledge_documents',
+        'get_captain_knowledge_document',
+        'create_captain_knowledge_document',
+        'update_captain_knowledge_document',
+        'resync_captain_knowledge_document',
+        'delete_captain_knowledge_document',
+        'list_captain_knowledge_entries',
+        'get_captain_knowledge_entry',
+        'create_captain_knowledge_entry',
+        'update_captain_knowledge_entry',
+        'delete_captain_knowledge_entry',
         'search_documentation',
         'list_captain_documents',
         'faq_lookup',
@@ -218,6 +229,17 @@ RSpec.describe Captain::ToolRegistry do
       update_captain_scenario
       set_captain_scenario_status
       delete_captain_scenario
+      list_captain_knowledge_documents
+      get_captain_knowledge_document
+      create_captain_knowledge_document
+      update_captain_knowledge_document
+      resync_captain_knowledge_document
+      delete_captain_knowledge_document
+      list_captain_knowledge_entries
+      get_captain_knowledge_entry
+      create_captain_knowledge_entry
+      update_captain_knowledge_entry
+      delete_captain_knowledge_entry
       add_appointment_payment
       get_kaspi_pay_integration_status
       start_kaspi_pay_connection

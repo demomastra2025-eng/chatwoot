@@ -142,6 +142,66 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(Captain::Scenario.where(account: account, title: 'Sensitive Scenario')).not_to exist
   end
 
+  it 'redacts document-source arguments in confirmation previews' do
+    gate = described_class.new(
+      copilot_thread: copilot_thread,
+      tool_definition: {
+        id: 'create_captain_knowledge_document',
+        title: 'Create Captain Knowledge Document',
+        risk_level: 'high',
+        requires_confirmation: true
+      },
+      arguments: {
+        assistant_id: assistant.id,
+        name: 'Docs',
+        external_link: 'https://docs.example.test/page?token=abc',
+        source_text: 'Raw source text should not persist',
+        artifact_id: 'signed-artifact-id',
+        import_profile_json: { metadata: 'internal metadata', content: 'hidden content' }.to_json
+      },
+      user: user
+    )
+
+    payload = JSON.parse(gate.call)
+    preview = payload.dig('data', 'arguments_preview')
+    pending_preview = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'arguments_preview')
+
+    expect(preview).to include('[FILTERED]')
+    expect(preview).not_to include('docs.example.test')
+    expect(preview).not_to include('Raw source text')
+    expect(preview).not_to include('signed-artifact-id')
+    expect(preview).not_to include('internal metadata')
+    expect(pending_preview).not_to include('hidden content')
+  end
+
+  it 'redacts knowledge-entry question and answer arguments in confirmation previews' do
+    gate = described_class.new(
+      copilot_thread: copilot_thread,
+      tool_definition: {
+        id: 'create_captain_knowledge_entry',
+        title: 'Create Captain Knowledge Entry',
+        risk_level: 'high',
+        requires_confirmation: true
+      },
+      arguments: {
+        assistant_id: assistant.id,
+        question: 'How do I pay?',
+        answer: 'Use the invoice portal.',
+        status: 'approved'
+      },
+      user: user
+    )
+
+    payload = JSON.parse(gate.call)
+    preview = payload.dig('data', 'arguments_preview')
+    pending_preview = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'arguments_preview')
+
+    expect(preview).to include('[FILTERED]')
+    expect(preview).not_to include('How do I pay?')
+    expect(preview).not_to include('Use the invoice portal.')
+    expect(pending_preview).not_to include('Use the invoice portal.')
+  end
+
   it 'expires stale confirmation requests' do
     service = Captain::Tools::Copilot::SendMessageToConversationService.new(
       assistant,
