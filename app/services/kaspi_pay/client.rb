@@ -30,6 +30,34 @@ class KaspiPay::Client
     get('/internal/kaspi/qr/status', { qrOperationId: operation_id }, session_headers)
   end
 
+  def create_invoice(phone_number:, amount:, comment: nil)
+    post('/internal/kaspi/invoice/create', { phoneNumber: phone_number, amount: amount, comment: comment }.compact, session_headers)
+  end
+
+  def invoice_details(operation_id)
+    get('/internal/kaspi/invoice/details', { operationId: operation_id }, session_headers)
+  end
+
+  def cancel_invoice(operation_id)
+    post('/internal/kaspi/invoice/cancel', { operationId: operation_id }, session_headers)
+  end
+
+  def operations_history(end_date:, last_transaction_date: nil, statement_period_code: 0)
+    post(
+      '/internal/kaspi/history/operations',
+      { endDate: end_date, lastTransactionDate: last_transaction_date, statementPeriodCode: statement_period_code }.compact,
+      session_headers
+    )
+  end
+
+  def operation_details(id, operation_method: 0)
+    post('/internal/kaspi/history/details', { id: id, operationMethod: operation_method }, session_headers)
+  end
+
+  def create_refund(qr_operation_id:, return_amount:)
+    post('/internal/kaspi/refund/create', { qrOperationId: qr_operation_id, returnAmount: return_amount }, session_headers)
+  end
+
   private
 
   attr_reader :adapter_url, :hook, :internal_secret

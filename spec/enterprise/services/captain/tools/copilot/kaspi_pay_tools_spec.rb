@@ -13,6 +13,7 @@ RSpec.describe 'Captain Kaspi Pay tools' do
     hook
     allow(KaspiPay::Client).to receive(:new).with(hook: hook).and_return(client)
     allow(KaspiPay::StatusPollJob).to receive(:perform_later)
+    allow_any_instance_of(Captain::Copilot::ToolConfirmationGate).to receive(:call).and_return(nil)
   end
 
   describe Captain::Tools::CreateKaspiPayPaymentTool do
@@ -88,6 +89,47 @@ RSpec.describe 'Captain Kaspi Pay tools' do
       expect(payload.dig('payment', 'amount')).to eq(20_000)
     end
 
+    it 'creates an assistant-scope remote invoice when payment_type is invoice' do
+      allow(client).to receive(:create_invoice).and_return(
+        'StatusCode' => 0,
+        'Data' => {
+          'Id' => 'assistant-invoice-1',
+          'OrderNumber' => 'order-1',
+          'Amount' => 20_000,
+          'Status' => 'RemotePaymentCreated'
+        }
+      )
+      service = described_class.new(assistant, user: admin, conversation: conversation)
+
+      payload = JSON.parse(
+        service.execute(
+          conversation_id: conversation.display_id,
+          amount: 20_000,
+          payment_type: 'invoice',
+          phone_number: '77011234567',
+          comment: 'Order 1'
+        )
+      )
+
+      expect(payload['action']).to eq('create_kaspi_pay_payment')
+      expect(payload.dig('payment', 'payment_type')).to eq('invoice')
+      expect(payload.dig('payment', 'kaspi_operation_id')).to eq('assistant-invoice-1')
+      expect(payload.dig('payment', 'kaspi_order_number')).to eq('order-1')
+      expect(client).to have_received(:create_invoice).with(phone_number: '77011234567', amount: 20_000, comment: 'Order 1')
+    end
+
+    it 'rejects an invalid assistant payment_type before calling Kaspi' do
+      service = described_class.new(assistant, user: admin, conversation: conversation)
+      allow(client).to receive(:create_qr)
+      allow(client).to receive(:create_invoice)
+
+      expect do
+        service.execute(conversation_id: conversation.display_id, amount: 20_000, payment_type: 'wire')
+      end.to raise_error(ArgumentError, /payment_type/)
+      expect(client).not_to have_received(:create_qr)
+      expect(client).not_to have_received(:create_invoice)
+    end
+
     it 'blocks non-admin account users from assistant-scope payment creation' do
       service = described_class.new(assistant, user: agent, conversation: conversation)
 
@@ -140,6 +182,42 @@ RSpec.describe 'Captain Kaspi Pay tools' do
     end
   end
 
+  describe Captain::Tools::Copilot::RefundKaspiPayPaymentService do
+    it 'requests a refund for an account payment without exposing Kaspi secrets' do
+      payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: conversation, amount: 15_000, status: 'paid',
+                                           kaspi_operation_id: '15530881826')
+      allow(client).to receive(:create_refund).with(qr_operation_id: '15530881826', return_amount: 5_000).and_return(
+        'StatusCode' => 0,
+        'Data' => { 'Status' => 'Returned' }
+      )
+      service = described_class.new(assistant, user: admin)
+
+      payload = JSON.parse(service.execute(payment_id: payment.id, amount: 5_000))
+
+      expect(payload['action']).to eq('refund_kaspi_pay_payment')
+      expect(payload.dig('payment', 'id')).to eq(payment.id)
+      expect(payload.to_json).not_to include('vtoken_secret')
+    end
+  end
+
+  describe Captain::Tools::Copilot::ReconcileKaspiPayPaymentService do
+    it 'marks the payment refunded when provider operation details include returns' do
+      payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: conversation, amount: 15_000, status: 'paid',
+                                           kaspi_operation_id: '15530881826')
+      allow(client).to receive(:operation_details).with('15530881826', operation_method: 0).and_return(
+        'StatusCode' => 0,
+        'Data' => { 'Returns' => [{ 'Amount' => 15_000 }] }
+      )
+      service = described_class.new(assistant, user: admin)
+
+      payload = JSON.parse(service.execute(payment_id: payment.id))
+
+      expect(payload['action']).to eq('reconcile_kaspi_pay_payment')
+      expect(payload.dig('payment', 'status')).to eq('refunded')
+      expect(payment.reload.status).to eq('refunded')
+    end
+  end
+
   describe 'assistant-only admin guards' do
     let(:payment) { create(:kaspi_pay_payment, account: account, integration_hook: hook, source: conversation) }
 
@@ -156,7 +234,9 @@ RSpec.describe 'Captain Kaspi Pay tools' do
         -> { Captain::Tools::Copilot::DisconnectKaspiPayService.new(assistant, user: agent).execute },
         -> { Captain::Tools::Copilot::SearchKaspiPayPaymentsService.new(assistant, user: agent).execute },
         -> { Captain::Tools::Copilot::GetKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id) },
-        -> { Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService.new(assistant, user: agent).execute(payment_id: payment.id) }
+        -> { Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService.new(assistant, user: agent).execute(payment_id: payment.id) },
+        -> { Captain::Tools::Copilot::RefundKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id, amount: 100) },
+        -> { Captain::Tools::Copilot::ReconcileKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id) }
       ]
 
       guarded_calls.each do |call|

@@ -19,17 +19,19 @@ class KaspiPay::AuthService
   end
 
   def send_phone(process_id:, phone_number:)
-    body = client.send_phone(process_id: process_id, phone_number: phone_number)
+    body = client.send_phone(process_id: process_id, phone_number: normalize_cashier_phone(phone_number))
     {
       process_id: body['processId'] || process_id,
       view: body['view'],
       description: body['desc'],
+      error: body['error'],
       success: body['success']
     }.compact
   end
 
   def verify_otp(process_id:, otp:, phone_number: nil)
-    normalize_session(client.verify_otp(process_id: process_id, otp: otp, phone_number: phone_number), phone_number)
+    normalized_phone = normalize_cashier_phone(phone_number)
+    normalize_session(client.verify_otp(process_id: process_id, otp: otp, phone_number: normalized_phone), normalized_phone)
   end
 
   def connect!(session:, settings: {})
@@ -44,6 +46,13 @@ class KaspiPay::AuthService
   private
 
   attr_reader :account, :client
+
+  def normalize_cashier_phone(phone_number)
+    digits = phone_number.to_s.gsub(/\D/, '')
+    return digits[1..] if digits.length == 11 && digits.start_with?('7', '8')
+
+    digits
+  end
 
   def normalize_session(body, phone_number)
     {

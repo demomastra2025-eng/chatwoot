@@ -34,6 +34,7 @@ class KaspiPay::PayloadBuilder
         paid_at: payment.paid_at,
         failed_at: payment.failed_at,
         kaspi_operation_id: payment.kaspi_operation_id,
+        kaspi_order_number: payment.kaspi_order_number,
         created_at: payment.created_at,
         updated_at: payment.updated_at
       }.compact

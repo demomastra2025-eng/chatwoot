@@ -1136,7 +1136,7 @@ class Captain::ToolRegistry
         definition(
           id: 'create_kaspi_pay_payment',
           title: 'Create Kaspi Pay Payment',
-          description: 'Create a Kaspi Pay QR payment link. Customer-facing agent scope is limited to the current conversation; assistant scope is account-admin only.',
+          description: 'Create a Kaspi Pay QR payment link or assistant-only remote invoice. Customer-facing agent scope is limited to the current conversation QR flow; assistant scope is account-admin only.',
           group_name: 'Payments',
           icon: 'qr-code',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1189,6 +1189,29 @@ class Captain::ToolRegistry
           icon: 'refresh',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'medium'
+        ),
+        definition(
+          id: 'refund_kaspi_pay_payment',
+          title: 'Refund Kaspi Pay Payment',
+          description: 'Admin-only: request a Kaspi Pay refund for one account payment',
+          group_name: 'Payments',
+          icon: 'arrow-counter-clockwise',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::RefundKaspiPayPaymentService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'reconcile_kaspi_pay_payment',
+          title: 'Reconcile Kaspi Pay Payment',
+          description: 'Admin-only: fetch Kaspi operation details and reconcile local payment/refund status',
+          group_name: 'Payments',
+          icon: 'arrows-clockwise',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ReconcileKaspiPayPaymentService,
           required_integrations: %w[kaspi_pay],
           risk_level: 'medium'
         ),

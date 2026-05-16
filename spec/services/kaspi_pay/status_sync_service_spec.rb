@@ -178,4 +178,25 @@ RSpec.describe KaspiPay::StatusSyncService do
     expect(client).to have_received(:qr_status).with('qr-stale')
     expect(stale_payment.reload.status).to eq('expired')
   end
+
+  it 'uses invoice details for remote invoice payments' do
+    invoice_payment = create(
+      :kaspi_pay_payment,
+      account: account,
+      integration_hook: hook,
+      source: create(:conversation, account: account),
+      payment_type: 'invoice',
+      amount: 15_000,
+      kaspi_operation_id: 'remote-1',
+      status: 'pending'
+    )
+    allow(client).to receive(:invoice_details).with('remote-1').and_return(
+      'StatusCode' => 0,
+      'Data' => { 'Status' => 'Processed', 'StatusDesc' => 'Платеж успешно совершен' }
+    )
+
+    described_class.new(payment: invoice_payment).sync!
+
+    expect(invoice_payment.reload.status).to eq('paid')
+  end
 end

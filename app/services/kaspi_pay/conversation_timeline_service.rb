@@ -63,6 +63,8 @@ class KaspiPay::ConversationTimelineService
       "Kaspi Pay payment failed: #{payment.amount} #{payment.currency}"
     when 'cancelled'
       "Kaspi Pay payment cancelled: #{payment.amount} #{payment.currency}"
+    when 'refunded'
+      "Kaspi Pay payment refunded: #{payment.amount} #{payment.currency}"
     else
       "Kaspi Pay payment status: #{payment.status}"
     end

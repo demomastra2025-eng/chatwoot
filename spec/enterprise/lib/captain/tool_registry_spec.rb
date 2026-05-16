@@ -50,6 +50,8 @@ RSpec.describe Captain::ToolRegistry do
         'search_kaspi_pay_payments',
         'get_kaspi_pay_payment',
         'sync_kaspi_pay_payment_status',
+        'refund_kaspi_pay_payment',
+        'reconcile_kaspi_pay_payment',
         'execute_macro',
         'get_account_health',
         'get_recent_account_errors',
@@ -190,6 +192,8 @@ RSpec.describe Captain::ToolRegistry do
       search_kaspi_pay_payments
       get_kaspi_pay_payment
       sync_kaspi_pay_payment_status
+      refund_kaspi_pay_payment
+      reconcile_kaspi_pay_payment
       execute_macro
       create_contact
       complete_task

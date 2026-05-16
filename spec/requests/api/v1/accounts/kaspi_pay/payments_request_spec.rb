@@ -44,7 +44,9 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
         source: appointment,
         amount: 15_000,
         idempotency_key: 'idem-1',
-        payment_type: 'qr'
+        payment_type: 'qr',
+        phone_number: nil,
+        comment: nil
       ).and_return(creator)
       allow(creator).to receive(:create_qr!).and_return(payment)
 
@@ -62,7 +64,7 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
       )
     end
 
-    it 'can attach a QR payment to a conversation when created from the reply box' do
+    it 'can attach a QR payment to a conversation when created from the reply box display id' do
       conversation = create(:conversation, account: account)
       creator = instance_double(KaspiPay::PaymentCreator)
       payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: conversation, amount: 15_000)
@@ -70,18 +72,71 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
         hook: hook,
         source: conversation,
         amount: 15_000,
-        idempotency_key: a_string_matching(/^kaspi-pay:conversation:#{conversation.id}:15000:qr:/),
-        payment_type: 'qr'
+        idempotency_key: a_string_matching(/^kaspi-pay:conversation:#{conversation.display_id}:15000:qr:/),
+        payment_type: 'qr',
+        phone_number: nil,
+        comment: nil
       ).and_return(creator)
       allow(creator).to receive(:create_qr!).and_return(payment)
 
       post "/api/v1/accounts/#{account.id}/kaspi_pay/payments",
-           params: { conversation_id: conversation.id, amount: 15_000 },
+           params: {
+             conversation_id: conversation.display_id,
+             amount: 15_000,
+             idempotency_key: "kaspi-pay:conversation:#{conversation.display_id}:15000:qr:browser"
+           },
            headers: admin.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:created)
-      expect(response.parsed_body).to include('id' => payment.id, 'amount' => 15_000)
+      expect(response.parsed_body).to include('id' => payment.id, 'amount' => 15_000, 'source_type' => 'Conversation', 'source_id' => conversation.id)
+    end
+
+    it 'creates a remote invoice payment when requested' do
+      conversation = create(:conversation, account: account)
+      creator = instance_double(KaspiPay::PaymentCreator)
+      payment = create(
+        :kaspi_pay_payment,
+        account: account,
+        integration_hook: hook,
+        source: conversation,
+        payment_type: 'invoice',
+        amount: 15_000,
+        kaspi_operation_id: 'remote-1',
+        kaspi_order_number: 'order-1'
+      )
+      allow(KaspiPay::PaymentCreator).to receive(:new).with(
+        hook: hook,
+        source: conversation,
+        amount: 15_000,
+        idempotency_key: a_string_matching(/^kaspi-pay:conversation:#{conversation.id}:15000:invoice:/),
+        payment_type: 'invoice',
+        phone_number: '77011234567',
+        comment: 'Order 1'
+      ).and_return(creator)
+      allow(creator).to receive(:create_invoice!).and_return(payment)
+
+      post "/api/v1/accounts/#{account.id}/kaspi_pay/payments",
+           params: { conversation_id: conversation.id, amount: 15_000, payment_type: 'invoice', phone_number: '77011234567', comment: 'Order 1' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(response.parsed_body).to include('payment_type' => 'invoice', 'kaspi_operation_id' => 'remote-1', 'kaspi_order_number' => 'order-1')
+    end
+
+    it 'rejects unsupported payment_type before creating or calling Kaspi' do
+      hook
+      allow(KaspiPay::PaymentCreator).to receive(:new)
+
+      post "/api/v1/accounts/#{account.id}/kaspi_pay/payments",
+           params: { conversation_id: create(:conversation, account: account).id, amount: 15_000, payment_type: 'wire' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include('code' => 'INVALID_PAYMENT_TYPE')
+      expect(KaspiPay::PaymentCreator).not_to have_received(:new)
     end
 
     it 'uses the appointment remaining amount when amount is omitted' do
@@ -93,7 +148,9 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
         source: appointment,
         amount: 13_000,
         idempotency_key: "kaspi-pay:appointment:#{appointment.id}:13000:qr",
-        payment_type: 'qr'
+        payment_type: 'qr',
+        phone_number: nil,
+        comment: nil
       ).and_return(creator)
       allow(creator).to receive(:create_qr!).and_return(payment)
 
@@ -129,6 +186,27 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(response.parsed_body).to include('id' => payment.id, 'amount' => 15_000, 'status' => 'pending')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/kaspi_pay/payments/:id/refund' do
+    it 'requests a refund for an account-scoped Kaspi payment' do
+      payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: appointment, amount: 15_000, status: 'paid',
+                                           kaspi_operation_id: '15530881826')
+      service = instance_double(KaspiPay::RefundService)
+      allow(KaspiPay::RefundService).to receive(:new).with(payment: payment, return_amount: 15_000).and_return(service)
+      allow(service).to receive(:refund!) do
+        payment.update!(status: 'refunded', failed_at: Time.current, metadata: { 'refund_amount' => 15_000 })
+        payment
+      end
+
+      post "/api/v1/accounts/#{account.id}/kaspi_pay/payments/#{payment.id}/refund",
+           params: { amount: 15_000 },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('id' => payment.id, 'status' => 'refunded', 'refund_amount' => 15_000)
     end
   end
 end

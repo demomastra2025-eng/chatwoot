@@ -4,7 +4,7 @@ class Captain::Tools::Copilot::SearchKaspiPayPaymentsService < Captain::Tools::C
   end
 
   description 'Admin-only: search Kaspi Pay payments within the current account by status, source, date, or source record'
-  param :status, type: :string, desc: 'Optional payment status: pending, paid, expired, failed, or cancelled', required: false
+  param :status, type: :string, desc: 'Optional payment status: pending, paid, expired, failed, cancelled, or refunded', required: false
   param :source_type, type: :string, desc: 'Optional source type: Conversation or Scheduling::Appointment', required: false
   param :conversation_id, type: :number, desc: 'Optional conversation display ID', required: false
   param :appointment_id, type: :number, desc: 'Optional appointment database ID', required: false

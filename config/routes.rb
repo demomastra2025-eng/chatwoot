@@ -545,7 +545,9 @@ Rails.application.routes.draw do
             end
           end
           namespace :kaspi_pay do
-            resources :payments, only: [:create, :show]
+            resources :payments, only: [:create, :show] do
+              post :refund, on: :member
+            end
           end
           resources :working_hours, only: [:update]
 

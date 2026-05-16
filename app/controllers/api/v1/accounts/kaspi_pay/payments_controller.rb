@@ -1,7 +1,7 @@
 class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseController
   before_action :check_authorization
   before_action :fetch_hook, only: [:create]
-  before_action :fetch_payment, only: [:show]
+  before_action :fetch_payment, only: [:show, :refund]
 
   rescue_from KaspiPay::Error, with: :render_kaspi_pay_error
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
@@ -13,15 +13,23 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
   def create
     return render_invalid_amount if payment_amount <= 0
 
-    payment = KaspiPay::PaymentCreator.new(
+    creator = KaspiPay::PaymentCreator.new(
       hook: @hook,
       source: payment_source,
       amount: payment_amount,
       idempotency_key: params[:idempotency_key].presence || default_idempotency_key,
-      payment_type: params[:payment_type].presence || 'qr'
-    ).create_qr!
+      payment_type: payment_type,
+      phone_number: params[:phone_number],
+      comment: params[:comment]
+    )
+    payment = payment_type == 'invoice' ? creator.create_invoice! : creator.create_qr!
 
     render json: payment_payload(payment), status: :created
+  end
+
+  def refund
+    payment = KaspiPay::RefundService.new(payment: @payment, return_amount: params[:amount]).refund!
+    render json: payment_payload(payment.reload)
   end
 
   private
@@ -42,8 +50,13 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
     @payment_source ||= if params[:appointment_id].present?
                           Current.account.scheduling_appointments.find(params[:appointment_id])
                         elsif params[:conversation_id].present?
-                          Current.account.conversations.find(params[:conversation_id])
+                          find_conversation_source(params[:conversation_id])
                         end
+  end
+
+  def find_conversation_source(identifier)
+    Current.account.conversations.find_by(id: identifier) ||
+      Current.account.conversations.find_by!(display_id: identifier)
   end
 
   def payment_amount
@@ -58,7 +71,7 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
   end
 
   def default_idempotency_key
-    parts = [source_key, payment_amount, params[:payment_type].presence || 'qr']
+    parts = [source_key, payment_amount, payment_type]
     parts << SecureRandom.uuid if payment_source.is_a?(Conversation) || payment_source.blank?
 
     "kaspi-pay:#{parts.join(':')}"
@@ -69,6 +82,17 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
     return "conversation:#{payment_source.id}" if payment_source.is_a?(Conversation)
 
     'manual'
+  end
+
+  def payment_type
+    return @payment_type if defined?(@payment_type)
+
+    requested_type = params[:payment_type].presence
+    if requested_type.present? && KaspiPay::Payment::PAYMENT_TYPES.exclude?(requested_type)
+      raise KaspiPay::Error.new('payment_type must be qr or invoice', code: 'INVALID_PAYMENT_TYPE')
+    end
+
+    @payment_type = requested_type || 'qr'
   end
 
   def payment_payload(payment)
@@ -85,7 +109,9 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
       receipt_url: payment.receipt_url,
       expires_at: payment.expires_at,
       paid_at: payment.paid_at,
-      kaspi_operation_id: payment.kaspi_operation_id
+      kaspi_operation_id: payment.kaspi_operation_id,
+      kaspi_order_number: payment.kaspi_order_number,
+      refund_amount: payment.metadata.to_h['refund_amount']
     }
   end
 

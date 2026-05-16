@@ -45,6 +45,28 @@ RSpec.describe KaspiPay::PaymentCreator do
     expect(KaspiPay::StatusPollJob).to have_received(:perform_later).with(payment.id)
   end
 
+  it 'persists the requested amount when Kaspi echoes a zero-like provider amount' do
+    allow(client).to receive(:create_qr).and_return(
+      'StatusCode' => 0,
+      'Data' => {
+        'QrOperationId' => 'qr-zero-echo',
+        'QrToken' => 'https://pay.kaspi.kz/pay/token',
+        'Amount' => '0.00'
+      }
+    )
+
+    payment = described_class.new(
+      hook: hook,
+      source: appointment,
+      amount: 100,
+      idempotency_key: 'zero-echo-payment'
+    ).create_qr!
+
+    expect(payment).to be_persisted
+    expect(payment.amount).to eq(100)
+    expect(payment.metadata['Amount']).to eq('0.00')
+  end
+
   it 'returns existing payment for the same account idempotency key without creating a duplicate' do
     existing = create(:kaspi_pay_payment, account: account, integration_hook: hook, idempotency_key: 'same-key')
     allow(client).to receive(:create_qr)
@@ -121,5 +143,51 @@ RSpec.describe KaspiPay::PaymentCreator do
     expect(activity.content).to include('Kaspi Pay')
     expect(activity.content_attributes.dig('data', 'type')).to eq('kaspi_pay_payment')
     expect(activity.content_attributes.dig('data', 'payment_id')).to eq(payment.id)
+  end
+
+  it 'rejects QR creation with a non-QR payment type before calling Kaspi' do
+    allow(client).to receive(:create_qr)
+
+    expect do
+      described_class.new(
+        hook: hook,
+        source: appointment,
+        amount: 15_000,
+        idempotency_key: 'invalid-type',
+        payment_type: 'wire'
+      ).create_qr!
+    end.to raise_error(KaspiPay::Error) { |error| expect(error.code).to eq('INVALID_PAYMENT_TYPE') }
+    expect(client).not_to have_received(:create_qr)
+  end
+
+  it 'creates a remote invoice payment and schedules status polling' do
+    conversation = create(:conversation, account: account)
+    allow(client).to receive(:create_invoice).and_return(
+      'StatusCode' => 0,
+      'Data' => {
+        'Id' => 'remote-123',
+        'Amount' => 12_000,
+        'ReceiptUrl' => 'https://kaspi.kz/remote/123',
+        'OrderNumber' => 'order-123',
+        'Status' => 'RemotePaymentCreated'
+      }
+    )
+
+    payment = described_class.new(
+      hook: hook,
+      source: conversation,
+      amount: 12_000,
+      idempotency_key: 'invoice-payment',
+      payment_type: 'invoice',
+      phone_number: '77011234567',
+      comment: 'Order 123'
+    ).create_invoice!
+
+    expect(client).to have_received(:create_invoice).with(phone_number: '77011234567', amount: 12_000, comment: 'Order 123')
+    expect(payment.payment_type).to eq('invoice')
+    expect(payment.kaspi_operation_id).to eq('remote-123')
+    expect(payment.kaspi_order_number).to eq('order-123')
+    expect(payment.receipt_url).to eq('https://kaspi.kz/remote/123')
+    expect(KaspiPay::StatusPollJob).to have_received(:perform_later).with(payment.id)
   end
 end

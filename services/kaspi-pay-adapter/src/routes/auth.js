@@ -111,7 +111,13 @@ router.post('/send-phone', async (req, res) => {
       `Kaspi auth send-phone result success=${smsSent} view=${body.view?.code || 'unknown'} type=${body.type || 'unknown'} actType=${body.actType || 'unknown'} isClosed=${body.isClosed ?? 'unknown'} error=${String(errorCode).slice(0, 80)} hasDescription=${Boolean(body.data?.desc)} bodyKeys=${bodyKeys} dataKeys=${dataKeys}`
     );
 
-    res.json({ success: smsSent, processId: session.processId, desc: body.data?.desc, view: body.view?.code });
+    res.json({
+      success: smsSent,
+      processId: session.processId,
+      desc: body.data?.desc,
+      view: body.view?.code,
+      ...(errorCode !== 'none' && { error: errorCode }),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

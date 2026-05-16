@@ -42,8 +42,8 @@ class KaspiPay::Payment < ApplicationRecord
   self.table_name = 'kaspi_pay_payments'
 
   PAYMENT_TYPES = %w[qr invoice].freeze
-  STATUSES = %w[pending paid expired failed cancelled].freeze
-  FINAL_STATUSES = %w[paid expired failed cancelled].freeze
+  STATUSES = %w[pending paid expired failed cancelled refunded].freeze
+  FINAL_STATUSES = %w[paid expired failed cancelled refunded].freeze
 
   belongs_to :account
   belongs_to :integration_hook, class_name: 'Integrations::Hook'

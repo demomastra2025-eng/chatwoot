@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "lint": "node --check server.js && node --check src/security.js && node --check src/routes/auth.js && node --check src/routes/qr.js && node --check test/security.test.js",
+    "lint": "node --check server.js && node --check src/security.js && node --check src/routes/auth.js && node --check src/routes/qr.js && node --check src/routes/invoice.js && node --check src/routes/history.js && node --check src/routes/refund.js && node --check test/security.test.js",
     "test": "node --test"
   },
   "dependencies": {

@@ -11,7 +11,9 @@ class KaspiPay::StatusSyncService
     'cancelled' => 'cancelled',
     'failed' => 'failed',
     'declined' => 'failed',
-    'error' => 'failed'
+    'error' => 'failed',
+    'returned' => 'refunded',
+    'refunded' => 'refunded'
   }.freeze
 
   def initialize(payment:, client: nil)
@@ -34,7 +36,7 @@ class KaspiPay::StatusSyncService
       metadata: payment.metadata.to_h.merge('last_status_response' => data)
     }
     attrs[:paid_at] = Time.current if new_status == 'paid'
-    attrs[:failed_at] = Time.current if new_status.in?(%w[expired failed cancelled])
+    attrs[:failed_at] = Time.current if new_status.in?(%w[expired failed cancelled refunded])
 
     KaspiPay::Payment.transaction do
       payment.update!(attrs)
@@ -50,7 +52,7 @@ class KaspiPay::StatusSyncService
   attr_reader :client, :payment
 
   def status_data
-    response = client.qr_status(payment.kaspi_operation_id)
+    response = payment.payment_type == 'invoice' ? client.invoice_details(payment.kaspi_operation_id) : client.qr_status(payment.kaspi_operation_id)
     if response['StatusCode'].present? && response['StatusCode'].to_i != 0
       raise KaspiPay::Error.new('Kaspi Pay status request failed', details: response)
     end
@@ -97,11 +99,11 @@ class KaspiPay::StatusSyncService
 
     Scheduling::Appointments::FinanceSyncService.new(appointment: payment.source).add_payment!(
       amount: payment.amount,
-      payment_method: 'kaspi_qr'
+      payment_method: payment.payment_type == 'invoice' ? 'kaspi_invoice' : 'kaspi_qr'
     )
 
     scheduling_payment = payment.source.payments
-                                .where(payment_method: 'kaspi_qr', payment_kind: 'payment', amount: payment.amount)
+                                .where(payment_method: payment.payment_type == 'invoice' ? 'kaspi_invoice' : 'kaspi_qr', payment_kind: 'payment', amount: payment.amount)
                                 .where.not(id: existing_payment_ids)
                                 .order(:created_at, :id)
                                 .last

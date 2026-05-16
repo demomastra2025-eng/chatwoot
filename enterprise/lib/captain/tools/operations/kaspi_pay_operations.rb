@@ -66,7 +66,7 @@ class Captain::Tools::Operations::KaspiPayOperations
     { action: 'disconnect_kaspi_pay', connected: false, hook_id: hook.id }
   end
 
-  def create_current_conversation_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil)
+  def create_current_conversation_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, phone_number: nil, comment: nil)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
     source = current_appointment || conversation
@@ -75,11 +75,14 @@ class Captain::Tools::Operations::KaspiPayOperations
       source: source,
       amount: amount.presence || source_amount(source),
       payment_type: payment_type,
-      idempotency_key: idempotency_key
+      idempotency_key: idempotency_key,
+      phone_number: phone_number,
+      comment: comment
     )
   end
 
-  def create_account_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, conversation_id: nil, appointment_id: nil)
+  def create_account_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, conversation_id: nil, appointment_id: nil,
+                             phone_number: nil, comment: nil)
     ensure_account_admin!
 
     source = source_for(conversation_id: conversation_id, appointment_id: appointment_id)
@@ -88,7 +91,9 @@ class Captain::Tools::Operations::KaspiPayOperations
       source: source,
       amount: amount.presence || source_amount(source),
       payment_type: payment_type,
-      idempotency_key: idempotency_key
+      idempotency_key: idempotency_key,
+      phone_number: phone_number,
+      comment: comment
     )
   end
 
@@ -140,6 +145,30 @@ class Captain::Tools::Operations::KaspiPayOperations
     }
   end
 
+  def refund_payment(payment_id:, amount:)
+    ensure_account_admin!
+
+    payment = account.kaspi_pay_payments.find(payment_id)
+    payment = KaspiPay::RefundService.new(payment: payment, return_amount: amount).refund!
+
+    {
+      action: 'refund_kaspi_pay_payment',
+      payment: KaspiPay::PayloadBuilder.payment(payment)
+    }
+  end
+
+  def reconcile_payment(payment_id:, operation_method: 0)
+    ensure_account_admin!
+
+    payment = account.kaspi_pay_payments.find(payment_id)
+    payment = KaspiPay::HistoryReconciliationService.new(payment: payment, operation_method: operation_method).sync!
+
+    {
+      action: 'reconcile_kaspi_pay_payment',
+      payment: KaspiPay::PayloadBuilder.payment(payment)
+    }
+  end
+
   def get_payment(payment_id:, sync: false)
     ensure_account_admin!
 
@@ -172,18 +201,21 @@ class Captain::Tools::Operations::KaspiPayOperations
     assistant.account
   end
 
-  def create_payment(source:, amount:, payment_type:, idempotency_key:)
-    raise ArgumentError, 'Only Kaspi Pay QR payments are supported' unless payment_type.to_s == DEFAULT_PAYMENT_TYPE
-
+  def create_payment(source:, amount:, payment_type:, idempotency_key:, phone_number: nil, comment: nil)
     normalized_amount = normalize_amount(amount)
+    normalized_payment_type = normalize_payment_type(payment_type)
     hook = enabled_hook!
-    payment = KaspiPay::PaymentCreator.new(
+    creator = KaspiPay::PaymentCreator.new(
       hook: hook,
       source: source,
       amount: normalized_amount,
-      idempotency_key: idempotency_key.presence || default_idempotency_key(source: source, amount: normalized_amount, payment_type: payment_type),
-      payment_type: payment_type
-    ).create_qr!
+      idempotency_key: idempotency_key.presence || default_idempotency_key(source: source, amount: normalized_amount,
+                                                                           payment_type: normalized_payment_type),
+      payment_type: normalized_payment_type,
+      phone_number: phone_number,
+      comment: comment
+    )
+    payment = normalized_payment_type == 'invoice' ? creator.create_invoice! : creator.create_qr!
 
     {
       action: 'create_kaspi_pay_payment',
@@ -194,7 +226,9 @@ class Captain::Tools::Operations::KaspiPayOperations
   def source_for(conversation_id:, appointment_id:)
     return account.scheduling_appointments.find(appointment_id) if appointment_id.present?
 
-    return account.conversations.find_by(display_id: conversation_id) || account.conversations.find(conversation_id) if conversation_id.present?
+    if conversation_id.present?
+      return account.conversations.find_by(id: conversation_id) || account.conversations.find_by!(display_id: conversation_id)
+    end
 
     conversation || raise(ArgumentError, 'conversation_id or appointment_id is required')
   end
@@ -243,6 +277,13 @@ class Captain::Tools::Operations::KaspiPayOperations
     value.to_i
   rescue ArgumentError, TypeError
     raise ArgumentError, 'amount must be a whole number in KZT'
+  end
+
+  def normalize_payment_type(payment_type)
+    normalized = payment_type.presence || DEFAULT_PAYMENT_TYPE
+    return normalized if normalized.in?(KaspiPay::Payment::PAYMENT_TYPES)
+
+    raise ArgumentError, 'payment_type must be qr or invoice'
   end
 
   def default_idempotency_key(source:, amount:, payment_type:)
