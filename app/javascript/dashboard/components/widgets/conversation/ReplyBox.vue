@@ -81,7 +81,7 @@ export default {
     CopilotReplyBottomPanel,
   },
   mixins: [inboxMixin, fileUploadMixin, keyboardEventListenerMixins],
-  emits: ['toggleEditorSize'],
+  emits: ['toggleEditorSize', 'update:popOutReplyBox'],
   setup() {
     const {
       uiSettings,
@@ -1546,6 +1546,7 @@ export default {
         @select-content-template="openContentTemplateModal"
         @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
+        @replace-text="addIntoEditor"
       />
     </Transition>
 

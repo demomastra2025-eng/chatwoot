@@ -84,6 +84,24 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
   end
 
+  it 'returns and redirects to an account-scoped external Fonoster recording URL' do
+    external_url = 'https://cloud.vconsult.kz/api/recordings/operator-call.wav'
+    call_session = create_recorded_call_session(
+      'external-recording-call',
+      recording_metadata.merge('storage_key' => nil, 'recording_ref' => external_url),
+      recording_ref: external_url
+    )
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'recording_url')).to eq(external_url)
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
+
+    expect(response).to redirect_to(external_url)
+  end
+
   it 'does not expose another account recording for the same call ref' do
     other_account = create(:account)
     create(:telephony_call_session, account: other_account, external_call_ref: 'other-recording-call', metadata: recording_metadata)
@@ -122,7 +140,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
 
-  def create_recorded_call_session(call_ref)
+  def create_recorded_call_session(call_ref, metadata = recording_metadata, recording_ref: metadata['storage_key'])
     conversation = create(:conversation, account: account, inbox: voice_inbox, contact: contact)
     create(
       :telephony_call_session,
@@ -132,8 +150,8 @@ RSpec.describe 'Telephony Calls API', type: :request do
       contact: contact,
       number_binding: voice_inbox.telephony_number_binding,
       external_call_ref: call_ref,
-      recording_ref: recording_metadata['storage_key'],
-      metadata: { 'recording' => recording_metadata }
+      recording_ref: recording_ref,
+      metadata: { 'recording' => metadata }
     )
   end
 

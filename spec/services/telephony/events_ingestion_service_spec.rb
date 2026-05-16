@@ -470,15 +470,37 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(other_session.reload.status).to eq('ringing')
     end
 
-    it 'does not resolve bridge event ownership from call_ref alone' do
+    it 'resolves bridge event ownership from a unique existing call_ref when late events omit account context' do
+      existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
+
+      result = described_class.new(
+        payload: {
+          event_key: 'evt-unique-call-ref-recording-ready',
+          callRef: 'call-retry-1',
+          event: 'recording_ready',
+          recordingUrl: 'https://cloud.vconsult.kz/api/recordings/call-retry-1.wav'
+        }
+      ).perform
+
+      expect(result).to eq(existing_call_session)
+      expect(account.telephony_events.find_by!(event_key: 'evt-unique-call-ref-recording-ready')).to be_processed
+      expect(result.reload.recording_ref).to eq('https://cloud.vconsult.kz/api/recordings/call-retry-1.wav')
+      expect(result.metadata.dig('recording', 'recording_url')).to eq('https://cloud.vconsult.kz/api/recordings/call-retry-1.wav')
+      expect(result.latest_voice_message.content_attributes.dig('data', 'recording_url')).to eq(
+        'https://cloud.vconsult.kz/api/recordings/call-retry-1.wav'
+      )
+    end
+
+    it 'does not resolve ambiguous bridge event ownership from call_ref alone' do
       other_account = create(:account)
-      create(:telephony_call_session, account: other_account, external_call_ref: 'unscoped-bridge-call-ref', status: 'ringing')
+      create(:telephony_call_session, account: other_account, external_call_ref: 'ambiguous-bridge-call-ref', status: 'ringing')
+      create(:telephony_call_session, account: account, external_call_ref: 'ambiguous-bridge-call-ref', status: 'ringing')
 
       expect do
         described_class.new(
           payload: {
-            event_key: 'evt-unscoped-bridge-call-ref',
-            call_ref: 'unscoped-bridge-call-ref',
+            event_key: 'evt-ambiguous-bridge-call-ref',
+            call_ref: 'ambiguous-bridge-call-ref',
             event: 'answered'
           }
         ).perform

@@ -154,6 +154,34 @@ describe('useCallSession', () => {
     ]);
   });
 
+  it('terminates active Fonoster calls through backend bridge release instead of local hangup only', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-active-bridge-release',
+      provider: 'fonoster',
+    });
+    callsStore.setCallActive('call-active-bridge-release');
+    const callSession = mountUseCallSession();
+
+    await callSession.endCall({
+      conversationId: 6,
+      inboxId: 4083,
+      provider: 'fonoster',
+      callSid: 'call-active-bridge-release',
+    });
+
+    expect(endClientCallMock).toHaveBeenCalledWith('fonoster');
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-active-bridge-release',
+      {
+        reason: 'operator_declined',
+        status: 'rejected',
+      }
+    );
+    expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('releases the backend call when claim succeeds but no SIP incoming call is available to answer', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

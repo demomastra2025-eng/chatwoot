@@ -54,16 +54,6 @@ export function useCallSession() {
     );
   });
 
-  const endCall = async ({ conversationId, inboxId, provider }) => {
-    if (provider !== 'fonoster') {
-      await VoiceAPI.leaveConference(inboxId, conversationId);
-    }
-
-    await WebphoneClient.endClientCall(provider);
-    durationTimer.stop();
-    callsStore.clearActiveCall();
-  };
-
   const claimErrorPayload = error => error?.response?.data || {};
 
   const claimFonosterIncomingCall = async callSid => {
@@ -96,6 +86,26 @@ export function useCallSession() {
       console.warn('Failed to release incoming call:', error);
       return null;
     }
+  };
+
+  const endCall = async ({ conversationId, inboxId, provider, callSid }) => {
+    if (provider === 'fonoster') {
+      await WebphoneClient.endClientCall(provider);
+      const releaseResult = await releaseFonosterIncomingCall(callSid, {
+        status: 'rejected',
+        reason: 'operator_declined',
+      });
+      if (!releaseResult) return;
+      durationTimer.stop();
+      callDuration.value = 0;
+      callsStore.dismissCall(callSid);
+      return;
+    }
+
+    await VoiceAPI.leaveConference(inboxId, conversationId);
+    await WebphoneClient.endClientCall(provider);
+    durationTimer.stop();
+    callsStore.clearActiveCall();
   };
 
   const joinCall = async ({

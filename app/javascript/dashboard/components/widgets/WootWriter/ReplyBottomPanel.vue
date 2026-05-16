@@ -138,6 +138,7 @@ export default {
     'selectWhatsappTemplate',
     'selectContentTemplate',
     'toggleQuotedReply',
+    'replaceText',
   ],
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
@@ -316,6 +317,9 @@ export default {
     },
     toggleInsertArticle() {
       this.$emit('toggleInsertArticle');
+    },
+    replaceText(text) {
+      this.$emit('replaceText', text);
     },
     async toggleCaptainForConversation() {
       if (this.isTogglingCaptain) return;

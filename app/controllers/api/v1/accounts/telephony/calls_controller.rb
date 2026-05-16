@@ -16,15 +16,18 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
 
   def show
     payload = @call_session.to_telephony_h
-    if recording_available?
-      payload[:recording_url] = recording_api_v1_account_telephony_call_path(Current.account.id, @call_session.external_call_ref)
-    end
+    payload[:recording_url] = recording_url_for_call_session if recording_available?
     payload[:bridge] = calls_service.find_remote(@call_session.external_call_ref) if parse_boolean(params[:include_bridge], default: false)
     render_payload(payload)
   end
 
   def recording
     authorize_recording_access!
+
+    if external_recording_url.present?
+      redirect_to external_recording_url, allow_other_host: true
+      return
+    end
 
     path = recording_file_path
     raise ActiveRecord::RecordNotFound, 'Recording could not be found' if path.blank?
@@ -82,7 +85,29 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_available?
-    recording_storage_key.present?
+    recording_storage_key.present? || external_recording_url.present?
+  end
+
+  def recording_url_for_call_session
+    external_recording_url || recording_api_v1_account_telephony_call_path(Current.account.id, @call_session.external_call_ref)
+  end
+
+  def external_recording_url
+    return @external_recording_url if defined?(@external_recording_url)
+
+    @external_recording_url = parsed_external_recording_url
+  end
+
+  def parsed_external_recording_url
+    candidate = recording_metadata['recording_url'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
+    return if candidate.blank?
+
+    uri = URI.parse(candidate.to_s)
+    return unless uri.is_a?(URI::HTTP) && uri.host.present?
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    nil
   end
 
   def recording_file_path

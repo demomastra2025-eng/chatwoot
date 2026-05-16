@@ -87,6 +87,7 @@ const handleEndCall = async () => {
     conversationId: call.conversationId,
     inboxId,
     provider,
+    callSid: call.callSid,
   });
 };
 

@@ -182,6 +182,9 @@ class Telephony::EventsIngestionService
     binding = resolve_number_binding
     return binding.account if binding.present?
 
+    call_session = uniquely_resolved_call_session
+    return call_session.account if call_session.present?
+
     channel = Channel::Voice.find_by(phone_number: inbound_number)
     return channel.account if channel.present?
 
@@ -197,6 +200,13 @@ class Telephony::EventsIngestionService
     raise unless uniqueness_conflict?(e.record, :external_call_ref)
 
     account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+  end
+
+  def uniquely_resolved_call_session
+    return if call_ref.blank?
+
+    sessions = Telephony::CallSession.where(external_call_ref: call_ref).limit(2).to_a
+    sessions.one? ? sessions.first : nil
   end
 
   def upsert_call_session!(call_session, account)
@@ -754,10 +764,26 @@ class Telephony::EventsIngestionService
   end
 
   def recording_url(call_session)
+    external_recording_url(call_session) || internal_recording_url(call_session)
+  end
+
+  def internal_recording_url(call_session)
     Rails.application.routes.url_helpers.recording_api_v1_account_telephony_call_path(
       account_id: call_session.account_id,
       call_ref: call_session.external_call_ref
     )
+  end
+
+  def external_recording_url(call_session)
+    candidate = call_recording_metadata(call_session)['recording_url'].presence || call_session.recording_ref.presence
+    return if candidate.blank?
+
+    uri = URI.parse(candidate.to_s)
+    return unless uri.is_a?(URI::HTTP) && uri.host.present?
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    nil
   end
 
   def recording_event_metadata
@@ -772,6 +798,7 @@ class Telephony::EventsIngestionService
       'source' => 'onelink_runtime',
       'ready_at' => (resolved_occurred_at || Time.current).iso8601,
       'recording_ref' => recording_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl'),
+      'recording_url' => recording_payload_value('recording_url', 'recordingUrl'),
       'storage_key' => recording_payload_value('storage_key', 'storageKey'),
       'byte_size' => recording_payload_value('byte_size', 'byteSize', 'file_size', 'fileSize')&.to_i,
       'content_type' => recording_payload_value('content_type', 'contentType', 'mime_type', 'mimeType'),
