@@ -131,35 +131,44 @@ class VoiceApplication {
     await answerCall(call);
     void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
 
+    let mediaStream;
+    try {
+      mediaStream = await this.startMediaStream(call);
+      if (!mediaStream) throw mediaStreamEstablishmentError('call.stream returned no media stream', 'call.stream');
+    } catch (error) {
+      return this.handleMediaStreamEstablishmentFailure({
+        error,
+        call,
+        session,
+        requestPayload,
+        routeDecision,
+        context: routeDecision
+      });
+    }
+
     const context = await session.bootstrap();
     this.registry?.update?.(callRef, { context, state: session.state });
 
     if (session.state === 'fallback') {
+      closeMediaStreamSafely(mediaStream);
       await this.fallbackResponder.greet(call);
       return { session, context, mode: 'fallback', completion: Promise.resolve() };
     }
 
     let bridge;
     try {
-      bridge = await this.startRealtimeBridge(call, session, context, requestPayload);
+      bridge = await this.startRealtimeBridge(call, session, context, requestPayload, mediaStream);
     } catch (error) {
       const reason = sanitizeReason(error?.reason || error?.message || 'realtime_unavailable');
       if (isMediaStreamEstablishmentError(error)) {
-        await session.safeEvent('media_stream_not_established', {
-          reason,
-          source: error.source || 'call.stream',
-          ...correlationPayload(session, requestPayload, routeDecision)
+        return this.handleMediaStreamEstablishmentFailure({
+          error,
+          call,
+          session,
+          requestPayload,
+          routeDecision,
+          context
         });
-        await session.close('media_stream_not_established', {
-          reason: 'media_stream_not_established',
-          final_status: 'failed',
-          incomplete_transcript: true,
-          include_partial_transcript: true,
-          source: error.source || 'call.stream'
-        });
-        this.registry?.close?.(callRef, 'media_stream_not_established');
-        await hangupSafely(call, 'media_stream_not_established');
-        return { session, context, mode: 'failed', completion: Promise.resolve(), reason: 'media_stream_not_established' };
       }
       session.state = 'fallback';
       await session.safeEvent('error', { scope: 'gemini_live', error_code: 'realtime_unavailable', error_message: reason, retryable: false });
@@ -229,11 +238,12 @@ class VoiceApplication {
     this.registry?.update?.(session.callRef, { routeDecision, state: 'failed' });
   }
 
-  async startRealtimeBridge(call, session, context, requestPayload = {}) {
-    const mediaStream = await this.startMediaStream(call);
+  async startRealtimeBridge(call, session, context, requestPayload = {}, existingMediaStream = null) {
+    const mediaStream = existingMediaStream || await this.startMediaStream(call);
     if (!mediaStream) throw mediaStreamEstablishmentError('call.stream returned no media stream', 'call.stream');
 
     let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
+    const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     let acceptingInput = true;
     let lastAudioOutLogAt = 0;
     let lastCallerTranscriptAt = null;
@@ -246,7 +256,6 @@ class VoiceApplication {
       context,
       sendContinuation: text => realtime?.sendText?.(text)
     });
-    const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
     const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
     const recordingWriter = this.createRecordingWriter(session, requestPayload, context);
     if (recordingWriter) {
@@ -509,6 +518,43 @@ class VoiceApplication {
     return { realtime, mediaStream, completion };
   }
 
+  async handleMediaStreamEstablishmentFailure({ error, call, session, requestPayload = {}, routeDecision = {}, context = {} }) {
+    const reason = sanitizeReason(error?.reason || error?.message || 'media_stream_not_established');
+    const eventContext = context || routeDecision;
+
+    if (!session.context) {
+      session.context = compactPayload({
+        account_id: routeDecision.account_id || routeDecision.accountId || session.accountId,
+        number_ref: routeDecision.number_ref || routeDecision.numberRef || session.numberRef,
+        conversation_id: routeDecision.conversation_id || routeDecision.conversationId
+      });
+    }
+
+    if (error.upstreamReason === 'start_stream_response_timeout') {
+      await session.safeEvent('start_stream_response_timeout', {
+        reason: 'start_stream_response_timeout',
+        source: error.source || 'fonoster_start_stream',
+        timeout_ms: error.timeoutMs,
+        ...correlationPayload(session, requestPayload, eventContext)
+      });
+    }
+    await session.safeEvent('media_stream_not_established', {
+      reason,
+      source: error.source || 'call.stream',
+      ...correlationPayload(session, requestPayload, eventContext)
+    });
+    await session.close('media_stream_not_established', {
+      reason: 'media_stream_not_established',
+      final_status: 'failed',
+      incomplete_transcript: true,
+      include_partial_transcript: true,
+      source: error.source || 'call.stream'
+    });
+    this.registry?.close?.(session.callRef, 'media_stream_not_established');
+    await hangupSafely(call, 'media_stream_not_established');
+    return { session, context: session.context || context, mode: 'failed', completion: Promise.resolve(), reason: 'media_stream_not_established' };
+  }
+
   async startMediaStream(call) {
     if (this.mediaStreamFactory) {
       try {
@@ -526,7 +572,14 @@ class VoiceApplication {
         format: streamConstants.wavFormat
       });
     } catch (error) {
-      throw mediaStreamEstablishmentError(error?.message || 'call.stream failed', 'call.stream');
+      const upstreamReason = error?.reason || error?.code || sanitizeReason(error?.message || '');
+      const wrapped = mediaStreamEstablishmentError(
+        upstreamReason || 'call.stream failed',
+        error?.source || 'call.stream'
+      );
+      wrapped.upstreamReason = upstreamReason;
+      wrapped.timeoutMs = error?.timeoutMs;
+      throw wrapped;
     }
   }
 
@@ -791,8 +844,12 @@ async function closePassiveRecording(passiveRecording) {
   } catch (_error) {
     // Recording finalization is best effort and must not block call cleanup.
   }
+  closeMediaStreamSafely(passiveRecording.mediaStream);
+}
+
+function closeMediaStreamSafely(mediaStream) {
   try {
-    passiveRecording.mediaStream?.close?.();
+    mediaStream?.close?.();
   } catch (_error) {
     // ignore media stream cleanup errors
   }
@@ -1854,17 +1911,17 @@ function loadStreamConstants() {
   try {
     const common = require('@fonoster/common');
     return {
-      audioIn: 'audio_in',
-      audioOut: 'audio_out',
+      audioIn: common.StreamMessageType?.AUDIO_IN || 'AUDIO_IN',
+      audioOut: common.StreamMessageType?.AUDIO_OUT || 'AUDIO_OUT',
       wavFormat: common.StreamAudioFormat?.WAV || 'WAV',
-      bothDirection: 'both'
+      bothDirection: common.StreamDirection?.BOTH || 'BOTH'
     };
   } catch (_error) {
     return {
-      audioIn: 'audio_in',
-      audioOut: 'audio_out',
+      audioIn: 'AUDIO_IN',
+      audioOut: 'AUDIO_OUT',
       wavFormat: 'WAV',
-      bothDirection: 'both'
+      bothDirection: 'BOTH'
     };
   }
 }

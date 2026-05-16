@@ -11,6 +11,7 @@ async function main() {
   const client = new OnelinkClient({
     baseUrl: config.railsBaseUrl,
     token: config.internalToken,
+    bridgeToken: config.bridgeToken,
     contextPath: config.contextPath,
     transcriptPath: config.transcriptPath,
     controlPath: config.controlPath,

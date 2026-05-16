@@ -107,6 +107,119 @@ test('startManagedVoiceStream uses Fonoster StartStream/Stream/StopStream native
   assert.equal(inputPayloads.length, 0, 'close must detach native transport listener');
 });
 
+test('startManagedVoiceStream fails fast when Fonoster StartStream response never arrives', async () => {
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write() {}
+  });
+  class HangingStartStream {
+    async run() {
+      return new Promise(() => {});
+    }
+  }
+  class FakeStopStream {
+    async run() {
+      return {};
+    }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-timeout', mediaSessionRef: 'media-session-timeout' },
+    voice: voiceTransport,
+    stream() { throw new Error('native managed stream should not use fallback call.stream'); }
+  };
+
+  await assert.rejects(
+    () => startManagedVoiceStream(call, {
+      direction: 'both',
+      format: 'wav',
+      startStreamResponseTimeoutMs: 5,
+      internals: { StartStream: HangingStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+    }),
+    error => {
+      assert.equal(error.reason, 'start_stream_response_timeout');
+      assert.equal(error.source, 'fonoster_start_stream');
+      assert.equal(error.timeoutMs, 5);
+      return true;
+    }
+  );
+});
+
+test('startManagedVoiceStream ignores late StartStream rejection after timeout', async () => {
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write() {}
+  });
+  const unhandledRejections = [];
+  const onUnhandledRejection = reason => unhandledRejections.push(reason);
+  class LateRejectingStartStream {
+    async run() {
+      return new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('late provider failure')), 20);
+      });
+    }
+  }
+  class FakeStopStream {
+    async run() {
+      return {};
+    }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-late-timeout', mediaSessionRef: 'media-session-late-timeout' },
+    voice: voiceTransport
+  };
+
+  process.on('unhandledRejection', onUnhandledRejection);
+  try {
+    await assert.rejects(
+      () => startManagedVoiceStream(call, {
+        direction: 'both',
+        format: 'wav',
+        startStreamResponseTimeoutMs: 5,
+        internals: { StartStream: LateRejectingStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+      }),
+      { reason: 'start_stream_response_timeout' }
+    );
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(unhandledRejections.length, 0);
+  } finally {
+    process.removeListener('unhandledRejection', onUnhandledRejection);
+  }
+});
+
+test('startManagedVoiceStream stops a native stream that starts after the timeout', async () => {
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write() {}
+  });
+  const stopRuns = [];
+  class LateResolvingStartStream {
+    async run() {
+      return new Promise(resolve => {
+        setTimeout(() => resolve({ startStreamResponse: { streamRef: 'late-managed-stream' } }), 20);
+      });
+    }
+  }
+  class FakeStopStream {
+    async run(payload) {
+      stopRuns.push(payload);
+      return {};
+    }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-late-resolve', mediaSessionRef: 'media-session-late-resolve' },
+    voice: voiceTransport
+  };
+
+  await assert.rejects(
+    () => startManagedVoiceStream(call, {
+      direction: 'both',
+      format: 'wav',
+      startStreamResponseTimeoutMs: 5,
+      internals: { StartStream: LateResolvingStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+    }),
+    { reason: 'start_stream_response_timeout' }
+  );
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.deepEqual(stopRuns, [{ mediaSessionRef: 'media-session-late-resolve', streamRef: 'late-managed-stream' }]);
+});
+
 test('loadFonosterInternalsFrom supports the @fonoster/voice 0.18 dist/verbs/Stream export path', () => {
   const calls = [];
   const expected = { StartStream: class {}, StopStream: class {}, Stream: class {} };
@@ -134,4 +247,55 @@ test('startManagedVoiceStream falls back to call.stream when native Fonoster int
 
   assert.equal(stream, fallbackStream);
   assert.deepEqual(call.streamCalls, [{ direction: 'both', format: 'wav' }]);
+});
+
+test('startManagedVoiceStream fails fast when fallback call.stream never returns', async () => {
+  const call = {
+    streamCalls: [],
+    stream(options) {
+      this.streamCalls.push(options);
+      return new Promise(() => {});
+    }
+  };
+
+  await assert.rejects(
+    () => startManagedVoiceStream(call, {
+      direction: 'both',
+      format: 'wav',
+      startStreamResponseTimeoutMs: 5,
+      internals: {}
+    }),
+    error => {
+      assert.equal(error.reason, 'start_stream_response_timeout');
+      assert.equal(error.source, 'fonoster_start_stream');
+      assert.equal(error.timeoutMs, 5);
+      return true;
+    }
+  );
+  assert.deepEqual(call.streamCalls, [{ direction: 'both', format: 'wav' }]);
+});
+
+test('startManagedVoiceStream closes a fallback stream that appears after the timeout', async () => {
+  const fallbackStream = new EventEmitter();
+  fallbackStream.closed = false;
+  fallbackStream.close = () => { fallbackStream.closed = true; };
+  const call = {
+    streamCalls: [],
+    stream(options) {
+      this.streamCalls.push(options);
+      return new Promise(resolve => setTimeout(() => resolve(fallbackStream), 20));
+    }
+  };
+
+  await assert.rejects(
+    () => startManagedVoiceStream(call, {
+      direction: 'both',
+      format: 'wav',
+      startStreamResponseTimeoutMs: 5,
+      internals: {}
+    }),
+    { reason: 'start_stream_response_timeout' }
+  );
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(fallbackStream.closed, true);
 });

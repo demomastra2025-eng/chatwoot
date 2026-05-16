@@ -1,10 +1,18 @@
 const { EventEmitter } = require('node:events');
 
 const defaultConstants = loadStreamConstants();
+const DEFAULT_START_STREAM_RESPONSE_TIMEOUT_MS = parsePositiveInteger(
+  process.env.VOICE_AGENT_START_STREAM_RESPONSE_TIMEOUT_MS,
+  3000
+);
 
 async function startManagedVoiceStream(call, options = {}) {
   const internals = options.internals || loadFonosterInternals();
-  const { internals: _ignoredInternals, ...streamOptions } = options;
+  const {
+    internals: _ignoredInternals,
+    startStreamResponseTimeoutMs = DEFAULT_START_STREAM_RESPONSE_TIMEOUT_MS,
+    ...streamOptions
+  } = options;
   const mediaSessionRef = mediaSessionRefFor(call, streamOptions);
   const format = streamOptions.format || defaultConstants.wavFormat;
 
@@ -12,10 +20,19 @@ async function startManagedVoiceStream(call, options = {}) {
     const stream = new internals.Stream();
     const startStream = new internals.StartStream(call.request, call.voice);
     const stopStream = new internals.StopStream(call.request, call.voice);
-    const response = await startStream.run({
-      mediaSessionRef,
-      ...streamOptions
-    });
+    const response = await waitForStartStreamResponse(
+      startStream.run({
+        mediaSessionRef,
+        ...streamOptions
+      }),
+      startStreamResponseTimeoutMs,
+      {
+        onLateResolve: lateResponse => stopLateManagedStream(stopStream, lateResponse, {
+          mediaSessionRef,
+          streamRef: streamOptions.streamRef
+        })
+      }
+    );
     const streamRef = trimText(response?.startStreamResponse?.streamRef || response?.streamRef || streamOptions.streamRef || '');
 
     stream.mediaSessionRef = mediaSessionRef;
@@ -36,7 +53,11 @@ async function startManagedVoiceStream(call, options = {}) {
   }
 
   if (!call || typeof call.stream !== 'function') return null;
-  return call.stream(streamOptions);
+  return waitForStartStreamResponse(
+    call.stream(streamOptions),
+    startStreamResponseTimeoutMs,
+    { onLateResolve: lateStream => closeLateStream(lateStream) }
+  );
 }
 
 function canUseNativeManagedStream(call, internals = {}) {
@@ -107,6 +128,57 @@ function emitPayload(stream, payload) {
   if (stream instanceof EventEmitter) stream.emit('payload', payload);
 }
 
+async function waitForStartStreamResponse(responsePromise, timeoutMs, { onLateResolve = null } = {}) {
+  const guardedResponsePromise = Promise.resolve(responsePromise);
+  let timedOut = false;
+  guardedResponsePromise.then(
+    response => {
+      if (!timedOut || typeof onLateResolve !== 'function') return;
+      try {
+        onLateResolve(response);
+      } catch (_error) {
+        // Late provider cleanup is best effort; the caller already failed fast.
+      }
+    },
+    () => {}
+  );
+
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return guardedResponsePromise;
+
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      const error = new Error('start_stream_response_timeout');
+      error.code = 'start_stream_response_timeout';
+      error.reason = 'start_stream_response_timeout';
+      error.source = 'fonoster_start_stream';
+      error.timeoutMs = timeoutMs;
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([guardedResponsePromise, timeout]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function stopLateManagedStream(stopStream, response, { mediaSessionRef, streamRef: fallbackStreamRef } = {}) {
+  const streamRef = trimText(response?.startStreamResponse?.streamRef || response?.streamRef || fallbackStreamRef || '');
+  if (!streamRef || typeof stopStream?.run !== 'function') return;
+  Promise.resolve(stopStream.run({ mediaSessionRef, streamRef })).catch(() => {});
+}
+
+function closeLateStream(stream) {
+  try {
+    stream?.close?.();
+  } catch (_error) {
+    // ignore late stream cleanup errors
+  }
+}
+
 function mediaSessionRefFor(call, options = {}) {
   return options.mediaSessionRef || options.media_session_ref || call?.request?.mediaSessionRef || call?.request?.media_session_ref || call?.mediaSessionRef || call?.media_session_ref;
 }
@@ -143,6 +215,11 @@ function loadStreamConstants() {
   } catch (_error) {
     return { wavFormat: 'WAV' };
   }
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function trimText(value) {

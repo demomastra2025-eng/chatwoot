@@ -153,6 +153,44 @@ test('OnelinkClient calls Rails inbound route and bridge lifecycle event APIs', 
   }
 });
 
+test('OnelinkClient uses bridge token for inbound route/events and AI token for AI callbacks', async () => {
+  const seen = await withServer((req, res, body) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/internal/voice/inbound/route') {
+      res.end(JSON.stringify({ action: 'ai', bridge_call_ref: JSON.parse(body).bridge_call_ref }));
+    } else if (req.url === '/internal/voice/inbound/event') {
+      res.end(JSON.stringify({ status: 'ok', event: JSON.parse(body).event }));
+    } else if (req.url === '/internal/voice/ai/context') {
+      res.end(JSON.stringify({ call_ref: JSON.parse(body).call_ref, ai: { provider: 'gemini-live' } }));
+    } else {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not_found' }));
+    }
+  });
+
+  try {
+    const client = new OnelinkClient({
+      baseUrl: seen.baseUrl,
+      token: 'ai-token',
+      bridgeToken: 'bridge-token',
+      timeoutMs: 1_000
+    });
+
+    await client.routeInbound({ call_ref: 'runtime-call-1', bridge_call_ref: 'bridge-call-1' });
+    await client.sendBridgeEvent({ event: 'session_started', call_ref: 'runtime-call-1', bridge_call_ref: 'bridge-call-1' });
+    await client.getContext({ call_ref: 'runtime-call-1' });
+
+    assert.equal(seen.requests[0].url, '/internal/voice/inbound/route');
+    assert.equal(seen.requests[0].headers.authorization, 'Bearer bridge-token');
+    assert.equal(seen.requests[1].url, '/internal/voice/inbound/event');
+    assert.equal(seen.requests[1].headers.authorization, 'Bearer bridge-token');
+    assert.equal(seen.requests[2].url, '/internal/voice/ai/context');
+    assert.equal(seen.requests[2].headers.authorization, 'Bearer ai-token');
+  } finally {
+    await seen.close();
+  }
+});
+
 test('OnelinkClient returns structured errors without leaking tokens', async () => {
   const seen = await withServer((_req, res) => {
     res.statusCode = 503;

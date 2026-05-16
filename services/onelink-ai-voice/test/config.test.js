@@ -28,6 +28,16 @@ test('loadConfig prefers AI voice internal token while preserving legacy fallbac
   assert.equal(loadConfig({ ONELINK_INTERNAL_TOKEN: 'legacy-token' }).internalToken, 'legacy-token');
 });
 
+test('loadConfig keeps bridge token separate from AI voice token', () => {
+  const config = loadConfig({
+    ONELINK_AI_VOICE_INTERNAL_TOKEN: 'ai-token',
+    TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN: 'bridge-token'
+  });
+
+  assert.equal(config.internalToken, 'ai-token');
+  assert.equal(config.bridgeToken, 'bridge-token');
+});
+
 test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tuning', () => {
   const config = loadConfig({
     VOICE_AGENT_ONELINK_AI_BASE_URL: 'http://rails:3000/',

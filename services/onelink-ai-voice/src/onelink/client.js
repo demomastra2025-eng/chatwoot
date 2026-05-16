@@ -4,6 +4,7 @@ class OnelinkClient {
   constructor({
     baseUrl,
     token,
+    bridgeToken,
     timeoutMs = 5_000,
     fetchImpl = globalThis.fetch,
     contextPath = '/internal/voice/ai/context',
@@ -21,6 +22,8 @@ class OnelinkClient {
     );
     this.token = token || process.env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET || process.env.ONELINK_AI_VOICE_INTERNAL_TOKEN ||
       process.env.ONELINK_INTERNAL_SECRET || process.env.ONELINK_INTERNAL_TOKEN || process.env.VOICE_AGENT_INTERNAL_TOKEN || '';
+    this.bridgeToken = bridgeToken || process.env.TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN || process.env.TELEPHONY_BRIDGE_ACCESS_TOKEN ||
+      process.env.TELEPHONY_BRIDGE_SHARED_SECRET || this.token;
     this.timeoutMs = timeoutMs;
     this.fetchImpl = fetchImpl;
     this.paths = {
@@ -65,7 +68,7 @@ class OnelinkClient {
   }
 
   routeInbound(payload = {}) {
-    return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload) });
+    return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload), token: this.bridgeToken });
   }
 
   async callTool(name, payload = {}, options = {}) {
@@ -79,10 +82,10 @@ class OnelinkClient {
   }
 
   sendBridgeEvent(payload = {}) {
-    return this.request('/internal/voice/inbound/event', { method: 'POST', body: normalizeKeys(payload) });
+    return this.request('/internal/voice/inbound/event', { method: 'POST', body: normalizeKeys(payload), token: this.bridgeToken });
   }
 
-  async request(path, { method = 'GET', query = null, body = null, headers: extraHeaders = {}, timeoutMs = this.timeoutMs } = {}) {
+  async request(path, { method = 'GET', query = null, body = null, headers: extraHeaders = {}, timeoutMs = this.timeoutMs, token = this.token } = {}) {
     const url = new URL(path, `${this.baseUrl}/`);
     if (query && typeof query === 'object') {
       Object.entries(query).forEach(([key, value]) => {
@@ -98,7 +101,7 @@ class OnelinkClient {
       accept: 'application/json',
       ...(body ? { 'content-type': 'application/json' } : {}),
       ...extraHeaders,
-      ...(this.token ? { authorization: `Bearer ${this.token}` } : {})
+      ...(token ? { authorization: `Bearer ${token}` } : {})
     };
 
     try {

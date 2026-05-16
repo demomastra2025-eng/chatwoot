@@ -23,6 +23,7 @@ function loadConfig(env = process.env) {
     ).replace(/\/+$/, ''),
     internalToken: env.VOICE_AGENT_ONELINK_AI_SHARED_SECRET || env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN ||
       env.VOICE_AGENT_INTERNAL_TOKEN || env.ONELINK_INTERNAL_SECRET || env.ONELINK_INTERNAL_TOKEN || '',
+    bridgeToken: env.TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN || env.TELEPHONY_BRIDGE_ACCESS_TOKEN || env.TELEPHONY_BRIDGE_SHARED_SECRET || '',
     contextPath: env.VOICE_AGENT_ONELINK_AI_CONTEXT_PATH || '/internal/voice/ai/context',
     transcriptPath: env.VOICE_AGENT_ONELINK_AI_TRANSCRIPT_PATH || '/internal/voice/ai/transcript',
     controlPath: env.VOICE_AGENT_ONELINK_AI_CONTROL_PATH || '/internal/voice/ai/control',
