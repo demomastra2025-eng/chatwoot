@@ -213,4 +213,57 @@ RSpec.describe Channel::Whatsapp do
       end
     end
   end
+
+  describe '#voice_enabled?' do
+    let(:account) { create(:account) }
+
+    before do
+      setup_service = instance_double(Whatsapp::WebhookSetupService)
+      allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(setup_service)
+      allow(setup_service).to receive(:perform)
+    end
+
+    it 'returns true only for embedded WhatsApp Cloud inboxes with calling enabled and account feature enabled' do
+      account.enable_features!('whatsapp_call')
+
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'embedded_signup', 'calling_enabled' => true },
+        validate_provider_config: false,
+        sync_templates: false
+      )
+
+      expect(channel.voice_enabled?).to be true
+    end
+
+    it 'returns false when the account feature is disabled' do
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'embedded_signup', 'calling_enabled' => true },
+        validate_provider_config: false,
+        sync_templates: false
+      )
+
+      expect(channel.voice_enabled?).to be false
+    end
+
+    it 'returns false for non embedded signup WhatsApp Cloud inboxes' do
+      account.enable_features!('whatsapp_call')
+
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'manual', 'calling_enabled' => true },
+        validate_provider_config: false,
+        sync_templates: false
+      )
+
+      expect(channel.voice_enabled?).to be false
+    end
+  end
 end

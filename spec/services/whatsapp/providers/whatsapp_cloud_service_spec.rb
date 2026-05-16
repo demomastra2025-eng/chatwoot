@@ -96,6 +96,90 @@ describe Whatsapp::Providers::WhatsappCloudService do
     end
   end
 
+  describe 'call action methods' do
+    let(:calls_url) { "https://graph.facebook.com/#{api_version}/123456789/calls" }
+    let(:messages_url) { "https://graph.facebook.com/#{api_version}/123456789/messages" }
+
+    it 'POSTs pre_accept with an SDP answer' do
+      stub_request(:post, calls_url)
+        .with(body: {
+          messaging_product: 'whatsapp',
+          call_id: 'WACALL',
+          action: 'pre_accept',
+          session: { sdp: 'sdp_answer', sdp_type: 'answer' }
+        }.to_json)
+        .to_return(status: 200, body: '{}', headers: response_headers)
+
+      expect(service.pre_accept_call('WACALL', 'sdp_answer')).to be true
+    end
+
+    it 'POSTs accept with an SDP answer' do
+      stub_request(:post, calls_url)
+        .with(body: {
+          messaging_product: 'whatsapp',
+          call_id: 'WACALL',
+          action: 'accept',
+          session: { sdp: 'sdp_answer', sdp_type: 'answer' }
+        }.to_json)
+        .to_return(status: 200, body: '{}', headers: response_headers)
+
+      expect(service.accept_call('WACALL', 'sdp_answer')).to be true
+    end
+
+    it 'POSTs reject and returns false on Meta failure' do
+      stub_request(:post, calls_url)
+        .with(body: { messaging_product: 'whatsapp', call_id: 'WACALL', action: 'reject' }.to_json)
+        .to_return(status: 400, body: '{}', headers: response_headers)
+
+      expect(service.reject_call('WACALL')).to be false
+    end
+
+    it 'POSTs terminate' do
+      stub_request(:post, calls_url)
+        .with(body: { messaging_product: 'whatsapp', call_id: 'WACALL', action: 'terminate' }.to_json)
+        .to_return(status: 200, body: '{}', headers: response_headers)
+
+      expect(service.terminate_call('WACALL')).to be true
+    end
+
+    it 'sends a call permission request interactive message' do
+      stub_request(:post, messages_url)
+        .with(body: hash_including(messaging_product: 'whatsapp', to: '15551234567', type: 'interactive'))
+        .to_return(status: 200, body: { messages: [{ id: 'wamid.permission' }] }.to_json, headers: response_headers)
+
+      expect(service.send_call_permission_request('15551234567')).to eq('messages' => [{ 'id' => 'wamid.permission' }])
+    end
+
+    it 'initiates outbound calls with connect action and SDP offer' do
+      stub_request(:post, calls_url)
+        .with(body: {
+          messaging_product: 'whatsapp',
+          to: '15551234567',
+          action: 'connect',
+          session: { sdp: 'sdp_offer', sdp_type: 'offer' }
+        }.to_json)
+        .to_return(status: 200, body: { calls: [{ id: 'wacall_1' }] }.to_json, headers: response_headers)
+
+      expect(service.initiate_call('15551234567', 'sdp_offer')).to eq('calls' => [{ 'id' => 'wacall_1' }])
+    end
+
+    it 'maps Meta error 138006 to NoCallPermission' do
+      stub_request(:post, calls_url)
+        .to_return(status: 400, body: { error: { code: '138006', error_user_msg: 'No call permission' } }.to_json, headers: response_headers)
+
+      expect { service.initiate_call('15551234567', 'sdp_offer') }
+        .to raise_error(Whatsapp::CallErrors::NoCallPermission, 'No call permission')
+    end
+
+    it 'maps non-permission errors with malformed bodies to CallFailed' do
+      stub_request(:post, calls_url)
+        .to_return(status: 502, body: '<html>502 Bad Gateway</html>', headers: { 'Content-Type' => 'text/html' })
+
+      expect { service.initiate_call('15551234567', 'sdp_offer') }
+        .to raise_error(Whatsapp::CallErrors::CallFailed, 'Failed to initiate call')
+    end
+  end
+
   describe '#send_interactive message' do
     context 'when called' do
       it 'calls message endpoints with button payload when number of items is less than or equal to 3' do

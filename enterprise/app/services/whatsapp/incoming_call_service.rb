@@ -1,20 +1,25 @@
 class Whatsapp::IncomingCallService
+  FAILURE_REASONS = %w[failed error rejected busy invalid_offer cancelled canceled].freeze
+
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    return unless inbox.account.feature_enabled?('whatsapp_call')
+    return unless calling_enabled?
 
-    calls = params[:calls]
-    return if calls.blank?
-
-    calls.each do |call_payload|
-      process_call_event(call_payload.with_indifferent_access)
-    end
+    Array(params[:calls]).each { |call_payload| handle_call_event(call_payload.with_indifferent_access) }
+    Array(params[:statuses]).each { |status_payload| handle_call_status(status_payload.with_indifferent_access) }
   end
 
   private
 
-  def process_call_event(call_payload)
+  def calling_enabled?
+    channel = inbox.channel
+    return channel.voice_enabled? if channel.respond_to?(:voice_enabled?)
+
+    inbox.account.feature_enabled?('whatsapp_call')
+  end
+
+  def handle_call_event(call_payload)
     case call_payload[:event]
     when 'connect' then handle_call_connect(call_payload)
     when 'terminate' then handle_call_terminate(call_payload)
@@ -22,57 +27,110 @@ class Whatsapp::IncomingCallService
     end
   end
 
+  # Meta sends outbound pickup as a status webhook. The `connect` event only
+  # means the WebRTC tunnel is ready and can arrive before the contact answers.
+  def handle_call_status(status_payload)
+    return unless status_payload[:type] == 'call'
+
+    call = Call.whatsapp.find_by(provider_call_id: status_payload[:id])
+    return unless call
+
+    case status_payload[:status]
+    when 'ACCEPTED' then mark_outbound_accepted(call, status_payload)
+    when 'RINGING' then nil
+    else Rails.logger.info "[WHATSAPP CALL] Unhandled call status: #{status_payload[:status]} for #{status_payload[:id]}"
+    end
+  end
+
+  def mark_outbound_accepted(call, status_payload)
+    transitioned = false
+
+    call.with_lock do
+      call.reload
+      if call.outgoing? && !call.in_progress? && !call.terminal?
+        started_at = status_timestamp(status_payload) || Time.current
+        call.update!(status: 'in_progress', started_at: started_at)
+        transitioned = true
+      end
+    end
+
+    return unless transitioned
+
+    Whatsapp::CallMessageBuilder.update_status!(call: call, status: 'in_progress', agent: call.accepted_by_agent)
+    update_conversation_call_status(call.conversation, 'in-progress', call.direction_label)
+    broadcast_outbound_accepted(call)
+  end
+
   def handle_call_connect(call_payload)
     provider_call_id = call_payload[:id]
-    direction = map_direction(call_payload[:direction])
+    call = Call.whatsapp.find_by(provider_call_id: provider_call_id)
 
-    # For outbound calls, a Call record already exists from initiate.
-    # Update it instead of creating a duplicate.
-    existing_call = Call.whatsapp.find_by(provider_call_id: provider_call_id)
-    if existing_call
-      sdp_answer = nil
-      transitioned = false
+    if call.nil?
+      return create_inbound_call(call_payload) if inbound_offer?(call_payload)
 
-      existing_call.with_lock do
-        existing_call.reload
-        Rails.logger.info "[WHATSAPP CALL] call_connect for existing call #{provider_call_id} (direction=#{direction})"
-        unless existing_call.terminal? || existing_call.in_progress?
-          sdp_answer = fix_sdp_setup(call_payload.dig(:session, :sdp))
-          existing_call.update!(
-            status: 'in_progress',
-            started_at: Time.current,
-            meta: (existing_call.meta || {}).merge('sdp_answer' => sdp_answer)
-          )
-          transitioned = true
-        end
-      end
-
-      if transitioned
-        Whatsapp::CallMessageBuilder.update_status!(call: existing_call, status: 'in_progress')
-        update_conversation_call_status(existing_call.conversation, 'in-progress', existing_call.direction_label)
-
-        if existing_call.media_session_id.present?
-          finalize_outbound_server_relay(existing_call, sdp_answer)
-        else
-          broadcast_outbound_call_connected(existing_call, sdp_answer)
-        end
-      end
-
+      Rails.logger.warn "[WHATSAPP CALL] Outbound connect for unknown call #{provider_call_id}; skipping"
       return
     end
 
+    return handle_outbound_connect(call, call_payload) if call.outgoing?
+
+    Rails.logger.info "[WHATSAPP CALL] Duplicate inbound connect for #{provider_call_id}; ignoring"
+  rescue ActiveRecord::RecordNotUnique
+    Rails.logger.warn "[WHATSAPP CALL] Duplicate provider_call_id received: #{provider_call_id}"
+  end
+
+  def inbound_offer?(call_payload)
+    call_payload.dig(:session, :sdp_type).to_s.downcase == 'offer'
+  end
+
+  def create_inbound_call(call_payload)
     contact = find_or_create_contact("+#{call_payload[:from]}")
     return unless contact
 
     conversation = find_or_create_conversation(contact)
     return unless conversation
 
-    call = create_call_record(call_payload, conversation, contact, direction)
+    call = create_call_record(call_payload, conversation, contact, :incoming)
     create_voice_call_message(conversation, call)
     update_conversation_call_status(conversation, 'ringing', call.direction_label)
     broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
-  rescue ActiveRecord::RecordNotUnique
-    Rails.logger.warn "[WHATSAPP CALL] Duplicate provider_call_id received: #{provider_call_id}"
+  end
+
+  def handle_outbound_connect(call, call_payload)
+    sdp_answer = fix_sdp_setup(call_payload.dig(:session, :sdp))
+    if sdp_answer.blank?
+      Rails.logger.warn "[WHATSAPP CALL] Outbound connect for #{call.provider_call_id} missing SDP answer"
+      return
+    end
+
+    stored = false
+    should_finalize_server_relay = false
+
+    call.with_lock do
+      call.reload
+      unless call.terminal?
+        meta = call.meta || {}
+        if meta['sdp_answer'].blank?
+          call.update!(meta: meta.merge('sdp_answer' => sdp_answer))
+          stored = true
+        end
+        should_finalize_server_relay = call.media_session_id.present? && call.meta&.dig('agent_offer_generated_at').blank?
+        sdp_answer = call.meta&.dig('sdp_answer') || sdp_answer
+      end
+    end
+
+    if call.media_session_id.present?
+      finalize_outbound_server_relay(call, sdp_answer) if should_finalize_server_relay
+    elsif stored
+      broadcast_outbound_call_connected(call, sdp_answer)
+    end
+  end
+
+  def mark_agent_offer_generated(call)
+    call.with_lock do
+      call.reload
+      call.update!(meta: (call.meta || {}).merge('agent_offer_generated_at' => Time.zone.now.to_i)) unless call.terminal?
+    end
   end
 
   def create_voice_call_message(conversation, call, user: nil)
@@ -92,32 +150,31 @@ class Whatsapp::IncomingCallService
       provider_call_id: call_payload[:id],
       direction: direction,
       status: 'ringing',
-      meta: { sdp_offer: call_payload.dig(:session, :sdp), ice_servers: default_ice_servers }
+      meta: { 'sdp_offer' => call_payload.dig(:session, :sdp), 'ice_servers' => default_ice_servers }
     )
   end
 
   def handle_call_terminate(call_payload)
-    provider_call_id = call_payload[:id]
-    duration = call_payload[:duration]&.to_i
-    end_reason = call_payload[:terminate_reason]
-
-    call = Call.whatsapp.find_by(provider_call_id: provider_call_id)
-    return unless call
+    call = Call.whatsapp.find_by(provider_call_id: call_payload[:id])
+    if call.nil?
+      Rails.logger.warn "[WHATSAPP CALL] Terminate for unknown call #{call_payload[:id]}; skipping"
+      return
+    end
 
     final_status = nil
+    duration = call_payload[:duration]&.to_i
+    end_reason = call_payload[:terminate_reason].to_s
     transitioned = false
 
     call.with_lock do
       call.reload
       unless call.terminal?
-        # Determine if the call was answered: check in_progress status, duration > 0,
-        # or accepted_by_agent_id presence (handles webhook race conditions)
-        was_answered = call.in_progress? || duration.to_i.positive? || call.accepted_by_agent_id.present?
-        final_status = was_answered ? 'completed' : 'no_answer'
+        final_status = derive_terminate_status(call, duration, end_reason)
         call.update!(
           status: final_status,
           duration_seconds: duration,
-          end_reason: end_reason
+          end_reason: end_reason,
+          meta: (call.meta || {}).merge('ended_at' => Time.zone.now.to_i)
         )
         transitioned = true
       end
@@ -130,9 +187,20 @@ class Whatsapp::IncomingCallService
     mapped = Whatsapp::CallMessageBuilder::CALL_TO_VOICE_STATUS[final_status] || final_status
     update_conversation_call_status(call.conversation, mapped, call.direction_label)
     broadcast_call_ended(call)
-
-    # Fetch recording from media server if a session was active.
     Whatsapp::CallRecordingFetchJob.perform_later(call.id) if call.media_session_id.present?
+  end
+
+  def derive_terminate_status(call, duration, reason)
+    normalized_reason = reason.to_s.downcase
+    return 'failed' if FAILURE_REASONS.any? { |failure_reason| normalized_reason.include?(failure_reason) }
+
+    answered?(call, duration) ? 'completed' : 'no_answer'
+  end
+
+  # For outbound calls, accepted_by_agent_id is the initiating agent, not proof
+  # that the WhatsApp contact answered.
+  def answered?(call, duration)
+    call.in_progress? || duration.to_i.positive? || (call.incoming? && call.accepted_by_agent_id.present?)
   end
 
   def find_or_create_contact(phone_number)
@@ -191,8 +259,6 @@ class Whatsapp::IncomingCallService
       }
     }
 
-    # When media server is enabled, the browser does not need Meta's SDP since
-    # the Go sidecar handles the Meta-side peer connection directly.
     unless media_server_enabled
       data[:sdp_offer] = sdp_offer
       data[:ice_servers] = default_ice_servers
@@ -232,10 +298,23 @@ class Whatsapp::IncomingCallService
     ActionCable.server.broadcast("account_#{inbox.account_id}", payload)
   end
 
+  def broadcast_outbound_accepted(call)
+    payload = {
+      event: 'whatsapp_call.outbound_accepted',
+      data: {
+        account_id: inbox.account_id,
+        id: call.id,
+        call_id: call.provider_call_id,
+        conversation_id: call.conversation_id,
+        status: 'in-progress'
+      }
+    }
+
+    ActionCable.server.broadcast("account_#{inbox.account_id}", payload)
+  end
+
   # Server-relay outbound: deliver Meta's SDP answer to the media server so it
   # completes Peer A, then ask it for an SDP offer to send to the agent (Peer B).
-  # Broadcast that offer so the agent browser can negotiate directly with the
-  # media server.
   def finalize_outbound_server_relay(call, sdp_answer)
     client = Whatsapp::MediaServerClient.new
     client.set_meta_answer(call.media_session_id, sdp_answer: sdp_answer)
@@ -253,15 +332,15 @@ class Whatsapp::IncomingCallService
       }
     }
     ActionCable.server.broadcast("account_#{inbox.account_id}", payload)
+    mark_agent_offer_generated(call)
   rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
     Rails.logger.error "[WHATSAPP CALL] Failed to finalize outbound server-relay: #{e.message}"
   end
 
-  # Meta sends "USER_INITIATED" / "BUSINESS_INITIATED", map to Call enum values
-  def map_direction(raw_direction)
-    return :outgoing if raw_direction&.upcase == 'BUSINESS_INITIATED'
+  def status_timestamp(status_payload)
+    return if status_payload[:timestamp].blank?
 
-    :incoming
+    Time.zone.at(status_payload[:timestamp].to_i)
   end
 
   def default_ice_servers

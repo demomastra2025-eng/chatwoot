@@ -1,4 +1,5 @@
 class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseController
+  PERMISSION_REQUEST_THROTTLE = 5.minutes
   ALLOWED_PEER_ROLES = %w[listen_only participant].freeze
   ALLOWED_AUDIO_MODES = %w[replace mix].freeze
   ALLOWED_AUDIO_EXTENSIONS = %w[.ogg].freeze
@@ -197,12 +198,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
   def create_outbound_call_direct(conversation, contact_phone)
     result = conversation.inbox.channel.provider_service.initiate_call(contact_phone.delete('+'), params[:sdp_offer])
-    provider_call_id = result.dig('calls', 0, 'id') || result['call_id']
+    provider_call_id = extract_provider_call_id(result)
+    raise ArgumentError, 'Provider call id not returned' if provider_call_id.blank?
 
     current_account.calls.create!(
       provider: :whatsapp,
       inbox: conversation.inbox, conversation: conversation, contact: conversation.contact,
       provider_call_id: provider_call_id, direction: :outgoing, status: 'ringing',
+      accepted_by_agent_id: current_user.id,
       meta: { sdp_offer: params[:sdp_offer] }
     )
   end
@@ -226,13 +229,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     # Step 2: Send the media server's SDP offer to Meta to initiate the call
     sdp_offer = session_response['meta_sdp_offer']
     result = provider_service.initiate_call(contact_phone.delete('+'), sdp_offer)
-    provider_call_id = result.dig('calls', 0, 'id') || result['call_id']
+    provider_call_id = extract_provider_call_id(result)
     raise ArgumentError, 'Provider call id not returned' if provider_call_id.blank?
 
     current_account.calls.create!(
       provider: :whatsapp,
       inbox: conversation.inbox, conversation: conversation, contact: conversation.contact,
       provider_call_id: provider_call_id, direction: :outgoing, status: 'ringing',
+      accepted_by_agent_id: current_user.id,
       media_session_id: session_id,
       meta: { sdp_offer: sdp_offer }
     )
@@ -259,25 +263,81 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   def handle_no_call_permission(conversation)
-    last_requested = conversation.additional_attributes&.dig('call_permission_requested_at')
+    status = nil
 
-    return render json: { status: 'permission_pending' } if last_requested.present? && Time.zone.parse(last_requested) > 5.minutes.ago
+    conversation.with_lock do
+      if permission_request_throttled?(conversation)
+        status = 'permission_pending'
+        next
+      end
 
+      result = send_permission_request_safely(conversation)
+      if result
+        record_permission_request_wamid(conversation, result)
+        emit_permission_requested_activity(conversation)
+        status = 'permission_requested'
+      else
+        status = 'failed'
+      end
+    end
+
+    return render json: { error: 'Failed to send call permission request' }, status: :unprocessable_entity if status == 'failed'
+
+    render json: { status: status }, status: :unprocessable_entity
+  end
+
+  def send_permission_request_safely(conversation)
     contact_phone = conversation.contact.phone_number.delete('+')
-    result = conversation.inbox.channel.provider_service.send_call_permission_request(contact_phone)
-    return render json: { error: 'Failed to send call permission request' }, status: :unprocessable_entity unless result
+    conversation.inbox.channel.provider_service.send_call_permission_request(contact_phone, *permission_request_body_args(conversation))
+  rescue StandardError => e
+    Rails.logger.warn "[WHATSAPP CALL] permission_request failed: #{e.class} #{e.message}"
+    nil
+  end
 
-    attrs = (conversation.additional_attributes || {}).merge('call_permission_requested_at' => Time.current.iso8601)
+  def record_permission_request_wamid(conversation, result)
+    attrs = (conversation.additional_attributes || {}).merge(
+      'call_permission_requested_at' => Time.current.iso8601,
+      'call_permission_request_message_id' => result.dig('messages', 0, 'id')
+    )
     conversation.update!(additional_attributes: attrs)
-    render json: { status: 'permission_requested' }
+  end
+
+  def emit_permission_requested_activity(conversation)
+    content = I18n.t(
+      'conversations.activity.whatsapp_call.permission_requested',
+      contact_name: conversation.contact.name,
+      default: "#{conversation.contact.name} was sent a WhatsApp call permission request"
+    )
+    ::Conversations::ActivityMessageJob.perform_later(
+      conversation,
+      { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity, content: content }
+    )
   end
 
   def validate_whatsapp_calling(conversation)
     channel = conversation.inbox.channel
-    return 'Calling is only supported on WhatsApp Cloud inboxes' unless channel.is_a?(Channel::Whatsapp) && channel.provider == 'whatsapp_cloud'
-    return 'Calling is not enabled for this inbox' unless channel.provider_config['calling_enabled']
+    return 'Calling is only supported on WhatsApp Cloud inboxes' unless channel.is_a?(Channel::Whatsapp)
+    return 'Calling is not enabled for this inbox' unless channel.voice_enabled?
 
     nil
+  end
+
+  def extract_provider_call_id(result)
+    return if result.blank?
+
+    result.dig('calls', 0, 'id') || result.dig('messages', 0, 'id') || result['call_id']
+  end
+
+  def permission_request_throttled?(conversation)
+    timestamp = conversation.additional_attributes&.dig('call_permission_requested_at')
+    timestamp.present? && Time.zone.parse(timestamp) > PERMISSION_REQUEST_THROTTLE.ago
+  rescue ArgumentError, TypeError
+    false
+  end
+
+  def permission_request_body_args(conversation)
+    custom_body = conversation.inbox.channel.provider_config&.dig('call_permission_request_body').presence
+    custom_body ? [custom_body] : []
   end
 
   def ensure_whatsapp_call_enabled

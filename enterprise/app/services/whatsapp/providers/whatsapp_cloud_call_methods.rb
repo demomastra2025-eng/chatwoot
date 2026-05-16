@@ -1,4 +1,6 @@
 module Whatsapp::Providers::WhatsappCloudCallMethods
+  WHATSAPP_CALLING_API_VERSION_FALLBACK = 'v22.0'.freeze
+
   def pre_accept_call(call_id, sdp_answer)
     call_api('pre_accept_call', call_action_body(call_id, 'pre_accept', sdp_answer))
   end
@@ -15,9 +17,10 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
     call_api('terminate_call', { messaging_product: 'whatsapp', call_id: call_id, action: 'terminate' })
   end
 
-  def send_call_permission_request(to_phone_number, body_text = 'We would like to call you regarding your conversation.')
+  def send_call_permission_request(to_phone_number, body_text = I18n.t('conversations.messages.whatsapp.call_permission_request_body',
+                                                                       default: 'We would like to call you regarding your conversation.'))
     response = HTTParty.post(
-      "#{phone_id_path}/messages", headers: api_headers, body: permission_request_body(to_phone_number, body_text).to_json
+      "#{calls_phone_id_path}/messages", headers: api_headers, body: permission_request_body(to_phone_number, body_text).to_json
     )
 
     unless response.success?
@@ -30,12 +33,18 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
 
   def initiate_call(to_phone_number, sdp_offer)
     response = HTTParty.post(
-      "#{phone_id_path}/calls", headers: api_headers, body: initiate_call_body(to_phone_number, sdp_offer).to_json
+      "#{calls_phone_id_path}/calls", headers: api_headers, body: initiate_call_body(to_phone_number, sdp_offer).to_json
     )
     process_initiate_call_response(response)
   end
 
   private
+
+  def calls_phone_id_path
+    base = ENV.fetch('WHATSAPP_CLOUD_BASE_URL', 'https://graph.facebook.com')
+    version = GlobalConfigService.load('WHATSAPP_API_VERSION', WHATSAPP_CALLING_API_VERSION_FALLBACK)
+    "#{base}/#{version}/#{whatsapp_channel.provider_config['phone_number_id']}"
+  end
 
   def call_action_body(call_id, action, sdp_answer = nil)
     body = { messaging_product: 'whatsapp', call_id: call_id, action: action }
@@ -44,7 +53,7 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
   end
 
   def call_api(action_name, body)
-    url = "#{phone_id_path}/calls"
+    url = "#{calls_phone_id_path}/calls"
     Rails.logger.info "[WHATSAPP CALL] #{action_name} POST #{url} body=#{body.except(:session).to_json}"
     response = HTTParty.post(url, headers: api_headers, body: body.to_json)
     Rails.logger.error "[WHATSAPP CALL] #{action_name} failed: status=#{response.code} body=#{response.body}" unless response.success?
@@ -65,7 +74,7 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
 
   def initiate_call_body(to_phone_number, sdp_offer)
     {
-      messaging_product: 'whatsapp', to: to_phone_number, type: 'audio',
+      messaging_product: 'whatsapp', to: to_phone_number, action: 'connect',
       session: { sdp: sdp_offer, sdp_type: 'offer' }
     }
   end
@@ -73,13 +82,13 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
   def process_initiate_call_response(response)
     return response.parsed_response if response.success?
 
-    parsed = response.parsed_response
+    parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response : {}
     error_code = parsed&.dig('error', 'code')
     error_msg = parsed&.dig('error', 'error_user_msg') || 'Failed to initiate call'
     Rails.logger.error "[WHATSAPP CALL] initiate_call failed: status=#{response.code} body=#{response.body}"
 
-    raise Whatsapp::CallErrors::NoCallPermission, error_msg if error_code == 138_006
+    raise Whatsapp::CallErrors::NoCallPermission, error_msg if error_code.to_i == 138_006
 
-    raise StandardError, error_msg
+    raise Whatsapp::CallErrors::CallFailed, error_msg
   end
 end

@@ -2,22 +2,38 @@ class Whatsapp::CallPermissionReplyService
   pattr_initialize [:inbox!, :params!]
 
   def perform
-    return unless inbox.account.feature_enabled?('whatsapp_call')
+    return unless calling_enabled?
 
     reply_data = extract_reply_data
     return unless reply_data&.dig(:accepted)
 
-    contact = find_contact(reply_data[:from_number])
-    return unless contact
-
-    conversation = find_active_conversation(contact)
+    conversation = find_requesting_conversation(reply_data[:context_id])
     return unless conversation
 
     clear_permission_flag(conversation)
-    broadcast_permission_granted(contact, conversation)
+    emit_permission_granted_activity(conversation)
+    broadcast_permission_granted(conversation.contact, conversation)
   end
 
   private
+
+  def emit_permission_granted_activity(conversation)
+    content = I18n.t(
+      'conversations.activity.whatsapp_call.permission_granted',
+      contact_name: conversation.contact.name,
+      default: "#{conversation.contact.name} granted WhatsApp call permission"
+    )
+    ::Conversations::ActivityMessageJob.perform_later(
+      conversation,
+      { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity, content: content }
+    )
+  end
+
+  def calling_enabled?
+    return inbox.channel.voice_enabled? if inbox.channel.respond_to?(:voice_enabled?)
+
+    inbox.account.feature_enabled?('whatsapp_call')
+  end
 
   def extract_reply_data
     value = params.dig(:entry, 0, :changes, 0, :value)
@@ -28,22 +44,22 @@ class Whatsapp::CallPermissionReplyService
     accepted = reply[:response] == 'accept'
     Rails.logger.info "[WHATSAPP CALL] call_permission_reply from=#{message[:from]} accepted=#{accepted} permanent=#{reply[:is_permanent]}"
 
-    { from_number: message[:from], accepted: accepted }
+    { from_number: message[:from], accepted: accepted, context_id: message.dig(:context, :id) }
   end
 
-  def find_contact(from_number)
-    inbox.contact_inboxes.joins(:contact)
-         .where(contacts: { phone_number: "+#{from_number}" })
-         .first&.contact
-  end
+  def find_requesting_conversation(context_id)
+    return if context_id.blank?
 
-  def find_active_conversation(contact)
-    inbox.conversations.where(contact: contact).where.not(status: :resolved).last
+    inbox.conversations
+         .where.not(status: :resolved)
+         .where("additional_attributes ->> 'call_permission_request_message_id' = ?", context_id)
+         .first
   end
 
   def clear_permission_flag(conversation)
-    attrs = conversation.additional_attributes || {}
-    attrs.delete('call_permission_requested_at')
+    attrs = (conversation.additional_attributes || {}).except(
+      'call_permission_requested_at', 'call_permission_request_message_id'
+    )
     conversation.update!(additional_attributes: attrs)
   end
 

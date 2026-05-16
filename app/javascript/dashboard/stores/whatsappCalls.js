@@ -73,6 +73,12 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
       this.activeCall = callData;
     },
 
+    updateActiveCall(updates) {
+      if (this.activeCall) {
+        this.activeCall = { ...this.activeCall, ...updates };
+      }
+    },
+
     clearActiveCall() {
       this.activeCall = null;
       this.callTimerOffset = 0;

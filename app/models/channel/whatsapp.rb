@@ -40,6 +40,15 @@ class Channel::Whatsapp < ApplicationRecord
     'Whatsapp'
   end
 
+  # Meta WhatsApp Calling is only available for Cloud API channels provisioned
+  # through embedded signup and explicitly enabled for calling.
+  def voice_enabled?
+    provider == 'whatsapp_cloud' &&
+      provider_config['source'] == 'embedded_signup' &&
+      provider_config['calling_enabled'].present? &&
+      account.feature_enabled?('whatsapp_call')
+  end
+
   def provider_service
     if provider == 'whatsapp_cloud'
       Whatsapp::Providers::WhatsappCloudService.new(whatsapp_channel: self)

@@ -20,7 +20,6 @@ import {
   useWhatsappCallsStore,
   setOutboundCallProperty,
 } from 'dashboard/stores/whatsappCalls';
-import { startCallRecording } from 'dashboard/composables/useWhatsappCallSession';
 
 const props = defineProps({
   chat: {
@@ -182,6 +181,14 @@ const waitForOutboundIceGathering = pc =>
     };
   });
 
+const showPermissionStatusAlert = callStatus => {
+  const message =
+    callStatus === 'permission_requested'
+      ? t('WHATSAPP_CALL.PERMISSION_REQUESTED')
+      : t('WHATSAPP_CALL.PERMISSION_PENDING');
+  emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
+};
+
 /**
  * Server-relay mode: POST /initiate without SDP. The media server creates
  * Peer A (Meta-side) and later sends the agent Peer B offer via ActionCable
@@ -199,11 +206,7 @@ const initiateServerRelayCall = async () => {
       callStatus === 'permission_requested' ||
       callStatus === 'permission_pending'
     ) {
-      const message =
-        callStatus === 'permission_requested'
-          ? t('WHATSAPP_CALL.PERMISSION_REQUESTED')
-          : t('WHATSAPP_CALL.PERMISSION_PENDING');
-      emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
+      showPermissionStatusAlert(callStatus);
       return;
     }
 
@@ -229,6 +232,15 @@ const initiateServerRelayCall = async () => {
       },
     });
   } catch (err) {
+    const permissionStatus = err.response?.data?.status;
+    if (
+      permissionStatus === 'permission_requested' ||
+      permissionStatus === 'permission_pending'
+    ) {
+      showPermissionStatusAlert(permissionStatus);
+      return;
+    }
+
     const errorMessage =
       err.response?.data?.error || t('WHATSAPP_CALL.CALL_FAILED');
     emitter.emit(BUS_EVENTS.SHOW_ALERT, {
@@ -249,7 +261,6 @@ const initiateLegacyCall = async () => {
   isInitiatingCall.value = true;
   let pc = null;
   let localStream = null;
-  let recordCallId = null;
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     pc = new RTCPeerConnection({
@@ -265,8 +276,6 @@ const initiateLegacyCall = async () => {
       audio.autoplay = true;
       document.body.appendChild(audio);
       setOutboundCallProperty('audio', audio);
-      whatsappCallsStore.markActiveCallConnected();
-      if (recordCallId) startCallRecording(pc, localStream, recordCallId);
     };
 
     const offer = await pc.createOffer();
@@ -287,11 +296,7 @@ const initiateLegacyCall = async () => {
     ) {
       pc.close();
       localStream.getTracks().forEach(track => track.stop());
-      const message =
-        callStatus === 'permission_requested'
-          ? t('WHATSAPP_CALL.PERMISSION_REQUESTED')
-          : t('WHATSAPP_CALL.PERMISSION_PENDING');
-      emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
+      showPermissionStatusAlert(callStatus);
       return;
     }
 
@@ -301,7 +306,6 @@ const initiateLegacyCall = async () => {
     });
 
     const outboundCallId = response.data?.call_id;
-    recordCallId = response.data?.id;
     setOutboundCallProperty('pc', pc);
     setOutboundCallProperty('stream', localStream);
     setOutboundCallProperty('callId', outboundCallId);
@@ -322,6 +326,16 @@ const initiateLegacyCall = async () => {
   } catch (err) {
     if (pc) pc.close();
     if (localStream) localStream.getTracks().forEach(track => track.stop());
+
+    const permissionStatus = err.response?.data?.status;
+    if (
+      permissionStatus === 'permission_requested' ||
+      permissionStatus === 'permission_pending'
+    ) {
+      showPermissionStatusAlert(permissionStatus);
+      return;
+    }
+
     const errorMessage =
       err.response?.data?.error || t('WHATSAPP_CALL.CALL_FAILED');
     emitter.emit(BUS_EVENTS.SHOW_ALERT, {

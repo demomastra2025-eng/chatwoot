@@ -8,7 +8,10 @@ import {
   useWhatsappCallsStore,
   getOutboundCallState,
 } from 'dashboard/stores/whatsappCalls';
-import { handleAgentOffer } from 'dashboard/composables/useWhatsappCallSession';
+import {
+  handleAgentOffer,
+  startCallRecording,
+} from 'dashboard/composables/useWhatsappCallSession';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
 let audioNotificationHelperPromise;
@@ -65,6 +68,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'whatsapp_call.accepted': this.onWhatsappCallAccepted,
       'whatsapp_call.ended': this.onWhatsappCallEnded,
       'whatsapp_call.outbound_connected': this.onWhatsappCallOutboundConnected,
+      'whatsapp_call.outbound_accepted': this.onWhatsappCallOutboundAccepted,
       'whatsapp_call.permission_granted': this.onWhatsappCallPermissionGranted,
       'whatsapp_call.agent_offer': this.onWhatsappCallAgentOffer,
       'whatsapp_call.agent_disconnected': this.onWhatsappCallAgentDisconnected,
@@ -310,12 +314,14 @@ class ActionCableConnector extends BaseActionCableConnector {
     // for Peer B) instead of sdp_answer.
     if (data.sdp_offer) {
       const activeCall = whatsappCallsStore.activeCall;
-      if (activeCall && activeCall.callId === data.call_id) {
+      if (activeCall && String(activeCall.callId) === String(data.call_id)) {
         handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers)
           .then(() => {
-            whatsappCallsStore.markActiveCallConnected();
-            // Emit event so the composable can start the timer
-            emitter.emit('whatsapp_call:agent_webrtc_connected');
+            whatsappCallsStore.updateActiveCall({ agentWebrtcConnected: true });
+            if (whatsappCallsStore.activeCall?.metaAccepted) {
+              whatsappCallsStore.markActiveCallConnected();
+              emitter.emit('whatsapp_call:agent_webrtc_connected');
+            }
           })
           .catch(err => {
             // eslint-disable-next-line no-console
@@ -330,7 +336,7 @@ class ActionCableConnector extends BaseActionCableConnector {
 
     // Legacy mode: data contains sdp_answer (Meta's answer to browser's offer)
     const { pc, callId } = getOutboundCallState();
-    if (pc && callId === data.call_id && data.sdp_answer) {
+    if (pc && String(callId) === String(data.call_id) && data.sdp_answer) {
       pc.setRemoteDescription({ type: 'answer', sdp: data.sdp_answer }).catch(
         err => {
           // eslint-disable-next-line no-console
@@ -341,6 +347,33 @@ class ActionCableConnector extends BaseActionCableConnector {
         }
       );
     }
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onWhatsappCallOutboundAccepted = data => {
+    const whatsappCallsStore = useWhatsappCallsStore();
+    const activeCall = whatsappCallsStore.activeCall;
+    if (!activeCall || String(activeCall.callId) !== String(data.call_id)) {
+      return;
+    }
+
+    if (activeCall.serverRelay) {
+      whatsappCallsStore.updateActiveCall({ metaAccepted: true });
+      if (!activeCall.agentWebrtcConnected) {
+        return;
+      }
+      whatsappCallsStore.markActiveCallConnected();
+      emitter.emit('whatsapp_call:agent_webrtc_connected');
+      return;
+    }
+
+    if (!activeCall.serverRelay) {
+      whatsappCallsStore.markActiveCallConnected();
+      const { pc, stream } = getOutboundCallState();
+      if (pc && stream) startCallRecording(pc, stream, activeCall.id);
+    }
+
+    emitter.emit('whatsapp_call:agent_webrtc_connected');
   };
 
   // eslint-disable-next-line class-methods-use-this
