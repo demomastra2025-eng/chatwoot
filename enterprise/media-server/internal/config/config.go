@@ -54,6 +54,11 @@ type Config struct {
 	// HTTPPort is the port on which the HTTP API listens.
 	HTTPPort int
 
+	// HTTPBindAddress is the interface/address for the HTTP API. Empty means
+	// all interfaces, matching Go's net/http default. Local DEV should set this
+	// to 127.0.0.1 so only Rails can reach the control API.
+	HTTPBindAddress string
+
 	// LogLevel controls the verbosity of structured logging.
 	// Valid values: "debug", "info", "warn", "error".
 	LogLevel string
@@ -85,6 +90,7 @@ func Load() (*Config, error) {
 		PublicIP:         getEnv("PUBLIC_IP", ""),
 		RecordingsDir:    getEnv("RECORDINGS_DIR", "/recordings"),
 		AudioDir:         getEnv("MEDIA_SERVER_AUDIO_DIR", getEnv("AUDIO_DIR", "/audio")),
+		HTTPBindAddress:  getEnv("HTTP_BIND_ADDRESS", ""),
 		LogLevel:         getEnv("LOG_LEVEL", "info"),
 	}
 

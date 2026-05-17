@@ -39,8 +39,8 @@ docker run -p 4000:4000 -p 10000-10100:10000-10100/udp \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_TOKEN` | (empty) | Shared secret for Bearer token auth. Empty disables auth (dev only). |
-| `RAILS_CALLBACK_URL` | `http://localhost:3000` | Base URL for Rails callbacks. |
+| `MEDIA_SERVER_AUTH_TOKEN` / `AUTH_TOKEN` | (required) | Shared secret for Bearer token auth. `MEDIA_SERVER_AUTH_TOKEN` takes precedence. |
+| `RAILS_CALLBACK_URL` | (required) | Base URL for Rails callbacks. |
 | `STUN_SERVERS` | `stun:stun.l.google.com:19302` | Comma-separated STUN server URLs. |
 | `TURN_SERVERS` | (empty) | Comma-separated TURN server URLs. |
 | `TURN_USERNAME` | (empty) | TURN credential username. |
@@ -50,6 +50,7 @@ docker run -p 4000:4000 -p 10000-10100:10000-10100/udp \
 | `UDP_PORT_MAX` | `12000` | Upper bound of UDP port range. |
 | `RECORDINGS_DIR` | `/recordings` | Directory for recording files. |
 | `HTTP_PORT` | `4000` | HTTP API listen port. |
+| `HTTP_BIND_ADDRESS` | (empty) | HTTP API bind address. Empty means all interfaces; use `127.0.0.1` for local-only control API. |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error). |
 | `MAX_SESSION_DURATION` | `7200` | Max call duration in seconds (2 hours). |
 | `RECONNECT_TIMEOUT` | `30` | Seconds to wait for agent reconnect. |

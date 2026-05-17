@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -67,7 +69,7 @@ func run() error {
 
 	// Create the HTTP server.
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HTTPPort),
+		Addr:         net.JoinHostPort(cfg.HTTPBindAddress, strconv.Itoa(cfg.HTTPPort)),
 		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,

@@ -67,7 +67,11 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       allow_any_instance_of(Channel::Whatsapp).to receive(:provider_service).and_return(provider_service)
       call.inbox.channel.update!(
         provider: 'whatsapp_cloud',
-        provider_config: call.inbox.channel.provider_config.merge('source' => 'embedded_signup', 'calling_enabled' => true)
+        provider_config: call.inbox.channel.provider_config.merge(
+          'source' => 'embedded_signup',
+          'calling_enabled' => true,
+          'media_server_enabled' => false
+        )
       )
     end
 
@@ -87,6 +91,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
 
     it 'accepts direct mode only when sdp_answer is present' do
       ringing_call = create(:call, account: account, status: 'ringing', media_session_id: nil, meta: { 'sdp_offer' => 'v=0' })
+      ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => false))
       allow(provider_service).to receive(:pre_accept_call).with(ringing_call.provider_call_id, 'answer').and_return(true)
       allow(provider_service).to receive(:accept_call).with(ringing_call.provider_call_id, 'answer').and_return(true)
       allow(ActionCable.server).to receive(:broadcast)
@@ -102,6 +107,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
 
     it 'rejects direct accept without sdp_answer' do
       ringing_call = create(:call, account: account, status: 'ringing', media_session_id: nil, meta: { 'sdp_offer' => 'v=0' })
+      ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => false))
 
       post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/accept",
            headers: headers,
@@ -164,7 +170,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
         :channel_whatsapp,
         account: account,
         provider: 'whatsapp_cloud',
-        provider_config: { 'source' => 'embedded_signup', 'calling_enabled' => true },
+        provider_config: { 'source' => 'embedded_signup', 'calling_enabled' => true, 'media_server_enabled' => false },
         validate_provider_config: false,
         sync_templates: false
       )
@@ -196,6 +202,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
     end
 
     it 'creates an outbound media-server ringing call without browser SDP' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
       allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-out-1', 'meta_sdp_offer' => 'meta-offer' })
       allow(provider_service).to receive(:initiate_call)
         .with(contact.phone_number.delete('+'), 'meta-offer')
