@@ -8,6 +8,7 @@ import { messageTimestamp } from 'shared/helpers/timeHelper';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import BaseBubble from 'next/message/bubbles/Base.vue';
+import AudioChip from 'next/message/chips/Audio.vue';
 
 const LABEL_MAP = {
   [VOICE_CALL_STATUS.IN_PROGRESS]: 'CONVERSATION.VOICE_CALL.CALL_IN_PROGRESS',
@@ -59,7 +60,11 @@ const isWhatsappCall = computed(() => data.value?.callSource === 'whatsapp');
 const callId = computed(() => data.value?.callId);
 const acceptedBy = computed(() => data.value?.acceptedBy);
 const recordingUrl = computed(
-  () => data.value?.recordingUrl || data.value?.recording_url
+  () =>
+    data.value?.recordingUrl ||
+    data.value?.recording_url ||
+    data.value?.recording?.recordingUrl ||
+    data.value?.recording?.recording_url
 );
 const transcript = computed(() => data.value?.transcript);
 const transcriptItems = computed(() => data.value?.transcriptItems || []);
@@ -84,7 +89,7 @@ const timeLabel = computed(() => messageTimestamp(createdAt.value, 'HH:mm'));
 
 const durationInSeconds = computed(() => {
   const explicitDuration = Number(
-    data.value?.durationSeconds ?? meta.value?.duration
+    data.value?.durationSeconds ?? data.value?.duration ?? meta.value?.duration
   );
   if (Number.isFinite(explicitDuration) && explicitDuration >= 0) {
     return explicitDuration;
@@ -110,6 +115,50 @@ const formattedDuration = computed(() => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return [mins, secs].map(unit => String(unit).padStart(2, '0')).join(':');
+});
+
+const voiceCallBubbleStyle = computed(() => {
+  if (!(recordingUrl.value && status.value === VOICE_CALL_STATUS.COMPLETED)) {
+    return {
+      '--voice-call-bubble-width': '20rem',
+    };
+  }
+
+  const seconds = durationInSeconds.value;
+  const widthRem = Number.isFinite(seconds)
+    ? Math.min(48, Math.max(24, 24 + seconds / 8))
+    : 24;
+
+  return {
+    '--voice-call-bubble-width': `min(${widthRem}rem, calc(100vw - 8rem))`,
+  };
+});
+
+const recordingExtension = computed(() => {
+  const contentType = data.value?.recording?.contentType;
+  if (contentType === 'audio/mpeg') return 'mp3';
+  if (contentType?.startsWith('audio/')) {
+    return contentType.split('/').pop()?.replace(/^x-/, '') || 'wav';
+  }
+
+  const path = recordingUrl.value?.split('?')[0] || '';
+  const extension = path.split('.').pop();
+  return extension && extension !== path ? extension.toLowerCase() : 'wav';
+});
+
+const recordingAttachment = computed(() => {
+  if (!recordingUrl.value) return null;
+
+  const recordingRef =
+    data.value?.recordingRef || data.value?.recording?.recordingRef;
+  const callRef = callId.value || data.value?.callSid || recordingRef;
+
+  return {
+    id: recordingRef || callRef || recordingUrl.value,
+    fileType: 'audio',
+    extension: recordingExtension.value,
+    dataUrl: recordingUrl.value,
+  };
 });
 
 // Show join/accept button logic.
@@ -237,8 +286,14 @@ const handleJoinCall = async () => {
 </script>
 
 <template>
-  <BaseBubble class="p-0 border-none" hide-meta>
-    <div class="flex overflow-hidden flex-col w-full max-w-xs">
+  <BaseBubble
+    class="p-0 overflow-hidden border-none !max-w-[min(48rem,calc(100vw-8rem))]"
+    hide-meta
+  >
+    <div
+      class="voice-call-bubble-body flex overflow-hidden flex-col w-[var(--voice-call-bubble-width)] max-w-full"
+      :style="voiceCallBubbleStyle"
+    >
       <div class="flex gap-3 items-center p-3 w-full">
         <div
           class="flex justify-center items-center rounded-full size-10 shrink-0"
@@ -275,7 +330,7 @@ const handleJoinCall = async () => {
             v-if="isAiVoice"
             class="flex gap-1 items-center mt-1 text-xs font-medium text-n-teal-11"
           >
-            <i class="i-ph-robot-bold text-sm" />
+            <i class="i-woot-captain text-sm" />
             <span>{{ $t(subtextKey) }}</span>
           </div>
           <div
@@ -305,12 +360,14 @@ const handleJoinCall = async () => {
       </div>
 
       <div
-        v-if="recordingUrl && status === VOICE_CALL_STATUS.COMPLETED"
+        v-if="recordingAttachment && status === VOICE_CALL_STATUS.COMPLETED"
         class="px-3 pb-2"
       >
-        <audio controls class="w-full h-8" :src="recordingUrl">
-          {{ $t('CONVERSATION.VOICE_CALL.AUDIO_NOT_SUPPORTED') }}
-        </audio>
+        <AudioChip
+          :attachment="recordingAttachment"
+          :show-transcribed-text="false"
+          class="!w-full rounded-xl bg-n-alpha-1 px-2 py-2 text-n-slate-12 skip-context-menu"
+        />
       </div>
 
       <div v-if="showTools" class="px-3 pb-3">

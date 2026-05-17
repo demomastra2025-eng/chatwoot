@@ -1782,6 +1782,7 @@
     "INBOXES": {
       "HEADER": "Connected Channels",
       "ADD_NEW": "Connect a new inbox",
+      "CONNECTION_TOGGLE_LABEL": "Connection",
       "OPTIONS": {
         "DISCONNECT": "Disconnect"
       },

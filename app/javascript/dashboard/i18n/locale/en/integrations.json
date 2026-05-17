@@ -2488,6 +2488,7 @@
       "HEADER": "Connected Inboxes",
       "ADD_NEW": "Connect a new inbox",
       "CONNECTED_TO": "Connected to: {assistantName}",
+      "CONNECTION_TOGGLE_LABEL": "Connection",
       "AUTO_REPLY_MODE": {
         "LABEL": "Auto-reply",
         "OPTIONS": {

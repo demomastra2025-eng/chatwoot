@@ -5,6 +5,20 @@ import { computed, h, ref } from 'vue';
 import { messageTimestamp } from 'shared/helpers/timeHelper';
 import { MESSAGE_TYPES, MESSAGE_VARIANTS, ORIENTATION } from '../constants';
 import { provideMessageContext } from '../provider.js';
+
+vi.mock('next/message/chips/Audio.vue', () => ({
+  default: {
+    name: 'AudioChip',
+    props: ['attachment', 'showTranscribedText'],
+    template:
+      '<div data-testid="voice-call-recording" :data-url="attachment.dataUrl" :data-extension="attachment.extension" :data-show-transcribed-text="String(showTranscribedText)" />',
+  },
+}));
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 import VoiceCall from './VoiceCall.vue';
 
 vi.mock('dashboard/composables/store', () => ({
@@ -100,6 +114,72 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('00:01');
   });
 
+  it('expands the call bubble width for longer call recordings', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          duration: 240,
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
+        },
+      }),
+    });
+
+    expect(
+      wrapper.find('.voice-call-bubble-body').attributes('style')
+    ).toContain('--voice-call-bubble-width: min(48rem, calc(100vw - 8rem));');
+  });
+
+  it('keeps the compact call bubble width when no recording is available', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'no_answer',
+          duration: 240,
+        },
+      }),
+    });
+
+    expect(
+      wrapper.find('.voice-call-bubble-body').attributes('style')
+    ).toContain('--voice-call-bubble-width: 20rem;');
+  });
+
+  it('keeps the compact call bubble width before the recording is renderable', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'ringing',
+          duration: 240,
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
+        },
+      }),
+    });
+
+    expect(
+      wrapper.find('.voice-call-bubble-body').attributes('style')
+    ).toContain('--voice-call-bubble-width: 20rem;');
+  });
+
+  it('uses the Captain icon for AI voice status inside call bubbles', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          aiVoice: {
+            enabled: true,
+            answered: true,
+          },
+        },
+      }),
+    });
+
+    expect(wrapper.find('.i-woot-captain').exists()).toBe(true);
+    expect(wrapper.find('.i-ph-robot-bold').exists()).toBe(false);
+  });
+
   it('normalizes Rails voice call statuses before rendering labels', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
@@ -127,38 +207,43 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
 
-  it('renders native audio playback for completed calls with an authorized recording URL', () => {
+  it('renders the shared audio waveform chip for completed calls with an authorized recording URL', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
         data: {
           status: 'completed',
-          recordingUrl: '/api/v1/accounts/1/telephony/calls/call-1/recording',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
         },
       }),
     });
 
-    const audio = wrapper.find('audio');
-    expect(audio.exists()).toBe(true);
-    expect(audio.attributes('src')).toBe(
-      '/api/v1/accounts/1/telephony/calls/call-1/recording'
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.exists()).toBe(true);
+    expect(recording.attributes('data-url')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-1/recording.wav'
     );
+    expect(recording.attributes('data-extension')).toBe('wav');
+    expect(recording.attributes('data-show-transcribed-text')).toBe('false');
   });
 
-  it('renders native audio playback when Rails sends snake_case recording_url', () => {
+  it('renders the shared audio waveform chip when Rails sends snake_case recording_url', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
         data: {
           status: 'completed',
-          recording_url: '/api/v1/accounts/1/telephony/calls/call-2/recording',
+          recording_url:
+            '/api/v1/accounts/1/telephony/calls/call-2/recording.mp3',
         },
       }),
     });
 
-    const audio = wrapper.find('audio');
-    expect(audio.exists()).toBe(true);
-    expect(audio.attributes('src')).toBe(
-      '/api/v1/accounts/1/telephony/calls/call-2/recording'
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.exists()).toBe(true);
+    expect(recording.attributes('data-url')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-2/recording.mp3'
     );
+    expect(recording.attributes('data-extension')).toBe('mp3');
   });
 
   it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {

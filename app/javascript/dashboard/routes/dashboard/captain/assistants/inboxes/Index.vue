@@ -278,14 +278,14 @@ const autoReplyModeDisabled = inbox => {
             <div class="flex items-center gap-3 shrink-0">
               <Policy
                 :permissions="['administrator']"
-                class="flex items-center gap-3"
+                class="flex items-center gap-6"
               >
                 <div
                   v-if="isConnectedToCurrentAssistant(inbox)"
-                  class="flex flex-col gap-1 min-w-[15rem]"
+                  class="flex items-center gap-2 min-w-[18rem]"
                 >
                   <label
-                    class="text-xs font-medium text-n-slate-11"
+                    class="text-xs font-medium text-n-slate-11 whitespace-nowrap"
                     :for="`captain-auto-reply-mode-${inbox.id}`"
                   >
                     {{ t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.LABEL') }}
@@ -295,16 +295,25 @@ const autoReplyModeDisabled = inbox => {
                     v-model="autoReplyModeByInboxId[inbox.id]"
                     :options="autoReplyModeOptions"
                     :disabled="autoReplyModeDisabled(inbox)"
-                    class="w-full"
+                    class="min-w-[12rem]"
                     @change="event => updateAutoReplyMode(inbox, event)"
                   />
                 </div>
 
-                <Switch
-                  v-model="connectionStateByInboxId[inbox.id]"
-                  :disabled="toggleDisabled(inbox)"
-                  @change="value => toggleInboxConnection(inbox, value)"
-                />
+                <div class="flex items-center gap-2">
+                  <span
+                    :id="`captain-channel-toggle-label-${inbox.id}`"
+                    class="text-xs font-medium text-n-slate-11 whitespace-nowrap"
+                  >
+                    {{ t('CAPTAIN.INBOXES.CONNECTION_TOGGLE_LABEL') }}
+                  </span>
+                  <Switch
+                    v-model="connectionStateByInboxId[inbox.id]"
+                    :aria-labelledby="`captain-channel-toggle-label-${inbox.id}`"
+                    :disabled="toggleDisabled(inbox)"
+                    @change="value => toggleInboxConnection(inbox, value)"
+                  />
+                </div>
               </Policy>
             </div>
           </div>

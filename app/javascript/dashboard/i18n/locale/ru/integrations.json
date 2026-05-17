@@ -2488,6 +2488,7 @@
       "HEADER": "Подключённые каналы",
       "ADD_NEW": "Подключить новый канал",
       "CONNECTED_TO": "Подключён к: {assistantName}",
+      "CONNECTION_TOGGLE_LABEL": "Подключение",
       "AUTO_REPLY_MODE": {
         "LABEL": "Автоответ",
         "OPTIONS": {
