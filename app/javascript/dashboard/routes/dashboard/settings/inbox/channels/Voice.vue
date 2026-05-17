@@ -202,7 +202,7 @@ async function createKazakhstanChannel() {
 
   try {
     const channel = await store.dispatch('inboxes/createVoiceChannel', {
-      name: `${t('INBOX_MGMT.ADD.VOICE.TITLE')} (${kazakhstanState.phoneNumber})`,
+      name: kazakhstanState.phoneNumber,
       voice: {
         phone_number: kazakhstanState.phoneNumber,
         provider: 'fonoster',
@@ -225,7 +225,7 @@ async function createTwilioChannel() {
 
   try {
     const channel = await store.dispatch('inboxes/createVoiceChannel', {
-      name: `${t('INBOX_MGMT.ADD.VOICE.TITLE')} (${twilioState.phoneNumber})`,
+      name: twilioState.phoneNumber,
       voice: {
         phone_number: twilioState.phoneNumber,
         provider: 'twilio',
