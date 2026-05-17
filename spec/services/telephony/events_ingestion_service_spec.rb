@@ -207,6 +207,101 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-late-answered-1')).to be_processed
     end
 
+    it 'closes a linked runtime child session when the parent bridge session is terminal' do
+      ended_at = Time.zone.parse(10.seconds.ago.iso8601)
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: existing_call_session.conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        external_call_ref: 'runtime-child-call-1',
+        status: 'ringing',
+        last_event_at: 1.minute.ago
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-parent-terminal-child-close-1',
+          event: 'session_completed',
+          runtime_call_ref: 'runtime-child-call-1',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'media_stream_closed_after_audio'
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'media_stream_closed_after_audio'
+      )
+      expect(child_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'media_stream_closed_after_audio'
+      )
+      expect(child_session.metadata.dig('ai_voice', 'linked_parent_terminal')).to include(
+        'bridge_call_ref' => 'call-retry-1',
+        'runtime_call_ref' => 'runtime-child-call-1',
+        'event_key' => 'evt-parent-terminal-child-close-1'
+      )
+      expect(child_session.legs.last).to include(
+        'event_key' => 'evt-parent-terminal-child-close-1',
+        'event_type' => 'session_completed',
+        'status' => 'completed',
+        'leg' => 'ai'
+      )
+    end
+
+    it 'does not resurrect a linked runtime child when late runtime events arrive after parent terminal cleanup' do
+      ended_at = Time.zone.parse(20.seconds.ago.iso8601)
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: existing_call_session.conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        external_call_ref: 'runtime-child-call-2',
+        status: 'ringing',
+        last_event_at: 1.minute.ago
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-parent-terminal-child-close-2',
+          event: 'session_completed',
+          runtime_call_ref: 'runtime-child-call-2',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'media_stream_closed_after_audio'
+        )
+      ).perform
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-runtime-child-ai-answered-1',
+          call_ref: 'runtime-child-call-2',
+          event: 'ai_answered',
+          occurred_at: 5.seconds.ago.iso8601
+        )
+      ).perform
+
+      expect(result).to eq(child_session)
+      expect(child_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'media_stream_closed_after_audio'
+      )
+    end
+
     it 'ignores older event state when a timestamp shows the session already moved forward' do
       last_event_at = Time.zone.parse(2.minutes.ago.iso8601)
       existing_call_session.update!(status: 'in_progress', last_event_at: last_event_at)
@@ -299,6 +394,66 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
     end
 
+    it 'stores first_audio_out_write as non-terminal AI telemetry with stream correlation' do
+      existing_call_session.update!(status: 'in_progress', answered_by: 'ai_agent')
+      voice_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'in_progress' } }
+      )
+      legacy_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'ringing' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-first-audio-out-write-1',
+          event: 'first_audio_out_write',
+          occurred_at: Time.current.iso8601,
+          media_session_ref: 'media-session-telemetry',
+          stream_ref: 'stream-telemetry',
+          payload: {
+            first_audio_out_write_at: '2026-05-17T12:00:00.000Z',
+            first_audio_out_write_bytes: 320,
+            first_audio_out_write_kind: 'keepalive_silence',
+            first_audio_out_non_zero_ratio: 0,
+            first_audio_out_rms: 0
+          }
+        )
+      ).perform
+
+      expect(result.reload.status).to eq('in_progress')
+      expect(result.legs.last).to include(
+        'event_key' => 'evt-first-audio-out-write-1',
+        'event_type' => 'first_audio_out_write',
+        'status' => 'in_progress',
+        'leg' => 'ai',
+        'media_session_ref' => 'media-session-telemetry',
+        'stream_ref' => 'stream-telemetry'
+      )
+      expect(result.metadata.dig('last_payload', 'payload')).to include(
+        'first_audio_out_write_at' => '2026-05-17T12:00:00.000Z',
+        'first_audio_out_write_bytes' => 320,
+        'first_audio_out_write_kind' => 'keepalive_silence',
+        'first_audio_out_non_zero_ratio' => 0,
+        'first_audio_out_rms' => 0
+      )
+      expect(voice_message.reload.content_attributes.dig('data', 'ai_voice')).to include(
+        'latest_event' => 'first_audio_out_write',
+        'state' => 'answered'
+      )
+      expect(legacy_message.reload.content_attributes.dig('data', 'ai_voice')).to be_blank
+    end
+
     it 'stores OneLink runtime recording_ready metadata without changing terminal call state' do
       existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
       message = create(
@@ -308,6 +463,14 @@ RSpec.describe Telephony::EventsIngestionService do
         inbox: existing_call_session.inbox,
         content_type: 'voice_call',
         source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'completed' } }
+      )
+      legacy_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
         content_attributes: { 'data' => { 'status' => 'completed' } }
       )
 
@@ -351,9 +514,9 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
         expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
         expect(message.reload.content_attributes.dig('data', 'recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
-        expect(message.content_attributes.dig('data', 'recording_url')).to eq(
-          "/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording"
-        )
+        recording_url = message.content_attributes.dig('data', 'recording_url')
+        expect(recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
+        expect(recording_url).to include('recording_token=')
         expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       end.to have_enqueued_job(Telephony::CallRecordingTranscriptionJob).with(existing_call_session.id)
 
@@ -368,10 +531,12 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
       expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
       expect(message.reload.content_attributes.dig('data', 'recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
-      expect(message.content_attributes.dig('data', 'recording_url')).to eq(
-        "/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording"
-      )
+      recording_url = message.content_attributes.dig('data', 'recording_url')
+      expect(recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
+      expect(recording_url).to include('recording_token=')
       expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(legacy_message.reload.content_attributes.dig('data', 'recording')).to be_blank
+      expect(legacy_message.content_attributes.dig('data', 'recording_ref')).to be_blank
     end
 
     it 'stores recording scoped errors as recording metadata without failing the live call' do

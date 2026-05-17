@@ -1,5 +1,8 @@
 class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telephony::BaseController
+  skip_before_action :authenticate_user!, :ensure_active_auth_session!, only: [:recording], raise: false
+
   before_action :set_call_session, only: [:show, :recording]
+  before_action :authenticate_recording_request!, only: [:recording]
 
   def index
     sessions = Current.account.telephony_call_sessions.includes(:contact, :conversation, :inbox, :number_binding, :agent_binding).recent
@@ -71,6 +74,8 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def authorize_recording_access!
+    return if @signed_recording_request_authorized
+
     if @call_session.conversation.present?
       authorize @call_session.conversation, :show?
       return
@@ -89,7 +94,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def recording_url_for_call_session
-    external_recording_url || recording_api_v1_account_telephony_call_path(Current.account.id, @call_session.external_call_ref)
+    external_recording_url || signed_recording_url_for_call_session
   end
 
   def external_recording_url
@@ -131,6 +136,40 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
 
   def recording_storage_key
     recording_metadata['storage_key'].presence || recording_metadata['recording_ref'].presence || @call_session.recording_ref.presence
+  end
+
+  def authenticate_recording_request!
+    if signed_recording_request?
+      raise ActiveRecord::RecordNotFound, 'Recording could not be found' unless valid_signed_recording_request?
+
+      @signed_recording_request_authorized = true
+      return
+    end
+
+    if authenticate_by_access_token?
+      authenticate_access_token!
+      validate_bot_access_token!
+      return
+    end
+
+    authenticate_user!
+    ensure_active_auth_session!
+  end
+
+  def signed_recording_url_for_call_session
+    Telephony::CallRecordingPlaybackUrl.path_for(@call_session, storage_key: recording_storage_key)
+  end
+
+  def signed_recording_request?
+    params[Telephony::CallRecordingPlaybackUrl::TOKEN_PARAM].present?
+  end
+
+  def valid_signed_recording_request?
+    Telephony::CallRecordingPlaybackUrl.valid?(
+      token: params[Telephony::CallRecordingPlaybackUrl::TOKEN_PARAM],
+      call_session: @call_session,
+      storage_key: recording_storage_key
+    )
   end
 
   def recording_content_type

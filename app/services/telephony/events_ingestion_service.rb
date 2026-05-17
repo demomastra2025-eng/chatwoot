@@ -22,6 +22,7 @@ class Telephony::EventsIngestionService
     'media_stream_not_established' => 'failed',
     'media_stream_framing_error' => 'failed',
     'media_writer_started' => nil,
+    'first_audio_out_write' => nil,
     'app_received_call' => 'ringing',
     'app_answered' => 'in_progress',
     'ai_ringing' => 'ringing',
@@ -130,6 +131,7 @@ class Telephony::EventsIngestionService
       call_session = resolve_call_session!(account)
       call_session.with_lock do
         call_session = upsert_call_session!(call_session, account)
+        reconcile_linked_runtime_call_sessions!(account, call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
@@ -213,6 +215,88 @@ class Telephony::EventsIngestionService
     persist_call_session!(account, call_session) do |current_call_session|
       call_session_attributes(account, current_call_session)
     end
+  end
+
+  def reconcile_linked_runtime_call_sessions!(account, parent_call_session)
+    return unless parent_call_session.terminal?
+
+    refs = linked_runtime_call_refs - [parent_call_session.external_call_ref]
+    return if refs.blank?
+
+    account.telephony_call_sessions.where(external_call_ref: refs).where.not(id: parent_call_session.id).find_each do |child_call_session|
+      child_call_session.with_lock do
+        child_call_session.reload
+        next if child_call_session.terminal?
+
+        child_call_session.assign_attributes(linked_runtime_child_attributes(parent_call_session, child_call_session))
+        child_call_session.save!
+      end
+    end
+  end
+
+  def linked_runtime_child_attributes(parent_call_session, child_call_session)
+    ended_at = parent_call_session.ended_at || resolved_ended_at || resolved_occurred_at || Time.current
+    duration_seconds = child_call_session.duration_seconds || linked_runtime_child_duration(child_call_session, parent_call_session, ended_at)
+
+    {
+      status: parent_call_session.status,
+      ended_at: child_call_session.ended_at || ended_at,
+      ended_by: child_call_session.ended_by || parent_call_session.ended_by || resolved_ended_by,
+      end_reason: child_call_session.end_reason || parent_call_session.end_reason || resolved_end_reason || parent_call_session.status,
+      duration_seconds: duration_seconds,
+      last_event_at: [child_call_session.last_event_at, parent_call_session.last_event_at, ended_at].compact.max,
+      legs: linked_runtime_child_legs(parent_call_session, child_call_session),
+      metadata: linked_runtime_child_metadata(parent_call_session, child_call_session)
+    }
+  end
+
+  def linked_runtime_child_duration(child_call_session, parent_call_session, ended_at)
+    return parent_call_session.duration_seconds if parent_call_session.duration_seconds.present?
+
+    duration_start = child_call_session.answered_at ||
+                     child_call_session.started_at ||
+                     parent_call_session.answered_at ||
+                     parent_call_session.started_at
+    return if duration_start.blank? || ended_at.blank?
+
+    [ended_at.to_i - duration_start.to_i, 0].max
+  end
+
+  def linked_runtime_child_legs(parent_call_session, child_call_session)
+    legs = Array.wrap(child_call_session.legs).map { |leg| leg.is_a?(Hash) ? leg.deep_stringify_keys : leg }
+    return legs if legs.any? { |leg| leg.is_a?(Hash) && leg['event_key'] == event_key }
+
+    legs + [leg_snapshot(parent_call_session.status).merge(
+      'leg' => 'ai',
+      'bridge_call_ref' => parent_call_session.external_call_ref,
+      'runtime_call_ref' => child_call_session.external_call_ref
+    ).compact]
+  end
+
+  def linked_runtime_child_metadata(parent_call_session, child_call_session)
+    metadata = (child_call_session.metadata || {}).deep_dup
+    ai_voice = metadata['ai_voice'].is_a?(Hash) ? metadata['ai_voice'].deep_dup : {}
+    ai_voice['linked_parent_terminal'] = {
+      'bridge_call_ref' => parent_call_session.external_call_ref,
+      'runtime_call_ref' => child_call_session.external_call_ref,
+      'event_key' => event_key,
+      'event_type' => resolved_event_type,
+      'status' => parent_call_session.status,
+      'ended_at' => (parent_call_session.ended_at || resolved_ended_at || resolved_occurred_at)&.iso8601,
+      'end_reason' => parent_call_session.end_reason || resolved_end_reason,
+      'stream_ref' => payload_value('stream_ref', 'streamRef') || nested_payload_value('stream_ref', 'streamRef'),
+      'media_session_ref' => payload_value('media_session_ref', 'mediaSessionRef')
+    }.compact
+    metadata['ai_voice'] = ai_voice
+    metadata.compact
+  end
+
+  def linked_runtime_call_refs
+    [
+      payload_value('runtime_call_ref', 'runtimeCallRef'),
+      payload_value('child_call_ref', 'childCallRef'),
+      payload_value('ai_runtime_call_ref', 'aiRuntimeCallRef')
+    ].compact_blank.uniq
   end
 
   def call_session_attributes(account, call_session)
@@ -463,37 +547,7 @@ class Telephony::EventsIngestionService
   def voice_message_for(call_session)
     return if call_session.conversation.blank?
 
-    source_id = "voice_call:#{call_session.external_call_ref}"
-    call_session.conversation.messages.voice_calls.find_by(source_id: source_id) ||
-      voice_message_with_call_ref(call_session) ||
-      single_legacy_voice_message(call_session) ||
-      legacy_current_call_message(call_session)
-  end
-
-  def single_legacy_voice_message(call_session)
-    voice_messages = call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc)
-    return unless voice_messages.limit(2).count == 1
-
-    message = voice_messages.first
-    data = voice_message_data(message)
-    return message if data['call_sid'].blank? && message.source_id.blank?
-  end
-
-  def voice_message_with_call_ref(call_session)
-    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
-      voice_message_data(message)['call_sid'] == call_session.external_call_ref
-    end
-  end
-
-  def legacy_current_call_message(call_session)
-    return unless call_session.conversation.identifier == call_session.external_call_ref
-
-    call_session.latest_voice_message
-  end
-
-  def voice_message_data(message)
-    data = message.content_attributes.to_h['data'] || message.content_attributes.to_h[:data]
-    data.is_a?(Hash) ? data.deep_stringify_keys : {}
+    call_session.voice_message_for_current_call
   end
 
   def build_voice_message!(call_session)
@@ -600,7 +654,7 @@ class Telephony::EventsIngestionService
 
   def ai_voice_event_types
     %w[
-      app_answered ai_ringing ai_answered media_stream_started realtime_audio_out ai_speaking caller_interrupted
+      app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
       media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed
     ]
   end
@@ -721,6 +775,10 @@ class Telephony::EventsIngestionService
       direction: resolved_direction,
       occurred_at: resolved_occurred_at&.iso8601,
       provider_call_sid: payload_value('provider_call_sid', 'providerCallSid', 'provider_call_id', 'providerCallId'),
+      bridge_call_ref: bridge_call_ref,
+      runtime_call_ref: runtime_call_ref,
+      media_session_ref: payload_value('media_session_ref', 'mediaSessionRef'),
+      stream_ref: payload_value('stream_ref', 'streamRef') || nested_payload_value('stream_ref', 'streamRef'),
       answered_by: resolved_answered_by || resolved_agent_actor(status),
       ended_by: resolved_ended_by,
       end_reason: resolved_end_reason
@@ -735,7 +793,7 @@ class Telephony::EventsIngestionService
 
   def leg_name
     event_name = resolved_event_type.to_s
-    ai_event_names = %w[caller_interrupted realtime_audio_out media_stream_started provider_stream_closed provider_error]
+    ai_event_names = %w[caller_interrupted realtime_audio_out first_audio_out_write media_stream_started provider_stream_closed provider_error]
     return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name.in?(ai_event_names)
     return 'operator' if event_name.start_with?('transfer_', 'operator_')
 
@@ -768,9 +826,9 @@ class Telephony::EventsIngestionService
   end
 
   def internal_recording_url(call_session)
-    Rails.application.routes.url_helpers.recording_api_v1_account_telephony_call_path(
-      account_id: call_session.account_id,
-      call_ref: call_session.external_call_ref
+    Telephony::CallRecordingPlaybackUrl.path_for(
+      call_session,
+      storage_key: call_recording_metadata(call_session)['storage_key'].presence || call_session.recording_ref
     )
   end
 
@@ -788,6 +846,7 @@ class Telephony::EventsIngestionService
 
   def recording_event_metadata
     return recording_ready_metadata if resolved_event_type == 'recording_ready'
+    return recording_incomplete_metadata if resolved_event_type == 'recording_incomplete'
     return recording_error_metadata if recording_error_event?
 
     {}
@@ -821,6 +880,26 @@ class Telephony::EventsIngestionService
         'occurred_at' => (resolved_occurred_at || Time.current).iso8601
       }.compact
     }.compact
+  end
+
+  def recording_incomplete_metadata
+    {
+      'source' => 'onelink_runtime',
+      'recording_status' => recording_payload_value('recording_status', 'recordingStatus') || 'incomplete',
+      'degraded' => recording_degraded?,
+      'missing_direction' => recording_payload_value('missing_direction', 'missingDirection'),
+      'reason' => recording_payload_value('reason'),
+      'media_session_ref' => recording_payload_value('media_session_ref', 'mediaSessionRef'),
+      'stream_ref' => recording_payload_value('stream_ref', 'streamRef'),
+      'updated_at' => (resolved_occurred_at || Time.current).iso8601
+    }.compact
+  end
+
+  def recording_degraded?
+    value = recording_payload_value('degraded', 'recording_degraded', 'recordingDegraded')
+    return true if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def recording_error_event?
@@ -878,7 +957,16 @@ class Telephony::EventsIngestionService
   end
 
   def call_ref
-    payload_value('call_ref', 'callRef', 'provider_call_id', 'providerCallId', 'call_sid', 'callSid', 'ref')
+    bridge_call_ref || payload_value('call_ref', 'callRef', 'provider_call_id', 'providerCallId', 'call_sid', 'callSid', 'ref')
+  end
+
+  def bridge_call_ref
+    payload_value('bridge_call_ref', 'bridgeCallRef', 'parent_call_ref', 'parentCallRef')
+  end
+
+  def runtime_call_ref
+    payload_value('runtime_call_ref', 'runtimeCallRef', 'child_call_ref', 'childCallRef', 'ai_runtime_call_ref', 'aiRuntimeCallRef') ||
+      payload_value('call_ref', 'callRef')
   end
 
   def resolved_status

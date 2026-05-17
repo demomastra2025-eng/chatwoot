@@ -130,6 +130,18 @@ class Telephony::CallSession < ApplicationRecord
     conversation&.messages&.voice_calls&.order(created_at: :desc)&.first
   end
 
+  def voice_call_source_id
+    "voice_call:#{external_call_ref}"
+  end
+
+  def exact_voice_message
+    conversation&.messages&.voice_calls&.find_by(source_id: voice_call_source_id)
+  end
+
+  def voice_message_for_current_call
+    exact_voice_message || voice_message_with_call_ref || single_legacy_voice_message || legacy_current_call_message
+  end
+
   def to_telephony_h
     {
       id: id,
@@ -167,6 +179,32 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   private
+
+  def single_legacy_voice_message
+    voice_messages = conversation&.messages&.voice_calls&.order(created_at: :desc, id: :desc)
+    return unless voice_messages&.limit(2)&.count == 1
+
+    message = voice_messages.first
+    return message if voice_message_data(message)['call_sid'].blank? && message.source_id.blank?
+  end
+
+  def voice_message_with_call_ref
+    conversation&.messages&.voice_calls&.order(created_at: :desc, id: :desc)&.detect do |message|
+      voice_message_data(message)['call_sid'] == external_call_ref
+    end
+  end
+
+  def legacy_current_call_message
+    return unless conversation&.identifier == external_call_ref
+
+    latest_voice_message
+  end
+
+  def voice_message_data(message)
+    content_attributes = (message.content_attributes || {}).to_h
+    data = content_attributes['data'] || content_attributes[:data]
+    data.is_a?(Hash) ? data.deep_stringify_keys : {}
+  end
 
   def normalize_status_value
     self.status = self.class.normalize_status(status) || status

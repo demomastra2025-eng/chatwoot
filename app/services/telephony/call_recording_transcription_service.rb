@@ -152,7 +152,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def voice_message
-    @voice_message ||= call_session.latest_voice_message
+    @voice_message ||= call_session.voice_message_for_current_call
   end
 
   def instrumentation_params(file_path)

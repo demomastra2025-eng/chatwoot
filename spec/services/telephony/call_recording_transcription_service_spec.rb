@@ -80,6 +80,23 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(data['recording']).to include('storage_key' => 'voice-recordings/1/operator-call-1/recording.wav')
   end
 
+  it 'does not attach a recording transcript to a newer unsourced legacy voice_call when exact bubble exists' do
+    legacy_voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: conversation.inbox,
+      content_type: :voice_call,
+      content_attributes: { 'data' => { 'status' => 'completed' } }
+    )
+
+    described_class.new(call_session).perform
+
+    expect(voice_message.reload.content_attributes.dig('data', 'transcript_ref')).to eq('call_recording_transcript:operator-call-1')
+    expect(legacy_voice_message.reload.content_attributes.dig('data', 'transcript_ref')).to be_blank
+    expect(legacy_voice_message.content_attributes.dig('data', 'transcript')).to be_blank
+  end
+
   it 'rejects recording storage keys that resolve through symlinks outside storage' do
     outside_path = Rails.root.join('tmp/operator-call-secret.wav')
     FileUtils.rm_f(recording_path)

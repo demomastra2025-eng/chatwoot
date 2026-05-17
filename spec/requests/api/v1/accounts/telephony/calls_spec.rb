@@ -75,6 +75,19 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.mkdir_p(recording_path.dirname)
     File.binwrite(recording_path, "RIFF\x24\x00\x00\x00WAVEfmt ")
 
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    signed_recording_url = response.parsed_body.dig('payload', 'recording_url')
+    expect(signed_recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording?")
+    expect(signed_recording_url).to include('recording_token=')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/wav')
+    expect(response.body).to start_with('RIFF')
+
     get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
 
     expect(response).to have_http_status(:ok)
@@ -82,6 +95,36 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response.body).to start_with('RIFF')
   ensure
     FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
+  it 'rejects an invalid signed recording playback URL without falling back to account auth' do
+    call_session = create_recorded_call_session('invalid-token-recording-call')
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording?recording_token=invalid"
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it 'rejects a signed recording token minted for another account call session' do
+    call_session = create_recorded_call_session('target-token-recording-call')
+    other_account = create(:account)
+    other_account.enable_features!('channel_voice')
+    other_call_session = create(
+      :telephony_call_session,
+      account: other_account,
+      external_call_ref: 'other-token-recording-call',
+      recording_ref: 'voice-recordings/999/other-token-recording-call/recording.wav',
+      metadata: {
+        'recording' => recording_metadata.merge('storage_key' => 'voice-recordings/999/other-token-recording-call/recording.wav')
+      }
+    )
+    other_storage_key = other_call_session.metadata.dig('recording', 'storage_key')
+    other_token = Telephony::CallRecordingPlaybackUrl.token_for(other_call_session, storage_key: other_storage_key)
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording",
+        params: { recording_token: other_token }
+
+    expect(response).to have_http_status(:not_found)
   end
 
   it 'returns and redirects to an account-scoped external Fonoster recording URL' do
