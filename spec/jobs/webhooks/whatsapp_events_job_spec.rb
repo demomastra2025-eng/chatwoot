@@ -91,11 +91,44 @@ RSpec.describe Webhooks::WhatsappEventsJob do
     end
 
     it 'logs a warning with unknown phone number when channel does not exist' do
-      unknown_phone = '+1234567890'
+      unknown_phone = '+123****7890'
       allow(Rails.logger).to receive(:warn)
 
       expect(Rails.logger).to receive(:warn).with("Inactive WhatsApp channel: unknown - #{unknown_phone}")
       job.perform_now(phone_number: unknown_phone)
+    end
+
+    it 'dispatches WhatsApp Cloud call events under a stable call lock' do
+      call_payload = {
+        id: 'wacid.call-1',
+        from: '77470000000',
+        to: channel.phone_number.delete('+'),
+        event: 'connect',
+        direction: 'USER_INITIATED',
+        session: { sdp: 'v=0', sdp_type: 'offer' }
+      }
+      call_params = params.deep_merge(
+        entry: [{
+          changes: [{
+            field: 'calls',
+            value: {
+              metadata: {
+                phone_number_id: channel.provider_config['phone_number_id'],
+                display_phone_number: channel.phone_number.delete('+')
+              },
+              calls: [call_payload]
+            }
+          }]
+        }]
+      )
+      service = instance_double(Whatsapp::IncomingCallService, perform: true)
+
+      expect(Redis::Alfred::WHATSAPP_MESSAGE_MUTEX).to eq('WHATSAPP_MESSAGE_CREATE_LOCK::%<inbox_id>s::%<sender_id>s')
+      expect(Whatsapp::IncomingCallService).to receive(:new)
+        .with(inbox: channel.inbox, params: { calls: [call_payload.with_indifferent_access] })
+        .and_return(service)
+
+      expect { job.perform_now(call_params.with_indifferent_access) }.not_to raise_error
     end
   end
 

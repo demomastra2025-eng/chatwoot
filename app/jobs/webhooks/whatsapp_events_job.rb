@@ -1,5 +1,6 @@
-class Webhooks::WhatsappEventsJob < ApplicationJob
+class Webhooks::WhatsappEventsJob < MutexApplicationJob
   queue_as :whatsapp_inbound
+  retry_on LockAcquisitionError, wait: 1.second, attempts: 8
 
   def perform(params = {})
     channel = find_channel_from_whatsapp_business_payload(params)
