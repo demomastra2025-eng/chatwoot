@@ -445,6 +445,43 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'status' => 'start',
       'type' => 'captain_tool_event'
     )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/control',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             action: 'tool_async_completed',
+             metadata: {
+               tool_name: 'faq_lookup',
+               request_id: 'tool-call-1',
+               provider: 'gemini-live',
+               ok: true,
+               pending: true,
+               async: true
+             }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    async_source_id = "ai_voice_event:#{call_session.external_call_ref}:tool_async_completed:tool-call-1"
+    async_activity = conversation.messages.activity.find_by!(source_id: async_source_id)
+    expect(async_activity.content).to eq('Инструмент faq_lookup выполнен')
+    expect(async_activity.content_attributes.dig('data', 'metadata')).to include(
+      'tool_name' => 'faq_lookup',
+      'request_id' => 'tool-call-1',
+      'pending' => true,
+      'async' => true
+    )
+    expect(call_session.reload.status).to eq('in_progress')
+    expect(call_session.events.where(event_type: 'tool_async_completed')).to exist
+    expect(ai_message.reload.additional_attributes.dig('captain_trace', 'tool_steps').last).to include(
+      'tool_name' => 'faq_lookup',
+      'event' => 'finish',
+      'id' => 'faq_lookup:finish:1:tool-call-1'
+    )
   end
 
   it 'keeps native activity source ids monotonic after control event history is trimmed' do
@@ -505,6 +542,78 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'action' => 'media_stream_not_established',
       'metadata' => include('source' => 'call.stream')
     )
+  end
+
+  it 'reconciles linked runtime session and exact voice bubble on caller hangup after media writer started' do
+    runtime_call_ref = 'runtime-caller-hangup-after-writer-1'
+    runtime_session = create(
+      :telephony_call_session,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      number_binding: voice_inbox.telephony_number_binding,
+      external_call_ref: runtime_call_ref,
+      status: 'in_progress',
+      direction: 'inbound',
+      answered_by: 'ai_agent',
+      metadata: {
+        'ai_voice' => {
+          'last_payload' => {
+            'event_type' => 'media_writer_started',
+            'stream_ref' => 'stream-after-writer-1',
+            'media_session_ref' => 'media-after-writer-1'
+          }
+        }
+      }
+    )
+    parent_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      source_id: "voice_call:#{call_session.external_call_ref}",
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+    runtime_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      source_id: "voice_call:#{runtime_call_ref}",
+      content_attributes: { data: { call_sid: runtime_call_ref, status: 'in_progress', ai_voice: { enabled: true, state: 'speaking' } } }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/control',
+           params: {
+             call_ref: runtime_call_ref,
+             bridgeCallRef: call_session.external_call_ref,
+             runtimeCallRef: runtime_call_ref,
+             account_id: account.id,
+             conversation_id: conversation.id,
+             action: 'caller_hangup',
+             metadata: {
+               reason: 'caller_hangup',
+               streamRef: 'stream-after-writer-1',
+               mediaSessionRef: 'media-after-writer-1'
+             }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(status: 'cancelled', end_reason: 'caller_hangup')
+    expect(runtime_session.reload).to have_attributes(status: 'cancelled', end_reason: 'caller_hangup')
+    expect(parent_message.reload.content_attributes.dig('data', 'status')).to eq('cancelled')
+    expect(runtime_message.reload.content_attributes.dig('data', 'status')).to eq('cancelled')
+    expect(runtime_message.content_attributes.dig('data', 'ai_voice', 'state')).to eq('completed')
   end
 
   it 'accepts incomplete media-stream finalization with partial transcript payloads' do

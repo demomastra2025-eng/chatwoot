@@ -35,6 +35,8 @@ class Telephony::EventsIngestionService
     'tool_progress' => nil,
     'tool_completed' => nil,
     'tool_failed' => nil,
+    'tool_async_completed' => nil,
+    'tool_async_failed' => nil,
     'ai_speaking' => nil,
     'caller_interrupted' => nil,
     'ringing' => 'ringing',
@@ -640,7 +642,7 @@ class Telephony::EventsIngestionService
   end
 
   def voice_ai_tool_events(call_session)
-    tool_event_types = %w[tool_started tool_progress tool_completed tool_failed]
+    tool_event_types = %w[tool_started tool_progress tool_completed tool_failed tool_async_completed tool_async_failed]
 
     call_session.events.where(event_type: tool_event_types).order(:created_at, :id).last(20).filter_map do |event|
       event_payload = event.payload.to_h.deep_stringify_keys
@@ -654,6 +656,9 @@ class Telephony::EventsIngestionService
         'name' => tool_name,
         'status' => tool_status(event.event_type),
         'ok' => tool_payload.key?('ok') ? tool_payload['ok'] : metadata_payload['ok'],
+        'pending' => tool_payload.key?('pending') ? tool_payload['pending'] : metadata_payload['pending'],
+        'async' => tool_payload.key?('async') ? tool_payload['async'] : metadata_payload['async'],
+        'request_id' => tool_payload['request_id'] || tool_payload['requestId'] || metadata_payload['request_id'] || metadata_payload['requestId'],
         'error' => tool_payload['error'] || metadata_payload['error'],
         'at' => parse_time(event_payload['occurred_at'] || event_payload['occurredAt'])&.iso8601 || event.created_at.iso8601
       }.compact
@@ -664,6 +669,7 @@ class Telephony::EventsIngestionService
     %w[
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
       media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed
+      tool_async_completed tool_async_failed
     ]
   end
 
@@ -671,9 +677,9 @@ class Telephony::EventsIngestionService
     case event_type
     when 'tool_started', 'tool_progress'
       'running'
-    when 'tool_completed'
+    when 'tool_completed', 'tool_async_completed'
       'completed'
-    when 'tool_failed'
+    when 'tool_failed', 'tool_async_failed'
       'failed'
     end
   end

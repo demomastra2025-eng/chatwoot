@@ -2,7 +2,7 @@
 
 Canonical internal contract for how OneLink, Fonoster, and the OneLink voice runtimes must behave across `operator`, `ai`, and `app` modes for both inbound and outbound calls.
 
-Last updated: 2026-05-17.
+Last updated: 2026-05-18.
 
 Related active documents:
 
@@ -39,6 +39,14 @@ answer + StartStreamResponse(stream_ref present) -> first observed valid AUDIO_O
 ```
 
 `stream_started` means the runtime has received `StartStreamResponse` and has a usable `stream_ref`; it does not mean merely calling `stream()` / `StartStream.run()`. The first payload may be greeting, keepalive, or silence PCM, but it must be a real media `AUDIO_OUT` payload observed by Fonoster/bridge, not only an internal runtime event.
+
+Voice tool isolation contract:
+
+- Tool execution is never part of the first-audio SLA. The runtime must send greeting/keepalive before FAQ/CRM/API tool results are available.
+- Fast tools may run synchronously only inside a short per-tool timeout (`timeout_ms` from Rails catalog or `VOICE_AGENT_TOOL_TIMEOUT_MS`).
+- When a tool exceeds the voice timeout, the realtime response returns a bounded fallback immediately with `pending=true` and stable `request_id`; the underlying tool may continue out of band.
+- Late tool completion/failure is emitted as `tool_async_completed` / `tool_async_failed` with the same `request_id`; it must not reopen terminal calls or block media callbacks.
+- The model/runtime should use filler speech and post-tool continuation prompts so the caller never hears silence just because a tool is slow.
 
 OneLink owns the matrix contract. Fonoster/ct.z owns the counterpart execution contract. Both documents must describe the same AI production happy path above.
 
@@ -392,6 +400,7 @@ OneLink runtime obligations:
 - Fail fast and finalize `failed` when `StartStream.run()` does not return `streamRef`/stream response in time.
 - Send first greeting/keepalive without waiting for FAQ/tools.
 - Run FAQ/tools after the first phrase, asynchronously or in parallel where possible.
+- Return a bounded realtime fallback with `pending=true` and `request_id` when a tool exceeds its voice timeout; emit late `tool_async_completed` / `tool_async_failed` out of band instead of keeping the caller waiting.
 - Use `AUDIO_IN` only as caller input to Gemini.
 - Write Gemini output as `AUDIO_OUT` using `StreamMessageType.AUDIO_OUT`.
 - Pace output as PCM16 frames at `VOICE_AGENT_REALTIME_CALL_RATE` (currently 8000 Hz, 20 ms frames).
@@ -838,6 +847,7 @@ Important event status mappings in Rails:
 - `caller_hangup` -> `cancelled`
 - `session_completed`, `transfer_completed`, `call_ended`, `completed` -> `completed`
 - `recording_ready`, `transfer_requested`, `transfer_result`, transcript/tool/progress events do not directly change status.
+- `tool_started`, `tool_completed`, `tool_failed`, `tool_async_completed`, `tool_async_failed`, `dialogue_director_prompt`, and `post_tool_model_stall` are non-terminal AI telemetry; they must preserve correlation refs but must not directly change call status.
 
 Finalize allowed statuses:
 

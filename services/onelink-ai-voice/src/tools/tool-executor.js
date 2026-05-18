@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const { withTimeout, safeReason } = require('../utils/timeout');
 const { sanitizeErrorMessage } = require('../utils/errors');
 
@@ -16,21 +17,35 @@ class ToolExecutor {
   async execute(name, args = {}, metadata = {}) {
     const toolName = String(name || '').trim();
     const timeoutMs = this.timeoutFor(toolName);
-    const baseMetadata = { ...metadata, tool_name: toolName, timeout_ms: timeoutMs };
+    const requestId = metadata.request_id || metadata.requestId || metadata.tool_call_id || `tool_${randomUUID()}`;
+    const baseMetadata = { ...metadata, tool_name: toolName, timeout_ms: timeoutMs, request_id: requestId };
     await this.safeControl('tool_started', baseMetadata);
 
+    let timedOut = false;
+    const toolPromise = Promise.resolve().then(() => (
+      this.client.callTool(toolName, this.scopedPayload({ arguments: args, request_id: requestId }), { timeoutMs, requestId })
+    ));
+
+    toolPromise
+      .then(result => {
+        if (!timedOut) return null;
+        return this.safeControl('tool_async_completed', { ...baseMetadata, ok: true, async: true, result_present: result !== undefined });
+      })
+      .catch(error => {
+        if (!timedOut) return null;
+        const reason = sanitizeErrorMessage(error.message || safeReason(error));
+        return this.safeControl('tool_async_failed', { ...baseMetadata, ok: false, async: true, error: reason });
+      });
+
     try {
-      const result = await withTimeout(
-        this.client.callTool(toolName, this.scopedPayload({ arguments: args }), { timeoutMs }),
-        timeoutMs,
-        `tool ${toolName}`
-      );
+      const result = await withTimeout(toolPromise, timeoutMs, `tool ${toolName}`);
       await this.safeControl('tool_completed', { ...baseMetadata, ok: true });
       return { ok: true, result };
     } catch (error) {
       const reason = sanitizeErrorMessage(error.message || safeReason(error));
-      await this.safeControl('tool_failed', { ...baseMetadata, ok: false, error: reason });
-      return { ok: false, fallback: true, error: reason };
+      timedOut = isTimeoutError(error);
+      await this.safeControl('tool_failed', { ...baseMetadata, ok: false, error: reason, pending: timedOut || undefined, async: timedOut || undefined });
+      return { ok: false, fallback: true, error: reason, pending: timedOut || undefined, request_id: timedOut ? requestId : undefined };
     }
   }
 
@@ -60,6 +75,10 @@ class ToolExecutor {
     const parsed = Number.parseInt(candidate, 10);
     return parsed > 0 ? parsed : this.timeoutMs;
   }
+}
+
+function isTimeoutError(error) {
+  return error?.code === 'timeout' || /timed out/i.test(String(error?.message || ''));
 }
 
 function compactPayload(payload = {}) {

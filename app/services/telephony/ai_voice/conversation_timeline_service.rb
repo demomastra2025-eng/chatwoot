@@ -3,12 +3,14 @@ class Telephony::AiVoice::ConversationTimelineService
   EVENT_SOURCE_PREFIX = 'ai_voice_event'.freeze
   TRANSCRIPT_TYPE = 'ai_voice_transcript_turn'.freeze
   EVENT_TYPE = 'ai_voice_event'.freeze
-  TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed].freeze
+  TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed tool_async_completed tool_async_failed].freeze
   TOOL_EVENTS = {
     'tool_started' => 'start',
     'tool_progress' => 'progress',
     'tool_completed' => 'finish',
-    'tool_failed' => 'failed'
+    'tool_failed' => 'failed',
+    'tool_async_completed' => 'finish',
+    'tool_async_failed' => 'failed'
   }.freeze
   TOOL_CONTENT = {
     'start' => 'Using %<tool_name>s',
@@ -206,9 +208,9 @@ class Telephony::AiVoice::ConversationTimelineService
     case action
     when 'tool_started'
       "Инструмент #{tool_name} запущен"
-    when 'tool_completed'
+    when 'tool_completed', 'tool_async_completed'
       "Инструмент #{tool_name} выполнен"
-    when 'tool_failed'
+    when 'tool_failed', 'tool_async_failed'
       error = metadata['error'].to_s.strip
       error.present? ? "Инструмент #{tool_name} завершился с ошибкой: #{error}" : "Инструмент #{tool_name} завершился с ошибкой"
     end
@@ -219,12 +221,16 @@ class Telephony::AiVoice::ConversationTimelineService
   end
 
   def event_source_id(action, metadata, sequence)
-    suffix = metadata['tool_call_id'].presence || sequence.presence || SecureRandom.uuid
+    suffix = metadata['tool_call_id'].presence || metadata['request_id'].presence || metadata['requestId'].presence ||
+             sequence.presence || SecureRandom.uuid
     "#{EVENT_SOURCE_PREFIX}:#{call_session.external_call_ref}:#{action}:#{suffix}"
   end
 
   def safe_event_metadata(metadata)
-    metadata.slice('tool_name', 'tool_call_id', 'provider', 'ok', 'error', 'timeout_ms', 'reason', 'source', 'final_status')
+    metadata.slice(
+      'tool_name', 'tool_call_id', 'request_id', 'requestId', 'provider', 'ok', 'pending', 'async', 'error',
+      'timeout_ms', 'reason', 'source', 'final_status'
+    )
   end
 
   def captain_trace_payload
@@ -244,7 +250,7 @@ class Telephony::AiVoice::ConversationTimelineService
       tool_name: tool_name,
       event: trace_event,
       sequence: index,
-      tool_call_id: metadata['tool_call_id'].presence,
+      tool_call_id: metadata['tool_call_id'].presence || metadata['request_id'].presence || metadata['requestId'].presence,
       input: metadata['input'].presence,
       output: tool_trace_output(trace_event, metadata),
       error: metadata['error'].presence,

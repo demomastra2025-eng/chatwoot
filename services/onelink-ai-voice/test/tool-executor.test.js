@@ -26,20 +26,33 @@ test('ToolExecutor wraps Rails tools with start/complete control events', async 
   assert.equal(toolPayloads[0].number_ref, 'num-1');
 });
 
-test('ToolExecutor converts timeout/errors into bounded fallback results and emits tool_failed', async () => {
+test('ToolExecutor converts timeout into fallback, keeps tool running, and emits async completion', async () => {
   const controls = [];
+  const toolPayloads = [];
   const client = {
     sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
-    callTool: async () => new Promise((resolve) => setTimeout(() => resolve({ unreachable: true }), 50))
+    callTool: async (_name, payload) => {
+      toolPayloads.push(payload);
+      return new Promise((resolve) => setTimeout(() => resolve({ answer: 'late result' }), 30));
+    }
   };
   const executor = new ToolExecutor({ client, callRef: 'call-1', timeoutMs: 5 });
 
-  const result = await executor.execute('find_contact', { phone_number: '+7000' });
+  const result = await executor.execute('find_contact', { phone_number: '+7000' }, { tool_call_id: 'gemini-tool-1' });
 
   assert.equal(result.ok, false);
   assert.equal(result.fallback, true);
+  assert.equal(result.pending, true);
+  assert.equal(result.request_id, 'gemini-tool-1');
   assert.match(result.error, /timed out/);
   assert.deepEqual(controls.map((event) => event.action), ['tool_started', 'tool_failed']);
+  assert.equal(controls[1].metadata.pending, true);
+  assert.equal(toolPayloads[0].request_id, 'gemini-tool-1');
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(controls.map((event) => event.action), ['tool_started', 'tool_failed', 'tool_async_completed']);
+  assert.equal(controls[2].metadata.request_id, 'gemini-tool-1');
+  assert.equal(controls[2].metadata.async, true);
 });
 
 test('ToolExecutor uses per-tool timeout when catalog provides one', async () => {

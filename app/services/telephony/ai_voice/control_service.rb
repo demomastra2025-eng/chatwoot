@@ -4,7 +4,14 @@ class Telephony::AiVoice::ControlService
     transfer_started transfer_answered transfer_completed transfer_failed session_completed session_failed
     caller_hangup media_stream_closed media_stream_not_established provider_stream_closed provider_error fonoster_call_closed runtime_closed
     tool_requested_end_call handoff_requested close
+    tool_async_completed tool_async_failed
   ].freeze
+  BRIDGE_CALL_REF_KEYS = %w[bridge_call_ref bridgeCallRef parent_call_ref parentCallRef].freeze
+  RUNTIME_CALL_REF_KEYS = %w[
+    runtime_call_ref runtimeCallRef child_call_ref childCallRef ai_runtime_call_ref aiRuntimeCallRef
+  ].freeze
+  MEDIA_SESSION_REF_KEYS = %w[media_session_ref mediaSessionRef].freeze
+  STREAM_REF_KEYS = %w[stream_ref streamRef].freeze
 
   def initialize(payload:)
     @payload = payload.deep_stringify_keys
@@ -51,16 +58,46 @@ class Telephony::AiVoice::ControlService
   end
 
   def ingest_lifecycle_event!
-    Telephony::EventsIngestionService.new(
-      payload: {
-        event_key: payload['event_key'].presence || "ai-control:#{call_session.external_call_ref}:#{action}:#{SecureRandom.uuid}",
-        account_id: call_session.account_id,
-        call_ref: call_session.external_call_ref,
-        event: action,
-        occurred_at: Time.current.iso8601,
-        metadata: payload['metadata'].is_a?(Hash) ? payload['metadata'] : {}
-      }
-    ).perform
+    Telephony::EventsIngestionService.new(payload: lifecycle_event_payload).perform
+  end
+
+  def lifecycle_event_payload
+    {
+      event_key: lifecycle_event_key,
+      account_id: call_session.account_id,
+      call_ref: call_session.external_call_ref,
+      bridge_call_ref: bridge_call_ref,
+      runtime_call_ref: runtime_call_ref,
+      media_session_ref: metadata_value(*MEDIA_SESSION_REF_KEYS),
+      stream_ref: metadata_value(*STREAM_REF_KEYS),
+      event: action,
+      occurred_at: Time.current.iso8601,
+      metadata: lifecycle_metadata
+    }.compact
+  end
+
+  def lifecycle_event_key
+    payload['event_key'].presence || "ai-control:#{call_session.external_call_ref}:#{action}:#{SecureRandom.uuid}"
+  end
+
+  def lifecycle_metadata
+    @lifecycle_metadata ||= payload['metadata'].is_a?(Hash) ? payload['metadata'].deep_stringify_keys : {}
+  end
+
+  def bridge_call_ref
+    payload_value(*BRIDGE_CALL_REF_KEYS)
+  end
+
+  def runtime_call_ref
+    payload_value(*RUNTIME_CALL_REF_KEYS) || metadata_value(*RUNTIME_CALL_REF_KEYS) || linked_payload_call_ref
+  end
+
+  def linked_payload_call_ref
+    raw_call_ref = payload['call_ref'].presence || payload['callRef'].presence
+    return if raw_call_ref.blank? || bridge_call_ref.blank?
+    return if raw_call_ref == call_session.external_call_ref
+
+    raw_call_ref
   end
 
   def lifecycle_action?
@@ -85,5 +122,22 @@ class Telephony::AiVoice::ControlService
 
   def call_session
     @call_session ||= Telephony::AiVoice::CallSessionResolver.new(payload: payload).call_session
+  end
+
+  def payload_value(*keys)
+    value_for(payload, keys)
+  end
+
+  def metadata_value(*keys)
+    value_for(lifecycle_metadata, keys)
+  end
+
+  def value_for(source, keys)
+    keys.each do |key|
+      value = source[key]
+      return value if value.present?
+    end
+
+    nil
   end
 end

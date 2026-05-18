@@ -433,13 +433,13 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       existing_call_session.update!(status: 'in_progress')
 
-      %w[caller_interrupted tool_started tool_completed tool_failed ai_speaking].each do |event_name|
+      %w[caller_interrupted tool_started tool_completed tool_failed tool_async_completed tool_async_failed ai_speaking].each do |event_name|
         result = described_class.new(
           payload: payload.merge(
             event_key: "evt-#{event_name}",
             event: event_name,
             occurred_at: Time.current.iso8601,
-            payload: { tool_name: 'faq_lookup', ok: event_name == 'tool_completed' }
+            payload: { tool_name: 'faq_lookup', request_id: 'tool-req-1', ok: event_name.include?('completed') }
           )
         ).perform
 
@@ -448,8 +448,11 @@ RSpec.describe Telephony::EventsIngestionService do
       end
 
       tools = existing_call_session.latest_voice_message.reload.content_attributes.dig('data', 'tools')
-      expect(tools.map { |tool| tool['event'] }).to include('tool_started', 'tool_completed', 'tool_failed')
+      expect(tools.map { |tool| tool['event'] }).to include(
+        'tool_started', 'tool_completed', 'tool_failed', 'tool_async_completed', 'tool_async_failed'
+      )
       expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
+      expect(tools.filter_map { |tool| tool['request_id'] }).to all(eq('tool-req-1'))
     end
 
     it 'stores first_audio_out_write as non-terminal AI telemetry with stream correlation' do

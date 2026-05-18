@@ -2,7 +2,7 @@
 
 Audience: Fonoster/calls, Onelink Rails, Onelink VoiceAI, and Onelink operator/app voice runtime teams.
 
-Last updated: 2026-05-17.
+Last updated: 2026-05-18.
 
 This document defines the Fonoster-side telecom execution contract for all Onelink voice calls that pass through Fonoster. It is written so Onelink + VoiceAI can implement and debug against the Fonoster/calls behavior without reading Fonoster-side code.
 
@@ -113,6 +113,14 @@ target:
 ```
 
 The first `AUDIO_OUT` may be greeting audio, keepalive audio, or silence PCM. It must be a real media payload observed on the Fonoster/bridge media path, not only an internal runtime event.
+
+AI tool isolation:
+
+- FAQ/CRM/API tools are not part of the first-audio SLA and must not delay the first greeting or keepalive `AUDIO_OUT`.
+- OneLink runtime may execute fast tools synchronously only within a short per-tool voice timeout.
+- When a tool exceeds that timeout, OneLink runtime returns a bounded fallback to the realtime model immediately with `pending=true` and a stable `request_id`; the underlying tool may continue out of band.
+- Late completion/failure is emitted as `tool_async_completed` / `tool_async_failed` with the same `request_id`; these events are non-terminal telemetry and must not change call status by themselves.
+- Fonoster should continue media/stream delivery while tools are pending; tool latency is not a reason to close or reclassify the media session.
 
 ## Fonoster Execution Matrix
 
@@ -512,11 +520,12 @@ Required behavior:
 7. Forward caller `AUDIO_IN` to provider without blocking the media callback on Rails/tools/storage.
 8. Forward provider audio to caller as paced `AUDIO_OUT`.
 9. Send first greeting without waiting for FAQ/tools; run FAQ/tools after the first phrase asynchronously or in parallel.
-10. Emit transcript deltas and final transcript.
-11. Execute tool calls only through Rails.
-12. Record call if recording is enabled.
-13. Finalize exactly once.
-14. Close provider, stream, recorder, timers, and session state on terminal.
+10. If a tool exceeds its voice timeout, return bounded fallback with `pending=true`/`request_id` and emit late `tool_async_completed` / `tool_async_failed` telemetry when the tool eventually finishes.
+11. Emit transcript deltas and final transcript.
+12. Execute tool calls only through Rails.
+13. Record call if recording is enabled.
+14. Finalize exactly once.
+15. Close provider, stream, recorder, timers, and session state on terminal.
 
 ### operator Mode
 
