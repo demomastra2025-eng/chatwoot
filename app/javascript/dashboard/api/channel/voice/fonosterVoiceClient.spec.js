@@ -132,7 +132,7 @@ describe('fonosterVoiceClient', () => {
     }
   });
 
-  it('keeps the active SIP registration when only the webphone token rotates', async () => {
+  it('keeps the active SIP connection but re-registers when only the webphone token rotates', async () => {
     registerMock.mockImplementation(() => {
       simpleUserConstructorMock.mock.calls[0][1].delegate.onRegistered();
       return Promise.resolve();
@@ -155,7 +155,12 @@ describe('fonosterVoiceClient', () => {
     expect(simpleUserConstructorMock).toHaveBeenCalledTimes(1);
     expect(unregisterMock).not.toHaveBeenCalled();
     expect(disconnectMock).not.toHaveBeenCalled();
-    expect(registerMock).toHaveBeenCalledTimes(1);
+    expect(registerMock).toHaveBeenCalledTimes(2);
+    expect(registerMock.mock.calls[1][0]).toEqual({
+      requestOptions: {
+        extraHeaders: ['X-Connect-Token: rotated-token-for-same-operator'],
+      },
+    });
   });
 
   it('disables SIP.js built-in request logging so webphone tokens are not printed to the browser console', async () => {

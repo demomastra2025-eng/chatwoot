@@ -90,11 +90,11 @@ test('startManagedVoiceStream uses Fonoster StartStream/Stream/StopStream native
   stream.write({ type: 'audio_out', data: Buffer.from([4, 5]) });
   assert.equal(voiceWrites.length, 1);
   assert.deepEqual(voiceWrites[0].streamPayload, {
-    type: 'audio_out',
-    data: Buffer.from([4, 5]),
     mediaSessionRef: 'media-session-1',
     streamRef: 'managed-stream-1',
-    format: 'wav'
+    format: 'WAV',
+    type: 'AUDIO_OUT',
+    data: Buffer.from([4, 5])
   });
 
   stream.close();
@@ -105,6 +105,160 @@ test('startManagedVoiceStream uses Fonoster StartStream/Stream/StopStream native
   inputPayloads.length = 0;
   voiceTransport.emit('data', { streamPayload: { type: 'audio_in', streamRef: 'managed-stream-1', data: Buffer.from([9]) } });
   assert.equal(inputPayloads.length, 0, 'close must detach native transport listener');
+});
+
+test('startManagedVoiceStream writes outbound audio using the Fonoster 0.18 StreamPayload contract', async () => {
+  const voiceWrites = [];
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write(payload) { voiceWrites.push(payload); }
+  });
+  class FakeStartStream {
+    async run() {
+      return { startStreamResponse: { streamRef: 'managed-stream-contract' } };
+    }
+  }
+  class FakeStopStream {
+    async run() { return {}; }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-contract', mediaSessionRef: 'media-session-contract' },
+    voice: voiceTransport
+  };
+  const stream = await startManagedVoiceStream(call, {
+    direction: 'BOTH',
+    format: 'WAV',
+    internals: { StartStream: FakeStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+  });
+
+  stream.write({
+    type: 'audio_out',
+    format: 'wav',
+    media_session_ref: 'wrong-snake-media-ref',
+    stream_ref: 'wrong-snake-stream-ref',
+    data: Buffer.from([4, 5, 6, 7]),
+    debug: 'must-not-leak-to-fonoster'
+  });
+
+  assert.equal(voiceWrites.length, 1);
+  assert.deepEqual(voiceWrites[0], {
+    streamPayload: {
+      mediaSessionRef: 'media-session-contract',
+      streamRef: 'managed-stream-contract',
+      format: 'WAV',
+      type: 'AUDIO_OUT',
+      data: Buffer.from([4, 5, 6, 7])
+    }
+  });
+});
+
+test('startManagedVoiceStream reports first outbound write telemetry with audio validity stats', async () => {
+  const telemetry = [];
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write() { return true; }
+  });
+  class FakeStartStream {
+    async run() {
+      return { startStreamResponse: { streamRef: 'managed-stream-telemetry' } };
+    }
+  }
+  class FakeStopStream {
+    async run() { return {}; }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-telemetry', mediaSessionRef: 'media-session-telemetry' },
+    voice: voiceTransport
+  };
+  const stream = await startManagedVoiceStream(call, {
+    direction: 'BOTH',
+    format: 'WAV',
+    onAudioOutWrite: payload => telemetry.push(payload),
+    internals: { StartStream: FakeStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+  });
+
+  const audio = Buffer.alloc(4);
+  audio.writeInt16LE(0, 0);
+  audio.writeInt16LE(1000, 2);
+  stream.write({ type: 'audio_out', kind: 'model_audio', data: audio });
+
+  assert.equal(telemetry.length, 1);
+  assert.equal(telemetry[0].first_audio_out_write_bytes, 4);
+  assert.equal(telemetry[0].first_audio_out_write_kind, 'model_audio');
+  assert.equal(telemetry[0].first_audio_out_non_zero_ratio, 0.5);
+  assert.equal(Math.round(telemetry[0].first_audio_out_rms), 707);
+  assert.equal(telemetry[0].stream_ref, 'managed-stream-telemetry');
+  assert.equal(telemetry[0].media_session_ref, 'media-session-telemetry');
+  assert.match(telemetry[0].first_audio_out_write_at, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('startManagedVoiceStream refuses a native media stream without a streamRef', async () => {
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write() { throw new Error('no outbound write is allowed without a streamRef'); }
+  });
+  class MissingStreamRefStartStream {
+    async run() {
+      return { startStreamResponse: {} };
+    }
+  }
+  class FakeStopStream {
+    async run() { return {}; }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-missing-stream-ref', mediaSessionRef: 'media-session-missing-stream-ref' },
+    voice: voiceTransport
+  };
+
+  await assert.rejects(
+    () => startManagedVoiceStream(call, {
+      direction: 'BOTH',
+      format: 'WAV',
+      internals: { StartStream: MissingStreamRefStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+    }),
+    error => {
+      assert.equal(error.reason, 'start_stream_missing_stream_ref');
+      assert.equal(error.source, 'fonoster_start_stream');
+      return true;
+    }
+  );
+});
+
+test('startManagedVoiceStream drops malformed outbound payloads before Fonoster write', async () => {
+  const voiceWrites = [];
+  const voiceTransport = Object.assign(new EventEmitter(), {
+    write(payload) { voiceWrites.push(payload); }
+  });
+  class FakeStartStream {
+    async run() {
+      return { startStreamResponse: { streamRef: 'managed-stream-guarded' } };
+    }
+  }
+  class FakeStopStream {
+    async run() { return {}; }
+  }
+  const call = {
+    request: { callRef: 'runtime-call-guarded', mediaSessionRef: 'media-session-guarded' },
+    voice: voiceTransport
+  };
+
+  const stream = await startManagedVoiceStream(call, {
+    direction: 'BOTH',
+    format: 'WAV',
+    internals: { StartStream: FakeStartStream, StopStream: FakeStopStream, Stream: FakeInternalStream }
+  });
+
+  stream.write({ type: 'debug', data: Buffer.from([1, 2, 3]) });
+  stream.write({ type: 'audio_out', data: Buffer.alloc(0) });
+  stream.write({ type: 'audio_out', data: 'not-binary-audio' });
+  assert.equal(voiceWrites.length, 0);
+
+  stream.write({ type: 'audio_out', data: Buffer.from([4, 5]) });
+  assert.equal(voiceWrites.length, 1);
+  assert.deepEqual(voiceWrites[0].streamPayload, {
+    mediaSessionRef: 'media-session-guarded',
+    streamRef: 'managed-stream-guarded',
+    format: 'WAV',
+    type: 'AUDIO_OUT',
+    data: Buffer.from([4, 5])
+  });
 });
 
 test('startManagedVoiceStream fails fast when Fonoster StartStream response never arrives', async () => {

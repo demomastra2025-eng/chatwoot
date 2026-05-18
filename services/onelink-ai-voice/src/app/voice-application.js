@@ -21,7 +21,8 @@ class VoiceApplication {
     toolTimeoutMs = 3_000,
     outputMaxBufferedMs = 5_000,
     clearOutputOnInterrupt = false,
-    postToolContinuationMs = 4_000
+    postToolContinuationMs = 4_000,
+    initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0)
   } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
@@ -36,6 +37,7 @@ class VoiceApplication {
     this.outputMaxBufferedMs = outputMaxBufferedMs;
     this.clearOutputOnInterrupt = clearOutputOnInterrupt;
     this.postToolContinuationMs = postToolContinuationMs;
+    this.initialMediaKeepaliveMs = initialMediaKeepaliveMs;
   }
 
   async handleCall(call, payload = {}) {
@@ -51,7 +53,12 @@ class VoiceApplication {
       bridgeCallRef: bridgeCallRefCandidate(requestPayload),
       toolTimeoutMs: this.toolTimeoutMs
     });
-    this.registry?.create({ callRef, context: {}, accountId: requestPayload.account_id });
+    this.registry?.create({
+      ...requestPayload,
+      callRef,
+      context: {},
+      accountId: requestPayload.account_id
+    });
 
     const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
     applyRouteScope(session, routeDecision);
@@ -61,7 +68,9 @@ class VoiceApplication {
     await session.safeEvent('call_started', {
       route_action: routeDecision.action || routeDecision.mode,
       route_reason: routeDecision.reason,
-      app_ref: routeDecision.app_ref || routeDecision.appRef || requestPayload.app_ref || requestPayload.appRef,
+      app_ref: selectedAppRef(requestPayload, routeDecision),
+      route_app_ref: routeAppRef(routeDecision),
+      topology: directAiTopology(requestPayload, routeDecision),
       from: requestPayload.caller_number || requestPayload.from,
       to: requestPayload.ingress_number || requestPayload.to,
       direction: requestPayload.direction || 'inbound'
@@ -132,9 +141,28 @@ class VoiceApplication {
     void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
 
     let mediaStream;
+    let initialMediaKeepalive = null;
     try {
-      mediaStream = await this.startMediaStream(call);
+      const mediaStreamRequestedAt = Date.now();
+      mediaStream = await this.startMediaStream(call, { session, requestPayload, routeDecision });
       if (!mediaStream) throw mediaStreamEstablishmentError('call.stream returned no media stream', 'call.stream');
+      const mediaStreamEstablishedAt = Date.now();
+      mediaStream.__onelinkEstablishedAt = new Date(mediaStreamEstablishedAt).toISOString();
+      mediaStream.__onelinkEstablishmentMs = Math.max(0, mediaStreamEstablishedAt - mediaStreamRequestedAt);
+      await session.safeEvent('media_stream_established', {
+        ...correlationPayload(session, requestPayload, routeDecision),
+        stream_ref: mediaStream.streamRef || mediaStream.stream_ref || requestPayload.stream_ref || requestPayload.streamRef,
+        media_session_ref: mediaStream.mediaSessionRef || mediaStream.media_session_ref || requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef,
+        media_stream_requested_at: new Date(mediaStreamRequestedAt).toISOString(),
+        media_stream_established_at: mediaStream.__onelinkEstablishedAt,
+        media_stream_establishment_ms: mediaStream.__onelinkEstablishmentMs
+      });
+      initialMediaKeepalive = startInitialMediaKeepalive({
+        mediaStream,
+        session,
+        requestPayload,
+        durationMs: this.initialMediaKeepaliveMs
+      });
     } catch (error) {
       return this.handleMediaStreamEstablishmentFailure({
         error,
@@ -150,6 +178,7 @@ class VoiceApplication {
     this.registry?.update?.(callRef, { context, state: session.state });
 
     if (session.state === 'fallback') {
+      initialMediaKeepalive?.stop?.('fallback');
       closeMediaStreamSafely(mediaStream);
       await this.fallbackResponder.greet(call);
       return { session, context, mode: 'fallback', completion: Promise.resolve() };
@@ -157,8 +186,14 @@ class VoiceApplication {
 
     let bridge;
     try {
-      bridge = await this.startRealtimeBridge(call, session, context, requestPayload, mediaStream);
+      bridge = await this.startRealtimeBridge(call, session, context, requestPayload, mediaStream, initialMediaKeepalive);
+      this.registry?.update?.(callRef, {
+        stream_ref: session.streamRef,
+        media_session_ref: session.mediaSessionRef,
+        state: session.state || 'active'
+      });
     } catch (error) {
+      initialMediaKeepalive?.stop?.('realtime_unavailable');
       const reason = sanitizeReason(error?.reason || error?.message || 'realtime_unavailable');
       if (isMediaStreamEstablishmentError(error)) {
         return this.handleMediaStreamEstablishmentFailure({
@@ -238,12 +273,21 @@ class VoiceApplication {
     this.registry?.update?.(session.callRef, { routeDecision, state: 'failed' });
   }
 
-  async startRealtimeBridge(call, session, context, requestPayload = {}, existingMediaStream = null) {
-    const mediaStream = existingMediaStream || await this.startMediaStream(call);
+  async startRealtimeBridge(call, session, context, requestPayload = {}, existingMediaStream = null, initialMediaKeepalive = null) {
+    const mediaStream = existingMediaStream || await this.startMediaStream(call, { session, requestPayload, routeDecision: context });
     if (!mediaStream) throw mediaStreamEstablishmentError('call.stream returned no media stream', 'call.stream');
 
-    let streamRef = mediaStream?.streamRef || requestPayload.stream_ref || requestPayload.media_session_ref || '';
-    const mediaSessionRef = requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef;
+    let streamRef = String(mediaStream?.streamRef || mediaStream?.stream_ref || requestPayload.stream_ref || requestPayload.streamRef || '').trim();
+    const mediaSessionRef = String(mediaStream?.mediaSessionRef || mediaStream?.media_session_ref || requestPayload.media_session_ref || requestPayload.mediaSessionRef || call?.request?.mediaSessionRef || session.callRef || '').trim();
+    if (!streamRef) {
+      closeMediaStreamSafely(mediaStream);
+      const error = mediaStreamEstablishmentError('media_stream_missing_stream_ref', 'call.stream');
+      error.upstreamReason = 'media_stream_missing_stream_ref';
+      throw error;
+    }
+    session.streamRef = streamRef || session.streamRef;
+    session.mediaSessionRef = mediaSessionRef || session.mediaSessionRef;
+    initialMediaKeepalive?.updateRefs?.({ streamRef, mediaSessionRef });
     let acceptingInput = true;
     let lastAudioOutLogAt = 0;
     let lastCallerTranscriptAt = null;
@@ -258,6 +302,32 @@ class VoiceApplication {
     });
     const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
     const recordingWriter = this.createRecordingWriter(session, requestPayload, context);
+    const degradedRecordingDirections = new Set();
+    const writeRecordingAudio = (direction, data, metadata = {}) => {
+      if (!recordingWriter || !data) return;
+      const missingDirection = direction === 'inbound' ? 'caller' : 'remote';
+      const reportDegraded = error => {
+        if (degradedRecordingDirections.has(direction)) return;
+        degradedRecordingDirections.add(direction);
+        void session.safeEvent('recording_incomplete', {
+          recording_status: 'incomplete',
+          degraded: true,
+          missing_direction: missingDirection,
+          reason: 'recording_write_failed',
+          error_message: sanitizeReason(error?.message || error?.reason || 'recording_write_failed'),
+          stream_ref: metadata.stream_ref || streamRef,
+          media_session_ref: metadata.media_session_ref || mediaSessionRef
+        });
+      };
+      try {
+        const result = direction === 'inbound'
+          ? recordingWriter.writeInbound(data, metadata)
+          : recordingWriter.writeOutbound(data, metadata);
+        if (result && typeof result.then === 'function') result.catch(reportDegraded);
+      } catch (error) {
+        reportDegraded(error);
+      }
+    };
     if (recordingWriter) {
       void recordingWriter.start({ sampleRate: FONOSTER_CALL_RATE });
     }
@@ -274,11 +344,15 @@ class VoiceApplication {
       frame_ms: 20,
       expected_frame_bytes: mediaFrameBytes
     });
+    const establishedAtMs = Date.parse(mediaStream.__onelinkEstablishedAt || '');
     await session.safeEvent('media_stream_started', {
       ...correlationPayload(session, requestPayload, context),
       stream_ref: streamRef,
       media_stream_id: streamRef,
       media_session_ref: mediaSessionRef,
+      media_stream_established_at: mediaStream.__onelinkEstablishedAt,
+      media_stream_establishment_ms: mediaStream.__onelinkEstablishmentMs,
+      established_to_media_started_ms: Number.isNaN(establishedAtMs) ? undefined : Math.max(0, Date.now() - establishedAtMs),
       input_rate: FONOSTER_INPUT_RATE,
       telephony_output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
@@ -337,7 +411,7 @@ class VoiceApplication {
             frame_bytes: frame.length
           });
         }
-        void recordingWriter?.writeOutbound?.(frame, {
+        writeRecordingAudio('outbound', frame, {
           stream_ref: streamRef,
           media_session_ref: mediaSessionRef,
           source: 'media_writer'
@@ -348,6 +422,7 @@ class VoiceApplication {
             streamRef,
             format: streamConstants.wavFormat,
             type: streamConstants.audioOut,
+            kind: 'model_audio',
             data: frame
           });
           if (writeResult && typeof writeResult.then === 'function') {
@@ -373,6 +448,7 @@ class VoiceApplication {
       tools: normalizeContextTools(context.tools),
       onAudio: (chunk, metadata = {}) => {
         postToolWatchdog.cancel('model_audio');
+        initialMediaKeepalive?.stop?.('model_audio');
         if (!outputPacer || !chunk) return;
         const data = fonosterAudioChunk(chunk, metadata);
         if (!data.length) return;
@@ -467,15 +543,16 @@ class VoiceApplication {
 
     wireMediaInput(mediaStream, payload => {
       if (!acceptingInput || !payload || !payload.data || !isAudioIn(payload.type)) return;
-      streamRef = payload.streamRef || streamRef;
+      streamRef = payload.streamRef || payload.stream_ref || streamRef;
+      session.streamRef = streamRef || session.streamRef;
       const recordingInput = resamplePcm16(
         Buffer.from(payload.data),
         audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE,
         FONOSTER_CALL_RATE
       );
-      void recordingWriter?.writeInbound?.(recordingInput, {
+      writeRecordingAudio('inbound', recordingInput, {
         ...payload,
-        stream_ref: payload.streamRef || streamRef,
+        stream_ref: payload.streamRef || payload.stream_ref || streamRef,
         media_session_ref: mediaSessionRef
       });
       realtime.sendAudio(Buffer.from(payload.data), {
@@ -492,7 +569,10 @@ class VoiceApplication {
       recordingWriter,
       registry: this.registry,
       stopInput: () => { acceptingInput = false; },
-      onFinish: () => postToolWatchdog.cancel('completion')
+      onFinish: () => {
+        initialMediaKeepalive?.stop?.('completion');
+        postToolWatchdog.cancel('completion');
+      }
     });
     try {
       await realtime.connect(callbacks);
@@ -519,7 +599,7 @@ class VoiceApplication {
   }
 
   async handleMediaStreamEstablishmentFailure({ error, call, session, requestPayload = {}, routeDecision = {}, context = {} }) {
-    const reason = sanitizeReason(error?.reason || error?.message || 'media_stream_not_established');
+    const reason = sanitizeReason(error?.upstreamReason || error?.reason || error?.message || 'media_stream_not_established');
     const eventContext = context || routeDecision;
 
     if (!session.context) {
@@ -555,7 +635,7 @@ class VoiceApplication {
     return { session, context: session.context || context, mode: 'failed', completion: Promise.resolve(), reason: 'media_stream_not_established' };
   }
 
-  async startMediaStream(call) {
+  async startMediaStream(call, { session = null, requestPayload = {}, routeDecision = {} } = {}) {
     if (this.mediaStreamFactory) {
       try {
         return await this.mediaStreamFactory(call);
@@ -569,7 +649,8 @@ class VoiceApplication {
     try {
       return await this.managedStreamStarter(call, {
         direction: streamConstants.bothDirection,
-        format: streamConstants.wavFormat
+        format: streamConstants.wavFormat,
+        onAudioOutWrite: firstAudioOutWriteReporter(session, requestPayload, routeDecision)
       });
     } catch (error) {
       const upstreamReason = error?.reason || error?.code || sanitizeReason(error?.message || '');
@@ -853,6 +934,114 @@ function closeMediaStreamSafely(mediaStream) {
   } catch (_error) {
     // ignore media stream cleanup errors
   }
+}
+
+function firstAudioOutWriteReporter(session, requestPayload = {}, routeDecision = {}) {
+  if (!session || typeof session.safeEvent !== 'function') return null;
+
+  let reported = false;
+  return metadata => {
+    if (reported) return;
+    reported = true;
+    void session.safeEvent('first_audio_out_write', {
+      ...correlationPayload(session, requestPayload, routeDecision),
+      ...metadata
+    });
+  };
+}
+
+function startInitialMediaKeepalive({ mediaStream, session, requestPayload = {}, durationMs = 0, frameMs = 20 } = {}) {
+  const maxDurationMs = Number(durationMs) || 0;
+  if (!mediaStream || typeof mediaStream.write !== 'function' || maxDurationMs <= 0) return null;
+
+  let streamRef = String(mediaStream.streamRef || mediaStream.stream_ref || requestPayload.stream_ref || requestPayload.streamRef || '').trim();
+  let mediaSessionRef = String(mediaStream.mediaSessionRef || mediaStream.media_session_ref || requestPayload.media_session_ref || requestPayload.mediaSessionRef || session?.callRef || '').trim();
+  if (!streamRef) return null;
+
+  const frameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, frameMs);
+  const silenceFrame = Buffer.alloc(frameBytes);
+  const startedAt = Date.now();
+  let stopped = false;
+  let timer = null;
+  let framesWritten = 0;
+
+  const stop = reason => {
+    if (stopped) return;
+    stopped = true;
+    clearTimer(timer);
+    timer = null;
+    if (framesWritten > 0) {
+      void session?.safeEvent?.('media_keepalive_stopped', {
+        reason,
+        frames_written: framesWritten,
+        duration_ms: Math.max(0, Date.now() - startedAt),
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      });
+    }
+  };
+
+  const reportFailure = (reason, error) => {
+    void session?.safeEvent?.('media_keepalive_failed', {
+      reason,
+      error_message: sanitizeReason(error?.message || error?.reason || reason),
+      error_code: error?.code,
+      stream_ref: streamRef,
+      media_session_ref: mediaSessionRef
+    });
+    stop(reason);
+  };
+
+  const writeSilence = () => {
+    if (stopped) return;
+    if (Date.now() - startedAt >= maxDurationMs) {
+      stop('timeout');
+      return;
+    }
+
+    try {
+      const result = mediaStream.write({
+        mediaSessionRef,
+        streamRef,
+        format: streamConstants.wavFormat,
+        type: streamConstants.audioOut,
+        kind: 'keepalive_silence',
+        data: silenceFrame
+      });
+      framesWritten += 1;
+      if (framesWritten === 1) {
+        void session?.safeEvent?.('media_keepalive_started', {
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef,
+          output_format: streamConstants.wavFormat,
+          output_encoding: 'pcm_s16le',
+          telephony_output_rate: FONOSTER_CALL_RATE,
+          frame_ms: frameMs,
+          frame_bytes: frameBytes,
+          max_duration_ms: maxDurationMs
+        });
+      }
+      if (result && typeof result.then === 'function') {
+        result.catch(error => reportFailure('media_keepalive_write_failed', error));
+      }
+    } catch (error) {
+      reportFailure('media_keepalive_write_failed', error);
+    }
+  };
+
+  writeSilence();
+  if (!stopped) {
+    timer = setInterval(writeSilence, frameMs);
+    timer.unref?.();
+  }
+
+  return {
+    stop,
+    updateRefs(refs = {}) {
+      streamRef = String(refs.streamRef || refs.stream_ref || streamRef || '').trim();
+      mediaSessionRef = String(refs.mediaSessionRef || refs.media_session_ref || mediaSessionRef || '').trim();
+    }
+  };
 }
 
 function buildPassiveRecordingCompletion({ call, passiveRecording }) {
@@ -1193,6 +1382,11 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
       // ignore close errors
     }
     try {
+      await mediaStream?.close?.();
+    } catch (_error) {
+      // ignore stream cleanup errors
+    }
+    try {
       await recordingWriter?.close?.({ endedAt: new Date() });
     } catch (_error) {
       // recording_ready/error reporting is best effort and must not block call cleanup
@@ -1515,6 +1709,11 @@ function parseStreamRate(value, fallback) {
   return Number.isFinite(rate) && rate > 0 ? rate : fallback;
 }
 
+function parsePositiveInt(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function envFlag(name) {
   return truthy(process.env[name]);
 }
@@ -1675,13 +1874,22 @@ function bridgeEventPayload(event, session, requestPayload = {}, routeDecision =
     event_key: `runtime:${session.callRef}:${event}`,
     event,
     call_ref: session.callRef,
+    bridge_call_ref: session.bridgeCallRef || bridgeCallRefCandidate(requestPayload) || bridgeCallRefCandidate(routeDecision),
+    runtime_call_ref: session.callRef,
+    ai_runtime_call_ref: session.callRef,
+    media_session_ref: session.mediaSessionRef || requestPayload.media_session_ref || requestPayload.mediaSessionRef,
+    stream_ref: session.streamRef || requestPayload.stream_ref || requestPayload.streamRef,
     account_id: session.accountId || requestPayload.account_id || requestPayload.accountId,
     number_ref: session.numberRef || requestPayload.number_ref || requestPayload.numberRef,
+    app_ref: selectedAppRef(requestPayload, routeDecision),
     ingress_number: session.ingressNumber || requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to,
     caller_number: session.callerNumber || requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from,
     metadata: {
       ...operatorRouteMetadata(routeDecision),
       ...metadata,
+      route_app_ref: routeAppRef(routeDecision),
+      selected_app_ref: selectedAppRef(requestPayload, routeDecision),
+      topology: directAiTopology(requestPayload, routeDecision),
       route_action: routeDecision.action || routeDecision.mode,
       route_reason: routeDecision.reason
     }
@@ -1863,12 +2071,39 @@ function correlationPayload(session, requestPayload = {}, data = {}) {
     inbox_id: source.inbox_id || source.inboxId || requestPayload.inbox_id || requestPayload.inboxId,
     number_ref: session?.numberRef || source.number_ref || source.numberRef || requestPayload.number_ref || requestPayload.numberRef,
     ai_session_id: session?.aiSessionId,
+    media_session_ref: session?.mediaSessionRef || source.media_session_ref || source.mediaSessionRef || requestPayload.media_session_ref || requestPayload.mediaSessionRef,
+    stream_ref: session?.streamRef || source.stream_ref || source.streamRef || requestPayload.stream_ref || requestPayload.streamRef,
     provider: source.provider || source.ai?.provider || 'gemini-live',
     provider_session_id: source.provider_session_id || source.providerSessionId || session?.aiSessionId,
-    app_ref: source.app_ref || source.appRef || requestPayload.app_ref || requestPayload.appRef,
+    app_ref: selectedAppRef(requestPayload, source),
+    route_app_ref: routeAppRef(source),
+    topology: directAiTopology(requestPayload, source),
     route_action: source.action || source.mode,
     route_reason: source.reason
   });
+}
+
+function selectedAppRef(requestPayload = {}, routeDecision = {}) {
+  const inboundAppRef = requestAppRef(requestPayload);
+  if (inboundAppRef && directAiTopology(requestPayload, routeDecision) === 'direct_ai') return inboundAppRef;
+
+  return routeAppRef(routeDecision) || inboundAppRef;
+}
+
+function directAiTopology(requestPayload = {}, routeDecision = {}) {
+  const inboundAppRef = requestAppRef(requestPayload);
+  const routedAppRef = routeAppRef(routeDecision);
+  const routeReason = String(routeDecision?.reason || '').trim().toLowerCase();
+  if (inboundAppRef && routedAppRef && inboundAppRef !== routedAppRef && routeReason === 'recursive_runtime_app_ref') return 'direct_ai';
+  return undefined;
+}
+
+function routeAppRef(routeDecision = {}) {
+  return routeDecision?.app_ref || routeDecision?.appRef;
+}
+
+function requestAppRef(requestPayload = {}) {
+  return requestPayload?.app_ref || requestPayload?.appRef;
 }
 
 async function rejectCall(call, routeDecision = {}) {

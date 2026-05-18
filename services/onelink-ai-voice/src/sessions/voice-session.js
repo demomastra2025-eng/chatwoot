@@ -18,6 +18,10 @@ class VoiceSession {
     this.startedAt = new Date();
     this.eventSeq = 0;
     this.closed = false;
+    this.finalizeSent = false;
+    this.finalizeInFlight = false;
+    this.mediaSessionRef = null;
+    this.streamRef = null;
     this.context = null;
     this.state = 'new';
     this.transcripts = new TranscriptBuffer({ client, callRef, scopeProvider: () => this.scopePayload() });
@@ -65,6 +69,7 @@ class VoiceSession {
   }
 
   recordTranscript(item) {
+    if (this.closed) return null;
     const normalized = this.transcripts.add(item);
     if (!normalized) return null;
 
@@ -79,6 +84,7 @@ class VoiceSession {
   }
 
   executeTool(name, args = {}, metadata = {}) {
+    if (this.closed) return { ok: false, ignored: true, reason: 'session_closed' };
     return this.tools.execute(name, args, metadata);
   }
 
@@ -102,6 +108,7 @@ class VoiceSession {
   }
 
   async safeControl(action, metadata = {}) {
+    if (this.closed && !terminalLifecycleAction(action)) return;
     try {
       await this.client.sendControl(this.scopedPayload({ action, metadata }));
     } catch (_error) {
@@ -112,6 +119,8 @@ class VoiceSession {
 
   async safeFinalize(action, metadata = {}) {
     if (typeof this.client.finalizeCall !== 'function') return;
+    if (this.finalizeSent || this.finalizeInFlight) return;
+    this.finalizeInFlight = true;
 
     try {
       const includePartialTranscript = Boolean(metadata.include_partial_transcript || metadata.incomplete_transcript);
@@ -125,6 +134,8 @@ class VoiceSession {
         runtime_call_ref: this.callRef,
         ai_session_id: this.aiSessionId,
         provider_session_id: metadata.provider_session_id || this.aiSessionId,
+        media_session_ref: metadata.media_session_ref || this.mediaSessionRef || undefined,
+        stream_ref: metadata.stream_ref || this.streamRef || undefined,
         conversation_id: this.context?.conversation_id || this.context?.conversationId,
         status: metadata.final_status || finalStatusForAction(action),
         started_at: this.startedAt.toISOString(),
@@ -137,19 +148,26 @@ class VoiceSession {
         summary: metadata.summary,
         transfer_result: metadata.transfer_result,
         recording_url: metadata.recording_url,
+        recording_status: metadata.recording_status,
+        degraded: metadata.degraded,
+        missing_direction: metadata.missing_direction,
         source: metadata.source,
         close_code: metadata.close_code,
         close_reason: metadata.close_reason,
         error_code: metadata.error_code,
         error_message: metadata.error_message || metadata.reason
       }));
+      this.finalizeSent = true;
     } catch (_error) {
       // Finalize is retried by the caller/runtime path; media cleanup must still complete.
+    } finally {
+      this.finalizeInFlight = false;
     }
   }
 
   async safeEvent(eventType, eventPayload = {}) {
     if (typeof this.client.sendEvent !== 'function') return;
+    if (this.closed && !terminalLifecycleAction(eventType)) return;
 
     try {
       await this.client.sendEvent(this.eventPayload(eventType, eventPayload));
@@ -191,6 +209,8 @@ class VoiceSession {
     return {
       account_id: this.accountId,
       bridge_call_ref: this.bridgeCallRef,
+      media_session_ref: this.mediaSessionRef,
+      stream_ref: this.streamRef,
       number_ref: this.numberRef,
       ingress_number: this.ingressNumber,
       caller_number: this.callerNumber
@@ -207,6 +227,21 @@ function finalStatusForAction(action) {
   if (normalized.includes('operator_unavailable') || normalized.includes('operator_no_answer')) return 'operator_unavailable';
   if (normalized.includes('transfer')) return 'transferred';
   return 'completed';
+}
+
+function terminalLifecycleAction(action) {
+  const normalized = String(action || '').toLowerCase();
+  return normalized.includes('completed') ||
+    normalized.includes('failed') ||
+    normalized.includes('cancelled') ||
+    normalized.includes('caller_hangup') ||
+    normalized.includes('provider_stream_closed') ||
+    normalized.includes('media_stream_closed') ||
+    normalized.includes('media_stream_framing_error') ||
+    normalized.includes('media_stream_not_established') ||
+    normalized.includes('fonoster_call_closed') ||
+    normalized.includes('runtime_closed') ||
+    normalized.includes('transfer_completed');
 }
 
 function compactPayload(payload = {}) {

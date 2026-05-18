@@ -51,7 +51,8 @@ function buildCallFacade(request, voice) {
   return new Proxy(voice, {
     get(target, prop, receiver) {
       if (prop === 'request') return request || {};
-      if (prop === 'voice') return target;
+      if (prop === 'voice') return target.voice || target;
+      if (prop === 'response') return target;
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? value.bind(target) : value;
     },

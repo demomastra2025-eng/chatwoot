@@ -220,6 +220,15 @@ RSpec.describe Telephony::EventsIngestionService do
         status: 'ringing',
         last_event_at: 1.minute.ago
       )
+      child_voice_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:runtime-child-call-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'runtime-child-call-1' } }
+      )
 
       result = described_class.new(
         payload: payload.merge(
@@ -250,12 +259,61 @@ RSpec.describe Telephony::EventsIngestionService do
         'runtime_call_ref' => 'runtime-child-call-1',
         'event_key' => 'evt-parent-terminal-child-close-1'
       )
+      expect(child_voice_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(child_voice_message.content_attributes.dig('data', 'ai_voice')).to include(
+        'enabled' => true,
+        'state' => 'completed'
+      )
       expect(child_session.legs.last).to include(
         'event_key' => 'evt-parent-terminal-child-close-1',
         'event_type' => 'session_completed',
         'status' => 'completed',
         'leg' => 'ai'
       )
+    end
+
+    it 'resyncs a terminal linked runtime child voice message on parent terminal retry' do
+      ended_at = Time.zone.parse(15.seconds.ago.iso8601)
+      child_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: existing_call_session.conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        external_call_ref: 'runtime-child-call-retry-1',
+        status: 'completed',
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'media_stream_closed_after_audio',
+        last_event_at: ended_at,
+        metadata: { 'ai_voice' => { 'enabled' => true } }
+      )
+      child_voice_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:runtime-child-call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'runtime-child-call-retry-1' } }
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-parent-terminal-child-retry-sync-1',
+          event: 'session_completed',
+          runtime_call_ref: 'runtime-child-call-retry-1',
+          occurred_at: ended_at.iso8601,
+          ended_at: ended_at.iso8601,
+          ended_by: 'caller',
+          end_reason: 'media_stream_closed_after_audio'
+        )
+      ).perform
+
+      expect(child_session.reload).to have_attributes(status: 'completed', last_event_at: ended_at)
+      expect(child_voice_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(child_voice_message.content_attributes.dig('data', 'ai_voice')).to include('state' => 'completed')
     end
 
     it 'does not resurrect a linked runtime child when late runtime events arrive after parent terminal cleanup' do

@@ -31,10 +31,14 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
              event_id: 'evt-stream-started-1',
              event_seq: 2,
              event_type: 'stream_started',
-             provider_call_id: call_session.external_call_ref,
+             provider_call_id: 'runtime-call-legacy-1',
+             call_ref: 'runtime-call-legacy-1',
+             bridge_call_ref: call_session.external_call_ref,
+             runtime_call_ref: 'runtime-call-legacy-1',
              account_id: account.id,
              ai_session_id: 'ai-session-1',
              media_session_ref: 'media-session-1',
+             stream_ref: 'stream-1',
              occurred_at: Time.current.iso8601,
              payload: {
                stream_ref: 'stream-1',
@@ -58,7 +62,49 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.reload.legs.last).to include(
       'event_key' => 'evt-stream-started-1',
       'event_type' => 'stream_started',
-      'status' => 'in_progress'
+      'status' => 'in_progress',
+      'bridge_call_ref' => call_session.external_call_ref,
+      'runtime_call_ref' => 'runtime-call-legacy-1',
+      'media_session_ref' => 'media-session-1',
+      'stream_ref' => 'stream-1'
+    )
+  end
+
+  it 'persists degraded recording metadata without making it a call terminal status' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/event',
+           params: {
+             event_id: 'evt-recording-incomplete-1',
+             event_seq: 4,
+             event_type: 'recording_incomplete',
+             bridge_call_ref: call_session.external_call_ref,
+             runtime_call_ref: 'runtime-recording-1',
+             account_id: account.id,
+             media_session_ref: 'media-recording-1',
+             stream_ref: 'stream-recording-1',
+             occurred_at: Time.current.iso8601,
+             payload: {
+               recording_status: 'incomplete',
+               degraded: true,
+               missing_direction: 'remote',
+               reason: 'recording_write_failed'
+             }
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Idempotency-Key' => 'evt-recording-incomplete-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload.status).to eq('in_progress')
+    expect(call_session.metadata['recording']).to include(
+      'recording_status' => 'incomplete',
+      'degraded' => true,
+      'missing_direction' => 'remote',
+      'media_session_ref' => 'media-recording-1',
+      'stream_ref' => 'stream-recording-1'
     )
   end
 
@@ -101,6 +147,10 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       provider_call_id: call_session.external_call_ref,
       account_id: account.id,
       conversation_id: conversation.id,
+      bridge_call_ref: call_session.external_call_ref,
+      runtime_call_ref: 'runtime-finalize-1',
+      media_session_ref: 'media-finalize-1',
+      stream_ref: 'stream-finalize-1',
       status: 'transferred',
       ended_at: Time.current.iso8601,
       duration_ms: 12_500,
@@ -142,7 +192,11 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.metadata.dig('ai_voice', 'finalize')).to include(
       'event_id' => 'evt-finalize-1',
       'status' => 'transferred',
-      'stored_status' => 'completed'
+      'stored_status' => 'completed',
+      'bridge_call_ref' => call_session.external_call_ref,
+      'runtime_call_ref' => 'runtime-finalize-1',
+      'media_session_ref' => 'media-finalize-1',
+      'stream_ref' => 'stream-finalize-1'
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('speaker')).to include('caller', 'assistant')
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
@@ -182,6 +236,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     end
 
     expect(call_session.reload.status).to eq('completed')
+    expect(response.parsed_body).to include('ok' => true, 'already_finalized' => true, 'conflict' => true)
     expect(call_session.metadata.dig('ai_voice', 'finalize')).to include('status' => 'completed')
     expect(call_session.metadata.dig('ai_voice', 'finalize_conflicts').last).to include('status' => 'failed')
     expect(conversation.reload.additional_attributes['ai_voice_final_status']).to eq('completed')

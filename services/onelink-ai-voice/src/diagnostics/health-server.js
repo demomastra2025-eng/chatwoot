@@ -4,7 +4,10 @@ function createHealthServer({ registry = null, port = 8081 } = {}) {
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/health' || req.url === '/ready') {
-      res.end(JSON.stringify({ status: 'ok', sessions: registry ? registry.sessions.size : 0 }));
+      const sessions = registry
+        ? (typeof registry.activeCount === 'function' ? registry.activeCount() : registry.sessions.size)
+        : 0;
+      res.end(JSON.stringify({ status: 'ok', sessions }));
       return;
     }
     res.statusCode = 404;

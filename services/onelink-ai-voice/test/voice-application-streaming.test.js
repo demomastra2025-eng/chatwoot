@@ -149,6 +149,133 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   call.emit('end');
   await result.completion;
   assert.equal(completed, true);
+  assert.equal(stream.closed, true);
+});
+
+test('VoiceApplication can send initial silence keepalive before Gemini emits first audio', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  let releaseContext;
+  const contextReady = new Promise(resolve => { releaseContext = resolve; });
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream: () => stream
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => {
+      await contextReady;
+      return {
+        call_ref: 'call-keepalive',
+        ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+        tools: []
+      };
+    },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; }
+  };
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async options => { realtimeCallbacks = options; },
+      sendText: () => {},
+      sendAudio: () => {},
+      close: () => {}
+    }),
+    initialMediaKeepaliveMs: 1_000
+  });
+
+  const resultPromise = app.handleCall(call, { call_ref: 'call-keepalive' });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(stream.writes.length > 0, true);
+  assert.equal(stream.writes[0].type, 'AUDIO_OUT');
+  assert.equal(stream.writes[0].streamRef, 'stream-1');
+  assert.equal(stream.writes[0].data.length, 320);
+  assert.equal(stream.writes[0].data.every(byte => byte === 0), true);
+
+  releaseContext();
+  const result = await resultPromise;
+  const geminiPcm24 = Buffer.alloc(960);
+  for (let index = 0; index < 480; index += 1) geminiPcm24.writeInt16LE(index, index * 2);
+  realtimeCallbacks.onAudio(geminiPcm24, { mimeType: 'audio/pcm;rate=24000' });
+  const modelAudioWrite = stream.writes.at(-1);
+  assert.equal(modelAudioWrite.data.readInt16LE(2), 3);
+
+  call.emit('end');
+  await result.completion;
+  assert.equal(events.some(payload => payload.event_type === 'media_keepalive_started'), true);
+  assert.equal(events.some(payload => payload.event_type === 'media_keepalive_stopped'), true);
+});
+
+test('VoiceApplication emits first_audio_out_write telemetry from the managed Fonoster write callback', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  let managedOptions;
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {}
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', app_ref: 'ai-app-1' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-first-audio-write',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+      tools: []
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; }
+  };
+  const app = new VoiceApplication({
+    client,
+    managedStreamStarter: async (_call, options) => {
+      managedOptions = options;
+      return stream;
+    },
+    realtimeFactory: () => ({
+      connect: async () => {},
+      sendText: () => {},
+      sendAudio: () => {},
+      close: () => {}
+    })
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-first-audio-write', media_session_ref: 'media-first-audio-write' });
+  managedOptions.onAudioOutWrite({
+    first_audio_out_write_at: '2026-05-17T12:00:00.000Z',
+    first_audio_out_write_bytes: 320,
+    first_audio_out_write_kind: 'keepalive_silence',
+    first_audio_out_non_zero_ratio: 0,
+    first_audio_out_rms: 0,
+    stream_ref: 'stream-1',
+    media_session_ref: 'media-first-audio-write'
+  });
+  managedOptions.onAudioOutWrite({
+    first_audio_out_write_at: '2026-05-17T12:00:00.020Z',
+    first_audio_out_write_bytes: 320,
+    first_audio_out_write_kind: 'model_audio',
+    first_audio_out_non_zero_ratio: 0.5,
+    first_audio_out_rms: 707,
+    stream_ref: 'stream-1',
+    media_session_ref: 'media-first-audio-write'
+  });
+  await new Promise(resolve => setImmediate(resolve));
+
+  const telemetryEvents = events.filter(payload => payload.event_type === 'first_audio_out_write');
+  assert.equal(telemetryEvents.length, 1);
+  assert.equal(telemetryEvents[0].payload.first_audio_out_write_kind, 'keepalive_silence');
+  assert.equal(telemetryEvents[0].payload.first_audio_out_write_bytes, 320);
+  assert.equal(telemetryEvents[0].payload.first_audio_out_non_zero_ratio, 0);
+  assert.equal(telemetryEvents[0].payload.stream_ref, 'stream-1');
+  assert.equal(telemetryEvents[0].payload.media_session_ref, 'media-first-audio-write');
+
+  call.emit('end');
+  await result.completion;
 });
 
 test('VoiceApplication keeps OneLink recording writer anchored in the realtime media path when enabled', async () => {
@@ -205,6 +332,58 @@ test('VoiceApplication keeps OneLink recording writer anchored in the realtime m
   await result.completion;
 
   assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
+});
+
+test('VoiceApplication marks recording incomplete without failing media when recording writes fail', async () => {
+  const stream = new FakeVoiceStream();
+  let realtimeCallbacks;
+  const events = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream: () => stream
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-recording-degraded',
+      account_id: 42,
+      recording: { enabled: true },
+      ai: { provider: 'gemini-live', first_message: 'Здравствуйте' },
+      tools: []
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; }
+  };
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({
+      connect: async options => { realtimeCallbacks = options; },
+      sendText: () => {},
+      sendAudio: () => {},
+      close: () => {}
+    }),
+    recordingWriterFactory: () => ({
+      start: async () => true,
+      writeInbound: () => { throw new Error('disk unavailable'); },
+      writeOutbound: async () => true,
+      close: async () => ({})
+    })
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-recording-degraded' });
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-degraded' });
+  await new Promise(resolve => setImmediate(resolve));
+  const degradedEvent = events.find(payload => payload.event_type === 'recording_incomplete');
+  assert.equal(degradedEvent.payload.recording_status, 'incomplete');
+  assert.equal(degradedEvent.payload.degraded, true);
+  assert.equal(degradedEvent.payload.missing_direction, 'caller');
+
+  realtimeCallbacks.onAudio(Buffer.alloc(960), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+  call.emit('end');
+  await result.completion;
 });
 
 test('VoiceApplication passively records operator-routed calls through the OneLink media path', async () => {
@@ -457,6 +636,49 @@ test('VoiceApplication fails explicitly when app leg answers but media stream is
   assert.equal(finalizations.at(-1).conversation_id, 77);
   assert.equal(finalizations.at(-1).ai_runtime_call_ref, 'call-no-media');
   assert.equal(events.some(event => event.event_type === 'media_stream_not_established'), true);
+  assert.deepEqual(hangups, [{ reason: 'media_stream_not_established' }]);
+});
+
+test('VoiceApplication refuses to write AUDIO_OUT before a real streamRef exists', async () => {
+  const stream = new FakeVoiceStream();
+  stream.streamRef = '';
+  stream.mediaSessionRef = 'media-no-stream-ref';
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  const hangups = [];
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; },
+    async hangup(payload) { hangups.push(payload); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-no-stream-ref' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-no-stream-ref', ai: { provider: 'gemini-live', first_message: 'Здравствуйте' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => { throw new Error('realtime should not start before streamRef is known'); }
+  });
+  const result = await app.handleCall(call, { call_ref: 'call-no-stream-ref', media_session_ref: 'media-no-stream-ref' });
+
+  assert.equal(result.mode, 'failed');
+  assert.equal(result.reason, 'media_stream_not_established');
+  assert.equal(stream.closed, true);
+  assert.equal(stream.writes.length, 0);
+  assert.equal(controls.at(-1).action, 'media_stream_not_established');
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'media_stream_not_established');
+  assert.equal(finalizations.at(-1).stream_ref, undefined);
+  const failureEvent = events.find(event => event.event_type === 'media_stream_not_established');
+  assert.equal(failureEvent.payload.reason, 'media_stream_missing_stream_ref');
   assert.deepEqual(hangups, [{ reason: 'media_stream_not_established' }]);
 });
 
@@ -1082,6 +1304,7 @@ test('VoiceApplication emits a terminal event when the operator leg ends', async
 test('VoiceApplication treats recursive AI app route decisions as local realtime sessions', async () => {
   const stream = new FakeVoiceStream();
   const bridgeEvents = [];
+  const events = [];
   let contextPayload;
   let realtimeCallbacks;
   const client = {
@@ -1093,6 +1316,7 @@ test('VoiceApplication treats recursive AI app route decisions as local realtime
       number_ref: 'number-ai-1'
     }),
     sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     getContext: async payload => {
       contextPayload = payload;
       return {
@@ -1130,6 +1354,15 @@ test('VoiceApplication treats recursive AI app route decisions as local realtime
   assert.equal(contextPayload.number_ref, 'number-ai-1');
   assert.equal(realtimeCallbacks.systemPrompt.includes('Здравствуйте'), true);
   assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started']);
+  assert.equal(bridgeEvents[0].app_ref, 'ai-app-1');
+  assert.equal(bridgeEvents[0].metadata.route_app_ref, 'fallback-runtime-app-1');
+  assert.equal(bridgeEvents[0].metadata.topology, 'direct_ai');
+  assert.equal(events.find(event => event.event_type === 'app_received_call').payload.app_ref, 'ai-app-1');
+  assert.equal(events.find(event => event.event_type === 'call_started').payload.app_ref, 'ai-app-1');
+  assert.equal(events.find(event => event.event_type === 'call_started').payload.route_app_ref, 'fallback-runtime-app-1');
+  assert.equal(events.find(event => event.event_type === 'call_started').payload.topology, 'direct_ai');
+  assert.equal(events.some(event => event.event_type === 'media_stream_established'), true);
+  assert.equal(events.find(event => event.event_type === 'media_stream_started').payload.established_to_media_started_ms >= 0, true);
 
   call.emit('end');
   await result.completion;

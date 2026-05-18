@@ -49,7 +49,7 @@ class Telephony::AiVoice::TranscriptIngestionService
   end
 
   def sync_voice_message_transcript!
-    message = call_session.latest_voice_message
+    message = call_session.voice_message_for_current_call
     return if message.blank?
 
     data = (message.content_attributes || {}).deep_dup

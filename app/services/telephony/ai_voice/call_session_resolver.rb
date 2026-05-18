@@ -87,7 +87,14 @@ class Telephony::AiVoice::CallSessionResolver
   end
 
   def call_ref
-    payload['call_ref'].presence || payload['callRef'].presence || payload['provider_call_id'].presence || payload['providerCallId'].presence
+    payload['bridge_call_ref'].presence ||
+      payload['bridgeCallRef'].presence ||
+      payload['parent_call_ref'].presence ||
+      payload['parentCallRef'].presence ||
+      payload['call_ref'].presence ||
+      payload['callRef'].presence ||
+      payload['provider_call_id'].presence ||
+      payload['providerCallId'].presence
   end
 
   def call_id

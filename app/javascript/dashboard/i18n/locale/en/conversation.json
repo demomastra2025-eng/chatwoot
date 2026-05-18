@@ -261,7 +261,14 @@
         "CREATED": "Payment link added to the reply",
         "CREATED_COPY": "Payment link copied to clipboard",
         "CREATE_ERROR": "Could not create payment link",
-        "KASPI_PAYMENT_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}"
+        "KASPI_PAYMENT_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}",
+        "KASPI_QR_IMAGE": "Kaspi QR image",
+        "KASPI_INVOICE": "Kaspi Pay invoice",
+        "PHONE_LABEL": "Customer phone",
+        "PHONE_PLACEHOLDER": "77011234567",
+        "CREATE_INVOICE": "Send invoice",
+        "KASPI_INVOICE_TEXT": "Kaspi Pay invoice sent to the customer. Amount: {amount} {currency}. Number: {orderNumber}",
+        "KASPI_QR_IMAGE_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}\nQR: {image}"
       },
       "EMAIL_HEAD": {
         "TO": "TO",

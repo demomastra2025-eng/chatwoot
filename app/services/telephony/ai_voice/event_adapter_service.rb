@@ -74,7 +74,10 @@ class Telephony::AiVoice::EventAdapterService
       'event_seq' => payload['event_seq'],
       'event_type' => event_type,
       'ai_session_id' => payload['ai_session_id'],
-      'media_session_ref' => payload['media_session_ref'],
+      'bridge_call_ref' => bridge_call_ref,
+      'runtime_call_ref' => runtime_call_ref,
+      'media_session_ref' => payload['media_session_ref'].presence || payload['mediaSessionRef'].presence,
+      'stream_ref' => stream_ref,
       'request_id' => headers['request_id'],
       'attempt' => attempt,
       'payload' => event_payload.presence
@@ -133,7 +136,34 @@ class Telephony::AiVoice::EventAdapterService
   end
 
   def call_ref
-    @call_ref ||= payload['call_ref'].presence || payload['callRef'].presence || payload['provider_call_id'].presence || payload['providerCallId'].presence
+    @call_ref ||= bridge_call_ref ||
+                  payload['call_ref'].presence ||
+                  payload['callRef'].presence ||
+                  payload['provider_call_id'].presence ||
+                  payload['providerCallId'].presence
+  end
+
+  def bridge_call_ref
+    payload['bridge_call_ref'].presence ||
+      payload['bridgeCallRef'].presence ||
+      payload['parent_call_ref'].presence ||
+      payload['parentCallRef'].presence
+  end
+
+  def runtime_call_ref
+    payload['runtime_call_ref'].presence ||
+      payload['runtimeCallRef'].presence ||
+      payload['child_call_ref'].presence ||
+      payload['childCallRef'].presence ||
+      payload['ai_runtime_call_ref'].presence ||
+      payload['aiRuntimeCallRef'].presence
+  end
+
+  def stream_ref
+    payload['stream_ref'].presence ||
+      payload['streamRef'].presence ||
+      event_payload['stream_ref'].presence ||
+      event_payload['streamRef'].presence
   end
 
   def account_id

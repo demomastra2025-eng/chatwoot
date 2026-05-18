@@ -240,7 +240,14 @@
         "CREATED": "Payment link added to the reply",
         "CREATED_COPY": "Payment link copied to clipboard",
         "CREATE_ERROR": "Could not create payment link",
-        "KASPI_PAYMENT_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}"
+        "KASPI_PAYMENT_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}",
+        "KASPI_QR_IMAGE": "Kaspi QR суреті",
+        "KASPI_INVOICE": "Kaspi Pay шоты",
+        "PHONE_LABEL": "Клиент телефоны",
+        "PHONE_PLACEHOLDER": "77011234567",
+        "CREATE_INVOICE": "Шот жіберу",
+        "KASPI_INVOICE_TEXT": "Kaspi Pay шоты клиентке жіберілді. Сома: {amount} {currency}. Нөмірі: {orderNumber}",
+        "KASPI_QR_IMAGE_TEXT": "Kaspi төлем сілтемесі: {link}\nСома: {amount} {currency}\nQR: {image}"
       },
       "EMAIL_HEAD": {
         "TO": "TO",

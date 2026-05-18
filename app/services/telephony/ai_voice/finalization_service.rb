@@ -35,7 +35,7 @@ class Telephony::AiVoice::FinalizationService
     ingest_final_transcript! unless already_finalized
     run_post_call_captain_features!
     sync_conversation!(already_finalized: already_finalized)
-    response_payload(already_finalized: already_finalized)
+    response_payload(already_finalized: already_finalized, conflict: already_finalized && finalize_conflict?)
   end
 
   private
@@ -49,6 +49,7 @@ class Telephony::AiVoice::FinalizationService
     ai_voice['transfer_result'] = transfer_result if transfer_result.present?
     ai_voice['final_transcript'] = final_transcript if final_transcript.present?
     ai_voice['last_error'] = error_payload if error_payload.present?
+    ai_voice['recording'] = recording_metadata if recording_metadata.present?
 
     attrs = {
       status: canonical_status,
@@ -136,15 +137,17 @@ class Telephony::AiVoice::FinalizationService
     finalized_metadata&.dig('status').presence || final_status
   end
 
-  def response_payload(already_finalized:)
+  def response_payload(already_finalized:, conflict: false)
     {
       status: 'ok',
+      ok: true,
       event_id: event_id,
       call_id: call_session.id,
       call_ref: call_session.external_call_ref,
       conversation_id: call_session.conversation_id,
       conversation_display_id: conversation&.display_id,
       already_finalized: already_finalized,
+      conflict: conflict,
       stored_status: call_session.status
     }.compact
   end
@@ -154,11 +157,16 @@ class Telephony::AiVoice::FinalizationService
       'event_id' => event_id,
       'event_seq' => payload['event_seq'],
       'provider_call_id' => provider_call_id,
-      'bridge_call_ref' => payload['bridge_call_ref'].presence || payload['bridgeCallRef'].presence,
-      'ai_runtime_call_ref' => payload['ai_runtime_call_ref'].presence || payload['aiRuntimeCallRef'].presence || call_ref,
+      'bridge_call_ref' => bridge_call_ref,
+      'runtime_call_ref' => runtime_call_ref,
+      'ai_runtime_call_ref' => ai_runtime_call_ref,
       'provider_session_id' => payload['provider_session_id'].presence || payload['providerSessionId'].presence,
       'ai_session_id' => payload['ai_session_id'],
-      'media_session_ref' => payload['media_session_ref'],
+      'media_session_ref' => media_session_ref,
+      'stream_ref' => stream_ref,
+      'recording_status' => recording_status,
+      'degraded' => degraded,
+      'missing_direction' => missing_direction,
       'status' => final_status,
       'stored_status' => canonical_status,
       'reason' => reason,
@@ -230,11 +238,38 @@ class Telephony::AiVoice::FinalizationService
   end
 
   def call_ref
-    @call_ref ||= payload['call_ref'].presence || payload['callRef'].presence || provider_call_id
+    @call_ref ||= bridge_call_ref || payload['call_ref'].presence || payload['callRef'].presence || provider_call_id
   end
 
   def provider_call_id
     payload['provider_call_id'].presence || payload['providerCallId'].presence
+  end
+
+  def bridge_call_ref
+    payload['bridge_call_ref'].presence ||
+      payload['bridgeCallRef'].presence ||
+      payload['parent_call_ref'].presence ||
+      payload['parentCallRef'].presence
+  end
+
+  def runtime_call_ref
+    payload['runtime_call_ref'].presence ||
+      payload['runtimeCallRef'].presence ||
+      payload['child_call_ref'].presence ||
+      payload['childCallRef'].presence ||
+      ai_runtime_call_ref
+  end
+
+  def ai_runtime_call_ref
+    payload['ai_runtime_call_ref'].presence || payload['aiRuntimeCallRef'].presence || call_ref
+  end
+
+  def media_session_ref
+    payload['media_session_ref'].presence || payload['mediaSessionRef'].presence
+  end
+
+  def stream_ref
+    payload['stream_ref'].presence || payload['streamRef'].presence
   end
 
   def call_session
@@ -276,6 +311,33 @@ class Telephony::AiVoice::FinalizationService
     }.compact
   end
 
+  def recording_metadata
+    metadata = {
+      'recording_ref' => recording_ref,
+      'recording_status' => recording_status,
+      'degraded' => degraded,
+      'missing_direction' => missing_direction,
+      'media_session_ref' => media_session_ref,
+      'stream_ref' => stream_ref
+    }.compact
+    metadata.presence
+  end
+
+  def recording_status
+    payload['recording_status'].presence || payload['recordingStatus'].presence
+  end
+
+  def degraded
+    value = payload.key?('degraded') ? payload['degraded'] : payload['recording_degraded']
+    return if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def missing_direction
+    payload['missing_direction'].presence || payload['missingDirection'].presence
+  end
+
   def recording_ref
     payload['recording_ref'].presence || payload['recordingRef'].presence || payload['recording_url'].presence || payload['recordingUrl'].presence
   end
@@ -300,7 +362,7 @@ class Telephony::AiVoice::FinalizationService
     return 'caller' if final_status == 'caller_hung_up'
     return 'operator' if final_status == 'transferred'
 
-    'ai_agent'
+    'ai'
   end
 
   def started_at

@@ -260,7 +260,14 @@
         "CREATED": "Ссылка на оплату добавлена в ответ",
         "CREATED_COPY": "Ссылка на оплату скопирована",
         "CREATE_ERROR": "Не удалось создать ссылку на оплату",
-        "KASPI_PAYMENT_TEXT": "Ссылка для оплаты Kaspi: {link}\nСумма: {amount} {currency}"
+        "KASPI_PAYMENT_TEXT": "Ссылка для оплаты Kaspi: {link}\nСумма: {amount} {currency}",
+        "KASPI_QR_IMAGE": "Kaspi QR картинка",
+        "KASPI_INVOICE": "Счёт Kaspi Pay",
+        "PHONE_LABEL": "Телефон клиента",
+        "PHONE_PLACEHOLDER": "77011234567",
+        "CREATE_INVOICE": "Отправить счёт",
+        "KASPI_INVOICE_TEXT": "Счёт Kaspi Pay отправлен клиенту. Сумма: {amount} {currency}. Номер: {orderNumber}",
+        "KASPI_QR_IMAGE_TEXT": "Ссылка для оплаты Kaspi: {link}\nСумма: {amount} {currency}\nQR: {image}"
       },
       "EMAIL_HEAD": {
         "TO": "ДО",

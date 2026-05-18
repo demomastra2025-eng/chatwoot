@@ -120,6 +120,7 @@ class Telephony::EventsIngestionService
 
   def process_event!(account, event)
     call_session = nil
+    linked_runtime_call_sessions = []
 
     ActiveRecord::Base.transaction do
       event.lock!
@@ -131,19 +132,20 @@ class Telephony::EventsIngestionService
       call_session = resolve_call_session!(account)
       call_session.with_lock do
         call_session = upsert_call_session!(call_session, account)
-        reconcile_linked_runtime_call_sessions!(account, call_session)
+        linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
 
-    run_side_effects!(call_session, account, event) if call_session.present?
+    run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions) if call_session.present?
     call_session
   end
 
-  def run_side_effects!(call_session, account, event)
+  def run_side_effects!(call_session, account, event, linked_runtime_call_sessions: [])
     ensure_conversation!(call_session, account)
     apply_call_status!(call_session)
     sync_voice_message!(call_session)
+    linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
     enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
   rescue StandardError => e
     event.update(status: 'failed', error_message: e.message)
@@ -218,20 +220,26 @@ class Telephony::EventsIngestionService
   end
 
   def reconcile_linked_runtime_call_sessions!(account, parent_call_session)
-    return unless parent_call_session.terminal?
+    return [] unless parent_call_session.terminal?
 
     refs = linked_runtime_call_refs - [parent_call_session.external_call_ref]
-    return if refs.blank?
+    return [] if refs.blank?
 
+    reconciled_call_sessions = []
     account.telephony_call_sessions.where(external_call_ref: refs).where.not(id: parent_call_session.id).find_each do |child_call_session|
       child_call_session.with_lock do
         child_call_session.reload
-        next if child_call_session.terminal?
+        if child_call_session.terminal?
+          reconciled_call_sessions << child_call_session
+          next
+        end
 
         child_call_session.assign_attributes(linked_runtime_child_attributes(parent_call_session, child_call_session))
         child_call_session.save!
+        reconciled_call_sessions << child_call_session
       end
     end
+    reconciled_call_sessions
   end
 
   def linked_runtime_child_attributes(parent_call_session, child_call_session)

@@ -43,6 +43,11 @@ describe('webphoneClient', () => {
     fonosterInitializeMock.mockReset();
     WebphoneClient.activeProvider = null;
     WebphoneClient.providerSessions = {};
+    Object.values(WebphoneClient.tokenRefreshTimers || {}).forEach(timer => {
+      window.clearTimeout(timer);
+    });
+    WebphoneClient.tokenRefreshTimers = {};
+    WebphoneClient.tokenRefreshState = {};
   });
 
   it('bootstraps fonoster browser calling without an inbox', async () => {
@@ -117,6 +122,120 @@ describe('webphoneClient', () => {
       })
     );
     expect(WebphoneClient.activeProvider).toBe('twilio');
+  });
+
+  it('refreshes fonoster webphone token before expiry and keeps the inbox scope', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-16T09:00:00.000Z'));
+
+    getWebphoneTokenMock
+      .mockResolvedValueOnce({
+        provider: 'fonoster',
+        calling_supported: true,
+        token: 'initial-token',
+        token_expires_in: 120,
+        username: 'agent-42',
+        domain: 'agents.example.test',
+        signalingServer: 'wss://bridge.example/ws',
+        targetAor: 'sip:agent-42@agents.example.test',
+      })
+      .mockResolvedValueOnce({
+        provider: 'fonoster',
+        calling_supported: true,
+        token: 'rotated-token',
+        token_expires_in: 120,
+        username: 'agent-42',
+        domain: 'agents.example.test',
+        signalingServer: 'wss://bridge.example/ws',
+        targetAor: 'sip:agent-42@agents.example.test',
+      });
+    fonosterInitializeMock.mockResolvedValue({
+      provider: 'fonoster',
+      callingSupported: true,
+      registered: true,
+    });
+
+    try {
+      await WebphoneClient.initializeDevice(4083);
+
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(1);
+      expect(getWebphoneTokenMock).toHaveBeenCalledWith(4083);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(2);
+      expect(getWebphoneTokenMock).toHaveBeenLastCalledWith(4083);
+      expect(fonosterInitializeMock).toHaveBeenCalledTimes(2);
+      expect(fonosterInitializeMock.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ token: 'rotated-token' })
+      );
+      expect(fonosterInitializeMock.mock.calls[1][1]).toEqual({
+        inboxId: 4083,
+      });
+    } finally {
+      Object.values(WebphoneClient.tokenRefreshTimers || {}).forEach(timer => {
+        window.clearTimeout(timer);
+      });
+      WebphoneClient.tokenRefreshTimers = {};
+      WebphoneClient.tokenRefreshState = {};
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries fonoster token refresh until a new token is fetched', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-16T09:00:00.000Z'));
+
+    getWebphoneTokenMock
+      .mockResolvedValueOnce({
+        provider: 'fonoster',
+        calling_supported: true,
+        token: 'initial-token',
+        token_expires_in: 120,
+        username: 'agent-42',
+        domain: 'agents.example.test',
+        signalingServer: 'wss://bridge.example/ws',
+        targetAor: 'sip:agent-42@agents.example.test',
+      })
+      .mockRejectedValueOnce(new Error('temporary bridge outage'))
+      .mockResolvedValueOnce({
+        provider: 'fonoster',
+        calling_supported: true,
+        token: 'rotated-token-after-retry',
+        token_expires_in: 120,
+        username: 'agent-42',
+        domain: 'agents.example.test',
+        signalingServer: 'wss://bridge.example/ws',
+        targetAor: 'sip:agent-42@agents.example.test',
+      });
+    fonosterInitializeMock.mockResolvedValue({
+      provider: 'fonoster',
+      callingSupported: true,
+      registered: true,
+    });
+
+    try {
+      await WebphoneClient.initializeDevice(4083);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(2);
+      expect(fonosterInitializeMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(3);
+      expect(fonosterInitializeMock).toHaveBeenCalledTimes(2);
+      expect(fonosterInitializeMock.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ token: 'rotated-token-after-retry' })
+      );
+    } finally {
+      Object.values(WebphoneClient.tokenRefreshTimers || {}).forEach(timer => {
+        window.clearTimeout(timer);
+      });
+      WebphoneClient.tokenRefreshTimers = {};
+      WebphoneClient.tokenRefreshState = {};
+      vi.useRealTimers();
+    }
   });
 
   it('keeps outbound fonoster calls out of the browser-join path', () => {

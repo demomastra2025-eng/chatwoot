@@ -227,6 +227,24 @@ describe('VoiceCall bubble', () => {
     expect(recording.attributes('data-show-transcribed-text')).toBe('false');
   });
 
+  it('renders the shared audio waveform chip for cancelled terminal calls with an authorized recording URL', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'cancelled',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-cancelled/recording.wav',
+        },
+      }),
+    });
+
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.exists()).toBe(true);
+    expect(recording.attributes('data-url')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-cancelled/recording.wav'
+    );
+  });
+
   it('renders the shared audio waveform chip when Rails sends snake_case recording_url', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
@@ -244,6 +262,25 @@ describe('VoiceCall bubble', () => {
       '/api/v1/accounts/1/telephony/calls/call-2/recording.mp3'
     );
     expect(recording.attributes('data-extension')).toBe('mp3');
+  });
+
+  it('preserves signed native playback query params for internal call recordings', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-3/recording?recording_token=signed-token',
+        },
+      }),
+    });
+
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.exists()).toBe(true);
+    expect(recording.attributes('data-url')).toBe(
+      '/api/v1/accounts/1/telephony/calls/call-3/recording?recording_token=signed-token'
+    );
+    expect(recording.attributes('data-extension')).toBe('wav');
   });
 
   it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {

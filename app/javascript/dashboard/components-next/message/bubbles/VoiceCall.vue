@@ -34,6 +34,13 @@ const BG_COLOR_MAP = {
   [VOICE_CALL_STATUS.FAILED]: 'bg-n-ruby-9',
 };
 
+const TERMINAL_RECORDING_STATUSES = [
+  VOICE_CALL_STATUS.COMPLETED,
+  VOICE_CALL_STATUS.NO_ANSWER,
+  VOICE_CALL_STATUS.FAILED,
+  'cancelled',
+];
+
 const router = useRouter();
 const { contentAttributes, messageType, createdAt } = useMessageContext();
 
@@ -86,6 +93,9 @@ const showTools = computed(
 const isJoining = ref(false);
 const showTranscript = ref(true);
 const timeLabel = computed(() => messageTimestamp(createdAt.value, 'HH:mm'));
+const hasRenderableRecordingStatus = computed(() =>
+  TERMINAL_RECORDING_STATUSES.includes(status.value)
+);
 
 const durationInSeconds = computed(() => {
   const explicitDuration = Number(
@@ -118,7 +128,7 @@ const formattedDuration = computed(() => {
 });
 
 const voiceCallBubbleStyle = computed(() => {
-  if (!(recordingUrl.value && status.value === VOICE_CALL_STATUS.COMPLETED)) {
+  if (!(recordingUrl.value && hasRenderableRecordingStatus.value)) {
     return {
       '--voice-call-bubble-width': '20rem',
     };
@@ -360,7 +370,7 @@ const handleJoinCall = async () => {
       </div>
 
       <div
-        v-if="recordingAttachment && status === VOICE_CALL_STATUS.COMPLETED"
+        v-if="recordingAttachment && hasRenderableRecordingStatus"
         class="px-3 pb-2"
       >
         <AudioChip

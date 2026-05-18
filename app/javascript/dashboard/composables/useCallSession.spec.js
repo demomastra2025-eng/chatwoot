@@ -209,6 +209,44 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('keeps a registered Fonoster call alive when the delayed SIP INVITE is not yet available', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-registered-waiting-for-invite',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'fonoster',
+      callingSupported: true,
+      registered: true,
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    const callSession = mountUseCallSession();
+
+    const result = await callSession.joinCall({
+      callSid: 'call-registered-waiting-for-invite',
+      provider: 'fonoster',
+      callDirection: 'inbound',
+    });
+
+    expect(result).toEqual({
+      provider: 'fonoster',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+    });
+    expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
+      'call-registered-waiting-for-invite'
+    );
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toMatchObject([
+      {
+        callSid: 'call-registered-waiting-for-invite',
+        browserJoinSupported: null,
+      },
+    ]);
+  });
+
   it('keeps the call visible as browser-unsupported when backend claim says the operator is not registered', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({

@@ -161,6 +161,14 @@ export function useCallSession() {
         });
 
         if (!joinResult) {
+          if (webphoneSession.registered === true) {
+            return {
+              provider: 'fonoster',
+              joinSupported: false,
+              reason: 'sip_invite_not_received',
+            };
+          }
+
           await releaseFonosterIncomingCall(callSid, {
             status: 'no_answer',
             reason: 'browser_webphone_not_ready',

@@ -99,3 +99,77 @@ test('VoiceSession applies timeout_ms from Rails tool catalog', async () => {
   assert.equal(callOptions[0].timeoutMs, 6_000);
   assert.equal(controls.find(payload => payload.action === 'tool_started').metadata.timeout_ms, 6_000);
 });
+
+test('VoiceSession sends finalize once with stable correlation refs', async () => {
+  const finalizes = [];
+  const client = {
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizes.push(payload); return { status: 'ok' }; }
+  };
+  const session = new VoiceSession({ client, callRef: 'runtime-ref', bridgeCallRef: 'bridge-ref', accountId: 42 });
+  session.mediaSessionRef = 'media-ref';
+  session.streamRef = 'stream-ref';
+
+  await session.safeFinalize('session_completed');
+  await session.safeFinalize('session_completed');
+  await session.close('provider_stream_closed');
+
+  assert.equal(finalizes.length, 1);
+  assert.equal(finalizes[0].event_id, 'finalize:runtime-ref:session_completed');
+  assert.equal(finalizes[0].bridge_call_ref, 'bridge-ref');
+  assert.equal(finalizes[0].runtime_call_ref, 'runtime-ref');
+  assert.equal(finalizes[0].media_session_ref, 'media-ref');
+  assert.equal(finalizes[0].stream_ref, 'stream-ref');
+});
+
+test('VoiceSession retries finalize after a transient client failure', async () => {
+  const finalizes = [];
+  let attempts = 0;
+  const client = {
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary finalize outage');
+      finalizes.push(payload);
+      return { status: 'ok' };
+    }
+  };
+  const session = new VoiceSession({ client, callRef: 'runtime-retry', bridgeCallRef: 'bridge-retry' });
+
+  await session.safeFinalize('session_completed');
+  await session.safeFinalize('session_completed');
+  await session.safeFinalize('session_completed');
+
+  assert.equal(attempts, 2);
+  assert.equal(finalizes.length, 1);
+  assert.equal(finalizes[0].bridge_call_ref, 'bridge-retry');
+});
+
+test('VoiceSession ignores non-terminal realtime work after close', async () => {
+  const calls = [];
+  const client = {
+    sendControl: async payload => { calls.push(['control', payload]); return { status: 'ok' }; },
+    sendEvent: async payload => { calls.push(['event', payload]); return { status: 'ok' }; },
+    sendTranscript: async payload => { calls.push(['transcript', payload]); return { status: 'ok', accepted: payload.items.length }; },
+    callTool: async (name, payload) => { calls.push(['tool', name, payload]); return { ok: true }; },
+    finalizeCall: async payload => { calls.push(['finalize', payload]); return { status: 'ok' }; }
+  };
+  const session = new VoiceSession({ client, callRef: 'late-runtime', bridgeCallRef: 'late-bridge' });
+
+  await session.close('session_completed');
+  await session.safeEvent('realtime_audio_out', { bytes: 320 });
+  await session.safeControl('tool_started', { tool_name: 'faq_lookup' });
+  session.recordAiTranscript('late text', { final: true });
+  await session.transcriptFlushPromise;
+  const toolResult = await session.executeTool('faq_lookup', { query: 'late' });
+
+  assert.equal(toolResult.ignored, true);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'event').map(([, payload]) => payload.event_type), ['session_completed']);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'control').map(([, payload]) => payload.action), ['session_completed']);
+  assert.equal(calls.some(([kind]) => kind === 'transcript'), false);
+  assert.equal(calls.some(([kind]) => kind === 'tool'), false);
+});

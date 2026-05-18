@@ -5,8 +5,9 @@ const { startFonosterVoiceServer } = require('../src/fonoster/server');
 class FakeVoice {
   #answerResult = 'answered';
 
-  constructor(id) {
+  constructor(id, rawVoice = null) {
     this.id = id;
+    if (rawVoice) this.voice = rawVoice;
   }
 
   get answered() {
@@ -79,4 +80,29 @@ test('startFonosterVoiceServer wires the real Fonoster listen(handler) shape and
   assert.equal(handledCall.call.answered, 'answered');
   assert.equal(await handledCall.call.answer(), 'answered');
   assert.equal(completionResolved, true);
+});
+
+test('call facade exposes Fonoster VoiceResponse methods while preserving raw voice transport for native streaming', async () => {
+  FakeVoiceServer.instances = [];
+  let handledCall = null;
+  const rawTransport = {
+    on() {},
+    write() {}
+  };
+  const app = {
+    async handleCall(call) {
+      handledCall = call;
+    },
+  };
+
+  const server = startFonosterVoiceServer({ VoiceServerImpl: FakeVoiceServer, app });
+  const request = { appRef: 'voice-app', callRef: 'call-2', mediaSessionRef: 'media-session-2' };
+  const response = new FakeVoice('voice-response', rawTransport);
+
+  await server.handler(request, response);
+
+  assert.equal(handledCall.request, request);
+  assert.equal(handledCall.voice, rawTransport);
+  assert.equal(handledCall.response, response);
+  assert.equal(await handledCall.answer(), 'answered');
 });

@@ -66,6 +66,7 @@ class FonosterVoiceClient extends EventTarget {
   async initializeDevice(sessionConfig, { inboxId = null } = {}) {
     const normalized =
       FonosterVoiceClient.normalizeSessionConfig(sessionConfig);
+    const previousToken = this.sessionConfig?.token;
     this.sessionConfig = normalized;
     this.inboxId = inboxId;
 
@@ -87,7 +88,10 @@ class FonosterVoiceClient extends EventTarget {
     }
 
     if (this.initialized && this.sessionSignature === signature) {
-      await this.ensureConnectedAndRegistered();
+      await this.ensureConnectedAndRegistered({
+        refreshRegistration:
+          Boolean(previousToken) && previousToken !== normalized.token,
+      });
       return this.sessionState(normalized);
     }
 
@@ -258,13 +262,13 @@ class FonosterVoiceClient extends EventTarget {
     this.presenceHeartbeatTimer = null;
   }
 
-  async ensureConnectedAndRegistered() {
+  async ensureConnectedAndRegistered({ refreshRegistration = false } = {}) {
     if (!this.simpleUser) return;
     if (!this.simpleUser.isConnected()) {
       await this.simpleUser.connect();
       this.connected = true;
     }
-    if (!this.registered) {
+    if (!this.registered || refreshRegistration) {
       await this.register();
       this.markRegistered();
     }

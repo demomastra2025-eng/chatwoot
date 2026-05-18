@@ -117,6 +117,48 @@ RSpec.describe 'Internal Voice AI Transcript API', type: :request do
     expect(call_session.metadata.dig('ai_voice', 'transcript', 'final_items').pluck('text')).to include('Здравствуйте')
   end
 
+  it 'updates the exact voice call bubble instead of a newer legacy voice_call bubble' do
+    exact_voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Voice Call',
+      source_id: "voice_call:#{call_session.external_call_ref}",
+      content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
+    )
+    legacy_voice_message = create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      content_type: :voice_call,
+      message_type: :incoming,
+      content: 'Legacy Voice Call',
+      content_attributes: { data: { status: 'completed' } }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/transcript',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             final: true,
+             items: [{ speaker: 'caller', text: 'Exact bubble transcript', final: true, at: Time.current.iso8601 }]
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(exact_voice_message.reload.content_attributes.dig('data', 'transcript_ref')).to eq("ai_voice_transcript:#{call_session.external_call_ref}")
+    expect(exact_voice_message.content_attributes.dig('data', 'transcript')).to eq('Клиент: Exact bubble transcript')
+    expect(legacy_voice_message.reload.content_attributes.dig('data', 'transcript_ref')).to be_blank
+    expect(legacy_voice_message.content_attributes.dig('data', 'transcript')).to be_blank
+  end
+
   it 'scopes transcript writes by account_id when call_ref collides across accounts' do
     other_account = create(:account)
     other_voice_channel = create(:channel_voice, :fonoster, account: other_account, phone_number: '+1555889002')

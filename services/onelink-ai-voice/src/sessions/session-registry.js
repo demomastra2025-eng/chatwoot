@@ -13,6 +13,7 @@ class ManagedSession {
     this.transcript = [];
     this.controlEvents = [];
     this.metadata = {};
+    this.aliases = new Set([callRef]);
   }
 
   touch() {
@@ -56,15 +57,14 @@ class SessionRegistry {
     this.maxHistory = maxHistory;
     this.now = now;
     this.sessions = new Map();
+    this.aliases = new Map();
   }
 
   create(options = {}) {
-    const callRef = options.callRef || options.call_ref;
+    const callRef = normalizeRef(options.callRef || options.call_ref);
     const existing = this.get(callRef);
     if (existing) {
-      existing.context = options.context || existing.context;
-      existing.accountId = options.accountId || options.account_id || existing.accountId;
-      existing.touch();
+      this.update(existing.callRef, options);
       return existing;
     }
 
@@ -76,36 +76,98 @@ class SessionRegistry {
       now: this.now
     });
     this.sessions.set(callRef, session);
+    this.indexSession(session, options);
     return session;
   }
 
   get(callRef) {
-    const session = this.sessions.get(callRef);
-    if (!session) return undefined;
+    const primaryRef = this.primaryRef(callRef);
+    if (!primaryRef) return undefined;
+
+    const session = this.sessions.get(primaryRef);
+    if (!session) {
+      this.aliases.delete(normalizeRef(callRef));
+      return undefined;
+    }
     if (session.expired()) {
-      this.sessions.delete(callRef);
+      this.deleteSession(session);
       return undefined;
     }
     return session;
   }
 
+  update(callRef, attributes = {}) {
+    const session = this.get(callRef);
+    if (!session) return undefined;
+
+    if (Object.prototype.hasOwnProperty.call(attributes, 'context')) {
+      session.context = attributes.context || session.context;
+    }
+    session.accountId = attributes.accountId || attributes.account_id || session.accountId;
+    session.state = attributes.state || session.state;
+    if (attributes.metadata && typeof attributes.metadata === 'object') {
+      session.metadata = { ...session.metadata, ...attributes.metadata };
+    }
+    if (attributes.routeDecision) session.routeDecision = attributes.routeDecision;
+    this.indexSession(session, attributes);
+    session.touch();
+    return session;
+  }
+
   close(callRef, reason = 'completed') {
-    const session = this.sessions.get(callRef);
+    const session = this.get(callRef);
     if (!session) return undefined;
     session.close(reason);
-    this.sessions.delete(callRef);
+    this.deleteSession(session);
     return session;
+  }
+
+  activeCount() {
+    this.sweep();
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (!terminalState(session.state)) count += 1;
+    }
+    return count;
   }
 
   sweep() {
     let count = 0;
-    for (const [callRef, session] of this.sessions.entries()) {
+    for (const session of [...this.sessions.values()]) {
       if (session.expired()) {
-        this.sessions.delete(callRef);
+        this.deleteSession(session);
         count += 1;
       }
     }
     return count;
+  }
+
+  primaryRef(callRef) {
+    const ref = normalizeRef(callRef);
+    if (!ref) return null;
+    return this.sessions.has(ref) ? ref : this.aliases.get(ref);
+  }
+
+  indexSession(session, source = {}) {
+    for (const ref of lifecycleRefs(source)) {
+      session.aliases.add(ref);
+      this.aliases.set(ref, session.callRef);
+    }
+    for (const ref of lifecycleRefs(source.context)) {
+      session.aliases.add(ref);
+      this.aliases.set(ref, session.callRef);
+    }
+    for (const ref of lifecycleRefs(source.routeDecision)) {
+      session.aliases.add(ref);
+      this.aliases.set(ref, session.callRef);
+    }
+  }
+
+  deleteSession(session) {
+    this.sessions.delete(session.callRef);
+    for (const ref of session.aliases || []) {
+      this.aliases.delete(ref);
+    }
   }
 }
 
@@ -122,6 +184,46 @@ function normalizeTranscriptItem(item = {}) {
 
 function transcriptKey(item) {
   return [item.speaker, item.text, item.final ? '1' : '0', item.at].join('|');
+}
+
+function lifecycleRefs(source = {}) {
+  if (!source || typeof source !== 'object') return [];
+  return [
+    source.callRef,
+    source.call_ref,
+    source.runtimeCallRef,
+    source.runtime_call_ref,
+    source.aiRuntimeCallRef,
+    source.ai_runtime_call_ref,
+    source.bridgeCallRef,
+    source.bridge_call_ref,
+    source.childCallRef,
+    source.child_call_ref,
+    source.parentCallRef,
+    source.parent_call_ref,
+    source.mediaSessionRef,
+    source.media_session_ref,
+    source.streamRef,
+    source.stream_ref
+  ].map(normalizeRef).filter(Boolean);
+}
+
+function normalizeRef(ref) {
+  const normalized = String(ref || '').trim();
+  return normalized || null;
+}
+
+function terminalState(state) {
+  const normalized = String(state || '').toLowerCase();
+  return ['completed', 'failed', 'cancelled', 'rejected', 'transferred'].includes(normalized) ||
+    normalized.includes('completed') ||
+    normalized.includes('failed') ||
+    normalized.includes('cancelled') ||
+    normalized.includes('rejected') ||
+    normalized.includes('closed') ||
+    normalized.includes('caller_hangup') ||
+    normalized.includes('caller_hung_up') ||
+    normalized.includes('transferred');
 }
 
 module.exports = { SessionRegistry, ManagedSession, normalizeTranscriptItem, transcriptKey };
