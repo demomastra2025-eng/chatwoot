@@ -88,6 +88,17 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'language' => 'ru-KZ',
       'first_message' => 'Здравствуйте! Чем могу помочь?',
       'interruptions_enabled' => true,
+      'clear_audio_on_interrupt' => true,
+      'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
+      'humanlike_defaults_profile' => 'standard_v1',
+      'finish_current_word_on_interrupt' => true,
+      'post_interrupt_micro_pause_ms' => 180,
+      'interrupt_ack_phrases' => ['Ага.', 'Понял.', 'Мм.', 'Аха.', 'А-а, понял.'],
+      'silence_prompt_enabled' => true,
+      'tool_start_phrases' => ['Секунду, проверю.'],
+      'emotional_style' => 'warm_professional',
+      'nonverbal_cues_enabled' => true,
+      'ambient_noise_enabled' => false,
       'max_duration_sec' => 600
     )
     expect(body.dig('ai', 'system_prompt')).to include('Ты голосовой ассистент в телефонном звонке')
@@ -117,6 +128,60 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('recording', 'enabled')).to eq(false)
+  end
+
+  it 'preserves explicit false and zero values in normalized voice settings' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        interruptions_enabled: false,
+        clear_audio_on_interrupt: false,
+        silence_prompt_after_ms: 0,
+        nonverbal_cue_max_per_minute: 0
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['ai']).to include(
+      'interruptions_enabled' => false,
+      'clear_audio_on_interrupt' => false,
+      'silence_prompt_after_ms' => 0,
+      'nonverbal_cue_max_per_minute' => 0
+    )
+  end
+
+  it 'falls back to standard defaults when persisted voice settings contain blank values' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        provider: '',
+        model: nil,
+        voice: ' ',
+        first_message: '',
+        max_duration_sec: ''
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['ai']).to include(
+      'provider' => 'gemini-live',
+      'model' => 'gemini-3.1-flash-live-preview',
+      'voice' => 'sulafat',
+      'first_message' => 'Здравствуйте! Чем могу помочь?',
+      'max_duration_sec' => 900
+    )
   end
 
   it 'uses the inbox Captain assistant as the voice brain and preserves voice default tools' do

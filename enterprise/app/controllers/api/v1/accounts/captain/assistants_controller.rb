@@ -21,7 +21,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   def show; end
 
   def create
-    @assistant = account_assistants.create!(assistant_params)
+    @assistant = account_assistants.create!(assistant_create_params)
   end
 
   def update
@@ -111,14 +111,32 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     permitted
   end
 
+  def assistant_create_params
+    attributes = assistant_params.to_h.deep_symbolize_keys
+    existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
+    existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
+
+    attributes.merge(config: existing_config)
+  end
+
   def assistant_update_params
     attributes = assistant_params.to_h.deep_symbolize_keys
     return attributes unless attributes.key?(:config)
 
     existing_config = @assistant.config.is_a?(Hash) ? @assistant.config.deep_stringify_keys : {}
     incoming_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
+    if incoming_config.key?('voice_settings')
+      incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
+    end
 
     attributes.merge(config: existing_config.merge(incoming_config))
+  end
+
+  def normalized_voice_settings(*sources)
+    merged = sources.each_with_object({}) do |source, settings|
+      settings.merge!(source) if source.is_a?(Hash)
+    end
+    Telephony::AiVoice::VoiceSettingsDefaults.normalize(merged)
   end
 
   def merge_optional_array_param!(permitted, field_name)

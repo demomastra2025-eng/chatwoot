@@ -101,21 +101,11 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def ai_payload
-    settings = ai_settings
-    {
+    ai_settings.except('system_prompt', 'recording_enabled').merge(
       deployment_mode: routing_policy&.ai_deployment_mode || Telephony::RoutingPolicy::AI_DEPLOYMENT_FONOSTER_MANAGED,
       app_ref: routing_policy&.effective_ai_app_ref,
-      provider: settings['provider'].presence || DEFAULT_PROVIDER,
-      model: settings['model'].presence || DEFAULT_MODEL,
-      voice: settings['voice'].presence || DEFAULT_VOICE,
-      language: settings['language'].presence || DEFAULT_LANGUAGE,
-      system_prompt: system_prompt,
-      first_message: settings['first_message'].presence || DEFAULT_FIRST_MESSAGE,
-      temperature: settings['temperature'].presence&.to_f || 0.3,
-      max_output_tokens: settings['max_output_tokens'].presence&.to_i || 120,
-      interruptions_enabled: settings.key?('interruptions_enabled') ? ActiveModel::Type::Boolean.new.cast(settings['interruptions_enabled']) : true,
-      max_duration_sec: settings['max_duration_sec'].presence&.to_i || DEFAULT_MAX_DURATION_SEC
-    }.compact
+      system_prompt: system_prompt
+    ).compact
   end
 
   def captain_payload
@@ -171,7 +161,7 @@ class Telephony::AiVoice::ContextBuilder
   def ai_settings
     @ai_settings ||= begin
       legacy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
-      legacy_settings.merge(captain_voice_settings)
+      Telephony::AiVoice::VoiceSettingsDefaults.normalize(legacy_settings.merge(captain_voice_settings))
     end
   end
 

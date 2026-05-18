@@ -2,6 +2,7 @@ const { VoiceSession } = require('../sessions/voice-session');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
 const { startManagedVoiceStream } = require('../fonoster/managed-stream');
 const { RecordingWriter } = require('../recordings/recording-writer');
+const { DialogueDirector } = require('../dialogue/dialogue-director');
 
 const streamConstants = loadStreamConstants();
 const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
@@ -293,8 +294,9 @@ class VoiceApplication {
     let lastCallerTranscriptAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
+    const clearOutputOnInterrupt = context.ai?.clear_audio_on_interrupt ?? context.ai?.clearAudioOnInterrupt ?? this.clearOutputOnInterrupt;
     const postToolWatchdog = createPostToolWatchdog({
-      timeoutMs: this.postToolContinuationMs,
+      timeoutMs: context.ai?.post_tool_continuation_ms ?? context.ai?.postToolContinuationMs ?? this.postToolContinuationMs,
       session,
       requestPayload,
       context,
@@ -442,6 +444,7 @@ class VoiceApplication {
       }
     }) : null;
     let completion = null;
+    let dialogueDirector = null;
 
     const callbacks = {
       systemPrompt: buildSystemPrompt(context),
@@ -476,10 +479,12 @@ class VoiceApplication {
         }
       },
       onToolCall: async callPayload => {
+        dialogueDirector?.startToolWait(callPayload);
         const toolResult = await session.executeTool(callPayload.name, callPayload.args || {}, {
           provider: 'gemini-live',
           tool_call_id: callPayload.id
         });
+        dialogueDirector?.finishToolWait(callPayload, toolResult);
         await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
         if (shouldWatchPostToolContinuation(toolResult)) postToolWatchdog.arm(callPayload, toolResult);
         return toolResult;
@@ -489,14 +494,14 @@ class VoiceApplication {
           provider: 'gemini-live',
           reason: metadata.reason || metadata.source || 'vad_or_caller_speech',
           source: metadata.source || 'provider_interruption',
-          clear_output_buffer: Boolean(this.clearOutputOnInterrupt),
+          clear_output_buffer: Boolean(clearOutputOnInterrupt),
           last_caller_transcript_at: lastCallerTranscriptAt,
           last_ai_transcript_at: lastAiTranscriptAt,
           last_ai_audio_at: lastAiAudioAt,
           stream_ref: streamRef,
           media_session_ref: mediaSessionRef
         });
-        if (this.clearOutputOnInterrupt) {
+        if (clearOutputOnInterrupt) {
           outputPacer?.clear?.();
         }
         await session.safeControl('caller_interrupted', interruptMetadata);
@@ -537,6 +542,12 @@ class VoiceApplication {
     };
 
     const realtime = this.realtimeFactory ? this.realtimeFactory({ session, context, ...callbacks }) : null;
+    dialogueDirector = new DialogueDirector({
+      context,
+      session,
+      requestPayload,
+      sendText: text => realtime?.sendText?.(text)
+    });
     if (!realtime || typeof realtime.connect !== 'function') {
       throw new Error('realtime client is required');
     }
@@ -572,12 +583,18 @@ class VoiceApplication {
       onFinish: () => {
         initialMediaKeepalive?.stop?.('completion');
         postToolWatchdog.cancel('completion');
+        dialogueDirector?.close();
       }
     });
     try {
       await realtime.connect(callbacks);
       sendInitialGreeting(realtime, context);
     } catch (error) {
+      try {
+        dialogueDirector?.close?.();
+      } catch (_closeError) {
+        // ignore dialogue director cleanup errors
+      }
       try {
         realtime?.close?.();
       } catch (_closeError) {

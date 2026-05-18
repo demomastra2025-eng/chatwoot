@@ -374,6 +374,32 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
       end
 
+      it 'creates assistants with the standard humanlike voice defaults' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/assistants",
+               params: valid_attributes,
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.to change(Captain::Assistant, :count).by(1)
+
+        voice_settings = Captain::Assistant.order(:id).last.config['voice_settings']
+        expect(voice_settings).to include(
+          'humanlike_defaults_profile' => 'standard_v1',
+          'provider' => 'gemini-live',
+          'model' => 'gemini-3.1-flash-live-preview',
+          'interruptions_enabled' => true,
+          'clear_audio_on_interrupt' => true,
+          'finish_current_word_on_interrupt' => true,
+          'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
+          'silence_prompt_enabled' => true,
+          'tool_start_phrases' => ['Секунду, проверю.'],
+          'emotional_style' => 'warm_professional',
+          'nonverbal_cues_enabled' => true,
+          'ambient_noise_enabled' => false
+        )
+        expect(json_response.dig(:config, :voice_settings, :humanlike_defaults_profile)).to eq('standard_v1')
+      end
+
       it 'creates an assistant with feature_citation disabled' do
         attributes_with_disabled_citation = valid_attributes.deep_dup
         attributes_with_disabled_citation[:assistant][:config][:feature_citation] = false
@@ -643,6 +669,43 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'transfer_message' => 'Қазір операторға қосамын.'
         )
         expect(json_response.dig(:config, :voice_settings, :voice)).to eq('sulafat')
+      end
+
+      it 'merges partial voice settings updates with existing settings and standard defaults' do
+        assistant.update!(
+          config: {
+            'voice_settings' => {
+              'voice' => 'legacy-voice',
+              'language' => 'ru-KZ',
+              'interruptions_enabled' => false
+            }
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    voice_settings: {
+                      voice: 'sulafat',
+                      first_message: ''
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['voice_settings']).to include(
+          'humanlike_defaults_profile' => 'standard_v1',
+          'voice' => 'sulafat',
+          'language' => 'ru-KZ',
+          'interruptions_enabled' => false,
+          'first_message' => 'Здравствуйте! Чем могу помочь?',
+          'clear_audio_on_interrupt' => true,
+          'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY'
+        )
       end
 
       it 'preserves unrelated config sections when updating only feature flags' do

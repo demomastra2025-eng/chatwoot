@@ -844,6 +844,107 @@ test('VoiceApplication passes configured tool timeout into realtime tool executi
   await result.completion;
 });
 
+test('VoiceApplication sends configured tool-wait fillers while a realtime tool is running', async () => {
+  const sentTexts = [];
+  const events = [];
+  let realtimeCallbacks;
+  let resolveTool;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return new FakeVoiceStream(); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-tool-wait' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-wait',
+      ai: {
+        provider: 'gemini-live',
+        tool_start_phrases: ['Секунду, проверю.'],
+        tool_delay_after_ms: 10,
+        tool_delay_phrases: ['Ещё смотрю, почти готово.']
+      },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise(resolve => { resolveTool = resolve; })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, toolTimeoutMs: 100 });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-wait' });
+
+  const toolPromise = realtimeCallbacks.onToolCall({ id: 'tool-wait-1', name: 'faq_lookup', args: { query: 'режим' } });
+  assert.equal(sentTexts.some(text => text.includes('Секунду, проверю.')), true);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(sentTexts.some(text => text.includes('Ещё смотрю, почти готово.')), true);
+
+  resolveTool({ answer: 'Работаем до 18:00' });
+  const toolResult = await toolPromise;
+  assert.equal(toolResult.ok, true);
+  assert.equal(events.some(event => event.event_type === 'dialogue_director_prompt' && event.payload.kind === 'tool_wait_start'), true);
+  assert.equal(events.some(event => event.event_type === 'dialogue_director_prompt' && event.payload.kind === 'tool_wait_delay'), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication does not send tool-wait fillers for transfer tools', async () => {
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return new FakeVoiceStream(); },
+    async dial() { return new EventEmitter(); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-transfer-no-filler',
+      ai: {
+        provider: 'gemini-live',
+        tool_start_phrases: ['Секунду, проверю.'],
+        tool_delay_after_ms: 10,
+        tool_delay_phrases: ['Ещё смотрю.']
+      },
+      tools: [{ name: 'request_transfer', description: 'Transfer to operator' }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async () => ({ status: 'ok' }),
+    callTool: async () => ({ action: 'transfer', operator_agent_aor: 'sip:1001@example.test' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'runtime-transfer-no-filler' });
+  await realtimeCallbacks.onToolCall({ id: 'transfer-1', name: 'request_transfer', args: {} });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(sentTexts.some(text => text.includes('Секунду, проверю.')), false);
+  assert.equal(sentTexts.some(text => text.includes('Ещё смотрю.')), false);
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication executes AI transfer tools and finalizes the call as transferred', async () => {
   const stream = new FakeVoiceStream();
   const dialLeg = new EventEmitter();
@@ -947,6 +1048,45 @@ test('VoiceApplication paces model audio into 20ms frames and preserves buffered
   assert.equal(controls.at(-1).action, 'caller_interrupted');
   assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
   assert.equal(stream.writes.length > 1, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication honors per-assistant clear_audio_on_interrupt from context', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-clear-on-interrupt', ai: { provider: 'gemini-live', clear_audio_on_interrupt: true } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
+  const result = await app.handleCall(call, { call_ref: 'call-clear-on-interrupt' });
+
+  realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, true);
+  assert.equal(stream.writes.length, 1);
 
   call.emit('end');
   await result.completion;
