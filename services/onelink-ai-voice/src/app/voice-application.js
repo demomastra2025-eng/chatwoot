@@ -23,7 +23,8 @@ class VoiceApplication {
     outputMaxBufferedMs = 5_000,
     clearOutputOnInterrupt = false,
     postToolContinuationMs = 4_000,
-    initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0)
+    initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0),
+    answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000)
   } = {}) {
     if (!client) throw new Error('client is required');
     this.client = client;
@@ -39,6 +40,7 @@ class VoiceApplication {
     this.clearOutputOnInterrupt = clearOutputOnInterrupt;
     this.postToolContinuationMs = postToolContinuationMs;
     this.initialMediaKeepaliveMs = initialMediaKeepaliveMs;
+    this.answerTimeoutMs = answerTimeoutMs;
   }
 
   async handleCall(call, payload = {}) {
@@ -80,7 +82,8 @@ class VoiceApplication {
     const handleLocallyAsAi = shouldHandleAppRouteLocally(routeDecision, requestPayload);
 
     if (routeAction === 'operator') {
-      await answerCall(call);
+      const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
+      if (answerFailure) return answerFailure;
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('operator_ringing', session, requestPayload, routeDecision);
       const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
@@ -119,7 +122,8 @@ class VoiceApplication {
     }
 
     if (routeAction === 'app' && !handleLocallyAsAi) {
-      await answerCall(call);
+      const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
+      if (answerFailure) return answerFailure;
       void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
       await this.safeBridgeEvent('app_routing', session, requestPayload, routeDecision);
       const passiveRecording = await this.startPassiveRecording(call, session, requestPayload, routeDecision);
@@ -138,7 +142,8 @@ class VoiceApplication {
       }
     }
 
-    await answerCall(call);
+    const answerFailure = await this.answerCallOrFail({ call, session, requestPayload, routeDecision });
+    if (answerFailure) return answerFailure;
     void session.safeEvent('app_answered', correlationPayload(session, requestPayload, routeDecision));
 
     let mediaStream;
@@ -650,6 +655,31 @@ class VoiceApplication {
     this.registry?.close?.(session.callRef, 'media_stream_not_established');
     await hangupSafely(call, 'media_stream_not_established');
     return { session, context: session.context || context, mode: 'failed', completion: Promise.resolve(), reason: 'media_stream_not_established' };
+  }
+
+  async answerCallOrFail({ call, session, requestPayload = {}, routeDecision = {} }) {
+    try {
+      await answerCall(call, { timeoutMs: this.answerTimeoutMs });
+      return null;
+    } catch (error) {
+      const reason = sanitizeReason(error?.reason || error?.message || 'app_answer_failed');
+      await session.safeEvent('app_answer_failed', {
+        reason,
+        source: error?.source || 'call.answer',
+        timeout_ms: error?.timeoutMs,
+        ...correlationPayload(session, requestPayload, routeDecision)
+      });
+      await session.close('app_answer_failed', {
+        reason,
+        final_status: 'failed',
+        incomplete_transcript: true,
+        include_partial_transcript: true,
+        source: error?.source || 'call.answer'
+      });
+      this.registry?.close?.(session.callRef, 'app_answer_failed');
+      await hangupSafely(call, reason);
+      return { session, context: session.context, mode: 'failed', completion: Promise.resolve(), reason };
+    }
   }
 
   async startMediaStream(call, { session = null, requestPayload = {}, routeDecision = {} } = {}) {
@@ -2111,6 +2141,7 @@ function directAiTopology(requestPayload = {}, routeDecision = {}) {
   const inboundAppRef = requestAppRef(requestPayload);
   const routedAppRef = routeAppRef(routeDecision);
   const routeReason = String(routeDecision?.reason || '').trim().toLowerCase();
+  if (inboundAppRef && routedAppRef && inboundAppRef === routedAppRef && normalizeRouteAction(routeDecision) === 'ai') return 'direct_ai';
   if (inboundAppRef && routedAppRef && inboundAppRef !== routedAppRef && routeReason === 'recursive_runtime_app_ref') return 'direct_ai';
   return undefined;
 }
@@ -2150,9 +2181,26 @@ function bridgeCallRefCandidate(payload = {}) {
     payload.parent_call_ref || payload.parentCallRef || payload.original_call_ref || payload.originalCallRef;
 }
 
-function answerCall(call) {
+function answerCall(call, { timeoutMs = 0 } = {}) {
   if (!call || typeof call.answer !== 'function') return Promise.resolve(false);
-  return Promise.resolve(call.answer()).then(() => true);
+  return promiseWithTimeout(Promise.resolve(call.answer()).then(() => true), timeoutMs, 'app_answer_timeout', 'call.answer');
+}
+
+function promiseWithTimeout(promise, timeoutMs, reason, source) {
+  if (!timeoutMs || timeoutMs <= 0) return promise;
+
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(reason);
+      error.reason = reason;
+      error.source = source;
+      error.timeoutMs = timeoutMs;
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function sanitizeReason(message) {

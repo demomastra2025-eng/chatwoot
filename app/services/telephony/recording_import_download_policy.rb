@@ -1,7 +1,7 @@
 require 'ipaddr'
 
 class Telephony::RecordingImportDownloadPolicy
-  DEFAULT_ALLOWED_HOSTS = %w[cloud.vconsult.kz fonoster.example.test].freeze
+  DEFAULT_ALLOWED_HOSTS = %w[cloud.vconsult.kz].freeze
   BLOCKED_LITERAL_IP_RANGES = %w[
     0.0.0.0/8
     10.0.0.0/8

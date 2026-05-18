@@ -58,24 +58,23 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
     raise_non_retryable!('Recording download redirect URL is not allowed') unless Telephony::RecordingImportDownloadPolicy.allowed?(uri)
 
     response = http_response(uri)
+    return stream_success_response!(response, file) if response.is_a?(Net::HTTPSuccess)
+    return follow_redirect!(file, uri, response, redirects_left) if response.is_a?(Net::HTTPRedirection)
 
-    case response
-    when Net::HTTPSuccess
-      stream_success_response!(response, file)
-    when Net::HTTPRedirection
-      raise_retryable!('Too many redirects while downloading recording') if redirects_left <= 0
+    raise_retryable!("Recording download failed with HTTP #{response.code}") if response.is_a?(Net::HTTPServerError)
 
-      location = response['location'].to_s
-      raise_retryable!('Recording download redirect without Location header') if location.blank?
-
-      download_recording!(file, URI.join(uri, location), redirects_left - 1)
-    when Net::HTTPServerError
-      raise_retryable!("Recording download failed with HTTP #{response.code}")
-    else
-      raise_non_retryable!("Recording download failed with HTTP #{response.code}")
-    end
+    raise_non_retryable!("Recording download failed with HTTP #{response.code}")
   rescue Timeout::Error, Errno::ECONNRESET, Errno::ECONNREFUSED, SocketError, OpenSSL::SSL::SSLError => e
     raise_retryable!("Recording download failed: #{e.class.name}")
+  end
+
+  def follow_redirect!(file, uri, response, redirects_left)
+    raise_retryable!('Too many redirects while downloading recording') if redirects_left <= 0
+
+    location = response['location'].to_s
+    raise_retryable!('Recording download redirect without Location header') if location.blank?
+
+    download_recording!(file, URI.join(uri, location), redirects_left - 1)
   end
 
   def http_response(uri)
@@ -240,7 +239,7 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
   end
 
   def download_url
-    payload_value('download_url', 'downloadUrl')
+    payload_value('download_url', 'downloadUrl', 'recording_url', 'recordingUrl')
   end
 
   def parsed_download_url
@@ -257,11 +256,17 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
   end
 
   def size_bytes
-    payload_value('size_bytes', 'sizeBytes').to_i
+    payload_value('size_bytes', 'sizeBytes', 'byte_size', 'byteSize').to_i
   end
 
   def duration_sec
-    payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds').to_i
+    seconds = payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds')
+    return seconds.to_i if seconds.present?
+
+    milliseconds = payload_value('duration_ms', 'durationMs')
+    return (milliseconds.to_f / 1000.0).ceil if milliseconds.present?
+
+    nil
   end
 
   def event_key

@@ -360,6 +360,125 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'treats late AI runtime events after finalize as diagnostic-only without mutating the finalized parent or bubble' do
+      finalized_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'completed',
+        ended_at: finalized_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        duration_seconds: 18,
+        recording_ref: 'voice-recordings/1/stable-parent.wav',
+        metadata: {
+          'ai_voice' => {
+            'finalize' => {
+              'event_id' => 'evt-finalize-stable-parent-1',
+              'status' => 'completed',
+              'reason' => 'caller_hangup',
+              'recording_ref' => 'voice-recordings/1/stable-parent.wav'
+            },
+            'final_transcript' => [
+              { 'speaker' => 'ai', 'text' => 'Стабильный финальный текст', 'at' => finalized_at.iso8601 }
+            ]
+          },
+          'recording' => {
+            'recording_ref' => 'voice-recordings/1/stable-parent.wav',
+            'storage_key' => 'voice-recordings/1/stable-parent.wav'
+          }
+        }
+      )
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: {
+          'data' => {
+            'call_sid' => 'call-retry-1',
+            'status' => 'completed',
+            'recording_ref' => 'voice-recordings/1/stable-parent.wav',
+            'recording' => { 'storage_key' => 'voice-recordings/1/stable-parent.wav' },
+            'duration' => 18,
+            'ai_voice' => { 'enabled' => true, 'state' => 'completed' }
+          }
+        }
+      )
+      original_message_data = message.content_attributes.deep_dup
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-provider-stream-closed-after-finalize-1',
+          event: 'session_failed',
+          bridge_call_ref: 'call-retry-1',
+          runtime_call_ref: 'runtime-late-after-finalize-1',
+          occurred_at: Time.current.iso8601,
+          ended_by: 'ai',
+          end_reason: 'provider_stream_closed',
+          duration: 310,
+          recording_url: 'voice-recordings/1/late-provider.wav',
+          payload: {
+            reason: 'provider_stream_closed',
+            recording_ref: 'voice-recordings/1/late-provider.wav'
+          }
+        )
+      ).perform
+
+      expect(result).to eq(existing_call_session)
+      expect(account.telephony_events.find_by!(event_key: 'evt-late-provider-stream-closed-after-finalize-1')).to be_processed
+      expect(existing_call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: finalized_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        duration_seconds: 18,
+        recording_ref: 'voice-recordings/1/stable-parent.wav'
+      )
+      expect(existing_call_session.metadata.dig('ai_voice', 'finalize', 'reason')).to eq('caller_hangup')
+      expect(existing_call_session.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/stable-parent.wav')
+      expect(message.reload.content_attributes).to eq(original_message_data)
+    end
+
+    it 'does not create or activate a late runtime child when its bridge parent is already finalized' do
+      finalized_at = Time.zone.parse(25.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'completed',
+        ended_at: finalized_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        metadata: {
+          'ai_voice' => {
+            'finalize' => {
+              'event_id' => 'evt-finalize-parent-for-late-child-1',
+              'status' => 'completed',
+              'reason' => 'caller_hangup'
+            }
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-runtime-child-after-parent-finalize-1',
+          call_ref: 'runtime-child-after-finalize-1',
+          bridge_call_ref: 'call-retry-1',
+          event: 'app_received_call',
+          occurred_at: Time.current.iso8601
+        )
+      ).perform
+
+      expect(result).to eq(existing_call_session)
+      expect(account.telephony_call_sessions.find_by(external_call_ref: 'runtime-child-after-finalize-1')).to be_nil
+      expect(existing_call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: finalized_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup'
+      )
+      expect(existing_call_session.legs).to be_blank
+    end
+
     it 'ignores older event state when a timestamp shows the session already moved forward' do
       last_event_at = Time.zone.parse(2.minutes.ago.iso8601)
       existing_call_session.update!(status: 'in_progress', last_event_at: last_event_at)
@@ -515,8 +634,20 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(legacy_message.reload.content_attributes.dig('data', 'ai_voice')).to be_blank
     end
 
-    it 'stores OneLink runtime recording_ready metadata without changing terminal call state' do
-      existing_call_session.update!(status: 'completed', ended_at: 1.minute.ago)
+    it 'stores OneLink runtime recording_ready metadata after finalize without changing terminal call state' do
+      existing_call_session.update!(
+        status: 'completed',
+        ended_at: 1.minute.ago,
+        metadata: {
+          'ai_voice' => {
+            'finalize' => {
+              'event_id' => 'evt-finalize-before-recording-ready-1',
+              'status' => 'completed',
+              'reason' => 'caller_hangup'
+            }
+          }
+        }
+      )
       message = create(
         :message,
         account: account,
@@ -552,7 +683,13 @@ RSpec.describe Telephony::EventsIngestionService do
               byte_size: 12_345,
               content_type: 'audio/wav',
               sha256: 'abc123',
-              duration_ms: 90_000
+              duration_ms: 90_000,
+              recorded_by: 'onelink-ai-voice',
+              mode: 'ai_voice',
+              layout: 'dual_channel_stereo',
+              channel_layout: { left: 'caller', right: 'voice_agent' },
+              inbound_bytes: 4096,
+              outbound_bytes: 2048
             },
             metadata: {
               recording: {
@@ -571,6 +708,10 @@ RSpec.describe Telephony::EventsIngestionService do
         expect(result.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
         expect(result.metadata.dig('recording', 'byte_size')).to eq(12_345)
         expect(result.metadata.dig('recording', 'source')).to eq('onelink_runtime')
+        expect(result.metadata.dig('recording', 'layout')).to eq('dual_channel_stereo')
+        expect(result.metadata.dig('recording', 'channel_layout')).to eq({ 'left' => 'caller', 'right' => 'voice_agent' })
+        expect(result.metadata.dig('recording', 'inbound_bytes')).to eq(4096)
+        expect(result.metadata.dig('recording', 'outbound_bytes')).to eq(2048)
         expect(result.metadata.dig('recording', 'transcription', 'status')).to eq('queued')
         expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
         expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
@@ -589,6 +730,8 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.metadata.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
       expect(result.metadata.dig('recording', 'byte_size')).to eq(12_345)
       expect(result.metadata.dig('recording', 'source')).to eq('onelink_runtime')
+      expect(result.metadata.dig('recording', 'layout')).to eq('dual_channel_stereo')
+      expect(result.metadata.dig('recording', 'channel_layout')).to eq({ 'left' => 'caller', 'right' => 'voice_agent' })
       expect(result.metadata.dig('metadata', 'recording', 'writer')).to eq('onelink-ai-voice')
       expect(result.conversation.additional_attributes.dig('recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')
       expect(message.reload.content_attributes.dig('data', 'recording', 'storage_key')).to eq('voice-recordings/1/call-retry-1.wav')

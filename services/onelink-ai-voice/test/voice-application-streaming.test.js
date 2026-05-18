@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { VoiceApplication } = require('../src/app/voice-application');
+const { SessionRegistry } = require('../src/sessions/session-registry');
 
 class FakeVoiceStream extends EventEmitter {
   constructor() {
@@ -637,6 +638,46 @@ test('VoiceApplication fails explicitly when app leg answers but media stream is
   assert.equal(finalizations.at(-1).ai_runtime_call_ref, 'call-no-media');
   assert.equal(events.some(event => event.event_type === 'media_stream_not_established'), true);
   assert.deepEqual(hangups, [{ reason: 'media_stream_not_established' }]);
+});
+
+test('VoiceApplication fails and removes the session when app answer never resolves', async () => {
+  const events = [];
+  const finalizations = [];
+  const hangups = [];
+  let streamCalled = false;
+  const registry = new SessionRegistry();
+  const call = Object.assign(new EventEmitter(), {
+    answer() { return new Promise(() => {}); },
+    stream() { streamCalled = true; return new FakeVoiceStream(); },
+    async hangup(payload) { hangups.push(payload); }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42, number_ref: 'number-1', conversation_id: 77 }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => { throw new Error('context should not be fetched before answer'); },
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+
+  const app = new VoiceApplication({
+    client,
+    registry,
+    answerTimeoutMs: 1,
+    realtimeFactory: () => { throw new Error('realtime should not start before answer'); }
+  });
+  const result = await app.handleCall(call, { call_ref: 'call-answer-timeout', number_ref: 'number-1' });
+
+  assert.equal(result.mode, 'failed');
+  assert.equal(result.reason, 'app_answer_timeout');
+  assert.equal(streamCalled, false);
+  assert.equal(events.some(event => event.event_type === 'app_answer_failed'), true);
+  assert.equal(finalizations.at(-1).status, 'failed');
+  assert.equal(finalizations.at(-1).reason, 'app_answer_timeout');
+  assert.equal(finalizations.at(-1).ai_runtime_call_ref, 'call-answer-timeout');
+  assert.deepEqual(hangups, [{ reason: 'app_answer_timeout' }]);
+  assert.equal(registry.activeCount(), 0);
 });
 
 test('VoiceApplication refuses to write AUDIO_OUT before a real streamRef exists', async () => {
@@ -1503,6 +1544,66 @@ test('VoiceApplication treats recursive AI app route decisions as local realtime
   assert.equal(events.find(event => event.event_type === 'call_started').payload.topology, 'direct_ai');
   assert.equal(events.some(event => event.event_type === 'media_stream_established'), true);
   assert.equal(events.find(event => event.event_type === 'media_stream_started').payload.established_to_media_started_ms >= 0, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication treats direct AI app route decisions as local realtime sessions without legacy app fallback telemetry', async () => {
+  const stream = new FakeVoiceStream();
+  const bridgeEvents = [];
+  const events = [];
+  let contextPayload;
+  const client = {
+    routeInbound: async () => ({
+      action: 'ai',
+      app_ref: 'ai-app-1',
+      reason: 'ai_route',
+      account_id: 6,
+      number_ref: 'number-ai-1'
+    }),
+    sendBridgeEvent: async payload => { bridgeEvents.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    getContext: async payload => {
+      contextPayload = payload;
+      return {
+        call_ref: payload.call_ref,
+        account_id: payload.account_id,
+        number_ref: payload.number_ref,
+        ai: { provider: 'gemini-live', model: 'gemini-live-test', first_message: 'Здравствуйте' },
+        tools: []
+      };
+    },
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const call = Object.assign(new EventEmitter(), {
+    answerCount: 0,
+    async answer() { this.answerCount += 1; },
+    stream: () => stream,
+    async transferToApp() { throw new Error('direct AI route should not transfer to a legacy app'); }
+  });
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => ({ connect: async () => {}, close: () => {} })
+  });
+
+  const result = await app.handleCall(call, {
+    call_ref: 'call-direct-ai-app',
+    from: '+155****1001',
+    to: '+155****7001',
+    app_ref: 'ai-app-1'
+  });
+
+  assert.equal(result.mode, 'realtime');
+  assert.equal(call.answerCount, 1);
+  assert.equal(contextPayload.account_id, 6);
+  assert.deepEqual(bridgeEvents.map(event => event.event), ['session_started']);
+  assert.equal(bridgeEvents[0].app_ref, 'ai-app-1');
+  assert.equal(bridgeEvents[0].metadata.route_app_ref, 'ai-app-1');
+  assert.equal(bridgeEvents[0].metadata.topology, 'direct_ai');
+  assert.equal(events.find(event => event.event_type === 'call_started').payload.route_app_ref, 'ai-app-1');
+  assert.equal(events.find(event => event.event_type === 'call_started').payload.topology, 'direct_ai');
 
   call.emit('end');
   await result.completion;

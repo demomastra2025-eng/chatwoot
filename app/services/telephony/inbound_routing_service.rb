@@ -24,6 +24,9 @@ class Telephony::InboundRoutingService
   attr_reader :payload
 
   def routed_decision
+    recursive_runtime_decision = recursive_runtime_call_active_decision
+    return recursive_runtime_decision if recursive_runtime_decision.present?
+
     status_decision = status_aware_conversation_decision
     return status_decision if status_decision.present?
 
@@ -322,6 +325,14 @@ class Telephony::InboundRoutingService
     DEFAULT_REJECT_MESSAGE
   end
 
+  def recursive_runtime_call_active_decision
+    return unless direct_onelink_ai_runtime_request?
+    return if existing_voice_conversation.blank?
+    return if active_bridge_call_ref_for_context.blank?
+
+    reject_decision(reason: 'recursive_runtime_call_active')
+  end
+
   def shared_context
     return {} if number_binding.blank?
 
@@ -366,7 +377,18 @@ class Telephony::InboundRoutingService
   end
 
   def resolved_ai_app_ref
-    @resolved_ai_app_ref ||= routable_app_ref(routing_policy&.effective_ai_app_ref)
+    @resolved_ai_app_ref ||= if direct_onelink_ai_runtime_request?
+                               routing_policy.effective_ai_app_ref
+                             else
+                               routable_app_ref(routing_policy&.effective_ai_app_ref)
+                             end
+  end
+
+  def direct_onelink_ai_runtime_request?
+    return false if runtime_app_ref.blank?
+    return false unless routing_policy&.ai_deployment_mode == Telephony::RoutingPolicy::AI_DEPLOYMENT_ONELINK_MANAGED
+
+    runtime_app_ref == routing_policy.effective_ai_app_ref
   end
 
   def primary_app_failure_reason
@@ -399,16 +421,23 @@ class Telephony::InboundRoutingService
   def bridge_call_ref_for_context
     return if existing_voice_conversation.blank?
 
-    @bridge_call_ref_for_context ||= begin
-      recent_scope = Telephony::CallSession.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
-      recent_scope = recent_scope.where.not(external_call_ref: call_ref)
-      recent_scope = recent_scope.where('created_at >= ?', 2.minutes.ago)
+    @bridge_call_ref_for_context ||= active_bridge_call_ref_for_context ||
+                                     recent_bridge_call_session_scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
+  end
 
-      active_ref = recent_scope.where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
-                               .order(created_at: :desc, id: :desc)
-                               .pick(:external_call_ref)
-      active_ref || recent_scope.order(created_at: :desc, id: :desc).pick(:external_call_ref)
-    end
+  def active_bridge_call_ref_for_context
+    return if existing_voice_conversation.blank?
+
+    @active_bridge_call_ref_for_context ||= recent_bridge_call_session_scope
+                                            .where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
+                                            .order(created_at: :desc, id: :desc)
+                                            .pick(:external_call_ref)
+  end
+
+  def recent_bridge_call_session_scope
+    Telephony::CallSession.where(account_id: number_binding.account_id, conversation_id: existing_voice_conversation.id)
+                          .where.not(external_call_ref: call_ref)
+                          .where('created_at >= ?', 2.minutes.ago)
   end
 
   def conversation_from_call_ref

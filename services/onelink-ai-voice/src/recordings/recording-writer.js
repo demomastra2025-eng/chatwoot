@@ -141,7 +141,14 @@ class RecordingWriter {
       channels: CHANNELS,
       bits_per_sample: BITS_PER_SAMPLE,
       inbound_bytes: this.inboundBytes,
-      outbound_bytes: this.outboundBytes
+      outbound_bytes: this.outboundBytes,
+      recorded_by: 'onelink-ai-voice',
+      mode: 'ai_voice',
+      layout: 'dual_channel_stereo',
+      channel_layout: {
+        left: 'caller',
+        right: 'voice_agent'
+      }
     };
   }
 

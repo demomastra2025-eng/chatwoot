@@ -961,6 +961,97 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     )
   end
 
+  it 'keeps direct OneLink AI runtime routes on the AI app instead of falling back to the legacy router app' do
+    number_binding.update!(app_ref: 'legacy-router-app')
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_deployment_mode: 'onelink_managed',
+      ai_app_ref: 'legacy-fonoster-ai-app',
+      fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+      onelink_ai_app_ref: 'direct-onelink-ai-app',
+      fallback_mode: 'app'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'inbound-route-direct-ai-runtime',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+155****7779',
+             app_ref: 'direct-onelink-ai-app'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'ai',
+      'ai_mode' => 'onelink_managed',
+      'app_ref' => 'direct-onelink-ai-app',
+      'reason' => 'ai_route'
+    )
+    expect(response.parsed_body['app_ref']).not_to eq('legacy-router-app')
+  end
+
+  it 'rejects recursive direct OneLink AI runtime legs while an active leg is already open' do
+    caller_number = '+15558888880'
+    contact = create(:contact, account: account, phone_number: caller_number)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: caller_number)
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: voice_inbox,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      status: :pending
+    )
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: number_binding,
+      conversation: conversation,
+      external_call_ref: 'active-direct-runtime-leg',
+      status: 'ringing',
+      created_at: 10.seconds.ago,
+      updated_at: 9.seconds.ago
+    )
+    number_binding.update!(app_ref: 'legacy-router-app')
+    number_binding.routing_policy.update!(
+      mode: 'ai',
+      ai_deployment_mode: 'onelink_managed',
+      ai_app_ref: 'legacy-fonoster-ai-app',
+      fonoster_ai_app_ref: 'legacy-fonoster-ai-app',
+      onelink_ai_app_ref: 'direct-onelink-ai-app',
+      fallback_mode: 'app'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
+      post path,
+           params: {
+             call_ref: 'recursive-direct-runtime-leg',
+             ingress_number: voice_channel.phone_number,
+             caller_number: caller_number,
+             app_ref: 'direct-onelink-ai-app'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'bridge-secret'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'action' => 'reject',
+      'reason' => 'recursive_runtime_call_active',
+      'bridge_call_ref' => 'active-direct-runtime-leg'
+    )
+    expect(response.parsed_body).not_to have_key('app_ref')
+  end
+
   it 'keeps legacy Fonoster AI app ref as fallback when OneLink app ref is not configured' do
     number_binding.routing_policy.update!(
       mode: 'ai',

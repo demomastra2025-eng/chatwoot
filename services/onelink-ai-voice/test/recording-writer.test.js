@@ -28,6 +28,10 @@ test('RecordingWriter stores a playable OneLink-owned stereo WAV and emits recor
     assert.equal(result.storage_key, 'voice-recordings/42/call-rec-1/recording.wav');
     assert.equal(result.content_type, 'audio/wav');
     assert.equal(result.channels, 2);
+    assert.equal(result.layout, 'dual_channel_stereo');
+    assert.deepEqual(result.channel_layout, { left: 'caller', right: 'voice_agent' });
+    assert.equal(result.recorded_by, 'onelink-ai-voice');
+    assert.equal(result.mode, 'ai_voice');
     assert.equal(result.sample_rate, 8000);
     assert.equal(result.inbound_bytes, 4);
     assert.equal(result.outbound_bytes, 2);
@@ -39,6 +43,8 @@ test('RecordingWriter stores a playable OneLink-owned stereo WAV and emits recor
     assert.equal(events[0].payload.storage_key, 'voice-recordings/42/call-rec-1/recording.wav');
     assert.equal(events[0].payload.byte_size, result.byte_size);
     assert.equal(events[0].payload.content_type, 'audio/wav');
+    assert.equal(events[0].payload.layout, 'dual_channel_stereo');
+    assert.deepEqual(events[0].payload.channel_layout, { left: 'caller', right: 'voice_agent' });
     assert.equal(events[0].metadata.recording.writer, 'onelink-ai-voice');
 
     const stored = await readFile(join(dir, result.storage_key));

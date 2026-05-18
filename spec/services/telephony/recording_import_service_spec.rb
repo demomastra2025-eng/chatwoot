@@ -2,13 +2,13 @@ require 'rails_helper'
 
 RSpec.describe Telephony::RecordingImportService do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230200') }
+  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15550100200') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_ref) { 'operator-direct-import-1' }
   let(:recording_body) { "RIFF\x10\x00\x00\x00WAVEfmt test audio".b }
   let(:sha256) { Digest::SHA256.hexdigest(recording_body) }
-  let(:download_url) { 'https://fonoster.example.test/recordings/operator-direct-import-1.wav?signature=test' }
+  let(:download_url) { 'https://fonoster.example.test/recordings/operator-direct-import-1.wav?signature=***' }
   let(:payload) do
     {
       'event_key' => "recording_ready:#{account.id}:#{call_ref}:#{sha256}",
@@ -68,6 +68,12 @@ RSpec.describe Telephony::RecordingImportService do
     Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
     call_session
     stub_request(:get, download_url).to_return(status: 200, body: recording_body, headers: { 'Content-Type' => 'audio/wav' })
+  end
+
+  around do |example|
+    with_modified_env(TELEPHONY_RECORDING_IMPORT_ALLOWED_HOSTS: 'fonoster.example.test') do
+      example.run
+    end
   end
 
   after do

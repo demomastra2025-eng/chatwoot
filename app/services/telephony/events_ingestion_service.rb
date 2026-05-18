@@ -123,6 +123,7 @@ class Telephony::EventsIngestionService
   def process_event!(account, event)
     call_session = nil
     linked_runtime_call_sessions = []
+    immutable_ai_finalized_late_event = false
 
     ActiveRecord::Base.transaction do
       event.lock!
@@ -133,14 +134,33 @@ class Telephony::EventsIngestionService
 
       call_session = resolve_call_session!(account)
       call_session.with_lock do
+        call_session.reload
+        if immutable_ai_finalized_late_event?(call_session)
+          immutable_ai_finalized_late_event = true
+          event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
+          next
+        end
+
         call_session = upsert_call_session!(call_session, account)
         linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
         event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
       end
     end
 
-    run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions) if call_session.present?
+    if call_session.present? && !immutable_ai_finalized_late_event
+      run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
+    end
     call_session
+  end
+
+  def immutable_ai_finalized_late_event?(call_session)
+    return false if post_finalize_recording_event?
+
+    call_session.metadata.to_h.dig('ai_voice', 'finalize').present?
+  end
+
+  def post_finalize_recording_event?
+    resolved_event_type.in?(%w[recording_ready recording_incomplete]) || recording_error_event?
   end
 
   def run_side_effects!(call_session, account, event, linked_runtime_call_sessions: [])
@@ -867,9 +887,32 @@ class Telephony::EventsIngestionService
   end
 
   def recording_ready_metadata
+    import_metadata = recording_import_metadata
+    recording_ready_base_metadata(import_metadata)
+      .merge(recording_ready_payload_metadata)
+      .merge(recording_ready_audio_metadata)
+      .compact
+  end
+
+  def recording_import_metadata
+    recording_import = metadata['recording_import']
+    recording_import.is_a?(Hash) ? recording_import.deep_stringify_keys : {}
+  end
+
+  def recording_ready_base_metadata(import_metadata)
     {
-      'source' => 'onelink_runtime',
+      'source' => import_metadata.present? ? 'fonoster_import' : 'onelink_runtime',
       'ready_at' => (resolved_occurred_at || Time.current).iso8601,
+      'recorded_by' => import_metadata['recorded_by'] || recording_payload_value('recorded_by', 'recordedBy'),
+      'layout' => import_metadata['layout'] || recording_payload_value('layout'),
+      'mode' => import_metadata['mode'] || recording_payload_value('mode'),
+      'download_host' => import_metadata['download_host'],
+      'import_event_key' => import_metadata['event_key']
+    }
+  end
+
+  def recording_ready_payload_metadata
+    {
       'recording_ref' => recording_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl'),
       'recording_url' => recording_payload_value('recording_url', 'recordingUrl'),
       'storage_key' => recording_payload_value('storage_key', 'storageKey'),
@@ -880,7 +923,17 @@ class Telephony::EventsIngestionService
       'duration_seconds' => recording_payload_value('duration_seconds', 'durationSeconds', 'duration')&.to_i,
       'writer' => metadata.dig('recording', 'writer'),
       'storage_provider' => metadata.dig('recording', 'storage_provider') || metadata.dig('recording', 'storageProvider')
-    }.compact
+    }
+  end
+
+  def recording_ready_audio_metadata
+    {
+      'sample_rate' => recording_payload_value('sample_rate', 'sampleRate')&.to_i,
+      'channels' => recording_payload_value('channels')&.to_i,
+      'channel_layout' => recording_payload_value('channel_layout', 'channelLayout'),
+      'inbound_bytes' => recording_payload_value('inbound_bytes', 'inboundBytes')&.to_i,
+      'outbound_bytes' => recording_payload_value('outbound_bytes', 'outboundBytes')&.to_i
+    }
   end
 
   def recording_error_metadata

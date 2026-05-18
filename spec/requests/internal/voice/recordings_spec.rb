@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Internal Voice Recording Import API', type: :request do
   let(:account) { create(:account) }
-  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15551230100') }
+  let(:voice_channel) { create(:channel_voice, :fonoster, account: account, phone_number: '+15550100100') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:call_ref) { 'operator-direct-call-1' }
@@ -40,11 +40,11 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
       provider_call_id: 'provider-call-1',
       media_session_ref: 'media-session-1',
       app_ref: 'operator-app-ref',
-      ingress_number: '+15551230100',
-      caller_number: '+15551230999',
+      ingress_number: '+15550100100',
+      caller_number: '+15550100999',
       started_at: 1.minute.ago.iso8601,
       ended_at: Time.current.iso8601,
-      download_url: 'https://fonoster.example.test/recordings/operator-direct-call-1.wav?signature=test',
+      download_url: 'https://fonoster.example.test/recordings/operator-direct-call-1.wav?signature=***',
       size_bytes: 123,
       duration_sec: 7,
       sha256: sha256,
@@ -57,6 +57,12 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
   before do
     Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
     call_session
+  end
+
+  around do |example|
+    with_modified_env(TELEPHONY_RECORDING_IMPORT_ALLOWED_HOSTS: 'fonoster.example.test') do
+      example.run
+    end
   end
 
   it 'accepts a valid recording_ready JSON event and enqueues one pull import for duplicate delivery' do
@@ -79,7 +85,37 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
     expect(call_session.reload.metadata.dig('recording_import', 'status')).to eq('queued')
   end
 
-  it 'rejects requests without internal voice auth' do
+  it 'accepts Fonoster bridge auth and aliases when source_id/account_id are omitted but call_ref is unique' do
+    expect(Telephony::RecordingImportJob).to receive(:perform_later).once
+
+    bridge_payload = payload.except(:account_id, :source_id, :download_url, :size_bytes, :duration_sec).merge(
+      recordingUrl: payload[:download_url],
+      byteSize: payload[:size_bytes],
+      durationMs: 7_001,
+      mode: 'operator',
+      layout: 'mono'
+    )
+
+    with_modified_env(TELEPHONY_BRIDGE_ACCESS_TOKEN: 'bridge-secret') do
+      post '/internal/voice/recordings/ready',
+           params: bridge_payload,
+           headers: { 'Authorization' => 'Bearer bridge-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:accepted)
+    expect(response.parsed_body).to include(
+      'status' => 'accepted',
+      'duplicate' => false,
+      'call_ref' => call_ref,
+      'source_id' => "voice_call:#{call_ref}",
+      'message_id' => voice_message.id
+    )
+    expect(call_session.reload.metadata.dig('recording_import', 'duration_sec')).to eq(8)
+    expect(call_session.metadata.dig('recording_import', 'mode')).to eq('operator')
+  end
+
+  it 'rejects requests without internal voice or bridge auth' do
     post '/internal/voice/recordings/ready', params: payload, as: :json
 
     expect(response).to have_http_status(:unauthorized)

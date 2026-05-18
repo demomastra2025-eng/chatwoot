@@ -1,7 +1,7 @@
 class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLength
-  REQUIRED_MODE = 'operator_direct_bridge'.freeze
+  SUPPORTED_OPERATOR_MODES = %w[operator operator_direct_bridge operator_bridge inbound_operator outbound_operator].freeze
   REQUIRED_RECORDED_BY = 'fonoster'.freeze
-  REQUIRED_LAYOUT = 'mixed_mono'.freeze
+  SUPPORTED_LAYOUTS = %w[mixed_mono mono mixed_stereo stereo dual_channel].freeze
   DEFAULT_BLOCKED_APP_REFS = %w[f2498e07-2bb5-45a1-8c8c-6fecdb4c791a].freeze
 
   def initialize(payload:, headers: {})
@@ -34,19 +34,19 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   attr_reader :payload, :headers
 
   def validate! # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
-    require_value!(account_id, 'account_id')
     require_value!(call_ref, 'call_ref')
-    require_value!(source_id, 'source_id')
     require_value!(download_url, 'download_url')
     require_value!(sha256, 'sha256')
-    require_value!(payload_value('size_bytes', 'sizeBytes'), 'size_bytes')
-    require_value!(payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds'), 'duration_sec')
+    require_value!(payload_value('size_bytes', 'sizeBytes', 'byte_size', 'byteSize'), 'size_bytes')
+    require_value!(payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds', 'duration_ms', 'durationMs'), 'duration_sec')
 
-    raise_error!('SOURCE_ID_MISMATCH', 'source_id must be voice_call:<call_ref>') unless source_id == expected_source_id
-    raise_error!('UNSUPPORTED_RECORDING_MODE', 'Only operator_direct_bridge recording import is accepted') unless mode == REQUIRED_MODE
+    raise_error!('SOURCE_ID_MISMATCH', 'source_id must be voice_call:<call_ref>') if raw_source_id.present? && raw_source_id != expected_source_id
+    raise_error!('UNSUPPORTED_RECORDING_MODE', 'Only operator recording import is accepted') unless operator_mode?
     raise_error!('UNSUPPORTED_RECORDED_BY', 'recorded_by must be fonoster') unless recorded_by == REQUIRED_RECORDED_BY
-    raise_error!('UNSUPPORTED_RECORDING_LAYOUT', 'layout must be mixed_mono') unless layout == REQUIRED_LAYOUT
-    raise_error!('AI_RECORDING_IMPORT_REJECTED', 'AI recordings must be written by OneLink runtime, not imported from Fonoster') if ai_app_ref?
+    raise_error!('UNSUPPORTED_RECORDING_LAYOUT', 'layout is not supported') unless supported_layout?
+    if ai_app_ref? || ai_mode?
+      raise_error!('AI_RECORDING_IMPORT_REJECTED', 'AI recordings must be written by OneLink runtime, not imported from Fonoster')
+    end
     unless Telephony::RecordingImportDownloadPolicy.allowed?(parsed_download_url)
       raise_error!('INVALID_DOWNLOAD_URL', 'download_url must be an allowed HTTPS recording URL')
     end
@@ -109,8 +109,16 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
 
   def job_payload
     payload.merge(
+      'account_id' => call_session.account_id,
+      'call_ref' => call_session.external_call_ref,
       'event_key' => event_key,
       'source_id' => expected_source_id,
+      'download_url' => download_url,
+      'size_bytes' => size_bytes,
+      'duration_sec' => duration_sec,
+      'mode' => mode,
+      'layout' => layout,
+      'recorded_by' => recorded_by,
       'received_at' => Time.current.iso8601
     )
   end
@@ -133,11 +141,27 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   end
 
   def call_session
-    @call_session ||= account&.telephony_call_sessions&.find_by(external_call_ref: call_ref)
+    @call_session ||= begin
+      scoped_session = Account.find_by(id: account_id)&.telephony_call_sessions&.find_by(external_call_ref: call_ref) if account_id.present?
+      scoped_session || uniquely_resolved_call_session
+    end
+  end
+
+  def uniquely_resolved_call_session
+    return if account_id.present?
+
+    matches = Telephony::CallSession.where(external_call_ref: call_ref).limit(2).to_a
+    raise_error!('CALL_SESSION_AMBIGUOUS', 'call_ref matches more than one call session; account_id is required') if matches.size > 1
+
+    matches.first
   end
 
   def account
-    @account ||= Account.find_by(id: account_id)
+    @account ||= if account_id.present?
+                   Account.find_by(id: account_id)
+                 else
+                   call_session&.account
+                 end
   end
 
   def account_id
@@ -149,6 +173,10 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   end
 
   def source_id
+    raw_source_id.presence || expected_source_id
+  end
+
+  def raw_source_id
     payload_value('source_id', 'sourceId')
   end
 
@@ -157,7 +185,7 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   end
 
   def download_url
-    payload_value('download_url', 'downloadUrl')
+    payload_value('download_url', 'downloadUrl', 'recording_url', 'recordingUrl')
   end
 
   def parsed_download_url
@@ -174,15 +202,21 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   end
 
   def size_bytes
-    payload_value('size_bytes', 'sizeBytes').to_i
+    payload_value('size_bytes', 'sizeBytes', 'byte_size', 'byteSize').to_i
   end
 
   def duration_sec
-    payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds').to_i
+    seconds = payload_value('duration_sec', 'durationSec', 'duration_seconds', 'durationSeconds')
+    return seconds.to_i if seconds.present?
+
+    milliseconds = payload_value('duration_ms', 'durationMs')
+    return (milliseconds.to_f / 1000.0).ceil if milliseconds.present?
+
+    nil
   end
 
   def mode
-    payload_value('mode').to_s
+    payload_value('mode').to_s.presence || 'operator'
   end
 
   def recorded_by
@@ -195,6 +229,18 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
 
   def app_ref
     payload_value('app_ref', 'appRef').to_s
+  end
+
+  def operator_mode?
+    SUPPORTED_OPERATOR_MODES.include?(mode)
+  end
+
+  def ai_mode?
+    mode.start_with?('ai')
+  end
+
+  def supported_layout?
+    layout.blank? || SUPPORTED_LAYOUTS.include?(layout)
   end
 
   def ai_app_ref?
@@ -212,8 +258,9 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
   end
 
   def event_key
+    resolved_account_id = account_id.presence || call_session&.account_id
     headers['idempotency_key'].presence || payload_value('idempotency_key', 'idempotencyKey') ||
-      "recording_ready:#{account_id}:#{call_ref}:#{sha256}"
+      "recording_ready:#{resolved_account_id}:#{call_ref}:#{sha256}"
   end
 
   def payload_value(*keys)
