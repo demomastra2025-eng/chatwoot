@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_14_103000) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_18_070752) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1353,7 +1353,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_14_103000) do
     t.string "email_address"
     t.boolean "working_hours_enabled", default: false
     t.string "out_of_office_message"
-    t.string "timezone", default: "UTC"
+    t.string "timezone", default: "Asia/Almaty"
     t.boolean "enable_email_collect", default: true
     t.boolean "csat_survey_enabled", default: false
     t.boolean "allow_messages_after_resolved", default: true

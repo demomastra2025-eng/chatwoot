@@ -1,25 +1,26 @@
 <script>
-import parse from 'date-fns/parse';
 import differenceInMinutes from 'date-fns/differenceInMinutes';
-import { generateTimeSlots } from '../helpers/businessHour';
+import {
+  generateTimeSlots,
+  parseBusinessHourTime,
+} from '../helpers/businessHour';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import NextSelect from 'dashboard/components-next/select/Select.vue';
 
 const timeSlots = generateTimeSlots(30);
 
-const groupByPeriod = slots =>
-  ['AM', 'PM']
-    .map(period => ({
-      label: period,
-      options: slots
-        .filter(s => s.endsWith(period))
-        .map(s => ({ value: s, label: s })),
-    }))
-    .filter(g => g.options.length);
+const groupByPeriod = slots => [
+  {
+    label: '24h',
+    options: slots.map(s => ({ value: s, label: s })),
+  },
+];
 
 export default {
   components: {
     Icon,
+    Checkbox,
     NextSelect,
   },
   props: {
@@ -41,7 +42,7 @@ export default {
       return groupByPeriod(timeSlots);
     },
     toTimeSlots() {
-      return groupByPeriod(timeSlots.filter(slot => slot !== '12:00 AM'));
+      return groupByPeriod(timeSlots.filter(slot => slot !== '00:00'));
     },
     isDayEnabled: {
       get() {
@@ -71,7 +72,7 @@ export default {
         return this.timeSlot.from;
       },
       set(value) {
-        const fromDate = parse(value, 'hh:mm a', new Date());
+        const fromDate = parseBusinessHourTime(value);
         const valid = differenceInMinutes(this.toDate, fromDate) / 60 > 0;
         this.$emit('update', {
           ...this.timeSlot,
@@ -85,8 +86,8 @@ export default {
         return this.timeSlot.to;
       },
       set(value) {
-        const toDate = parse(value, 'hh:mm a', new Date());
-        if (value === '12:00 AM') {
+        const toDate = parseBusinessHourTime(value);
+        if (value === '23:59') {
           this.$emit('update', {
             ...this.timeSlot,
             to: value,
@@ -103,10 +104,10 @@ export default {
       },
     },
     fromDate() {
-      return parse(this.fromTime, 'hh:mm a', new Date());
+      return parseBusinessHourTime(this.fromTime);
     },
     toDate() {
-      return parse(this.toTime, 'hh:mm a', new Date());
+      return parseBusinessHourTime(this.toTime);
     },
     totalHours() {
       if (this.timeSlot.openAllDay) return '24h';
@@ -127,16 +128,16 @@ export default {
         if (value) {
           this.$emit('update', {
             ...this.timeSlot,
-            from: '12:00 AM',
-            to: '11:59 PM',
+            from: '00:00',
+            to: '23:59',
             valid: true,
             openAllDay: value,
           });
         } else {
           this.$emit('update', {
             ...this.timeSlot,
-            from: '09:00 AM',
-            to: '05:00 PM',
+            from: '09:00',
+            to: '17:00',
             valid: true,
             openAllDay: value,
           });
@@ -151,11 +152,10 @@ export default {
   <tr>
     <td class="ltr:pl-4 ltr:pr-3 rtl:pl-3 rtl:pr-4">
       <div class="flex items-center gap-2 min-h-16">
-        <input
+        <Checkbox
           v-model="isDayEnabled"
           name="enable-day"
-          class="m-0"
-          type="checkbox"
+          class="!m-0 shrink-0"
           :title="$t('INBOX_MGMT.BUSINESS_HOURS.DAY.ENABLE')"
         />
         <span class="text-body-main text-n-slate-12 font-medium">
@@ -167,11 +167,10 @@ export default {
       <div v-if="isDayEnabled" class="flex flex-col gap-1.5">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
-            <input
+            <Checkbox
               v-model="isOpenAllDay"
               name="enable-open-all-day"
-              class="m-0"
-              type="checkbox"
+              class="!m-0 shrink-0"
               :title="$t('INBOX_MGMT.BUSINESS_HOURS.ALL_DAY')"
             />
             <span class="text-body-main text-n-slate-12">{{

@@ -21,7 +21,7 @@
 #  name                          :string           not null
 #  out_of_office_message         :string
 #  sender_name_type              :integer          default("friendly"), not null
-#  timezone                      :string           default("UTC")
+#  timezone                      :string           default("Asia/Almaty")
 #  working_hours_enabled         :boolean          default(FALSE)
 #  created_at                    :datetime         not null
 #  updated_at                    :datetime         not null

@@ -9,16 +9,16 @@ import BusinessDay from './BusinessDay.vue';
 import {
   timeSlotParse,
   timeSlotTransform,
+  DEFAULT_TIMEZONE,
   defaultTimeSlot,
   timeZoneOptions,
 } from '../helpers/businessHour';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
-const DEFAULT_TIMEZONE = {
-  label: 'Pacific Time (US & Canada) (GMT-07:00)',
-  value: 'America/Los_Angeles',
-};
+const defaultTimeZoneOption = () =>
+  timeZoneOptions().find(item => item.value === DEFAULT_TIMEZONE) ||
+  timeZoneOptions()[0];
 
 export default {
   components: {
@@ -40,15 +40,15 @@ export default {
     return {
       isBusinessHoursEnabled: false,
       unavailableMessage: '',
-      timeZone: DEFAULT_TIMEZONE,
+      timeZone: defaultTimeZoneOption(),
       dayNames: {
-        0: 'Sunday',
-        1: 'Monday',
-        2: 'Tuesday',
-        3: 'Wednesday',
-        4: 'Thursday',
-        5: 'Friday',
-        6: 'Saturday',
+        0: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.SUNDAY'),
+        1: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.MONDAY'),
+        2: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.TUESDAY'),
+        3: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.WEDNESDAY'),
+        4: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.THURSDAY'),
+        5: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.FRIDAY'),
+        6: this.$t('INBOX_MGMT.BUSINESS_HOURS.DAY_NAMES.SATURDAY'),
       },
       timeSlots: [...defaultTimeSlot],
     };
@@ -105,7 +105,7 @@ export default {
       this.timeSlots = slots;
       this.timeZone =
         this.timeZones.find(item => timeZone === item.value) ||
-        DEFAULT_TIMEZONE;
+        defaultTimeZoneOption();
     },
     onSlotUpdate(slotIndex, slotData) {
       this.timeSlots = this.timeSlots.map(item =>

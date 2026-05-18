@@ -1456,6 +1456,15 @@
         "DAY": "День",
         "AVAILABILITY": "Доступность"
       },
+      "DAY_NAMES": {
+        "SUNDAY": "Воскресенье",
+        "MONDAY": "Понедельник",
+        "TUESDAY": "Вторник",
+        "WEDNESDAY": "Среда",
+        "THURSDAY": "Четверг",
+        "FRIDAY": "Пятница",
+        "SATURDAY": "Суббота"
+      },
       "ALL_DAY": "Весь день"
     },
     "IMAP": {
