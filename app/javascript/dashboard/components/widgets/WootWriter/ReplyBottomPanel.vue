@@ -139,6 +139,7 @@ export default {
     'selectContentTemplate',
     'toggleQuotedReply',
     'replaceText',
+    'attachFile',
   ],
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
@@ -467,6 +468,7 @@ export default {
         v-if="!isOnPrivateNote && !isEditorDisabled"
         :conversation-id="conversationId"
         @replace-text="replaceText"
+        @attach-file="$emit('attachFile', $event)"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"

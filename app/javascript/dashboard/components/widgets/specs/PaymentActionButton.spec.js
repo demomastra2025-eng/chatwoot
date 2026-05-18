@@ -19,7 +19,7 @@ vi.mock('dashboard/composables', () => ({
 
 vi.mock('qrcode', () => ({
   default: {
-    toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,qr')),
+    toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,cXI=')),
   },
 }));
 
@@ -60,8 +60,10 @@ const mountComponent = props =>
       mocks: {
         $t: (key, params = {}) =>
           ({
+            'CONVERSATION.REPLYBOX.PAYMENTS.CREATE_QR_IMAGE':
+              'Создать QR картинку',
             'CONVERSATION.REPLYBOX.PAYMENTS.KASPI_PAYMENT_TEXT': `Ссылка для оплаты Kaspi: ${params.link}\nСумма: ${params.amount} ${params.currency}`,
-            'CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE_TEXT': `QR: ${params.image} ${params.link}`,
+            'CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE_TEXT': `QR для оплаты Kaspi\nСсылка: ${params.link}\nСумма: ${params.amount} ${params.currency}`,
             'CONVERSATION.REPLYBOX.PAYMENTS.KASPI_INVOICE_TEXT': `Счёт Kaspi: ${params.orderNumber} ${params.amount} ${params.currency}`,
           })[key] || key,
       },
@@ -137,7 +139,7 @@ describe('PaymentActionButton', () => {
     );
   });
 
-  it('creates a QR image action from a separate menu item', async () => {
+  it('creates a QR image action from a separate menu item and attaches the generated image', async () => {
     KaspiPayPaymentsAPI.create.mockResolvedValue({
       data: {
         id: 13,
@@ -151,6 +153,9 @@ describe('PaymentActionButton', () => {
     const wrapper = mountComponent();
     await wrapper.find('button').trigger('click');
     await wrapper.findAll('.payment-menu button')[1].trigger('click');
+    expect(wrapper.find('form button[type="submit"]').text()).toBe(
+      'Создать QR картинку'
+    );
     await wrapper.find('input').setValue('15000');
     await wrapper.find('form').trigger('submit.prevent');
     await flushPromises();
@@ -162,9 +167,15 @@ describe('PaymentActionButton', () => {
       'https://pay.example/qr/13',
       expect.objectContaining({ width: 256 })
     );
-    expect(wrapper.emitted('replaceText')?.[0]?.[0]).toContain(
-      'data:image/png;base64,qr'
-    );
+    const replacementText = wrapper.emitted('replaceText')?.[0]?.[0];
+    expect(replacementText).toContain('https://pay.example/qr/13');
+    expect(replacementText).not.toContain('data:image/png;base64');
+
+    const attachment = wrapper.emitted('attachFile')?.[0]?.[0];
+    expect(attachment.name).toBe('kaspi-qr-13.png');
+    expect(attachment.type).toBe('image/png');
+    expect(attachment.file).toBeInstanceOf(File);
+    expect(wrapper.emitted('created')?.[0]?.[0].attachment).toBe(attachment);
   });
 
   it('creates a Kaspi invoice action with phone number when selected', async () => {

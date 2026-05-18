@@ -235,6 +235,7 @@
         "AMOUNT_LABEL": "Amount in KZT",
         "AMOUNT_PLACEHOLDER": "15000",
         "CREATE_LINK": "Create link",
+        "CREATE_QR_IMAGE": "Create QR image",
         "CANCEL": "Cancel",
         "INVALID_AMOUNT": "Enter a valid payment amount",
         "CREATED": "Payment link added to the reply",
@@ -247,7 +248,7 @@
         "PHONE_PLACEHOLDER": "77011234567",
         "CREATE_INVOICE": "Шот жіберу",
         "KASPI_INVOICE_TEXT": "Kaspi Pay шоты клиентке жіберілді. Сома: {amount} {currency}. Нөмірі: {orderNumber}",
-        "KASPI_QR_IMAGE_TEXT": "Kaspi төлем сілтемесі: {link}\nСома: {amount} {currency}\nQR: {image}"
+        "KASPI_QR_IMAGE_TEXT": "Kaspi төлем QR\nСілтеме: {link}\nСома: {amount} {currency}"
       },
       "EMAIL_HEAD": {
         "TO": "TO",

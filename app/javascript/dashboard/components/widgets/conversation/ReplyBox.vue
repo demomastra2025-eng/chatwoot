@@ -1547,6 +1547,7 @@ export default {
         @toggle-insert-article="toggleInsertArticle"
         @toggle-quoted-reply="toggleQuotedReply"
         @replace-text="addIntoEditor"
+        @attach-file="onFileUpload"
       />
     </Transition>
 

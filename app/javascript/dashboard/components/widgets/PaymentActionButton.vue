@@ -44,7 +44,7 @@ export default {
       default: true,
     },
   },
-  emits: ['created', 'replaceText'],
+  emits: ['created', 'replaceText', 'attachFile'],
   data() {
     return {
       amountInput: '',
@@ -76,6 +76,9 @@ export default {
     paymentSubmitLabel() {
       if (this.selectedPaymentAction === 'kaspi_invoice') {
         return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_INVOICE');
+      }
+      if (this.selectedPaymentAction === 'kaspi_qr_image') {
+        return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_QR_IMAGE');
       }
 
       return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_LINK');
@@ -198,23 +201,38 @@ export default {
         link: payment.qr_token || payment.receipt_url,
       });
     },
-    qrImageText(payment, amount, imageDataUrl) {
+    qrImageText(payment, amount) {
       return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE_TEXT', {
         amount,
         currency: payment.currency || 'KZT',
         link: payment.qr_token || payment.receipt_url,
-        image: imageDataUrl,
       });
     },
-    async deliverPaymentText(paymentText, payment) {
+    qrImageFile(imageDataUrl, payment) {
+      const [, metadata = '', base64Data = ''] =
+        imageDataUrl.match(/^data:([^;]+);base64,(.*)$/) || [];
+      const mimeType = metadata || 'image/png';
+      const binary = atob(base64Data);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const fileName = `kaspi-qr-${payment.id || Date.now()}.png`;
+      const file = new File([bytes], fileName, { type: mimeType });
+      return {
+        name: fileName,
+        type: mimeType,
+        size: file.size,
+        file,
+      };
+    },
+    async deliverPaymentText(paymentText, payment, attachment = null) {
       if (this.deliveryMode === 'copy') {
         await copyTextToClipboard(paymentText);
         useAlert(this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATED_COPY'));
       } else {
+        if (attachment) this.$emit('attachFile', attachment);
         this.$emit('replaceText', paymentText);
         useAlert(this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATED'));
       }
-      this.$emit('created', { payment, text: paymentText });
+      this.$emit('created', { payment, text: paymentText, attachment });
     },
     async createKaspiPaymentLink() {
       const normalizedAmount = this.normalizeAmount(this.amountInput);
@@ -230,6 +248,7 @@ export default {
         );
         const payment = response.data;
         let paymentText = this.paymentText(payment, normalizedAmount);
+        let attachment = null;
         if (
           this.selectedPaymentAction === 'kaspi_qr_image' &&
           payment.qr_token
@@ -239,13 +258,10 @@ export default {
             width: 256,
           });
           payment.qr_image_data_url = imageDataUrl;
-          paymentText = this.qrImageText(
-            payment,
-            normalizedAmount,
-            imageDataUrl
-          );
+          attachment = this.qrImageFile(imageDataUrl, payment);
+          paymentText = this.qrImageText(payment, normalizedAmount);
         }
-        await this.deliverPaymentText(paymentText, payment);
+        await this.deliverPaymentText(paymentText, payment, attachment);
         this.showAmountForm = false;
       } catch (error) {
         const message =
@@ -265,7 +281,7 @@ export default {
     <template v-if="hasEnabledPaymentProvider">
       <NextButton
         v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.PAYMENTS.TOOLTIP')"
-        icon="i-ph-coins"
+        icon="i-ph-invoice"
         slate
         faded
         sm

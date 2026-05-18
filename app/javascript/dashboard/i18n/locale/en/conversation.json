@@ -256,6 +256,7 @@
         "AMOUNT_LABEL": "Amount in KZT",
         "AMOUNT_PLACEHOLDER": "15000",
         "CREATE_LINK": "Create link",
+        "CREATE_QR_IMAGE": "Create QR image",
         "CANCEL": "Cancel",
         "INVALID_AMOUNT": "Enter a valid payment amount",
         "CREATED": "Payment link added to the reply",
@@ -268,7 +269,7 @@
         "PHONE_PLACEHOLDER": "77011234567",
         "CREATE_INVOICE": "Send invoice",
         "KASPI_INVOICE_TEXT": "Kaspi Pay invoice sent to the customer. Amount: {amount} {currency}. Number: {orderNumber}",
-        "KASPI_QR_IMAGE_TEXT": "Kaspi payment link: {link}\nAmount: {amount} {currency}\nQR: {image}"
+        "KASPI_QR_IMAGE_TEXT": "Kaspi payment QR\nLink: {link}\nAmount: {amount} {currency}"
       },
       "EMAIL_HEAD": {
         "TO": "TO",
