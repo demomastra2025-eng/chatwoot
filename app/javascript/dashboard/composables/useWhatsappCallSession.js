@@ -8,6 +8,7 @@ import {
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import Auth from 'dashboard/api/auth';
 import Timer from 'dashboard/helper/Timer';
+import { emitter } from 'shared/helpers/mitt';
 
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
 let inboundPc = null;
@@ -215,10 +216,20 @@ export { handleAgentOffer };
  * Can be called from anywhere — composable, widget, or bubble.
  */
 async function doAcceptCall(call) {
-  // Server-relay mode: just POST /accept without SDP. Wait for agent_offer event.
+  // Server-relay mode: POST /accept without SDP. New Rails returns the media
+  // server's Peer-B offer in the response as the synchronous source of truth;
+  // the ActionCable agent_offer event remains as a fallback for older tabs and
+  // reconnects. The caller commits active-call state before attempting the local
+  // browser WebRTC handshake, so a mic/ICE failure does not hide an already
+  // accepted provider call from the agent UI.
   if (isServerRelayCall(call)) {
-    await WhatsappCallsAPI.accept(call.id);
-    return { success: true, awaitingAgentOffer: true };
+    const { data } = await WhatsappCallsAPI.accept(call.id);
+    return {
+      success: true,
+      awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
+      agentOffer: data?.agent_offer,
+      acceptData: data,
+    };
   }
 
   // Legacy mode: full browser-side WebRTC handshake
@@ -268,6 +279,43 @@ async function doAcceptCall(call) {
   }
 }
 
+async function connectAgentOfferForActiveCall(
+  callsStore,
+  callId,
+  agentOffer,
+  context
+) {
+  if (!agentOffer?.sdp_offer) return false;
+
+  try {
+    callsStore.updateActiveCall({ agentWebrtcConnecting: true });
+    await handleAgentOffer(
+      callId,
+      agentOffer.sdp_offer,
+      agentOffer.ice_servers || []
+    );
+    callsStore.updateActiveCall({
+      agentWebrtcConnected: true,
+      agentWebrtcConnecting: false,
+    });
+    callsStore.markActiveCallConnected();
+    callsStore.setReconnecting(false);
+    emitter.emit('whatsapp_call:agent_webrtc_connected');
+    return true;
+  } catch (err) {
+    callsStore.updateActiveCall({ agentWebrtcConnecting: false });
+    callsStore.setReconnecting(false);
+    // The provider call is already accepted at this point. Keep the call active
+    // so the agent can reconnect/retry instead of losing visibility in the UI.
+    // eslint-disable-next-line no-console
+    console.error(
+      `[WhatsApp Call] Failed to handle ${context} agent offer:`,
+      err
+    );
+    return false;
+  }
+}
+
 /**
  * Standalone function callable from VoiceCall bubble.
  * Fetches call data if needed, runs WebRTC accept, updates store.
@@ -294,6 +342,7 @@ export async function acceptWhatsappCallById(callId) {
       direction: data.direction,
       inboxId: data.inbox_id,
       conversationId: data.conversation_id,
+      conversationDisplayId: data.conversation_display_id,
       sdpOffer: data.sdp_offer,
       iceServers: data.ice_servers,
       mediaServerEnabled: data.media_server_enabled,
@@ -311,11 +360,24 @@ export async function acceptWhatsappCallById(callId) {
     // ActionCable event to complete WebRTC setup. Mark it with serverRelay flag.
     const activeCallData = {
       ...call,
+      conversationId: result.acceptData?.conversation_id || call.conversationId,
+      conversationDisplayId:
+        result.acceptData?.conversation_display_id ||
+        call.conversationDisplayId,
       serverRelay: isServerRelayCall(call),
+      agentWebrtcConnected: false,
+      agentWebrtcConnecting: false,
+      status: result.acceptData?.status || call.status,
     };
     callsStore.setActiveCall(activeCallData);
+    await connectAgentOfferForActiveCall(
+      callsStore,
+      activeCallData.id,
+      result.agentOffer,
+      'accept-response'
+    );
 
-    return { success: true, call: activeCallData, ...result };
+    return { success: true, call: callsStore.activeCall, ...result };
   } catch (err) {
     callsStore.removeIncomingCall(call.callId);
     throw err;
@@ -436,14 +498,28 @@ export function useWhatsappCallSession() {
 
       const activeCallData = {
         ...call,
+        conversationId:
+          result.acceptData?.conversation_id || call.conversationId,
+        conversationDisplayId:
+          result.acceptData?.conversation_display_id ||
+          call.conversationDisplayId,
         serverRelay: isServerRelayCall(call),
+        agentWebrtcConnected: false,
+        agentWebrtcConnecting: false,
+        status: result.acceptData?.status || call.status,
       };
       callsStore.setActiveCall(activeCallData);
+      await connectAgentOfferForActiveCall(
+        callsStore,
+        activeCallData.id,
+        result.agentOffer,
+        'accept-response'
+      );
 
       // In legacy mode, WebRTC is already established so start timer now.
       // In server-relay mode, timer starts when handleAgentOffer completes
       // (triggered by the whatsapp_call.agent_offer ActionCable event).
-      if (!result.awaitingAgentOffer) {
+      if (!activeCallData.serverRelay) {
         durationTimer.start();
       }
     } catch (err) {

@@ -73,7 +73,9 @@ const handleAccept = async call => {
   if (activeCall.value) {
     router.push({
       name: 'inbox_conversation',
-      params: { conversation_id: call.conversationId },
+      params: {
+        conversation_id: call.conversationDisplayId || call.conversationId,
+      },
     });
   }
 };

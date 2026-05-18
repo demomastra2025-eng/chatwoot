@@ -6,6 +6,11 @@ import { messageTimestamp } from 'shared/helpers/timeHelper';
 import { MESSAGE_TYPES, MESSAGE_VARIANTS, ORIENTATION } from '../constants';
 import { provideMessageContext } from '../provider.js';
 
+const { routerPushMock, acceptWhatsappCallByIdMock } = vi.hoisted(() => ({
+  routerPushMock: vi.fn(),
+  acceptWhatsappCallByIdMock: vi.fn(),
+}));
+
 vi.mock('next/message/chips/Audio.vue', () => ({
   default: {
     name: 'AudioChip',
@@ -16,7 +21,11 @@ vi.mock('next/message/chips/Audio.vue', () => ({
 }));
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPushMock }),
+}));
+
+vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
+  acceptWhatsappCallById: acceptWhatsappCallByIdMock,
 }));
 
 import VoiceCall from './VoiceCall.vue';
@@ -91,6 +100,10 @@ const buildWrapper = contextOverrides => {
 };
 
 describe('VoiceCall bubble', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders the saved call time', () => {
     const wrapper = buildWrapper();
 
@@ -281,6 +294,35 @@ describe('VoiceCall bubble', () => {
       '/api/v1/accounts/1/telephony/calls/call-3/recording?recording_token=signed-token'
     );
     expect(recording.attributes('data-extension')).toBe('wav');
+  });
+
+  it('routes WhatsApp accept from bubble by conversation display id', async () => {
+    acceptWhatsappCallByIdMock.mockResolvedValue({
+      success: true,
+      call: {
+        conversationId: 13743,
+        conversationDisplayId: 481,
+      },
+    });
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'ringing',
+          callSource: 'whatsapp',
+          callId: 42,
+          mediaServerEnabled: true,
+        },
+      }),
+    });
+
+    await wrapper.find('button').trigger('click');
+    await Promise.resolve();
+
+    expect(acceptWhatsappCallByIdMock).toHaveBeenCalledWith(42);
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'inbox_conversation',
+      params: { conversation_id: 481 },
+    });
   });
 
   it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {

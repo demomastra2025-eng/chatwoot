@@ -282,7 +282,10 @@ const handleJoinCall = async () => {
       if (result?.success && result.call) {
         router.push({
           name: 'inbox_conversation',
-          params: { conversation_id: result.call.conversationId },
+          params: {
+            conversation_id:
+              result.call.conversationDisplayId || result.call.conversationId,
+          },
         });
       }
     }

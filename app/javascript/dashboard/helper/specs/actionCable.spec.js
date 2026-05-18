@@ -130,6 +130,67 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(callsStore.isReconnecting).toBe(false);
     });
 
+    it('stores incoming WhatsApp call conversation display id for native conversation routing', () => {
+      const callsStore = useWhatsappCallsStore();
+
+      actionCable.onWhatsappCallIncoming({
+        id: 42,
+        call_id: 'provider-call-1',
+        direction: 'incoming',
+        inbox_id: 7,
+        conversation_id: 13743,
+        conversation_display_id: 481,
+        caller: { name: 'Ahan' },
+        media_server_enabled: true,
+      });
+
+      expect(callsStore.incomingCalls[0]).toMatchObject({
+        conversationId: 13743,
+        conversationDisplayId: 481,
+      });
+    });
+
+    it('ignores a late duplicate agent offer after synchronous accept response connected WebRTC', () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'provider-call-1',
+        serverRelay: true,
+        agentWebrtcConnected: true,
+        status: 'connected',
+      });
+
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        call_id: 'provider-call-1',
+        sdp_offer: 'late-offer',
+        ice_servers: [],
+      });
+
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+    });
+
+    it('ignores a duplicate agent offer while synchronous accept response WebRTC is connecting', () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'provider-call-1',
+        serverRelay: true,
+        agentWebrtcConnected: false,
+        agentWebrtcConnecting: true,
+        status: 'in_progress',
+      });
+
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        call_id: 'provider-call-1',
+        sdp_offer: 'duplicate-offer',
+        ice_servers: [],
+      });
+
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+    });
+
     it('waits for outbound accepted before marking a server-relay outbound call connected after agent offer', async () => {
       const callsStore = useWhatsappCallsStore();
       callsStore.setActiveCall({
@@ -149,6 +210,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
       expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'agent-offer', []);
       expect(callsStore.activeCall.agentWebrtcConnected).toBe(true);
+      expect(callsStore.activeCall.agentWebrtcConnecting).toBe(false);
       expect(callsStore.activeCall.status).toBe('ringing');
       expect(emitter.emit).not.toHaveBeenCalledWith(
         'whatsapp_call:agent_webrtc_connected'

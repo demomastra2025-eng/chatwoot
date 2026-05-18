@@ -1,6 +1,8 @@
 class Whatsapp::CallService
   pattr_initialize [:call!, :agent!]
 
+  attr_reader :agent_offer
+
   def accept(params = {})
     if media_server_enabled?
       accept_via_media_server
@@ -126,6 +128,7 @@ class Whatsapp::CallService
 
       # Step 3: Generate agent offer (Peer B)
       agent_offer = client.generate_agent_offer(media_session_id)
+      @agent_offer = agent_offer
 
       # Step 4: Update call record
       call.with_lock do
@@ -240,6 +243,7 @@ class Whatsapp::CallService
         id: call.id,
         call_id: call.provider_call_id,
         conversation_id: call.conversation_id,
+        conversation_display_id: call.conversation&.display_id,
         accepted_by_agent_id: agent.id,
         sdp_offer: agent_offer['sdp_offer'],
         ice_servers: agent_offer['ice_servers']

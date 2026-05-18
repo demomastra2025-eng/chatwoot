@@ -117,7 +117,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(response.parsed_body['error']).to eq('sdp_answer is required')
     end
 
-    it 'accepts media-server mode without browser SDP answer' do
+    it 'accepts media-server mode without browser SDP answer and returns agent offer for race-free browser handshake' do
       ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil,
                                    meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
       allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-2', 'meta_sdp_answer' => 'meta-answer' })
@@ -134,6 +134,15 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(ringing_call.reload).to have_attributes(status: 'in_progress', media_session_id: 'media-2')
+      expect(response.parsed_body).to include(
+        'media_session_id' => 'media-2',
+        'conversation_id' => ringing_call.conversation_id,
+        'conversation_display_id' => ringing_call.conversation.display_id,
+        'agent_offer' => {
+          'sdp_offer' => 'agent-offer',
+          'ice_servers' => []
+        }
+      )
     end
 
     it 'rejects a ringing call' do

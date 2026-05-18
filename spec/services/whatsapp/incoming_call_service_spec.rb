@@ -58,7 +58,10 @@ RSpec.describe Whatsapp::IncomingCallService do
       expect(call.conversation.additional_attributes).to include('call_status' => 'ringing', 'call_direction' => 'inbound')
       expect(ActionCable.server).to have_received(:broadcast).with(
         "account_#{account.id}",
-        hash_including(event: 'whatsapp_call.incoming', data: hash_including(call_id: 'wa-inbound-1'))
+        hash_including(
+          event: 'whatsapp_call.incoming',
+          data: hash_including(call_id: 'wa-inbound-1', conversation_display_id: call.conversation.display_id)
+        )
       )
     end
 

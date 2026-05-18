@@ -15,6 +15,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       status: @call.status,
       direction: @call.direction_label,
       conversation_id: @call.conversation_id,
+      conversation_display_id: @call.conversation&.display_id,
       inbox_id: @call.inbox_id,
       message_id: @call.message_id,
       # In server-relay mode the browser must not talk WebRTC to Meta directly
@@ -31,14 +32,16 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
   def accept
     if @call.media_server_enabled?
-      call = Whatsapp::CallService.new(call: @call, agent: current_user).accept
-      render json: { id: call.id, status: call.status, message_id: call.message_id, media_session_id: call.media_session_id }
+      service = Whatsapp::CallService.new(call: @call, agent: current_user)
+      call = service.accept
+      render json: media_server_accept_payload(call, service.agent_offer)
     else
       sdp_answer = params[:sdp_answer]
       return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity if sdp_answer.blank?
 
       call = Whatsapp::CallService.new(call: @call, agent: current_user).pre_accept_and_accept(sdp_answer)
-      render json: { id: call.id, status: call.status, message_id: call.message_id }
+      render json: { id: call.id, status: call.status, message_id: call.message_id, conversation_id: call.conversation_id,
+                     conversation_display_id: call.conversation&.display_id }
     end
   rescue Whatsapp::CallErrors::NotRinging, Whatsapp::CallErrors::AlreadyAccepted => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -83,6 +86,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
         call_id: call.provider_call_id,
         direction: call.direction_label,
         conversation_id: call.conversation_id,
+        conversation_display_id: call.conversation&.display_id,
         inbox_id: call.inbox_id,
         status: call.status,
         elapsed_seconds: elapsed,
@@ -183,6 +187,18 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   private
+
+  def media_server_accept_payload(call, agent_offer)
+    {
+      id: call.id,
+      status: call.status,
+      message_id: call.message_id,
+      media_session_id: call.media_session_id,
+      conversation_id: call.conversation_id,
+      conversation_display_id: call.conversation&.display_id,
+      agent_offer: agent_offer&.slice('sdp_offer', 'ice_servers')
+    }.compact
+  end
 
   def create_outbound_call(conversation)
     contact_phone = conversation.contact&.phone_number

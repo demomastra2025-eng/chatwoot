@@ -284,6 +284,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       direction: data.direction,
       inboxId: data.inbox_id,
       conversationId: data.conversation_id,
+      conversationDisplayId: data.conversation_display_id,
       caller: data.caller,
       sdpOffer: data.sdp_offer || null,
       iceServers: data.ice_servers || null,
@@ -314,16 +315,28 @@ class ActionCableConnector extends BaseActionCableConnector {
     // for Peer B) instead of sdp_answer.
     if (data.sdp_offer) {
       const activeCall = whatsappCallsStore.activeCall;
-      if (activeCall && String(activeCall.callId) === String(data.call_id)) {
+      if (
+        activeCall &&
+        String(activeCall.callId) === String(data.call_id) &&
+        !activeCall.agentWebrtcConnected &&
+        !activeCall.agentWebrtcConnecting
+      ) {
+        whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
         handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers)
           .then(() => {
-            whatsappCallsStore.updateActiveCall({ agentWebrtcConnected: true });
+            whatsappCallsStore.updateActiveCall({
+              agentWebrtcConnected: true,
+              agentWebrtcConnecting: false,
+            });
             if (whatsappCallsStore.activeCall?.metaAccepted) {
               whatsappCallsStore.markActiveCallConnected();
               emitter.emit('whatsapp_call:agent_webrtc_connected');
             }
           })
           .catch(err => {
+            whatsappCallsStore.updateActiveCall({
+              agentWebrtcConnecting: false,
+            });
             // eslint-disable-next-line no-console
             console.error(
               '[WhatsApp Call] Failed to handle outbound agent offer:',
@@ -399,14 +412,27 @@ class ActionCableConnector extends BaseActionCableConnector {
       return;
     }
 
+    if (
+      (activeCall.agentWebrtcConnected || activeCall.agentWebrtcConnecting) &&
+      !whatsappCallsStore.isReconnecting
+    ) {
+      return;
+    }
+
+    whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
     handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers)
       .then(() => {
+        whatsappCallsStore.updateActiveCall({
+          agentWebrtcConnected: true,
+          agentWebrtcConnecting: false,
+        });
         whatsappCallsStore.markActiveCallConnected();
         whatsappCallsStore.setReconnecting(false);
         // Emit event so the composable can start the timer
         emitter.emit('whatsapp_call:agent_webrtc_connected');
       })
       .catch(err => {
+        whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
         whatsappCallsStore.setReconnecting(false);
         // eslint-disable-next-line no-console
         console.error('[WhatsApp Call] Failed to handle agent offer:', err);
@@ -427,6 +453,10 @@ class ActionCableConnector extends BaseActionCableConnector {
     }
 
     whatsappCallsStore.setReconnecting(true);
+    whatsappCallsStore.updateActiveCall({
+      agentWebrtcConnected: false,
+      agentWebrtcConnecting: true,
+    });
 
     try {
       const { data: reconnectData } = await WhatsappCallsAPI.reconnect(
@@ -440,9 +470,14 @@ class ActionCableConnector extends BaseActionCableConnector {
         reconnectData.sdp_offer,
         reconnectData.ice_servers
       );
+      whatsappCallsStore.updateActiveCall({
+        agentWebrtcConnected: true,
+        agentWebrtcConnecting: false,
+      });
       whatsappCallsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch (err) {
+      whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       // eslint-disable-next-line no-console
       console.error('[WhatsApp Call] Failed to reconnect agent:', err);
     } finally {
