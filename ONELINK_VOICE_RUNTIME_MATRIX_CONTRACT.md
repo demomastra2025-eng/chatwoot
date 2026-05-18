@@ -6,9 +6,7 @@ Last updated: 2026-05-17.
 
 Related active documents:
 
-- `ONELINK_FONOSTER_VOICE_CONTRACT.md` - canonical high-level voice/call/recording contract.
-- `ONELINK_BRIDGE_API_CONTRACT.md` - Rails <-> Fonoster bridge command/callback API.
-- `ONELINK_EXTERNAL_GEMINI_LIVE_VOICEAPP.md` - deployment/runbook for `onelink-ai-voice`.
+- `FONOSTER_ONELINK_VOICE_EXECUTION_CONTRACT.md` - counterpart execution contract for Fonoster, `onelink-ai-voice`, and Rails.
 - `docs/internal/voice-fonoster-integration-contract.mdx` - internal docs index that points to active source-of-truth files.
 
 This document is intentionally implementation-facing. It names runtime files, ownership boundaries, data fields, media semantics, lifecycle events, routing decisions, fallback behavior, and acceptance criteria so Fonoster, Rails, and OneLink voice runtimes can implement the same technical contract.

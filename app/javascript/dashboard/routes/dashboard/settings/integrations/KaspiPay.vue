@@ -64,6 +64,7 @@ const sendOtp = async () => {
     if (!phoneResponse.data.success) {
       formError.value =
         phoneResponse.data.description ||
+        phoneResponse.data.error ||
         t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR');
       return;
     }
@@ -149,7 +150,9 @@ onMounted(() => {
           <Input
             v-model="phoneNumber"
             :label="$t('INTEGRATION_SETTINGS.KASPI_PAY.PHONE_LABEL')"
-            placeholder="77001234567"
+            placeholder="7012345678"
+            inputmode="numeric"
+            maxlength="11"
             :disabled="step === 'otp'"
           />
           <Input

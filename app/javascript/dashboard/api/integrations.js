@@ -2,6 +2,14 @@
 
 import ApiClient from './ApiClient';
 
+export const normalizeKaspiPayCashierPhone = phoneNumber => {
+  const digits = String(phoneNumber || '').replace(/\D/g, '');
+  if (digits.length === 11 && ['7', '8'].includes(digits[0])) {
+    return digits.slice(1);
+  }
+  return digits;
+};
+
 class IntegrationsAPI extends ApiClient {
   constructor() {
     super('integrations/apps', { accountScoped: true });
@@ -65,7 +73,7 @@ class IntegrationsAPI extends ApiClient {
       `${this.baseUrl()}/integrations/kaspi_pay/auth/send_phone`,
       {
         process_id: processId,
-        phone_number: phoneNumber,
+        phone_number: normalizeKaspiPayCashierPhone(phoneNumber),
       }
     );
   }
@@ -75,7 +83,7 @@ class IntegrationsAPI extends ApiClient {
       `${this.baseUrl()}/integrations/kaspi_pay/auth/verify_otp`,
       {
         process_id: processId,
-        phone_number: phoneNumber,
+        phone_number: normalizeKaspiPayCashierPhone(phoneNumber),
         otp,
         settings,
       }

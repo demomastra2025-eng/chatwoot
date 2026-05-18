@@ -22,7 +22,7 @@
       "OTP_LABEL": "SMS code",
       "LATITUDE_LABEL": "POS latitude",
       "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. The session secrets are stored only on the server and are not returned to the browser.",
+      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
       "PHONE_REQUIRED": "Enter the phone number",
       "OTP_REQUIRED": "Enter the SMS code",
       "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",

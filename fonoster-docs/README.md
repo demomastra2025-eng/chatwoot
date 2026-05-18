@@ -8,10 +8,8 @@ It is no longer the source of truth for the active Onelink/Fonoster voice-agent 
 
 Use these root-level documents instead:
 
-- `../ONELINK_FONOSTER_VOICE_CONTRACT.md` - canonical production voice/call contract.
-- `../ONELINK_EXTERNAL_GEMINI_LIVE_VOICEAPP.md` - deployment/runbook for the Onelink-hosted Gemini Live VoiceApp.
-- `../ONELINK_BRIDGE_API_CONTRACT.md` - bridge command API and inbound route/event callbacks.
-- `../ONELINK_CRM_GEMINI_SYNC_HANDOFF.md` - short operational handoff/checklist for cross-team production sync.
+- `../ONELINK_VOICE_RUNTIME_MATRIX_CONTRACT.md` - OneLink-owned runtime matrix and acceptance contract.
+- `../FONOSTER_ONELINK_VOICE_EXECUTION_CONTRACT.md` - Fonoster/OneLink execution contract for calls, media, events, recording, and cleanup.
 
 If any file in this archive conflicts with the active documents, the active root-level documents win.
 

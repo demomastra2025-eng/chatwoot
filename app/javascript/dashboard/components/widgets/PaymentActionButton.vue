@@ -2,6 +2,7 @@
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import QRCode from 'qrcode';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
 import KaspiPayPaymentsAPI from 'dashboard/api/kaspiPayPayments';
@@ -50,6 +51,8 @@ export default {
       showAmountForm: false,
       showDropdown: false,
       isCreatingPayment: false,
+      selectedPaymentAction: 'kaspi_qr_link',
+      phoneNumberInput: '',
     };
   },
   computed: {
@@ -70,25 +73,38 @@ export default {
     shouldPromptForAmount() {
       return this.requireAmountInput || !this.normalizedDefaultAmount;
     },
+    paymentSubmitLabel() {
+      if (this.selectedPaymentAction === 'kaspi_invoice') {
+        return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_INVOICE');
+      }
+
+      return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_LINK');
+    },
     paymentMenuItems() {
       const items = [];
 
       if (this.hasKaspiPay) {
-        items.push({
-          icon: 'i-ph-qr-code',
-          label: this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_LINK'),
-          action: 'kaspi_qr_link',
-          value: 'kaspi_qr_link',
-        });
+        items.push(
+          {
+            icon: 'i-ph-link',
+            label: this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_LINK'),
+            action: 'kaspi_qr_link',
+            value: 'kaspi_qr_link',
+          },
+          {
+            icon: 'i-ph-qr-code',
+            label: this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE'),
+            action: 'kaspi_qr_image',
+            value: 'kaspi_qr_image',
+          },
+          {
+            icon: 'i-ph-file-text',
+            label: this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_INVOICE'),
+            action: 'kaspi_invoice',
+            value: 'kaspi_invoice',
+          }
+        );
       }
-
-      items.push({
-        icon: 'i-ph-file-text',
-        label: this.$t('CONVERSATION.REPLYBOX.PAYMENTS.INVOICE_SOON'),
-        action: 'invoice',
-        value: 'invoice',
-        disabled: true,
-      });
 
       return items;
     },
@@ -111,9 +127,13 @@ export default {
     },
     handlePaymentAction({ action }) {
       this.toggleDropdown(false);
-      if (action !== 'kaspi_qr_link') return;
+      if (
+        !['kaspi_qr_link', 'kaspi_qr_image', 'kaspi_invoice'].includes(action)
+      )
+        return;
 
-      if (this.shouldPromptForAmount) {
+      this.selectedPaymentAction = action;
+      if (this.shouldPromptForAmount || action === 'kaspi_invoice') {
         this.openAmountForm();
       } else {
         this.amountInput = String(this.normalizedDefaultAmount);
@@ -124,6 +144,7 @@ export default {
       this.amountInput = this.normalizedDefaultAmount
         ? String(this.normalizedDefaultAmount)
         : '';
+      this.phoneNumberInput = '';
       this.showAmountForm = true;
       this.$nextTick(() => this.$refs.amountInput?.focus());
     },
@@ -131,29 +152,58 @@ export default {
       return Number(String(value || '').replace(/\s/g, ''));
     },
     paymentRequestPayload(amount) {
+      const paymentType =
+        this.selectedPaymentAction === 'kaspi_invoice' ? 'invoice' : 'qr';
       const payload = {
         amount,
+        payment_type: paymentType,
         ...(this.appointmentId ? { appointment_id: this.appointmentId } : {}),
         ...(this.conversationId
           ? { conversation_id: this.conversationId }
           : {}),
       };
 
+      if (
+        this.selectedPaymentAction === 'kaspi_invoice' &&
+        this.phoneNumberInput
+      ) {
+        payload.phone_number = this.phoneNumberInput;
+      }
+
       if (this.conversationId) {
-        payload.idempotency_key = this.dialogPaymentIdempotencyKey(amount);
+        payload.idempotency_key = this.dialogPaymentIdempotencyKey(
+          amount,
+          paymentType
+        );
       }
 
       return payload;
     },
-    dialogPaymentIdempotencyKey(amount) {
+    dialogPaymentIdempotencyKey(amount, paymentType = 'qr') {
       const randomPart = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      return `kaspi-pay:conversation:${this.conversationId}:${amount}:qr:${randomPart}`;
+      return `kaspi-pay:conversation:${this.conversationId}:${amount}:${paymentType}:${randomPart}`;
     },
     paymentText(payment, amount) {
+      if (payment.payment_type === 'invoice') {
+        return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_INVOICE_TEXT', {
+          amount,
+          currency: payment.currency || 'KZT',
+          orderNumber: payment.kaspi_order_number || payment.kaspi_operation_id,
+        });
+      }
+
       return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_PAYMENT_TEXT', {
         amount,
         currency: payment.currency || 'KZT',
         link: payment.qr_token || payment.receipt_url,
+      });
+    },
+    qrImageText(payment, amount, imageDataUrl) {
+      return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE_TEXT', {
+        amount,
+        currency: payment.currency || 'KZT',
+        link: payment.qr_token || payment.receipt_url,
+        image: imageDataUrl,
       });
     },
     async deliverPaymentText(paymentText, payment) {
@@ -179,7 +229,22 @@ export default {
           this.paymentRequestPayload(normalizedAmount)
         );
         const payment = response.data;
-        const paymentText = this.paymentText(payment, normalizedAmount);
+        let paymentText = this.paymentText(payment, normalizedAmount);
+        if (
+          this.selectedPaymentAction === 'kaspi_qr_image' &&
+          payment.qr_token
+        ) {
+          const imageDataUrl = await QRCode.toDataURL(payment.qr_token, {
+            margin: 1,
+            width: 256,
+          });
+          payment.qr_image_data_url = imageDataUrl;
+          paymentText = this.qrImageText(
+            payment,
+            normalizedAmount,
+            imageDataUrl
+          );
+        }
         await this.deliverPaymentText(paymentText, payment);
         this.showAmountForm = false;
       } catch (error) {
@@ -212,11 +277,14 @@ export default {
         v-if="showDropdown"
         :menu-items="paymentMenuItems"
         class="bottom-full mb-1 ltr:left-0 rtl:right-0 min-w-[220px]"
+        @click.stop
         @action="handlePaymentAction"
       />
       <form
         v-if="showAmountForm"
-        class="absolute bottom-full ltr:left-0 rtl:right-0 mb-1 z-50 w-64 rounded-xl bg-n-alpha-3 p-3 shadow-lg outline outline-1 outline-n-container backdrop-blur-[100px]"
+        class="absolute bottom-full ltr:left-0 rtl:right-0 mb-1 z-[160] w-64 rounded-xl bg-n-alpha-3 p-3 shadow-lg outline outline-1 outline-n-container backdrop-blur-[100px]"
+        @click.stop
+        @keydown.esc.prevent="closePaymentMenus"
         @submit.prevent="createKaspiPaymentLink"
       >
         <label class="mb-2 block text-xs font-medium text-n-slate-11">
@@ -231,6 +299,19 @@ export default {
           class="reset-base h-8 w-full rounded-lg border border-n-strong bg-n-solid-1 px-3 text-sm text-n-slate-12 focus:outline-none"
           :placeholder="$t('CONVERSATION.REPLYBOX.PAYMENTS.AMOUNT_PLACEHOLDER')"
         />
+        <template v-if="selectedPaymentAction === 'kaspi_invoice'">
+          <label class="mb-2 mt-3 block text-xs font-medium text-n-slate-11">
+            {{ $t('CONVERSATION.REPLYBOX.PAYMENTS.PHONE_LABEL') }}
+          </label>
+          <input
+            v-model="phoneNumberInput"
+            type="tel"
+            class="reset-base h-8 w-full rounded-lg border border-n-strong bg-n-solid-1 px-3 text-sm text-n-slate-12 focus:outline-none"
+            :placeholder="
+              $t('CONVERSATION.REPLYBOX.PAYMENTS.PHONE_PLACEHOLDER')
+            "
+          />
+        </template>
         <div class="mt-3 flex justify-end gap-2">
           <NextButton
             type="button"
@@ -245,7 +326,7 @@ export default {
             blue
             xs
             :is-loading="isCreatingPayment"
-            :label="$t('CONVERSATION.REPLYBOX.PAYMENTS.CREATE_LINK')"
+            :label="paymentSubmitLabel"
           />
         </div>
       </form>

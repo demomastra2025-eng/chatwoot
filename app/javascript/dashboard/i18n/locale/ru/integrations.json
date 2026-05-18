@@ -23,7 +23,7 @@
       "OTP_LABEL": "SMS-код",
       "LATITUDE_LABEL": "Широта POS",
       "LONGITUDE_LABEL": "Долгота POS",
-      "CONNECT_HELP": "Kaspi Pay подключается через SMS-вход кассира. Секреты сессии хранятся только на сервере и не возвращаются в браузер.",
+      "CONNECT_HELP": "Kaspi Pay подключается через SMS-вход кассира. Можно вводить номер с +7/7/8 — OneLink отправит в Kaspi локальные 10 цифр. Секреты сессии хранятся только на сервере и не возвращаются в браузер.",
       "PHONE_REQUIRED": "Укажите телефон",
       "OTP_REQUIRED": "Укажите SMS-код",
       "CONNECT_ERROR": "Не удалось подключить Kaspi Pay. Проверьте код и повторите попытку.",
@@ -2490,7 +2490,7 @@
       "CONNECTED_TO": "Подключён к: {assistantName}",
       "CONNECTION_TOGGLE_LABEL": "Подключение",
       "AUTO_REPLY_MODE": {
-        "LABEL": "Автоответ",
+        "LABEL": "Режим ответов",
         "OPTIONS": {
           "ALWAYS": "Всегда",
           "WORKING_HOURS": "В рабочее время",
