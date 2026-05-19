@@ -71,6 +71,71 @@ describe('useWhatsappCallSession', () => {
     global.RTCPeerConnection = FakeRTCPeerConnection;
   });
 
+  it('prewarms server-relay inbound microphone in parallel with accept request', async () => {
+    let resolveMedia;
+    navigator.mediaDevices.getUserMedia.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveMedia = resolve;
+        })
+    );
+
+    let resolveAccept;
+    WhatsappCallsAPI.show.mockResolvedValue({
+      data: {
+        id: 46,
+        call_id: 'wacid-46',
+        status: 'ringing',
+        direction: 'incoming',
+        inbox_id: 57,
+        conversation_id: 13746,
+        conversation_display_id: 484,
+        media_server_enabled: true,
+        caller: { name: 'Ahan' },
+      },
+    });
+    WhatsappCallsAPI.accept.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveAccept = resolve;
+        })
+    );
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const resultPromise = acceptWhatsappCallById(46);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: true,
+    });
+    expect(WhatsappCallsAPI.accept).toHaveBeenCalledWith(46);
+    expect(
+      navigator.mediaDevices.getUserMedia.mock.invocationCallOrder[0]
+    ).toBeLessThan(WhatsappCallsAPI.accept.mock.invocationCallOrder[0]);
+
+    resolveAccept({
+      data: {
+        id: 46,
+        status: 'in_progress',
+        media_session_id: 'sess-46',
+        agent_offer: {
+          sdp_offer: 'agent-offer-sdp',
+          ice_servers: [],
+        },
+      },
+    });
+    await Promise.resolve();
+    resolveMedia({ getTracks: () => [{ stop: vi.fn() }] });
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      46,
+      'agent-answer-sdp'
+    );
+  });
+
   it('completes server-relay browser handshake from accept response even if ActionCable agent_offer was missed', async () => {
     WhatsappCallsAPI.show.mockResolvedValue({
       data: {

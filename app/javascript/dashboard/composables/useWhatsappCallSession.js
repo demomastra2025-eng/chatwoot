@@ -14,6 +14,8 @@ import { emitter } from 'shared/helpers/mitt';
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
 let inboundPc = null;
 let inboundStream = null;
+let inboundStreamPromise = null;
+let inboundStreamToken = 0;
 let inboundAudio = null;
 
 // ── Module-level recording state (legacy mode only) ──
@@ -33,10 +35,14 @@ export function isMediaLegClosedError(error) {
   );
 }
 
-function cleanupInboundWebRTC() {
-  if (inboundStream) {
-    inboundStream.getTracks().forEach(track => track.stop());
-    inboundStream = null;
+function cleanupInboundWebRTC({ keepStream = false } = {}) {
+  if (!keepStream) {
+    inboundStreamToken += 1;
+    inboundStreamPromise = null;
+    if (inboundStream) {
+      inboundStream.getTracks().forEach(track => track.stop());
+      inboundStream = null;
+    }
   }
   if (inboundPc) {
     inboundPc.close();
@@ -49,6 +55,29 @@ function cleanupInboundWebRTC() {
     }
     inboundAudio = null;
   }
+}
+
+function prepareInboundAudioStream() {
+  if (inboundStream) return Promise.resolve(inboundStream);
+  if (!inboundStreamPromise) {
+    const token = inboundStreamToken;
+    inboundStreamPromise = navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then(stream => {
+        if (token !== inboundStreamToken) {
+          stream.getTracks().forEach(track => track.stop());
+          throw new Error('Inbound audio prewarm was cancelled');
+        }
+        inboundStream = stream;
+        return stream;
+      })
+      .catch(error => {
+        if (token === inboundStreamToken) inboundStreamPromise = null;
+        throw error;
+      });
+    inboundStreamPromise.catch(() => {});
+  }
+  return inboundStreamPromise;
 }
 
 export function handleMediaLegClosed(callsStore) {
@@ -207,10 +236,10 @@ function isServerRelayCall(call) {
  *       -> createAnswer -> fast initial ICE wait -> POST /agent_answer
  */
 async function handleAgentOffer(callId, sdpOffer, iceServers) {
-  cleanupInboundWebRTC();
+  cleanupInboundWebRTC({ keepStream: true });
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await prepareInboundAudioStream();
     inboundStream = stream;
 
     const servers = iceServers?.length
@@ -267,13 +296,19 @@ async function doAcceptCall(call) {
   // browser WebRTC handshake, so a mic/ICE failure does not hide an already
   // accepted provider call from the agent UI.
   if (isServerRelayCall(call)) {
-    const { data } = await WhatsappCallsAPI.accept(call.id);
-    return {
-      success: true,
-      awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
-      agentOffer: data?.agent_offer,
-      acceptData: data,
-    };
+    prepareInboundAudioStream();
+    try {
+      const { data } = await WhatsappCallsAPI.accept(call.id);
+      return {
+        success: true,
+        awaitingAgentOffer: !data?.agent_offer?.sdp_offer,
+        agentOffer: data?.agent_offer,
+        acceptData: data,
+      };
+    } catch (error) {
+      cleanupInboundWebRTC();
+      throw error;
+    }
   }
 
   // Legacy mode: full browser-side WebRTC handshake
