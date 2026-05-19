@@ -142,7 +142,7 @@ describe('useWhatsappCallSession', () => {
     );
   });
 
-  it('connects a prepared inbound agent offer before accepting the Meta call', async () => {
+  it('accepts the Meta call before connecting a prepared inbound agent offer', async () => {
     const callsStore = useWhatsappCallsStore();
     callsStore.addIncomingCall({
       id: 47,
@@ -172,19 +172,19 @@ describe('useWhatsappCallSession', () => {
     const result = await acceptWhatsappCallById(47);
 
     expect(result.success).toBe(true);
+    expect(WhatsappCallsAPI.accept).toHaveBeenCalledWith(47);
     expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
       47,
       'agent-answer-sdp',
       expect.objectContaining({
         direction: 'incoming',
-        context: 'pre-accept-agent-offer',
+        context: 'accept-response',
         stages: expect.any(Object),
       })
     );
-    expect(WhatsappCallsAPI.accept).toHaveBeenCalledWith(47);
-    expect(
+    expect(WhatsappCallsAPI.accept.mock.invocationCallOrder[0]).toBeLessThan(
       WhatsappCallsAPI.agentAnswer.mock.invocationCallOrder[0]
-    ).toBeLessThan(WhatsappCallsAPI.accept.mock.invocationCallOrder[0]);
+    );
     expect(callsStore.activeCall).toMatchObject({
       id: 47,
       serverRelay: true,
@@ -246,6 +246,95 @@ describe('useWhatsappCallSession', () => {
     expect(emitter.emit).toHaveBeenCalledWith(
       'whatsapp_call:agent_webrtc_connected'
     );
+  });
+
+  it('clears the temporary active call when server-relay accept fails', async () => {
+    WhatsappCallsAPI.show.mockResolvedValue({
+      data: {
+        id: 41,
+        call_id: 'wacid-41',
+        status: 'ringing',
+        direction: 'incoming',
+        inbox_id: 57,
+        conversation_id: 13741,
+        conversation_display_id: 480,
+        media_server_enabled: true,
+        caller: { name: 'Ahan' },
+      },
+    });
+    WhatsappCallsAPI.accept.mockRejectedValue({ response: { status: 422 } });
+
+    await expect(acceptWhatsappCallById(41)).rejects.toMatchObject({
+      response: { status: 422 },
+    });
+
+    const callsStore = useWhatsappCallsStore();
+    expect(callsStore.activeCall).toBeNull();
+    expect(callsStore.incomingCalls).toHaveLength(0);
+    expect(WhatsappCallsAPI.agentAnswer).not.toHaveBeenCalled();
+  });
+
+  it('uses a pending ActionCable agent offer that arrives while accept is in flight', async () => {
+    let resolveAccept;
+    WhatsappCallsAPI.show.mockResolvedValue({
+      data: {
+        id: 40,
+        call_id: 'wacid-40',
+        status: 'ringing',
+        direction: 'incoming',
+        inbox_id: 57,
+        conversation_id: 13740,
+        conversation_display_id: 479,
+        media_server_enabled: true,
+        caller: { name: 'Ahan' },
+      },
+    });
+    WhatsappCallsAPI.accept.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveAccept = resolve;
+        })
+    );
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const resultPromise = acceptWhatsappCallById(40);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const callsStore = useWhatsappCallsStore();
+    expect(callsStore.activeCall).toMatchObject({
+      id: 40,
+      providerAccepting: true,
+    });
+    callsStore.storePendingAgentOffer({
+      id: 40,
+      call_id: 'wacid-40',
+      peer_id: 'peer-40',
+      sdp_offer: 'inflight-actioncable-offer',
+      ice_servers: [],
+    });
+
+    resolveAccept({
+      data: {
+        id: 40,
+        status: 'in_progress',
+        media_session_id: 'sess-40',
+      },
+    });
+
+    const result = await resultPromise;
+
+    expect(result.success).toBe(true);
+    expect(WhatsappCallsAPI.accept.mock.invocationCallOrder[0]).toBeLessThan(
+      WhatsappCallsAPI.agentAnswer.mock.invocationCallOrder[0]
+    );
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      40,
+      'agent-answer-sdp',
+      expect.objectContaining({ context: 'accept-response' }),
+      'peer-40'
+    );
+    expect(callsStore.activeCall.providerAccepting).toBe(false);
   });
 
   it('uses a pending early ActionCable agent offer when accept response has no offer', async () => {

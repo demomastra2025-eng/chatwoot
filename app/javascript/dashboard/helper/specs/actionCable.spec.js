@@ -250,6 +250,39 @@ describe('ActionCableConnector - Copilot Tests', () => {
       ).toBeNull();
     });
 
+    it('stores matching agent offer while provider accept is still in flight', () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({
+        id: 42,
+        callId: 'provider-call-1',
+        serverRelay: true,
+        providerAccepting: true,
+        agentWebrtcConnected: false,
+        agentWebrtcConnecting: false,
+        status: 'ringing',
+      });
+
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        call_id: 'provider-call-1',
+        peer_id: 'peer-42',
+        sdp_offer: 'accept-inflight-offer',
+        ice_servers: [],
+      });
+
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+      expect(
+        callsStore.consumePendingAgentOffer({
+          id: 42,
+          callId: 'provider-call-1',
+        })
+      ).toMatchObject({
+        peer_id: 'peer-42',
+        sdp_offer: 'accept-inflight-offer',
+        ice_servers: [],
+      });
+    });
+
     it('ignores a late duplicate agent offer after synchronous accept response connected WebRTC', () => {
       const callsStore = useWhatsappCallsStore();
       callsStore.setActiveCall({

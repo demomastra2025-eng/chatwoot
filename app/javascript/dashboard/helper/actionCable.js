@@ -441,6 +441,11 @@ class ActionCableConnector extends BaseActionCableConnector {
       return;
     }
 
+    if (activeCall.providerAccepting) {
+      whatsappCallsStore.storePendingAgentOffer(data);
+      return;
+    }
+
     if (
       (activeCall.agentWebrtcConnected || activeCall.agentWebrtcConnecting) &&
       !whatsappCallsStore.isReconnecting

@@ -617,29 +617,25 @@ export async function acceptWhatsappCallById(callId) {
     callsStore.addIncomingCall(call);
   }
 
+  let serverRelay = false;
+
   try {
-    const serverRelay = isServerRelayCall(call);
+    serverRelay = isServerRelayCall(call);
     let preconnectedAgent = false;
 
-    if (serverRelay && call.agentOffer?.sdp_offer) {
+    if (serverRelay) {
+      // Inbound Meta calls have a short accept window. Do not block the
+      // provider /accept call on browser WebRTC negotiation; answer the
+      // prepared agent offer only after Meta has accepted the call.
       const activeCallData = {
         ...call,
         serverRelay: true,
         agentWebrtcConnected: false,
         agentWebrtcConnecting: false,
+        providerAccepting: true,
         status: call.status || 'ringing',
       };
       callsStore.setActiveCall(activeCallData);
-      preconnectedAgent = await connectAgentOfferForActiveCall(
-        callsStore,
-        activeCallData.id,
-        call.agentOffer,
-        'pre-accept-agent-offer'
-      );
-      if (!preconnectedAgent) {
-        callsStore.clearActiveCall();
-        throw new Error('agent_webrtc_preaccept_failed');
-      }
     }
 
     const result = await doAcceptCall(call, { preconnectedAgent });
@@ -658,6 +654,7 @@ export async function acceptWhatsappCallById(callId) {
       serverRelay,
       agentWebrtcConnected: preconnectedAgent,
       agentWebrtcConnecting: false,
+      providerAccepting: false,
       status:
         preconnectedAgent && existingActiveCall?.status === 'connected'
           ? 'connected'
@@ -667,6 +664,7 @@ export async function acceptWhatsappCallById(callId) {
     const agentOffer = preconnectedAgent
       ? null
       : result.agentOffer ||
+        call.agentOffer ||
         callsStore.consumePendingAgentOffer(activeCallData);
     if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
     if (agentOffer) {
@@ -680,6 +678,7 @@ export async function acceptWhatsappCallById(callId) {
 
     return { success: true, call: callsStore.activeCall, ...result };
   } catch (err) {
+    if (serverRelay) callsStore.clearActiveCall();
     callsStore.removeIncomingCall(call.callId);
     throw err;
   }
@@ -793,29 +792,25 @@ export function useWhatsappCallSession() {
     isAccepting.value = true;
     callError.value = null;
 
+    let serverRelay = false;
+
     try {
-      const serverRelay = isServerRelayCall(call);
+      serverRelay = isServerRelayCall(call);
       let preconnectedAgent = false;
 
-      if (serverRelay && call.agentOffer?.sdp_offer) {
+      if (serverRelay) {
+        // Inbound Meta calls have a short accept window. Do not block the
+        // provider /accept call on browser WebRTC negotiation; answer the
+        // prepared agent offer only after Meta has accepted the call.
         const activeCallData = {
           ...call,
           serverRelay: true,
           agentWebrtcConnected: false,
           agentWebrtcConnecting: false,
+          providerAccepting: true,
           status: call.status || 'ringing',
         };
         callsStore.setActiveCall(activeCallData);
-        preconnectedAgent = await connectAgentOfferForActiveCall(
-          callsStore,
-          activeCallData.id,
-          call.agentOffer,
-          'pre-accept-agent-offer'
-        );
-        if (!preconnectedAgent) {
-          callsStore.clearActiveCall();
-          throw new Error('agent_webrtc_preaccept_failed');
-        }
       }
 
       const result = await doAcceptCall(call, { preconnectedAgent });
@@ -832,6 +827,7 @@ export function useWhatsappCallSession() {
         serverRelay,
         agentWebrtcConnected: preconnectedAgent,
         agentWebrtcConnecting: false,
+        providerAccepting: false,
         status:
           preconnectedAgent && existingActiveCall?.status === 'connected'
             ? 'connected'
@@ -841,6 +837,7 @@ export function useWhatsappCallSession() {
       const agentOffer = preconnectedAgent
         ? null
         : result.agentOffer ||
+          call.agentOffer ||
           callsStore.consumePendingAgentOffer(activeCallData);
       if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
       await connectAgentOfferForActiveCall(
@@ -857,6 +854,7 @@ export function useWhatsappCallSession() {
         durationTimer.start();
       }
     } catch (err) {
+      if (serverRelay) callsStore.clearActiveCall();
       callError.value =
         err.name === 'NotAllowedError'
           ? t('WHATSAPP_CALL.MIC_DENIED')
