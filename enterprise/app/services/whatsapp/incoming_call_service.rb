@@ -152,14 +152,15 @@ class Whatsapp::IncomingCallService
     )
     media_session_id = session_response['session_id']
     agent_offers = prepare_agent_offers_for_online_agents(client, media_session_id)
-    call.update!(
-      media_session_id: media_session_id,
-      meta: (call.meta || {}).merge(
-        'media_sdp_answer' => session_response['meta_sdp_answer'],
-        'agent_offers' => agent_offers,
-        'agent_offer_generated_at' => Time.zone.now.to_i
-      )
-    )
+    shared_agent_offer = prepare_shared_agent_offer(client, media_session_id) if agent_offers.blank?
+    media_meta = {
+      'media_sdp_answer' => session_response['meta_sdp_answer'],
+      'agent_offers' => agent_offers,
+      'agent_offer_generated_at' => Time.zone.now.to_i
+    }
+    media_meta['agent_offer'] = shared_agent_offer if shared_agent_offer.present?
+
+    call.update!(media_session_id: media_session_id, meta: (call.meta || {}).merge(media_meta))
   rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
     Rails.logger.error "[WHATSAPP CALL] early inbound media prepare failed for #{call.provider_call_id}: #{e.message}"
   end
@@ -174,6 +175,10 @@ class Whatsapp::IncomingCallService
     rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
       Rails.logger.warn "[WHATSAPP CALL] failed to prepare agent peer for user_id=#{user.id}: #{e.message}"
     end
+  end
+
+  def prepare_shared_agent_offer(client, media_session_id)
+    normalize_agent_offer(client.generate_agent_offer(media_session_id))
   end
 
   def prepared_agents_for_inbox

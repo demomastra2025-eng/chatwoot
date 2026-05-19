@@ -118,6 +118,48 @@ RSpec.describe Whatsapp::IncomingCallService do
       )
     end
 
+    it 'keeps a shared early agent offer when no online inbox agents are resolvable' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      message = instance_double(Message, id: 123)
+      media_client = instance_double(Whatsapp::MediaServerClient)
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(message)
+      allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
+      allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-in-empty', 'meta_sdp_answer' => 'meta-answer' })
+      allow(media_client).to receive(:generate_agent_offer).and_return(
+        { 'peer_id' => 'peer-shared-1', 'sdp_offer' => 'shared-agent-offer', 'ice_servers' => [] }
+      )
+      allow(Whatsapp::CallCleanupJob).to receive_message_chain(:set, :perform_later)
+      allow_any_instance_of(Inbox).to receive(:available_agents).and_return([])
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        described_class.new(
+          inbox: inbox,
+          params: { calls: [{ id: 'wa-shared-fallback-1', from: '15551234567', event: 'connect', session: { sdp_type: 'offer', sdp: 'v=0' } }] }
+        ).perform
+      end
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-shared-fallback-1')
+      expect(media_client).to have_received(:generate_agent_offer).with('media-in-empty')
+      expect(call.meta).to include(
+        'media_sdp_answer' => 'meta-answer',
+        'agent_offer' => hash_including('peer_id' => 'peer-shared-1', 'sdp_offer' => 'shared-agent-offer', 'ice_servers' => []),
+        'agent_offers' => {},
+        'agent_offer_generated_at' => be_present
+      )
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(
+          event: 'whatsapp_call.incoming',
+          data: hash_including(
+            call_id: 'wa-shared-fallback-1',
+            media_server_enabled: true,
+            media_session_id: 'media-in-empty',
+            agent_offer: hash_including('peer_id' => 'peer-shared-1', 'sdp_offer' => 'shared-agent-offer', 'ice_servers' => [])
+          )
+        )
+      )
+    end
+
     it 'routes an inbound call for an open conversation to the operator UI' do
       create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
