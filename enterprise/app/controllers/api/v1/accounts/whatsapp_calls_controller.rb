@@ -3,6 +3,11 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   ALLOWED_PEER_ROLES = %w[listen_only participant].freeze
   ALLOWED_AUDIO_MODES = %w[replace mix].freeze
   ALLOWED_AUDIO_EXTENSIONS = %w[.ogg].freeze
+  ALLOWED_CLIENT_TIMING_STAGE_KEYS = %w[
+    offer_received_ms get_user_media_start_ms get_user_media_ok_ms
+    set_remote_description_ok_ms create_answer_ok_ms set_local_description_ok_ms
+    fast_ice_ready_ms agent_answer_post_start_ms agent_answer_error_ms
+  ].freeze
   SAFE_AUDIO_PATH_PATTERN = %r{\A[a-zA-Z0-9][a-zA-Z0-9_\.\-/]*\z}
 
   before_action :ensure_whatsapp_call_enabled
@@ -112,22 +117,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     return render json: { error: 'No media session' }, status: :unprocessable_entity if @call.media_session_id.blank?
 
     client = Whatsapp::MediaServerClient.new
+    log_agent_answer_client_timing('received')
     client.set_agent_answer(@call.media_session_id, sdp_answer: params[:sdp_answer])
+    log_agent_answer_client_timing('ok')
     render json: { success: true }
   rescue Whatsapp::MediaServerClient::SessionError => e
-    if e.media_leg_closed?
-      Rails.logger.warn(
-        "[WHATSAPP CALL] agent_answer media leg closed: call_id=#{@call.id} " \
-        "media_session_id=#{@call.media_session_id} code=#{e.error_code} status=#{e.http_status}"
-      )
-      render_media_leg_closed
-    else
-      Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{e.message}"
-      render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
-    end
+    handle_agent_answer_session_error(e)
   rescue Whatsapp::MediaServerClient::ConnectionError => e
-    Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{e.message}"
-    render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
+    handle_agent_answer_connection_error(e)
   end
 
   def reconnect
@@ -226,6 +223,68 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       status: 'media_leg_closed',
       message: 'Call media leg already closed'
     }, status: :conflict
+  end
+
+  def handle_agent_answer_session_error(error)
+    log_agent_answer_client_timing('error')
+    return handle_agent_answer_media_leg_closed(error) if error.media_leg_closed?
+
+    handle_agent_answer_connection_error(error, log_timing: false)
+  end
+
+  def handle_agent_answer_media_leg_closed(error)
+    Rails.logger.warn(
+      "[WHATSAPP CALL] agent_answer media leg closed: call_id=#{@call.id} " \
+      "media_session_id=#{@call.media_session_id} code=#{error.error_code} status=#{error.http_status}"
+    )
+    render_media_leg_closed
+  end
+
+  def handle_agent_answer_connection_error(error, log_timing: true)
+    log_agent_answer_client_timing('error') if log_timing
+    Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{error.message}"
+    render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
+  end
+
+  def log_agent_answer_client_timing(result)
+    timing = sanitized_client_timing_payload
+    return if timing.blank?
+
+    Rails.logger.info(
+      "[WHATSAPP CALL] agent_answer client_timing call_id=#{@call.id} " \
+      "media_session_id=#{@call.media_session_id} result=#{result} " \
+      "direction=#{timing[:direction]} context=#{timing[:context]} #{timing[:stages]}".strip
+    )
+  end
+
+  def sanitized_client_timing_payload
+    timing = normalized_timing_hash(params[:client_timing])
+    return if timing.blank?
+
+    {
+      direction: sanitized_timing_value(timing['direction'] || timing[:direction]),
+      context: sanitized_timing_value(timing['context'] || timing[:context]),
+      stages: sanitized_client_timing_stages(normalized_timing_hash(timing['stages'] || timing[:stages]))
+    }
+  end
+
+  def normalized_timing_hash(value)
+    return {} if value.blank?
+
+    value.respond_to?(:to_unsafe_h) ? value.to_unsafe_h : value
+  end
+
+  def sanitized_client_timing_stages(stages)
+    ALLOWED_CLIENT_TIMING_STAGE_KEYS.filter_map do |key|
+      value = stages[key] || stages[key.to_sym]
+      next if value.blank? || value.to_s !~ /\A\d+\z/
+
+      "#{key}=#{value.to_i}"
+    end.join(' ')
+  end
+
+  def sanitized_timing_value(value)
+    value.to_s.gsub(/[^a-zA-Z0-9_.:-]/, '_').first(64)
   end
 
   def create_outbound_call(conversation)

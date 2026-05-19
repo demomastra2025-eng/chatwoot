@@ -58,6 +58,7 @@ describe('useWhatsappCallSession', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
 
     Object.defineProperty(global.navigator, 'mediaDevices', {
       configurable: true,
@@ -132,7 +133,12 @@ describe('useWhatsappCallSession', () => {
     expect(result.success).toBe(true);
     expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
       46,
-      'agent-answer-sdp'
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'incoming',
+        context: 'accept-response',
+        stages: expect.any(Object),
+      })
     );
   });
 
@@ -179,7 +185,12 @@ describe('useWhatsappCallSession', () => {
     });
     expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
       42,
-      'agent-answer-sdp'
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'incoming',
+        context: 'accept-response',
+        stages: expect.any(Object),
+      })
     );
     expect(emitter.emit).toHaveBeenCalledWith(
       'whatsapp_call:agent_webrtc_connected'
@@ -297,16 +308,96 @@ describe('useWhatsappCallSession', () => {
         data: { success: true },
       });
 
-      const answerPromise = handleAgentOffer(45, 'agent-offer-sdp', []);
+      const answerPromise = handleAgentOffer(45, 'agent-offer-sdp', [], {
+        direction: 'incoming',
+        context: 'test-fast-ice',
+      });
       await vi.advanceTimersByTimeAsync(25);
       await answerPromise;
 
       expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
         45,
-        'agent-answer-sdp'
+        'agent-answer-sdp',
+        expect.objectContaining({
+          direction: 'incoming',
+          context: 'test-fast-ice',
+          stages: expect.any(Object),
+        })
       );
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('uses a fresh browser audio stream for outbound offers after an inbound prewarm', async () => {
+    const inboundStop = vi.fn();
+    const outboundStop = vi.fn();
+    const inboundTrack = { id: 'inbound-track', stop: inboundStop };
+    const outboundTrack = { id: 'outbound-track', stop: outboundStop };
+    const inboundStream = { getTracks: () => [inboundTrack] };
+    const outboundStream = { getTracks: () => [outboundTrack] };
+
+    navigator.mediaDevices.getUserMedia
+      .mockResolvedValueOnce(inboundStream)
+      .mockResolvedValueOnce(outboundStream);
+
+    const pcs = [];
+    global.RTCPeerConnection = vi.fn(() => {
+      const pc = new FakeRTCPeerConnection();
+      pcs.push(pc);
+      return pc;
+    });
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    await handleAgentOffer(46, 'inbound-offer-sdp', [], {
+      direction: 'incoming',
+      context: 'accept-response',
+      usePrewarmedStream: true,
+    });
+    await handleAgentOffer(47, 'outbound-offer-sdp', [], {
+      direction: 'outbound',
+      context: 'outbound-connect',
+    });
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(pcs[0].addTrack).toHaveBeenCalledWith(inboundTrack, inboundStream);
+    expect(pcs[1].addTrack).toHaveBeenCalledWith(outboundTrack, outboundStream);
+    expect(outboundStop).not.toHaveBeenCalled();
+  });
+
+  it('sends sanitized timing telemetry with agent answer', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    await handleAgentOffer(48, 'agent-offer-sdp', [], {
+      direction: 'outbound',
+      context: 'outbound-connect',
+    });
+
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      48,
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'outbound',
+        context: 'outbound-connect',
+        stages: expect.objectContaining({
+          offer_received_ms: expect.any(Number),
+          get_user_media_start_ms: expect.any(Number),
+          get_user_media_ok_ms: expect.any(Number),
+          set_local_description_ok_ms: expect.any(Number),
+          agent_answer_post_start_ms: expect.any(Number),
+        }),
+      })
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      '[WhatsApp Call][timing]',
+      expect.objectContaining({
+        callId: 48,
+        direction: 'outbound',
+        context: 'outbound-connect',
+        stage: 'agent_answer_ok',
+      })
+    );
+    consoleInfo.mockRestore();
   });
 });

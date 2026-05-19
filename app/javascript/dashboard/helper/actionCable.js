@@ -324,7 +324,10 @@ class ActionCableConnector extends BaseActionCableConnector {
         !activeCall.agentWebrtcConnecting
       ) {
         whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
-        handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers)
+        handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers, {
+          direction: 'outbound',
+          context: 'outbound-connected',
+        })
           .then(() => {
             whatsappCallsStore.updateActiveCall({
               agentWebrtcConnected: true,
@@ -426,7 +429,13 @@ class ActionCableConnector extends BaseActionCableConnector {
     }
 
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
-    handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers)
+    handleAgentOffer(activeCall.id, data.sdp_offer, data.ice_servers, {
+      direction: activeCall.direction,
+      context: 'actioncable-agent-offer',
+      usePrewarmedStream:
+        activeCall.direction === 'incoming' ||
+        activeCall.direction === 'inbound',
+    })
       .then(() => {
         whatsappCallsStore.updateActiveCall({
           agentWebrtcConnected: true,
@@ -478,7 +487,11 @@ class ActionCableConnector extends BaseActionCableConnector {
       await handleAgentOffer(
         activeCall.id,
         reconnectData.sdp_offer,
-        reconnectData.ice_servers
+        reconnectData.ice_servers,
+        {
+          direction: activeCall.direction || 'unknown',
+          context: 'reconnect',
+        }
       );
       whatsappCallsStore.updateActiveCall({
         agentWebrtcConnected: true,

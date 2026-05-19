@@ -14,9 +14,14 @@ import { emitter } from 'shared/helpers/mitt';
 // ── Module-level WebRTC state (shared across legacy inbound + server-relay) ──
 let inboundPc = null;
 let inboundStream = null;
-let inboundStreamPromise = null;
-let inboundStreamToken = 0;
 let inboundAudio = null;
+
+// Inbound accept can prewarm microphone while Rails/Meta accepts the call.
+// Keep this separate from the active PeerConnection stream so a warmed inbound
+// stream never leaks into the outbound server-relay path.
+let inboundPrewarmStream = null;
+let inboundPrewarmPromise = null;
+let inboundPrewarmToken = 0;
 
 // ── Module-level recording state (legacy mode only) ──
 let mediaRecorder = null;
@@ -35,18 +40,26 @@ export function isMediaLegClosedError(error) {
   );
 }
 
-function cleanupInboundWebRTC({ keepStream = false } = {}) {
-  if (!keepStream) {
-    inboundStreamToken += 1;
-    inboundStreamPromise = null;
-    if (inboundStream) {
-      inboundStream.getTracks().forEach(track => track.stop());
-      inboundStream = null;
-    }
-  }
+function stopStream(stream) {
+  stream?.getTracks?.().forEach(track => track.stop());
+}
+
+function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
+  }
+  if (inboundStream) {
+    stopStream(inboundStream);
+    inboundStream = null;
+  }
+  if (!keepPrewarmStream) {
+    inboundPrewarmToken += 1;
+    inboundPrewarmPromise = null;
+    if (inboundPrewarmStream) {
+      stopStream(inboundPrewarmStream);
+      inboundPrewarmStream = null;
+    }
   }
   if (inboundAudio) {
     inboundAudio.srcObject = null;
@@ -58,26 +71,65 @@ function cleanupInboundWebRTC({ keepStream = false } = {}) {
 }
 
 function prepareInboundAudioStream() {
-  if (inboundStream) return Promise.resolve(inboundStream);
-  if (!inboundStreamPromise) {
-    const token = inboundStreamToken;
-    inboundStreamPromise = navigator.mediaDevices
+  if (inboundPrewarmStream) return Promise.resolve(inboundPrewarmStream);
+  if (!inboundPrewarmPromise) {
+    const token = inboundPrewarmToken;
+    inboundPrewarmPromise = navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then(stream => {
-        if (token !== inboundStreamToken) {
-          stream.getTracks().forEach(track => track.stop());
+        if (token !== inboundPrewarmToken) {
+          stopStream(stream);
           throw new Error('Inbound audio prewarm was cancelled');
         }
-        inboundStream = stream;
+        inboundPrewarmStream = stream;
         return stream;
       })
       .catch(error => {
-        if (token === inboundStreamToken) inboundStreamPromise = null;
+        if (token === inboundPrewarmToken) inboundPrewarmPromise = null;
         throw error;
       });
-    inboundStreamPromise.catch(() => {});
+    inboundPrewarmPromise.catch(() => {});
   }
-  return inboundStreamPromise;
+  return inboundPrewarmPromise;
+}
+
+async function takeInboundPrewarmedAudioStream() {
+  if (!inboundPrewarmStream && !inboundPrewarmPromise) {
+    return navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+  const stream = inboundPrewarmStream || (await inboundPrewarmPromise);
+  inboundPrewarmStream = null;
+  inboundPrewarmPromise = null;
+  inboundPrewarmToken += 1;
+  return stream;
+}
+
+function isInboundDirection(direction) {
+  return direction === 'incoming' || direction === 'inbound';
+}
+
+function nowMs() {
+  if (typeof performance !== 'undefined' && performance.now) {
+    return Math.round(performance.now());
+  }
+  return Date.now();
+}
+
+function createCallTiming(callId, { direction, context }) {
+  const startedAt = nowMs();
+  const stages = {};
+  const mark = stage => {
+    stages[`${stage}_ms`] = nowMs() - startedAt;
+    // eslint-disable-next-line no-console
+    console.info('[WhatsApp Call][timing]', {
+      callId,
+      direction,
+      context,
+      stage,
+      elapsedMs: stages[`${stage}_ms`],
+    });
+  };
+  return { stages, mark };
 }
 
 export function handleMediaLegClosed(callsStore) {
@@ -235,11 +287,21 @@ function isServerRelayCall(call) {
  * Flow: getUserMedia -> RTCPeerConnection(iceServers) -> setRemoteDescription(offer)
  *       -> createAnswer -> fast initial ICE wait -> POST /agent_answer
  */
-async function handleAgentOffer(callId, sdpOffer, iceServers) {
-  cleanupInboundWebRTC({ keepStream: true });
+async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
+  const direction = options.direction || 'incoming';
+  const context = options.context || 'agent-offer';
+  const usePrewarmedStream =
+    options.usePrewarmedStream === true && isInboundDirection(direction);
+  const timing = createCallTiming(callId, { direction, context });
+  timing.mark('offer_received');
+  cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
 
   try {
-    const stream = await prepareInboundAudioStream();
+    timing.mark('get_user_media_start');
+    const stream = usePrewarmedStream
+      ? await takeInboundPrewarmedAudioStream()
+      : await navigator.mediaDevices.getUserMedia({ audio: true });
+    timing.mark('get_user_media_ok');
     inboundStream = stream;
 
     const servers = iceServers?.length
@@ -267,15 +329,26 @@ async function handleAgentOffer(callId, sdpOffer, iceServers) {
     };
 
     await pc.setRemoteDescription({ type: 'offer', sdp: sdpOffer });
+    timing.mark('set_remote_description_ok');
     const answer = await pc.createAnswer();
+    timing.mark('create_answer_ok');
     await pc.setLocalDescription(answer);
+    timing.mark('set_local_description_ok');
     await waitForFastAgentAnswerSdp(pc);
+    timing.mark('fast_ice_ready');
 
     const completeSdp = pc.localDescription.sdp;
-    await WhatsappCallsAPI.agentAnswer(callId, completeSdp);
+    timing.mark('agent_answer_post_start');
+    await WhatsappCallsAPI.agentAnswer(callId, completeSdp, {
+      direction,
+      context,
+      stages: timing.stages,
+    });
+    timing.mark('agent_answer_ok');
 
     return { success: true };
   } catch (err) {
+    timing.mark('agent_answer_error');
     cleanupInboundWebRTC();
     throw err;
   }
@@ -371,7 +444,14 @@ async function connectAgentOfferForActiveCall(
     await handleAgentOffer(
       callId,
       agentOffer.sdp_offer,
-      agentOffer.ice_servers || []
+      agentOffer.ice_servers || [],
+      {
+        direction: callsStore.activeCall?.direction,
+        context,
+        usePrewarmedStream: isInboundDirection(
+          callsStore.activeCall?.direction
+        ),
+      }
     );
     callsStore.updateActiveCall({
       agentWebrtcConnected: true,

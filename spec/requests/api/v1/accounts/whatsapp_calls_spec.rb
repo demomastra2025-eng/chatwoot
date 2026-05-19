@@ -188,6 +188,37 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(ringing_call.reload.status).to eq('failed')
     end
 
+    it 'logs sanitized client timing for agent answer without SDP payloads' do
+      allow(media_client).to receive(:set_agent_answer).with('session-1', sdp_answer: 'v=0')
+      allow(Rails.logger).to receive(:info)
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/agent_answer",
+           params: {
+             sdp_answer: 'v=0',
+             client_timing: {
+               direction: 'outbound',
+               context: 'outbound-connected',
+               stages: {
+                 offer_received_ms: 0,
+                 agent_answer_post_start_ms: 4200
+               },
+               sdp_answer: 'SHOULD_NOT_BE_LOGGED'
+             }
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      timing_log_pattern = /\[WHATSAPP CALL\] agent_answer client_timing call_id=#{call.id} .*/
+      expect(Rails.logger).to have_received(:info).with(
+        a_string_matching(timing_log_pattern)
+          .and(a_string_matching(/direction=outbound/))
+          .and(a_string_matching(/context=outbound-connected/))
+          .and(a_string_matching(/agent_answer_post_start_ms=4200/))
+      ).at_least(:once)
+      expect(Rails.logger).not_to have_received(:info).with(a_string_including('SHOULD_NOT_BE_LOGGED'))
+    end
+
     it 'returns a controlled conflict when agent answer arrives after media leg closed' do
       error = Whatsapp::MediaServerClient::SessionError.new(
         'Media server error (409): media leg closed',

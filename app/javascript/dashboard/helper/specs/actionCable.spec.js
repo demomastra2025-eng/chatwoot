@@ -135,7 +135,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
 
       expect(reconnectMock).toHaveBeenCalledWith(42);
-      expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'fresh-offer', []);
+      expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'fresh-offer', [], {
+        direction: 'unknown',
+        context: 'reconnect',
+      });
       expect(callsStore.activeCall.status).toBe('connected');
       expect(callsStore.isReconnecting).toBe(false);
     });
@@ -236,7 +239,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
         ice_servers: [],
       });
 
-      expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'agent-offer', []);
+      expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'agent-offer', [], {
+        direction: 'outbound',
+        context: 'outbound-connected',
+      });
       expect(callsStore.activeCall.agentWebrtcConnected).toBe(true);
       expect(callsStore.activeCall.agentWebrtcConnecting).toBe(false);
       expect(callsStore.activeCall.status).toBe('ringing');

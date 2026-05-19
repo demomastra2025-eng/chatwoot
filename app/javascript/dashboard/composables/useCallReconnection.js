@@ -55,7 +55,11 @@ export function useCallReconnection() {
       await handleAgentOffer(
         activeCallData.id,
         reconnectData.sdp_offer,
-        reconnectData.ice_servers
+        reconnectData.ice_servers,
+        {
+          direction: activeCallData.direction,
+          context: 'page-load-reconnect',
+        }
       );
       callsStore.markActiveCallConnected();
       emitter.emit('whatsapp_call:agent_webrtc_connected');

@@ -34,10 +34,10 @@ class WhatsappCallsAPI extends ApiClient {
   }
 
   // Send the agent's SDP answer for the Peer B connection (server-relay mode).
-  agentAnswer(callId, sdpAnswer) {
-    return axios.post(`${this.url}/${callId}/agent_answer`, {
-      sdp_answer: sdpAnswer,
-    });
+  agentAnswer(callId, sdpAnswer, clientTiming = null) {
+    const body = { sdp_answer: sdpAnswer };
+    if (clientTiming) body.client_timing = clientTiming;
+    return axios.post(`${this.url}/${callId}/agent_answer`, body);
   }
 
   // Get the current agent's active call (if any). Used for reconnection on page load.
