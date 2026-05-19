@@ -92,8 +92,12 @@ export default {
         this.inbox.selected_feature_flags || []
       ).includes('allow_mobile_webview');
       this.allowedDomains = this.inbox.allowed_domains || '';
-      this.callingEnabled =
-        this.inbox.provider_config?.calling_enabled || false;
+      this.callingEnabled = Object.prototype.hasOwnProperty.call(
+        this.inbox.provider_config || {},
+        'calling_enabled'
+      )
+        ? !!this.inbox.provider_config.calling_enabled
+        : !!this.inbox.provider_config?.calling_capable;
       this.$nextTick(() => {
         this.isSettingDefaults = false;
       });

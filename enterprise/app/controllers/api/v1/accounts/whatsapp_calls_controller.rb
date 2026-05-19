@@ -316,13 +316,15 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     provider_call_id = extract_provider_call_id(result)
     raise ArgumentError, 'Provider call id not returned' if provider_call_id.blank?
 
-    current_account.calls.create!(
+    call = current_account.calls.create!(
       provider: :whatsapp,
       inbox: conversation.inbox, conversation: conversation, contact: conversation.contact,
       provider_call_id: provider_call_id, direction: :outgoing, status: 'ringing',
       accepted_by_agent_id: current_user.id,
       meta: { sdp_offer: params[:sdp_offer] }
     )
+    schedule_call_cleanup(call)
+    call
   end
 
   def create_outbound_call_via_media_server(conversation, contact_phone)
@@ -360,6 +362,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       media_session_id: session_id,
       meta: { sdp_offer: sdp_offer, agent_offer_generated_at: Time.zone.now.to_i }
     )
+    schedule_call_cleanup(call)
     replay_cached_outbound_connect(call)
     call
   rescue StandardError
@@ -376,6 +379,10 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     return if cached_payload.blank?
 
     Whatsapp::IncomingCallService.new(inbox: call.inbox, params: { calls: [cached_payload] }).perform
+  end
+
+  def schedule_call_cleanup(call)
+    Whatsapp::CallCleanupJob.set(wait: Whatsapp::IncomingCallService::RINGING_CLEANUP_DELAY).perform_later(call.id)
   end
 
   def terminate_provider_call(provider_service, provider_call_id)

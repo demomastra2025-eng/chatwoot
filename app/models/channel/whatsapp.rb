@@ -45,8 +45,14 @@ class Channel::Whatsapp < ApplicationRecord
   def voice_enabled?
     provider == 'whatsapp_cloud' &&
       provider_config['source'] == 'embedded_signup' &&
-      provider_config['calling_enabled'].present? &&
+      calling_enabled? &&
       account.feature_enabled?('whatsapp_call')
+  end
+
+  def calling_enabled?
+    return ActiveModel::Type::Boolean.new.cast(provider_config['calling_enabled']) if provider_config.key?('calling_enabled')
+
+    ActiveModel::Type::Boolean.new.cast(provider_config['calling_capable'])
   end
 
   def provider_service

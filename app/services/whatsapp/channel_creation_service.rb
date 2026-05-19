@@ -52,8 +52,12 @@ class Whatsapp::ChannelCreationService
       api_key: @access_token,
       phone_number_id: @phone_info[:phone_number_id],
       business_account_id: @waba_info[:waba_id],
-      source: 'embedded_signup'
-    }
+      source: 'embedded_signup',
+      calling_capable: @phone_info[:calling_capable],
+      calling_capabilities: @phone_info[:calling_capabilities]
+    }.compact.tap do |config|
+      config[:calling_enabled] = true if @phone_info[:calling_capable]
+    end
   end
 
   def create_inbox(channel)

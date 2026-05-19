@@ -280,7 +280,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     const whatsappCallsStore = useWhatsappCallsStore();
     // In server-relay mode, sdp_offer and ice_servers are absent — the media
     // server handles WebRTC with Meta, and the browser only needs call metadata.
-    whatsappCallsStore.addIncomingCall({
+    const incomingCall = {
       id: data.id,
       callId: data.call_id,
       direction: data.direction,
@@ -291,7 +291,9 @@ class ActionCableConnector extends BaseActionCableConnector {
       sdpOffer: data.sdp_offer || null,
       iceServers: data.ice_servers || null,
       mediaServerEnabled: data.media_server_enabled,
-    });
+      mediaSessionId: data.media_session_id || null,
+    };
+    whatsappCallsStore.addIncomingCall(incomingCall);
   };
 
   onWhatsappCallAccepted = data => {

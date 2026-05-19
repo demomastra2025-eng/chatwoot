@@ -181,6 +181,31 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
+    it('does not consume account-wide incoming agent offer before an operator accepts', () => {
+      const callsStore = useWhatsappCallsStore();
+
+      actionCable.onWhatsappCallIncoming({
+        id: 52,
+        call_id: 'provider-call-52',
+        direction: 'inbound',
+        inbox_id: 7,
+        conversation_id: 13752,
+        conversation_display_id: 492,
+        caller: { name: 'Ahan' },
+        media_server_enabled: true,
+        media_session_id: 'media-52',
+        agent_offer: { sdp_offer: 'early-agent-offer', ice_servers: [] },
+      });
+
+      expect(callsStore.incomingCalls[0]).toMatchObject({
+        id: 52,
+        callId: 'provider-call-52',
+        mediaSessionId: 'media-52',
+      });
+      expect(callsStore.incomingCalls[0].agentOffer).toBeUndefined();
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+    });
+
     it('keeps an early inbound agent offer until the call becomes active', () => {
       const callsStore = useWhatsappCallsStore();
 

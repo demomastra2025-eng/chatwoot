@@ -6,7 +6,7 @@ describe Whatsapp::ChannelCreationService do
   let(:phone_info) do
     {
       phone_number_id: 'test_phone_id',
-      phone_number: '+1234567890',
+      phone_number: '+123****7890',
       verified: true,
       business_name: 'Test Business'
     }
@@ -45,12 +45,36 @@ describe Whatsapp::ChannelCreationService do
 
       it 'creates channel with correct attributes' do
         channel = service.perform
-        expect(channel.phone_number).to eq('+1234567890')
+        expect(channel.phone_number).to eq('+123****7890')
         expect(channel.provider).to eq('whatsapp_cloud')
         expect(channel.provider_config['api_key']).to eq(access_token)
         expect(channel.provider_config['phone_number_id']).to eq('test_phone_id')
         expect(channel.provider_config['business_account_id']).to eq('test_waba_id')
         expect(channel.provider_config['source']).to eq('embedded_signup')
+        expect(channel.provider_config['calling_enabled']).to be_nil
+      end
+
+      context 'when phone number is WhatsApp Calling capable' do
+        let(:phone_info) do
+          {
+            phone_number_id: 'test_phone_id',
+            phone_number: '+123****7890',
+            verified: true,
+            business_name: 'Test Business',
+            calling_capable: true,
+            calling_capabilities: ['CALLING']
+          }
+        end
+
+        it 'enables WhatsApp Calling by default' do
+          channel = service.perform
+
+          expect(channel.provider_config).to include(
+            'calling_capable' => true,
+            'calling_enabled' => true,
+            'calling_capabilities' => ['CALLING']
+          )
+        end
       end
 
       it 'creates an inbox for the channel' do
@@ -66,14 +90,14 @@ describe Whatsapp::ChannelCreationService do
       let(:different_account) { create(:account) }
 
       before do
-        create(:channel_whatsapp, account: different_account, phone_number: '+1234567890',
+        create(:channel_whatsapp, account: different_account, phone_number: '+123****7890',
                                   provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
       end
 
       it 'raises an error even if the channel belongs to a different account' do
         expect { service.perform }.to raise_error(
           RuntimeError,
-          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+1234567890')
+          I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: '+123****7890')
         )
       end
     end
@@ -114,7 +138,7 @@ describe Whatsapp::ChannelCreationService do
         let(:phone_info) do
           {
             phone_number_id: 'test_phone_id',
-            phone_number: '+1234567890',
+            phone_number: '+123****7890',
             verified: true
           }
         end

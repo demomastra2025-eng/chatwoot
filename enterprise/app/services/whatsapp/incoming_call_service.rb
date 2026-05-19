@@ -1,5 +1,6 @@
 class Whatsapp::IncomingCallService
   FAILURE_REASONS = %w[failed error rejected busy invalid_offer cancelled canceled].freeze
+  RINGING_CLEANUP_DELAY = 60.seconds
 
   def self.outbound_connect_cache_key(account_id, provider_call_id)
     "whatsapp:outbound_connect:#{account_id}:#{provider_call_id}"
@@ -124,6 +125,7 @@ class Whatsapp::IncomingCallService
     return unless conversation
 
     call = create_call_record(call_payload, conversation, contact, :incoming)
+    schedule_call_cleanup(call)
     routing_decision = Whatsapp::CallRoutingService.new(call: call).perform
     persist_routing_decision(call, routing_decision)
     create_voice_call_message(conversation, call)
@@ -131,9 +133,35 @@ class Whatsapp::IncomingCallService
     if routing_decision.ai?
       handle_ai_voice_call(call, contact, call_payload, routing_decision)
     else
+      prepare_inbound_media_session(call) if call.media_server_enabled?
       update_conversation_call_status(conversation, 'ringing', call.direction_label)
       broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
     end
+  end
+
+  def prepare_inbound_media_session(call)
+    return if call.media_session_id.present?
+
+    client = Whatsapp::MediaServerClient.new
+    session_response = client.create_session(
+      call_id: call.provider_call_id,
+      direction: 'incoming',
+      sdp_offer: call.sdp_offer,
+      ice_servers: call.ice_servers,
+      account_id: call.account_id
+    )
+    media_session_id = session_response['session_id']
+    agent_offer = client.generate_agent_offer(media_session_id)
+    call.update!(
+      media_session_id: media_session_id,
+      meta: (call.meta || {}).merge(
+        'media_sdp_answer' => session_response['meta_sdp_answer'],
+        'agent_offer' => agent_offer,
+        'agent_offer_generated_at' => Time.zone.now.to_i
+      )
+    )
+  rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
+    Rails.logger.error "[WHATSAPP CALL] early inbound media prepare failed for #{call.provider_call_id}: #{e.message}"
   end
 
   def handle_outbound_connect(call, call_payload)
@@ -201,6 +229,10 @@ class Whatsapp::IncomingCallService
       status: 'ringing',
       meta: { 'sdp_offer' => call_payload.dig(:session, :sdp), 'ice_servers' => default_ice_servers }
     )
+  end
+
+  def schedule_call_cleanup(call)
+    Whatsapp::CallCleanupJob.set(wait: RINGING_CLEANUP_DELAY).perform_later(call.id)
   end
 
   def handle_ai_voice_call(call, contact, call_payload, routing_decision)
@@ -346,6 +378,7 @@ class Whatsapp::IncomingCallService
       inbox_id: call.inbox_id,
       conversation_id: call.conversation_id,
       conversation_display_id: call.conversation&.display_id,
+      media_session_id: call.media_session_id,
       media_server_enabled: media_server_enabled,
       caller: {
         name: contact.name,
@@ -353,6 +386,10 @@ class Whatsapp::IncomingCallService
         avatar: contact.avatar_url
       }
     }
+
+    if media_server_enabled && call.meta&.dig('agent_offer', 'sdp_offer').present?
+      data[:agent_offer] = call.meta['agent_offer'].slice('sdp_offer', 'ice_servers')
+    end
 
     unless media_server_enabled
       data[:sdp_offer] = sdp_offer

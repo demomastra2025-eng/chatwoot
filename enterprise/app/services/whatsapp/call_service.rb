@@ -107,27 +107,36 @@ class Whatsapp::CallService
     reserve_acceptance!
 
     begin
-      # Step 1: Create session on Go server with Meta's SDP
-      session_response = client.create_session(
-        call_id: call.provider_call_id,
-        direction: 'incoming',
-        sdp_offer: call.sdp_offer,
-        ice_servers: call.ice_servers,
-        account_id: call.account_id
-      )
-      media_session_id = session_response['session_id']
+      prepared = prepared_media_session
+      if prepared
+        media_session_id = prepared[:media_session_id]
+        agent_offer = prepared[:agent_offer]
+        @agent_offer = agent_offer
+        meta_sdp_answer = prepared[:meta_sdp_answer]
+      else
+        # Step 1: Create session on Go server with Meta's SDP
+        session_response = client.create_session(
+          call_id: call.provider_call_id,
+          direction: 'incoming',
+          sdp_offer: call.sdp_offer,
+          ice_servers: call.ice_servers,
+          account_id: call.account_id
+        )
+        media_session_id = session_response['session_id']
+        meta_sdp_answer = session_response['meta_sdp_answer']
 
-      # Step 2: Generate agent offer (Peer B) before provider accept. This
-      # shaves a full media-server round-trip from the caller's short accept
-      # window; the browser can answer as soon as /accept returns.
-      agent_offer = client.generate_agent_offer(media_session_id)
-      @agent_offer = agent_offer
+        # Step 2: Generate agent offer (Peer B) before provider accept. This
+        # shaves a full media-server round-trip from the caller's short accept
+        # window; the browser can answer as soon as /accept returns.
+        agent_offer = client.generate_agent_offer(media_session_id)
+        @agent_offer = agent_offer
+      end
 
       # Step 3: Send Go-generated SDP answer to Meta
-      pre_response = provider.pre_accept_call(call.provider_call_id, session_response['meta_sdp_answer'])
+      pre_response = provider.pre_accept_call(call.provider_call_id, meta_sdp_answer)
       raise Whatsapp::CallErrors::NotRinging, 'Meta pre_accept failed' unless pre_response
 
-      accept_response = provider.accept_call(call.provider_call_id, session_response['meta_sdp_answer'])
+      accept_response = provider.accept_call(call.provider_call_id, meta_sdp_answer)
       raise Whatsapp::CallErrors::NotRinging, 'Meta accept failed' unless accept_response
 
       provider_accepted = true
@@ -141,12 +150,18 @@ class Whatsapp::CallService
         call.update!(
           status: 'in_progress',
           started_at: Time.current,
-          media_session_id: media_session_id
+          media_session_id: media_session_id,
+          meta: (call.meta || {}).merge(
+            'media_sdp_answer' => meta_sdp_answer,
+            'agent_offer' => agent_offer,
+            'agent_offer_generated_at' => (call.meta || {})['agent_offer_generated_at'] || Time.zone.now.to_i
+          )
         )
       end
     rescue StandardError
       terminate_on_provider(call.provider_call_id) if provider_accepted
       terminate_media_session(media_session_id) if media_session_id.present?
+      clear_failed_media_preparation!(media_session_id)
       release_acceptance_reservation!
       raise
     end
@@ -163,6 +178,18 @@ class Whatsapp::CallService
     call.media_server_enabled?
   end
 
+  def prepared_media_session
+    call.reload
+    meta = call.meta || {}
+    return if call.media_session_id.blank? || meta['media_sdp_answer'].blank? || meta.dig('agent_offer', 'sdp_offer').blank?
+
+    {
+      media_session_id: call.media_session_id,
+      meta_sdp_answer: meta['media_sdp_answer'],
+      agent_offer: meta['agent_offer']
+    }
+  end
+
   def reserve_acceptance!
     call.with_lock do
       call.reload
@@ -176,6 +203,18 @@ class Whatsapp::CallService
     call.with_lock do
       call.reload
       call.update!(accepted_by_agent_id: nil) if call.ringing? && call.accepted_by_agent_id == agent.id
+    end
+  end
+
+  def clear_failed_media_preparation!(media_session_id)
+    return if media_session_id.blank?
+
+    call.with_lock do
+      call.reload
+      next unless call.ringing? && call.media_session_id == media_session_id
+
+      meta = (call.meta || {}).except('media_sdp_answer', 'agent_offer', 'agent_offer_generated_at')
+      call.update!(media_session_id: nil, meta: meta)
     end
   end
 

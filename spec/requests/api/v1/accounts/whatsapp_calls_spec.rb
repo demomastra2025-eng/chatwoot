@@ -290,6 +290,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       created_call = Call.find_by!(provider_call_id: 'wacid.outbound-1')
       expect(created_call).to have_attributes(direction: 'outgoing', status: 'ringing', accepted_by_agent_id: administrator.id)
       expect(created_call.meta['sdp_offer']).to eq('v=0')
+      expect(created_call.message).to have_attributes(source_id: 'wacid.outbound-1', content_type: 'voice_call')
     end
 
     it 'creates an outbound media-server ringing call and returns an immediate agent offer' do
@@ -333,8 +334,8 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       )
       created_call = Call.find_by!(provider_call_id: 'wacid.outbound-media')
       expect(created_call).to have_attributes(status: 'ringing', media_session_id: 'media-out-1')
-      expect(created_call.meta['sdp_offer']).to eq('meta-offer')
-      expect(created_call.meta['sdp_answer']).to eq('early-answer')
+      expect(created_call.message).to have_attributes(source_id: 'wacid.outbound-media', content_type: 'voice_call')
+      expect(created_call.meta).to include('sdp_offer' => 'meta-offer', 'sdp_answer' => 'early-answer')
       expect(created_call.meta['agent_offer_generated_at']).to be_present
       expect(created_call.meta['meta_answer_set_at']).to be_present
     end

@@ -36,8 +36,37 @@ describe Whatsapp::PhoneInfoService do
                                phone_number_id: phone_number_id,
                                phone_number: '+1234567890',
                                verified: true,
-                               business_name: 'Test Business'
+                               business_name: 'Test Business',
+                               calling_capable: false,
+                               calling_capabilities: []
                              })
+      end
+    end
+
+    context 'when phone number has WhatsApp Calling capability' do
+      let(:phone_response) do
+        {
+          'data' => [
+            {
+              'id' => phone_number_id,
+              'display_phone_number' => '1234567890',
+              'verified_name' => 'Test Business',
+              'code_verification_status' => 'VERIFIED',
+              'capabilities' => ['CALLING']
+            }
+          ]
+        }
+      end
+
+      before do
+        allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(phone_response)
+      end
+
+      it 'marks the phone number as calling capable' do
+        result = service.perform
+
+        expect(result[:calling_capable]).to be true
+        expect(result[:calling_capabilities]).to include('CALLING')
       end
     end
 

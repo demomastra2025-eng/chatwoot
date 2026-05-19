@@ -65,6 +65,53 @@ RSpec.describe Whatsapp::IncomingCallService do
       )
     end
 
+    it 'prepares the media-server agent leg as soon as an inbound connect rings operators' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      message = instance_double(Message, id: 123)
+      media_client = instance_double(Whatsapp::MediaServerClient)
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(message)
+      allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
+      allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-in-1', 'meta_sdp_answer' => 'meta-answer' })
+      allow(media_client).to receive(:generate_agent_offer).with('media-in-1').and_return(
+        { 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+      )
+      allow(Whatsapp::CallCleanupJob).to receive_message_chain(:set, :perform_later)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        described_class.new(
+          inbox: inbox,
+          params: { calls: [{ id: 'wa-early-inbound-1', from: '15551234567', event: 'connect', session: { sdp_type: 'offer', sdp: 'v=0' } }] }
+        ).perform
+      end
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-early-inbound-1')
+      expect(media_client).to have_received(:create_session).with(
+        call_id: 'wa-early-inbound-1',
+        direction: 'incoming',
+        sdp_offer: 'v=0',
+        ice_servers: [{ 'urls' => ['stun:stun.l.google.com:19302'] }],
+        account_id: account.id
+      )
+      expect(call.media_session_id).to eq('media-in-1')
+      expect(call.meta).to include(
+        'media_sdp_answer' => 'meta-answer',
+        'agent_offer' => hash_including('sdp_offer' => 'agent-offer', 'ice_servers' => []),
+        'agent_offer_generated_at' => be_present
+      )
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(
+          event: 'whatsapp_call.incoming',
+          data: hash_including(
+            call_id: 'wa-early-inbound-1',
+            media_server_enabled: true,
+            media_session_id: 'media-in-1',
+            agent_offer: hash_including('sdp_offer' => 'agent-offer', 'ice_servers' => [])
+          )
+        )
+      )
+    end
+
     it 'routes an inbound call for an open conversation to the operator UI' do
       create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
       contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')

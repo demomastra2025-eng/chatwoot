@@ -238,6 +238,36 @@ RSpec.describe Channel::Whatsapp do
       expect(channel.voice_enabled?).to be true
     end
 
+    it 'defaults to enabled when calling capability is known but no manual toggle exists' do
+      account.enable_features!('whatsapp_call')
+
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'embedded_signup', 'calling_capable' => true },
+        validate_provider_config: false,
+        sync_templates: false
+      )
+
+      expect(channel.voice_enabled?).to be true
+    end
+
+    it 'respects an explicit manual disable even when calling capability is present' do
+      account.enable_features!('whatsapp_call')
+
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'embedded_signup', 'calling_capable' => true, 'calling_enabled' => false },
+        validate_provider_config: false,
+        sync_templates: false
+      )
+
+      expect(channel.voice_enabled?).to be false
+    end
+
     it 'returns false when the account feature is disabled' do
       channel = create(
         :channel_whatsapp,

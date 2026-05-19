@@ -1,4 +1,6 @@
 class Whatsapp::PhoneInfoService
+  CALLING_CAPABILITY_VALUES = %w[CALLING CALLS VOICE VOICE_CALLING WHATSAPP_CALLING calling calls voice voice_calling whatsapp_calling].freeze
+
   def initialize(waba_id, phone_number_id, access_token)
     @waba_id = waba_id
     @phone_number_id = phone_number_id
@@ -45,7 +47,9 @@ class Whatsapp::PhoneInfoService
       phone_number_id: phone_data['id'],
       phone_number: "+#{display_phone_number}",
       verified: phone_data['code_verification_status'] == 'VERIFIED',
-      business_name: phone_data['verified_name'] || phone_data['display_phone_number']
+      business_name: phone_data['verified_name'] || phone_data['display_phone_number'],
+      calling_capable: calling_capable?(phone_data),
+      calling_capabilities: calling_capabilities(phone_data)
     }
   end
 
@@ -53,5 +57,19 @@ class Whatsapp::PhoneInfoService
     return phone_number if phone_number.blank?
 
     phone_number.gsub(/[\s\-\(\)\.\+]/, '').strip
+  end
+
+  def calling_capable?(phone_data)
+    calling_capabilities(phone_data).intersect?(CALLING_CAPABILITY_VALUES) ||
+      ActiveModel::Type::Boolean.new.cast(phone_data['calling_capable']) ||
+      ActiveModel::Type::Boolean.new.cast(phone_data['calling_enabled']) ||
+      false
+  end
+
+  def calling_capabilities(phone_data)
+    Array(phone_data['capabilities']) +
+      Array(phone_data['calling_capabilities']) +
+      Array(phone_data.dig('calls', 'capabilities')) +
+      Array(phone_data.dig('calling', 'capabilities'))
   end
 end

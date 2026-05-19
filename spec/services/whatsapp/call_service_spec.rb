@@ -67,6 +67,36 @@ RSpec.describe Whatsapp::CallService do
       expect(call.accepted_by_agent_id).to be_nil
     end
 
+    it 'accepts a media-server call that was prepared when the inbound connect arrived' do
+      call.update!(
+        status: 'ringing',
+        accepted_by_agent_id: nil,
+        media_session_id: 'prepared-media-1',
+        meta: {
+          'sdp_offer' => 'meta-offer',
+          'ice_servers' => [],
+          'media_sdp_answer' => 'prepared-meta-answer',
+          'agent_offer' => { 'sdp_offer' => 'prepared-agent-offer', 'ice_servers' => [] },
+          'agent_offer_generated_at' => 1_776_000_000
+        }
+      )
+
+      expect(media_client).not_to receive(:create_session)
+      expect(media_client).not_to receive(:generate_agent_offer)
+      expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'prepared-meta-answer').and_return(true)
+      expect(provider).to receive(:accept_call).with(call.provider_call_id, 'prepared-meta-answer').and_return(true)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        service = described_class.new(call: call, agent: agent)
+        service.accept
+        expect(service.agent_offer).to eq('sdp_offer' => 'prepared-agent-offer', 'ice_servers' => [])
+      end
+
+      expect(call.reload.status).to eq('in_progress')
+      expect(call.media_session_id).to eq('prepared-media-1')
+      expect(call.accepted_by_agent_id).to eq(agent.id)
+    end
+
     it 'does not let another agent steal a reserved media-server call' do
       other_agent = create(:user, account: account)
       call.update!(status: 'ringing', accepted_by_agent_id: other_agent.id, meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })

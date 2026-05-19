@@ -41,6 +41,10 @@ class Whatsapp::CallMessageBuilder
       content_type: 'voice_call',
       content_attributes: { 'data' => build_data_payload }
     }
+    # Outbound WhatsApp calls are already initiated through Meta's /calls API.
+    # Mark the local timeline card as channel-originated so Base::SendOnChannelService
+    # does not send a duplicate "WhatsApp Call" text message to the customer.
+    params[:source_id] = call.provider_call_id if call.outgoing?
 
     Messages::MessageBuilder.new(sender, conversation, params).perform
   end

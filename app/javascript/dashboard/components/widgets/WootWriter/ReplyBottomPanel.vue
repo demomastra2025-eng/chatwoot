@@ -9,6 +9,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { getAllowedFileTypesByChannel } from '@chatwoot/utils';
 import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 import VideoCallButton from '../VideoCallButton.vue';
+import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
 import PaymentActionButton from '../PaymentActionButton.vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { mapGetters } from 'vuex';
@@ -144,6 +145,11 @@ export default {
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
       useUISettings();
+    const {
+      canInitiateWhatsappCall,
+      initiateWhatsappCall,
+      isInitiatingWhatsappCall,
+    } = useWhatsappCallInitiation();
 
     const uploadRef = ref(false);
 
@@ -172,6 +178,9 @@ export default {
       setSignatureFlagForInbox,
       fetchSignatureFlagFromUISettings,
       uploadRef,
+      canInitiateWhatsappCall,
+      initiateWhatsappCall,
+      isInitiatingWhatsappCall,
     };
   },
   data() {
@@ -469,6 +478,17 @@ export default {
         :conversation-id="conversationId"
         @replace-text="replaceText"
         @attach-file="$emit('attachFile', $event)"
+      />
+      <NextButton
+        v-if="canInitiateWhatsappCall && !isOnPrivateNote && !isEditorDisabled"
+        v-tooltip.top-end="$t('WHATSAPP_CALL.INITIATE_CALL')"
+        icon="i-ph-phone-bold"
+        slate
+        faded
+        sm
+        :is-loading="isInitiatingWhatsappCall"
+        :disabled="isInitiatingWhatsappCall"
+        @click="initiateWhatsappCall"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"
