@@ -139,6 +139,84 @@ RSpec.describe 'Media server callbacks', type: :request do
     expect(call.conversation.reload.additional_attributes['call_status']).to eq('completed')
   end
 
+  it 'marks answered sessions failed when media server reports missing bidirectional RTP' do
+    expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
+    expect(ActionCable.server).to receive(:broadcast).once.with(
+      "account_#{account.id}",
+      hash_including(
+        event: 'whatsapp_call.ended',
+        data: hash_including(account_id: account.id, call_id: call.provider_call_id, status: 'failed')
+      )
+    )
+
+    with_modified_env(MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      post '/callbacks/media_server/session_terminated',
+           params: { session_id: call.media_session_id, account_id: account.id, call_id: call.provider_call_id,
+                     reason: 'api_request', duration_seconds: 7, media_ready: false,
+                     meta_to_agent_packets: 0, agent_to_meta_packets: 255 },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call.reload).to have_attributes(status: 'failed', duration_seconds: 7, end_reason: 'bidirectional_rtp_missing')
+    expect(call.accepted_by_agent_id).to be_nil
+    expect(call.conversation.reload.additional_attributes['call_status']).to eq('failed')
+    expect(call.meta.dig('media_server', 'callbacks', 'media_ready')).to eq(false)
+    expect(call.meta.dig('media_server', 'callbacks', 'meta_to_agent_packets')).to eq(0)
+    expect(call.meta.dig('media_server', 'callbacks', 'agent_to_meta_packets')).to eq(255)
+  end
+
+  it 'fails RTP gate from counters even if media_ready is inconsistent' do
+    expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
+    expect(ActionCable.server).to receive(:broadcast).once.with(
+      "account_#{account.id}",
+      hash_including(
+        event: 'whatsapp_call.ended',
+        data: hash_including(account_id: account.id, call_id: call.provider_call_id, status: 'failed')
+      )
+    )
+
+    with_modified_env(MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      post '/callbacks/media_server/session_terminated',
+           params: { session_id: call.media_session_id, account_id: account.id, call_id: call.provider_call_id,
+                     reason: 'api_request', duration_seconds: 7, media_ready: true,
+                     meta_to_agent_packets: 0, agent_to_meta_packets: 255 },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call.reload).to have_attributes(status: 'failed', end_reason: 'bidirectional_rtp_missing')
+    expect(call.meta.dig('media_server', 'callbacks', 'media_ready')).to eq(false)
+  end
+
+  it 'keeps answered sessions completed when bidirectional RTP counters are positive' do
+    expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
+    expect(ActionCable.server).to receive(:broadcast).once.with(
+      "account_#{account.id}",
+      hash_including(
+        event: 'whatsapp_call.ended',
+        data: hash_including(account_id: account.id, call_id: call.provider_call_id, status: 'completed')
+      )
+    )
+
+    with_modified_env(MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      post '/callbacks/media_server/session_terminated',
+           params: { session_id: call.media_session_id, account_id: account.id, call_id: call.provider_call_id,
+                     reason: 'api_request', duration_seconds: 7, media_ready: true,
+                     meta_to_agent_packets: 257, agent_to_meta_packets: 778 },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call.reload).to have_attributes(status: 'completed', duration_seconds: 7, end_reason: 'api_request')
+    expect(call.meta.dig('media_server', 'callbacks', 'media_ready')).to eq(true)
+    expect(call.meta.dig('media_server', 'callbacks', 'meta_to_agent_packets')).to eq(257)
+    expect(call.meta.dig('media_server', 'callbacks', 'agent_to_meta_packets')).to eq(778)
+  end
+
   it 'finds session termination by provider call id when media_session_id was not persisted yet' do
     call.update!(status: 'ringing', media_session_id: nil, accepted_by_agent_id: nil)
     expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)

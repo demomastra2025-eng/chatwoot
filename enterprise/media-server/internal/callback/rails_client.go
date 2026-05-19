@@ -59,11 +59,14 @@ type RecordingReadyPayload struct {
 // SessionTerminatedPayload is the request body sent when a call session has
 // been fully terminated and cleaned up.
 type SessionTerminatedPayload struct {
-	SessionID   string `json:"session_id"`
-	CallID      string `json:"call_id"`
-	AccountID   string `json:"account_id"`
-	Reason      string `json:"reason"`
-	DurationSec int    `json:"duration_seconds"`
+	SessionID          string `json:"session_id"`
+	CallID             string `json:"call_id"`
+	AccountID          string `json:"account_id"`
+	Reason             string `json:"reason"`
+	DurationSec        int    `json:"duration_seconds"`
+	MediaReady         bool   `json:"media_ready"`
+	MetaToAgentPackets uint64 `json:"meta_to_agent_packets"`
+	AgentToMetaPackets uint64 `json:"agent_to_meta_packets"`
 }
 
 // ErrorPayload is the request body sent when the media server encounters

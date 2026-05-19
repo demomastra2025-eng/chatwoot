@@ -288,11 +288,18 @@ func (mp *MetaPeer) LocalTrack() *webrtc.TrackLocalStaticRTP {
 }
 
 // OnTrackReady sets a callback that fires when the remote audio track from
-// Meta becomes available.
+// Meta becomes available. If the track arrived before the callback was wired
+// (possible for fast inbound offers), replay it so session-level forwarding is
+// not lost.
 func (mp *MetaPeer) OnTrackReady(fn func(track *webrtc.TrackRemote)) {
 	mp.mu.Lock()
-	defer mp.mu.Unlock()
 	mp.onTrackReady = fn
+	track := mp.audioTrack
+	mp.mu.Unlock()
+
+	if fn != nil && track != nil {
+		fn(track)
+	}
 }
 
 // OnICEStateChange sets a callback that fires when the ICE connection state

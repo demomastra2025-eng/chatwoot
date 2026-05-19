@@ -694,14 +694,22 @@ func (s *Session) sendTerminationCallbacks(reason string) {
 	if !s.StartedAt.IsZero() {
 		durationSec = int(time.Since(s.StartedAt).Seconds())
 	}
+	bridgeStats := media.BridgeSnapshot{}
+	if s.Bridge != nil {
+		bridgeStats = s.Bridge.Snapshot()
+	}
+	mediaReady := bridgeStats.BidirectionalReady()
 
 	// Notify session terminated.
 	if err := s.railsClient.NotifySessionTerminated(ctx, callback.SessionTerminatedPayload{
-		SessionID:   s.ID,
-		CallID:      s.CallID,
-		AccountID:   s.AccountID,
-		Reason:      reason,
-		DurationSec: durationSec,
+		SessionID:          s.ID,
+		CallID:             s.CallID,
+		AccountID:          s.AccountID,
+		Reason:             reason,
+		DurationSec:        durationSec,
+		MediaReady:         mediaReady,
+		MetaToAgentPackets: bridgeStats.MetaToAgentPackets,
+		AgentToMetaPackets: bridgeStats.AgentToMetaPackets,
 	}); err != nil {
 		slog.Error("session: failed to notify Rails of termination",
 			"session_id", s.ID,

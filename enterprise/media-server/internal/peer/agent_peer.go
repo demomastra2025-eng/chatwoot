@@ -212,11 +212,17 @@ func (ap *AgentPeer) LocalTrack() *webrtc.TrackLocalStaticRTP {
 }
 
 // OnTrackReady sets a callback that fires when the agent's microphone audio
-// track becomes available.
+// track becomes available. If the browser track arrived before the callback
+// was wired, replay it so forwarding is not lost.
 func (ap *AgentPeer) OnTrackReady(fn func(track *webrtc.TrackRemote)) {
 	ap.mu.Lock()
-	defer ap.mu.Unlock()
 	ap.onTrackReady = fn
+	track := ap.audioTrack
+	ap.mu.Unlock()
+
+	if fn != nil && track != nil {
+		fn(track)
+	}
 }
 
 // OnICEStateChange sets a callback that fires when the ICE connection state

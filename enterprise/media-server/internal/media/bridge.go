@@ -48,6 +48,12 @@ type BridgeSnapshot struct {
 	AgentToMetaPayloadBytes uint64
 }
 
+// BidirectionalReady reports whether RTP flowed in both directions. A call
+// with only agent->Meta packets is not live from the operator perspective.
+func (s BridgeSnapshot) BidirectionalReady() bool {
+	return s.MetaToAgentPackets > 0 && s.AgentToMetaPackets > 0
+}
+
 // NewBridge creates a new audio bridge for the given session. The bridge does
 // not start forwarding automatically; call Start after both peers are connected.
 func NewBridge(sessionID string, metaPeer *peer.MetaPeer, recorder *Recorder) *Bridge {

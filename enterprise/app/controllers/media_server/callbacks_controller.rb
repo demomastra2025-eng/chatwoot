@@ -28,17 +28,24 @@ class MediaServer::CallbacksController < ApplicationController
     final_status = nil
     duration_seconds = normalized_duration_seconds
     transitioned = false
-    reason = params[:reason].presence || 'media_server'
+    rtp_gate = normalized_rtp_gate
+    media_gate_failed = rtp_gate[:present] && !rtp_gate[:media_ready]
+    reason = media_gate_failed ? 'bidirectional_rtp_missing' : (params[:reason].presence || 'media_server')
 
     call.with_lock do
       call.reload
       unless call.terminal?
         was_answered = call.in_progress? || duration_seconds.to_i.positive?
-        final_status = was_answered ? 'completed' : 'failed'
+        final_status = if media_gate_failed
+                         'failed'
+                       else
+                         (was_answered ? 'completed' : 'failed')
+                       end
         attrs = { status: final_status, end_reason: reason }
         attrs[:duration_seconds] = duration_seconds if duration_seconds
         attrs[:media_session_id] = params[:session_id] if call.media_session_id.blank? && params[:session_id].present?
         attrs[:accepted_by_agent_id] = nil if final_status == 'failed'
+        attrs[:meta] = with_media_server_termination_stats(call, rtp_gate) if rtp_gate[:present]
         call.update!(attrs)
         transitioned = true
       end
@@ -141,6 +148,42 @@ class MediaServer::CallbacksController < ApplicationController
 
     seconds = params[:duration_seconds].to_i
     seconds.negative? ? 0 : seconds
+  end
+
+  def normalized_rtp_gate
+    meta_to_agent = integer_param(:meta_to_agent_packets)
+    agent_to_meta = integer_param(:agent_to_meta_packets)
+    media_ready_present = params.key?(:media_ready)
+    counters_present = !meta_to_agent.nil? || !agent_to_meta.nil?
+    present = media_ready_present || counters_present
+
+    declared_media_ready = media_ready_present ? ActiveModel::Type::Boolean.new.cast(params[:media_ready]) : true
+    counters_ready = counters_present ? (meta_to_agent.to_i.positive? && agent_to_meta.to_i.positive?) : true
+    media_ready = declared_media_ready && counters_ready
+
+    {
+      present: present,
+      media_ready: media_ready,
+      meta_to_agent_packets: meta_to_agent,
+      agent_to_meta_packets: agent_to_meta
+    }
+  end
+
+  def integer_param(key)
+    return unless params.key?(key)
+
+    params[key].to_i
+  end
+
+  def with_media_server_termination_stats(call, rtp_gate)
+    meta = (call.meta || {}).deep_dup
+    meta['media_server'] ||= {}
+    meta['media_server']['callbacks'] ||= {}
+    meta['media_server']['callbacks']['session_terminated_at'] = Time.current.iso8601
+    meta['media_server']['callbacks']['media_ready'] = rtp_gate[:media_ready]
+    meta['media_server']['callbacks']['meta_to_agent_packets'] = rtp_gate[:meta_to_agent_packets] unless rtp_gate[:meta_to_agent_packets].nil?
+    meta['media_server']['callbacks']['agent_to_meta_packets'] = rtp_gate[:agent_to_meta_packets] unless rtp_gate[:agent_to_meta_packets].nil?
+    meta
   end
 
   def terminate_on_provider(call)
