@@ -1,6 +1,9 @@
 import { describe, it, beforeEach, expect, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { acceptWhatsappCallById } from '../useWhatsappCallSession';
+import {
+  acceptWhatsappCallById,
+  WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE,
+} from '../useWhatsappCallSession';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import { emitter } from 'shared/helpers/mitt';
@@ -165,5 +168,46 @@ describe('useWhatsappCallSession', () => {
       'whatsapp_call:agent_webrtc_connected'
     );
     consoleError.mockRestore();
+  });
+
+  it('clears the active server-relay call when media leg already closed during agent answer', async () => {
+    WhatsappCallsAPI.show.mockResolvedValue({
+      data: {
+        id: 44,
+        call_id: 'wacid-44',
+        status: 'ringing',
+        direction: 'incoming',
+        inbox_id: 57,
+        conversation_id: 13745,
+        conversation_display_id: 483,
+        media_server_enabled: true,
+        caller: { name: 'Ahan' },
+      },
+    });
+    WhatsappCallsAPI.accept.mockResolvedValue({
+      data: {
+        id: 44,
+        status: 'in_progress',
+        media_session_id: 'sess-44',
+        agent_offer: {
+          sdp_offer: 'agent-offer-sdp',
+          ice_servers: [],
+        },
+      },
+    });
+    WhatsappCallsAPI.agentAnswer.mockRejectedValue({
+      response: { data: { code: 'media_leg_closed' } },
+    });
+
+    const result = await acceptWhatsappCallById(44);
+    const callsStore = useWhatsappCallsStore();
+
+    expect(result.success).toBe(true);
+    expect(callsStore.activeCall).toBeNull();
+    expect(callsStore.isReconnecting).toBe(false);
+    expect(emitter.emit).toHaveBeenCalledWith('newToastMessage', {
+      message: WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE,
+      action: null,
+    });
   });
 });

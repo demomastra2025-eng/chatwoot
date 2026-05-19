@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -140,6 +142,24 @@ type InjectAudioRequest struct {
 	Loop   bool   `json:"loop"`
 }
 
+// RuntimeAgentRequest is the JSON body for POST /sessions/:id/runtime-agent.
+type RuntimeAgentRequest struct {
+	CallRef        string `json:"call_ref"`
+	AccountID      string `json:"account_id"`
+	ConversationID string `json:"conversation_id"`
+	InboxID        string `json:"inbox_id"`
+}
+
+// RuntimeAgentResponse is the attach contract for the AI voice runtime.
+type RuntimeAgentResponse struct {
+	RuntimeSessionID string    `json:"runtime_session_id"`
+	StreamURL        string    `json:"stream_url"`
+	Codec            string    `json:"codec"`
+	InputSampleRate  int       `json:"input_sample_rate"`
+	OutputSampleRate int       `json:"output_sample_rate"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
 // HealthResponse is the JSON response for GET /health.
 type HealthResponse struct {
 	Status         string `json:"status"`
@@ -227,6 +247,40 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sess.GetInfo())
 }
 
+// RuntimeAgent handles POST /sessions/{id}/runtime-agent. It reserves a
+// short-lived, one-time media stream attach contract for the AI voice runtime.
+func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if h.manager == nil || h.manager.GetSession(sessionID) == nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	var req RuntimeAgentRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.CallRef) == "" || strings.TrimSpace(req.AccountID) == "" {
+		writeError(w, http.StatusBadRequest, "call_ref and account_id are required")
+		return
+	}
+
+	resp, err := h.buildRuntimeAgentContract(sessionID, req, r.Host)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create runtime agent contract")
+		return
+	}
+
+	slog.Info("handler: runtime agent contract created",
+		"session_id", sessionID,
+		"call_ref", req.CallRef,
+		"account_id", req.AccountID,
+		"runtime_session_id", resp.RuntimeSessionID,
+	)
+	writeJSON(w, http.StatusCreated, resp)
+}
+
 // AgentOffer handles POST /sessions/{id}/agent-offer. It creates a new
 // agent-side peer connection and returns the SDP offer to send to the
 // agent's browser.
@@ -234,7 +288,7 @@ func (h *Handlers) AgentOffer(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	sess := h.manager.GetSession(sessionID)
 	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found")
+		writeCodedError(w, http.StatusNotFound, "media_session_closed", "session not found")
 		return
 	}
 
@@ -261,6 +315,10 @@ func (h *Handlers) AgentOffer(w http.ResponseWriter, r *http.Request) {
 			"session_id", sessionID,
 			"error", err,
 		)
+		if session.IsMediaLegClosed(err) {
+			writeCodedError(w, http.StatusConflict, "media_leg_closed", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to create agent peer: "+err.Error())
 		return
 	}
@@ -284,7 +342,7 @@ func (h *Handlers) AgentAnswer(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	sess := h.manager.GetSession(sessionID)
 	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found")
+		writeCodedError(w, http.StatusNotFound, "media_session_closed", "session not found")
 		return
 	}
 
@@ -316,6 +374,10 @@ func (h *Handlers) AgentAnswer(w http.ResponseWriter, r *http.Request) {
 			"peer_id", req.PeerID,
 			"error", err,
 		)
+		if session.IsMediaLegClosed(err) {
+			writeCodedError(w, http.StatusConflict, "media_leg_closed", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to set agent answer: "+err.Error())
 		return
 	}
@@ -771,6 +833,41 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func writeCodedError(w http.ResponseWriter, status int, code string, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg, "code": code, "status": code})
+}
+
+func (h *Handlers) buildRuntimeAgentContract(sessionID string, req RuntimeAgentRequest, host string) (RuntimeAgentResponse, error) {
+	token, err := randomURLToken(32)
+	if err != nil {
+		return RuntimeAgentResponse{}, err
+	}
+
+	expiresAt := time.Now().UTC().Add(60 * time.Second)
+	if strings.TrimSpace(host) == "" {
+		host = "localhost:4000"
+	}
+
+	return RuntimeAgentResponse{
+		RuntimeSessionID: fmt.Sprintf("rt_%s_%d", sessionID, time.Now().UnixNano()),
+		StreamURL:        fmt.Sprintf("ws://%s/sessions/%s/runtime-stream?token=%s", host, sessionID, token),
+		Codec:            "pcm_s16le",
+		InputSampleRate:  16000,
+		OutputSampleRate: 24000,
+		ExpiresAt:        expiresAt,
+	}, nil
+}
+
+func randomURLToken(size int) (string, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // toWebRTCICEServers converts the request ICE server configs to Pion's

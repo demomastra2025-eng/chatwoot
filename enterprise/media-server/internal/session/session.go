@@ -4,6 +4,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -29,6 +30,26 @@ const (
 	StatusTerminated        Status = "terminated"
 )
 
+// MediaLegClosedError is returned when a browser/agent operation arrives after
+// Meta's media leg has already closed. HTTP handlers translate it to a
+// controlled 409 instead of a generic 500.
+type MediaLegClosedError struct {
+	Reason string
+}
+
+func (e *MediaLegClosedError) Error() string {
+	if e == nil || e.Reason == "" {
+		return "media leg closed"
+	}
+	return "media leg closed: " + e.Reason
+}
+
+// IsMediaLegClosed reports whether err is a controlled media-leg-closed error.
+func IsMediaLegClosed(err error) bool {
+	var target *MediaLegClosedError
+	return errors.As(err, &target)
+}
+
 // Session represents a single active call, holding the Meta-side peer
 // connection (Peer A), one or more agent-side peer connections (Peer B),
 // the audio bridge, and the recording engine.
@@ -48,6 +69,11 @@ type Session struct {
 	StartedAt time.Time
 	CreatedAt time.Time
 
+	MetaICEState         string
+	MetaConnectionState  string
+	MetaDTLSState        string
+	MediaLegClosedReason string
+
 	config         *config.Config
 	railsClient    *callback.RailsClient
 	reconnectTimer *time.Timer
@@ -60,16 +86,19 @@ type Session struct {
 // Info is the JSON-serializable representation of a session's current state,
 // returned by the GET /sessions/:id endpoint.
 type Info struct {
-	ID              string `json:"id"`
-	CallID          string `json:"call_id"`
-	AccountID       string `json:"account_id"`
-	Direction       string `json:"direction"`
-	Status          string `json:"status"`
-	MetaICEState    string `json:"meta_ice_state"`
-	AgentPeerCount  int    `json:"agent_peer_count"`
-	DurationSeconds int    `json:"duration_seconds"`
-	HasRecording    bool   `json:"has_recording"`
-	CreatedAt       string `json:"created_at"`
+	ID                   string `json:"id"`
+	CallID               string `json:"call_id"`
+	AccountID            string `json:"account_id"`
+	Direction            string `json:"direction"`
+	Status               string `json:"status"`
+	MetaICEState         string `json:"meta_ice_state"`
+	MetaConnectionState  string `json:"meta_connection_state"`
+	MetaDTLSState        string `json:"meta_dtls_state"`
+	MediaLegClosedReason string `json:"media_leg_closed_reason,omitempty"`
+	AgentPeerCount       int    `json:"agent_peer_count"`
+	DurationSeconds      int    `json:"duration_seconds"`
+	HasRecording         bool   `json:"has_recording"`
+	CreatedAt            string `json:"created_at"`
 }
 
 // NewSession creates a new call session. For incoming calls, the Meta SDP
@@ -85,18 +114,21 @@ func NewSession(
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxSessionDuration)
 
 	sess := &Session{
-		ID:          id,
-		CallID:      callID,
-		AccountID:   accountID,
-		Direction:   direction,
-		AgentPeers:  make(map[string]*peer.AgentPeer),
-		Injectors:   make(map[string]*media.Injector),
-		Status:      StatusCreated,
-		CreatedAt:   time.Now(),
-		config:      cfg,
-		railsClient: railsClient,
-		ctx:         ctx,
-		cancel:      cancel,
+		ID:                  id,
+		CallID:              callID,
+		AccountID:           accountID,
+		Direction:           direction,
+		AgentPeers:          make(map[string]*peer.AgentPeer),
+		Injectors:           make(map[string]*media.Injector),
+		Status:              StatusCreated,
+		MetaICEState:        "new",
+		MetaConnectionState: "new",
+		MetaDTLSState:       "new",
+		CreatedAt:           time.Now(),
+		config:              cfg,
+		railsClient:         railsClient,
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 
 	// Create the Meta-side peer connection (Peer A).
@@ -122,6 +154,12 @@ func NewSession(
 	// Wire up Meta peer event handlers.
 	metaPeer.OnICEStateChange(func(state webrtc.ICEConnectionState) {
 		sess.handleMetaICEStateChange(state)
+	})
+	metaPeer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		sess.handleMetaConnectionStateChange(state)
+	})
+	metaPeer.OnDTLSStateChange(func(state webrtc.DTLSTransportState) {
+		sess.handleMetaDTLSStateChange(state)
 	})
 
 	metaPeer.OnTrackReady(func(track *webrtc.TrackRemote) {
@@ -167,6 +205,10 @@ func (s *Session) SetMetaAnswer(sdpAnswer string) error {
 func (s *Session) CreateAgentPeer(peerID string, role peer.PeerRole, iceServers []webrtc.ICEServer) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.ensureMediaLegOpenLocked(); err != nil {
+		return "", err
+	}
 
 	agentPeer, sdpOffer, err := peer.NewAgentPeer(s.config, peerID, role, iceServers)
 	if err != nil {
@@ -225,6 +267,10 @@ func (s *Session) SoleAgentPeerID() (string, bool) {
 func (s *Session) SetAgentAnswer(peerID, sdpAnswer string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.ensureMediaLegOpenLocked(); err != nil {
+		return err
+	}
 
 	ap, ok := s.AgentPeers[peerID]
 	if !ok {
@@ -369,18 +415,18 @@ func (s *Session) GetInfo() Info {
 	defer s.mu.Unlock()
 
 	info := Info{
-		ID:             s.ID,
-		CallID:         s.CallID,
-		AccountID:      s.AccountID,
-		Direction:      s.Direction,
-		Status:         string(s.Status),
-		AgentPeerCount: len(s.AgentPeers),
-		HasRecording:   s.Recorder != nil,
-		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
-	}
-
-	if s.MetaPeer != nil {
-		info.MetaICEState = s.MetaPeer.ICEConnectionState().String()
+		ID:                   s.ID,
+		CallID:               s.CallID,
+		AccountID:            s.AccountID,
+		Direction:            s.Direction,
+		Status:               string(s.Status),
+		MetaICEState:         s.MetaICEState,
+		MetaConnectionState:  s.MetaConnectionState,
+		MetaDTLSState:        s.MetaDTLSState,
+		MediaLegClosedReason: s.MediaLegClosedReason,
+		AgentPeerCount:       len(s.AgentPeers),
+		HasRecording:         s.Recorder != nil,
+		CreatedAt:            s.CreatedAt.UTC().Format(time.RFC3339),
 	}
 
 	if !s.StartedAt.IsZero() {
@@ -452,6 +498,7 @@ func (s *Session) StopInjector(id string) error {
 func (s *Session) handleMetaICEStateChange(state webrtc.ICEConnectionState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.MetaICEState = state.String()
 
 	if s.Status == StatusTerminated {
 		return
@@ -459,15 +506,12 @@ func (s *Session) handleMetaICEStateChange(state webrtc.ICEConnectionState) {
 
 	switch state {
 	case webrtc.ICEConnectionStateConnected:
-		if s.Status == StatusCreated {
-			s.Status = StatusMetaConnected
-			s.StartedAt = time.Now()
-			slog.Info("session: Meta peer connected",
-				"session_id", s.ID,
-			)
-		}
+		slog.Info("session: Meta ICE connected; waiting for DTLS",
+			"session_id", s.ID,
+		)
 
 	case webrtc.ICEConnectionStateFailed, webrtc.ICEConnectionStateDisconnected:
+		s.MediaLegClosedReason = "meta_ice_" + state.String()
 		slog.Warn("session: Meta peer disconnected/failed",
 			"session_id", s.ID,
 			"state", state.String(),
@@ -476,7 +520,61 @@ func (s *Session) handleMetaICEStateChange(state webrtc.ICEConnectionState) {
 		go s.Terminate("meta_disconnected")
 
 	case webrtc.ICEConnectionStateClosed:
+		s.MediaLegClosedReason = "meta_ice_closed"
 		slog.Info("session: Meta peer closed", "session_id", s.ID)
+		go s.Terminate("meta_ice_closed")
+	}
+}
+
+func (s *Session) handleMetaConnectionStateChange(state webrtc.PeerConnectionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.MetaConnectionState = state.String()
+
+	if s.Status == StatusTerminated {
+		return
+	}
+
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
+		slog.Info("session: Meta peer connection connected", "session_id", s.ID)
+	case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
+		s.MediaLegClosedReason = "meta_connection_" + state.String()
+		slog.Warn("session: Meta peer connection closed/failed",
+			"session_id", s.ID,
+			"state", state.String(),
+		)
+		go s.Terminate("meta_connection_" + state.String())
+	}
+}
+
+func (s *Session) handleMetaDTLSStateChange(state webrtc.DTLSTransportState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.MetaDTLSState = state.String()
+
+	if s.Status == StatusTerminated {
+		return
+	}
+
+	switch state {
+	case webrtc.DTLSTransportStateConnected:
+		if s.Status == StatusCreated {
+			s.Status = StatusMetaConnected
+			s.StartedAt = time.Now()
+			slog.Info("session: Meta DTLS connected; media leg ready", "session_id", s.ID)
+		}
+		if s.hasConnectedAgentPeerLocked() {
+			s.Status = StatusActive
+			s.Bridge.Start(s.ctx)
+		}
+	case webrtc.DTLSTransportStateFailed, webrtc.DTLSTransportStateClosed:
+		s.MediaLegClosedReason = "meta_dtls_" + state.String()
+		slog.Warn("session: Meta DTLS closed/failed",
+			"session_id", s.ID,
+			"state", state.String(),
+		)
+		go s.Terminate("meta_dtls_" + state.String())
 	}
 }
 
@@ -552,6 +650,38 @@ func (s *Session) handleAgentICEStateChange(peerID string, state webrtc.ICEConne
 			"peer_id", peerID,
 		)
 	}
+}
+
+func (s *Session) hasConnectedAgentPeerLocked() bool {
+	for _, ap := range s.AgentPeers {
+		if ap.ICEConnectionState() == webrtc.ICEConnectionStateConnected {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Session) ensureMediaLegOpenLocked() error {
+	if s.Status == StatusTerminated {
+		return &MediaLegClosedError{Reason: "terminated"}
+	}
+	if s.MediaLegClosedReason != "" {
+		return &MediaLegClosedError{Reason: s.MediaLegClosedReason}
+	}
+	if s.MetaICEState == webrtc.ICEConnectionStateFailed.String() ||
+		s.MetaICEState == webrtc.ICEConnectionStateDisconnected.String() ||
+		s.MetaICEState == webrtc.ICEConnectionStateClosed.String() {
+		return &MediaLegClosedError{Reason: "meta_ice_" + s.MetaICEState}
+	}
+	if s.MetaConnectionState == webrtc.PeerConnectionStateFailed.String() ||
+		s.MetaConnectionState == webrtc.PeerConnectionStateClosed.String() {
+		return &MediaLegClosedError{Reason: "meta_connection_" + s.MetaConnectionState}
+	}
+	if s.MetaDTLSState == webrtc.DTLSTransportStateFailed.String() ||
+		s.MetaDTLSState == webrtc.DTLSTransportStateClosed.String() {
+		return &MediaLegClosedError{Reason: "meta_dtls_" + s.MetaDTLSState}
+	}
+	return nil
 }
 
 func (s *Session) sendTerminationCallbacks(reason string) {

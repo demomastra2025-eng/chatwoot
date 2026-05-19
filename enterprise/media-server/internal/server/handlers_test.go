@@ -3,6 +3,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chatwoot/chatwoot-media-server/internal/config"
@@ -59,5 +60,31 @@ func TestResolveAudioSourceAllowsOggFilesInsideAudioDir(t *testing.T) {
 	}
 	if resolved != filePath {
 		t.Fatalf("expected %q, got %q", filePath, resolved)
+	}
+}
+
+func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) {
+	h := NewHandlers(&config.Config{}, nil)
+	req := RuntimeAgentRequest{CallRef: "whatsapp:wa-call-1", AccountID: "42", ConversationID: "7", InboxID: "9"}
+
+	resp, err := h.buildRuntimeAgentContract("media-session-1", req, "media.internal")
+	if err != nil {
+		t.Fatalf("expected runtime agent contract: %v", err)
+	}
+
+	if !strings.HasPrefix(resp.RuntimeSessionID, "rt_media-session-1_") {
+		t.Fatalf("unexpected runtime session id %q", resp.RuntimeSessionID)
+	}
+	if !strings.HasPrefix(resp.StreamURL, "ws://media.internal/sessions/media-session-1/runtime-stream?token=") {
+		t.Fatalf("unexpected stream url %q", resp.StreamURL)
+	}
+	if strings.Contains(resp.StreamURL, "whatsapp:wa-call-1") {
+		t.Fatalf("stream url leaked call ref: %q", resp.StreamURL)
+	}
+	if resp.Codec != "pcm_s16le" || resp.InputSampleRate != 16000 || resp.OutputSampleRate != 24000 {
+		t.Fatalf("unexpected audio contract: %#v", resp)
+	}
+	if resp.ExpiresAt.IsZero() {
+		t.Fatal("expected non-zero expiration")
 	}
 }

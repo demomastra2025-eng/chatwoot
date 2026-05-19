@@ -91,9 +91,16 @@ class Whatsapp::IncomingCallService
     return unless conversation
 
     call = create_call_record(call_payload, conversation, contact, :incoming)
+    routing_decision = Whatsapp::CallRoutingService.new(call: call).perform
+    persist_routing_decision(call, routing_decision)
     create_voice_call_message(conversation, call)
-    update_conversation_call_status(conversation, 'ringing', call.direction_label)
-    broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
+
+    if routing_decision.ai?
+      handle_ai_voice_call(call, contact, call_payload, routing_decision)
+    else
+      update_conversation_call_status(conversation, 'ringing', call.direction_label)
+      broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
+    end
   end
 
   def handle_outbound_connect(call, call_payload)
@@ -152,6 +159,51 @@ class Whatsapp::IncomingCallService
       status: 'ringing',
       meta: { 'sdp_offer' => call_payload.dig(:session, :sdp), 'ice_servers' => default_ice_servers }
     )
+  end
+
+  def handle_ai_voice_call(call, contact, call_payload, routing_decision)
+    update_conversation_call_status(call.conversation, 'ai_accepting', call.direction_label)
+    broadcast_ai_accepting_call(call, routing_decision)
+    Whatsapp::AiVoiceCallService.new(call: call, routing_decision: routing_decision).perform
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP CALL] AI voice auto-answer failed for #{call.provider_call_id}: #{e.class} #{e.message}"
+    mark_ai_voice_fallback(call, routing_decision, e)
+    call.reload
+    if call.ringing?
+      update_conversation_call_status(call.conversation, 'ringing', call.direction_label)
+      broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
+    else
+      update_conversation_call_status(call.conversation, 'ai_failed', call.direction_label)
+      broadcast_call_ended(call) if call.terminal?
+    end
+  end
+
+  def mark_ai_voice_fallback(call, routing_decision, error)
+    ai_voice = {
+      'state' => 'failed',
+      'fallback' => 'human_ring',
+      'captain_assistant_id' => routing_decision.assistant&.id,
+      'runtime_transport' => 'whatsapp_cloud',
+      'error_class' => error.class.name,
+      'error_message' => error.message,
+      'updated_at' => Time.current.iso8601
+    }.compact
+
+    call.with_lock do
+      call.reload
+      call.update!(status: 'ringing', meta: (call.meta || {}).merge('ai_voice' => ai_voice)) unless call.terminal?
+    end
+  end
+
+  def persist_routing_decision(call, routing_decision)
+    routing = {
+      'action' => routing_decision.action,
+      'reason' => routing_decision.reason,
+      'conversation_status' => routing_decision.conversation_status,
+      'captain_assistant_id' => routing_decision.assistant&.id
+    }.compact
+
+    call.update!(meta: (call.meta || {}).merge('routing' => routing))
   end
 
   def handle_call_terminate(call_payload)
@@ -266,6 +318,22 @@ class Whatsapp::IncomingCallService
     end
 
     ActionCable.server.broadcast("account_#{inbox.account_id}", { event: 'whatsapp_call.incoming', data: data })
+  end
+
+  def broadcast_ai_accepting_call(call, routing_decision)
+    data = {
+      account_id: inbox.account_id,
+      id: call.id,
+      call_id: call.provider_call_id,
+      direction: call.direction_label,
+      inbox_id: call.inbox_id,
+      conversation_id: call.conversation_id,
+      conversation_display_id: call.conversation&.display_id,
+      routing_reason: routing_decision.reason,
+      captain_assistant_id: routing_decision.assistant&.id
+    }.compact
+
+    ActionCable.server.broadcast("account_#{inbox.account_id}", { event: 'whatsapp_call.ai_accepting', data: data })
   end
 
   def broadcast_call_ended(call)

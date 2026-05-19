@@ -1,6 +1,20 @@
 class Whatsapp::MediaServerClient
   class ConnectionError < StandardError; end
-  class SessionError < StandardError; end
+
+  class SessionError < StandardError
+    attr_reader :http_status, :response_body, :error_code
+
+    def initialize(message, http_status: nil, response_body: nil, error_code: nil)
+      super(message)
+      @http_status = http_status
+      @response_body = response_body
+      @error_code = error_code
+    end
+
+    def media_leg_closed?
+      %w[media_leg_closed media_session_closed].include?(error_code) || http_status.to_i == 404
+    end
+  end
 
   TIMEOUT = 10
 
@@ -28,6 +42,18 @@ class Whatsapp::MediaServerClient
 
   def terminate_session(session_id)
     post("/sessions/#{session_id}/terminate")
+  end
+
+  def create_runtime_agent(session_id, call_ref:, account_id:, conversation_id:, inbox_id:)
+    post(
+      "/sessions/#{session_id}/runtime-agent",
+      {
+        call_ref: call_ref,
+        account_id: account_id&.to_s,
+        conversation_id: conversation_id&.to_s,
+        inbox_id: inbox_id&.to_s
+      }.compact
+    )
   end
 
   def download_recording(session_id, side: nil)
@@ -92,11 +118,25 @@ class Whatsapp::MediaServerClient
 
   def parse_response(response)
     unless response.success?
-      Rails.logger.error "[MEDIA SERVER] Request failed: status=#{response.code} body=#{response.body}"
-      raise SessionError, "Media server error (#{response.code}): #{response.body}"
+      parsed_body = parse_error_body(response)
+      error_code = parsed_body['code'].presence || parsed_body['status'].presence
+      Rails.logger.error "[MEDIA SERVER] Request failed: status=#{response.code} code=#{error_code.presence || 'unknown'} body=#{response.body}"
+      raise SessionError.new(
+        "Media server error (#{response.code}): #{response.body}",
+        http_status: response.code,
+        response_body: response.body,
+        error_code: error_code
+      )
     end
 
     response.parsed_response
+  end
+
+  def parse_error_body(response)
+    body = response.parsed_response
+    body.is_a?(Hash) ? body.stringify_keys : {}
+  rescue StandardError
+    {}
   end
 
   def base_url

@@ -10,6 +10,8 @@ import {
 } from 'dashboard/stores/whatsappCalls';
 import {
   handleAgentOffer,
+  handleMediaLegClosed,
+  isMediaLegClosedError,
   startCallRecording,
 } from 'dashboard/composables/useWhatsappCallSession';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
@@ -337,6 +339,10 @@ class ActionCableConnector extends BaseActionCableConnector {
             whatsappCallsStore.updateActiveCall({
               agentWebrtcConnecting: false,
             });
+            if (isMediaLegClosedError(err)) {
+              handleMediaLegClosed(whatsappCallsStore);
+              return;
+            }
             // eslint-disable-next-line no-console
             console.error(
               '[WhatsApp Call] Failed to handle outbound agent offer:',
@@ -434,6 +440,10 @@ class ActionCableConnector extends BaseActionCableConnector {
       .catch(err => {
         whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
         whatsappCallsStore.setReconnecting(false);
+        if (isMediaLegClosedError(err)) {
+          handleMediaLegClosed(whatsappCallsStore);
+          return;
+        }
         // eslint-disable-next-line no-console
         console.error('[WhatsApp Call] Failed to handle agent offer:', err);
       });
@@ -478,6 +488,10 @@ class ActionCableConnector extends BaseActionCableConnector {
       emitter.emit('whatsapp_call:agent_webrtc_connected');
     } catch (err) {
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
+      if (isMediaLegClosedError(err)) {
+        handleMediaLegClosed(whatsappCallsStore);
+        return;
+      }
       // eslint-disable-next-line no-console
       console.error('[WhatsApp Call] Failed to reconnect agent:', err);
     } finally {

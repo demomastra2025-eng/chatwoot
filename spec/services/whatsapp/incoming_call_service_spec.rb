@@ -65,6 +65,156 @@ RSpec.describe Whatsapp::IncomingCallService do
       )
     end
 
+    it 'routes an inbound call for an open conversation to the operator UI' do
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
+      conversation.update!(contact_inbox: contact_inbox, status: 'open')
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(instance_double(Message, id: 124))
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          calls: [
+            {
+              id: 'wa-open-route-1',
+              from: '15551234567',
+              event: 'connect',
+              session: { sdp_type: 'offer', sdp: 'v=0' }
+            }
+          ]
+        }
+      ).perform
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-open-route-1')
+      expect(call.meta.dig('routing', 'action')).to eq('human_ring')
+      expect(call.meta.dig('routing', 'reason')).to eq('conversation_open_operator_owns_call')
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.incoming', data: hash_including(call_id: 'wa-open-route-1'))
+      )
+    end
+
+    it 'routes an inbound call for a pending conversation to the AI voice agent instead of ringing operators' do
+      channel.update!(provider_config: channel.provider_config.merge('ai_voice_enabled' => true))
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
+      conversation.update!(contact_inbox: contact_inbox, status: 'pending')
+      ai_voice_service = instance_double(Whatsapp::AiVoiceCallService, perform: true)
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(instance_double(Message, id: 125))
+      expect(Whatsapp::AiVoiceCallService).to receive(:new).with(
+        call: instance_of(Call),
+        routing_decision: satisfy(&:ai?)
+      ).and_return(ai_voice_service)
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          calls: [
+            {
+              id: 'wa-pending-route-1',
+              from: '15551234567',
+              event: 'connect',
+              session: { sdp_type: 'offer', sdp: 'v=0' }
+            }
+          ]
+        }
+      ).perform
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-pending-route-1')
+      expect(call.meta.dig('routing', 'action')).to eq('ai_accept')
+      expect(call.meta.dig('routing', 'reason')).to eq('conversation_pending_ai_voice_enabled')
+      expect(call.conversation.additional_attributes).to include('call_status' => 'ai_accepting', 'call_direction' => 'inbound')
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.incoming')
+      )
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.ai_accepting', data: hash_including(call_id: 'wa-pending-route-1'))
+      )
+    end
+
+    it 'falls back to the operator UI when AI voice auto-answer fails' do
+      channel.update!(provider_config: channel.provider_config.merge('ai_voice_enabled' => true))
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
+      conversation.update!(contact_inbox: contact_inbox, status: 'pending')
+      ai_voice_service = instance_double(Whatsapp::AiVoiceCallService)
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(instance_double(Message, id: 126))
+      allow(Whatsapp::AiVoiceCallService).to receive(:new).and_return(ai_voice_service)
+      allow(ai_voice_service).to receive(:perform).and_raise(Whatsapp::CallErrors::NotRinging, 'Media server is not enabled')
+
+      expect do
+        described_class.new(
+          inbox: inbox,
+          params: {
+            calls: [
+              {
+                id: 'wa-ai-fallback-1',
+                from: '15551234567',
+                event: 'connect',
+                session: { sdp_type: 'offer', sdp: 'v=0' }
+              }
+            ]
+          }
+        ).perform
+      end.not_to raise_error
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-ai-fallback-1')
+      expect(call.status).to eq('ringing')
+      expect(call.meta.dig('ai_voice', 'state')).to eq('failed')
+      expect(call.meta.dig('ai_voice', 'fallback')).to eq('human_ring')
+      expect(call.conversation.additional_attributes).to include('call_status' => 'ringing', 'call_direction' => 'inbound')
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.incoming', data: hash_including(call_id: 'wa-ai-fallback-1'))
+      )
+    end
+
+    it 'does not ring operators when AI voice failed after Meta was already accepted and closed' do
+      channel.update!(provider_config: channel.provider_config.merge('ai_voice_enabled' => true))
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567')
+      conversation.update!(contact_inbox: contact_inbox, status: 'pending')
+      allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(instance_double(Message, id: 127))
+      allow(Whatsapp::AiVoiceCallService).to receive(:new) do |call:, **_kwargs|
+        instance_double(Whatsapp::AiVoiceCallService).tap do |service|
+          allow(service).to receive(:perform) do
+            call.update!(status: 'failed', meta: (call.meta || {}).merge('ai_voice' => { 'state' => 'failed' }))
+            raise Whatsapp::MediaServerClient::SessionError, 'runtime attach failed'
+          end
+        end
+      end
+
+      expect do
+        described_class.new(
+          inbox: inbox,
+          params: {
+            calls: [
+              {
+                id: 'wa-ai-terminal-fallback-1',
+                from: '15551234567',
+                event: 'connect',
+                session: { sdp_type: 'offer', sdp: 'v=0' }
+              }
+            ]
+          }
+        ).perform
+      end.not_to raise_error
+
+      call = Call.whatsapp.find_by!(provider_call_id: 'wa-ai-terminal-fallback-1')
+      expect(call.status).to eq('failed')
+      expect(call.conversation.additional_attributes).to include('call_status' => 'ai_failed', 'call_direction' => 'inbound')
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.incoming', data: hash_including(call_id: 'wa-ai-terminal-fallback-1'))
+      )
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.ended', data: hash_including(call_id: 'wa-ai-terminal-fallback-1', status: 'failed'))
+      )
+    end
+
     it 'stores outbound SDP answer on connect without marking the call connected' do
       call = create(
         :call,

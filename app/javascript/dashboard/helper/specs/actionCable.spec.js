@@ -8,12 +8,19 @@ import {
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
-const { reconnectMock, handleAgentOfferMock, startCallRecordingMock } =
-  vi.hoisted(() => ({
-    reconnectMock: vi.fn(),
-    handleAgentOfferMock: vi.fn(),
-    startCallRecordingMock: vi.fn(),
-  }));
+const {
+  reconnectMock,
+  handleAgentOfferMock,
+  handleMediaLegClosedMock,
+  isMediaLegClosedErrorMock,
+  startCallRecordingMock,
+} = vi.hoisted(() => ({
+  reconnectMock: vi.fn(),
+  handleAgentOfferMock: vi.fn(),
+  handleMediaLegClosedMock: vi.fn(),
+  isMediaLegClosedErrorMock: vi.fn(() => false),
+  startCallRecordingMock: vi.fn(),
+}));
 
 vi.mock('shared/helpers/mitt', () => ({
   emitter: {
@@ -29,6 +36,8 @@ vi.mock('dashboard/composables/useImpersonation', () => ({
 
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
   handleAgentOffer: handleAgentOfferMock,
+  handleMediaLegClosed: handleMediaLegClosedMock,
+  isMediaLegClosedError: isMediaLegClosedErrorMock,
   startCallRecording: startCallRecordingMock,
 }));
 
@@ -54,6 +63,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       data: { sdp_offer: 'fresh-offer', ice_servers: [] },
     });
     handleAgentOfferMock.mockResolvedValue();
+    isMediaLegClosedErrorMock.mockReturnValue(false);
     mockDispatch = vi.fn();
     store = {
       $store: {
@@ -127,6 +137,24 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(reconnectMock).toHaveBeenCalledWith(42);
       expect(handleAgentOfferMock).toHaveBeenCalledWith(42, 'fresh-offer', []);
       expect(callsStore.activeCall.status).toBe('connected');
+      expect(callsStore.isReconnecting).toBe(false);
+    });
+
+    it('clears the active media-server call when reconnect sees closed media leg', async () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.setActiveCall({ id: 42, callId: 'provider-call-1' });
+      const error = { response: { data: { code: 'media_leg_closed' } } };
+      reconnectMock.mockRejectedValue(error);
+      isMediaLegClosedErrorMock.mockReturnValue(true);
+
+      await actionCable.onWhatsappCallAgentDisconnected({
+        account_id: 1,
+        id: 42,
+        call_id: 'provider-call-1',
+      });
+
+      expect(isMediaLegClosedErrorMock).toHaveBeenCalledWith(error);
+      expect(handleMediaLegClosedMock).toHaveBeenCalledWith(callsStore);
       expect(callsStore.isReconnecting).toBe(false);
     });
 

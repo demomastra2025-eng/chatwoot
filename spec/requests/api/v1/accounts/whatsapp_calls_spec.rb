@@ -158,6 +158,27 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(ringing_call.reload.status).to eq('failed')
     end
 
+    it 'returns a controlled conflict when agent answer arrives after media leg closed' do
+      error = Whatsapp::MediaServerClient::SessionError.new(
+        'Media server error (409): media leg closed',
+        http_status: 409,
+        error_code: 'media_leg_closed'
+      )
+      allow(media_client).to receive(:set_agent_answer).with('session-1', sdp_answer: 'v=0').and_raise(error)
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/agent_answer",
+           params: { sdp_answer: 'v=0' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include(
+        'error' => 'media_leg_closed',
+        'code' => 'media_leg_closed',
+        'status' => 'media_leg_closed'
+      )
+    end
+
     it 'terminates an active call' do
       allow(media_client).to receive(:terminate_session).with('session-1')
       allow(provider_service).to receive(:terminate_call).with(call.provider_call_id).and_return(true)

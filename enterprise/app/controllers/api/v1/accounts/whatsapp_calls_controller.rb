@@ -106,7 +106,16 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     client = Whatsapp::MediaServerClient.new
     client.set_agent_answer(@call.media_session_id, sdp_answer: params[:sdp_answer])
     render json: { success: true }
-  rescue Whatsapp::MediaServerClient::SessionError, Whatsapp::MediaServerClient::ConnectionError => e
+  rescue Whatsapp::MediaServerClient::SessionError => e
+    if e.media_leg_closed?
+      Rails.logger.warn "[WHATSAPP CALL] agent_answer media leg closed: call_id=#{@call.id} media_session_id=#{@call.media_session_id} code=#{e.error_code} status=#{e.http_status}"
+      render json: { error: 'media_leg_closed', code: 'media_leg_closed', status: 'media_leg_closed', message: 'Call media leg already closed' },
+             status: :conflict
+    else
+      Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{e.message}"
+      render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
+    end
+  rescue Whatsapp::MediaServerClient::ConnectionError => e
     Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{e.message}"
     render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
   end

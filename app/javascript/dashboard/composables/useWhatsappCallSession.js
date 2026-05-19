@@ -1,5 +1,6 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables/useAlert';
 import {
   useWhatsappCallsStore,
   getOutboundCallState,
@@ -20,6 +21,18 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let recordingCallId = null;
 
+export const WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE =
+  'Звонок уже оборвался. Попробуйте перезвонить.';
+
+export function isMediaLegClosedError(error) {
+  const data = error?.response?.data;
+  return (
+    data?.code === 'media_leg_closed' ||
+    data?.status === 'media_leg_closed' ||
+    data?.error === 'media_leg_closed'
+  );
+}
+
 function cleanupInboundWebRTC() {
   if (inboundStream) {
     inboundStream.getTracks().forEach(track => track.stop());
@@ -36,6 +49,13 @@ function cleanupInboundWebRTC() {
     }
     inboundAudio = null;
   }
+}
+
+export function handleMediaLegClosed(callsStore) {
+  cleanupInboundWebRTC();
+  callsStore?.clearActiveCall();
+  callsStore?.setReconnecting(false);
+  useAlert(WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE);
 }
 
 /**
@@ -305,6 +325,10 @@ async function connectAgentOfferForActiveCall(
   } catch (err) {
     callsStore.updateActiveCall({ agentWebrtcConnecting: false });
     callsStore.setReconnecting(false);
+    if (isMediaLegClosedError(err)) {
+      handleMediaLegClosed(callsStore);
+      return false;
+    }
     // The provider call is already accepted at this point. Keep the call active
     // so the agent can reconnect/retry instead of losing visibility in the UI.
     // eslint-disable-next-line no-console

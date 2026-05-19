@@ -31,6 +31,14 @@ type MetaPeer struct {
 	// onICEStateChange is called when the ICE connection state changes.
 	onICEStateChange func(state webrtc.ICEConnectionState)
 
+	// onConnectionStateChange is called when the aggregate peer connection
+	// state changes. This catches DTLS-level failures that may leave ICE as
+	// merely closed.
+	onConnectionStateChange func(state webrtc.PeerConnectionState)
+
+	// onDTLSStateChange is called when the DTLS transport state changes.
+	onDTLSStateChange func(state webrtc.DTLSTransportState)
+
 	mu     sync.Mutex
 	closed bool
 }
@@ -172,6 +180,13 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 	// such as DTLS handshake errors.
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		slog.Info("meta peer: connection state changed", "state", state.String())
+		mp.mu.Lock()
+		cb := mp.onConnectionStateChange
+		mp.mu.Unlock()
+
+		if cb != nil {
+			cb(state)
+		}
 	})
 	pc.OnSignalingStateChange(func(state webrtc.SignalingState) {
 		slog.Debug("meta peer: signaling state changed", "state", state.String())
@@ -179,9 +194,16 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 
 	// Also log DTLS transport state — failure here is the likely cause of the
 	// inbound "closed immediately after ICE connected" symptom.
-	if t := pc.SCTP().Transport(); t != nil {
+	if t := sender.Transport(); t != nil {
 		t.OnStateChange(func(state webrtc.DTLSTransportState) {
 			slog.Info("meta peer: DTLS state changed", "state", state.String())
+			mp.mu.Lock()
+			cb := mp.onDTLSStateChange
+			mp.mu.Unlock()
+
+			if cb != nil {
+				cb(state)
+			}
 		})
 	}
 
@@ -275,6 +297,22 @@ func (mp *MetaPeer) OnICEStateChange(fn func(state webrtc.ICEConnectionState)) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 	mp.onICEStateChange = fn
+}
+
+// OnConnectionStateChange sets a callback that fires when the aggregate peer
+// connection state changes.
+func (mp *MetaPeer) OnConnectionStateChange(fn func(state webrtc.PeerConnectionState)) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	mp.onConnectionStateChange = fn
+}
+
+// OnDTLSStateChange sets a callback that fires when the DTLS transport state
+// changes.
+func (mp *MetaPeer) OnDTLSStateChange(fn func(state webrtc.DTLSTransportState)) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	mp.onDTLSStateChange = fn
 }
 
 // ICEConnectionState returns the current ICE connection state.
