@@ -142,6 +142,57 @@ describe('useWhatsappCallSession', () => {
     );
   });
 
+  it('connects a prepared inbound agent offer before accepting the Meta call', async () => {
+    const callsStore = useWhatsappCallsStore();
+    callsStore.addIncomingCall({
+      id: 47,
+      callId: 'wacid-47',
+      status: 'ringing',
+      direction: 'incoming',
+      inboxId: 57,
+      conversationId: 13747,
+      conversationDisplayId: 485,
+      mediaServerEnabled: true,
+      mediaSessionId: 'sess-47',
+      agentOffer: {
+        sdp_offer: 'prepared-agent-offer-sdp',
+        ice_servers: [],
+      },
+      caller: { name: 'Ahan' },
+    });
+    WhatsappCallsAPI.accept.mockResolvedValue({
+      data: {
+        id: 47,
+        status: 'in_progress',
+        media_session_id: 'sess-47',
+      },
+    });
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const result = await acceptWhatsappCallById(47);
+
+    expect(result.success).toBe(true);
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      47,
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'incoming',
+        context: 'pre-accept-agent-offer',
+        stages: expect.any(Object),
+      })
+    );
+    expect(WhatsappCallsAPI.accept).toHaveBeenCalledWith(47);
+    expect(
+      WhatsappCallsAPI.agentAnswer.mock.invocationCallOrder[0]
+    ).toBeLessThan(WhatsappCallsAPI.accept.mock.invocationCallOrder[0]);
+    expect(callsStore.activeCall).toMatchObject({
+      id: 47,
+      serverRelay: true,
+      agentWebrtcConnected: true,
+      status: 'connected',
+    });
+  });
+
   it('completes server-relay browser handshake from accept response even if ActionCable agent_offer was missed', async () => {
     WhatsappCallsAPI.show.mockResolvedValue({
       data: {

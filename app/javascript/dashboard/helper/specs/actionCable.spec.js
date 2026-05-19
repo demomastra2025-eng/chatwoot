@@ -181,7 +181,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
-    it('does not consume account-wide incoming agent offer before an operator accepts', () => {
+    it('stores account-wide incoming agent offer for pre-accept negotiation without auto-connecting', () => {
       const callsStore = useWhatsappCallsStore();
 
       actionCable.onWhatsappCallIncoming({
@@ -201,8 +201,8 @@ describe('ActionCableConnector - Copilot Tests', () => {
         id: 52,
         callId: 'provider-call-52',
         mediaSessionId: 'media-52',
+        agentOffer: { sdp_offer: 'early-agent-offer', ice_servers: [] },
       });
-      expect(callsStore.incomingCalls[0].agentOffer).toBeUndefined();
       expect(handleAgentOfferMock).not.toHaveBeenCalled();
     });
 

@@ -23,6 +23,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       conversation_display_id: @call.conversation&.display_id,
       inbox_id: @call.inbox_id,
       message_id: @call.message_id,
+      media_session_id: @call.media_session_id,
       # In server-relay mode the browser must not talk WebRTC to Meta directly
       # — the media server owns that peer connection. Omitting sdp_offer forces
       # the FE's isServerRelayCall() check to return true so the accept flow
@@ -31,7 +32,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       sdp_offer: @call.ringing? && !@call.media_server_enabled? ? @call.sdp_offer : nil,
       ice_servers: @call.media_server_enabled? ? [] : @call.ice_servers,
       media_server_enabled: @call.media_server_enabled?,
-      caller: caller_info
+      caller: caller_info,
+      agent_offer: @call.ringing? && @call.media_server_enabled? ? @call.meta&.dig('agent_offer')&.slice('sdp_offer', 'ice_servers') : nil
     }
   end
 

@@ -450,7 +450,7 @@ export { handleAgentOffer };
  * Legacy mode: creates WebRTC session and posts SDP to backend (browser ↔ Meta).
  * Can be called from anywhere — composable, widget, or bubble.
  */
-async function doAcceptCall(call) {
+async function doAcceptCall(call, { preconnectedAgent = false } = {}) {
   // Server-relay mode: POST /accept without SDP. New Rails returns the media
   // server's Peer-B offer in the response as the synchronous source of truth;
   // the ActionCable agent_offer event remains as a fallback for older tabs and
@@ -458,7 +458,7 @@ async function doAcceptCall(call) {
   // browser WebRTC handshake, so a mic/ICE failure does not hide an already
   // accepted provider call from the agent UI.
   if (isServerRelayCall(call)) {
-    prepareInboundAudioStream();
+    if (!preconnectedAgent) prepareInboundAudioStream();
     try {
       const { data } = await WhatsappCallsAPI.accept(call.id);
       return {
@@ -598,39 +598,73 @@ export async function acceptWhatsappCallById(callId) {
       sdpOffer: data.sdp_offer,
       iceServers: data.ice_servers,
       mediaServerEnabled: data.media_server_enabled,
+      mediaSessionId: data.media_session_id,
+      agentOffer: data.agent_offer || null,
       caller: data.caller,
     };
     callsStore.addIncomingCall(call);
   }
 
   try {
-    const result = await doAcceptCall(call);
+    const serverRelay = isServerRelayCall(call);
+    let preconnectedAgent = false;
+
+    if (serverRelay && call.agentOffer?.sdp_offer) {
+      const activeCallData = {
+        ...call,
+        serverRelay: true,
+        agentWebrtcConnected: false,
+        agentWebrtcConnecting: false,
+        status: call.status || 'ringing',
+      };
+      callsStore.setActiveCall(activeCallData);
+      preconnectedAgent = await connectAgentOfferForActiveCall(
+        callsStore,
+        activeCallData.id,
+        call.agentOffer,
+        'pre-accept-agent-offer'
+      );
+      if (!preconnectedAgent) {
+        callsStore.clearActiveCall();
+        throw new Error('agent_webrtc_preaccept_failed');
+      }
+    }
+
+    const result = await doAcceptCall(call, { preconnectedAgent });
 
     callsStore.removeIncomingCall(call.callId);
 
     // In server-relay mode the call becomes active but awaits the agent_offer
     // ActionCable event to complete WebRTC setup. Mark it with serverRelay flag.
+    const existingActiveCall = callsStore.activeCall;
     const activeCallData = {
       ...call,
       conversationId: result.acceptData?.conversation_id || call.conversationId,
       conversationDisplayId:
         result.acceptData?.conversation_display_id ||
         call.conversationDisplayId,
-      serverRelay: isServerRelayCall(call),
-      agentWebrtcConnected: false,
+      serverRelay,
+      agentWebrtcConnected: preconnectedAgent,
       agentWebrtcConnecting: false,
-      status: result.acceptData?.status || call.status,
+      status:
+        preconnectedAgent && existingActiveCall?.status === 'connected'
+          ? 'connected'
+          : result.acceptData?.status || call.status,
     };
     callsStore.setActiveCall(activeCallData);
-    const agentOffer =
-      result.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
+    const agentOffer = preconnectedAgent
+      ? null
+      : result.agentOffer ||
+        callsStore.consumePendingAgentOffer(activeCallData);
     if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
-    await connectAgentOfferForActiveCall(
-      callsStore,
-      activeCallData.id,
-      agentOffer,
-      'accept-response'
-    );
+    if (agentOffer) {
+      await connectAgentOfferForActiveCall(
+        callsStore,
+        activeCallData.id,
+        agentOffer,
+        'accept-response'
+      );
+    }
 
     return { success: true, call: callsStore.activeCall, ...result };
   } catch (err) {

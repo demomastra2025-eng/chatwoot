@@ -290,6 +290,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       caller: data.caller,
       sdpOffer: data.sdp_offer || null,
       iceServers: data.ice_servers || null,
+      agentOffer: data.agent_offer || null,
       mediaServerEnabled: data.media_server_enabled,
       mediaSessionId: data.media_session_id || null,
     };

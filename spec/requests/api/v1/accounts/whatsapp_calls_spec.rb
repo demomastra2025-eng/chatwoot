@@ -89,6 +89,32 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       )
     end
 
+    it 'returns prepared agent offer for ringing media-server calls' do
+      ringing_call = create(:call, account: account, status: 'ringing', media_session_id: 'media-early',
+                                   meta: {
+                                     'sdp_offer' => 'meta-offer',
+                                     'agent_offer' => { 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+                                   })
+      ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => true))
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        get "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}",
+            headers: headers,
+            as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        'id' => ringing_call.id,
+        'media_server_enabled' => true,
+        'media_session_id' => 'media-early',
+        'agent_offer' => {
+          'sdp_offer' => 'agent-offer',
+          'ice_servers' => []
+        }
+      )
+    end
+
     it 'accepts direct mode only when sdp_answer is present' do
       ringing_call = create(:call, account: account, status: 'ringing', media_session_id: nil, meta: { 'sdp_offer' => 'v=0' })
       ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => false))
