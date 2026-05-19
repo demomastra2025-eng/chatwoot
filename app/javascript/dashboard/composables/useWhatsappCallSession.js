@@ -15,6 +15,7 @@ import { emitter } from 'shared/helpers/mitt';
 let inboundPc = null;
 let inboundStream = null;
 let inboundAudio = null;
+let inboundNegotiationToken = 0;
 
 // Inbound accept can prewarm microphone while Rails/Meta accepts the call.
 // Keep this separate from the active PeerConnection stream so a warmed inbound
@@ -44,7 +45,26 @@ function stopStream(stream) {
   stream?.getTracks?.().forEach(track => track.stop());
 }
 
+function inboundNegotiationCancelledError() {
+  const error = new Error('Inbound WebRTC negotiation was cancelled');
+  error.retryable = false;
+  error.cancelled = true;
+  error.stage = 'negotiation_cancelled';
+  return error;
+}
+
+function assertInboundNegotiationActive(
+  token,
+  { stream = null, pc = null } = {}
+) {
+  if (token === inboundNegotiationToken) return;
+  if (pc) pc.close();
+  if (stream) stopStream(stream);
+  throw inboundNegotiationCancelledError();
+}
+
 function cleanupInboundWebRTC({ keepPrewarmStream = false } = {}) {
+  inboundNegotiationToken += 1;
   if (inboundPc) {
     inboundPc.close();
     inboundPc = null;
@@ -79,7 +99,7 @@ function prepareInboundAudioStream() {
       .then(stream => {
         if (token !== inboundPrewarmToken) {
           stopStream(stream);
-          throw new Error('Inbound audio prewarm was cancelled');
+          throw inboundNegotiationCancelledError();
         }
         inboundPrewarmStream = stream;
         return stream;
@@ -329,7 +349,15 @@ async function negotiateAgentOfferOnce(
   callId,
   sdpOffer,
   iceServers,
-  { direction, context, usePrewarmedStream, peerId, timing }
+  {
+    direction,
+    context,
+    usePrewarmedStream,
+    peerId,
+    timing,
+    deferPost = false,
+    negotiationToken,
+  }
 ) {
   timing.mark('get_user_media_start');
   const stream = usePrewarmedStream
@@ -346,6 +374,7 @@ async function negotiateAgentOfferOnce(
         { retryable: false, onLateResolve: stopStream }
       );
   timing.mark('get_user_media_ok');
+  assertInboundNegotiationActive(negotiationToken, { stream });
   inboundStream = stream;
 
   const servers = iceServers?.length
@@ -353,6 +382,7 @@ async function negotiateAgentOfferOnce(
     : [{ urls: 'stun:stun.l.google.com:19302' }];
 
   const pc = new RTCPeerConnection({ iceServers: servers });
+  assertInboundNegotiationActive(negotiationToken, { stream, pc });
   inboundPc = pc;
 
   stream.getTracks().forEach(track => pc.addTrack(track, stream));
@@ -378,40 +408,54 @@ async function negotiateAgentOfferOnce(
     'set_remote_description'
   );
   timing.mark('set_remote_description_ok');
+  assertInboundNegotiationActive(negotiationToken, { stream, pc });
   const answer = await withTimeout(
     pc.createAnswer(),
     AGENT_WEBRTC_STEP_TIMEOUT_MS,
     'create_answer'
   );
   timing.mark('create_answer_ok');
+  assertInboundNegotiationActive(negotiationToken, { stream, pc });
   await withTimeout(
     pc.setLocalDescription(answer),
     AGENT_WEBRTC_STEP_TIMEOUT_MS,
     'set_local_description'
   );
   timing.mark('set_local_description_ok');
+  assertInboundNegotiationActive(negotiationToken, { stream, pc });
   await waitForFastAgentAnswerSdp(pc);
   timing.mark('fast_ice_ready');
+  assertInboundNegotiationActive(negotiationToken, { stream, pc });
 
   const completeSdp = pc.localDescription.sdp;
-  timing.mark('agent_answer_post_start');
-  const clientTiming = {
-    direction,
-    context,
-    stages: timing.stages,
-  };
-  if (peerId) {
-    await WhatsappCallsAPI.agentAnswer(
-      callId,
-      completeSdp,
-      clientTiming,
-      peerId
-    );
-  } else {
-    await WhatsappCallsAPI.agentAnswer(callId, completeSdp, clientTiming);
-  }
-  timing.mark('agent_answer_ok');
+  timing.mark('agent_answer_ready');
 
+  const postAgentAnswer = async () => {
+    assertInboundNegotiationActive(negotiationToken, { stream, pc });
+    timing.mark('agent_answer_post_start');
+    const clientTiming = {
+      direction,
+      context,
+      stages: timing.stages,
+    };
+    if (peerId) {
+      await WhatsappCallsAPI.agentAnswer(
+        callId,
+        completeSdp,
+        clientTiming,
+        peerId
+      );
+    } else {
+      await WhatsappCallsAPI.agentAnswer(callId, completeSdp, clientTiming);
+    }
+    timing.mark('agent_answer_ok');
+  };
+
+  if (deferPost) {
+    return { success: true, postAgentAnswer };
+  }
+
+  await postAgentAnswer();
   return { success: true };
 }
 
@@ -425,6 +469,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
 
   const attemptNegotiation = async attempt => {
+    const negotiationToken = inboundNegotiationToken;
     try {
       return await negotiateAgentOfferOnce(callId, sdpOffer, iceServers, {
         direction,
@@ -432,10 +477,13 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         usePrewarmedStream: usePrewarmedStream && attempt === 1,
         peerId: options.peerId,
         timing,
+        deferPost: options.deferPost === true,
+        negotiationToken,
       });
     } catch (err) {
-      cleanupInboundWebRTC();
+      if (!err.cancelled) cleanupInboundWebRTC();
       if (
+        !err.cancelled &&
         attempt < AGENT_WEBRTC_MAX_ATTEMPTS &&
         isRetryableAgentWebrtcError(err)
       ) {
@@ -457,11 +505,50 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
 // Expose handleAgentOffer so ActionCable handler can invoke it
 export { handleAgentOffer };
 
+function prepareInboundAgentAnswer(callId, agentOffer) {
+  if (!agentOffer?.sdp_offer) return null;
+  return handleAgentOffer(
+    callId,
+    agentOffer.sdp_offer,
+    agentOffer.ice_servers || [],
+    {
+      direction: 'incoming',
+      context: 'pre-accept-agent-answer',
+      usePrewarmedStream: true,
+      peerId: agentOffer.peer_id,
+      deferPost: true,
+    }
+  );
+}
+
+async function postPreparedInboundAgentAnswer(preparedAnswerPromise) {
+  if (!preparedAnswerPromise) return false;
+  const preparedAnswer = await preparedAnswerPromise;
+  if (!preparedAnswer?.postAgentAnswer) return false;
+  await preparedAnswer.postAgentAnswer();
+  return true;
+}
+
+function sameAgentOffer(firstOffer, secondOffer) {
+  if (!firstOffer?.sdp_offer || !secondOffer?.sdp_offer) return false;
+  if (firstOffer.sdp_offer !== secondOffer.sdp_offer) return false;
+  if ((firstOffer.peer_id || null) !== (secondOffer.peer_id || null)) {
+    return false;
+  }
+  return (
+    JSON.stringify(firstOffer.ice_servers || []) ===
+    JSON.stringify(secondOffer.ice_servers || [])
+  );
+}
+
 /**
  * Legacy mode: creates WebRTC session and posts SDP to backend (browser ↔ Meta).
  * Can be called from anywhere — composable, widget, or bubble.
  */
-async function doAcceptCall(call, { preconnectedAgent = false } = {}) {
+async function doAcceptCall(
+  call,
+  { preconnectedAgent = false, skipPrewarm = false } = {}
+) {
   // Server-relay mode: POST /accept without SDP. New Rails returns the media
   // server's Peer-B offer in the response as the synchronous source of truth;
   // the ActionCable agent_offer event remains as a fallback for older tabs and
@@ -469,7 +556,7 @@ async function doAcceptCall(call, { preconnectedAgent = false } = {}) {
   // browser WebRTC handshake, so a mic/ICE failure does not hide an already
   // accepted provider call from the agent UI.
   if (isServerRelayCall(call)) {
-    if (!preconnectedAgent) prepareInboundAudioStream();
+    if (!preconnectedAgent && !skipPrewarm) prepareInboundAudioStream();
     try {
       const { data } = await WhatsappCallsAPI.accept(call.id);
       return {
@@ -535,7 +622,8 @@ async function connectAgentOfferForActiveCall(
   callsStore,
   callId,
   agentOffer,
-  context
+  context,
+  { usePrewarmedStream } = {}
 ) {
   if (!agentOffer?.sdp_offer) return false;
 
@@ -548,9 +636,9 @@ async function connectAgentOfferForActiveCall(
       {
         direction: callsStore.activeCall?.direction,
         context,
-        usePrewarmedStream: isInboundDirection(
-          callsStore.activeCall?.direction
-        ),
+        usePrewarmedStream:
+          usePrewarmedStream ??
+          isInboundDirection(callsStore.activeCall?.direction),
         peerId: agentOffer.peer_id,
       }
     );
@@ -578,6 +666,51 @@ async function connectAgentOfferForActiveCall(
     );
     return false;
   }
+}
+
+async function connectPreparedOrFallbackAgentOffer({
+  callsStore,
+  activeCallData,
+  preparedAnswerPromise,
+  fallbackAgentOffer,
+  forceFreshStream = false,
+}) {
+  if (preparedAnswerPromise) {
+    try {
+      callsStore.updateActiveCall({ agentWebrtcConnecting: true });
+      await postPreparedInboundAgentAnswer(preparedAnswerPromise);
+      callsStore.updateActiveCall({
+        agentWebrtcConnected: true,
+        agentWebrtcConnecting: false,
+      });
+      callsStore.markActiveCallConnected();
+      callsStore.setReconnecting(false);
+      emitter.emit('whatsapp_call:agent_webrtc_connected');
+      return true;
+    } catch (err) {
+      callsStore.updateActiveCall({ agentWebrtcConnecting: false });
+      callsStore.setReconnecting(false);
+      if (isMediaLegClosedError(err)) {
+        handleMediaLegClosed(callsStore);
+        return false;
+      }
+      // Fallback to a fresh negotiation below. The provider call is already
+      // accepted, so keep UI state visible and do not drop the call.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[WhatsApp Call] Prepared inbound agent answer failed:',
+        err
+      );
+    }
+  }
+
+  return connectAgentOfferForActiveCall(
+    callsStore,
+    activeCallData.id,
+    fallbackAgentOffer,
+    'accept-response',
+    { usePrewarmedStream: !forceFreshStream }
+  );
 }
 
 /**
@@ -618,15 +751,17 @@ export async function acceptWhatsappCallById(callId) {
   }
 
   let serverRelay = false;
+  let preparedAgentAnswerPromise = null;
+  let preparedAgentOffer = null;
 
   try {
     serverRelay = isServerRelayCall(call);
-    let preconnectedAgent = false;
+    const preconnectedAgent = false;
 
     if (serverRelay) {
-      // Inbound Meta calls have a short accept window. Do not block the
-      // provider /accept call on browser WebRTC negotiation; answer the
-      // prepared agent offer only after Meta has accepted the call.
+      // Inbound Meta calls have a short accept window. Start browser-side
+      // negotiation immediately when an agent offer is already available, but
+      // keep /agent_answer gated until provider /accept succeeds.
       const activeCallData = {
         ...call,
         serverRelay: true,
@@ -636,9 +771,20 @@ export async function acceptWhatsappCallById(callId) {
         status: call.status || 'ringing',
       };
       callsStore.setActiveCall(activeCallData);
+      prepareInboundAudioStream();
+      preparedAgentOffer =
+        call.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
+      preparedAgentAnswerPromise = prepareInboundAgentAnswer(
+        call.id,
+        preparedAgentOffer
+      );
+      preparedAgentAnswerPromise?.catch(() => {});
     }
 
-    const result = await doAcceptCall(call, { preconnectedAgent });
+    const result = await doAcceptCall(call, {
+      preconnectedAgent,
+      skipPrewarm: preparedAgentAnswerPromise !== null,
+    });
 
     callsStore.removeIncomingCall(call.callId);
 
@@ -661,24 +807,37 @@ export async function acceptWhatsappCallById(callId) {
           : result.acceptData?.status || call.status,
     };
     callsStore.setActiveCall(activeCallData);
-    const agentOffer = preconnectedAgent
+    const freshOfferReplacesPrepared = Boolean(
+      preparedAgentOffer &&
+        result.agentOffer &&
+        !sameAgentOffer(result.agentOffer, preparedAgentOffer)
+    );
+    const preparedAnswerPromiseForConnect = freshOfferReplacesPrepared
       ? null
-      : result.agentOffer ||
-        call.agentOffer ||
-        callsStore.consumePendingAgentOffer(activeCallData);
-    if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
-    if (agentOffer) {
-      await connectAgentOfferForActiveCall(
-        callsStore,
-        activeCallData.id,
-        agentOffer,
-        'accept-response'
-      );
+      : preparedAgentAnswerPromise;
+    if (!preparedAnswerPromiseForConnect) {
+      preparedAgentAnswerPromise?.catch(() => {});
+      if (freshOfferReplacesPrepared) cleanupInboundWebRTC();
     }
+    const fallbackAgentOffer =
+      result.agentOffer ||
+      preparedAgentOffer ||
+      call.agentOffer ||
+      callsStore.consumePendingAgentOffer(activeCallData);
+    if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
+    await connectPreparedOrFallbackAgentOffer({
+      callsStore,
+      activeCallData,
+      preparedAnswerPromise: preparedAnswerPromiseForConnect,
+      fallbackAgentOffer,
+      forceFreshStream: freshOfferReplacesPrepared,
+    });
 
     return { success: true, call: callsStore.activeCall, ...result };
   } catch (err) {
+    preparedAgentAnswerPromise?.catch(() => {});
     if (serverRelay) callsStore.clearActiveCall();
+    cleanupInboundWebRTC();
     callsStore.removeIncomingCall(call.callId);
     throw err;
   }
@@ -793,15 +952,17 @@ export function useWhatsappCallSession() {
     callError.value = null;
 
     let serverRelay = false;
+    let preparedAgentAnswerPromise = null;
+    let preparedAgentOffer = null;
 
     try {
       serverRelay = isServerRelayCall(call);
-      let preconnectedAgent = false;
+      const preconnectedAgent = false;
 
       if (serverRelay) {
-        // Inbound Meta calls have a short accept window. Do not block the
-        // provider /accept call on browser WebRTC negotiation; answer the
-        // prepared agent offer only after Meta has accepted the call.
+        // Inbound Meta calls have a short accept window. Start browser-side
+        // negotiation immediately when an agent offer is already available, but
+        // keep /agent_answer gated until provider /accept succeeds.
         const activeCallData = {
           ...call,
           serverRelay: true,
@@ -811,9 +972,21 @@ export function useWhatsappCallSession() {
           status: call.status || 'ringing',
         };
         callsStore.setActiveCall(activeCallData);
+        prepareInboundAudioStream();
+        preparedAgentOffer =
+          call.agentOffer ||
+          callsStore.consumePendingAgentOffer(activeCallData);
+        preparedAgentAnswerPromise = prepareInboundAgentAnswer(
+          call.id,
+          preparedAgentOffer
+        );
+        preparedAgentAnswerPromise?.catch(() => {});
       }
 
-      const result = await doAcceptCall(call, { preconnectedAgent });
+      const result = await doAcceptCall(call, {
+        preconnectedAgent,
+        skipPrewarm: preparedAgentAnswerPromise !== null,
+      });
       callsStore.removeIncomingCall(call.callId);
 
       const existingActiveCall = callsStore.activeCall;
@@ -834,18 +1007,31 @@ export function useWhatsappCallSession() {
             : result.acceptData?.status || call.status,
       };
       callsStore.setActiveCall(activeCallData);
-      const agentOffer = preconnectedAgent
-        ? null
-        : result.agentOffer ||
-          call.agentOffer ||
-          callsStore.consumePendingAgentOffer(activeCallData);
-      if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
-      await connectAgentOfferForActiveCall(
-        callsStore,
-        activeCallData.id,
-        agentOffer,
-        'accept-response'
+      const freshOfferReplacesPrepared = Boolean(
+        preparedAgentOffer &&
+          result.agentOffer &&
+          !sameAgentOffer(result.agentOffer, preparedAgentOffer)
       );
+      const preparedAnswerPromiseForConnect = freshOfferReplacesPrepared
+        ? null
+        : preparedAgentAnswerPromise;
+      if (!preparedAnswerPromiseForConnect) {
+        preparedAgentAnswerPromise?.catch(() => {});
+        if (freshOfferReplacesPrepared) cleanupInboundWebRTC();
+      }
+      const fallbackAgentOffer =
+        result.agentOffer ||
+        preparedAgentOffer ||
+        call.agentOffer ||
+        callsStore.consumePendingAgentOffer(activeCallData);
+      if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
+      await connectPreparedOrFallbackAgentOffer({
+        callsStore,
+        activeCallData,
+        preparedAnswerPromise: preparedAnswerPromiseForConnect,
+        fallbackAgentOffer,
+        forceFreshStream: freshOfferReplacesPrepared,
+      });
 
       // In legacy mode, WebRTC is already established so start timer now.
       // In server-relay mode, timer starts when handleAgentOffer completes
@@ -855,6 +1041,8 @@ export function useWhatsappCallSession() {
       }
     } catch (err) {
       if (serverRelay) callsStore.clearActiveCall();
+      preparedAgentAnswerPromise?.catch(() => {});
+      cleanupInboundWebRTC();
       callError.value =
         err.name === 'NotAllowedError'
           ? t('WHATSAPP_CALL.MIC_DENIED')

@@ -54,6 +54,12 @@ class FakeRTCPeerConnection {
   close = vi.fn();
 }
 
+const flushMicrotasks = (count = 1) =>
+  Array.from({ length: count }).reduce(
+    promise => promise.then(() => Promise.resolve()),
+    Promise.resolve()
+  );
+
 describe('useWhatsappCallSession', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -142,6 +148,207 @@ describe('useWhatsappCallSession', () => {
     );
   });
 
+  it('prepares inbound browser answer while accept is in flight but posts only after accept succeeds', async () => {
+    let resolveAccept;
+    let acceptResolved = false;
+    const pcs = [];
+    global.RTCPeerConnection = vi.fn(() => {
+      const pc = new FakeRTCPeerConnection();
+      pcs.push(pc);
+      return pc;
+    });
+
+    const callsStore = useWhatsappCallsStore();
+    callsStore.addIncomingCall({
+      id: 52,
+      callId: 'wacid-52',
+      status: 'ringing',
+      direction: 'incoming',
+      inboxId: 57,
+      conversationId: 13752,
+      conversationDisplayId: 492,
+      mediaServerEnabled: true,
+      mediaSessionId: 'sess-52',
+      agentOffer: {
+        sdp_offer: 'prepared-agent-offer-sdp',
+        ice_servers: [],
+        peer_id: 'peer-52',
+      },
+      caller: { name: 'Ahan' },
+    });
+    WhatsappCallsAPI.accept.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveAccept = data => {
+            acceptResolved = true;
+            resolve(data);
+          };
+        })
+    );
+    WhatsappCallsAPI.agentAnswer.mockImplementation(() => {
+      expect(acceptResolved).toBe(true);
+      return Promise.resolve({ data: { success: true } });
+    });
+
+    const resultPromise = acceptWhatsappCallById(52);
+    await flushMicrotasks(100);
+
+    expect(WhatsappCallsAPI.accept).toHaveBeenCalledWith(52);
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(WhatsappCallsAPI.agentAnswer).not.toHaveBeenCalled();
+    expect(pcs[0].setRemoteDescription).toHaveBeenCalledWith({
+      type: 'offer',
+      sdp: 'prepared-agent-offer-sdp',
+    });
+    expect(pcs[0].createAnswer).toHaveBeenCalled();
+    expect(pcs[0].setLocalDescription).toHaveBeenCalled();
+
+    resolveAccept({
+      data: {
+        id: 52,
+        status: 'in_progress',
+        media_session_id: 'sess-52',
+      },
+    });
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      52,
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'incoming',
+        context: 'pre-accept-agent-answer',
+        stages: expect.objectContaining({
+          agent_answer_ready_ms: expect.any(Number),
+          agent_answer_post_start_ms: expect.any(Number),
+        }),
+      }),
+      'peer-52'
+    );
+  });
+
+  it('cancels the prepared inbound answer when provider accept fails', async () => {
+    let resolveMedia;
+    const lateStop = vi.fn();
+    navigator.mediaDevices.getUserMedia.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveMedia = resolve;
+        })
+    );
+
+    const callsStore = useWhatsappCallsStore();
+    callsStore.addIncomingCall({
+      id: 53,
+      callId: 'wacid-53',
+      status: 'ringing',
+      direction: 'incoming',
+      inboxId: 57,
+      conversationId: 13753,
+      conversationDisplayId: 493,
+      mediaServerEnabled: true,
+      mediaSessionId: 'sess-53',
+      agentOffer: {
+        sdp_offer: 'prepared-agent-offer-sdp',
+        ice_servers: [],
+      },
+      caller: { name: 'Ahan' },
+    });
+    WhatsappCallsAPI.accept.mockRejectedValue({ response: { status: 422 } });
+
+    const resultPromise = acceptWhatsappCallById(53);
+    await flushMicrotasks(10);
+    await expect(resultPromise).rejects.toMatchObject({
+      response: { status: 422 },
+    });
+
+    resolveMedia({ getTracks: () => [{ stop: lateStop }] });
+    await flushMicrotasks(10);
+
+    expect(WhatsappCallsAPI.agentAnswer).not.toHaveBeenCalled();
+    expect(lateStop).toHaveBeenCalled();
+    expect(callsStore.activeCall).toBeNull();
+    expect(callsStore.incomingCalls).toHaveLength(0);
+  });
+
+  it('uses a fresh mic/WebRTC path when accept returns a different agent offer', async () => {
+    let resolveStaleMedia;
+    const staleStop = vi.fn();
+    const freshStop = vi.fn();
+    const staleStream = { getTracks: () => [{ stop: staleStop }] };
+    const freshStream = { getTracks: () => [{ stop: freshStop }] };
+    navigator.mediaDevices.getUserMedia
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveStaleMedia = resolve;
+          })
+      )
+      .mockResolvedValueOnce(freshStream);
+
+    const pcs = [];
+    global.RTCPeerConnection = vi.fn(() => {
+      const pc = new FakeRTCPeerConnection();
+      pcs.push(pc);
+      return pc;
+    });
+
+    const callsStore = useWhatsappCallsStore();
+    callsStore.addIncomingCall({
+      id: 54,
+      callId: 'wacid-54',
+      status: 'ringing',
+      direction: 'incoming',
+      inboxId: 57,
+      conversationId: 13754,
+      conversationDisplayId: 494,
+      mediaServerEnabled: true,
+      mediaSessionId: 'sess-54',
+      agentOffer: {
+        sdp_offer: 'stale-prepared-agent-offer-sdp',
+        ice_servers: [],
+        peer_id: 'stale-peer',
+      },
+      caller: { name: 'Ahan' },
+    });
+    WhatsappCallsAPI.accept.mockResolvedValue({
+      data: {
+        id: 54,
+        status: 'in_progress',
+        media_session_id: 'sess-54',
+        agent_offer: {
+          sdp_offer: 'fresh-accept-agent-offer-sdp',
+          ice_servers: [],
+          peer_id: 'fresh-peer',
+        },
+      },
+    });
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const result = await acceptWhatsappCallById(54);
+
+    expect(result.success).toBe(true);
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(pcs).toHaveLength(1);
+    expect(pcs[0].setRemoteDescription).toHaveBeenCalledWith({
+      type: 'offer',
+      sdp: 'fresh-accept-agent-offer-sdp',
+    });
+    expect(freshStop).not.toHaveBeenCalled();
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      54,
+      'agent-answer-sdp',
+      expect.objectContaining({ context: 'accept-response' }),
+      'fresh-peer'
+    );
+
+    resolveStaleMedia(staleStream);
+    await flushMicrotasks(10);
+    expect(staleStop).toHaveBeenCalled();
+    expect(freshStop).not.toHaveBeenCalled();
+  });
+
   it('accepts the Meta call before connecting a prepared inbound agent offer', async () => {
     const callsStore = useWhatsappCallsStore();
     callsStore.addIncomingCall({
@@ -178,7 +385,7 @@ describe('useWhatsappCallSession', () => {
       'agent-answer-sdp',
       expect.objectContaining({
         direction: 'incoming',
-        context: 'accept-response',
+        context: 'pre-accept-agent-answer',
         stages: expect.any(Object),
       })
     );
@@ -383,7 +590,7 @@ describe('useWhatsappCallSession', () => {
     expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
       49,
       'agent-answer-sdp',
-      expect.objectContaining({ context: 'accept-response' })
+      expect.objectContaining({ context: 'pre-accept-agent-answer' })
     );
   });
 
