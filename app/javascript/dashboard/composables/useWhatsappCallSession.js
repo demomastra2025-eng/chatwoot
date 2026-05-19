@@ -125,7 +125,10 @@ function stopAndUploadRecording(callId) {
   mediaRecorder = null;
 }
 
-function waitForIceGatheringComplete(pc) {
+function waitForIceGathering(
+  pc,
+  { timeoutMs, firstCandidate = false, warning }
+) {
   return new Promise((resolve, reject) => {
     if (pc.iceGatheringState === 'complete') {
       resolve();
@@ -137,20 +140,25 @@ function waitForIceGatheringComplete(pc) {
     const cleanup = () => {
       clearTimeout(timeout);
       pc.onicegatheringstatechange = null;
+      pc.onicecandidate = null;
       pc.oniceconnectionstatechange = null;
     };
 
     timeout = setTimeout(() => {
       cleanup();
       // eslint-disable-next-line no-console
-      console.warn(
-        '[WhatsApp Call] ICE gathering timed out, sending partial SDP'
-      );
+      console.warn(warning);
       resolve();
-    }, 10000);
+    }, timeoutMs);
 
     pc.onicegatheringstatechange = () => {
       if (pc.iceGatheringState === 'complete') {
+        cleanup();
+        resolve();
+      }
+    };
+    pc.onicecandidate = event => {
+      if (firstCandidate && event.candidate) {
         cleanup();
         resolve();
       }
@@ -161,6 +169,22 @@ function waitForIceGatheringComplete(pc) {
         reject(new Error('ICE connection failed'));
       }
     };
+  });
+}
+
+function waitForFastAgentAnswerSdp(pc) {
+  return waitForIceGathering(pc, {
+    timeoutMs: 750,
+    firstCandidate: true,
+    warning:
+      '[WhatsApp Call] ICE gathering still running, sending fast partial SDP',
+  });
+}
+
+function waitForIceGatheringComplete(pc) {
+  return waitForIceGathering(pc, {
+    timeoutMs: 10000,
+    warning: '[WhatsApp Call] ICE gathering timed out, sending partial SDP',
   });
 }
 
@@ -180,7 +204,7 @@ function isServerRelayCall(call) {
  * for both inbound accept and outbound connect flows.
  *
  * Flow: getUserMedia -> RTCPeerConnection(iceServers) -> setRemoteDescription(offer)
- *       -> createAnswer -> waitForICE -> POST /agent_answer
+ *       -> createAnswer -> fast initial ICE wait -> POST /agent_answer
  */
 async function handleAgentOffer(callId, sdpOffer, iceServers) {
   cleanupInboundWebRTC();
@@ -216,7 +240,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers) {
     await pc.setRemoteDescription({ type: 'offer', sdp: sdpOffer });
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await waitForIceGatheringComplete(pc);
+    await waitForFastAgentAnswerSdp(pc);
 
     const completeSdp = pc.localDescription.sdp;
     await WhatsappCallsAPI.agentAnswer(callId, completeSdp);

@@ -176,6 +176,8 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 		"session_id", b.sessionID,
 		"codec", track.Codec().MimeType,
 	)
+	var packetCount uint64
+	var payloadBytes uint64
 
 	for {
 		select {
@@ -188,9 +190,20 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 		if readErr != nil {
 			slog.Debug("bridge: Meta track read ended",
 				"session_id", b.sessionID,
+				"packets", packetCount,
+				"payload_bytes", payloadBytes,
 				"error", readErr,
 			)
 			return
+		}
+		packetCount++
+		payloadBytes += uint64(len(pkt.Payload))
+		if packetCount == 1 || packetCount%200 == 0 {
+			slog.Info("bridge: Meta audio RTP flowing to agents",
+				"session_id", b.sessionID,
+				"packets", packetCount,
+				"payload_bytes", payloadBytes,
+			)
 		}
 
 		// Record customer audio.
@@ -216,15 +229,7 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 			if ap.Role == peer.RoleInjectOnly {
 				continue // inject-only peers do not receive audio
 			}
-			raw, marshalErr := pkt.Marshal()
-			if marshalErr != nil {
-				slog.Warn("bridge: failed to marshal RTP packet",
-					"session_id", b.sessionID,
-					"error", marshalErr,
-				)
-				continue
-			}
-			if _, writeErr := ap.LocalTrack().Write(raw); writeErr != nil {
+			if writeErr := ap.LocalTrack().WriteRTP(pkt); writeErr != nil {
 				slog.Debug("bridge: failed to write to agent peer",
 					"session_id", b.sessionID,
 					"peer_id", ap.ID,
@@ -264,6 +269,8 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 		"peer_id", ap.ID,
 		"codec", track.Codec().MimeType,
 	)
+	var packetCount uint64
+	var payloadBytes uint64
 
 	for {
 		select {
@@ -277,9 +284,21 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 			slog.Debug("bridge: agent track read ended",
 				"session_id", b.sessionID,
 				"peer_id", ap.ID,
+				"packets", packetCount,
+				"payload_bytes", payloadBytes,
 				"error", readErr,
 			)
 			return
+		}
+		packetCount++
+		payloadBytes += uint64(len(pkt.Payload))
+		if packetCount == 1 || packetCount%200 == 0 {
+			slog.Info("bridge: agent audio RTP flowing to Meta",
+				"session_id", b.sessionID,
+				"peer_id", ap.ID,
+				"packets", packetCount,
+				"payload_bytes", payloadBytes,
+			)
 		}
 
 		// Only active peers send audio to Meta.
@@ -305,15 +324,7 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 		b.mu.RUnlock()
 
 		// Forward to Meta.
-		raw, marshalErr := pkt.Marshal()
-		if marshalErr != nil {
-			slog.Warn("bridge: failed to marshal agent RTP packet",
-				"session_id", b.sessionID,
-				"error", marshalErr,
-			)
-			continue
-		}
-		if _, writeErr := b.metaPeer.LocalTrack().Write(raw); writeErr != nil {
+		if writeErr := b.metaPeer.LocalTrack().WriteRTP(pkt); writeErr != nil {
 			slog.Debug("bridge: failed to write to Meta peer",
 				"session_id", b.sessionID,
 				"error", writeErr,

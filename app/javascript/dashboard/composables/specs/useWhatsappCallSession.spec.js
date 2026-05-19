@@ -2,6 +2,7 @@ import { describe, it, beforeEach, expect, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import {
   acceptWhatsappCallById,
+  handleAgentOffer,
   WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE,
 } from '../useWhatsappCallSession';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
@@ -34,6 +35,7 @@ class FakeRTCPeerConnection {
     this.localDescription = { sdp: 'agent-answer-sdp' };
     this.iceGatheringState = 'complete';
     this.ontrack = null;
+    this.onicecandidate = null;
   }
 
   addTrack = vi.fn();
@@ -209,5 +211,37 @@ describe('useWhatsappCallSession', () => {
       message: WHATSAPP_CALL_MEDIA_LEG_CLOSED_MESSAGE,
       action: null,
     });
+  });
+
+  it('posts agent answer after the first ICE candidate instead of waiting for ICE gathering complete', async () => {
+    vi.useFakeTimers();
+
+    try {
+      global.RTCPeerConnection = vi.fn(() => {
+        const pc = new FakeRTCPeerConnection();
+        pc.iceGatheringState = 'gathering';
+        pc.setLocalDescription = vi.fn(async answer => {
+          pc.localDescription = answer;
+          setTimeout(() => {
+            pc.onicecandidate?.({ candidate: { candidate: 'candidate:1' } });
+          }, 25);
+        });
+        return pc;
+      });
+      WhatsappCallsAPI.agentAnswer.mockResolvedValue({
+        data: { success: true },
+      });
+
+      const answerPromise = handleAgentOffer(45, 'agent-offer-sdp', []);
+      await vi.advanceTimersByTimeAsync(25);
+      await answerPromise;
+
+      expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+        45,
+        'agent-answer-sdp'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -3,6 +3,7 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,8 +46,10 @@ type Recorder struct {
 	// period — browsers send mic RTP as soon as Peer B connects, ~3-5 s before
 	// the contact picks up, which would otherwise inflate the agent OGG and
 	// produce a recording much longer than the real conversation.
-	customerSeen bool
-	agentSeen    bool
+	customerSeen           bool
+	agentSeen              bool
+	customerPacketsWritten uint64
+	agentPacketsWritten    uint64
 
 	startedAt time.Time
 	finalized bool
@@ -116,6 +119,7 @@ func (r *Recorder) WriteCustomerRTP(pkt *rtp.Packet) error {
 	if err := r.customerWriter.WriteRTP(pkt); err != nil {
 		return fmt.Errorf("write customer RTP: %w", err)
 	}
+	r.customerPacketsWritten++
 	return nil
 }
 
@@ -139,6 +143,7 @@ func (r *Recorder) WriteAgentRTP(pkt *rtp.Packet) error {
 	if err := r.agentWriter.WriteRTP(pkt); err != nil {
 		return fmt.Errorf("write agent RTP: %w", err)
 	}
+	r.agentPacketsWritten++
 	return nil
 }
 
@@ -184,10 +189,15 @@ func (r *Recorder) Finalize() error {
 // stereo combined.ogg so playback and transcription receive a coherent file
 // with correct duration metadata.
 func (r *Recorder) buildCombinedFile() error {
-	customerExists := fileNonEmpty(r.customerFile)
-	agentExists := fileNonEmpty(r.agentFile)
+	customerExists := r.customerPacketsWritten > 0 && fileNonEmpty(r.customerFile)
+	agentExists := r.agentPacketsWritten > 0 && fileNonEmpty(r.agentFile)
 	if !customerExists && !agentExists {
-		return errors.New("build combined file: no per-direction recordings to merge")
+		slog.Info("recorder: no RTP packets recorded, skipping combined file",
+			"session_id", r.sessionID,
+			"customer_packets", r.customerPacketsWritten,
+			"agent_packets", r.agentPacketsWritten,
+		)
+		return nil
 	}
 
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -227,8 +237,13 @@ func (r *Recorder) buildCombinedFile() error {
 
 	args = append(args, "-c:a", "libopus", "-b:a", "48000", "-ar", "48000", "-ac", "1", r.combinedFile)
 
-	cmd := exec.Command(ffmpegPath, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	out, cmdErr := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("ffmpeg mix timed out after 6s")
+	}
 	if cmdErr != nil {
 		return fmt.Errorf("ffmpeg mix failed: %w (%s)", cmdErr, string(out))
 	}
