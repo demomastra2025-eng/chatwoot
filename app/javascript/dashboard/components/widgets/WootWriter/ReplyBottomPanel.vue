@@ -482,7 +482,7 @@ export default {
       <NextButton
         v-if="canInitiateWhatsappCall && !isOnPrivateNote && !isEditorDisabled"
         v-tooltip.top-end="$t('WHATSAPP_CALL.INITIATE_CALL')"
-        icon="i-ph-phone-bold"
+        icon="i-ph-phone"
         slate
         faded
         sm

@@ -24,12 +24,13 @@ RSpec.describe Whatsapp::CallService do
       Current.suppress_runtime_events = nil
     end
 
-    it 'marks the call terminal before calling the media server to avoid callback lock deadlocks' do
-      expect(media_client).to receive(:terminate_session).with('session-1') do
+    it 'marks the call terminal and asks Meta to terminate before closing media locally' do
+      expect(provider).to receive(:terminate_call).with(call.provider_call_id).ordered do
         expect(call.reload.status).to eq('completed')
         expect(call.end_reason).to eq('agent_terminated')
+        true
       end
-      expect(provider).to receive(:terminate_call).with(call.provider_call_id).and_return(true)
+      expect(media_client).to receive(:terminate_session).with('session-1').ordered
 
       described_class.new(call: call, agent: agent).terminate
 

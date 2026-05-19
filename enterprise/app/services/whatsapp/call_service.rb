@@ -77,8 +77,8 @@ class Whatsapp::CallService
     end
 
     if transitioned
-      terminate_media_session(media_session_id) if media_session_id.present?
       terminate_on_provider(provider_call_id)
+      terminate_media_session(media_session_id) if media_session_id.present?
       after_status_transition(status: 'completed')
     end
 
