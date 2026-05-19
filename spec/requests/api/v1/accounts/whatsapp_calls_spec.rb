@@ -118,7 +118,7 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
     end
 
     it 'accepts media-server mode without browser SDP answer and returns agent offer for race-free browser handshake' do
-      ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil,
+      ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil, media_session_id: nil,
                                    meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
       allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-2', 'meta_sdp_answer' => 'meta-answer' })
       allow(media_client).to receive(:generate_agent_offer).with('media-2').and_return({ 'sdp_offer' => 'agent-offer', 'ice_servers' => [] })
@@ -143,6 +143,36 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
           'ice_servers' => []
         }
       )
+    end
+
+    it 'returns a controlled conflict when media leg closes before agent offer during accept' do
+      ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil, media_session_id: nil,
+                                   meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
+      error = Whatsapp::MediaServerClient::SessionError.new(
+        'Media server error (409): media leg closed',
+        http_status: 409,
+        error_code: 'media_leg_closed'
+      )
+      allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-closed', 'meta_sdp_answer' => 'meta-answer' })
+      allow(media_client).to receive(:generate_agent_offer).with('media-closed').and_raise(error)
+      allow(media_client).to receive(:terminate_session).with('media-closed')
+      allow(provider_service).to receive(:pre_accept_call).with(ringing_call.provider_call_id, 'meta-answer').and_return(true)
+      allow(provider_service).to receive(:accept_call).with(ringing_call.provider_call_id, 'meta-answer').and_return(true)
+      allow(provider_service).to receive(:terminate_call).with(ringing_call.provider_call_id).and_return(true)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/accept",
+             headers: headers,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include(
+        'error' => 'media_leg_closed',
+        'code' => 'media_leg_closed',
+        'status' => 'media_leg_closed'
+      )
+      expect(ringing_call.reload).to have_attributes(status: 'ringing', media_session_id: nil, accepted_by_agent_id: nil)
     end
 
     it 'rejects a ringing call' do

@@ -45,6 +45,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     end
   rescue Whatsapp::CallErrors::NotRinging, Whatsapp::CallErrors::AlreadyAccepted => e
     render json: { error: e.message }, status: :unprocessable_entity
+  rescue Whatsapp::MediaServerClient::SessionError => e
+    if e.media_leg_closed?
+      Rails.logger.warn "[WHATSAPP CALL] accept media leg closed: call_id=#{@call.id} code=#{e.error_code} status=#{e.http_status}"
+      render_media_leg_closed
+    else
+      Rails.logger.error "[WHATSAPP CALL] accept failed: #{e.message}"
+      render json: { error: 'Failed to accept call' }, status: :internal_server_error
+    end
   rescue StandardError => e
     Rails.logger.error "[WHATSAPP CALL] accept failed: #{e.message}"
     render json: { error: 'Failed to accept call' }, status: :internal_server_error
@@ -108,9 +116,11 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     render json: { success: true }
   rescue Whatsapp::MediaServerClient::SessionError => e
     if e.media_leg_closed?
-      Rails.logger.warn "[WHATSAPP CALL] agent_answer media leg closed: call_id=#{@call.id} media_session_id=#{@call.media_session_id} code=#{e.error_code} status=#{e.http_status}"
-      render json: { error: 'media_leg_closed', code: 'media_leg_closed', status: 'media_leg_closed', message: 'Call media leg already closed' },
-             status: :conflict
+      Rails.logger.warn(
+        "[WHATSAPP CALL] agent_answer media leg closed: call_id=#{@call.id} " \
+        "media_session_id=#{@call.media_session_id} code=#{e.error_code} status=#{e.http_status}"
+      )
+      render_media_leg_closed
     else
       Rails.logger.error "[WHATSAPP CALL] agent_answer failed: #{e.message}"
       render json: { error: 'Failed to set agent answer' }, status: :internal_server_error
@@ -207,6 +217,15 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       conversation_display_id: call.conversation&.display_id,
       agent_offer: agent_offer&.slice('sdp_offer', 'ice_servers')
     }.compact
+  end
+
+  def render_media_leg_closed
+    render json: {
+      error: 'media_leg_closed',
+      code: 'media_leg_closed',
+      status: 'media_leg_closed',
+      message: 'Call media leg already closed'
+    }, status: :conflict
   end
 
   def create_outbound_call(conversation)

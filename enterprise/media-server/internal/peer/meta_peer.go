@@ -43,6 +43,13 @@ type MetaPeer struct {
 	closed bool
 }
 
+// metaAnsweringDTLSRole returns the DTLS role for answering Meta inbound SDP
+// offers. Keep this as an explicit helper so the WhatsApp Calling contract is
+// unit-tested and not accidentally reverted to passive/server.
+func metaAnsweringDTLSRole() webrtc.DTLSRole {
+	return webrtc.DTLSRoleClient
+}
+
 // NewMetaPeer creates a new Meta-side peer connection configured for the
 // given ICE servers and UDP port range. For incoming calls, sdpOffer contains
 // Meta's SDP offer; the method sets it as the remote description, creates an
@@ -56,14 +63,11 @@ func NewMetaPeer(cfg *config.Config, sdpOffer string, iceServers []webrtc.ICESer
 		return nil, "", fmt.Errorf("set UDP port range: %w", err)
 	}
 
-	// For inbound calls Meta doesn't know our DTLS fingerprint until Rails
-	// delivers the SDP answer via pre_accept_call / accept_call — which runs
-	// *after* create_session returns. If we're DTLS client (pion default when
-	// remote is actpass) we'd send ClientHello before Meta is listening for
-	// us and Meta would respond with a fatal alert. Answer as server so Meta
-	// becomes the client and only starts ClientHello after it has our
-	// fingerprint.
-	if err := se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer); err != nil {
+	// Meta's WhatsApp Calling examples and the existing browser-direct Rails
+	// fallback answer with a=setup:active. Production evidence showed Meta ICE
+	// connects but DTLS closes quickly when we answer as passive/server. Keep the
+	// media server aligned with the known-good contract: this side is DTLS client.
+	if err := se.SetAnsweringDTLSRole(metaAnsweringDTLSRole()); err != nil {
 		return nil, "", fmt.Errorf("set answering DTLS role: %w", err)
 	}
 	se.SetDTLSConnectContextMaker(func() (context.Context, func()) {

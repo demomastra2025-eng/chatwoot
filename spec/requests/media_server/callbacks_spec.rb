@@ -96,6 +96,23 @@ RSpec.describe 'Media server callbacks', type: :request do
     expect(callbacks['recording_file_size_bytes']).to eq(123)
   end
 
+  it 'finds recording callbacks by provider call id when media_session_id was not persisted yet' do
+    call.update!(media_session_id: nil)
+    expect(Whatsapp::CallRecordingFetchJob).to receive(:perform_later).with(call.id).once
+
+    with_modified_env(MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      post '/callbacks/media_server/recording_ready',
+           params: { session_id: 'early-session', account_id: account.id, call_id: call.provider_call_id, file_size_bytes: 96 },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    callbacks = call.reload.meta.dig('media_server', 'callbacks')
+    expect(callbacks['recording_ready_at']).to be_present
+    expect(callbacks['recording_file_size_bytes']).to eq(96)
+  end
+
   it 'processes session termination idempotently and avoids duplicate provider/cable side effects' do
     expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
     expect(ActionCable.server).to receive(:broadcast).once.with(
@@ -120,5 +137,29 @@ RSpec.describe 'Media server callbacks', type: :request do
     expect(call.reload.status).to eq('completed')
     expect(call.duration_seconds).to eq(7)
     expect(call.conversation.reload.additional_attributes['call_status']).to eq('completed')
+  end
+
+  it 'finds session termination by provider call id when media_session_id was not persisted yet' do
+    call.update!(status: 'ringing', media_session_id: nil, accepted_by_agent_id: nil)
+    expect(provider).to receive(:terminate_call).with(call.provider_call_id).once.and_return(true)
+    expect(ActionCable.server).to receive(:broadcast).once.with(
+      "account_#{account.id}",
+      hash_including(
+        event: 'whatsapp_call.ended',
+        data: hash_including(account_id: account.id, call_id: call.provider_call_id, status: 'failed')
+      )
+    )
+
+    with_modified_env(MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      post '/callbacks/media_server/session_terminated',
+           params: { session_id: 'early-session', account_id: account.id, call_id: call.provider_call_id, reason: 'meta_dtls_closed',
+                     duration_seconds: 0 },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call.reload).to have_attributes(status: 'failed', end_reason: 'meta_dtls_closed')
+    expect(call.conversation.reload.additional_attributes['call_status']).to eq('failed')
   end
 end

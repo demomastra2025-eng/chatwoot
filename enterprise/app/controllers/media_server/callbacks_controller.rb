@@ -33,10 +33,12 @@ class MediaServer::CallbacksController < ApplicationController
     call.with_lock do
       call.reload
       unless call.terminal?
-        was_answered = call.in_progress? || call.accepted_by_agent_id.present? || duration_seconds.to_i.positive?
+        was_answered = call.in_progress? || duration_seconds.to_i.positive?
         final_status = was_answered ? 'completed' : 'failed'
         attrs = { status: final_status, end_reason: reason }
         attrs[:duration_seconds] = duration_seconds if duration_seconds
+        attrs[:media_session_id] = params[:session_id] if call.media_session_id.blank? && params[:session_id].present?
+        attrs[:accepted_by_agent_id] = nil if final_status == 'failed'
         call.update!(attrs)
         transitioned = true
       end
@@ -94,7 +96,15 @@ class MediaServer::CallbacksController < ApplicationController
   end
 
   def find_call_by_session
-    Call.find_by(media_session_id: params[:session_id], account_id: params[:account_id])
+    account_id = params[:account_id]
+    session_id = params[:session_id].presence
+    call = Call.find_by(media_session_id: session_id, account_id: account_id) if session_id
+    return call if call
+
+    provider_call_id = params[:call_id].presence
+    return if provider_call_id.blank?
+
+    Call.find_by(provider_call_id: provider_call_id, account_id: account_id)
   end
 
   def mark_recording_ready!(call)
@@ -103,7 +113,9 @@ class MediaServer::CallbacksController < ApplicationController
     call.with_lock do
       call.reload
       unless call.recording.attached? || media_server_callback_marked?(call, 'recording_ready_at')
-        call.update!(meta: with_media_server_callback_mark(call, 'recording_ready_at'))
+        attrs = { meta: with_media_server_callback_mark(call, 'recording_ready_at') }
+        attrs[:media_session_id] = params[:session_id] if call.media_session_id.blank? && params[:session_id].present?
+        call.update!(attrs)
         enqueue_fetch = true
       end
     end
