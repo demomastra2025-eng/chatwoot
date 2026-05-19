@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -32,6 +33,19 @@ type Bridge struct {
 	cancel context.CancelFunc
 	mu     sync.RWMutex
 	active bool
+
+	metaToAgentPackets      uint64
+	metaToAgentPayloadBytes uint64
+	agentToMetaPackets      uint64
+	agentToMetaPayloadBytes uint64
+}
+
+// BridgeSnapshot is a point-in-time summary of RTP activity through a bridge.
+type BridgeSnapshot struct {
+	MetaToAgentPackets      uint64
+	MetaToAgentPayloadBytes uint64
+	AgentToMetaPackets      uint64
+	AgentToMetaPayloadBytes uint64
 }
 
 // NewBridge creates a new audio bridge for the given session. The bridge does
@@ -136,7 +150,14 @@ func (b *Bridge) Stop() {
 		b.cancel()
 	}
 
-	slog.Info("bridge: stopped", "session_id", b.sessionID)
+	stats := b.Snapshot()
+	slog.Info("bridge: stopped",
+		"session_id", b.sessionID,
+		"meta_to_agent_packets", stats.MetaToAgentPackets,
+		"meta_to_agent_payload_bytes", stats.MetaToAgentPayloadBytes,
+		"agent_to_meta_packets", stats.AgentToMetaPackets,
+		"agent_to_meta_payload_bytes", stats.AgentToMetaPayloadBytes,
+	)
 }
 
 // IsActive returns whether the bridge is currently forwarding audio.
@@ -144,6 +165,26 @@ func (b *Bridge) IsActive() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.active
+}
+
+func (b *Bridge) recordMetaPacket(payloadBytes int) {
+	atomic.AddUint64(&b.metaToAgentPackets, 1)
+	atomic.AddUint64(&b.metaToAgentPayloadBytes, uint64(payloadBytes))
+}
+
+func (b *Bridge) recordAgentPacket(payloadBytes int) {
+	atomic.AddUint64(&b.agentToMetaPackets, 1)
+	atomic.AddUint64(&b.agentToMetaPayloadBytes, uint64(payloadBytes))
+}
+
+// Snapshot returns bidirectional RTP counters for observability and terminate summaries.
+func (b *Bridge) Snapshot() BridgeSnapshot {
+	return BridgeSnapshot{
+		MetaToAgentPackets:      atomic.LoadUint64(&b.metaToAgentPackets),
+		MetaToAgentPayloadBytes: atomic.LoadUint64(&b.metaToAgentPayloadBytes),
+		AgentToMetaPackets:      atomic.LoadUint64(&b.agentToMetaPackets),
+		AgentToMetaPayloadBytes: atomic.LoadUint64(&b.agentToMetaPayloadBytes),
+	}
 }
 
 // forwardMetaToAgents reads RTP packets from the Meta peer's remote audio
@@ -197,7 +238,9 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 			return
 		}
 		packetCount++
-		payloadBytes += uint64(len(pkt.Payload))
+		payloadSize := len(pkt.Payload)
+		payloadBytes += uint64(payloadSize)
+		b.recordMetaPacket(payloadSize)
 		if packetCount == 1 || packetCount%200 == 0 {
 			slog.Info("bridge: Meta audio RTP flowing to agents",
 				"session_id", b.sessionID,
@@ -291,7 +334,9 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 			return
 		}
 		packetCount++
-		payloadBytes += uint64(len(pkt.Payload))
+		payloadSize := len(pkt.Payload)
+		payloadBytes += uint64(payloadSize)
+		b.recordAgentPacket(payloadSize)
 		if packetCount == 1 || packetCount%200 == 0 {
 			slog.Info("bridge: agent audio RTP flowing to Meta",
 				"session_id", b.sessionID,

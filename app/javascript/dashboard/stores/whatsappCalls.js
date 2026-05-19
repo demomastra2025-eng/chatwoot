@@ -5,6 +5,28 @@ import { defineStore } from 'pinia';
 // Used ONLY in legacy (browser-direct) mode. In server-relay mode outbound calls
 // go through the same inbound WebRTC path via handleAgentOffer.
 const outboundCall = { pc: null, stream: null, audio: null, callId: null };
+const PENDING_AGENT_OFFER_TTL_MS = 30000;
+const MAX_PENDING_AGENT_OFFERS = 20;
+
+function pendingOfferKeys(callLike = {}) {
+  return [
+    callLike.id ? `id:${callLike.id}` : null,
+    callLike.callId ? `call:${callLike.callId}` : null,
+    callLike.call_id ? `call:${callLike.call_id}` : null,
+  ].filter(Boolean);
+}
+
+function normalizeAgentOffer(data = {}) {
+  const sdpOffer = data.sdp_offer || data.sdpOffer;
+  if (!sdpOffer) return null;
+
+  return {
+    id: data.id,
+    call_id: data.call_id || data.callId,
+    sdp_offer: sdpOffer,
+    ice_servers: data.ice_servers || data.iceServers || [],
+  };
+}
 
 export function getOutboundCallState() {
   return outboundCall;
@@ -41,6 +63,10 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
     isReconnecting: false,
     // Seconds already elapsed when reconnecting — timer resumes from this offset
     callTimerOffset: 0,
+    // Agent offers can race ahead of activeCall creation. Keep them briefly
+    // in-memory by both Rails call id and provider call id so accept/initiate
+    // responses can consume the earliest available offer exactly once.
+    pendingAgentOffers: {},
   }),
 
   getters: {
@@ -103,12 +129,74 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
       this.callTimerOffset = seconds;
     },
 
+    prunePendingAgentOffers() {
+      const now = Date.now();
+      const entries = Object.entries(this.pendingAgentOffers).filter(
+        ([, record]) => record.expiresAt > now
+      );
+      this.pendingAgentOffers = Object.fromEntries(
+        entries.slice(-MAX_PENDING_AGENT_OFFERS)
+      );
+    },
+
+    storePendingAgentOffer(data) {
+      const offer = normalizeAgentOffer(data);
+      if (!offer) return;
+
+      this.prunePendingAgentOffers();
+      const record = {
+        offer,
+        expiresAt: Date.now() + PENDING_AGENT_OFFER_TTL_MS,
+      };
+      const updates = {};
+      pendingOfferKeys({ id: offer.id, callId: offer.call_id }).forEach(key => {
+        updates[key] = record;
+      });
+      this.pendingAgentOffers = { ...this.pendingAgentOffers, ...updates };
+      this.prunePendingAgentOffers();
+    },
+
+    consumePendingAgentOffer(callLike) {
+      this.prunePendingAgentOffers();
+      const keys = pendingOfferKeys(callLike);
+      const key = keys.find(candidate => this.pendingAgentOffers[candidate]);
+      if (!key) return null;
+
+      const record = this.pendingAgentOffers[key];
+      const next = { ...this.pendingAgentOffers };
+      keys.forEach(candidate => delete next[candidate]);
+      pendingOfferKeys({
+        id: record.offer.id,
+        callId: record.offer.call_id,
+      }).forEach(candidate => delete next[candidate]);
+      this.pendingAgentOffers = next;
+      return record.offer;
+    },
+
+    clearPendingAgentOffer(callLike) {
+      const keys = pendingOfferKeys(callLike);
+      const matchingRecords = keys
+        .map(key => this.pendingAgentOffers[key])
+        .filter(Boolean);
+      const next = { ...this.pendingAgentOffers };
+      keys.forEach(key => delete next[key]);
+      matchingRecords.forEach(record => {
+        pendingOfferKeys({
+          id: record.offer.id,
+          callId: record.offer.call_id,
+        }).forEach(key => delete next[key]);
+      });
+      this.pendingAgentOffers = next;
+    },
+
     handleCallAcceptedByOther(callId) {
       this.removeIncomingCall(callId);
+      this.clearPendingAgentOffer({ callId });
     },
 
     handleCallEnded(callId) {
       this.removeIncomingCall(callId);
+      this.clearPendingAgentOffer({ callId });
       if (this.activeCall?.callId === callId) {
         // Invoke cleanup BEFORE clearing activeCall so the callback can
         // check isMediaServerEnabled (which depends on activeCall.serverRelay)

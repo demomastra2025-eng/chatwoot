@@ -259,8 +259,9 @@ const initiateServerRelayCall = async () => {
 
     const outboundCallId = response.data?.call_id;
 
-    // Set active call — WebRTC setup happens when ActionCable delivers agent_offer
-    whatsappCallsStore.setActiveCall({
+    // Set active call before consuming any agent offer so fast answer events
+    // can be handled whether they came from the initiate response or ActionCable.
+    const activeCallData = {
       id: response.data?.id,
       callId: outboundCallId,
       direction: 'outbound',
@@ -272,11 +273,15 @@ const initiateServerRelayCall = async () => {
         phone: currentContact.value?.phone_number,
         avatar: currentContact.value?.thumbnail,
       },
-    });
-    await connectImmediateOutboundAgentOffer(
-      response.data?.id,
-      response.data?.agent_offer
-    );
+    };
+    whatsappCallsStore.setActiveCall(activeCallData);
+    const agentOffer =
+      response.data?.agent_offer ||
+      whatsappCallsStore.consumePendingAgentOffer(activeCallData);
+    if (response.data?.agent_offer) {
+      whatsappCallsStore.clearPendingAgentOffer(activeCallData);
+    }
+    await connectImmediateOutboundAgentOffer(response.data?.id, agentOffer);
   } catch (err) {
     const permissionStatus = err.response?.data?.status;
     if (

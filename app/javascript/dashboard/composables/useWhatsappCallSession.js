@@ -115,6 +115,41 @@ function nowMs() {
   return Date.now();
 }
 
+const AGENT_WEBRTC_MAX_ATTEMPTS = 2;
+const AGENT_WEBRTC_STEP_TIMEOUT_MS = 2500;
+const AGENT_WEBRTC_MEDIA_TIMEOUT_MS = 15000;
+
+function withTimeout(
+  promise,
+  timeoutMs,
+  stage,
+  { retryable = true, onLateResolve = null } = {}
+) {
+  let timeout = null;
+  let timedOut = false;
+  const guardedPromise = Promise.resolve(promise).then(value => {
+    if (timedOut) onLateResolve?.(value);
+    return value;
+  });
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      timedOut = true;
+      const error = new Error(`${stage} timed out`);
+      error.retryable = retryable;
+      error.stage = stage;
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([guardedPromise, timeoutPromise]).finally(() => {
+    clearTimeout(timeout);
+  });
+}
+
+function isRetryableAgentWebrtcError(error) {
+  return error?.retryable === true;
+}
+
 function createCallTiming(callId, { direction, context }) {
   const startedAt = nowMs();
   const stages = {};
@@ -247,7 +282,10 @@ function waitForIceGathering(
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'failed') {
         cleanup();
-        reject(new Error('ICE connection failed'));
+        const error = new Error('ICE connection failed');
+        error.retryable = true;
+        error.stage = 'ice_connection';
+        reject(error);
       }
     };
   });
@@ -287,6 +325,86 @@ function isServerRelayCall(call) {
  * Flow: getUserMedia -> RTCPeerConnection(iceServers) -> setRemoteDescription(offer)
  *       -> createAnswer -> fast initial ICE wait -> POST /agent_answer
  */
+async function negotiateAgentOfferOnce(
+  callId,
+  sdpOffer,
+  iceServers,
+  { direction, context, usePrewarmedStream, timing }
+) {
+  timing.mark('get_user_media_start');
+  const stream = usePrewarmedStream
+    ? await withTimeout(
+        takeInboundPrewarmedAudioStream(),
+        AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
+        'get_user_media',
+        { retryable: false, onLateResolve: stopStream }
+      )
+    : await withTimeout(
+        navigator.mediaDevices.getUserMedia({ audio: true }),
+        AGENT_WEBRTC_MEDIA_TIMEOUT_MS,
+        'get_user_media',
+        { retryable: false, onLateResolve: stopStream }
+      );
+  timing.mark('get_user_media_ok');
+  inboundStream = stream;
+
+  const servers = iceServers?.length
+    ? iceServers
+    : [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  const pc = new RTCPeerConnection({ iceServers: servers });
+  inboundPc = pc;
+
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+  pc.ontrack = event => {
+    const [remoteStream] = event.streams;
+    if (!remoteStream) return;
+    if (!inboundAudio) {
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+      inboundAudio = audio;
+    }
+    inboundAudio.srcObject = remoteStream;
+    inboundAudio.play().catch(() => {});
+
+    // No client-side recording in server-relay mode — the media server records
+  };
+
+  await withTimeout(
+    pc.setRemoteDescription({ type: 'offer', sdp: sdpOffer }),
+    AGENT_WEBRTC_STEP_TIMEOUT_MS,
+    'set_remote_description'
+  );
+  timing.mark('set_remote_description_ok');
+  const answer = await withTimeout(
+    pc.createAnswer(),
+    AGENT_WEBRTC_STEP_TIMEOUT_MS,
+    'create_answer'
+  );
+  timing.mark('create_answer_ok');
+  await withTimeout(
+    pc.setLocalDescription(answer),
+    AGENT_WEBRTC_STEP_TIMEOUT_MS,
+    'set_local_description'
+  );
+  timing.mark('set_local_description_ok');
+  await waitForFastAgentAnswerSdp(pc);
+  timing.mark('fast_ice_ready');
+
+  const completeSdp = pc.localDescription.sdp;
+  timing.mark('agent_answer_post_start');
+  await WhatsappCallsAPI.agentAnswer(callId, completeSdp, {
+    direction,
+    context,
+    stages: timing.stages,
+  });
+  timing.mark('agent_answer_ok');
+
+  return { success: true };
+}
+
 async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   const direction = options.direction || 'incoming';
   const context = options.context || 'agent-offer';
@@ -296,62 +414,33 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
   timing.mark('offer_received');
   cleanupInboundWebRTC({ keepPrewarmStream: usePrewarmedStream });
 
-  try {
-    timing.mark('get_user_media_start');
-    const stream = usePrewarmedStream
-      ? await takeInboundPrewarmedAudioStream()
-      : await navigator.mediaDevices.getUserMedia({ audio: true });
-    timing.mark('get_user_media_ok');
-    inboundStream = stream;
-
-    const servers = iceServers?.length
-      ? iceServers
-      : [{ urls: 'stun:stun.l.google.com:19302' }];
-
-    const pc = new RTCPeerConnection({ iceServers: servers });
-    inboundPc = pc;
-
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-    pc.ontrack = event => {
-      const [remoteStream] = event.streams;
-      if (!remoteStream) return;
-      if (!inboundAudio) {
-        const audio = document.createElement('audio');
-        audio.autoplay = true;
-        document.body.appendChild(audio);
-        inboundAudio = audio;
+  const attemptNegotiation = async attempt => {
+    try {
+      return await negotiateAgentOfferOnce(callId, sdpOffer, iceServers, {
+        direction,
+        context,
+        usePrewarmedStream: usePrewarmedStream && attempt === 1,
+        timing,
+      });
+    } catch (err) {
+      cleanupInboundWebRTC();
+      if (
+        attempt < AGENT_WEBRTC_MAX_ATTEMPTS &&
+        isRetryableAgentWebrtcError(err)
+      ) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[WhatsApp Call] Retrying agent WebRTC negotiation after local failure',
+          { callId, direction, context, attempt, stage: err.stage }
+        );
+        return attemptNegotiation(attempt + 1);
       }
-      inboundAudio.srcObject = remoteStream;
-      inboundAudio.play().catch(() => {});
+      timing.mark('agent_answer_error');
+      throw err;
+    }
+  };
 
-      // No client-side recording in server-relay mode — the media server records
-    };
-
-    await pc.setRemoteDescription({ type: 'offer', sdp: sdpOffer });
-    timing.mark('set_remote_description_ok');
-    const answer = await pc.createAnswer();
-    timing.mark('create_answer_ok');
-    await pc.setLocalDescription(answer);
-    timing.mark('set_local_description_ok');
-    await waitForFastAgentAnswerSdp(pc);
-    timing.mark('fast_ice_ready');
-
-    const completeSdp = pc.localDescription.sdp;
-    timing.mark('agent_answer_post_start');
-    await WhatsappCallsAPI.agentAnswer(callId, completeSdp, {
-      direction,
-      context,
-      stages: timing.stages,
-    });
-    timing.mark('agent_answer_ok');
-
-    return { success: true };
-  } catch (err) {
-    timing.mark('agent_answer_error');
-    cleanupInboundWebRTC();
-    throw err;
-  }
+  return attemptNegotiation(1);
 }
 
 // Expose handleAgentOffer so ActionCable handler can invoke it
@@ -533,10 +622,13 @@ export async function acceptWhatsappCallById(callId) {
       status: result.acceptData?.status || call.status,
     };
     callsStore.setActiveCall(activeCallData);
+    const agentOffer =
+      result.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
+    if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
     await connectAgentOfferForActiveCall(
       callsStore,
       activeCallData.id,
-      result.agentOffer,
+      agentOffer,
       'accept-response'
     );
 
@@ -672,10 +764,14 @@ export function useWhatsappCallSession() {
         status: result.acceptData?.status || call.status,
       };
       callsStore.setActiveCall(activeCallData);
+      const agentOffer =
+        result.agentOffer ||
+        callsStore.consumePendingAgentOffer(activeCallData);
+      if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
       await connectAgentOfferForActiveCall(
         callsStore,
         activeCallData.id,
-        result.agentOffer,
+        agentOffer,
         'accept-response'
       );
 

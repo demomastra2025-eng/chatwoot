@@ -317,9 +317,11 @@ class ActionCableConnector extends BaseActionCableConnector {
     // for Peer B) instead of sdp_answer.
     if (data.sdp_offer) {
       const activeCall = whatsappCallsStore.activeCall;
+      if (!activeCall || String(activeCall.callId) !== String(data.call_id)) {
+        whatsappCallsStore.storePendingAgentOffer(data);
+        return;
+      }
       if (
-        activeCall &&
-        String(activeCall.callId) === String(data.call_id) &&
         !activeCall.agentWebrtcConnected &&
         !activeCall.agentWebrtcConnecting
       ) {
@@ -412,12 +414,16 @@ class ActionCableConnector extends BaseActionCableConnector {
     const whatsappCallsStore = useWhatsappCallsStore();
     const activeCall = whatsappCallsStore.activeCall;
 
-    if (!activeCall) return;
+    if (!activeCall) {
+      whatsappCallsStore.storePendingAgentOffer(data);
+      return;
+    }
     // Verify this offer is for the current active call
     if (
       String(activeCall.callId) !== String(data.call_id) &&
       String(activeCall.id) !== String(data.id)
     ) {
+      whatsappCallsStore.storePendingAgentOffer(data);
       return;
     }
 

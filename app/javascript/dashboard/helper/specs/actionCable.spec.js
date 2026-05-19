@@ -181,6 +181,50 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
+    it('keeps an early inbound agent offer until the call becomes active', () => {
+      const callsStore = useWhatsappCallsStore();
+
+      actionCable.onWhatsappCallAgentOffer({
+        id: 42,
+        call_id: 'provider-call-1',
+        sdp_offer: 'early-offer',
+        ice_servers: [],
+      });
+
+      expect(handleAgentOfferMock).not.toHaveBeenCalled();
+      expect(
+        callsStore.consumePendingAgentOffer({
+          id: 42,
+          callId: 'provider-call-1',
+        })
+      ).toMatchObject({
+        sdp_offer: 'early-offer',
+        ice_servers: [],
+      });
+    });
+
+    it('clears matching pending agent offers when a call ends before accept', () => {
+      const callsStore = useWhatsappCallsStore();
+      callsStore.storePendingAgentOffer({
+        id: 42,
+        call_id: 'provider-call-1',
+        sdp_offer: 'stale-offer',
+        ice_servers: [],
+      });
+
+      actionCable.onWhatsappCallEnded({
+        id: 42,
+        call_id: 'provider-call-1',
+      });
+
+      expect(
+        callsStore.consumePendingAgentOffer({
+          id: 42,
+          callId: 'provider-call-1',
+        })
+      ).toBeNull();
+    });
+
     it('ignores a late duplicate agent offer after synchronous accept response connected WebRTC', () => {
       const callsStore = useWhatsappCallsStore();
       callsStore.setActiveCall({

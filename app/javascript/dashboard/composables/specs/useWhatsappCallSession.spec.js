@@ -197,6 +197,56 @@ describe('useWhatsappCallSession', () => {
     );
   });
 
+  it('uses a pending early ActionCable agent offer when accept response has no offer', async () => {
+    const pcs = [];
+    global.RTCPeerConnection = vi.fn(() => {
+      const pc = new FakeRTCPeerConnection();
+      pcs.push(pc);
+      return pc;
+    });
+    const callsStore = useWhatsappCallsStore();
+    callsStore.storePendingAgentOffer({
+      id: 49,
+      call_id: 'wacid-49',
+      sdp_offer: 'early-actioncable-offer',
+      ice_servers: [],
+    });
+    WhatsappCallsAPI.show.mockResolvedValue({
+      data: {
+        id: 49,
+        call_id: 'wacid-49',
+        status: 'ringing',
+        direction: 'incoming',
+        inbox_id: 57,
+        conversation_id: 13749,
+        conversation_display_id: 489,
+        media_server_enabled: true,
+        caller: { name: 'Ahan' },
+      },
+    });
+    WhatsappCallsAPI.accept.mockResolvedValue({
+      data: {
+        id: 49,
+        status: 'in_progress',
+        media_session_id: 'sess-49',
+      },
+    });
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const result = await acceptWhatsappCallById(49);
+
+    expect(result.success).toBe(true);
+    expect(pcs[0].setRemoteDescription).toHaveBeenCalledWith({
+      type: 'offer',
+      sdp: 'early-actioncable-offer',
+    });
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      49,
+      'agent-answer-sdp',
+      expect.objectContaining({ context: 'accept-response' })
+    );
+  });
+
   it('keeps an accepted server-relay call active when local agent WebRTC answer fails', async () => {
     const consoleError = vi
       .spyOn(console, 'error')
@@ -399,5 +449,76 @@ describe('useWhatsappCallSession', () => {
       })
     );
     consoleInfo.mockRestore();
+  });
+
+  it('retries the agent WebRTC negotiation once when a local step stalls', async () => {
+    vi.useFakeTimers();
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const stalledPc = new FakeRTCPeerConnection();
+      stalledPc.setLocalDescription = vi.fn(() => new Promise(() => {}));
+      const retryPc = new FakeRTCPeerConnection();
+      const pcs = [stalledPc, retryPc];
+      global.RTCPeerConnection = vi.fn(() => pcs.shift());
+      WhatsappCallsAPI.agentAnswer.mockResolvedValue({
+        data: { success: true },
+      });
+
+      const answerPromise = handleAgentOffer(50, 'agent-offer-sdp', [], {
+        direction: 'incoming',
+        context: 'stall-retry',
+      });
+
+      await vi.advanceTimersByTimeAsync(3000);
+      await answerPromise;
+
+      expect(global.RTCPeerConnection).toHaveBeenCalledTimes(2);
+      expect(stalledPc.close).toHaveBeenCalled();
+      expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+        50,
+        'agent-answer-sdp',
+        expect.objectContaining({ context: 'stall-retry' })
+      );
+      expect(consoleWarn).toHaveBeenCalledWith(
+        '[WhatsApp Call] Retrying agent WebRTC negotiation after local failure',
+        expect.objectContaining({ callId: 50, attempt: 1 })
+      );
+    } finally {
+      consoleWarn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops a microphone stream that resolves after media acquisition timeout', async () => {
+    vi.useFakeTimers();
+    const lateStop = vi.fn();
+    let resolveMedia;
+    navigator.mediaDevices.getUserMedia.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveMedia = resolve;
+        })
+    );
+
+    try {
+      const answerPromise = handleAgentOffer(51, 'agent-offer-sdp', [], {
+        direction: 'outbound',
+        context: 'late-media-timeout',
+      });
+      const rejectionExpectation = expect(answerPromise).rejects.toThrow(
+        'get_user_media timed out'
+      );
+
+      await vi.advanceTimersByTimeAsync(15000);
+      await rejectionExpectation;
+
+      resolveMedia({ getTracks: () => [{ stop: lateStop }] });
+      await Promise.resolve();
+
+      expect(lateStop).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
