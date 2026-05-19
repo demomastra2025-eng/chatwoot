@@ -293,6 +293,45 @@ RSpec.describe Whatsapp::IncomingCallService do
       )
     end
 
+    it 'sets Meta answer without regenerating an agent offer when outbound browser leg was pre-created' do
+      media_client = instance_double(Whatsapp::MediaServerClient)
+      allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
+      allow(media_client).to receive(:set_meta_answer).with('media-out-pre', sdp_answer: "stored-answer\na=setup:active\n")
+      expect(media_client).not_to receive(:generate_agent_offer)
+      call = create(
+        :call,
+        account: account,
+        inbox: inbox,
+        contact: contact,
+        conversation: conversation,
+        direction: :outgoing,
+        status: 'ringing',
+        media_session_id: 'media-out-pre',
+        meta: { 'agent_offer_generated_at' => 1_776_000_000 }
+      )
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          calls: [
+            {
+              id: call.provider_call_id,
+              event: 'connect',
+              session: { sdp_type: 'answer', sdp: "stored-answer\na=setup:actpass\n" }
+            }
+          ]
+        }
+      ).perform
+
+      call.reload
+      expect(call.meta['sdp_answer']).to include('a=setup:active')
+      expect(call.meta['meta_answer_set_at']).to be_present
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        "account_#{account.id}",
+        hash_including(event: 'whatsapp_call.outbound_connected')
+      )
+    end
+
     it 'marks an outbound call in progress only after Meta sends ACCEPTED status' do
       timestamp = 1_776_000_000
       call = create(

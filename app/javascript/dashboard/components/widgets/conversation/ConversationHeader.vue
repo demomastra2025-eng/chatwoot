@@ -20,6 +20,11 @@ import {
   useWhatsappCallsStore,
   setOutboundCallProperty,
 } from 'dashboard/stores/whatsappCalls';
+import {
+  handleAgentOffer,
+  isMediaLegClosedError,
+  handleMediaLegClosed,
+} from 'dashboard/composables/useWhatsappCallSession';
 
 const props = defineProps({
   chat: {
@@ -189,10 +194,47 @@ const showPermissionStatusAlert = callStatus => {
   emitter.emit(BUS_EVENTS.SHOW_ALERT, { message, type: 'info' });
 };
 
+const connectImmediateOutboundAgentOffer = async (callId, agentOffer) => {
+  if (!agentOffer?.sdp_offer) return;
+
+  whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
+  try {
+    await handleAgentOffer(
+      callId,
+      agentOffer.sdp_offer,
+      agentOffer.ice_servers,
+      {
+        direction: 'outbound',
+        context: 'outbound-initiate-response',
+      }
+    );
+    whatsappCallsStore.updateActiveCall({
+      agentWebrtcConnected: true,
+      agentWebrtcConnecting: false,
+    });
+    if (whatsappCallsStore.activeCall?.metaAccepted) {
+      whatsappCallsStore.markActiveCallConnected();
+      emitter.emit('whatsapp_call:agent_webrtc_connected');
+    }
+  } catch (err) {
+    whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
+    if (isMediaLegClosedError(err)) {
+      handleMediaLegClosed(whatsappCallsStore);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.error(
+      '[WhatsApp Call] Failed to handle immediate outbound agent offer:',
+      err
+    );
+  }
+};
+
 /**
  * Server-relay mode: POST /initiate without SDP. The media server creates
- * Peer A (Meta-side) and later sends the agent Peer B offer via ActionCable
- * (whatsapp_call.outbound_connected with sdp_offer).
+ * Peer A (Meta-side) and returns the agent Peer B offer immediately so the
+ * browser leg is ready before Meta/customer answer events arrive. ActionCable
+ * remains a fallback for older in-flight calls.
  */
 const initiateServerRelayCall = async () => {
   if (isInitiatingCall.value || !currentChat.value?.id) return;
@@ -231,6 +273,10 @@ const initiateServerRelayCall = async () => {
         avatar: currentContact.value?.thumbnail,
       },
     });
+    await connectImmediateOutboundAgentOffer(
+      response.data?.id,
+      response.data?.agent_offer
+    );
   } catch (err) {
     const permissionStatus = err.response?.data?.status;
     if (

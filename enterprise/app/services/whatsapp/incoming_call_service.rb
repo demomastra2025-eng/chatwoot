@@ -1,6 +1,31 @@
 class Whatsapp::IncomingCallService
   FAILURE_REASONS = %w[failed error rejected busy invalid_offer cancelled canceled].freeze
 
+  def self.outbound_connect_cache_key(account_id, provider_call_id)
+    "whatsapp:outbound_connect:#{account_id}:#{provider_call_id}"
+  end
+
+  def self.cache_outbound_connect(account_id:, call_payload:)
+    provider_call_id = call_payload[:id]
+    return if provider_call_id.blank?
+
+    Redis::Alfred.set(
+      outbound_connect_cache_key(account_id, provider_call_id),
+      call_payload.to_h.to_json,
+      ex: 2.minutes.to_i
+    )
+  end
+
+  def self.pop_cached_outbound_connect(account_id:, provider_call_id:)
+    key = outbound_connect_cache_key(account_id, provider_call_id)
+    payload = Redis::Alfred.get(key)
+    Redis::Alfred.delete(key) if payload.present?
+    JSON.parse(payload).with_indifferent_access if payload.present?
+  rescue JSON::ParserError
+    Redis::Alfred.delete(key)
+    nil
+  end
+
   pattr_initialize [:inbox!, :params!]
 
   def perform
@@ -68,6 +93,7 @@ class Whatsapp::IncomingCallService
     if call.nil?
       return create_inbound_call(call_payload) if inbound_offer?(call_payload)
 
+      cache_unknown_outbound_connect(call_payload)
       Rails.logger.warn "[WHATSAPP CALL] Outbound connect for unknown call #{provider_call_id}; skipping"
       return
     end
@@ -81,6 +107,13 @@ class Whatsapp::IncomingCallService
 
   def inbound_offer?(call_payload)
     call_payload.dig(:session, :sdp_type).to_s.downcase == 'offer'
+  end
+
+  def cache_unknown_outbound_connect(call_payload)
+    return unless call_payload.dig(:session, :sdp_type).to_s.downcase == 'answer'
+    return if call_payload.dig(:session, :sdp).blank?
+
+    self.class.cache_outbound_connect(account_id: inbox.account_id, call_payload: call_payload)
   end
 
   def create_inbound_call(call_payload)
@@ -111,7 +144,8 @@ class Whatsapp::IncomingCallService
     end
 
     stored = false
-    should_finalize_server_relay = false
+    should_set_meta_answer = false
+    should_generate_agent_offer = false
 
     call.with_lock do
       call.reload
@@ -121,13 +155,14 @@ class Whatsapp::IncomingCallService
           call.update!(meta: meta.merge('sdp_answer' => sdp_answer))
           stored = true
         end
-        should_finalize_server_relay = call.media_session_id.present? && call.meta&.dig('agent_offer_generated_at').blank?
+        should_set_meta_answer = call.media_session_id.present? && call.meta&.dig('meta_answer_set_at').blank?
+        should_generate_agent_offer = call.media_session_id.present? && call.meta&.dig('agent_offer_generated_at').blank?
         sdp_answer = call.meta&.dig('sdp_answer') || sdp_answer
       end
     end
 
     if call.media_session_id.present?
-      finalize_outbound_server_relay(call, sdp_answer) if should_finalize_server_relay
+      finalize_outbound_server_relay(call, sdp_answer, generate_agent_offer: should_generate_agent_offer) if should_set_meta_answer
     elsif stored
       broadcast_outbound_call_connected(call, sdp_answer)
     end
@@ -137,6 +172,13 @@ class Whatsapp::IncomingCallService
     call.with_lock do
       call.reload
       call.update!(meta: (call.meta || {}).merge('agent_offer_generated_at' => Time.zone.now.to_i)) unless call.terminal?
+    end
+  end
+
+  def mark_meta_answer_set(call)
+    call.with_lock do
+      call.reload
+      call.update!(meta: (call.meta || {}).merge('meta_answer_set_at' => Time.zone.now.to_i)) unless call.terminal?
     end
   end
 
@@ -383,10 +425,15 @@ class Whatsapp::IncomingCallService
   end
 
   # Server-relay outbound: deliver Meta's SDP answer to the media server so it
-  # completes Peer A, then ask it for an SDP offer to send to the agent (Peer B).
-  def finalize_outbound_server_relay(call, sdp_answer)
+  # completes Peer A. Agent Peer B may already be pre-created from /initiate;
+  # only generate/broadcast a fallback offer for older tabs/calls that do not
+  # have an early browser leg.
+  def finalize_outbound_server_relay(call, sdp_answer, generate_agent_offer: true)
     client = Whatsapp::MediaServerClient.new
     client.set_meta_answer(call.media_session_id, sdp_answer: sdp_answer)
+    mark_meta_answer_set(call)
+    return unless generate_agent_offer
+
     agent_offer = client.generate_agent_offer(call.media_session_id)
 
     payload = {

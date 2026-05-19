@@ -292,12 +292,29 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(created_call.meta['sdp_offer']).to eq('v=0')
     end
 
-    it 'creates an outbound media-server ringing call without browser SDP' do
+    it 'creates an outbound media-server ringing call and returns an immediate agent offer' do
       channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
       allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-out-1', 'meta_sdp_offer' => 'meta-offer' })
+      allow(media_client).to receive(:generate_agent_offer).with('media-out-1').and_return(
+        { 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+      )
+      allow(media_client).to receive(:set_meta_answer).with('media-out-1', sdp_answer: 'early-answer')
       allow(provider_service).to receive(:initiate_call)
-        .with(contact.phone_number.delete('+'), 'meta-offer')
-        .and_return({ 'calls' => [{ 'id' => 'wacid.outbound-media' }] })
+        .with(contact.phone_number.delete('+'), 'meta-offer') do
+          Whatsapp::IncomingCallService.new(
+            inbox: channel.inbox,
+            params: {
+              calls: [
+                {
+                  id: 'wacid.outbound-media',
+                  event: 'connect',
+                  session: { sdp_type: 'answer', sdp: 'early-answer' }
+                }
+              ]
+            }
+          ).perform
+          { 'calls' => [{ 'id' => 'wacid.outbound-media' }] }
+        end
 
       with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
         post initiate_path,
@@ -307,9 +324,19 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       end
 
       expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        'media_session_id' => 'media-out-1',
+        'agent_offer' => {
+          'sdp_offer' => 'agent-offer',
+          'ice_servers' => []
+        }
+      )
       created_call = Call.find_by!(provider_call_id: 'wacid.outbound-media')
       expect(created_call).to have_attributes(status: 'ringing', media_session_id: 'media-out-1')
       expect(created_call.meta['sdp_offer']).to eq('meta-offer')
+      expect(created_call.meta['sdp_answer']).to eq('early-answer')
+      expect(created_call.meta['agent_offer_generated_at']).to be_present
+      expect(created_call.meta['meta_answer_set_at']).to be_present
     end
 
     it 'sends and stores a WhatsApp call permission request when Meta rejects outbound calling permission' do

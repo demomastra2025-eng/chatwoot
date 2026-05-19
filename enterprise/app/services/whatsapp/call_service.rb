@@ -117,7 +117,13 @@ class Whatsapp::CallService
       )
       media_session_id = session_response['session_id']
 
-      # Step 2: Send Go-generated SDP answer to Meta
+      # Step 2: Generate agent offer (Peer B) before provider accept. This
+      # shaves a full media-server round-trip from the caller's short accept
+      # window; the browser can answer as soon as /accept returns.
+      agent_offer = client.generate_agent_offer(media_session_id)
+      @agent_offer = agent_offer
+
+      # Step 3: Send Go-generated SDP answer to Meta
       pre_response = provider.pre_accept_call(call.provider_call_id, session_response['meta_sdp_answer'])
       raise Whatsapp::CallErrors::NotRinging, 'Meta pre_accept failed' unless pre_response
 
@@ -125,10 +131,6 @@ class Whatsapp::CallService
       raise Whatsapp::CallErrors::NotRinging, 'Meta accept failed' unless accept_response
 
       provider_accepted = true
-
-      # Step 3: Generate agent offer (Peer B)
-      agent_offer = client.generate_agent_offer(media_session_id)
-      @agent_offer = agent_offer
 
       # Step 4: Update call record
       call.with_lock do

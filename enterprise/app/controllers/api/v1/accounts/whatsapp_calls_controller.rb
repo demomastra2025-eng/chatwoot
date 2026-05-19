@@ -192,7 +192,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     call = create_outbound_call(conversation)
     message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: call, user: current_user)
     call.update!(message_id: message.id)
-    render json: { status: 'calling', call_id: call.provider_call_id, id: call.id, message_id: message.id }
+    render json: outbound_initiate_payload(call, message)
   rescue Whatsapp::CallErrors::NoCallPermission
     handle_no_call_permission(conversation)
   rescue ActiveRecord::RecordNotFound
@@ -203,6 +203,18 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   private
+
+  def outbound_initiate_payload(call, message)
+    payload = {
+      status: 'calling',
+      call_id: call.provider_call_id,
+      id: call.id,
+      message_id: message.id,
+      media_session_id: call.media_session_id
+    }.compact
+    payload[:agent_offer] = @outbound_agent_offer.slice('sdp_offer', 'ice_servers') if @outbound_agent_offer.present?
+    payload
+  end
 
   def media_server_accept_payload(call, agent_offer)
     {
@@ -329,24 +341,41 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     )
     session_id = session_response['session_id']
 
-    # Step 2: Send the media server's SDP offer to Meta to initiate the call
+    # Step 2: Prepare the browser-agent leg before calling Meta. This avoids
+    # adding an extra no-local-call-row window after Meta accepts /calls and
+    # lets the browser start answering as soon as /initiate returns.
+    @outbound_agent_offer = client.generate_agent_offer(session_id)
+
+    # Step 3: Send the media server's SDP offer to Meta to initiate the call
     sdp_offer = session_response['meta_sdp_offer']
     result = provider_service.initiate_call(contact_phone.delete('+'), sdp_offer)
     provider_call_id = extract_provider_call_id(result)
     raise ArgumentError, 'Provider call id not returned' if provider_call_id.blank?
 
-    current_account.calls.create!(
+    call = current_account.calls.create!(
       provider: :whatsapp,
       inbox: conversation.inbox, conversation: conversation, contact: conversation.contact,
       provider_call_id: provider_call_id, direction: :outgoing, status: 'ringing',
       accepted_by_agent_id: current_user.id,
       media_session_id: session_id,
-      meta: { sdp_offer: sdp_offer }
+      meta: { sdp_offer: sdp_offer, agent_offer_generated_at: Time.zone.now.to_i }
     )
+    replay_cached_outbound_connect(call)
+    call
   rescue StandardError
     terminate_provider_call(provider_service, provider_call_id)
     terminate_orphan_media_session(client, session_id)
     raise
+  end
+
+  def replay_cached_outbound_connect(call)
+    cached_payload = Whatsapp::IncomingCallService.pop_cached_outbound_connect(
+      account_id: current_account.id,
+      provider_call_id: call.provider_call_id
+    )
+    return if cached_payload.blank?
+
+    Whatsapp::IncomingCallService.new(inbox: call.inbox, params: { calls: [cached_payload] }).perform
   end
 
   def terminate_provider_call(provider_service, provider_call_id)

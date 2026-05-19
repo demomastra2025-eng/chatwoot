@@ -53,6 +53,7 @@ RSpec.describe Whatsapp::CallService do
       call.update!(status: 'ringing', accepted_by_agent_id: nil, meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
 
       expect(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-1', 'meta_sdp_answer' => 'answer' })
+      expect(media_client).to receive(:generate_agent_offer).with('media-1').and_return({ 'sdp_offer' => 'agent-offer', 'ice_servers' => [] })
       expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'answer').and_return(false)
       expect(provider).not_to receive(:accept_call)
       expect(provider).not_to receive(:terminate_call)
