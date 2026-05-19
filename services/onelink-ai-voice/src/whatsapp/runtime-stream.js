@@ -8,6 +8,7 @@ const DEFAULT_INPUT_TYPE = 'AUDIO_IN';
 function createWhatsappRuntimeMediaStreamFactory({ WebSocketImpl = WebSocket } = {}) {
   return async function whatsappRuntimeMediaStreamFactory({ request = {} } = {}) {
     const runtimeStream = request.runtime_stream || request.runtimeStream || {};
+    if (!runtimeStream || Object.keys(runtimeStream).length === 0) return null;
     const streamUrl = String(runtimeStream.stream_url || runtimeStream.streamUrl || '').trim();
     if (!streamUrl) throw new Error('runtime stream_url is required');
 

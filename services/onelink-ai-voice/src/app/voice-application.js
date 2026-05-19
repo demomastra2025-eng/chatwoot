@@ -233,7 +233,7 @@ class VoiceApplication {
       throw new Error('client.routeInbound is required');
     }
 
-    return this.client.routeInbound(routePayload(requestPayload, callRef));
+    return providedRouteDecision(requestPayload) || this.client.routeInbound(routePayload(requestPayload, callRef));
   }
 
   async safeBridgeEvent(event, session, requestPayload, routeDecision = {}, metadata = {}) {
@@ -685,7 +685,8 @@ class VoiceApplication {
   async startMediaStream(call, { session = null, requestPayload = {}, routeDecision = {} } = {}) {
     if (this.mediaStreamFactory) {
       try {
-        return await this.mediaStreamFactory(call);
+        const mediaStream = await this.mediaStreamFactory(call);
+        if (mediaStream) return mediaStream;
       } catch (error) {
         throw mediaStreamEstablishmentError(error?.message || 'media stream factory failed', 'mediaStreamFactory');
       }
@@ -1914,6 +1915,18 @@ function routePayload(requestPayload = {}, callRef) {
     app_ref: requestPayload.app_ref || requestPayload.appRef,
     media_session_ref: requestPayload.media_session_ref || requestPayload.mediaSessionRef
   });
+}
+
+function providedRouteDecision(requestPayload = {}) {
+  const candidate = requestPayload.routing || requestPayload.route_decision || requestPayload.routeDecision;
+  if (!candidate || typeof candidate !== 'object') return null;
+  const action = candidate.action || candidate.mode || 'ai';
+  return {
+    ...candidate,
+    action,
+    mode: candidate.mode || action,
+    reason: candidate.reason || 'whatsapp_cloud_pre_routed'
+  };
 }
 
 function bridgeEventPayload(event, session, requestPayload = {}, routeDecision = {}, metadata = {}) {

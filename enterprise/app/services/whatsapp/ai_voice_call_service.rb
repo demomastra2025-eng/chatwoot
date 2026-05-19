@@ -6,6 +6,7 @@ class Whatsapp::AiVoiceCallService
     broadcast_ai_answering
 
     media_session_id = nil
+    call_session = nil
     provider_accepted = false
 
     begin
@@ -17,11 +18,13 @@ class Whatsapp::AiVoiceCallService
       provider_accepted = true
       runtime_contract = create_runtime_agent!(media_session_id)
       call_session = ensure_call_session!(media_session_id, runtime_contract)
+      attach_runtime!(media_session_id, runtime_contract, call_session)
       mark_answered!(media_session_id, runtime_contract, call_session)
     rescue StandardError
       terminate_on_provider if provider_accepted
       terminate_media_session(media_session_id) if media_session_id.present?
       mark_failed!(terminal: provider_accepted)
+      mark_call_session_failed!(call_session) if call_session.present?
       raise
     end
 
@@ -35,6 +38,7 @@ class Whatsapp::AiVoiceCallService
     raise Whatsapp::CallErrors::NotRinging, 'Call is not in ringing state' unless call.ringing?
     raise Whatsapp::CallErrors::NotRinging, 'Call is not routed to AI voice' unless routing_decision.ai?
     raise Whatsapp::CallErrors::NotRinging, 'Media server is not enabled for AI voice call' unless call.media_server_enabled?
+    raise Whatsapp::CallErrors::NotRinging, 'AI voice runtime attach endpoint is not configured' unless runtime_client.enabled?
   end
 
   def create_media_session
@@ -91,6 +95,26 @@ class Whatsapp::AiVoiceCallService
     retry
   end
 
+  def attach_runtime!(media_session_id, runtime_contract, call_session)
+    runtime_client.attach_call(
+      call_ref: runtime_call_ref,
+      account_id: call.account_id,
+      inbox_id: call.inbox_id,
+      conversation_id: call.conversation_id,
+      whatsapp_call_id: call.id,
+      provider_call_id: call.provider_call_id,
+      media_session_id: media_session_id,
+      runtime_stream: runtime_contract,
+      call_session_id: call_session.id,
+      routing: {
+        action: routing_decision.action,
+        reason: routing_decision.reason,
+        conversation_status: routing_decision.conversation_status,
+        captain_assistant_id: routing_decision.assistant&.id
+      }.compact
+    )
+  end
+
   def mark_answered!(media_session_id, runtime_contract, call_session)
     call.with_lock do
       call.reload
@@ -118,6 +142,17 @@ class Whatsapp::AiVoiceCallService
       call.update!(attrs)
     end
     update_conversation_call_status('ai_failed')
+  end
+
+  def mark_call_session_failed!(call_session)
+    call_session.update!(
+      status: 'failed',
+      ended_at: call_session.ended_at || Time.current,
+      ended_by: call_session.ended_by || 'system',
+      end_reason: call_session.end_reason || 'ai_voice_runtime_attach_failed'
+    )
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP AI VOICE CALL] Failed to mark call session #{call_session&.id} failed: #{e.message}"
   end
 
   def ai_voice_meta(state, media_session_id = nil, runtime_contract = nil, call_session = nil)
@@ -199,5 +234,9 @@ class Whatsapp::AiVoiceCallService
 
   def media_client
     @media_client ||= Whatsapp::MediaServerClient.new
+  end
+
+  def runtime_client
+    @runtime_client ||= Whatsapp::AiVoiceRuntimeClient.new
   end
 end

@@ -4,6 +4,8 @@ const { GeminiLiveClient } = require('./realtime/gemini-live-client');
 const { VoiceApplication } = require('./app/voice-application');
 const { createHealthServer } = require('./diagnostics/health-server');
 const { startFonosterVoiceServer } = require('./fonoster/server');
+const { createWhatsappInternalHandler } = require('./whatsapp/internal-server');
+const { createWhatsappRuntimeMediaStreamFactory } = require('./whatsapp/runtime-stream');
 const { loadConfig } = require('./config');
 
 async function main() {
@@ -26,6 +28,7 @@ async function main() {
     outputMaxBufferedMs: config.outputMaxBufferedMs,
     postToolContinuationMs: config.postToolContinuationMs,
     clearOutputOnInterrupt: config.clearAudioOnInterrupt,
+    mediaStreamFactory: createWhatsappRuntimeMediaStreamFactory(),
     realtimeFactory: ({ context, onAudio, onTranscript, onToolCall, onInterrupt, onEvent }) => new GeminiLiveClient({
       apiKey: config.geminiApiKey,
       model: context.ai?.model || config.geminiModel,
@@ -48,7 +51,15 @@ async function main() {
     })
   });
 
-  const health = createHealthServer({ registry, port: config.apiPort });
+  const health = createHealthServer({
+    registry,
+    port: config.apiPort,
+    handlers: [createWhatsappInternalHandler({
+      app,
+      internalToken: config.internalToken,
+      path: config.whatsappAttachPath
+    })]
+  });
   await health.listen();
 
   const voiceServer = await startFonosterVoiceServer({

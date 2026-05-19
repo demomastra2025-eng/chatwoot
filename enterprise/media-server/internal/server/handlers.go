@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -29,8 +30,9 @@ var startTime = time.Now()
 
 // Handlers implements all HTTP API endpoint handlers for the media server.
 type Handlers struct {
-	cfg     *config.Config
-	manager *session.Manager
+	cfg                 *config.Config
+	manager             *session.Manager
+	runtimeStreamGrants sync.Map
 }
 
 // NewHandlers creates a new Handlers instance backed by the given session
@@ -160,6 +162,18 @@ type RuntimeAgentResponse struct {
 	ExpiresAt        time.Time `json:"expires_at"`
 }
 
+type runtimeStreamGrant struct {
+	SessionID        string
+	RuntimeSessionID string
+	Token            string
+	CallRef          string
+	AccountID        string
+	ConversationID   string
+	InboxID          string
+	ExpiresAt        time.Time
+	Consumed         bool
+}
+
 // HealthResponse is the JSON response for GET /health.
 type HealthResponse struct {
 	Status         string `json:"status"`
@@ -251,7 +265,7 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 // short-lived, one-time media stream attach contract for the AI voice runtime.
 func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	if h.manager == nil || h.manager.GetSession(sessionID) == nil {
+	if h.manager != nil && h.manager.GetSession(sessionID) == nil {
 		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
@@ -279,6 +293,31 @@ func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 		"runtime_session_id", resp.RuntimeSessionID,
 	)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// RuntimeStream is the authenticated-by-token skeleton endpoint for the
+// transport-neutral AI voice runtime stream. The current slice verifies the
+// one-time grant and reserves the session boundary; RTP/audio bridging is a
+// separate implementation step.
+func (h *Handlers) RuntimeStream(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	grant, ok, status, message := h.consumeRuntimeStreamGrant(sessionID, token)
+	if !ok {
+		writeError(w, status, message)
+		return
+	}
+
+	slog.Info("handler: runtime stream grant consumed",
+		"session_id", sessionID,
+		"runtime_session_id", grant.RuntimeSessionID,
+		"call_ref", grant.CallRef,
+		"account_id", grant.AccountID,
+	)
+	writeJSON(w, http.StatusNotImplemented, map[string]string{
+		"status":             "runtime_stream_reserved",
+		"runtime_session_id": grant.RuntimeSessionID,
+	})
 }
 
 // AgentOffer handles POST /sessions/{id}/agent-offer. It creates a new
@@ -854,15 +893,67 @@ func (h *Handlers) buildRuntimeAgentContract(sessionID string, req RuntimeAgentR
 	if strings.TrimSpace(host) == "" {
 		host = "localhost:4000"
 	}
+	runtimeSessionID := fmt.Sprintf("rt_%s_%d", sessionID, time.Now().UnixNano())
+	h.storeRuntimeStreamGrant(runtimeStreamGrant{
+		SessionID:        sessionID,
+		RuntimeSessionID: runtimeSessionID,
+		Token:            token,
+		CallRef:          strings.TrimSpace(req.CallRef),
+		AccountID:        strings.TrimSpace(req.AccountID),
+		ConversationID:   strings.TrimSpace(req.ConversationID),
+		InboxID:          strings.TrimSpace(req.InboxID),
+		ExpiresAt:        expiresAt,
+	})
 
 	return RuntimeAgentResponse{
-		RuntimeSessionID: fmt.Sprintf("rt_%s_%d", sessionID, time.Now().UnixNano()),
+		RuntimeSessionID: runtimeSessionID,
 		StreamURL:        fmt.Sprintf("ws://%s/sessions/%s/runtime-stream?token=%s", host, sessionID, token),
 		Codec:            "pcm_s16le",
 		InputSampleRate:  16000,
 		OutputSampleRate: 24000,
 		ExpiresAt:        expiresAt,
 	}, nil
+}
+
+func (h *Handlers) storeRuntimeStreamGrant(grant runtimeStreamGrant) {
+	if strings.TrimSpace(grant.Token) == "" {
+		return
+	}
+	h.runtimeStreamGrants.Store(grant.Token, grant)
+}
+
+func (h *Handlers) consumeRuntimeStreamGrant(sessionID string, token string) (runtimeStreamGrant, bool, int, string) {
+	if strings.TrimSpace(token) == "" {
+		return runtimeStreamGrant{}, false, http.StatusUnauthorized, "runtime stream token is required"
+	}
+
+	value, ok := h.runtimeStreamGrants.Load(token)
+	if !ok {
+		return runtimeStreamGrant{}, false, http.StatusUnauthorized, "runtime stream token is invalid"
+	}
+	grant, ok := value.(runtimeStreamGrant)
+	if !ok {
+		h.runtimeStreamGrants.Delete(token)
+		return runtimeStreamGrant{}, false, http.StatusUnauthorized, "runtime stream token is invalid"
+	}
+	if grant.SessionID != sessionID {
+		return runtimeStreamGrant{}, false, http.StatusUnauthorized, "runtime stream token is scoped to another session"
+	}
+	if time.Now().UTC().After(grant.ExpiresAt) {
+		h.runtimeStreamGrants.Delete(token)
+		return runtimeStreamGrant{}, false, http.StatusGone, "runtime stream token expired"
+	}
+	if grant.Consumed {
+		return runtimeStreamGrant{}, false, http.StatusConflict, "runtime stream token already consumed"
+	}
+
+	consumedGrant := grant
+	consumedGrant.Consumed = true
+	if !h.runtimeStreamGrants.CompareAndSwap(token, grant, consumedGrant) {
+		return runtimeStreamGrant{}, false, http.StatusConflict, "runtime stream token already consumed"
+	}
+
+	return grant, true, http.StatusOK, ""
 }
 
 func randomURLToken(size int) (string, error) {

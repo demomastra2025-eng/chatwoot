@@ -1,7 +1,11 @@
 const { createServer } = require('node:http');
 
-function createHealthServer({ registry = null, port = 8081 } = {}) {
+function createHealthServer({ registry = null, port = 8081, handlers = [] } = {}) {
   const server = createServer((req, res) => {
+    for (const handler of handlers) {
+      if (typeof handler === 'function' && handler(req, res)) return;
+    }
+
     res.setHeader('content-type', 'application/json');
     if (req.url === '/health' || req.url === '/ready') {
       const sessions = registry

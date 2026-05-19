@@ -20,6 +20,7 @@ class Whatsapp::CallRoutingService
     when 'open'
       human_decision(reason: 'conversation_open_operator_owns_call')
     when 'pending'
+      return human_decision(reason: 'conversation_pending_captain_missing') if assistant.blank?
       return ai_decision if ai_voice_enabled?
 
       human_decision(reason: 'conversation_pending_ai_voice_disabled')

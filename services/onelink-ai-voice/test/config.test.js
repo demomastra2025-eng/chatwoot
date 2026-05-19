@@ -43,6 +43,7 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
     VOICE_AGENT_ONELINK_AI_BASE_URL: 'http://rails:3000/',
     VOICE_AGENT_ONELINK_AI_EVENT_PATH: '/custom/event',
     VOICE_AGENT_ONELINK_AI_FINALIZE_PATH: '/custom/finalize',
+    VOICE_AGENT_WHATSAPP_ATTACH_PATH: '/custom/whatsapp/calls',
     VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS: '1500',
     VOICE_AGENT_REALTIME_POST_TOOL_CONTINUATION_MS: '2500',
     VOICE_AGENT_REALTIME_VAD_PREFIX_PADDING_MS: '140',
@@ -55,6 +56,7 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
   assert.equal(config.railsBaseUrl, 'http://rails:3000');
   assert.equal(config.eventPath, '/custom/event');
   assert.equal(config.finalizePath, '/custom/finalize');
+  assert.equal(config.whatsappAttachPath, '/custom/whatsapp/calls');
   assert.equal(config.outputMaxBufferedMs, 1500);
   assert.equal(config.postToolContinuationMs, 2500);
   assert.equal(config.prefixPaddingMs, 140);

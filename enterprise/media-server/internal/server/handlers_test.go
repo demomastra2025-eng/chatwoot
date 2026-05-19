@@ -1,10 +1,13 @@
 package server
 
 import (
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chatwoot/chatwoot-media-server/internal/config"
 )
@@ -75,8 +78,11 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	if !strings.HasPrefix(resp.RuntimeSessionID, "rt_media-session-1_") {
 		t.Fatalf("unexpected runtime session id %q", resp.RuntimeSessionID)
 	}
-	if !strings.HasPrefix(resp.StreamURL, "ws://media.internal/sessions/media-session-1/runtime-stream?token=") {
+	if !strings.HasPrefix(resp.StreamURL, "ws://media.internal/sessions/media-session-1/runtime-stream?") {
 		t.Fatalf("unexpected stream url %q", resp.StreamURL)
+	}
+	if tokenFromRuntimeStreamURL(t, resp.StreamURL) == "" {
+		t.Fatal("expected stream url token")
 	}
 	if strings.Contains(resp.StreamURL, "whatsapp:wa-call-1") {
 		t.Fatalf("stream url leaked call ref: %q", resp.StreamURL)
@@ -87,4 +93,42 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	if resp.ExpiresAt.IsZero() {
 		t.Fatal("expected non-zero expiration")
 	}
+}
+
+func TestRuntimeStreamGrantIsScopedOneTimeAndExpires(t *testing.T) {
+	h := NewHandlers(&config.Config{}, nil)
+	resp, err := h.buildRuntimeAgentContract("media-session-1", RuntimeAgentRequest{CallRef: "whatsapp:wa-call-1", AccountID: "42"}, "media.internal")
+	if err != nil {
+		t.Fatalf("expected runtime agent contract: %v", err)
+	}
+	token := tokenFromRuntimeStreamURL(t, resp.StreamURL)
+
+	if _, ok, status, _ := h.consumeRuntimeStreamGrant("wrong-session", token); ok || status != http.StatusUnauthorized {
+		t.Fatalf("expected wrong-session token to be rejected with 401, ok=%v status=%d", ok, status)
+	}
+	grant, ok, status, message := h.consumeRuntimeStreamGrant("media-session-1", token)
+	if !ok || status != http.StatusOK || message != "" {
+		t.Fatalf("expected token to be consumed once, ok=%v status=%d message=%q", ok, status, message)
+	}
+	if grant.RuntimeSessionID != resp.RuntimeSessionID {
+		t.Fatalf("expected runtime session id %q, got %q", resp.RuntimeSessionID, grant.RuntimeSessionID)
+	}
+	if _, ok, status, _ := h.consumeRuntimeStreamGrant("media-session-1", token); ok || status != http.StatusConflict {
+		t.Fatalf("expected duplicate token use to be rejected with 409, ok=%v status=%d", ok, status)
+	}
+
+	expiredToken := "expired-runtime-token"
+	h.storeRuntimeStreamGrant(runtimeStreamGrant{SessionID: "media-session-1", RuntimeSessionID: "rt-expired", Token: expiredToken, ExpiresAt: time.Now().UTC().Add(-time.Second)})
+	if _, ok, status, _ := h.consumeRuntimeStreamGrant("media-session-1", expiredToken); ok || status != http.StatusGone {
+		t.Fatalf("expected expired token to be rejected with 410, ok=%v status=%d", ok, status)
+	}
+}
+
+func tokenFromRuntimeStreamURL(t *testing.T, rawURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse stream url %q: %v", rawURL, err)
+	}
+	return parsed.Query().Get("token")
 }

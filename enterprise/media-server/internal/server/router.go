@@ -47,6 +47,7 @@ func (rt *Router) Build() http.Handler {
 	mux.Handle("GET /sessions/{id}", authMw(http.HandlerFunc(rt.handler.GetSession)))
 	mux.Handle("POST /sessions/{id}/agent-offer", authMw(http.HandlerFunc(rt.handler.AgentOffer)))
 	mux.Handle("POST /sessions/{id}/runtime-agent", authMw(http.HandlerFunc(rt.handler.RuntimeAgent)))
+	mux.Handle("GET /sessions/{id}/runtime-stream", http.HandlerFunc(rt.handler.RuntimeStream))
 	mux.Handle("POST /sessions/{id}/agent-answer", authMw(http.HandlerFunc(rt.handler.AgentAnswer)))
 	mux.Handle("POST /sessions/{id}/meta-answer", authMw(http.HandlerFunc(rt.handler.MetaAnswer)))
 	mux.Handle("POST /sessions/{id}/agent-reconnect", authMw(http.HandlerFunc(rt.handler.AgentReconnect)))
