@@ -39,3 +39,33 @@ func TestBridgeSnapshotRequiresBothRTPDirectionsForReadiness(t *testing.T) {
 		t.Fatal("expected missing agent->Meta RTP to fail readiness")
 	}
 }
+
+func TestBridgeAllowsOnlyOneMetaForwarder(t *testing.T) {
+	bridge := NewBridge("sess-test", nil, nil)
+
+	if !bridge.beginMetaForwarding() {
+		t.Fatal("expected first Meta forwarder to start")
+	}
+	if bridge.beginMetaForwarding() {
+		t.Fatal("expected duplicate Meta forwarder to be rejected")
+	}
+}
+
+func TestBridgeAllowsOnlyOneAgentForwarderPerPeer(t *testing.T) {
+	bridge := NewBridge("sess-test", nil, nil)
+
+	if !bridge.beginAgentForwarding("agent-1") {
+		t.Fatal("expected first agent forwarder to start")
+	}
+	if bridge.beginAgentForwarding("agent-1") {
+		t.Fatal("expected duplicate agent forwarder to be rejected")
+	}
+	if !bridge.beginAgentForwarding("agent-2") {
+		t.Fatal("expected different peer to start independently")
+	}
+
+	bridge.finishAgentForwarding("agent-1")
+	if !bridge.beginAgentForwarding("agent-1") {
+		t.Fatal("expected agent forwarder to restart after previous loop ended")
+	}
+}

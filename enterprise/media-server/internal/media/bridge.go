@@ -34,6 +34,9 @@ type Bridge struct {
 	mu     sync.RWMutex
 	active bool
 
+	metaForwarding  bool
+	agentForwarding map[string]bool
+
 	metaToAgentPackets      uint64
 	metaToAgentPayloadBytes uint64
 	agentToMetaPackets      uint64
@@ -58,10 +61,11 @@ func (s BridgeSnapshot) BidirectionalReady() bool {
 // not start forwarding automatically; call Start after both peers are connected.
 func NewBridge(sessionID string, metaPeer *peer.MetaPeer, recorder *Recorder) *Bridge {
 	return &Bridge{
-		sessionID:  sessionID,
-		metaPeer:   metaPeer,
-		agentPeers: make(map[string]*peer.AgentPeer),
-		recorder:   recorder,
+		sessionID:       sessionID,
+		metaPeer:        metaPeer,
+		agentPeers:      make(map[string]*peer.AgentPeer),
+		agentForwarding: make(map[string]bool),
+		recorder:        recorder,
 	}
 }
 
@@ -208,14 +212,29 @@ func (b *Bridge) forwardMetaToAgents(ctx context.Context) {
 		return
 	}
 
-	b.readAndForwardMetaTrack(ctx, metaTrack)
+	b.ReadAndForwardMetaTrack(ctx, metaTrack)
 }
 
 // ReadAndForwardMetaTrack is the core loop that reads from a Meta remote
 // track and fans out to agent peers. It is exported so the session layer can
 // call it directly from the OnTrack callback.
 func (b *Bridge) ReadAndForwardMetaTrack(ctx context.Context, track *webrtc.TrackRemote) {
+	if !b.beginMetaForwarding() {
+		slog.Debug("bridge: Meta audio forwarding already running", "session_id", b.sessionID)
+		return
+	}
 	b.readAndForwardMetaTrack(ctx, track)
+}
+
+func (b *Bridge) beginMetaForwarding() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.metaForwarding {
+		return false
+	}
+	b.metaForwarding = true
+	return true
 }
 
 func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.TrackRemote) {
@@ -302,14 +321,43 @@ func (b *Bridge) forwardAgentToMeta(ctx context.Context, ap *peer.AgentPeer) {
 		return
 	}
 
-	b.readAndForwardAgentTrack(ctx, ap, agentTrack)
+	b.ReadAndForwardAgentTrack(ctx, ap, agentTrack)
 }
 
 // ReadAndForwardAgentTrack is the core loop that reads from an agent's remote
 // track and forwards to Meta. Exported so the session layer can call it from
 // the OnTrack callback.
 func (b *Bridge) ReadAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPeer, track *webrtc.TrackRemote) {
+	if !b.beginAgentForwarding(ap.ID) {
+		slog.Debug("bridge: agent audio forwarding already running",
+			"session_id", b.sessionID,
+			"peer_id", ap.ID,
+		)
+		return
+	}
+	defer b.finishAgentForwarding(ap.ID)
+
 	b.readAndForwardAgentTrack(ctx, ap, track)
+}
+
+func (b *Bridge) beginAgentForwarding(peerID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.agentForwarding == nil {
+		b.agentForwarding = make(map[string]bool)
+	}
+	if b.agentForwarding[peerID] {
+		return false
+	}
+	b.agentForwarding[peerID] = true
+	return true
+}
+
+func (b *Bridge) finishAgentForwarding(peerID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.agentForwarding, peerID)
 }
 
 func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPeer, track *webrtc.TrackRemote) {
