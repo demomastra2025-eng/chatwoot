@@ -329,7 +329,7 @@ async function negotiateAgentOfferOnce(
   callId,
   sdpOffer,
   iceServers,
-  { direction, context, usePrewarmedStream, timing }
+  { direction, context, usePrewarmedStream, peerId, timing }
 ) {
   timing.mark('get_user_media_start');
   const stream = usePrewarmedStream
@@ -395,11 +395,21 @@ async function negotiateAgentOfferOnce(
 
   const completeSdp = pc.localDescription.sdp;
   timing.mark('agent_answer_post_start');
-  await WhatsappCallsAPI.agentAnswer(callId, completeSdp, {
+  const clientTiming = {
     direction,
     context,
     stages: timing.stages,
-  });
+  };
+  if (peerId) {
+    await WhatsappCallsAPI.agentAnswer(
+      callId,
+      completeSdp,
+      clientTiming,
+      peerId
+    );
+  } else {
+    await WhatsappCallsAPI.agentAnswer(callId, completeSdp, clientTiming);
+  }
   timing.mark('agent_answer_ok');
 
   return { success: true };
@@ -420,6 +430,7 @@ async function handleAgentOffer(callId, sdpOffer, iceServers, options = {}) {
         direction,
         context,
         usePrewarmedStream: usePrewarmedStream && attempt === 1,
+        peerId: options.peerId,
         timing,
       });
     } catch (err) {
@@ -540,6 +551,7 @@ async function connectAgentOfferForActiveCall(
         usePrewarmedStream: isInboundDirection(
           callsStore.activeCall?.direction
         ),
+        peerId: agentOffer.peer_id,
       }
     );
     callsStore.updateActiveCall({
@@ -782,9 +794,34 @@ export function useWhatsappCallSession() {
     callError.value = null;
 
     try {
-      const result = await doAcceptCall(call);
+      const serverRelay = isServerRelayCall(call);
+      let preconnectedAgent = false;
+
+      if (serverRelay && call.agentOffer?.sdp_offer) {
+        const activeCallData = {
+          ...call,
+          serverRelay: true,
+          agentWebrtcConnected: false,
+          agentWebrtcConnecting: false,
+          status: call.status || 'ringing',
+        };
+        callsStore.setActiveCall(activeCallData);
+        preconnectedAgent = await connectAgentOfferForActiveCall(
+          callsStore,
+          activeCallData.id,
+          call.agentOffer,
+          'pre-accept-agent-offer'
+        );
+        if (!preconnectedAgent) {
+          callsStore.clearActiveCall();
+          throw new Error('agent_webrtc_preaccept_failed');
+        }
+      }
+
+      const result = await doAcceptCall(call, { preconnectedAgent });
       callsStore.removeIncomingCall(call.callId);
 
+      const existingActiveCall = callsStore.activeCall;
       const activeCallData = {
         ...call,
         conversationId:
@@ -792,15 +829,19 @@ export function useWhatsappCallSession() {
         conversationDisplayId:
           result.acceptData?.conversation_display_id ||
           call.conversationDisplayId,
-        serverRelay: isServerRelayCall(call),
-        agentWebrtcConnected: false,
+        serverRelay,
+        agentWebrtcConnected: preconnectedAgent,
         agentWebrtcConnecting: false,
-        status: result.acceptData?.status || call.status,
+        status:
+          preconnectedAgent && existingActiveCall?.status === 'connected'
+            ? 'connected'
+            : result.acceptData?.status || call.status,
       };
       callsStore.setActiveCall(activeCallData);
-      const agentOffer =
-        result.agentOffer ||
-        callsStore.consumePendingAgentOffer(activeCallData);
+      const agentOffer = preconnectedAgent
+        ? null
+        : result.agentOffer ||
+          callsStore.consumePendingAgentOffer(activeCallData);
       if (result.agentOffer) callsStore.clearPendingAgentOffer(activeCallData);
       await connectAgentOfferForActiveCall(
         callsStore,

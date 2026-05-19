@@ -59,11 +59,12 @@ type Session struct {
 	AccountID string
 	Direction string // "incoming" or "outgoing"
 
-	MetaPeer   *peer.MetaPeer
-	AgentPeers map[string]*peer.AgentPeer
-	Bridge     *media.Bridge
-	Recorder   *media.Recorder
-	Injectors  map[string]*media.Injector
+	MetaPeer            *peer.MetaPeer
+	AgentPeers          map[string]*peer.AgentPeer
+	SelectedAgentPeerID string
+	Bridge              *media.Bridge
+	Recorder            *media.Recorder
+	Injectors           map[string]*media.Injector
 
 	Status    Status
 	StartedAt time.Time
@@ -96,6 +97,7 @@ type Info struct {
 	MetaDTLSState        string `json:"meta_dtls_state"`
 	MediaLegClosedReason string `json:"media_leg_closed_reason,omitempty"`
 	AgentPeerCount       int    `json:"agent_peer_count"`
+	SelectedAgentPeerID  string `json:"selected_agent_peer_id,omitempty"`
 	DurationSeconds      int    `json:"duration_seconds"`
 	HasRecording         bool   `json:"has_recording"`
 	CreatedAt            string `json:"created_at"`
@@ -229,6 +231,9 @@ func (s *Session) CreateAgentPeer(peerID string, role peer.PeerRole, iceServers 
 	})
 
 	s.AgentPeers[peerID] = agentPeer
+	if role == peer.RoleActive {
+		s.selectActiveAgentPeerLocked(peerID)
+	}
 	s.Bridge.AddAgentPeer(agentPeer)
 
 	// Start the bridge if Meta is already connected.
@@ -244,6 +249,21 @@ func (s *Session) CreateAgentPeer(peerID string, role peer.PeerRole, iceServers 
 	}
 
 	return sdpOffer, nil
+}
+
+// selectActiveAgentPeerLocked marks one peer active and demotes every other
+// browser peer so only one operator can send RTP to Meta.
+func (s *Session) selectActiveAgentPeerLocked(peerID string) {
+	for id, ap := range s.AgentPeers {
+		if id == peerID {
+			ap.Role = peer.RoleActive
+			continue
+		}
+		if ap.Role == peer.RoleActive {
+			ap.Role = peer.RoleListenOnly
+		}
+	}
+	s.SelectedAgentPeerID = peerID
 }
 
 // SoleAgentPeerID returns the peer_id when the session has exactly one agent
@@ -331,6 +351,7 @@ func (s *Session) Terminate(reason string) {
 		agentPeers = append(agentPeers, ap)
 		delete(s.AgentPeers, id)
 	}
+	s.SelectedAgentPeerID = ""
 
 	metaPeer := s.MetaPeer
 	s.mu.Unlock()
@@ -388,6 +409,12 @@ func (s *Session) RemoveAgentPeer(peerID string) error {
 
 	s.Bridge.RemoveAgentPeer(peerID)
 	delete(s.AgentPeers, peerID)
+	if s.SelectedAgentPeerID == peerID {
+		s.SelectedAgentPeerID = ""
+		if s.Status != StatusTerminated {
+			s.Status = StatusAgentDisconnected
+		}
+	}
 	s.mu.Unlock()
 
 	// Close outside the lock to avoid deadlock from ICE state callbacks.
@@ -405,7 +432,14 @@ func (s *Session) ChangeAgentRole(peerID string, newRole peer.PeerRole) error {
 		return fmt.Errorf("agent peer %s not found", peerID)
 	}
 
-	ap.Role = newRole
+	if newRole == peer.RoleActive {
+		s.selectActiveAgentPeerLocked(peerID)
+	} else {
+		ap.Role = newRole
+		if s.SelectedAgentPeerID == peerID {
+			s.SelectedAgentPeerID = ""
+		}
+	}
 	return nil
 }
 
@@ -425,6 +459,7 @@ func (s *Session) GetInfo() Info {
 		MetaDTLSState:        s.MetaDTLSState,
 		MediaLegClosedReason: s.MediaLegClosedReason,
 		AgentPeerCount:       len(s.AgentPeers),
+		SelectedAgentPeerID:  s.SelectedAgentPeerID,
 		HasRecording:         s.Recorder != nil,
 		CreatedAt:            s.CreatedAt.UTC().Format(time.RFC3339),
 	}
@@ -592,7 +627,9 @@ func (s *Session) handleAgentICEStateChange(peerID string, state webrtc.ICEConne
 			"session_id", s.ID,
 			"peer_id", peerID,
 		)
-		if s.Status == StatusMetaConnected || s.Status == StatusAgentDisconnected {
+		ap := s.AgentPeers[peerID]
+		if ap != nil && ap.Role == peer.RoleActive && (s.Status == StatusMetaConnected || s.Status == StatusAgentDisconnected) {
+			s.SelectedAgentPeerID = peerID
 			s.Status = StatusActive
 			// Start bridge if not already running.
 			s.Bridge.Start(s.ctx)
@@ -605,16 +642,11 @@ func (s *Session) handleAgentICEStateChange(peerID string, state webrtc.ICEConne
 			"state", state.String(),
 		)
 
-		// Check if any other agent peers are still connected.
-		hasConnected := false
-		for id, ap := range s.AgentPeers {
-			if id != peerID && ap.ICEConnectionState() == webrtc.ICEConnectionStateConnected {
-				hasConnected = true
-				break
-			}
+		if s.SelectedAgentPeerID != "" && s.SelectedAgentPeerID != peerID {
+			return
 		}
 
-		if !hasConnected && s.Status != StatusTerminated {
+		if !s.hasConnectedSelectedAgentPeerLocked() && s.Status != StatusTerminated {
 			s.Status = StatusAgentDisconnected
 
 			// Start reconnect timer.
@@ -654,11 +686,19 @@ func (s *Session) handleAgentICEStateChange(peerID string, state webrtc.ICEConne
 
 func (s *Session) hasConnectedAgentPeerLocked() bool {
 	for _, ap := range s.AgentPeers {
-		if ap.ICEConnectionState() == webrtc.ICEConnectionStateConnected {
+		if ap.Role == peer.RoleActive && ap.ICEConnectionState() == webrtc.ICEConnectionStateConnected {
 			return true
 		}
 	}
 	return false
+}
+
+func (s *Session) hasConnectedSelectedAgentPeerLocked() bool {
+	if s.SelectedAgentPeerID == "" {
+		return s.hasConnectedAgentPeerLocked()
+	}
+	ap := s.AgentPeers[s.SelectedAgentPeerID]
+	return ap != nil && ap.Role == peer.RoleActive && ap.ICEConnectionState() == webrtc.ICEConnectionStateConnected
 }
 
 func (s *Session) ensureMediaLegOpenLocked() error {

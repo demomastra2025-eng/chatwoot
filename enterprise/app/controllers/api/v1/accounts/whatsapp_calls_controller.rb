@@ -33,7 +33,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       ice_servers: @call.media_server_enabled? ? [] : @call.ice_servers,
       media_server_enabled: @call.media_server_enabled?,
       caller: caller_info,
-      agent_offer: @call.ringing? && @call.media_server_enabled? ? @call.meta&.dig('agent_offer')&.slice('sdp_offer', 'ice_servers') : nil
+      agent_offer: @call.ringing? && @call.media_server_enabled? ? agent_offer_for_current_user(@call) : nil
     }
   end
 
@@ -120,7 +120,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
     client = Whatsapp::MediaServerClient.new
     log_agent_answer_client_timing('received')
-    client.set_agent_answer(@call.media_session_id, sdp_answer: params[:sdp_answer])
+    peer_id = verified_agent_peer_id
+    return if peer_id == false
+
+    if peer_id.present?
+      client.set_agent_answer(@call.media_session_id, sdp_answer: params[:sdp_answer], peer_id: peer_id)
+    else
+      client.set_agent_answer(@call.media_session_id, sdp_answer: params[:sdp_answer])
+    end
     log_agent_answer_client_timing('ok')
     render json: { success: true }
   rescue Whatsapp::MediaServerClient::SessionError => e
@@ -214,7 +221,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       message_id: message.id,
       media_session_id: call.media_session_id
     }.compact
-    payload[:agent_offer] = @outbound_agent_offer.slice('sdp_offer', 'ice_servers') if @outbound_agent_offer.present?
+    payload[:agent_offer] = normalize_agent_offer(@outbound_agent_offer) if @outbound_agent_offer.present?
     payload
   end
 
@@ -226,8 +233,48 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       media_session_id: call.media_session_id,
       conversation_id: call.conversation_id,
       conversation_display_id: call.conversation&.display_id,
-      agent_offer: agent_offer&.slice('sdp_offer', 'ice_servers')
+      agent_offer: normalize_agent_offer(agent_offer)
     }.compact
+  end
+
+  def agent_offer_for_current_user(call)
+    meta = call.meta || {}
+    offer = meta.dig('agent_offers', current_user.id.to_s)
+    offer ||= meta['agent_offer']
+    normalize_agent_offer(offer)
+  end
+
+  def normalize_agent_offer(offer)
+    return if offer.blank?
+
+    offer.to_h.stringify_keys.slice('peer_id', 'sdp_offer', 'ice_servers')
+  end
+
+  def verified_agent_peer_id
+    meta = @call.meta || {}
+    agent_offers = meta['agent_offers'] || {}
+    expected_peer_id = agent_offers.dig(current_user.id.to_s, 'peer_id')
+    requested_peer_id = params[:peer_id].presence
+
+    return requested_peer_id if agent_offers.blank? && requested_peer_id.present?
+    return if agent_offers.blank?
+
+    unless @call.accepted_by_agent_id.blank? || @call.accepted_by_agent_id == current_user.id
+      render json: { error: 'Call accepted by another agent' }, status: :forbidden
+      return false
+    end
+
+    if expected_peer_id.blank?
+      render json: { error: 'No prepared peer for current agent' }, status: :forbidden
+      return false
+    end
+
+    if requested_peer_id.present? && requested_peer_id != expected_peer_id
+      render json: { error: 'peer_id does not belong to current agent' }, status: :forbidden
+      return false
+    end
+
+    expected_peer_id
   end
 
   def render_media_leg_closed

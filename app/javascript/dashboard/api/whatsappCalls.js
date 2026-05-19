@@ -34,8 +34,9 @@ class WhatsappCallsAPI extends ApiClient {
   }
 
   // Send the agent's SDP answer for the Peer B connection (server-relay mode).
-  agentAnswer(callId, sdpAnswer, clientTiming = null) {
+  agentAnswer(callId, sdpAnswer, clientTiming = null, peerId = null) {
     const body = { sdp_answer: sdpAnswer };
+    if (peerId) body.peer_id = peerId;
     if (clientTiming) body.client_timing = clientTiming;
     return axios.post(`${this.url}/${callId}/agent_answer`, body);
   }

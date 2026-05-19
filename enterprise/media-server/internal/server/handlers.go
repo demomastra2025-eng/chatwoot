@@ -482,12 +482,15 @@ func (h *Handlers) TerminateSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	sess := h.manager.GetSession(sessionID)
 	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found")
+		writeJSON(w, http.StatusOK, TerminateResponse{Status: "terminated"})
 		return
 	}
 
 	info := sess.GetInfo()
-	sess.Terminate("api_request")
+	if err := h.manager.TerminateSession(sessionID, "api_request"); err != nil {
+		writeJSON(w, http.StatusOK, TerminateResponse{Status: "terminated"})
+		return
+	}
 
 	resp := TerminateResponse{
 		Status:          "terminated",

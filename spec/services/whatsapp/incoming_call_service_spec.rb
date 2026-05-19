@@ -72,10 +72,11 @@ RSpec.describe Whatsapp::IncomingCallService do
       allow(Whatsapp::CallMessageBuilder).to receive(:create!).and_return(message)
       allow(Whatsapp::MediaServerClient).to receive(:new).and_return(media_client)
       allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-in-1', 'meta_sdp_answer' => 'meta-answer' })
-      allow(media_client).to receive(:generate_agent_offer).with('media-in-1').and_return(
-        { 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+      allow(media_client).to receive(:add_peer).and_return(
+        { 'peer_id' => 'peer-agent-1', 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
       )
       allow(Whatsapp::CallCleanupJob).to receive_message_chain(:set, :perform_later)
+      allow_any_instance_of(Inbox).to receive(:available_agents).and_return([instance_double(InboxMember, user: agent)])
 
       with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
         described_class.new(
@@ -92,10 +93,13 @@ RSpec.describe Whatsapp::IncomingCallService do
         ice_servers: [{ 'urls' => ['stun:stun.l.google.com:19302'] }],
         account_id: account.id
       )
+      expect(media_client).to have_received(:add_peer).with('media-in-1', role: 'listen_only', label: agent.name)
       expect(call.media_session_id).to eq('media-in-1')
       expect(call.meta).to include(
         'media_sdp_answer' => 'meta-answer',
-        'agent_offer' => hash_including('sdp_offer' => 'agent-offer', 'ice_servers' => []),
+        'agent_offers' => hash_including(
+          agent.id.to_s => hash_including('peer_id' => 'peer-agent-1', 'sdp_offer' => 'agent-offer', 'ice_servers' => [])
+        ),
         'agent_offer_generated_at' => be_present
       )
       expect(ActionCable.server).to have_received(:broadcast).with(
@@ -106,7 +110,9 @@ RSpec.describe Whatsapp::IncomingCallService do
             call_id: 'wa-early-inbound-1',
             media_server_enabled: true,
             media_session_id: 'media-in-1',
-            agent_offer: hash_including('sdp_offer' => 'agent-offer', 'ice_servers' => [])
+            agent_offers: hash_including(
+              agent.id.to_s => hash_including('peer_id' => 'peer-agent-1', 'sdp_offer' => 'agent-offer', 'ice_servers' => [])
+            )
           )
         )
       )

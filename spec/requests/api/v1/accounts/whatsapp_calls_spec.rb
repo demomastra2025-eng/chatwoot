@@ -245,6 +245,40 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(Rails.logger).not_to have_received(:info).with(a_string_including('SHOULD_NOT_BE_LOGGED'))
     end
 
+    it 'accepts agent answer only for the current user prepared peer before the call is claimed' do
+      ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil, media_session_id: 'session-prepared',
+                                   meta: {
+                                     'agent_offers' => {
+                                       administrator.id.to_s => { 'peer_id' => 'peer-admin', 'sdp_offer' => 'offer-admin', 'ice_servers' => [] }
+                                     }
+                                   })
+      allow(media_client).to receive(:set_agent_answer).with('session-prepared', sdp_answer: 'v=0', peer_id: 'peer-admin')
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0', peer_id: 'peer-admin' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'rejects agent answer for another prepared peer' do
+      ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: nil, media_session_id: 'session-prepared',
+                                   meta: {
+                                     'agent_offers' => {
+                                       administrator.id.to_s => { 'peer_id' => 'peer-admin', 'sdp_offer' => 'offer-admin', 'ice_servers' => [] }
+                                     }
+                                   })
+      expect(media_client).not_to receive(:set_agent_answer)
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/agent_answer",
+           params: { sdp_answer: 'v=0', peer_id: 'peer-other' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
     it 'returns a controlled conflict when agent answer arrives after media leg closed' do
       error = Whatsapp::MediaServerClient::SessionError.new(
         'Media server error (409): media leg closed',

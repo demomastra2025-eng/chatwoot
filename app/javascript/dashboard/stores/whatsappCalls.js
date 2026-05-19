@@ -23,6 +23,7 @@ function normalizeAgentOffer(data = {}) {
   return {
     id: data.id,
     call_id: data.call_id || data.callId,
+    peer_id: data.peer_id || data.peerId,
     sdp_offer: sdpOffer,
     ice_servers: data.ice_servers || data.iceServers || [],
   };

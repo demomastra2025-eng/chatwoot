@@ -151,17 +151,40 @@ class Whatsapp::IncomingCallService
       account_id: call.account_id
     )
     media_session_id = session_response['session_id']
-    agent_offer = client.generate_agent_offer(media_session_id)
+    agent_offers = prepare_agent_offers_for_online_agents(client, media_session_id)
     call.update!(
       media_session_id: media_session_id,
       meta: (call.meta || {}).merge(
         'media_sdp_answer' => session_response['meta_sdp_answer'],
-        'agent_offer' => agent_offer,
+        'agent_offers' => agent_offers,
         'agent_offer_generated_at' => Time.zone.now.to_i
       )
     )
   rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
     Rails.logger.error "[WHATSAPP CALL] early inbound media prepare failed for #{call.provider_call_id}: #{e.message}"
+  end
+
+  def prepare_agent_offers_for_online_agents(client, media_session_id)
+    prepared_agents_for_inbox.each_with_object({}) do |user, offers|
+      response = client.add_peer(media_session_id, role: 'listen_only', label: user.name.presence || "Agent ##{user.id}")
+      offers[user.id.to_s] = normalize_agent_offer(response).merge(
+        'prepared_at' => Time.current.iso8601,
+        'state' => 'prepared'
+      )
+    rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
+      Rails.logger.warn "[WHATSAPP CALL] failed to prepare agent peer for user_id=#{user.id}: #{e.message}"
+    end
+  end
+
+  def prepared_agents_for_inbox
+    Array(inbox.available_agents).first(5).filter_map(&:user)
+  rescue StandardError => e
+    Rails.logger.warn "[WHATSAPP CALL] failed to resolve online agents for inbound prepare: #{e.message}"
+    []
+  end
+
+  def normalize_agent_offer(response)
+    response.to_h.stringify_keys.slice('peer_id', 'sdp_offer', 'ice_servers')
   end
 
   def handle_outbound_connect(call, call_payload)
@@ -388,7 +411,11 @@ class Whatsapp::IncomingCallService
     }
 
     if media_server_enabled && call.meta&.dig('agent_offer', 'sdp_offer').present?
-      data[:agent_offer] = call.meta['agent_offer'].slice('sdp_offer', 'ice_servers')
+      data[:agent_offer] = call.meta['agent_offer'].slice('peer_id', 'sdp_offer', 'ice_servers')
+    elsif media_server_enabled && call.meta&.dig('agent_offers').present?
+      data[:agent_offers] = call.meta['agent_offers'].transform_values do |offer|
+        offer.to_h.slice('peer_id', 'sdp_offer', 'ice_servers')
+      end
     end
 
     unless media_server_enabled
@@ -481,6 +508,7 @@ class Whatsapp::IncomingCallService
         call_id: call.provider_call_id,
         conversation_id: call.conversation_id,
         sdp_offer: agent_offer['sdp_offer'],
+        peer_id: agent_offer['peer_id'],
         ice_servers: agent_offer['ice_servers']
       }
     }

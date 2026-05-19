@@ -107,7 +107,7 @@ class Whatsapp::CallService
     reserve_acceptance!
 
     begin
-      prepared = prepared_media_session
+      prepared = prepared_media_session(client)
       if prepared
         media_session_id = prepared[:media_session_id]
         agent_offer = prepared[:agent_offer]
@@ -151,11 +151,7 @@ class Whatsapp::CallService
           status: 'in_progress',
           started_at: Time.current,
           media_session_id: media_session_id,
-          meta: (call.meta || {}).merge(
-            'media_sdp_answer' => meta_sdp_answer,
-            'agent_offer' => agent_offer,
-            'agent_offer_generated_at' => (call.meta || {})['agent_offer_generated_at'] || Time.zone.now.to_i
-          )
+          meta: merged_media_meta(meta_sdp_answer, agent_offer)
         )
       end
     rescue StandardError
@@ -165,6 +161,8 @@ class Whatsapp::CallService
       release_acceptance_reservation!
       raise
     end
+
+    cleanup_losing_prepared_peers(media_session_id, agent_offer)
 
     # Step 5: Broadcast events (outside lock)
     Whatsapp::CallMessageBuilder.update_status!(call: call, status: 'in_progress', agent: agent)
@@ -178,16 +176,55 @@ class Whatsapp::CallService
     call.media_server_enabled?
   end
 
-  def prepared_media_session
+  def prepared_media_session(client)
     call.reload
     meta = call.meta || {}
-    return if call.media_session_id.blank? || meta['media_sdp_answer'].blank? || meta.dig('agent_offer', 'sdp_offer').blank?
+    return if call.media_session_id.blank? || meta['media_sdp_answer'].blank?
+
+    offer = prepared_agent_offer_for(meta)
+    offer ||= create_agent_offer_for_agent(client, call.media_session_id)
+    promote_agent_peer(client, call.media_session_id, offer)
 
     {
       media_session_id: call.media_session_id,
       meta_sdp_answer: meta['media_sdp_answer'],
-      agent_offer: meta['agent_offer']
+      agent_offer: offer
     }
+  end
+
+  def prepared_agent_offer_for(meta)
+    offer = meta.dig('agent_offers', agent.id.to_s)
+    offer = meta['agent_offer'] if offer.blank? && meta.dig('agent_offer', 'sdp_offer').present?
+    normalize_agent_offer(offer)
+  end
+
+  def create_agent_offer_for_agent(client, media_session_id)
+    response = client.add_peer(media_session_id, role: 'active', label: agent.name.presence || "Agent ##{agent.id}")
+    normalize_agent_offer(response)
+  end
+
+  def promote_agent_peer(client, media_session_id, offer)
+    return if offer['peer_id'].blank?
+
+    client.change_peer_role(media_session_id, peer_id: offer['peer_id'], role: 'active')
+  end
+
+  def normalize_agent_offer(offer)
+    return if offer.blank?
+
+    normalized = offer.to_h.stringify_keys.slice('peer_id', 'sdp_offer', 'ice_servers')
+    normalized['sdp_offer'].present? ? normalized : nil
+  end
+
+  def merged_media_meta(meta_sdp_answer, agent_offer)
+    meta = call.meta || {}
+    agent_offers = (meta['agent_offers'] || {}).merge(agent.id.to_s => agent_offer)
+    meta.merge(
+      'media_sdp_answer' => meta_sdp_answer,
+      'agent_offer' => agent_offer,
+      'agent_offers' => agent_offers,
+      'agent_offer_generated_at' => meta['agent_offer_generated_at'] || Time.zone.now.to_i
+    )
   end
 
   def reserve_acceptance!
@@ -213,9 +250,27 @@ class Whatsapp::CallService
       call.reload
       next unless call.ringing? && call.media_session_id == media_session_id
 
-      meta = (call.meta || {}).except('media_sdp_answer', 'agent_offer', 'agent_offer_generated_at')
+      meta = (call.meta || {}).except('media_sdp_answer', 'agent_offer', 'agent_offers', 'agent_offer_generated_at')
       call.update!(media_session_id: nil, meta: meta)
     end
+  end
+
+  def cleanup_losing_prepared_peers(media_session_id, winning_offer)
+    winning_peer_id = winning_offer&.dig('peer_id')
+    return if media_session_id.blank? || winning_peer_id.blank?
+
+    meta = call.reload.meta || {}
+    offers = meta['agent_offers'] || {}
+    loser_offers = offers.except(agent.id.to_s)
+    client = Whatsapp::MediaServerClient.new
+    loser_offers.each_value do |offer|
+      peer_id = offer['peer_id'] || offer[:peer_id]
+      client.remove_peer(media_session_id, peer_id: peer_id) if peer_id.present?
+    rescue Whatsapp::MediaServerClient::ConnectionError, Whatsapp::MediaServerClient::SessionError => e
+      Rails.logger.warn "[WHATSAPP CALL] failed to remove losing prepared peer #{peer_id}: #{e.message}"
+    end
+
+    call.update!(meta: meta.merge('agent_offers' => { agent.id.to_s => winning_offer })) if loser_offers.present?
   end
 
   def terminate_media_session(media_session_id)
@@ -287,6 +342,7 @@ class Whatsapp::CallService
         conversation_display_id: call.conversation&.display_id,
         accepted_by_agent_id: agent.id,
         sdp_offer: agent_offer['sdp_offer'],
+        peer_id: agent_offer['peer_id'],
         ice_servers: agent_offer['ice_servers']
       }
     }

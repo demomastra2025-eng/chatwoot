@@ -28,8 +28,12 @@ class Whatsapp::MediaServerClient
     post("/sessions/#{session_id}/agent-offer")
   end
 
-  def set_agent_answer(session_id, sdp_answer:)
-    post("/sessions/#{session_id}/agent-answer", { sdp_answer: sdp_answer })
+  def set_agent_answer(session_id, sdp_answer:, peer_id: nil)
+    post("/sessions/#{session_id}/agent-answer", { sdp_answer: sdp_answer, peer_id: peer_id }.compact)
+  end
+
+  def change_peer_role(session_id, peer_id:, role:)
+    patch("/sessions/#{session_id}/peers/#{peer_id}/role", { role: role })
   end
 
   def set_meta_answer(session_id, sdp_answer:)
@@ -96,6 +100,11 @@ class Whatsapp::MediaServerClient
 
   def get(path)
     response = execute_request(:get, path)
+    parse_response(response)
+  end
+
+  def patch(path, body = {})
+    response = execute_request(:patch, path, body)
     parse_response(response)
   end
 
