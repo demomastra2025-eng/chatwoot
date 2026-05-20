@@ -385,7 +385,28 @@ async function negotiateAgentOfferOnce(
   assertInboundNegotiationActive(negotiationToken, { stream, pc });
   inboundPc = pc;
 
-  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  const audioTrack =
+    stream.getAudioTracks?.()[0] ||
+    stream.getTracks?.().find(track => track.kind === 'audio') ||
+    stream.getTracks?.()[0];
+
+  // Prefer an explicit sendrecv transceiver for the server-relay agent leg.
+  // Chrome can stall createAnswer() for ~10s when a live microphone track is
+  // attached with addTrack() before answering Pion's sendrecv offer. Keeping
+  // the SDP direction explicit and attaching the microphone with replaceTrack()
+  // lets us answer immediately while preserving operator → customer audio.
+  if (typeof pc.addTransceiver === 'function' && audioTrack) {
+    const transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    transceiver.sender?.replaceTrack?.(audioTrack).catch(error => {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[WhatsApp Call] Failed to attach microphone track:',
+        error
+      );
+    });
+  } else {
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+  }
 
   pc.ontrack = event => {
     const [remoteStream] = event.streams;

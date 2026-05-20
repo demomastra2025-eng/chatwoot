@@ -78,6 +78,40 @@ describe('useWhatsappCallSession', () => {
     global.RTCPeerConnection = FakeRTCPeerConnection;
   });
 
+  it('uses a sendrecv transceiver and replaceTrack for server-relay agent answers', async () => {
+    const audioTrack = { kind: 'audio', stop: vi.fn() };
+    const replaceTrack = vi.fn(async () => Promise.resolve());
+    const addTransceiver = vi.fn(() => ({ sender: { replaceTrack } }));
+    const pc = new FakeRTCPeerConnection();
+    pc.addTransceiver = addTransceiver;
+    global.RTCPeerConnection = vi.fn(() => pc);
+    navigator.mediaDevices.getUserMedia.mockResolvedValue({
+      getAudioTracks: () => [audioTrack],
+      getTracks: () => [audioTrack],
+    });
+    WhatsappCallsAPI.agentAnswer.mockResolvedValue({ data: { success: true } });
+
+    const result = await handleAgentOffer(44, 'agent-offer-sdp', [], {
+      direction: 'outbound',
+      context: 'outbound-connect',
+    });
+
+    expect(result.success).toBe(true);
+    expect(addTransceiver).toHaveBeenCalledWith('audio', {
+      direction: 'sendrecv',
+    });
+    expect(replaceTrack).toHaveBeenCalledWith(audioTrack);
+    expect(pc.addTrack).not.toHaveBeenCalled();
+    expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
+      44,
+      'agent-answer-sdp',
+      expect.objectContaining({
+        direction: 'outbound',
+        context: 'outbound-connect',
+      })
+    );
+  });
+
   it('prewarms server-relay inbound microphone in parallel with accept request', async () => {
     let resolveMedia;
     navigator.mediaDevices.getUserMedia.mockImplementation(
