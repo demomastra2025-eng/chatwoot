@@ -28,6 +28,23 @@ func TestBridgeSnapshotTracksBidirectionalRTP(t *testing.T) {
 	}
 }
 
+func TestBridgeSnapshotCountsRuntimeAgentAudioAsAgentToMeta(t *testing.T) {
+	bridge := NewBridge("sess-runtime", nil, nil)
+	bridge.recordMetaPacket(20)
+	bridge.RecordRuntimeAgentPacket(40)
+
+	stats := bridge.Snapshot()
+	if stats.AgentToMetaPackets != 1 {
+		t.Fatalf("expected runtime AI audio to count as agent->Meta RTP, got %d", stats.AgentToMetaPackets)
+	}
+	if stats.AgentToMetaPayloadBytes != 40 {
+		t.Fatalf("expected runtime AI payload bytes, got %d", stats.AgentToMetaPayloadBytes)
+	}
+	if !stats.BidirectionalReady() {
+		t.Fatal("expected runtime AI call with customer RTP and AI RTP to be media-ready")
+	}
+}
+
 func TestBridgeSnapshotRequiresBothRTPDirectionsForReadiness(t *testing.T) {
 	stats := BridgeSnapshot{AgentToMetaPackets: 10, MetaToAgentPackets: 0}
 	if stats.BidirectionalReady() {

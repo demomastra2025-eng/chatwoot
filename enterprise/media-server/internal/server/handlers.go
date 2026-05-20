@@ -172,6 +172,7 @@ type runtimeStreamGrant struct {
 	InboxID          string
 	ExpiresAt        time.Time
 	Consumed         bool
+	ConsumedAt       time.Time
 }
 
 // HealthResponse is the JSON response for GET /health.
@@ -301,18 +302,12 @@ func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RuntimeStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	grant, ok, status, message := h.consumeRuntimeStreamGrant(sessionID, token)
+	grant, ok, status, message := h.validateRuntimeStreamGrant(sessionID, token)
 	if !ok {
 		writeError(w, status, message)
 		return
 	}
 
-	slog.Info("handler: runtime stream grant consumed",
-		"session_id", sessionID,
-		"runtime_session_id", grant.RuntimeSessionID,
-		"call_ref", grant.CallRef,
-		"account_id", grant.AccountID,
-	)
 	h.serveRuntimeStream(w, r, grant)
 }
 
@@ -915,10 +910,39 @@ func (h *Handlers) storeRuntimeStreamGrant(grant runtimeStreamGrant) {
 	if strings.TrimSpace(grant.Token) == "" {
 		return
 	}
+	h.cleanupRuntimeStreamGrants(time.Now().UTC())
 	h.runtimeStreamGrants.Store(grant.Token, grant)
 }
 
+func (h *Handlers) validateRuntimeStreamGrant(sessionID string, token string) (runtimeStreamGrant, bool, int, string) {
+	h.cleanupRuntimeStreamGrants(time.Now().UTC())
+	return h.runtimeStreamGrant(sessionID, token)
+}
+
 func (h *Handlers) consumeRuntimeStreamGrant(sessionID string, token string) (runtimeStreamGrant, bool, int, string) {
+	h.cleanupRuntimeStreamGrants(time.Now().UTC())
+	grant, ok, status, message := h.runtimeStreamGrant(sessionID, token)
+	if !ok {
+		return runtimeStreamGrant{}, false, status, message
+	}
+
+	consumedGrant := grant
+	consumedGrant.Consumed = true
+	consumedGrant.ConsumedAt = time.Now().UTC()
+	if !h.runtimeStreamGrants.CompareAndSwap(token, grant, consumedGrant) {
+		return runtimeStreamGrant{}, false, http.StatusConflict, "runtime stream token already consumed"
+	}
+
+	slog.Info("handler: runtime stream grant consumed",
+		"session_id", sessionID,
+		"runtime_session_id", grant.RuntimeSessionID,
+		"call_ref", grant.CallRef,
+		"account_id", grant.AccountID,
+	)
+	return consumedGrant, true, http.StatusOK, ""
+}
+
+func (h *Handlers) runtimeStreamGrant(sessionID string, token string) (runtimeStreamGrant, bool, int, string) {
 	if strings.TrimSpace(token) == "" {
 		return runtimeStreamGrant{}, false, http.StatusUnauthorized, "runtime stream token is required"
 	}
@@ -942,14 +966,21 @@ func (h *Handlers) consumeRuntimeStreamGrant(sessionID string, token string) (ru
 	if grant.Consumed {
 		return runtimeStreamGrant{}, false, http.StatusConflict, "runtime stream token already consumed"
 	}
-
-	consumedGrant := grant
-	consumedGrant.Consumed = true
-	if !h.runtimeStreamGrants.CompareAndSwap(token, grant, consumedGrant) {
-		return runtimeStreamGrant{}, false, http.StatusConflict, "runtime stream token already consumed"
-	}
-
 	return grant, true, http.StatusOK, ""
+}
+
+func (h *Handlers) cleanupRuntimeStreamGrants(now time.Time) {
+	h.runtimeStreamGrants.Range(func(key, value any) bool {
+		grant, ok := value.(runtimeStreamGrant)
+		if !ok {
+			h.runtimeStreamGrants.Delete(key)
+			return true
+		}
+		if grant.Consumed && !grant.ConsumedAt.IsZero() && now.Sub(grant.ConsumedAt) > time.Minute {
+			h.runtimeStreamGrants.Delete(key)
+		}
+		return true
+	})
 }
 
 func randomURLToken(size int) (string, error) {

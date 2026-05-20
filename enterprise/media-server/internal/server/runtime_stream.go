@@ -64,6 +64,20 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 	}
 	defer conn.Close()
 
+	consumedGrant, ok, status, message := h.consumeRuntimeStreamGrant(grant.SessionID, grant.Token)
+	if !ok {
+		deadline := time.Now().Add(200 * time.Millisecond)
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, message), deadline)
+		slog.Warn("handler: runtime stream grant consume failed after websocket upgrade",
+			"session_id", grant.SessionID,
+			"runtime_session_id", grant.RuntimeSessionID,
+			"status", status,
+			"message", message,
+		)
+		return
+	}
+	grant = consumedGrant
+
 	slog.Info("handler: runtime stream websocket connected",
 		"session_id", grant.SessionID,
 		"runtime_session_id", grant.RuntimeSessionID,
@@ -637,6 +651,23 @@ func (w *runtimeAudioWriter) startLocked() error {
 					"error", err,
 				)
 				continue
+			}
+			payloadBytes := n
+			var pkt rtp.Packet
+			if err := pkt.Unmarshal(raw); err == nil {
+				payloadBytes = len(pkt.Payload)
+				if w.sess.Recorder != nil {
+					if err := w.sess.Recorder.WriteAgentRTP(&pkt); err != nil {
+						slog.Warn("handler: failed to record runtime audio",
+							"session_id", w.grant.SessionID,
+							"runtime_session_id", w.grant.RuntimeSessionID,
+							"error", err,
+						)
+					}
+				}
+			}
+			if w.sess.Bridge != nil {
+				w.sess.Bridge.RecordRuntimeAgentPacket(payloadBytes)
 			}
 			w.mu.Lock()
 			w.pkts++

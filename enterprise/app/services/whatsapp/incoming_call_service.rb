@@ -272,6 +272,7 @@ class Whatsapp::IncomingCallService
     mark_ai_voice_fallback(call, routing_decision, e)
     call.reload
     if call.ringing?
+      prepare_inbound_media_session(call) if call.media_server_enabled?
       update_conversation_call_status(call.conversation, 'ringing', call.direction_label)
       broadcast_incoming_call(call, contact, call_payload.dig(:session, :sdp))
     else
