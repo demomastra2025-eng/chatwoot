@@ -16,7 +16,7 @@ RSpec.describe Whatsapp::CallRecordingFetchJob, type: :job do
     expect(described_class.queue_name).to eq('whatsapp_calls')
   end
 
-  it 'does not hit the media server again when the recording is already attached' do
+  it 'repairs timeline metadata without hitting the media server when the recording is already attached' do
     call.recording.attach(io: StringIO.new('existing-recording'), filename: 'existing.ogg', content_type: 'audio/ogg')
 
     expect(client).not_to receive(:terminate_session)
@@ -24,7 +24,21 @@ RSpec.describe Whatsapp::CallRecordingFetchJob, type: :job do
 
     described_class.perform_now(call.id)
 
-    expect(Whatsapp::CallMessageBuilder).not_to have_received(:update_recording_url!)
+    expect(Whatsapp::CallMessageBuilder).to have_received(:update_recording_url!).with(call: call)
+    expect(Whatsapp::CallTranscriptionJob).to have_received(:perform_later).with(call.id)
+  end
+
+  it 'does not enqueue another transcription when an attached recording is already transcribed' do
+    call.update!(transcript: 'already transcribed')
+    call.recording.attach(io: StringIO.new('existing-recording'), filename: 'existing.ogg', content_type: 'audio/ogg')
+
+    expect(client).not_to receive(:terminate_session)
+    expect(client).not_to receive(:download_recording)
+
+    described_class.perform_now(call.id)
+
+    expect(Whatsapp::CallMessageBuilder).to have_received(:update_recording_url!).with(call: call)
+    expect(Whatsapp::CallTranscriptionJob).not_to have_received(:perform_later)
   end
 
   it 'attaches a mixed recording from side recordings when combined recording is missing' do

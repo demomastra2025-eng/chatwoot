@@ -13,8 +13,8 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
 
   def perform(call_id)
     call = Call.find(call_id)
+    return finalize_attached_recording!(call) if call.recording.attached?
     return if call.media_session_id.blank?
-    return if call.recording.attached?
 
     client = Whatsapp::MediaServerClient.new
 
@@ -30,12 +30,15 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
     return if recording_data.blank?
 
     attach_recording(call, recording_data)
-
-    Whatsapp::CallMessageBuilder.update_recording_url!(call: call)
-    Whatsapp::CallTranscriptionJob.perform_later(call.id) if call.recording.attached?
+    finalize_attached_recording!(call)
   end
 
   private
+
+  def finalize_attached_recording!(call)
+    Whatsapp::CallMessageBuilder.update_recording_url!(call: call)
+    Whatsapp::CallTranscriptionJob.perform_later(call.id) if call.transcript.blank?
+  end
 
   def safe_terminate(client, session_id)
     client.terminate_session(session_id)
