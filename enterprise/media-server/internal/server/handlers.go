@@ -295,10 +295,9 @@ func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-// RuntimeStream is the authenticated-by-token skeleton endpoint for the
-// transport-neutral AI voice runtime stream. The current slice verifies the
-// one-time grant and reserves the session boundary; RTP/audio bridging is a
-// separate implementation step.
+// RuntimeStream is the authenticated-by-token WebSocket endpoint for the
+// transport-neutral AI voice runtime stream. It consumes the one-time grant and
+// bridges runtime AUDIO_OUT frames to Meta as Opus/RTP.
 func (h *Handlers) RuntimeStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
@@ -314,10 +313,7 @@ func (h *Handlers) RuntimeStream(w http.ResponseWriter, r *http.Request) {
 		"call_ref", grant.CallRef,
 		"account_id", grant.AccountID,
 	)
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"status":             "runtime_stream_reserved",
-		"runtime_session_id": grant.RuntimeSessionID,
-	})
+	h.serveRuntimeStream(w, r, grant)
 }
 
 // AgentOffer handles POST /sessions/{id}/agent-offer. It creates a new
@@ -910,7 +906,7 @@ func (h *Handlers) buildRuntimeAgentContract(sessionID string, req RuntimeAgentR
 		StreamURL:        fmt.Sprintf("ws://%s/sessions/%s/runtime-stream?token=%s", host, sessionID, token),
 		Codec:            "pcm_s16le",
 		InputSampleRate:  16000,
-		OutputSampleRate: 24000,
+		OutputSampleRate: 8000,
 		ExpiresAt:        expiresAt,
 	}, nil
 }

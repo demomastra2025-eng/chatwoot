@@ -87,7 +87,7 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	if strings.Contains(resp.StreamURL, "whatsapp:wa-call-1") {
 		t.Fatalf("stream url leaked call ref: %q", resp.StreamURL)
 	}
-	if resp.Codec != "pcm_s16le" || resp.InputSampleRate != 16000 || resp.OutputSampleRate != 24000 {
+	if resp.Codec != "pcm_s16le" || resp.InputSampleRate != 16000 || resp.OutputSampleRate != 8000 {
 		t.Fatalf("unexpected audio contract: %#v", resp)
 	}
 	if resp.ExpiresAt.IsZero() {
