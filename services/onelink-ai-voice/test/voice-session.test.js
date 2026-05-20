@@ -100,6 +100,74 @@ test('VoiceSession applies timeout_ms from Rails tool catalog', async () => {
   assert.equal(controls.find(payload => payload.action === 'tool_started').metadata.timeout_ms, 6_000);
 });
 
+test('VoiceSession suppresses duplicate realtime tool calls with identical arguments', async () => {
+  const controls = [];
+  let toolInvocations = 0;
+  const client = {
+    getContext: async () => ({
+      call_ref: 'call-faq-loop',
+      ai: { provider: 'gemini-live' },
+      tools: [{ name: 'faq_lookup', enabled: true, timeout_ms: 6_000 }]
+    }),
+    sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => {
+      toolInvocations += 1;
+      return { action: 'captain_tool', tool_name: 'faq_lookup', result: '{"total_count":0,"matches":[]}' };
+    }
+  };
+
+  const session = new VoiceSession({ client, callRef: 'call-faq-loop' });
+  await session.bootstrap();
+
+  await session.executeTool('faq_lookup', { query: 'слоган' }, { tool_call_id: 'call-1' });
+  await session.executeTool('faq_lookup', { query: '  СЛОГАН ' }, { tool_call_id: 'call-2' });
+  const suppressed = await session.executeTool('faq_lookup', { query: 'слоган' }, { tool_call_id: 'call-3' });
+
+  assert.equal(toolInvocations, 2);
+  assert.equal(suppressed.ok, true);
+  assert.equal(suppressed.suppressed, true);
+  assert.equal(suppressed.result.action, 'tool_suppressed');
+  assert.equal(controls.filter(payload => payload.action === 'tool_started').length, 2);
+  assert.equal(controls.filter(payload => payload.action === 'tool_suppressed').length, 1);
+});
+
+test('VoiceSession still allows corrected arguments and retries after failed tool calls', async () => {
+  const controls = [];
+  const toolPayloads = [];
+  let failOnce = true;
+  const client = {
+    getContext: async () => ({
+      call_ref: 'call-tool-retry',
+      ai: { provider: 'gemini-live' },
+      tools: [{ name: 'faq_lookup', enabled: true, timeout_ms: 6_000 }]
+    }),
+    sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (_name, payload) => {
+      toolPayloads.push(payload.arguments);
+      if (failOnce) {
+        failOnce = false;
+        throw new Error('temporary faq outage');
+      }
+      return { action: 'captain_tool', tool_name: 'faq_lookup', result: '{"total_count":1,"matches":[]}' };
+    }
+  };
+
+  const session = new VoiceSession({ client, callRef: 'call-tool-retry' });
+  await session.bootstrap();
+
+  const failed = await session.executeTool('faq_lookup', { query: 'слоган' }, { tool_call_id: 'retry-1' });
+  const retry = await session.executeTool('faq_lookup', { query: 'слоган' }, { tool_call_id: 'retry-2' });
+  const corrected = await session.executeTool('faq_lookup', { query: 'слоган компании' }, { tool_call_id: 'retry-3' });
+
+  assert.equal(failed.ok, false);
+  assert.equal(retry.ok, true);
+  assert.equal(corrected.ok, true);
+  assert.equal(toolPayloads.length, 3);
+  assert.equal(controls.some(payload => payload.action === 'tool_suppressed'), false);
+});
+
 test('VoiceSession sends finalize once with stable correlation refs', async () => {
   const finalizes = [];
   const client = {

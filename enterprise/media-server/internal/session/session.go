@@ -28,6 +28,8 @@ const (
 	StatusActive            Status = "active"
 	StatusAgentDisconnected Status = "agent_disconnected"
 	StatusTerminated        Status = "terminated"
+
+	peerCloseTimeout = 2 * time.Second
 )
 
 // MediaLegClosedError is returned when a browser/agent operation arrives after
@@ -372,6 +374,13 @@ func (s *Session) Terminate(reason string) {
 		"reason", reason,
 	)
 
+	// Signal long-lived runtime transports first. In production a Meta peer
+	// close can block inside the WebRTC stack; the AI runtime must still see the
+	// media session end promptly so it can finalize transcript/recording.
+	if s.cancel != nil {
+		s.cancel()
+	}
+
 	// Stop the bridge.
 	s.Bridge.Stop()
 
@@ -385,9 +394,22 @@ func (s *Session) Terminate(reason string) {
 		ap.Close()
 	}
 
-	// Close Meta peer.
+	// Close Meta peer. Do not let a provider/WebRTC close hang block
+	// recording finalization or Rails callbacks.
 	if metaPeer != nil {
-		metaPeer.Close()
+		closeDone := make(chan struct{})
+		go func() {
+			defer close(closeDone)
+			metaPeer.Close()
+		}()
+		select {
+		case <-closeDone:
+		case <-time.After(peerCloseTimeout):
+			slog.Warn("session: meta peer close timed out; continuing termination",
+				"session_id", s.ID,
+				"timeout", peerCloseTimeout.String(),
+			)
+		}
 	}
 
 	// Finalize recording.
@@ -400,7 +422,8 @@ func (s *Session) Terminate(reason string) {
 		}
 	}
 
-	// Cancel the session context.
+	// Cancel the session context again for idempotency in case future cleanup
+	// paths are added above this point.
 	if s.cancel != nil {
 		s.cancel()
 	}

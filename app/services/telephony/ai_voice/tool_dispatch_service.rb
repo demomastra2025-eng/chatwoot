@@ -259,6 +259,8 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_end_call
+    transport_result = terminate_transport_call
+
     call_session.update!(
       status: 'completed',
       ended_at: Time.current,
@@ -266,7 +268,7 @@ class Telephony::AiVoice::ToolDispatchService
       end_reason: arguments['reason'].presence || 'ai_voice_end_call'
     )
 
-    { action: 'end_call', status: call_session.status }
+    { action: 'end_call', status: call_session.status }.merge(transport_result)
   end
 
   def perform_captain_tool
@@ -376,6 +378,52 @@ class Telephony::AiVoice::ToolDispatchService
     tool_arguments = arguments.to_h.transform_keys(&:to_sym)
     tool_arguments[:semantic] = false if tool_name == 'faq_lookup'
     tool_arguments
+  end
+
+  def terminate_transport_call
+    return { transport_terminate_requested: false } unless whatsapp_cloud_runtime?
+
+    whatsapp_call = whatsapp_cloud_call
+    return { transport_terminate_requested: false, transport_reason: 'whatsapp_call_not_found' } if whatsapp_call.blank?
+
+    Whatsapp::CallService.new(call: whatsapp_call, agent: nil).terminate
+    { transport_terminate_requested: true, whatsapp_call_id: whatsapp_call.id }
+  rescue StandardError => e
+    Rails.logger.error "[AI VOICE TOOL] Failed to terminate WhatsApp call for session #{call_session.id}: #{e.class.name}: #{e.message}"
+    { transport_terminate_requested: false, transport_error: e.class.name }
+  end
+
+  def whatsapp_cloud_runtime?
+    call_session.provider == 'whatsapp_cloud' ||
+      call_session.metadata&.dig('ai_voice', 'transport') == 'whatsapp_cloud' ||
+      call_session.metadata&.dig('whatsapp_cloud', 'provider_call_id').present? ||
+      call_session.external_call_ref.to_s.start_with?('whatsapp:')
+  end
+
+  def whatsapp_cloud_call
+    provider_call_id = whatsapp_provider_call_id
+    return if provider_call_id.blank?
+
+    scope = Call.whatsapp.where(account_id: account.id, provider_call_id: provider_call_id)
+    scope = scope.where(conversation_id: call_session.conversation_id) if call_session.conversation_id.present?
+    scope = scope.where(inbox_id: call_session.inbox_id) if call_session.inbox_id.present?
+    scope.order(updated_at: :desc).first
+  end
+
+  def whatsapp_provider_call_id
+    @whatsapp_provider_call_id ||= begin
+      metadata_provider_call_id = call_session.metadata&.dig('whatsapp_cloud', 'provider_call_id').presence
+      if metadata_provider_call_id.present?
+        metadata_provider_call_id
+      else
+        ref = call_session.external_call_ref.to_s
+        if ref.start_with?('whatsapp:')
+          ref.delete_prefix('whatsapp:').presence
+        elsif call_session.provider == 'whatsapp_cloud'
+          ref.presence
+        end
+      end
+    end
   end
 
   def captain_assistant

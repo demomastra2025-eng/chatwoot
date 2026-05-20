@@ -1,5 +1,8 @@
+const DEFAULT_TOOL_START_PROMPT_DELAY_MS = 700;
+const DEFAULT_TOOL_PROMPT_MIN_INTERVAL_MS = 5_000;
+
 class DialogueDirector {
-  constructor({ context = {}, session = null, requestPayload = {}, sendText = null, setTimer = defaultSetTimer, clearTimer = defaultClearTimer } = {}) {
+  constructor({ context = {}, session = null, requestPayload = {}, sendText = null, setTimer = defaultSetTimer, clearTimer = defaultClearTimer, now = () => Date.now() } = {}) {
     this.context = context || {};
     this.settings = this.context.ai || {};
     this.session = session;
@@ -7,8 +10,10 @@ class DialogueDirector {
     this.sendText = typeof sendText === 'function' ? sendText : null;
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
+    this.now = typeof now === 'function' ? now : () => Date.now();
     this.timers = new Map();
     this.sequence = 0;
+    this.lastPromptAt = 0;
   }
 
   startToolWait(toolCall = {}) {
@@ -17,12 +22,23 @@ class DialogueDirector {
 
     const sequence = ++this.sequence;
     this.cancelToolWait('rearmed');
-    this.sendPrompt('tool_wait_start', pickPhrase(this.settings.tool_start_phrases));
+
+    const startDelayMs = nonNegativeInteger(this.settings.tool_start_after_ms, DEFAULT_TOOL_START_PROMPT_DELAY_MS);
+    const startTimer = this.setTimer(() => {
+      if (sequence !== this.sequence || this.session?.closed) return;
+      this.timers.delete('tool_start');
+      this.sendPrompt('tool_wait_start', pickPhrase(this.settings.tool_start_phrases), {
+        tool_name: toolName,
+        tool_call_id: toolCall.id,
+        delay_ms: startDelayMs
+      });
+    }, startDelayMs);
+    this.timers.set('tool_start', startTimer);
 
     const delayMs = positiveInteger(this.settings.tool_delay_after_ms);
-    if (!delayMs) return;
+    if (!delayMs || delayMs <= startDelayMs) return;
 
-    const timer = this.setTimer(() => {
+    const delayTimer = this.setTimer(() => {
       if (sequence !== this.sequence || this.session?.closed) return;
       this.timers.delete('tool_delay');
       this.sendPrompt('tool_wait_delay', pickPhrase(this.settings.tool_delay_phrases), {
@@ -31,7 +47,7 @@ class DialogueDirector {
         delay_ms: delayMs
       });
     }, delayMs);
-    this.timers.set('tool_delay', timer);
+    this.timers.set('tool_delay', delayTimer);
   }
 
   finishToolWait(toolCall = {}, toolResult = {}) {
@@ -46,10 +62,12 @@ class DialogueDirector {
   }
 
   cancelToolWait(_reason = 'cancelled') {
-    const timer = this.timers.get('tool_delay');
-    if (!timer) return;
-    this.clearTimer(timer);
-    this.timers.delete('tool_delay');
+    for (const timerKey of ['tool_start', 'tool_delay']) {
+      const timer = this.timers.get(timerKey);
+      if (!timer) continue;
+      this.clearTimer(timer);
+      this.timers.delete(timerKey);
+    }
   }
 
   close() {
@@ -59,9 +77,13 @@ class DialogueDirector {
   sendPrompt(kind, phrase, metadata = {}) {
     const text = cleanPhrase(phrase);
     if (!text || !this.sendText) return false;
+    const minIntervalMs = nonNegativeInteger(this.settings.tool_prompt_min_interval_ms, DEFAULT_TOOL_PROMPT_MIN_INTERVAL_MS);
+    const currentTime = this.now();
+    if (minIntervalMs && this.lastPromptAt && currentTime - this.lastPromptAt < minIntervalMs) return false;
 
     try {
       this.sendText(`Произнеси клиенту коротко и дословно, без пояснений: ${text}`);
+      this.lastPromptAt = currentTime;
     } catch (_error) {
       return false;
     }
@@ -100,6 +122,12 @@ function cleanPhrase(value) {
 function positiveInteger(value) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function nonNegativeInteger(value, fallback = 0) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function defaultSetTimer(handler, timeoutMs) {

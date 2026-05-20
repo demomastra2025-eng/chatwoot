@@ -903,8 +903,10 @@ test('VoiceApplication sends configured tool-wait fillers while a realtime tool 
       ai: {
         provider: 'gemini-live',
         tool_start_phrases: ['Секунду, проверю.'],
-        tool_delay_after_ms: 10,
-        tool_delay_phrases: ['Ещё смотрю, почти готово.']
+        tool_start_after_ms: 10,
+        tool_delay_after_ms: 25,
+        tool_delay_phrases: ['Ещё смотрю, почти готово.'],
+        tool_prompt_min_interval_ms: 0
       },
       tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
     }),
@@ -925,8 +927,10 @@ test('VoiceApplication sends configured tool-wait fillers while a realtime tool 
   const result = await app.handleCall(call, { call_ref: 'runtime-tool-wait' });
 
   const toolPromise = realtimeCallbacks.onToolCall({ id: 'tool-wait-1', name: 'faq_lookup', args: { query: 'режим' } });
+  assert.equal(sentTexts.some(text => text.includes('Секунду, проверю.')), false);
+  await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(sentTexts.some(text => text.includes('Секунду, проверю.')), true);
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(sentTexts.some(text => text.includes('Ещё смотрю, почти готово.')), true);
 
   resolveTool({ answer: 'Работаем до 18:00' });
@@ -1226,7 +1230,7 @@ test('VoiceApplication sends a bounded Gemini continuation when the model stalls
   await result.completion;
 });
 
-test('VoiceApplication cancels post-tool stall watchdog when Gemini continues with audio', async () => {
+test('VoiceApplication cancels post-tool stall watchdog when Gemini continues with answer transcript', async () => {
   const stream = new FakeVoiceStream();
   const events = [];
   const sentTexts = [];
@@ -1264,11 +1268,112 @@ test('VoiceApplication cancels post-tool stall watchdog when Gemini continues wi
   const result = await app.handleCall(call, { call_ref: 'runtime-tool-continues' });
 
   await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
-  realtimeCallbacks.onAudio(Buffer.alloc(960), { mimeType: 'audio/pcm;rate=24000' });
+  realtimeCallbacks.onTranscript({ speaker: 'ai', text: 'Наш слоган — Акуна матата.', final: true });
   await new Promise(resolve => setTimeout(resolve, 50));
 
   assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), false);
   assert.equal(events.some(event => event.event_type === 'post_tool_model_stall'), false);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication cancels post-tool stall watchdog when Gemini streams answer audio before transcript', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-audio-continues',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => ({ answer: 'Акуна матата' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    postToolContinuationMs: 30
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-audio-continues' });
+
+  await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  realtimeCallbacks.onAudio(Buffer.alloc(960), { mimeType: 'audio/pcm;rate=24000' });
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(stream.writes.length > 0, true);
+  assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), false);
+  assert.equal(events.some(event => event.event_type === 'post_tool_model_stall'), false);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication keeps post-tool continuation armed when only a tool-wait filler is spoken', async () => {
+  const stream = new FakeVoiceStream();
+  const events = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-tool-filler' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-filler',
+      ai: {
+        provider: 'gemini-live',
+        model: 'gemini-live-test',
+        tool_start_phrases: ['Секунду, проверю.']
+      },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => ({ answer: 'Акуна матата' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    postToolContinuationMs: 10
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-filler' });
+
+  await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  realtimeCallbacks.onTranscript({ speaker: 'ai', text: 'Секунду, проверю.', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), true);
+  assert.equal(events.some(event => event.event_type === 'post_tool_model_stall'), true);
 
   call.emit('end');
   await result.completion;

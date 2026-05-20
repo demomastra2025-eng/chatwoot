@@ -97,6 +97,33 @@ RSpec.describe 'Telephony Calls API', type: :request do
     FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
   end
 
+  it 'streams a signed WhatsApp runtime recording when the call ref contains dots and padding' do
+    call_ref = 'whatsapp:wacid.IhggMDBENkUxMUQ3QTNGMzZGMjE0QjVBMTA0QUYwNzM0MjUcGAs3NzA4MDA4NzQyMRUCABUIAA=='
+    storage_key = 'voice-recordings/1/whatsapp-wacid-safe/recording.wav'
+    call_session = create_recorded_call_session(
+      call_ref,
+      recording_metadata.merge('storage_key' => storage_key),
+      recording_ref: storage_key
+    )
+    recording_path = Rails.root.join('storage', call_session.metadata.dig('recording', 'storage_key'))
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.binwrite(recording_path, "RIFF\x24\x00\x00\x00WAVEfmt ")
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_ref)}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    signed_recording_url = response.parsed_body.dig('payload', 'recording_url')
+    expect(signed_recording_url).to include('recording_token=')
+
+    get signed_recording_url
+
+    expect(response).to have_http_status(:ok)
+    expect(response.media_type).to eq('audio/wav')
+    expect(response.body).to start_with('RIFF')
+  ensure
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
   it 'rejects an invalid signed recording playback URL without falling back to account auth' do
     call_session = create_recorded_call_session('invalid-token-recording-call')
 

@@ -379,7 +379,7 @@ Rails.application.routes.draw do
           end
 
           namespace :telephony do
-            resources :calls, only: [:index, :show], param: :call_ref do
+            resources :calls, only: [:index, :show], param: :call_ref, constraints: { call_ref: %r{[^/]+} } do
               member do
                 get :recording
               end

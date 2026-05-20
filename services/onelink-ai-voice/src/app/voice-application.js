@@ -296,6 +296,7 @@ class VoiceApplication {
     initialMediaKeepalive?.updateRefs?.({ streamRef, mediaSessionRef });
     let acceptingInput = true;
     let lastAudioOutLogAt = 0;
+    let lastToolWaitFillerTranscriptAt = 0;
     let lastCallerTranscriptAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
@@ -455,13 +456,15 @@ class VoiceApplication {
       systemPrompt: buildSystemPrompt(context),
       tools: normalizeContextTools(context.tools),
       onAudio: (chunk, metadata = {}) => {
-        postToolWatchdog.cancel('model_audio');
         initialMediaKeepalive?.stop?.('model_audio');
         if (!outputPacer || !chunk) return;
         const data = fonosterAudioChunk(chunk, metadata);
         if (!data.length) return;
         const now = Date.now();
         lastAiAudioAt = new Date(now).toISOString();
+        if (!recentToolWaitFillerTranscript(now, lastToolWaitFillerTranscriptAt)) {
+          postToolWatchdog.cancel('model_audio');
+        }
         if (now - lastAudioOutLogAt >= 1_000) {
           lastAudioOutLogAt = now;
           void session.safeEvent('realtime_audio_out', {
@@ -479,7 +482,11 @@ class VoiceApplication {
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         } else {
           lastAiTranscriptAt = item.at || new Date().toISOString();
-          postToolWatchdog.cancel('model_transcript');
+          if (isToolWaitFillerTranscript(item.text, context.ai)) {
+            lastToolWaitFillerTranscriptAt = Date.now();
+          } else {
+            postToolWatchdog.cancel('model_transcript');
+          }
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
@@ -1386,6 +1393,30 @@ function summarizeToolResult(result) {
     if (result[key]) return String(result[key]).slice(0, 240);
   }
   return '';
+}
+
+function isToolWaitFillerTranscript(text, settings = {}) {
+  const normalizedText = normalizeSpokenText(text);
+  if (!normalizedText) return false;
+  const phrases = [
+    settings?.tool_start_phrases,
+    settings?.tool_delay_phrases,
+    settings?.tool_failure_phrases
+  ].flatMap(value => (Array.isArray(value) ? value : [value]));
+
+  return phrases.some(phrase => normalizeSpokenText(phrase) === normalizedText);
+}
+
+function recentToolWaitFillerTranscript(now, lastFillerAt) {
+  return lastFillerAt > 0 && now - lastFillerAt < 1_500;
+}
+
+function normalizeSpokenText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?…]+$/g, '')
+    .replace(/\s+/g, ' ');
 }
 
 function objectKeys(value) {
