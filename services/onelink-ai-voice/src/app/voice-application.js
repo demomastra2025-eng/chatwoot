@@ -299,8 +299,10 @@ class VoiceApplication {
     let lastAudioOutLogAt = 0;
     let lastToolWaitFillerTranscriptAt = 0;
     let lastCallerTranscriptAt = null;
+    let lastCallerAudioAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
+    let lastMediaWriteAt = null;
     const clearOutputOnInterrupt = context.ai?.clear_audio_on_interrupt ?? context.ai?.clearAudioOnInterrupt ?? this.clearOutputOnInterrupt;
     const postToolWatchdog = createPostToolWatchdog({
       timeoutMs: context.ai?.post_tool_continuation_ms ?? context.ai?.postToolContinuationMs ?? this.postToolContinuationMs,
@@ -423,6 +425,9 @@ class VoiceApplication {
           });
         }
         try {
+          const markMediaWrite = () => {
+            lastMediaWriteAt = new Date().toISOString();
+          };
           const writeResult = mediaStream.write({
             mediaSessionRef,
             streamRef,
@@ -432,12 +437,16 @@ class VoiceApplication {
             data: frame
           });
           if (writeResult && typeof writeResult.then === 'function') {
-            writeResult.catch(error => {
-              const reason = mediaWriteFailureReason(error, 'media_writer_rejected');
-              failMediaWrite(reason, {
-                error_message: sanitizeReason(error?.message || error?.reason || reason)
+            writeResult
+              .then(markMediaWrite)
+              .catch(error => {
+                const reason = mediaWriteFailureReason(error, 'media_writer_rejected');
+                failMediaWrite(reason, {
+                  error_message: sanitizeReason(error?.message || error?.reason || reason)
+                });
               });
-            });
+          } else {
+            markMediaWrite();
           }
         } catch (error) {
           const reason = mediaWriteFailureReason(error, 'media_writer_failed');
@@ -491,7 +500,7 @@ class VoiceApplication {
           lastAiTranscriptAt = item.at || new Date().toISOString();
           if (isToolWaitFillerTranscript(item.text, context.ai)) {
             lastToolWaitFillerTranscriptAt = Date.now();
-          } else {
+          } else if (String(item.text || '').trim()) {
             postToolWatchdog.cancel('model_transcript');
           }
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
@@ -580,6 +589,7 @@ class VoiceApplication {
 
     wireMediaInput(mediaStream, payload => {
       if (!acceptingInput || !payload || !payload.data || !isAudioIn(payload.type)) return;
+      lastCallerAudioAt = new Date().toISOString();
       streamRef = payload.streamRef || payload.stream_ref || streamRef;
       session.streamRef = streamRef || session.streamRef;
       const sourceRate = audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE;
@@ -609,6 +619,25 @@ class VoiceApplication {
       recordingWriter,
       registry: this.registry,
       stopInput: () => { acceptingInput = false; },
+      classifyCompletion: (action, metadata = {}) => {
+        if (action !== 'media_stream_closed') return null;
+        if (!lastMediaWriteAt) return null;
+
+        return {
+          action: 'session_completed',
+          metadata: {
+            ...metadata,
+            reason: 'media_stream_closed',
+            final_status: 'completed',
+            incomplete_transcript: false,
+            include_partial_transcript: false,
+            media_stream_closed_after_audio: true,
+            last_ai_audio_at: lastAiAudioAt,
+            last_caller_audio_at: lastCallerAudioAt,
+            last_media_write_at: lastMediaWriteAt
+          }
+        };
+      },
       onFinish: () => {
         initialMediaKeepalive?.stop?.('completion');
         postToolWatchdog.cancel('completion');
@@ -1465,7 +1494,7 @@ function objectKeys(value) {
   return value && typeof value === 'object' ? Object.keys(value).slice(0, 20) : [];
 }
 
-function buildCompletion({ call, mediaStream, outputPacer, realtime, session, recordingWriter = null, registry, stopInput = null, onFinish = null }) {
+function buildCompletion({ call, mediaStream, outputPacer, realtime, session, recordingWriter = null, registry, stopInput = null, classifyCompletion = null, onFinish = null }) {
   let resolveCompletion;
   const completion = new Promise(resolve => { resolveCompletion = resolve; });
   let completed = false;
@@ -1473,8 +1502,13 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
   const finish = async (action = 'session_completed', metadata = {}) => {
     if (completed) return;
     completed = true;
-    const finalAction = completionAction(session, action);
-    const finalMetadata = completionMetadata(session, finalAction, metadata);
+    const initialAction = completionAction(session, action);
+    const classification = classifyCompletion?.(initialAction, metadata) || {};
+    const finalAction = classification.action || initialAction;
+    const finalMetadata = completionMetadata(session, finalAction, {
+      ...metadata,
+      ...(classification.metadata || {})
+    });
 
     try {
       onFinish?.(finalAction, finalMetadata);
@@ -1488,7 +1522,7 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
       // ignore input-gate cleanup errors
     }
 
-    if (shouldDrainOutput(finalAction)) {
+    if (shouldDrainOutput(initialAction)) {
       try {
         await outputPacer?.drain?.({ timeoutMs: 2_000 });
       } catch (_error) {

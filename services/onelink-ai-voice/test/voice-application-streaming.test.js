@@ -563,6 +563,50 @@ test('VoiceApplication treats media stream close as an incomplete failure and pr
   assert.equal(controls.some(payload => payload.action === 'session_completed'), false);
 });
 
+test('VoiceApplication treats media stream close after live audio as completed', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const finalizations = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-media-after-audio' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-media-after-audio', ai: { provider: 'gemini-live' } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    finalizeCall: async payload => { finalizations.push(payload); return { status: 'ok' }; }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime });
+  const result = await app.handleCall(call, { call_ref: 'call-media-after-audio' });
+  realtimeCallbacks.onAudio(Buffer.alloc(960 * 3), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+  stream.emit('close');
+  await result.completion;
+
+  assert.equal(stream.writes.length, 1);
+  assert.equal(controls.at(-1).action, 'session_completed');
+  assert.equal(finalizations.at(-1).status, 'completed');
+  assert.equal(finalizations.at(-1).reason, 'media_stream_closed');
+  assert.equal(finalizations.at(-1).incomplete_transcript, undefined);
+  assert.equal(finalizations.at(-1).media_stream_closed_after_audio, true);
+  assert.ok(finalizations.at(-1).last_ai_audio_at);
+  assert.ok(finalizations.at(-1).last_media_write_at);
+  assert.equal(events.some(event => event.event_type === 'call_ended' && event.payload.final_status === 'completed'), true);
+});
+
 test('VoiceApplication classifies media writer byte errors as framing failures', async () => {
   const stream = new FakeVoiceStream();
   stream.write = () => {
