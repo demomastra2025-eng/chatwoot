@@ -1,12 +1,31 @@
 package session
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 
 	"github.com/chatwoot/chatwoot-media-server/internal/peer"
 )
+
+func TestDoneClosesWhenSessionCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sess := &Session{Status: StatusActive, ctx: ctx, cancel: cancel}
+
+	done := sess.Done()
+	if done == nil {
+		t.Fatal("expected non-nil Done channel")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected Done channel to close after cancel")
+	}
+}
 
 func TestSetAgentAnswerReturnsMediaLegClosedWhenSessionTerminated(t *testing.T) {
 	sess := &Session{Status: StatusTerminated}

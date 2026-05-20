@@ -94,7 +94,7 @@ class Telephony::AiVoice::ToolDispatchService
   def self.captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?
 
-    Array(captain_assistant.direct_agent_tools).filter_map do |tool_definition|
+    Array(captain_tool_definitions(captain_assistant)).filter_map do |tool_definition|
       tool = tool_definition.with_indifferent_access
       tool_id = tool[:id].to_s
       next if tool_id.blank?
@@ -111,6 +111,16 @@ class Telephony::AiVoice::ToolDispatchService
         risk_level: tool[:risk_level],
         parameters: captain_tool_parameters(captain_assistant, tool)
       }.compact.deep_stringify_keys
+    end
+  end
+
+  def self.captain_tool_definitions(captain_assistant)
+    return [] if captain_assistant.blank?
+
+    if captain_assistant.respond_to?(:allowed_agent_tools)
+      captain_assistant.allowed_agent_tools
+    else
+      captain_assistant.direct_agent_tools
     end
   end
 
@@ -285,7 +295,7 @@ class Telephony::AiVoice::ToolDispatchService
 
   def captain_tool_definition
     @captain_tool_definition ||= begin
-      definition = captain_assistant&.direct_agent_tools&.find do |tool_definition|
+      definition = self.class.captain_tool_definitions(captain_assistant).find do |tool_definition|
         tool_definition.with_indifferent_access[:id].to_s == tool_name
       end
       definition&.with_indifferent_access
@@ -309,13 +319,57 @@ class Telephony::AiVoice::ToolDispatchService
         conversation: conversation,
         channel_type: conversation&.inbox&.channel_type
       )
-      state.merge(
+      state.merge!(
         account_id: account.id,
         assistant_id: captain_assistant.id,
+        assistant_config: captain_assistant.config,
+        captain_runtime: account.captain_preferences[:runtime],
+        runtime_clock: runtime_clock_state,
         source: 'voice_ai',
         call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }
       )
+      state[:reply_window] ||= reply_window_state if conversation.present?
+      state.compact!
+      state[:prompt_context] = captain_assistant.prompt_context_state(state)
+      state
     end
+  end
+
+  def runtime_clock_state
+    timezone = conversation&.inbox&.timezone.presence || Time.zone.name
+    timezone = 'UTC' if Time.find_zone(timezone).blank?
+    now = Time.current
+    local_now = now.in_time_zone(timezone)
+
+    {
+      now_utc: now.utc.iso8601,
+      now_local: local_now.iso8601,
+      timezone: timezone,
+      date_local: local_now.to_date.iso8601,
+      time_local: local_now.strftime('%H:%M:%S')
+    }
+  rescue StandardError
+    { timezone: 'UTC' }
+  end
+
+  def reply_window_state
+    return {} unless conversation&.inbox&.channel.is_a?(Channel::Whatsapp)
+
+    last_incoming_at = conversation.messages
+                                   .where(account_id: conversation.account_id)
+                                   .incoming
+                                   .reorder(created_at: :desc)
+                                   .limit(1)
+                                   .pick(:created_at)
+    closes_at = last_incoming_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
+
+    {
+      channel: 'official_whatsapp',
+      last_incoming_at: last_incoming_at&.iso8601,
+      closes_at: closes_at&.iso8601,
+      open_now: closes_at.present? && Time.current < closes_at,
+      requires_template_after_close: true
+    }.compact
   end
 
   def captain_tool_arguments

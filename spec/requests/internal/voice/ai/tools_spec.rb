@@ -104,6 +104,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     assistant = create(
       :captain_assistant,
       account: account,
+      description: "Use [Lookup booking](tool://#{custom_tool.slug}) when the caller asks about a booking.",
       config: {
         tool_access: {
           agent: {
@@ -135,6 +136,7 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     assistant = create(
       :captain_assistant,
       account: account,
+      description: 'Use [Get conversation](tool://get_conversation) when caller asks about the current conversation.',
       config: {
         tool_access: {
           agent: {

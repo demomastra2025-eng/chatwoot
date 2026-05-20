@@ -103,6 +103,9 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
     expect(body.dig('ai', 'system_prompt')).to include('Ты голосовой ассистент в телефонном звонке')
     expect(body.dig('ai', 'system_prompt')).to include('Отвечай максимум 1-2 короткими предложениями')
+    expect(body.dig('ai', 'system_prompt')).to include('Answer callers using OneLink account context.')
+    expect(body.dig('ai', 'system_prompt')).to include('Answer shortly')
+    expect(body.dig('ai', 'system_prompt')).to include('Do not reveal private data')
     expect(body.dig('captain', 'assistant_id')).to eq(assistant.id)
     expect(body.dig('captain', 'system_prompt')).to include('Answer callers using OneLink account context.')
     expect(body.dig('transfer', 'operator_agent_aor')).to eq('sip:1001@example.test')
@@ -127,7 +130,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('recording', 'enabled')).to eq(false)
+    expect(response.parsed_body.dig('recording', 'enabled')).to be(false)
   end
 
   it 'preserves explicit false and zero values in normalized voice settings' do
@@ -290,6 +293,44 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response).to have_http_status(:ok)
     faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
     expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 6000)
+  end
+
+  it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
+    crm_assistant = create(
+      :captain_assistant,
+      account: account,
+      description: [
+        'Use [@Создать сделку](tool://create_deal) when the caller asks for a deal.',
+        'Use [@Обновить сделку](tool://update_deal) when the caller changes deal data.',
+        'Use [@Перевести сделку](tool://transition_deal_stage) when stage changes are requested.'
+      ].join(' '),
+      config: {
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup']
+          }
+        }
+      }
+    )
+    create(:captain_inbox, captain_assistant: crm_assistant, inbox: voice_inbox)
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    tool_names = response.parsed_body['tools'].pluck('name')
+    expect(tool_names).to include(
+      'create_deal',
+      'update_deal',
+      'transition_deal_stage',
+      'list_deal_pipelines',
+      'list_deal_stages'
+    )
   end
 
   it 'does not resolve context from an unscoped call_ref even when it is globally unique' do

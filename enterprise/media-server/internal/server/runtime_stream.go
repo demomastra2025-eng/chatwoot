@@ -73,6 +73,8 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	stopRuntimeCloseWatcher := closeRuntimeStreamOnSessionDone(ctx, sess, conn, grant)
+	defer stopRuntimeCloseWatcher()
 	writer := newRuntimeAudioWriter(ctx, sess, grant)
 	defer writer.Close()
 	inputProducer := newRuntimeAudioInputProducer(ctx, sess, grant, conn)
@@ -147,6 +149,36 @@ func (h *Handlers) serveRuntimeStream(w http.ResponseWriter, r *http.Request, gr
 		"rtp_packets", writer.Packets(),
 		"input_pcm_frames", inputProducer.PCMFrames(),
 	)
+}
+
+func closeRuntimeStreamOnSessionDone(ctx context.Context, sess *session.Session, conn *websocket.Conn, grant runtimeStreamGrant) func() {
+	done := sess.Done()
+	if done == nil {
+		return func() {}
+	}
+
+	stop := make(chan struct{})
+	var once sync.Once
+	stopFn := func() { once.Do(func() { close(stop) }) }
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-done:
+		}
+
+		slog.Info("handler: runtime stream closing after media session termination",
+			"session_id", grant.SessionID,
+			"runtime_session_id", grant.RuntimeSessionID,
+			"call_ref", grant.CallRef,
+		)
+		deadline := time.Now().Add(200 * time.Millisecond)
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "media session terminated"), deadline)
+		_ = conn.Close()
+	}()
+	return stopFn
 }
 
 type runtimeAudioWriter struct {

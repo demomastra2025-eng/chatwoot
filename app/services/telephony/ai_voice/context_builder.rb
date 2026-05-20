@@ -23,6 +23,7 @@ class Telephony::AiVoice::ContextBuilder
   def perform
     ensure_call_ref!
     session = call_session || create_call_session!
+    @call_session ||= session
 
     {
       call_ref: session.external_call_ref,
@@ -151,11 +152,88 @@ class Telephony::AiVoice::ContextBuilder
 
   def system_prompt
     base = []
-    base << captain_assistant.system_instruction if captain_assistant&.system_instruction.present?
-    base.concat(captain_assistant.system_rule_contents) if captain_assistant.present?
+    base << captain_agent_instructions if captain_assistant.present?
     base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
     base << DEFAULT_SYSTEM_PROMPT
     base.compact_blank.join("\n")
+  end
+
+  def captain_agent_instructions
+    state = captain_runtime_state_for_prompt
+    context_wrapper = Struct.new(:context).new({ state: state })
+    captain_assistant.agent_instructions(context_wrapper)
+  end
+
+  def captain_runtime_state_for_prompt
+    @captain_runtime_state_for_prompt ||= begin
+      state = {
+        account_id: account.id,
+        assistant_id: captain_assistant.id,
+        assistant_config: captain_assistant.config,
+        captain_runtime: account.captain_preferences[:runtime],
+        source: 'voice_ai',
+        runtime_clock: runtime_clock_state,
+        call_session: { id: session_for_prompt&.id, external_call_ref: session_for_prompt&.external_call_ref }
+      }
+
+      if session_for_prompt&.conversation.present?
+        state.merge!(
+          Captain::ContextFields.runtime_state_for(
+            account: account,
+            conversation: session_for_prompt.conversation,
+            channel_type: session_for_prompt.conversation.inbox&.channel_type
+          )
+        )
+        state[:channel_type] ||= session_for_prompt.conversation.inbox&.channel_type
+        state[:reply_window] ||= reply_window_state
+      end
+
+      state.compact!
+      state[:prompt_context] = captain_assistant.prompt_context_state(state)
+      state
+    end
+  end
+
+  def session_for_prompt
+    @session_for_prompt ||= call_session || create_call_session!
+  end
+
+  def runtime_clock_state
+    timezone = session_for_prompt&.conversation&.inbox&.timezone.presence || Time.zone.name
+    timezone = 'UTC' if Time.find_zone(timezone).blank?
+    now = Time.current
+    local_now = now.in_time_zone(timezone)
+
+    {
+      now_utc: now.utc.iso8601,
+      now_local: local_now.iso8601,
+      timezone: timezone,
+      date_local: local_now.to_date.iso8601,
+      time_local: local_now.strftime('%H:%M:%S')
+    }
+  rescue StandardError
+    { timezone: 'UTC' }
+  end
+
+  def reply_window_state
+    conversation = session_for_prompt&.conversation
+    return {} unless conversation&.inbox&.channel.is_a?(Channel::Whatsapp)
+
+    last_incoming_at = conversation.messages
+                                   .where(account_id: conversation.account_id)
+                                   .incoming
+                                   .reorder(created_at: :desc)
+                                   .limit(1)
+                                   .pick(:created_at)
+    closes_at = last_incoming_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
+
+    {
+      channel: 'official_whatsapp',
+      last_incoming_at: last_incoming_at&.iso8601,
+      closes_at: closes_at&.iso8601,
+      open_now: closes_at.present? && Time.current < closes_at,
+      requires_template_after_close: true
+    }.compact
   end
 
   def ai_settings
@@ -170,12 +248,12 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def call_session
-    @call_session ||= begin
-      return if call_ref.blank?
-
-      scoped_payload = params.merge('account_id' => account_id.presence || explicit_number_binding&.account_id)
-      Telephony::AiVoice::CallSessionResolver.new(payload: scoped_payload).call_session
-    end
+    @call_session ||= if call_ref.blank?
+                        nil
+                      else
+                        scoped_payload = params.merge('account_id' => account_id.presence || explicit_number_binding&.account_id)
+                        Telephony::AiVoice::CallSessionResolver.new(payload: scoped_payload).call_session
+                      end
   end
 
   def account
@@ -236,12 +314,13 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def contact
-    @contact ||= begin
-      return call_session.contact if call_session&.contact.present?
-      return if caller_number.blank? || account.blank?
-
-      account.contacts.find_by(phone_number: caller_number) || account.contacts.find_by(phone_number: normalized_caller_number)
-    end
+    @contact ||= if call_session&.contact.present?
+                   call_session.contact
+                 elsif caller_number.blank? || account.blank?
+                   nil
+                 else
+                   account.contacts.find_by(phone_number: caller_number) || account.contacts.find_by(phone_number: normalized_caller_number)
+                 end
   end
 
   def normalized_caller_number

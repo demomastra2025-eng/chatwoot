@@ -84,6 +84,17 @@ type Session struct {
 	mu sync.Mutex
 }
 
+// Done returns a channel that is closed when the session terminates.
+// Runtime-only transports can use it to unblock long-lived streams when the
+// WhatsApp media leg is closed. Operator/browser flows should continue using
+// their existing peer lifecycle callbacks.
+func (s *Session) Done() <-chan struct{} {
+	if s == nil || s.ctx == nil {
+		return nil
+	}
+	return s.ctx.Done()
+}
+
 // Info is the JSON-serializable representation of a session's current state,
 // returned by the GET /sessions/:id endpoint.
 type Info struct {
