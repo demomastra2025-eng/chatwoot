@@ -24,7 +24,7 @@ trigger_imap_email_inboxes_job:
 whatsapp_call_cleanup_job:
   cron: '*/5 * * * *'
   class: 'Whatsapp::CallCleanupJob'
-  queue: low
+  queue: whatsapp_calls
 
 # reconcile Fonoster bridge call state for active native telephony sessions
 telephony_call_reconciliation_job:

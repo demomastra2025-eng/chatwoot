@@ -66,6 +66,26 @@ services:
       - shared-services
     restart: always
 
+  whatsapp-calls-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+      - WHATSAPP_CALLS_SIDEKIQ_CONCURRENCY=${WHATSAPP_CALLS_SIDEKIQ_CONCURRENCY:-1}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_whatsapp_calls.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
   telegram-personal-history-worker:
     <<: *base
     depends_on:

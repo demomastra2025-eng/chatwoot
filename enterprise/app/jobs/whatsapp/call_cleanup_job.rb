@@ -1,5 +1,5 @@
 class Whatsapp::CallCleanupJob < ApplicationJob
-  queue_as :low
+  queue_as :whatsapp_calls
 
   RINGING_TIMEOUT = 60.seconds
   IN_PROGRESS_TIMEOUT = 3.hours

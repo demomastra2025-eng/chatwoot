@@ -4,8 +4,9 @@
 require 'rails_helper'
 
 RSpec.context 'with valid schedule.yml' do
+  let(:file) { Rails.root.join('config/schedule.yml') }
+
   it 'does not have duplicates' do
-    file = Rails.root.join('config/schedule.yml')
     schedule_keys = []
     invalid_line_starts = [' ', '#', "\n"]
     # couldn't figure out a proper solution with yaml.parse
@@ -20,5 +21,11 @@ RSpec.context 'with valid schedule.yml' do
     end
     # ensure that no duplicates exist
     expect(schedule_keys.count).to eq(schedule_keys.uniq.count)
+  end
+
+  it 'keeps WhatsApp call cleanup on the isolated calls queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('whatsapp_call_cleanup_job', 'queue')).to eq('whatsapp_calls')
   end
 end

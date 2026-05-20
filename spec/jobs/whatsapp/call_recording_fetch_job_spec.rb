@@ -12,6 +12,21 @@ RSpec.describe Whatsapp::CallRecordingFetchJob, type: :job do
     allow(Whatsapp::CallTranscriptionJob).to receive(:perform_later)
   end
 
+  it 'runs on the isolated WhatsApp calls queue' do
+    expect(described_class.queue_name).to eq('whatsapp_calls')
+  end
+
+  it 'does not hit the media server again when the recording is already attached' do
+    call.recording.attach(io: StringIO.new('existing-recording'), filename: 'existing.ogg', content_type: 'audio/ogg')
+
+    expect(client).not_to receive(:terminate_session)
+    expect(client).not_to receive(:download_recording)
+
+    described_class.perform_now(call.id)
+
+    expect(Whatsapp::CallMessageBuilder).not_to have_received(:update_recording_url!)
+  end
+
   it 'attaches a mixed recording from side recordings when combined recording is missing' do
     allow(client).to receive(:download_recording).with(call.media_session_id).and_raise(
       Whatsapp::MediaServerClient::SessionError.new('Recording download failed (404)', http_status: 404)

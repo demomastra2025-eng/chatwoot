@@ -3,7 +3,7 @@ require 'tempfile'
 require 'timeout'
 
 class Whatsapp::CallRecordingFetchJob < ApplicationJob
-  queue_as :default
+  queue_as :whatsapp_calls
 
   MIN_RECORDING_BYTES = 512
   MIX_TIMEOUT = 8.seconds
@@ -14,6 +14,7 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
   def perform(call_id)
     call = Call.find(call_id)
     return if call.media_session_id.blank?
+    return if call.recording.attached?
 
     client = Whatsapp::MediaServerClient.new
 

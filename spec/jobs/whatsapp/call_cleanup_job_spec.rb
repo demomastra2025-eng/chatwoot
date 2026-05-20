@@ -29,6 +29,10 @@ RSpec.describe Whatsapp::CallCleanupJob do
     Current.suppress_runtime_events = nil
   end
 
+  it 'runs on the isolated WhatsApp calls queue' do
+    expect(described_class.queue_name).to eq('whatsapp_calls')
+  end
+
   it 'expires one stale inbound ringing call after the 60 second answer window' do
     described_class.perform_now(call.id)
 

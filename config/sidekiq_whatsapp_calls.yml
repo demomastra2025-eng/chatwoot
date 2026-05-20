@@ -1,0 +1,13 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("WHATSAPP_CALLS_SIDEKIQ_CONCURRENCY", 1) %>
+:timeout: 25
+:max_retries: 3
+
+:queues:
+  - whatsapp_calls
+
+production:
+  :concurrency: <%= ENV.fetch("WHATSAPP_CALLS_SIDEKIQ_CONCURRENCY", 1) %>
+staging:
+  :concurrency: <%= ENV.fetch("WHATSAPP_CALLS_SIDEKIQ_CONCURRENCY", 1) %>
