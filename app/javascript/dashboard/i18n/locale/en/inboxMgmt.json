@@ -1312,6 +1312,9 @@
       "WHATSAPP_CALLING_TITLE": "WhatsApp Calling",
       "WHATSAPP_CALLING_SUBHEADER": "Allow agents to make and receive WhatsApp Cloud calls from this inbox.",
       "WHATSAPP_CALLING_LABEL": "Enable WhatsApp Calling",
+      "WHATSAPP_AI_VOICE_TITLE": "WhatsApp AI Voice",
+      "WHATSAPP_AI_VOICE_SUBHEADER": "Allow the AI voice agent to auto-answer WhatsApp calls in pending conversations.",
+      "WHATSAPP_AI_VOICE_LABEL": "Enable AI voice auto-answer",
       "UPDATE_PRE_CHAT_FORM_SETTINGS": "Update Pre Chat Form Settings",
       "ALLOW_MOBILE_WEBVIEW": {
         "LABEL": "Enable widget in mobile apps",

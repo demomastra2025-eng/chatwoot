@@ -48,6 +48,7 @@ export default {
       allowedDomains: '',
       isUpdatingAllowedDomains: false,
       callingEnabled: false,
+      aiVoiceEnabled: false,
       isSettingDefaults: false,
       fonosterReadinessKey: 0,
     };
@@ -98,6 +99,7 @@ export default {
       )
         ? !!this.inbox.provider_config.calling_enabled
         : !!this.inbox.provider_config?.calling_capable;
+      this.aiVoiceEnabled = !!this.inbox.provider_config?.ai_voice_enabled;
       this.$nextTick(() => {
         this.isSettingDefaults = false;
       });
@@ -211,6 +213,23 @@ export default {
             provider_config: {
               ...this.inbox.provider_config,
               calling_enabled: this.callingEnabled,
+            },
+          },
+        });
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
+      } catch (error) {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+    },
+    async updateAiVoiceEnabled() {
+      try {
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.inbox.id,
+          formData: false,
+          channel: {
+            provider_config: {
+              ...this.inbox.provider_config,
+              ai_voice_enabled: this.aiVoiceEnabled,
             },
           },
         });
@@ -565,6 +584,22 @@ export default {
           />
           <label for="callingEnabled" class="text-body-main text-n-slate-12">
             {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_CALLING_LABEL') }}
+          </label>
+        </div>
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_AI_VOICE_TITLE')"
+        :help-text="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_AI_VOICE_SUBHEADER')"
+      >
+        <div class="flex gap-2 items-center">
+          <input
+            id="aiVoiceEnabled"
+            v-model="aiVoiceEnabled"
+            type="checkbox"
+            @change="updateAiVoiceEnabled"
+          />
+          <label for="aiVoiceEnabled" class="text-body-main text-n-slate-12">
+            {{ $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_AI_VOICE_LABEL') }}
           </label>
         </div>
       </SettingsFieldSection>
