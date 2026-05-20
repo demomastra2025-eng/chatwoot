@@ -530,7 +530,11 @@ class VoiceApplication {
         await session.safeControl('caller_interrupted', interruptMetadata);
       },
       onEvent: event => {
-        if (event?.serverContent?.turnComplete) postToolWatchdog.cancel('turn_complete');
+        // Do not disarm the post-tool continuation watchdog on provider
+        // turnComplete alone. Gemini can complete the short tool-wait filler
+        // turn ("Секунду, проверю") without actually answering from the tool
+        // result; disarming here caused Voice Agent to stay silent/repeat tools.
+        // The watchdog is cancelled by real model audio/transcript above.
         if (event?.close) {
           postToolWatchdog.cancel('provider_closed');
           const metadata = {
@@ -549,7 +553,6 @@ class VoiceApplication {
           void session.safeEvent('provider_error', metadata);
           void completion?.finish?.('provider_error', metadata);
         } else if (event?.serverContent?.interrupted) {
-          postToolWatchdog.cancel('provider_interrupted');
           void session.safeEvent('realtime_interrupted', compactPayload({
             provider: 'gemini-live',
             reason: event.serverContent.interruptionReason || event.serverContent.reason || 'vad_or_caller_speech',
@@ -1398,11 +1401,40 @@ function postToolContinuationPrompt(toolCall = {}, toolResult = {}) {
 }
 
 function summarizeToolResult(result) {
-  if (!result || typeof result !== 'object') return '';
+  if (!result) return '';
+  if (typeof result === 'string') {
+    const parsed = parseJsonObject(result);
+    return parsed ? summarizeToolResult(parsed) : result.slice(0, 240);
+  }
+  if (typeof result !== 'object') return '';
+  if (result.result) {
+    const nested = summarizeToolResult(result.result);
+    if (nested) return nested;
+  }
   for (const key of ['answer', 'text', 'summary', 'message']) {
     if (result[key]) return String(result[key]).slice(0, 240);
   }
+  if (Number(result.total_count) === 0 || (Array.isArray(result.matches) && result.matches.length === 0)) {
+    return 'по этому запросу ничего не найдено; скажи клиенту это коротко и предложи уточнить вопрос или соединить со специалистом';
+  }
+  if (Array.isArray(result.matches) && result.matches.length > 0) {
+    return result.matches.slice(0, 2).map(item => item.answer || item.text || item.title || item.content).filter(Boolean).join(' ').slice(0, 240);
+  }
+  if (Array.isArray(result.pipelines) && result.pipelines.length > 0) {
+    const names = result.pipelines.slice(0, 4).map(item => item.name).filter(Boolean).join(', ');
+    return names ? `доступные воронки: ${names}` : '';
+  }
+  if (result.deal && result.deal.id) return `сделка создана, id ${result.deal.id}`;
   return '';
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_error) {
+    return null;
+  }
 }
 
 function isToolWaitFillerTranscript(text, settings = {}) {

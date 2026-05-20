@@ -78,7 +78,7 @@ describe('useWhatsappCallSession', () => {
     global.RTCPeerConnection = FakeRTCPeerConnection;
   });
 
-  it('uses a sendrecv transceiver and replaceTrack for server-relay agent answers', async () => {
+  it('attaches the microphone with addTrack for server-relay agent answers', async () => {
     const audioTrack = { kind: 'audio', stop: vi.fn() };
     const replaceTrack = vi.fn(async () => Promise.resolve());
     const addTransceiver = vi.fn(() => ({ sender: { replaceTrack } }));
@@ -97,11 +97,12 @@ describe('useWhatsappCallSession', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(addTransceiver).toHaveBeenCalledWith('audio', {
-      direction: 'sendrecv',
-    });
-    expect(replaceTrack).toHaveBeenCalledWith(audioTrack);
-    expect(pc.addTrack).not.toHaveBeenCalled();
+    expect(addTransceiver).not.toHaveBeenCalled();
+    expect(replaceTrack).not.toHaveBeenCalled();
+    expect(pc.addTrack).toHaveBeenCalledWith(
+      audioTrack,
+      expect.objectContaining({ getTracks: expect.any(Function) })
+    );
     expect(WhatsappCallsAPI.agentAnswer).toHaveBeenCalledWith(
       44,
       'agent-answer-sdp',

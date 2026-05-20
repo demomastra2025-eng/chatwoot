@@ -1204,7 +1204,7 @@ test('VoiceApplication sends a bounded Gemini continuation when the model stalls
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
     sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' }),
-    callTool: async () => ({ answer: 'Акуна матата' })
+    callTool: async () => ({ action: 'captain_tool', result: '{"query":"слоган","total_count":0,"matches":[]}' })
   };
   const realtime = {
     connect: async options => { realtimeCallbacks = options; },
@@ -1221,10 +1221,12 @@ test('VoiceApplication sends a bounded Gemini continuation when the model stalls
   const result = await app.handleCall(call, { call_ref: 'runtime-tool-stall' });
 
   const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  realtimeCallbacks.onEvent({ serverContent: { turnComplete: true } });
   assert.equal(toolResult.ok, true);
   await new Promise(resolve => setTimeout(resolve, 30));
 
   assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), true);
+  assert.equal(sentTexts.some(text => text.includes('ничего не найдено')), true);
   const stallEvent = events.find(event => event.event_type === 'post_tool_model_stall');
   assert.ok(stallEvent);
   assert.equal(stallEvent.payload.tool_name, 'faq_lookup');
