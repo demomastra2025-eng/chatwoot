@@ -23,6 +23,8 @@ let inboundNegotiationToken = 0;
 let inboundPrewarmStream = null;
 let inboundPrewarmPromise = null;
 let inboundPrewarmToken = 0;
+const preparedInboundAgentAnswers = new Map();
+const PREPARED_AGENT_ANSWER_TTL_MS = 15000;
 
 // ── Module-level recording state (legacy mode only) ──
 let mediaRecorder = null;
@@ -126,6 +128,56 @@ async function takeInboundPrewarmedAudioStream() {
 
 function isInboundDirection(direction) {
   return direction === 'incoming' || direction === 'inbound';
+}
+
+function preparedAnswerKeys(callLike = {}) {
+  return [
+    callLike.id ? `id:${callLike.id}` : null,
+    callLike.callId ? `call:${callLike.callId}` : null,
+    callLike.call_id ? `call:${callLike.call_id}` : null,
+  ].filter(Boolean);
+}
+
+function setPreparedInboundAgentAnswer(callLike, record) {
+  preparedAnswerKeys(callLike).forEach(key =>
+    preparedInboundAgentAnswers.set(key, record)
+  );
+}
+
+export function clearPreparedInboundAgentAnswer(
+  callLike,
+  { cleanupWebrtc = false } = {}
+) {
+  const records = new Set(
+    preparedAnswerKeys(callLike)
+      .map(key => preparedInboundAgentAnswers.get(key))
+      .filter(Boolean)
+  );
+  preparedAnswerKeys(callLike).forEach(key =>
+    preparedInboundAgentAnswers.delete(key)
+  );
+  if (records.size) {
+    Array.from(preparedInboundAgentAnswers.entries()).forEach(
+      ([key, record]) => {
+        if (records.has(record)) preparedInboundAgentAnswers.delete(key);
+      }
+    );
+  }
+  if (cleanupWebrtc) cleanupInboundWebRTC();
+}
+
+function getPreparedInboundAgentAnswer(callLike) {
+  const now = Date.now();
+  const keys = preparedAnswerKeys(callLike);
+  const record = keys
+    .map(key => preparedInboundAgentAnswers.get(key))
+    .find(Boolean);
+  if (!record) return null;
+  if (record.expiresAt <= now) {
+    clearPreparedInboundAgentAnswer(callLike);
+    return null;
+  }
+  return record;
 }
 
 function nowMs() {
@@ -526,14 +578,6 @@ function prepareInboundAgentAnswer(callId, agentOffer) {
   );
 }
 
-async function postPreparedInboundAgentAnswer(preparedAnswerPromise) {
-  if (!preparedAnswerPromise) return false;
-  const preparedAnswer = await preparedAnswerPromise;
-  if (!preparedAnswer?.postAgentAnswer) return false;
-  await preparedAnswer.postAgentAnswer();
-  return true;
-}
-
 function sameAgentOffer(firstOffer, secondOffer) {
   if (!firstOffer?.sdp_offer || !secondOffer?.sdp_offer) return false;
   if (firstOffer.sdp_offer !== secondOffer.sdp_offer) return false;
@@ -544,6 +588,45 @@ function sameAgentOffer(firstOffer, secondOffer) {
     JSON.stringify(firstOffer.ice_servers || []) ===
     JSON.stringify(secondOffer.ice_servers || [])
   );
+}
+
+export function prewarmInboundAgentAnswerForCall(call) {
+  if (!isServerRelayCall(call) || !call?.agentOffer?.sdp_offer) {
+    if (isServerRelayCall(call)) prepareInboundAudioStream();
+    return null;
+  }
+
+  prepareInboundAudioStream();
+  const existing = getPreparedInboundAgentAnswer(call);
+  if (existing && sameAgentOffer(existing.agentOffer, call.agentOffer)) {
+    return existing.promise;
+  }
+
+  clearPreparedInboundAgentAnswer(call);
+  const promise = prepareInboundAgentAnswer(call.id, call.agentOffer);
+  const record = {
+    agentOffer: call.agentOffer,
+    promise,
+    expiresAt: Date.now() + PREPARED_AGENT_ANSWER_TTL_MS,
+  };
+  setPreparedInboundAgentAnswer(call, record);
+  promise.catch(() => clearPreparedInboundAgentAnswer(call));
+  return promise;
+}
+
+function consumePreparedInboundAgentAnswer(call, agentOffer) {
+  const record = getPreparedInboundAgentAnswer(call);
+  if (!record || !sameAgentOffer(record.agentOffer, agentOffer)) return null;
+  clearPreparedInboundAgentAnswer(call);
+  return record.promise;
+}
+
+async function postPreparedInboundAgentAnswer(preparedAnswerPromise) {
+  if (!preparedAnswerPromise) return false;
+  const preparedAnswer = await preparedAnswerPromise;
+  if (!preparedAnswer?.postAgentAnswer) return false;
+  await preparedAnswer.postAgentAnswer();
+  return true;
 }
 
 /**
@@ -779,10 +862,9 @@ export async function acceptWhatsappCallById(callId) {
       prepareInboundAudioStream();
       preparedAgentOffer =
         call.agentOffer || callsStore.consumePendingAgentOffer(activeCallData);
-      preparedAgentAnswerPromise = prepareInboundAgentAnswer(
-        call.id,
-        preparedAgentOffer
-      );
+      preparedAgentAnswerPromise =
+        consumePreparedInboundAgentAnswer(call, preparedAgentOffer) ||
+        prepareInboundAgentAnswer(call.id, preparedAgentOffer);
       preparedAgentAnswerPromise?.catch(() => {});
     }
 
@@ -981,10 +1063,9 @@ export function useWhatsappCallSession() {
         preparedAgentOffer =
           call.agentOffer ||
           callsStore.consumePendingAgentOffer(activeCallData);
-        preparedAgentAnswerPromise = prepareInboundAgentAnswer(
-          call.id,
-          preparedAgentOffer
-        );
+        preparedAgentAnswerPromise =
+          consumePreparedInboundAgentAnswer(call, preparedAgentOffer) ||
+          prepareInboundAgentAnswer(call.id, preparedAgentOffer);
         preparedAgentAnswerPromise?.catch(() => {});
       }
 

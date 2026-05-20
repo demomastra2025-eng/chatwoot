@@ -89,7 +89,7 @@ export const useWhatsappCallInitiation = () => {
   };
 
   const connectImmediateOutboundAgentOffer = async (callId, agentOffer) => {
-    if (!agentOffer?.sdp_offer) return;
+    if (!agentOffer?.sdp_offer) return false;
 
     whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: true });
     try {
@@ -100,6 +100,7 @@ export const useWhatsappCallInitiation = () => {
         {
           direction: 'outbound',
           context: 'outbound-initiate-response',
+          peerId: agentOffer.peer_id,
         }
       );
       whatsappCallsStore.updateActiveCall({
@@ -110,17 +111,19 @@ export const useWhatsappCallInitiation = () => {
         whatsappCallsStore.markActiveCallConnected();
         emitter.emit('whatsapp_call:agent_webrtc_connected');
       }
+      return true;
     } catch (err) {
       whatsappCallsStore.updateActiveCall({ agentWebrtcConnecting: false });
       if (isMediaLegClosedError(err)) {
         handleMediaLegClosed(whatsappCallsStore);
-        return;
+        return false;
       }
       // eslint-disable-next-line no-console
       console.error(
         '[WhatsApp Call] Failed to handle immediate outbound agent offer:',
         err
       );
+      return false;
     }
   };
 
@@ -183,12 +186,17 @@ export const useWhatsappCallInitiation = () => {
   const initiateServerRelayCall = async () => {
     if (isInitiatingCall.value || !currentChat.value?.id) return;
     isInitiatingCall.value = true;
+    let preparedCallId = null;
+    let dialStarted = false;
 
     try {
-      const response = await WhatsappCallsAPI.initiate(currentChat.value.id);
-      if (handleInitiatePermissionStatus(response)) return;
-
       showCallingAlert();
+      const response = await WhatsappCallsAPI.prepareOutbound(
+        currentChat.value.id
+      );
+      if (handleInitiatePermissionStatus(response)) return;
+      preparedCallId = response.data?.id;
+
       const activeCallData = setOutboundActiveCall(response);
       const agentOffer =
         response.data?.agent_offer ||
@@ -196,8 +204,30 @@ export const useWhatsappCallInitiation = () => {
       if (response.data?.agent_offer) {
         whatsappCallsStore.clearPendingAgentOffer(activeCallData);
       }
-      await connectImmediateOutboundAgentOffer(response.data?.id, agentOffer);
+      const operatorLegReady = await connectImmediateOutboundAgentOffer(
+        response.data?.id,
+        agentOffer
+      );
+      if (!operatorLegReady) {
+        throw new Error(t('WHATSAPP_CALL.CALL_FAILED'));
+      }
+
+      dialStarted = true;
+      const dialResponse = await WhatsappCallsAPI.dial(response.data?.id);
+      if (handleInitiatePermissionStatus(dialResponse)) {
+        whatsappCallsStore.clearActiveCall();
+        return;
+      }
+      whatsappCallsStore.updateActiveCall({
+        id: dialResponse.data?.id || response.data?.id,
+        callId: dialResponse.data?.call_id || response.data?.call_id,
+        status: dialResponse.data?.status || 'ringing',
+      });
     } catch (err) {
+      if (preparedCallId && !dialStarted) {
+        WhatsappCallsAPI.terminate(preparedCallId).catch(() => {});
+      }
+      whatsappCallsStore.clearActiveCall();
       handleInitiateError(err);
     } finally {
       isInitiatingCall.value = false;

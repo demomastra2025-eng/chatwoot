@@ -11,7 +11,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   SAFE_AUDIO_PATH_PATTERN = %r{\A[a-zA-Z0-9][a-zA-Z0-9_\.\-/]*\z}
 
   before_action :ensure_whatsapp_call_enabled
-  before_action :set_call, only: [:show, :accept, :reject, :terminate, :upload_recording, :agent_answer, :reconnect, :join, :play_audio]
+  before_action :set_call, only: [:show, :accept, :reject, :terminate, :upload_recording, :agent_answer, :reconnect, :join, :play_audio, :dial]
 
   def show
     render json: {
@@ -211,6 +211,45 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     render json: { error: e.message }, status: :unprocessable_entity
   end
 
+  def prepare_outbound
+    conversation = current_account.conversations.find_by!(display_id: params[:conversation_id])
+    authorize conversation, :show?
+    error = validate_whatsapp_calling(conversation)
+    return render json: { error: error }, status: :unprocessable_entity if error
+    unless media_server_enabled_for_inbox?(conversation.inbox)
+      return render json: { error: 'Media server is required for prepared outbound calls' }, status: :unprocessable_entity
+    end
+
+    call = prepare_outbound_call_via_media_server(conversation)
+    message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: call, user: current_user)
+    call.update!(message_id: message.id)
+    schedule_call_cleanup(call)
+    render json: outbound_initiate_payload(call, message)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'Conversation not found' }, status: :not_found
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP CALL] prepare_outbound failed: #{e.message}"
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  def dial
+    return render json: { error: 'Call is not an outbound prepared call' }, status: :unprocessable_entity unless prepared_outbound_call?(@call)
+
+    provider_call_id = dial_prepared_outbound_call(@call)
+    render json: {
+      id: @call.id,
+      status: @call.status,
+      call_id: provider_call_id,
+      message_id: @call.message_id,
+      media_session_id: @call.media_session_id
+    }
+  rescue Whatsapp::CallErrors::NoCallPermission
+    handle_no_call_permission(@call.conversation)
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP CALL] dial failed: #{e.message}"
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   private
 
   def outbound_initiate_payload(call, message)
@@ -221,7 +260,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       message_id: message.id,
       media_session_id: call.media_session_id
     }.compact
-    payload[:agent_offer] = normalize_agent_offer(@outbound_agent_offer) if @outbound_agent_offer.present?
+    agent_offer = @outbound_agent_offer || call.meta&.dig('agent_offer')
+    payload[:agent_offer] = normalize_agent_offer(agent_offer) if agent_offer.present?
     payload
   end
 
@@ -256,12 +296,25 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     expected_peer_id = agent_offers.dig(current_user.id.to_s, 'peer_id')
     requested_peer_id = params[:peer_id].presence
 
-    return requested_peer_id if agent_offers.blank? && requested_peer_id.present?
-    return if agent_offers.blank?
-
     unless @call.accepted_by_agent_id.blank? || @call.accepted_by_agent_id == current_user.id
       render json: { error: 'Call accepted by another agent' }, status: :forbidden
       return false
+    end
+
+    if agent_offers.blank?
+      single_offer_peer_id = meta.dig('agent_offer', 'peer_id')
+      if single_offer_peer_id.present?
+        if requested_peer_id.present? && requested_peer_id != single_offer_peer_id
+          render json: { error: 'peer_id does not belong to current agent' }, status: :forbidden
+          return false
+        end
+
+        return requested_peer_id || single_offer_peer_id
+      end
+
+      return requested_peer_id if requested_peer_id.present?
+
+      return
     end
 
     if expected_peer_id.blank?
@@ -358,6 +411,125 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     else
       create_outbound_call_direct(conversation, contact_phone)
     end
+  end
+
+  def prepare_outbound_call_via_media_server(conversation)
+    contact_phone = conversation.contact&.phone_number
+    raise ArgumentError, 'Contact phone number not available' if contact_phone.blank?
+
+    client = Whatsapp::MediaServerClient.new
+    session_id = nil
+    session_response = client.create_session(
+      call_id: "pending_#{SecureRandom.hex(8)}",
+      direction: 'outgoing',
+      sdp_offer: nil,
+      ice_servers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+      account_id: current_account.id
+    )
+    session_id = session_response['session_id']
+    sdp_offer = session_response['meta_sdp_offer']
+    agent_offer = client.generate_agent_offer(session_id)
+    pending_provider_call_id = "pending_outbound_#{SecureRandom.hex(12)}"
+
+    current_account.calls.create!(
+      provider: :whatsapp,
+      inbox: conversation.inbox, conversation: conversation, contact: conversation.contact,
+      provider_call_id: pending_provider_call_id, direction: :outgoing, status: 'ringing',
+      accepted_by_agent_id: current_user.id,
+      media_session_id: session_id,
+      meta: {
+        'sdp_offer' => sdp_offer,
+        'outbound_prepare_pending' => true,
+        'outbound_prepared_at' => Time.zone.now.to_i,
+        'agent_offer_generated_at' => Time.zone.now.to_i,
+        'agent_offer' => normalize_agent_offer(agent_offer)
+      }
+    )
+  rescue StandardError
+    terminate_orphan_media_session(client, session_id)
+    raise
+  end
+
+  def prepared_outbound_call?(call)
+    call.outgoing? &&
+      call.media_server_enabled? &&
+      call.media_session_id.present? &&
+      call.meta&.dig('outbound_prepare_pending') == true &&
+      call.meta&.dig('outbound_dialing') != true &&
+      call.accepted_by_agent_id == current_user.id
+  end
+
+  def claim_prepared_outbound_dial!(call)
+    call.with_lock do
+      call.reload
+      raise ArgumentError, 'Call is not an outbound prepared call' unless prepared_outbound_call?(call)
+
+      call.update!(meta: (call.meta || {}).merge('outbound_dialing' => true))
+    end
+  end
+
+  def dial_prepared_outbound_call(call)
+    claim_prepared_outbound_dial!(call)
+
+    contact_phone = call.conversation.contact&.phone_number
+    raise ArgumentError, 'Contact phone number not available' if contact_phone.blank?
+
+    sdp_offer = call.meta&.dig('sdp_offer')
+    raise ArgumentError, 'Prepared media SDP offer is missing' if sdp_offer.blank?
+
+    provider_service = call.inbox.channel.provider_service
+    provider_call_id = nil
+    result = provider_service.initiate_call(contact_phone.delete('+'), sdp_offer)
+    provider_call_id = extract_provider_call_id(result)
+    raise ArgumentError, 'Provider call id not returned' if provider_call_id.blank?
+
+    update_prepared_outbound_provider_ref!(call, provider_call_id)
+    schedule_call_cleanup(call)
+    replay_cached_outbound_connect(call)
+    provider_call_id
+  rescue StandardError
+    terminate_provider_call(provider_service, provider_call_id)
+    mark_prepared_outbound_failed(call) if call&.persisted?
+    raise
+  end
+
+  def update_prepared_outbound_provider_ref!(call, provider_call_id)
+    call.with_lock do
+      call.reload
+      meta = (call.meta || {}).merge(
+        'outbound_prepare_pending' => false,
+        'outbound_dialing' => false,
+        'outbound_dialed_at' => Time.zone.now.to_i
+      )
+      call.update!(provider_call_id: provider_call_id, meta: meta)
+    end
+
+    update_outbound_call_message_provider_ref!(call, provider_call_id)
+  end
+
+  def update_outbound_call_message_provider_ref!(call, provider_call_id)
+    message = call.message
+    return unless message
+
+    attrs = (message.content_attributes || {}).dup
+    attrs['data'] ||= {}
+    attrs['data']['call_sid'] = provider_call_id
+    message.update!(source_id: provider_call_id, content_attributes: attrs)
+  end
+
+  def mark_prepared_outbound_failed(call)
+    call.with_lock do
+      call.reload
+      failed_meta = (call.meta || {}).merge(
+        'outbound_prepare_pending' => false,
+        'outbound_dialing' => false
+      )
+      call.update!(status: 'failed', meta: failed_meta) unless call.terminal?
+    end
+    Whatsapp::CallMessageBuilder.update_status!(call: call.reload, status: 'failed')
+    terminate_orphan_media_session(Whatsapp::MediaServerClient.new, call.media_session_id)
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP CALL] Failed to mark prepared outbound failed #{call&.id}: #{e.message}"
   end
 
   def create_outbound_call_direct(conversation, contact_phone)

@@ -400,6 +400,182 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(created_call.meta['meta_answer_set_at']).to be_present
     end
 
+    it 'prepares a media-server outbound operator leg before dialing the customer' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      allow(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-out-prep', 'meta_sdp_offer' => 'meta-offer' })
+      allow(media_client).to receive(:generate_agent_offer).with('media-out-prep').and_return(
+        { 'peer_id' => 'peer-agent', 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+      )
+      expect(provider_service).not_to receive(:initiate_call)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/prepare_outbound",
+             params: { conversation_id: conversation.display_id },
+             headers: headers,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        'media_session_id' => 'media-out-prep',
+        'agent_offer' => {
+          'peer_id' => 'peer-agent',
+          'sdp_offer' => 'agent-offer',
+          'ice_servers' => []
+        }
+      )
+      created_call = Call.find_by!(media_session_id: 'media-out-prep')
+      expect(created_call.provider_call_id).to start_with('pending_outbound_')
+      expect(created_call.meta).to include(
+        'outbound_prepare_pending' => true,
+        'sdp_offer' => 'meta-offer'
+      )
+      expect(created_call.message).to have_attributes(source_id: created_call.provider_call_id, content_type: 'voice_call')
+    end
+
+    it 'dials the customer only after a prepared media-server outbound call exists' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      prepared_call = create(
+        :call,
+        account: account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        contact: contact,
+        provider: :whatsapp,
+        provider_call_id: 'pending_outbound_test',
+        direction: :outgoing,
+        status: 'ringing',
+        accepted_by_agent_id: administrator.id,
+        media_session_id: 'media-out-prep',
+        meta: {
+          'outbound_prepare_pending' => true,
+          'sdp_offer' => 'meta-offer',
+          'agent_offer_generated_at' => Time.zone.now.to_i
+        }
+      )
+      message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: prepared_call, user: administrator)
+      prepared_call.update!(message_id: message.id)
+      allow(media_client).to receive(:set_meta_answer).with('media-out-prep', sdp_answer: 'early-answer')
+      allow(provider_service).to receive(:initiate_call)
+        .with(contact.phone_number.delete('+'), 'meta-offer') do
+          Whatsapp::IncomingCallService.new(
+            inbox: channel.inbox,
+            params: { calls: [{ id: 'wacid.outbound-prepared', event: 'connect', session: { sdp_type: 'answer', sdp: 'early-answer' } }] }
+          ).perform
+          { 'calls' => [{ 'id' => 'wacid.outbound-prepared' }] }
+        end
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{prepared_call.id}/dial",
+             headers: headers,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('call_id' => 'wacid.outbound-prepared')
+      expect(prepared_call.reload).to have_attributes(provider_call_id: 'wacid.outbound-prepared', media_session_id: 'media-out-prep')
+      expect(prepared_call.meta).to include('outbound_prepare_pending' => false, 'sdp_answer' => 'early-answer')
+      expect(prepared_call.message.reload).to have_attributes(source_id: 'wacid.outbound-prepared')
+      expect(prepared_call.message.content_attributes.dig('data', 'call_sid')).to eq('wacid.outbound-prepared')
+    end
+
+    it 'rejects agent_answer from a different agent for a prepared outbound call' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      other_agent = create(:user, account: account, role: :administrator)
+      prepared_call = create(
+        :call,
+        account: account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        contact: contact,
+        provider: :whatsapp,
+        provider_call_id: 'pending_outbound_test',
+        direction: :outgoing,
+        status: 'ringing',
+        accepted_by_agent_id: administrator.id,
+        media_session_id: 'media-out-prep',
+        meta: {
+          'outbound_prepare_pending' => true,
+          'agent_offer' => { 'peer_id' => 'peer-owner', 'sdp_offer' => 'agent-offer', 'ice_servers' => [] }
+        }
+      )
+      expect(media_client).not_to receive(:set_agent_answer)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{prepared_call.id}/agent_answer",
+             params: { sdp_answer: 'answer', peer_id: 'peer-owner' },
+             headers: other_agent.create_new_auth_token,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body['error']).to eq('Call accepted by another agent')
+    end
+
+    it 'rejects duplicate dial while a prepared outbound call is already dialing' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      prepared_call = create(
+        :call,
+        account: account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        contact: contact,
+        provider: :whatsapp,
+        provider_call_id: 'pending_outbound_test',
+        direction: :outgoing,
+        status: 'ringing',
+        accepted_by_agent_id: administrator.id,
+        media_session_id: 'media-out-prep',
+        meta: {
+          'outbound_prepare_pending' => true,
+          'outbound_dialing' => true,
+          'sdp_offer' => 'meta-offer'
+        }
+      )
+      expect(provider_service).not_to receive(:initiate_call)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{prepared_call.id}/dial",
+             headers: headers,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body['error']).to eq('Call is not an outbound prepared call')
+    end
+
+    it 'terminates a prepared outbound call without calling the provider for a fake pending id' do
+      channel.update!(provider_config: channel.provider_config.merge('media_server_enabled' => true))
+      prepared_call = create(
+        :call,
+        account: account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        contact: contact,
+        provider: :whatsapp,
+        provider_call_id: 'pending_outbound_test',
+        direction: :outgoing,
+        status: 'ringing',
+        accepted_by_agent_id: administrator.id,
+        media_session_id: 'media-out-prep',
+        meta: { 'outbound_prepare_pending' => true, 'outbound_dialing' => false }
+      )
+      message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: prepared_call, user: administrator)
+      prepared_call.update!(message_id: message.id)
+      allow(media_client).to receive(:terminate_session).with('media-out-prep')
+      expect(provider_service).not_to receive(:terminate_call)
+
+      with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{prepared_call.id}/terminate",
+             headers: headers,
+             as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(prepared_call.reload).to have_attributes(status: 'failed', end_reason: 'agent_setup_failed')
+      expect(prepared_call.meta).to include('outbound_prepare_pending' => false, 'outbound_dialing' => false)
+    end
+
     it 'sends and stores a WhatsApp call permission request when Meta rejects outbound calling permission' do
       allow(provider_service).to receive(:initiate_call).and_raise(Whatsapp::CallErrors::NoCallPermission)
       allow(provider_service).to receive(:send_call_permission_request)

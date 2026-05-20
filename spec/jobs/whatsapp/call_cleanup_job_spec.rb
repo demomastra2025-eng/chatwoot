@@ -52,6 +52,21 @@ RSpec.describe Whatsapp::CallCleanupJob do
     expect(provider).to have_received(:terminate_call).with(call.provider_call_id)
   end
 
+  it 'expires a stale prepared outbound call without calling the provider for a fake pending id' do
+    call.update!(
+      direction: :outgoing,
+      accepted_by_agent: agent,
+      provider_call_id: 'pending_outbound_test',
+      meta: { 'outbound_prepare_pending' => true }
+    )
+
+    described_class.perform_now(call.id)
+
+    expect(call.reload).to have_attributes(status: 'no_answer', end_reason: 'timeout')
+    expect(media_client).to have_received(:terminate_session).with('media-stale-1')
+    expect(provider).not_to have_received(:terminate_call)
+  end
+
   it 'does not expire a fresh ringing call before the timeout' do
     call.update!(created_at: 30.seconds.ago)
 

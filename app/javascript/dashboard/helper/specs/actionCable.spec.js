@@ -10,15 +10,19 @@ import { emitter } from 'shared/helpers/mitt';
 
 const {
   reconnectMock,
+  clearPreparedInboundAgentAnswerMock,
   handleAgentOfferMock,
   handleMediaLegClosedMock,
   isMediaLegClosedErrorMock,
+  prewarmInboundAgentAnswerForCallMock,
   startCallRecordingMock,
 } = vi.hoisted(() => ({
   reconnectMock: vi.fn(),
+  clearPreparedInboundAgentAnswerMock: vi.fn(),
   handleAgentOfferMock: vi.fn(),
   handleMediaLegClosedMock: vi.fn(),
   isMediaLegClosedErrorMock: vi.fn(() => false),
+  prewarmInboundAgentAnswerForCallMock: vi.fn(),
   startCallRecordingMock: vi.fn(),
 }));
 
@@ -35,9 +39,11 @@ vi.mock('dashboard/composables/useImpersonation', () => ({
 }));
 
 vi.mock('dashboard/composables/useWhatsappCallSession', () => ({
+  clearPreparedInboundAgentAnswer: clearPreparedInboundAgentAnswerMock,
   handleAgentOffer: handleAgentOfferMock,
   handleMediaLegClosed: handleMediaLegClosedMock,
   isMediaLegClosedError: isMediaLegClosedErrorMock,
+  prewarmInboundAgentAnswerForCall: prewarmInboundAgentAnswerForCallMock,
   startCallRecording: startCallRecordingMock,
 }));
 
@@ -63,6 +69,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       data: { sdp_offer: 'fresh-offer', ice_servers: [] },
     });
     handleAgentOfferMock.mockResolvedValue();
+    prewarmInboundAgentAnswerForCallMock.mockReturnValue(null);
     isMediaLegClosedErrorMock.mockReturnValue(false);
     mockDispatch = vi.fn();
     store = {
@@ -181,7 +188,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       });
     });
 
-    it('stores account-wide incoming agent offer for pre-accept negotiation without auto-connecting', () => {
+    it('prewarms an incoming agent offer for pre-accept negotiation without posting agent answer yet', () => {
       const callsStore = useWhatsappCallsStore();
 
       actionCable.onWhatsappCallIncoming({
@@ -203,6 +210,13 @@ describe('ActionCableConnector - Copilot Tests', () => {
         mediaSessionId: 'media-52',
         agentOffer: { sdp_offer: 'early-agent-offer', ice_servers: [] },
       });
+      expect(prewarmInboundAgentAnswerForCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 52,
+          callId: 'provider-call-52',
+          agentOffer: { sdp_offer: 'early-agent-offer', ice_servers: [] },
+        })
+      );
       expect(handleAgentOfferMock).not.toHaveBeenCalled();
     });
 
@@ -248,6 +262,13 @@ describe('ActionCableConnector - Copilot Tests', () => {
           callId: 'provider-call-1',
         })
       ).toBeNull();
+      expect(clearPreparedInboundAgentAnswerMock).toHaveBeenCalledWith(
+        {
+          id: 42,
+          call_id: 'provider-call-1',
+        },
+        { cleanupWebrtc: true }
+      );
     });
 
     it('stores matching agent offer while provider accept is still in flight', () => {

@@ -65,13 +65,18 @@ class Whatsapp::CallService
     provider_call_id = nil
     media_session_id = nil
     transitioned = false
+    target_status = 'completed'
 
     call.with_lock do
       call.reload
       unless call.terminal?
-        provider_call_id = call.provider_call_id
+        prepared_outbound = prepared_outbound_pending?
+        provider_call_id = prepared_outbound ? nil : call.provider_call_id
         media_session_id = call.media_session_id
-        call.update!(status: 'completed', end_reason: call.end_reason.presence || 'agent_terminated')
+        target_status = prepared_outbound ? 'failed' : 'completed'
+        end_reason = prepared_outbound ? 'agent_setup_failed' : call.end_reason.presence || 'agent_terminated'
+        meta = prepared_outbound ? (call.meta || {}).merge('outbound_prepare_pending' => false, 'outbound_dialing' => false) : call.meta
+        call.update!(status: target_status, end_reason: end_reason, meta: meta)
         transitioned = true
       end
     end
@@ -79,7 +84,7 @@ class Whatsapp::CallService
     if transitioned
       terminate_on_provider(provider_call_id)
       terminate_media_session(media_session_id) if media_session_id.present?
-      after_status_transition(status: 'completed')
+      after_status_transition(status: target_status)
     end
 
     call
@@ -174,6 +179,10 @@ class Whatsapp::CallService
 
   def media_server_enabled?
     call.media_server_enabled?
+  end
+
+  def prepared_outbound_pending?
+    call.outgoing? && call.meta&.dig('outbound_prepare_pending') == true
   end
 
   def prepared_media_session(client)

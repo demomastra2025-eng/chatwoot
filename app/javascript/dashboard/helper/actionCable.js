@@ -9,9 +9,11 @@ import {
   getOutboundCallState,
 } from 'dashboard/stores/whatsappCalls';
 import {
+  clearPreparedInboundAgentAnswer,
   handleAgentOffer,
   handleMediaLegClosed,
   isMediaLegClosedError,
+  prewarmInboundAgentAnswerForCall,
   startCallRecording,
 } from 'dashboard/composables/useWhatsappCallSession';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
@@ -297,6 +299,14 @@ class ActionCableConnector extends BaseActionCableConnector {
       mediaSessionId: data.media_session_id || null,
     };
     whatsappCallsStore.addIncomingCall(incomingCall);
+    prewarmInboundAgentAnswerForCall(incomingCall)?.catch(err => {
+      if (err?.cancelled) return;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[WhatsApp Call] Failed to prewarm inbound agent answer:',
+        err
+      );
+    });
   };
 
   onWhatsappCallAccepted = data => {
@@ -305,6 +315,12 @@ class ActionCableConnector extends BaseActionCableConnector {
     // If accepted by a different agent, remove from incoming list for this agent
     if (data.accepted_by_agent_id !== currentUserId) {
       whatsappCallsStore.handleCallAcceptedByOther(data.call_id);
+      clearPreparedInboundAgentAnswer(data, {
+        cleanupWebrtc: this.shouldCleanupPreparedInboundWebRTC(
+          whatsappCallsStore,
+          data
+        ),
+      });
     }
   };
 
@@ -312,7 +328,20 @@ class ActionCableConnector extends BaseActionCableConnector {
   onWhatsappCallEnded = data => {
     const whatsappCallsStore = useWhatsappCallsStore();
     whatsappCallsStore.handleCallEnded(data.call_id);
+    clearPreparedInboundAgentAnswer(data, {
+      cleanupWebrtc: this.shouldCleanupPreparedInboundWebRTC(
+        whatsappCallsStore,
+        data
+      ),
+    });
   };
+
+  // eslint-disable-next-line class-methods-use-this
+  shouldCleanupPreparedInboundWebRTC(whatsappCallsStore, data) {
+    const activeCall = whatsappCallsStore.activeCall;
+    if (!activeCall) return true;
+    return activeCall.id === data.id || activeCall.callId === data.call_id;
+  }
 
   // eslint-disable-next-line class-methods-use-this
   onWhatsappCallOutboundConnected = data => {

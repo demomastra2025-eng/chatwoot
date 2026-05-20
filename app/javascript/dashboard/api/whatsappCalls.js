@@ -33,6 +33,19 @@ class WhatsappCallsAPI extends ApiClient {
     return axios.post(`${this.url}/initiate`, body);
   }
 
+  // Server-relay outbound mode: prepare the operator browser/media leg before
+  // dialing the customer. The customer leg is started by dial() only after the
+  // browser has successfully posted /agent_answer.
+  prepareOutbound(conversationId) {
+    return axios.post(`${this.url}/prepare_outbound`, {
+      conversation_id: conversationId,
+    });
+  }
+
+  dial(callId) {
+    return axios.post(`${this.url}/${callId}/dial`);
+  }
+
   // Send the agent's SDP answer for the Peer B connection (server-relay mode).
   agentAnswer(callId, sdpAnswer, clientTiming = null, peerId = null) {
     const body = { sdp_answer: sdpAnswer };

@@ -480,11 +480,13 @@ Rails.application.routes.draw do
             collection do
               get :active
               post :initiate
+              post :prepare_outbound
             end
             member do
               post :accept
               post :reject
               post :terminate
+              post :dial
               post :agent_answer
               post :reconnect
               post :join

@@ -59,6 +59,7 @@ class Whatsapp::CallCleanupJob < ApplicationJob
 
   def close_provider_ringing_call(call, provider_call_id)
     return if provider_call_id.blank?
+    return if call.outgoing? && call.meta&.dig('outbound_prepare_pending') == true
 
     provider = call.inbox.channel.provider_service
     if call.incoming?
