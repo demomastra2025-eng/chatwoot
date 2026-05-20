@@ -194,6 +194,29 @@ func (w *runtimeAudioWriter) Close() {
 	}
 }
 
+func runtimeFFmpegArgs(port int) []string {
+	return []string{
+		"-hide_banner",
+		"-loglevel", "error",
+		"-analyzeduration", "0",
+		"-probesize", "32",
+		"-fflags", "nobuffer",
+		"-f", "s16le",
+		"-ar", runtimeOutputRate,
+		"-ac", "1",
+		"-i", "pipe:0",
+		"-acodec", "libopus",
+		"-ar", "48000",
+		"-ac", "1",
+		"-application", "voip",
+		"-frame_duration", "20",
+		"-payload_type", "111",
+		"-flush_packets", "1",
+		"-f", "rtp",
+		fmt.Sprintf("rtp://127.0.0.1:%d", port),
+	}
+}
+
 func (w *runtimeAudioWriter) startLocked() error {
 	if w.sess == nil || w.sess.MetaPeer == nil || w.sess.MetaPeer.LocalTrack() == nil {
 		return errors.New("meta local track unavailable")
@@ -210,22 +233,7 @@ func (w *runtimeAudioWriter) startLocked() error {
 	}
 
 	ctx, cancel := context.WithCancel(w.ctx)
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-f", "s16le",
-		"-ar", runtimeOutputRate,
-		"-ac", "1",
-		"-i", "pipe:0",
-		"-acodec", "libopus",
-		"-ar", "48000",
-		"-ac", "1",
-		"-application", "voip",
-		"-frame_duration", "20",
-		"-payload_type", "111",
-		"-f", "rtp",
-		fmt.Sprintf("rtp://127.0.0.1:%d", udpAddr.Port),
-	)
+	cmd := exec.CommandContext(ctx, "ffmpeg", runtimeFFmpegArgs(udpAddr.Port)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
