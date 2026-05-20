@@ -82,16 +82,10 @@ const aiVoiceState = computed(() => aiVoice.value?.state?.toString());
 const timelineMessagesEnabled = computed(
   () => isAiVoice.value && Boolean(aiVoice.value?.timelineMessagesEnabled)
 );
-const showTranscriptBlock = computed(
-  () =>
-    !timelineMessagesEnabled.value &&
-    (Boolean(transcript.value) || transcriptItems.value.length > 0)
-);
 const showTools = computed(
   () => !timelineMessagesEnabled.value && tools.value.length > 0
 );
 const isJoining = ref(false);
-const showTranscript = ref(true);
 const timeLabel = computed(() => messageTimestamp(createdAt.value, 'HH:mm'));
 const hasRenderableRecordingStatus = computed(() =>
   TERMINAL_RECORDING_STATUSES.includes(status.value)
@@ -156,6 +150,18 @@ const recordingExtension = computed(() => {
   return extension && extension !== path ? extension.toLowerCase() : 'wav';
 });
 
+const transcriptFallback = computed(() => {
+  if (transcript.value) return transcript.value;
+  return transcriptItems.value
+    .map(item => `${item.speaker === 'ai' ? 'ИИ' : 'Клиент'}: ${item.text}`)
+    .join('\n');
+});
+
+const recordingTranscribedText = computed(() => {
+  if (timelineMessagesEnabled.value) return '';
+  return transcriptFallback.value;
+});
+
 const recordingAttachment = computed(() => {
   if (!recordingUrl.value) return null;
 
@@ -168,6 +174,7 @@ const recordingAttachment = computed(() => {
     fileType: 'audio',
     extension: recordingExtension.value,
     dataUrl: recordingUrl.value,
+    transcribedText: recordingTranscribedText.value,
   };
 });
 
@@ -264,13 +271,6 @@ const toolStatusKey = tool => {
   }
   return 'CONVERSATION.VOICE_CALL.TOOL_RUNNING';
 };
-
-const transcriptFallback = computed(() => {
-  if (transcript.value) return transcript.value;
-  return transcriptItems.value
-    .map(item => `${item.speaker === 'ai' ? 'ИИ' : 'Клиент'}: ${item.text}`)
-    .join('\n');
-});
 
 const handleJoinCall = async () => {
   if (isJoining.value) return;
@@ -378,7 +378,7 @@ const handleJoinCall = async () => {
       >
         <AudioChip
           :attachment="recordingAttachment"
-          :show-transcribed-text="false"
+          show-transcribed-text
           class="!w-full rounded-xl bg-n-alpha-1 px-2 py-2 text-n-slate-12 skip-context-menu"
         />
       </div>
@@ -401,27 +401,6 @@ const handleJoinCall = async () => {
             </span>
           </div>
         </div>
-      </div>
-
-      <div v-if="showTranscriptBlock" class="px-3 pb-3">
-        <button
-          class="flex items-center gap-1 text-xs text-n-slate-11 hover:text-n-slate-12 transition-colors"
-          @click="showTranscript = !showTranscript"
-        >
-          <i
-            class="text-sm"
-            :class="
-              showTranscript ? 'i-ph-caret-up-bold' : 'i-ph-caret-down-bold'
-            "
-          />
-          {{ $t('CONVERSATION.VOICE_CALL.TRANSCRIPT') }}
-        </button>
-        <p
-          v-if="showTranscript"
-          class="mt-1 text-xs leading-relaxed text-n-slate-11 whitespace-pre-wrap"
-        >
-          {{ transcriptFallback }}
-        </p>
       </div>
     </div>
   </BaseBubble>

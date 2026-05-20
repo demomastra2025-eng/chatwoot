@@ -14,9 +14,12 @@ const { routerPushMock, acceptWhatsappCallByIdMock } = vi.hoisted(() => ({
 vi.mock('next/message/chips/Audio.vue', () => ({
   default: {
     name: 'AudioChip',
-    props: ['attachment', 'showTranscribedText'],
+    props: {
+      attachment: { type: Object, required: true },
+      showTranscribedText: { type: Boolean, default: false },
+    },
     template:
-      '<div data-testid="voice-call-recording" :data-url="attachment.dataUrl" :data-extension="attachment.extension" :data-show-transcribed-text="String(showTranscribedText)" />',
+      '<div data-testid="voice-call-recording" :data-url="attachment.dataUrl" :data-extension="attachment.extension" :data-transcribed-text="attachment.transcribedText" :data-show-transcribed-text="String(showTranscribedText)" />',
   },
 }));
 
@@ -237,7 +240,49 @@ describe('VoiceCall bubble', () => {
       '/api/v1/accounts/1/telephony/calls/call-1/recording.wav'
     );
     expect(recording.attributes('data-extension')).toBe('wav');
-    expect(recording.attributes('data-show-transcribed-text')).toBe('false');
+    expect(recording.attributes('data-show-transcribed-text')).toBe('true');
+  });
+
+  it('renders call transcript through the shared audio chip like audio messages', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
+          transcript: 'Клиент: привет\nAgent: здравствуйте',
+        },
+      }),
+    });
+
+    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    expect(recording.attributes('data-show-transcribed-text')).toBe('true');
+    expect(recording.attributes('data-transcribed-text')).toBe(
+      'Клиент: привет\nAgent: здравствуйте'
+    );
+    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.TRANSCRIPT');
+  });
+
+  it('formats transcript items for the shared audio chip when only structured items are available', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
+          transcriptItems: [
+            { speaker: 'caller', text: 'привет' },
+            { speaker: 'ai', text: 'слушаю вас' },
+          ],
+        },
+      }),
+    });
+
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording"]')
+        .attributes('data-transcribed-text')
+    ).toBe('Клиент: привет\nИИ: слушаю вас');
   });
 
   it('renders the shared audio waveform chip for cancelled terminal calls with an authorized recording URL', () => {
@@ -325,11 +370,13 @@ describe('VoiceCall bubble', () => {
     });
   });
 
-  it('hides embedded transcript and tool blocks when native timeline messages are enabled', () => {
+  it('hides duplicate transcript and tool blocks when native timeline messages are enabled', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
         data: {
           status: 'completed',
+          recordingUrl:
+            '/api/v1/accounts/1/telephony/calls/call-1/recording.wav',
           transcript: 'Клиент: привет',
           transcriptItems: [{ speaker: 'caller', text: 'привет' }],
           tools: [{ name: 'faq_lookup', status: 'completed' }],
@@ -343,5 +390,10 @@ describe('VoiceCall bubble', () => {
 
     expect(wrapper.text()).not.toContain('Клиент: привет');
     expect(wrapper.text()).not.toContain('faq_lookup');
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording"]')
+        .attributes('data-transcribed-text')
+    ).toBe('');
   });
 });
