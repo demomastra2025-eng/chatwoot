@@ -1,13 +1,19 @@
 package server
 
 import (
+	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"net"
+	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/pion/rtp"
 )
 
 func TestRuntimeFFmpegArgsEnableLowLatencyRawPcm(t *testing.T) {
@@ -89,6 +95,174 @@ func TestRuntimeFFmpegProducesRTPBeforeInputEOF(t *testing.T) {
 		}
 	case <-time.After(900 * time.Millisecond):
 		t.Fatalf("ffmpeg did not emit RTP before stdin EOF")
+	}
+}
+
+func TestRuntimeDecodeFFmpegArgsEnableLowLatencyOpusRTP(t *testing.T) {
+	sdpPath := "/tmp/runtime-input.sdp"
+	args := runtimeDecodeFFmpegArgs(sdpPath)
+	mustContainInOrder(t, args,
+		"-protocol_whitelist", "file,udp,rtp",
+		"-analyzeduration", "0",
+		"-probesize", "32",
+		"-fflags", "nobuffer",
+		"-i", sdpPath,
+		"-f", "s16le",
+		"-ar", runtimeInputRate,
+		"-ac", "1",
+		"pipe:1",
+	)
+
+	sdp := runtimeInputSDP(54321)
+	for _, want := range []string{"m=audio 54321 RTP/AVP 111", "a=rtpmap:111 opus/48000/2", "a=fmtp:111"} {
+		if !strings.Contains(sdp, want) {
+			t.Fatalf("expected SDP to contain %q, got %q", want, sdp)
+		}
+	}
+}
+
+func TestRuntimeInputProducerQueuesOnlyCustomerAudio(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	producer := newRuntimeAudioInputProducer(ctx, nil, runtimeStreamGrant{SessionID: "s1", RuntimeSessionID: "r1"}, nil)
+	producer.ctx, producer.cancel = ctx, cancel
+
+	producer.OnAudioFrame("s1", "agent", &rtp.Packet{Header: rtp.Header{PayloadType: 111}, Payload: []byte{1, 2, 3}})
+	select {
+	case <-producer.input:
+		t.Fatalf("agent audio must not be sent to AI runtime input")
+	default:
+	}
+
+	producer.OnAudioFrame("s1", "customer", &rtp.Packet{Header: rtp.Header{PayloadType: 109, SequenceNumber: 7, Timestamp: 960}, Payload: []byte{1, 2, 3}})
+	select {
+	case raw := <-producer.input:
+		if len(raw) == 0 {
+			t.Fatalf("expected marshaled RTP packet")
+		}
+		var queued rtp.Packet
+		if err := queued.Unmarshal(raw); err != nil {
+			t.Fatalf("queued RTP packet must be valid: %v", err)
+		}
+		if queued.PayloadType != 111 {
+			t.Fatalf("runtime decoder payload type = %d, want 111", queued.PayloadType)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("customer RTP packet was not queued")
+	}
+}
+
+func TestRuntimeDecodeFFmpegProducesPCMBeforeInputEOF(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+
+	encodedRTPConn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen encoded RTP UDP: %v", err)
+	}
+	defer encodedRTPConn.Close()
+
+	encoder := exec.Command("ffmpeg", runtimeFFmpegArgs(encodedRTPConn.LocalAddr().(*net.UDPAddr).Port)...)
+	encoder.Stdout = io.Discard
+	encoder.Stderr = io.Discard
+	encoderStdin, err := encoder.StdinPipe()
+	if err != nil {
+		t.Fatalf("encoder stdin pipe: %v", err)
+	}
+	if err := encoder.Start(); err != nil {
+		t.Fatalf("start encoder ffmpeg: %v", err)
+	}
+	defer func() {
+		_ = encoderStdin.Close()
+		if encoder.Process != nil {
+			_ = encoder.Process.Kill()
+		}
+		_ = encoder.Wait()
+	}()
+
+	decoderListener, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve decoder UDP port: %v", err)
+	}
+	decoderPort := decoderListener.LocalAddr().(*net.UDPAddr).Port
+	_ = decoderListener.Close()
+
+	sdpFile, err := os.CreateTemp(t.TempDir(), "runtime-input-*.sdp")
+	if err != nil {
+		t.Fatalf("create SDP: %v", err)
+	}
+	if _, err := sdpFile.WriteString(runtimeInputSDP(decoderPort)); err != nil {
+		t.Fatalf("write SDP: %v", err)
+	}
+	if err := sdpFile.Close(); err != nil {
+		t.Fatalf("close SDP: %v", err)
+	}
+
+	decoder := exec.Command("ffmpeg", runtimeDecodeFFmpegArgs(sdpFile.Name())...)
+	decoder.Stderr = io.Discard
+	decoderStdout, err := decoder.StdoutPipe()
+	if err != nil {
+		t.Fatalf("decoder stdout pipe: %v", err)
+	}
+	if err := decoder.Start(); err != nil {
+		t.Fatalf("start decoder ffmpeg: %v", err)
+	}
+	defer func() {
+		if decoder.Process != nil {
+			_ = decoder.Process.Kill()
+		}
+		_ = decoder.Wait()
+	}()
+
+	decoderUDP, err := net.Dial("udp4", fmt.Sprintf("127.0.0.1:%d", decoderPort))
+	if err != nil {
+		t.Fatalf("dial decoder UDP: %v", err)
+	}
+	defer decoderUDP.Close()
+
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			_ = encodedRTPConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			n, _, readErr := encodedRTPConn.ReadFrom(buf)
+			if readErr != nil {
+				return
+			}
+			_, _ = decoderUDP.Write(buf[:n])
+		}
+	}()
+
+	pcmReady := make(chan int, 1)
+	go func() {
+		buf := make([]byte, runtimeInputFrameBytes)
+		n, _ := io.ReadFull(decoderStdout, buf)
+		pcmReady <- n
+	}()
+
+	frame := runtimeToneFrame()
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if _, err := encoderStdin.Write(frame); err != nil {
+			t.Fatalf("write encoder PCM before EOF: %v", err)
+		}
+		select {
+		case n := <-pcmReady:
+			if n < runtimeInputFrameBytes {
+				t.Fatalf("expected a full runtime input PCM frame, got %d bytes", n)
+			}
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+
+	select {
+	case n := <-pcmReady:
+		if n < runtimeInputFrameBytes {
+			t.Fatalf("expected a full runtime input PCM frame, got %d bytes", n)
+		}
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatalf("ffmpeg decoder did not emit PCM before encoder stdin EOF")
 	}
 }
 
