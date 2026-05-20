@@ -10,6 +10,7 @@ class GeminiLiveClient {
     WebSocketImpl = null,
     setupTimeoutMs = 15_000,
     interruptions = true,
+    interruptionMode = 'transcript_confirmed',
     speechStartSensitivity = 'START_SENSITIVITY_HIGH',
     speechEndSensitivity = 'END_SENSITIVITY_HIGH',
     prefixPaddingMs = 120,
@@ -36,6 +37,7 @@ class GeminiLiveClient {
     this.WebSocketImpl = WebSocketImpl;
     this.setupTimeoutMs = setupTimeoutMs;
     this.interruptions = interruptions;
+    this.interruptionMode = normalizeInterruptionMode(interruptionMode);
     this.onAudio = onAudio;
     this.onTranscript = onTranscript;
     this.onToolCall = onToolCall;
@@ -143,7 +145,7 @@ class GeminiLiveClient {
           prefixPaddingMs: this.prefixPaddingMs,
           silenceDurationMs: this.silenceDurationMs
         },
-        activityHandling: this.interruptions ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION',
+        activityHandling: this.shouldUseProviderInterruptions() ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION',
         turnCoverage: this.turnCoverage
       },
       inputAudioTranscription: {},
@@ -181,6 +183,10 @@ class GeminiLiveClient {
 
   interrupt() {
     this.enqueueOrSend({ realtimeInput: { activityStart: {} } });
+  }
+
+  shouldUseProviderInterruptions() {
+    return this.interruptions && this.interruptionMode === 'provider';
   }
 
   sendToolResponse(id, response, name = undefined) {
@@ -366,6 +372,11 @@ function parseJson(raw) {
 
 function trimText(value) {
   return String(value || '').trim();
+}
+
+function normalizeInterruptionMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'provider' || normalized === 'start_of_activity' ? 'provider' : 'transcript_confirmed';
 }
 
 function sanitizeErrorMessage(message) {

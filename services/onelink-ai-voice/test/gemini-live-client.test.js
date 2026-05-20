@@ -78,7 +78,7 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.equal(socket.sent[0].setup.generationConfig.responseModalities[0], 'AUDIO');
   assert.equal(socket.sent[0].setup.generationConfig.temperature, 0.3);
   assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 120);
-  assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'START_OF_ACTIVITY_INTERRUPTS');
+  assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'NO_INTERRUPTION');
   assert.equal(socket.sent[0].setup.realtimeInputConfig.turnCoverage, 'TURN_INCLUDES_ONLY_ACTIVITY');
   assert.equal(socket.sent[0].setup.realtimeInputConfig.automaticActivityDetection.silenceDurationMs, 300);
   assert.equal(socket.sent[0].setup.systemInstruction.parts[0].text, 'Ты голосовой оператор OneLink.');
@@ -112,6 +112,26 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.deepEqual(toolCalls[0].args, { phone: '+7700' });
   assert.equal(socket.sent.at(-1).toolResponse.functionResponses[0].id, 'tool-1');
   assert.deepEqual(socket.sent.at(-1).toolResponse.functionResponses[0].response, { ok: true, result: { found: true } });
+});
+
+test('GeminiLiveClient can opt back into provider start-of-activity interruptions', async () => {
+  FakeSocket.instances = [];
+
+  const client = new GeminiLiveClient({
+    apiKey: 'secret-token-123',
+    model: 'gemini-live-test',
+    WebSocketImpl: FakeSocket,
+    interruptionMode: 'provider'
+  });
+
+  const connectPromise = client.connect();
+  const socket = FakeSocket.instances[0];
+  socket.open();
+
+  assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'START_OF_ACTIVITY_INTERRUPTS');
+
+  socket.receive({ setupComplete: {} });
+  await connectPromise;
 });
 
 test('GeminiLiveClient buffers streaming transcription chunks until the provider marks them complete', async () => {

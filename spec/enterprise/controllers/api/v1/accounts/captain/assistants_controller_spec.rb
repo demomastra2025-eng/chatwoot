@@ -388,11 +388,14 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'provider' => 'gemini-live',
           'model' => 'gemini-3.1-flash-live-preview',
           'interruptions_enabled' => true,
+          'interruption_mode' => 'transcript_confirmed',
           'clear_audio_on_interrupt' => true,
           'finish_current_word_on_interrupt' => true,
           'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
           'silence_prompt_enabled' => true,
           'tool_start_phrases' => ['Секунду, проверю.'],
+          'tool_start_after_ms' => 1800,
+          'tool_foreground_wait_ms' => 350,
           'emotional_style' => 'warm_professional',
           'nonverbal_cues_enabled' => true,
           'ambient_noise_enabled' => false
@@ -704,6 +707,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'interruptions_enabled' => false,
           'first_message' => 'Здравствуйте! Чем могу помочь?',
           'clear_audio_on_interrupt' => true,
+          'interruption_mode' => 'transcript_confirmed',
+          'tool_foreground_wait_ms' => 350,
           'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY'
         )
       end

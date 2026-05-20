@@ -299,6 +299,7 @@ class VoiceApplication {
     let lastAudioOutLogAt = 0;
     let lastToolWaitFillerTranscriptAt = 0;
     let lastCallerTranscriptAt = null;
+    let lastConfirmedCallerInterruptAt = null;
     let lastCallerAudioAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
@@ -459,6 +460,33 @@ class VoiceApplication {
     let completion = null;
     let dialogueDirector = null;
 
+    const confirmCallerTranscriptInterrupt = async (item = {}) => {
+      if (item.final === false) return;
+      if (!shouldClearOutputBufferOnCallerTranscript(clearOutputOnInterrupt, {
+        callerTranscript: item.text,
+        lastCallerTranscriptAt,
+        lastAiAudioAt,
+        lastConfirmedCallerInterruptAt
+      })) return;
+
+      lastConfirmedCallerInterruptAt = lastCallerTranscriptAt;
+      outputPacer?.clear?.();
+      realtime?.interrupt?.();
+      await session.safeControl('caller_interrupted', compactPayload({
+        provider: item.provider || 'gemini-live',
+        reason: 'caller_transcript_confirmed',
+        source: 'caller_transcript_confirmed',
+        clear_output_buffer: true,
+        caller_transcript: sanitizedInterruptTranscript(item.text),
+        last_caller_transcript_at: lastCallerTranscriptAt,
+        last_caller_audio_at: lastCallerAudioAt,
+        last_ai_transcript_at: lastAiTranscriptAt,
+        last_ai_audio_at: lastAiAudioAt,
+        stream_ref: streamRef,
+        media_session_ref: mediaSessionRef
+      }));
+    };
+
     const callbacks = {
       systemPrompt: buildSystemPrompt(context),
       tools: normalizeContextTools(context.tools),
@@ -495,6 +523,7 @@ class VoiceApplication {
         const speaker = normalizeSpeaker(item.speaker);
         if (speaker === 'caller') {
           lastCallerTranscriptAt = item.at || new Date().toISOString();
+          void confirmCallerTranscriptInterrupt(item);
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         } else {
           lastAiTranscriptAt = item.at || new Date().toISOString();
@@ -510,7 +539,25 @@ class VoiceApplication {
         dialogueDirector?.startToolWait(callPayload);
         const toolResult = await session.executeTool(callPayload.name, callPayload.args || {}, {
           provider: 'gemini-live',
-          tool_call_id: callPayload.id
+          tool_call_id: callPayload.id,
+          foreground_timeout_ms: foregroundToolWaitMs(context, callPayload.name),
+          onAsyncResult: async lateResult => {
+            dialogueDirector?.finishToolWait(callPayload, lateResult);
+            if (session.closed || realtime?.closed) return;
+            if (!shouldInjectLateToolResult(callPayload, lateResult)) return;
+            const prompt = lateToolResultPrompt(callPayload, lateResult);
+            if (!prompt) return;
+            realtime?.sendText?.(prompt);
+            await session.safeEvent('tool_async_result_injected', compactPayload({
+              ...correlationPayload(session, requestPayload, context),
+              provider: 'gemini-live',
+              tool_name: callPayload.name,
+              tool_call_id: callPayload.id,
+              request_id: lateResult.request_id,
+              ok: lateResult.ok,
+              result_keys: objectKeys(lateResult.result)
+            }));
+          }
         });
         dialogueDirector?.finishToolWait(callPayload, toolResult);
         await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
@@ -520,7 +567,9 @@ class VoiceApplication {
       onInterrupt: async (metadata = {}) => {
         const shouldClearOutput = shouldClearOutputBufferOnInterrupt(clearOutputOnInterrupt, {
           lastCallerTranscriptAt,
-          lastAiAudioAt
+          lastCallerAudioAt,
+          lastAiAudioAt,
+          interruptionMode: context.ai?.interruption_mode || context.ai?.interruptionMode
         });
         const interruptMetadata = compactPayload({
           provider: 'gemini-live',
@@ -528,6 +577,7 @@ class VoiceApplication {
           source: metadata.source || 'provider_interruption',
           clear_output_buffer: shouldClearOutput,
           last_caller_transcript_at: lastCallerTranscriptAt,
+          last_caller_audio_at: lastCallerAudioAt,
           last_ai_transcript_at: lastAiTranscriptAt,
           last_ai_audio_at: lastAiAudioAt,
           stream_ref: streamRef,
@@ -1423,6 +1473,47 @@ function shouldWatchPostToolContinuation(toolResult = {}) {
   return !['transfer', 'end_call', 'hangup'].includes(action);
 }
 
+const DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS = 350;
+
+function foregroundToolWaitMs(context = {}, toolName = '') {
+  if (isSideEffectToolName(toolName)) return null;
+  const tool = Array.isArray(context.tools)
+    ? context.tools.find(candidate => String(candidate?.name || '').trim() === String(toolName || '').trim())
+    : null;
+  const explicitToolWaitMs = parsePositiveInt(tool?.foreground_wait_ms ?? tool?.foregroundWaitMs);
+  if (explicitToolWaitMs) return explicitToolWaitMs;
+  if (!isReadLikeToolName(toolName)) return null;
+
+  const globalReadWaitMs = parsePositiveInt(context.ai?.tool_foreground_wait_ms ?? context.ai?.toolForegroundWaitMs);
+  return globalReadWaitMs || DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS;
+}
+
+function shouldInjectLateToolResult(toolCall = {}, lateResult = {}) {
+  if (!lateResult?.async || lateResult.ok === false) return false;
+  if (isSideEffectToolName(toolCall.name)) return false;
+  const action = String(lateResult.result?.action || '').trim().toLowerCase();
+  return !['transfer', 'end_call', 'hangup'].includes(action);
+}
+
+function lateToolResultPrompt(toolCall = {}, lateResult = {}) {
+  const toolName = String(toolCall.name || lateResult.tool_name || 'инструмента').trim();
+  const answer = summarizeToolResult(lateResult.result);
+  if (!answer) return '';
+  return `Результат инструмента ${toolName} готов. Используй его в следующей голосовой реплике клиенту, коротко и естественно по-русски. Не перечисляй служебные поля. Результат: ${answer}`;
+}
+
+function isSideEffectToolName(name = '') {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (['request_transfer', 'transfer', 'handoff', 'end_call', 'hangup'].includes(normalized)) return true;
+  return /^(create|update|delete|set|assign|add|remove)_/.test(normalized);
+}
+
+function isReadLikeToolName(name = '') {
+  const normalized = String(name || '').trim().toLowerCase();
+  return /(^|_)(find|lookup|search|list|get|read|fetch|faq)(_|$)/.test(normalized) || normalized === 'faq_lookup';
+}
+
 function postToolContinuationPrompt(toolCall = {}, toolResult = {}) {
   const toolName = String(toolCall.name || 'инструмента').trim();
   const answer = summarizeToolResult(toolResult.result);
@@ -2218,14 +2309,51 @@ async function hangupSafely(call, reason) {
   return false;
 }
 
-function shouldClearOutputBufferOnInterrupt(enabled, { lastCallerTranscriptAt, lastAiAudioAt } = {}) {
+function shouldClearOutputBufferOnInterrupt(enabled, {
+  lastCallerTranscriptAt,
+  lastCallerAudioAt,
+  lastAiAudioAt,
+  interruptionMode
+} = {}) {
   if (!enabled) return false;
 
-  const callerTime = Date.parse(lastCallerTranscriptAt || '');
   const aiAudioTime = Date.parse(lastAiAudioAt || '');
-  if (Number.isFinite(callerTime) && Number.isFinite(aiAudioTime) && callerTime < aiAudioTime) return false;
+  if (!Number.isFinite(aiAudioTime)) return false;
 
-  return true;
+  if (normalizeInterruptionMode(interruptionMode) === 'provider') {
+    const callerAudioTime = Date.parse(lastCallerAudioAt || '');
+    return Number.isFinite(callerAudioTime) && callerAudioTime >= aiAudioTime;
+  }
+
+  const callerTime = Date.parse(lastCallerTranscriptAt || '');
+  return Number.isFinite(callerTime) && callerTime >= aiAudioTime;
+}
+
+function shouldClearOutputBufferOnCallerTranscript(enabled, {
+  callerTranscript,
+  lastCallerTranscriptAt,
+  lastAiAudioAt,
+  lastConfirmedCallerInterruptAt
+} = {}) {
+  if (!meaningfulCallerTranscript(callerTranscript)) return false;
+  if (lastConfirmedCallerInterruptAt && lastConfirmedCallerInterruptAt === lastCallerTranscriptAt) return false;
+  return shouldClearOutputBufferOnInterrupt(enabled, { lastCallerTranscriptAt, lastAiAudioAt });
+}
+
+function meaningfulCallerTranscript(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (['да', 'нет', 'ок', 'ага', 'угу', 'алло'].includes(normalized)) return true;
+  return /[\p{L}\p{N}]/u.test(normalized) && normalized.replace(/[^\p{L}\p{N}]+/gu, '').length >= 2;
+}
+
+function sanitizedInterruptTranscript(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+}
+
+function normalizeInterruptionMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'provider' || normalized === 'start_of_activity' ? 'provider' : 'transcript_confirmed';
 }
 
 function mediaStreamEstablishmentError(message, source = 'call.stream') {

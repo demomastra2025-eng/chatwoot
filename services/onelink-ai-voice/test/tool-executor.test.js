@@ -55,6 +55,33 @@ test('ToolExecutor converts timeout into fallback, keeps tool running, and emits
   assert.equal(controls[2].metadata.async, true);
 });
 
+test('ToolExecutor reports late async tool result to runtime callback after foreground timeout', async () => {
+  const controls = [];
+  const lateResults = [];
+  const client = {
+    sendControl: async (payload) => { controls.push(payload); return { status: 'ok' }; },
+    callTool: async () => new Promise((resolve) => setTimeout(() => resolve({ answer: 'late answer' }), 25))
+  };
+  const executor = new ToolExecutor({ client, callRef: 'call-1', timeoutMs: 200 });
+
+  const result = await executor.execute('faq_lookup', { query: 'слоган' }, {
+    tool_call_id: 'gemini-tool-2',
+    foreground_timeout_ms: 5,
+    onAsyncResult: async payload => { lateResults.push(payload); }
+  });
+
+  assert.equal(result.pending, true);
+  assert.equal(result.request_id, 'gemini-tool-2');
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert.deepEqual(controls.map((event) => event.action), ['tool_started', 'tool_failed', 'tool_async_completed']);
+  assert.equal(lateResults.length, 1);
+  assert.equal(lateResults[0].ok, true);
+  assert.equal(lateResults[0].tool_name, 'faq_lookup');
+  assert.equal(lateResults[0].request_id, 'gemini-tool-2');
+  assert.deepEqual(lateResults[0].result, { answer: 'late answer' });
+});
+
 test('ToolExecutor uses per-tool timeout when catalog provides one', async () => {
   const controls = [];
   const callOptions = [];

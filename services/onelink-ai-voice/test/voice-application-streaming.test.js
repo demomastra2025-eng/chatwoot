@@ -1150,6 +1150,7 @@ test('VoiceApplication paces model audio into 20ms frames and preserves buffered
 test('VoiceApplication honors per-assistant clear_audio_on_interrupt from context', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
+  const interruptions = [];
   let realtimeCallbacks;
 
   const call = Object.assign(new EventEmitter(), {
@@ -1165,6 +1166,7 @@ test('VoiceApplication honors per-assistant clear_audio_on_interrupt from contex
   };
   const realtime = {
     connect: async options => { realtimeCallbacks = options; },
+    interrupt: () => interruptions.push('interrupt'),
     sendAudio: () => {},
     close: () => {}
   };
@@ -1174,6 +1176,64 @@ test('VoiceApplication honors per-assistant clear_audio_on_interrupt from contex
 
   realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
   assert.equal(stream.writes.length, 1);
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1', format: 'wav' });
+
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(stream.writes.length > 1, true);
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'подо', final: false });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'подождите', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.source, 'caller_transcript_confirmed');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, true);
+  assert.equal(controls.at(-1).metadata.caller_transcript, 'подождите');
+  assert.deepEqual(interruptions, ['interrupt']);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication clears queued audio on provider-mode interrupt after caller audio activity', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'call-provider-interrupt',
+      ai: { provider: 'gemini-live', clear_audio_on_interrupt: true, interruption_mode: 'provider' }
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
+  const result = await app.handleCall(call, { call_ref: 'call-provider-interrupt' });
+
+  realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+  stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1', format: 'wav' });
 
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
@@ -1181,6 +1241,45 @@ test('VoiceApplication honors per-assistant clear_audio_on_interrupt from contex
   assert.equal(controls.at(-1).action, 'caller_interrupted');
   assert.equal(controls.at(-1).metadata.clear_output_buffer, true);
   assert.equal(stream.writes.length, 1);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication does not clear queued audio on interrupt without fresh caller activity', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-no-fresh-interrupt', ai: { provider: 'gemini-live', clear_audio_on_interrupt: true } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
+  const result = await app.handleCall(call, { call_ref: 'call-no-fresh-interrupt' });
+
+  realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(stream.writes.length > 1, true);
 
   call.emit('end');
   await result.completion;
@@ -1221,6 +1320,99 @@ test('VoiceApplication preserves queued audio when provider interrupt follows st
   assert.equal(controls.at(-1).action, 'caller_interrupted');
   assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
   assert.equal(stream.writes.length > 1, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication injects late async tool result back into Gemini context after foreground timeout', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-late-result',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test', tool_foreground_wait_ms: 5 },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200 }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise(resolve => setTimeout(() => resolve({ answer: 'Акуна матата' }), 25))
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    toolTimeoutMs: 200,
+    postToolContinuationMs: 100
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-late-result' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-late-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  assert.equal(toolResult.pending, true);
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(controls.some(payload => payload.action === 'tool_async_completed'), true);
+  assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup готов')), true);
+  assert.equal(sentTexts.some(text => text.includes('Акуна матата')), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication does not apply global foreground timeout to unknown mutating tools', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-mutating-tool-waits',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test', tool_foreground_wait_ms: 5 },
+      tools: [{ name: 'book_appointment', description: 'Book appointment', parameters: { type: 'object', properties: {} }, timeout_ms: 200 }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise(resolve => setTimeout(() => resolve({ appointment_id: 42 }), 25))
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, toolTimeoutMs: 200 });
+  const result = await app.handleCall(call, { call_ref: 'runtime-mutating-tool-waits' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-book-1', name: 'book_appointment', args: { slot: '10:00' } });
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolResult.pending, undefined);
+  assert.equal(controls.some(payload => payload.action === 'tool_async_completed'), false);
+  assert.equal(sentTexts.length, 0);
 
   call.emit('end');
   await result.completion;

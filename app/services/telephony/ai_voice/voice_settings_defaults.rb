@@ -15,6 +15,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'closing_message' => 'Спасибо за звонок. Хорошего дня!',
     'transfer_message' => 'Сейчас соединю вас со специалистом.',
     'interruptions_enabled' => true,
+    'interruption_mode' => 'transcript_confirmed',
     'clear_audio_on_interrupt' => true,
     'finish_current_word_on_interrupt' => true,
     'interrupt_word_boundary_grace_ms' => 120,
@@ -40,6 +41,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'final_silence_message' => 'Похоже, сейчас неудобно говорить. Я завершу звонок, вы сможете продолжить позже.',
     'filler_phrases' => ['Понял.', 'Да, вижу.', 'Сейчас уточню.'].freeze,
     'tool_start_phrases' => ['Секунду, проверю.'].freeze,
+    'tool_start_after_ms' => 1800,
+    'tool_foreground_wait_ms' => 350,
     'tool_delay_phrases' => ['Ещё смотрю, почти готово.'].freeze,
     'tool_failure_phrases' => ['Не получилось проверить автоматически. Могу соединить со специалистом.'].freeze,
     'tool_delay_after_ms' => 1800,
@@ -78,6 +81,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     post_interrupt_resume_delay_ms min_interrupt_words silence_prompt_after_ms second_silence_prompt_after_ms
     max_silence_ms tool_delay_after_ms post_tool_continuation_ms max_sentences nonverbal_cue_max_per_minute
     sigh_cue_max_per_call
+    tool_start_after_ms tool_foreground_wait_ms
   ].freeze
 
   FLOAT_KEYS = %w[temperature ambient_noise_volume_dbfs].freeze

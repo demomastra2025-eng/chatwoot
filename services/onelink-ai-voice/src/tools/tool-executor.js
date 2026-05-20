@@ -23,8 +23,11 @@ class ToolExecutor {
   async execute(name, args = {}, metadata = {}) {
     const toolName = String(name || '').trim();
     const timeoutMs = this.timeoutFor(toolName);
-    const requestId = metadata.request_id || metadata.requestId || metadata.tool_call_id || `tool_${randomUUID()}`;
-    const baseMetadata = { ...metadata, tool_name: toolName, timeout_ms: timeoutMs, request_id: requestId };
+    const { onAsyncResult, foreground_timeout_ms: foregroundTimeoutSnake, foregroundTimeoutMs, ...eventMetadata } = metadata || {};
+    const foregroundTimeoutMsCandidate = foregroundTimeoutSnake ?? foregroundTimeoutMs;
+    const waitTimeoutMs = foregroundTimeoutFor(foregroundTimeoutMsCandidate, timeoutMs);
+    const requestId = eventMetadata.request_id || eventMetadata.requestId || eventMetadata.tool_call_id || `tool_${randomUUID()}`;
+    const baseMetadata = { ...eventMetadata, tool_name: toolName, timeout_ms: timeoutMs, foreground_timeout_ms: waitTimeoutMs, request_id: requestId };
     const duplicate = this.duplicateStatus(toolName, args);
     if (duplicate.suppressed) {
       const suppressedResult = duplicateSuppressedResult(toolName, duplicate);
@@ -48,16 +51,32 @@ class ToolExecutor {
     toolPromise
       .then(result => {
         if (!timedOut) return null;
+        void notifyAsyncResult(onAsyncResult, {
+          ok: true,
+          async: true,
+          tool_name: toolName,
+          request_id: requestId,
+          tool_call_id: baseMetadata.tool_call_id,
+          result
+        });
         return this.safeControl('tool_async_completed', { ...baseMetadata, ok: true, async: true, result_present: result !== undefined });
       })
       .catch(error => {
         if (!timedOut) return null;
         const reason = sanitizeErrorMessage(error.message || safeReason(error));
+        void notifyAsyncResult(onAsyncResult, {
+          ok: false,
+          async: true,
+          tool_name: toolName,
+          request_id: requestId,
+          tool_call_id: baseMetadata.tool_call_id,
+          error: reason
+        });
         return this.safeControl('tool_async_failed', { ...baseMetadata, ok: false, async: true, error: reason });
       });
 
     try {
-      const result = await withTimeout(toolPromise, timeoutMs, `tool ${toolName}`);
+      const result = await withTimeout(toolPromise, waitTimeoutMs, `tool ${toolName}`);
       this.recordSuccessfulCall(toolName, args);
       await this.safeControl('tool_completed', { ...baseMetadata, ok: true });
       return { ok: true, result };
@@ -117,6 +136,21 @@ class ToolExecutor {
     current.count += 1;
     current.lastAt = now;
     this.recentCalls.set(key, current);
+  }
+}
+
+function foregroundTimeoutFor(candidate, timeoutMs) {
+  const parsed = Number.parseInt(candidate, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return timeoutMs;
+  return Math.min(parsed, timeoutMs);
+}
+
+async function notifyAsyncResult(handler, payload = {}) {
+  if (typeof handler !== 'function') return;
+  try {
+    await handler(payload);
+  } catch (_error) {
+    // Late-result injection must never reject the original tool promise chain.
   }
 }
 

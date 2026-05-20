@@ -38,6 +38,7 @@ async function main() {
       maxOutputTokens: context.ai?.max_output_tokens ?? context.ai?.maxOutputTokens ?? config.maxOutputTokens,
       setupTimeoutMs: config.setupTimeoutMs,
       interruptions: context.ai?.interruptions_enabled ?? config.interruptions,
+      interruptionMode: context.ai?.interruption_mode || context.ai?.interruptionMode || config.interruptionMode,
       speechStartSensitivity: context.ai?.speech_start_sensitivity || config.speechStartSensitivity,
       speechEndSensitivity: context.ai?.speech_end_sensitivity || config.speechEndSensitivity,
       prefixPaddingMs: context.ai?.prefix_padding_ms ?? context.ai?.prefixPaddingMs ?? config.prefixPaddingMs,

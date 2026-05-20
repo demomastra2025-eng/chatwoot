@@ -13,6 +13,7 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.outputMaxBufferedMs, 5_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
+  assert.equal(config.interruptionMode, 'transcript_confirmed');
 });
 
 test('loadConfig prefers AI voice internal token while preserving legacy fallback', () => {
@@ -50,7 +51,8 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
     VOICE_AGENT_REALTIME_VAD_SILENCE_DURATION_MS: '320',
     VOICE_AGENT_REALTIME_VAD_START_SENSITIVITY: 'START_SENSITIVITY_LOW',
     VOICE_AGENT_REALTIME_VAD_END_SENSITIVITY: 'END_SENSITIVITY_LOW',
-    VOICE_AGENT_REALTIME_TURN_COVERAGE: 'TURN_INCLUDES_ALL_INPUT'
+    VOICE_AGENT_REALTIME_TURN_COVERAGE: 'TURN_INCLUDES_ALL_INPUT',
+    VOICE_AGENT_REALTIME_INTERRUPTION_MODE: 'provider'
   });
 
   assert.equal(config.railsBaseUrl, 'http://rails:3000');
@@ -64,4 +66,5 @@ test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tu
   assert.equal(config.speechStartSensitivity, 'START_SENSITIVITY_LOW');
   assert.equal(config.speechEndSensitivity, 'END_SENSITIVITY_LOW');
   assert.equal(config.turnCoverage, 'TURN_INCLUDES_ALL_INPUT');
+  assert.equal(config.interruptionMode, 'provider');
 });

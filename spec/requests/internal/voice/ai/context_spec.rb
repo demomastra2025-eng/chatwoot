@@ -88,6 +88,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'language' => 'ru-KZ',
       'first_message' => 'Здравствуйте! Чем могу помочь?',
       'interruptions_enabled' => true,
+      'interruption_mode' => 'transcript_confirmed',
       'clear_audio_on_interrupt' => true,
       'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
       'humanlike_defaults_profile' => 'standard_v1',
@@ -96,6 +97,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'interrupt_ack_phrases' => ['Ага.', 'Понял.', 'Мм.', 'Аха.', 'А-а, понял.'],
       'silence_prompt_enabled' => true,
       'tool_start_phrases' => ['Секунду, проверю.'],
+      'tool_start_after_ms' => 1800,
+      'tool_foreground_wait_ms' => 350,
       'emotional_style' => 'warm_professional',
       'nonverbal_cues_enabled' => true,
       'ambient_noise_enabled' => false,
@@ -138,6 +141,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
         interruptions_enabled: false,
         clear_audio_on_interrupt: false,
+        interruption_mode: 'provider',
+        tool_foreground_wait_ms: '0',
         silence_prompt_after_ms: 0,
         nonverbal_cue_max_per_minute: 0
       )
@@ -154,6 +159,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response.parsed_body['ai']).to include(
       'interruptions_enabled' => false,
       'clear_audio_on_interrupt' => false,
+      'interruption_mode' => 'provider',
+      'tool_foreground_wait_ms' => 0,
       'silence_prompt_after_ms' => 0,
       'nonverbal_cue_max_per_minute' => 0
     )

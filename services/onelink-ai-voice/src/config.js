@@ -45,6 +45,7 @@ function loadConfig(env = process.env) {
     maxOutputTokens: parseInteger(env.VOICE_AGENT_REALTIME_MAX_OUTPUT_TOKENS, 120),
     setupTimeoutMs: parseInteger(env.VOICE_AGENT_REALTIME_SETUP_TIMEOUT_MS, 15_000),
     interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase()),
+    interruptionMode: env.VOICE_AGENT_REALTIME_INTERRUPTION_MODE || 'transcript_confirmed',
     startupBeeps: parseBoolean(env.VOICE_AGENT_REALTIME_STARTUP_BEEPS, false),
     outputMaxBufferedMs: parseInteger(env.VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS, 5_000),
     postToolContinuationMs: parseInteger(env.VOICE_AGENT_POST_TOOL_CONTINUATION_MS || env.VOICE_AGENT_REALTIME_POST_TOOL_CONTINUATION_MS, 4_000),
