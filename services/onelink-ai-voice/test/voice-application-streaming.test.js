@@ -1133,6 +1133,46 @@ test('VoiceApplication honors per-assistant clear_audio_on_interrupt from contex
   await result.completion;
 });
 
+test('VoiceApplication preserves queued audio when provider interrupt follows stale caller transcript', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-stale-interrupt', ai: { provider: 'gemini-live', clear_audio_on_interrupt: true } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
+  const result = await app.handleCall(call, { call_ref: 'call-stale-interrupt' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'алло', final: true, at: '2026-05-20T04:15:13.999Z' });
+  realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
+  assert.equal(stream.writes.length, 1);
+
+  await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.at(-1).action, 'caller_interrupted');
+  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(stream.writes.length > 1, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication sends a bounded Gemini continuation when the model stalls after a successful tool response', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];

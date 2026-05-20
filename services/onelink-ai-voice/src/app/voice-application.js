@@ -495,18 +495,22 @@ class VoiceApplication {
         return toolResult;
       },
       onInterrupt: async (metadata = {}) => {
+        const shouldClearOutput = shouldClearOutputBufferOnInterrupt(clearOutputOnInterrupt, {
+          lastCallerTranscriptAt,
+          lastAiAudioAt
+        });
         const interruptMetadata = compactPayload({
           provider: 'gemini-live',
           reason: metadata.reason || metadata.source || 'vad_or_caller_speech',
           source: metadata.source || 'provider_interruption',
-          clear_output_buffer: Boolean(clearOutputOnInterrupt),
+          clear_output_buffer: shouldClearOutput,
           last_caller_transcript_at: lastCallerTranscriptAt,
           last_ai_transcript_at: lastAiTranscriptAt,
           last_ai_audio_at: lastAiAudioAt,
           stream_ref: streamRef,
           media_session_ref: mediaSessionRef
         });
-        if (clearOutputOnInterrupt) {
+        if (shouldClearOutput) {
           outputPacer?.clear?.();
         }
         await session.safeControl('caller_interrupted', interruptMetadata);
@@ -2105,6 +2109,16 @@ async function hangupSafely(call, reason) {
     // Terminal persistence is more important than propagating provider cleanup errors.
   }
   return false;
+}
+
+function shouldClearOutputBufferOnInterrupt(enabled, { lastCallerTranscriptAt, lastAiAudioAt } = {}) {
+  if (!enabled) return false;
+
+  const callerTime = Date.parse(lastCallerTranscriptAt || '');
+  const aiAudioTime = Date.parse(lastAiAudioAt || '');
+  if (Number.isFinite(callerTime) && Number.isFinite(aiAudioTime) && callerTime < aiAudioTime) return false;
+
+  return true;
 }
 
 function mediaStreamEstablishmentError(message, source = 'call.stream') {
