@@ -436,9 +436,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    activity_message = conversation.messages.activity.find_by!(source_id: "ai_voice_event:#{call_session.external_call_ref}:tool_started:tool-call-1")
-    expect(activity_message.content).to eq('Инструмент faq_lookup запущен')
-    expect(activity_message.content_attributes.dig('data', 'metadata')).to include('tool_name' => 'faq_lookup', 'tool_call_id' => 'tool-call-1')
+    expect(conversation.messages.activity.where(source_id: "ai_voice_event:#{call_session.external_call_ref}:tool_started:tool-call-1")).not_to exist
     expect(ai_message.reload.additional_attributes.dig('captain_trace', 'tool_steps').last).to include(
       'tool_name' => 'faq_lookup',
       'event' => 'start',
@@ -467,14 +465,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
     expect(response).to have_http_status(:ok)
     async_source_id = "ai_voice_event:#{call_session.external_call_ref}:tool_async_completed:tool-call-1"
-    async_activity = conversation.messages.activity.find_by!(source_id: async_source_id)
-    expect(async_activity.content).to eq('Инструмент faq_lookup выполнен')
-    expect(async_activity.content_attributes.dig('data', 'metadata')).to include(
-      'tool_name' => 'faq_lookup',
-      'request_id' => 'tool-call-1',
-      'pending' => true,
-      'async' => true
-    )
+    expect(conversation.messages.activity.where(source_id: async_source_id)).not_to exist
     expect(call_session.reload.status).to eq('in_progress')
     expect(call_session.events.where(event_type: 'tool_async_completed')).to exist
     expect(ai_message.reload.additional_attributes.dig('captain_trace', 'tool_steps').last).to include(

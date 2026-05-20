@@ -1,10 +1,10 @@
 class Telephony::AiVoice::ControlService
   ALLOWED_ACTIONS = %w[
-    ai_ringing ai_answered ai_speaking caller_interrupted tool_started tool_progress tool_completed tool_failed
+    ai_ringing ai_answered ai_speaking caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed
     transfer_started transfer_answered transfer_completed transfer_failed session_completed session_failed
     caller_hangup media_stream_closed media_stream_not_established provider_stream_closed provider_error fonoster_call_closed runtime_closed
     tool_requested_end_call handoff_requested close
-    tool_async_completed tool_async_failed
+    tool_async_completed tool_async_failed post_tool_model_stall
   ].freeze
   BRIDGE_CALL_REF_KEYS = %w[bridge_call_ref bridgeCallRef parent_call_ref parentCallRef].freeze
   RUNTIME_CALL_REF_KEYS = %w[

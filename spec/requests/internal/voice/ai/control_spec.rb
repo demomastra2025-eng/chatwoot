@@ -89,7 +89,8 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     [
       ['tool_started', { tool_name: 'faq_lookup', tool_call_id: 'tool-call-1', input: { question: 'Price?', access_token: 'x' } }],
       ['tool_progress', { tool_name: 'faq_lookup', tool_call_id: 'tool-call-1', output: { status: 'searching' } }],
-      ['tool_completed', { tool_name: 'faq_lookup', tool_call_id: 'tool-call-1', output: { answer: 'Found', api_key: 'x' } }]
+      ['tool_completed', { tool_name: 'faq_lookup', tool_call_id: 'tool-call-1', output: { answer: 'Found', api_key: 'x' } }],
+      ['tool_suppressed', { tool_name: 'faq_lookup', tool_call_id: 'tool-call-1', duplicate: true }]
     ].each do |action, metadata|
       with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
         post '/internal/voice/ai/control',
@@ -101,6 +102,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
       expect(response).to have_http_status(:ok)
     end
 
+    expect(conversation.messages.activity.where('source_id LIKE ?', "ai_voice_event:#{call_session.external_call_ref}:tool_%")).not_to exist
     tool_steps = conversation.messages.outgoing.last.additional_attributes.dig('captain_trace', 'tool_steps')
 
     expect(tool_steps).to contain_exactly(
@@ -124,6 +126,12 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
         'event' => 'finish',
         'status' => 'finish',
         'output' => { 'answer' => 'Found', 'api_key' => '[REDACTED]' }
+      ),
+      include(
+        'type' => 'captain_tool_event',
+        'tool_name' => 'faq_lookup',
+        'event' => 'suppressed',
+        'status' => 'suppressed'
       )
     )
   end

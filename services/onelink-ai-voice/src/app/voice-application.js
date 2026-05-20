@@ -8,6 +8,7 @@ const streamConstants = loadStreamConstants();
 const FONOSTER_INPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_INPUT_RATE, 16_000);
 const FONOSTER_CALL_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_CALL_RATE, 8_000);
 const GEMINI_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_OUTPUT_RATE, 24_000);
+const RECORDING_SAMPLE_RATE = parseStreamRate(process.env.VOICE_AGENT_RECORDING_SAMPLE_RATE, 16_000);
 
 class VoiceApplication {
   constructor({
@@ -337,7 +338,7 @@ class VoiceApplication {
       }
     };
     if (recordingWriter) {
-      void recordingWriter.start({ sampleRate: FONOSTER_CALL_RATE });
+      void recordingWriter.start({ sampleRate: RECORDING_SAMPLE_RATE });
     }
     await session.safeEvent('stream_started', {
       stream_ref: streamRef,
@@ -346,6 +347,7 @@ class VoiceApplication {
       input_rate: FONOSTER_INPUT_RATE,
       output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
+      recording_sample_rate: RECORDING_SAMPLE_RATE,
       gemini_model: context.ai?.model,
       output_format: streamConstants.wavFormat,
       output_encoding: 'pcm_s16le',
@@ -364,6 +366,7 @@ class VoiceApplication {
       input_rate: FONOSTER_INPUT_RATE,
       telephony_output_rate: FONOSTER_CALL_RATE,
       gemini_output_rate: GEMINI_OUTPUT_RATE,
+      recording_sample_rate: RECORDING_SAMPLE_RATE,
       output_format: streamConstants.wavFormat,
       output_encoding: 'pcm_s16le',
       frame_ms: 20,
@@ -419,11 +422,6 @@ class VoiceApplication {
             frame_bytes: frame.length
           });
         }
-        writeRecordingAudio('outbound', frame, {
-          stream_ref: streamRef,
-          media_session_ref: mediaSessionRef,
-          source: 'media_writer'
-        });
         try {
           const writeResult = mediaStream.write({
             mediaSessionRef,
@@ -473,6 +471,15 @@ class VoiceApplication {
             mime_type: metadata.mimeType
           });
         }
+        const sourceRate = audioRateFromMimeType(metadata.mimeType) || GEMINI_OUTPUT_RATE;
+        const recordingOutput = resamplePcm16(Buffer.from(chunk), sourceRate, RECORDING_SAMPLE_RATE);
+        writeRecordingAudio('outbound', recordingOutput, {
+          stream_ref: streamRef,
+          media_session_ref: mediaSessionRef,
+          source: 'realtime_model_audio',
+          source_rate: sourceRate,
+          recording_sample_rate: RECORDING_SAMPLE_RATE
+        });
         outputPacer.push(data);
       },
       onTranscript: item => {
@@ -572,15 +579,18 @@ class VoiceApplication {
       if (!acceptingInput || !payload || !payload.data || !isAudioIn(payload.type)) return;
       streamRef = payload.streamRef || payload.stream_ref || streamRef;
       session.streamRef = streamRef || session.streamRef;
+      const sourceRate = audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE;
       const recordingInput = resamplePcm16(
         Buffer.from(payload.data),
-        audioRateFromMimeType(mimeTypeForStreamPayload(payload)) || FONOSTER_INPUT_RATE,
-        FONOSTER_CALL_RATE
+        sourceRate,
+        RECORDING_SAMPLE_RATE
       );
       writeRecordingAudio('inbound', recordingInput, {
         ...payload,
         stream_ref: payload.streamRef || payload.stream_ref || streamRef,
-        media_session_ref: mediaSessionRef
+        media_session_ref: mediaSessionRef,
+        source_rate: sourceRate,
+        recording_sample_rate: RECORDING_SAMPLE_RATE
       });
       realtime.sendAudio(Buffer.from(payload.data), {
         mimeType: mimeTypeForStreamPayload(payload)

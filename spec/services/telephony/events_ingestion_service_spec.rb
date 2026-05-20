@@ -552,7 +552,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       existing_call_session.update!(status: 'in_progress')
 
-      %w[caller_interrupted tool_started tool_completed tool_failed tool_async_completed tool_async_failed ai_speaking].each do |event_name|
+      %w[caller_interrupted tool_started tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed post_tool_model_stall ai_speaking].each do |event_name|
         result = described_class.new(
           payload: payload.merge(
             event_key: "evt-#{event_name}",
@@ -568,7 +568,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
       tools = existing_call_session.latest_voice_message.reload.content_attributes.dig('data', 'tools')
       expect(tools.map { |tool| tool['event'] }).to include(
-        'tool_started', 'tool_completed', 'tool_failed', 'tool_async_completed', 'tool_async_failed'
+        'tool_started', 'tool_completed', 'tool_failed', 'tool_suppressed', 'tool_async_completed', 'tool_async_failed'
       )
       expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
       expect(tools.filter_map { |tool| tool['request_id'] }).to all(eq('tool-req-1'))

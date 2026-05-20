@@ -333,6 +333,11 @@ test('VoiceApplication keeps OneLink recording writer anchored in the realtime m
   await result.completion;
 
   assert.deepEqual(writes.map(([kind]) => kind), ['start', 'inbound', 'outbound', 'close']);
+  assert.equal(writes[0][1].sampleRate, 16000);
+  assert.equal(writes[2][2].source, 'realtime_model_audio');
+  assert.equal(writes[2][2].source_rate, 24000);
+  assert.equal(writes[2][2].recording_sample_rate, 16000);
+  assert.equal(writes[2][1].length, 640);
 });
 
 test('VoiceApplication marks recording incomplete without failing media when recording writes fail', async () => {

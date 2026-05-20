@@ -3,12 +3,13 @@ class Telephony::AiVoice::ConversationTimelineService
   EVENT_SOURCE_PREFIX = 'ai_voice_event'.freeze
   TRANSCRIPT_TYPE = 'ai_voice_transcript_turn'.freeze
   EVENT_TYPE = 'ai_voice_event'.freeze
-  TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed tool_async_completed tool_async_failed].freeze
+  TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed].freeze
   TOOL_EVENTS = {
     'tool_started' => 'start',
     'tool_progress' => 'progress',
     'tool_completed' => 'finish',
     'tool_failed' => 'failed',
+    'tool_suppressed' => 'suppressed',
     'tool_async_completed' => 'finish',
     'tool_async_failed' => 'failed'
   }.freeze
@@ -16,13 +17,15 @@ class Telephony::AiVoice::ConversationTimelineService
     'start' => 'Using %<tool_name>s',
     'progress' => 'Running %<tool_name>s',
     'finish' => 'Completed %<tool_name>s',
-    'failed' => 'Failed %<tool_name>s'
+    'failed' => 'Failed %<tool_name>s',
+    'suppressed' => 'Suppressed duplicate %<tool_name>s'
   }.freeze
   TOOL_TRACE_STATUSES = {
     'start' => 'start',
     'progress' => 'progress',
     'finish' => 'finish',
-    'failed' => 'failed'
+    'failed' => 'failed',
+    'suppressed' => 'suppressed'
   }.freeze
   SYSTEM_CONTENT = {
     'ai_ringing' => 'AI-агент принимает звонок',
@@ -64,8 +67,13 @@ class Telephony::AiVoice::ConversationTimelineService
   def record_control_event!(action:, metadata:, sequence:)
     return if conversation.blank?
 
-    upsert_activity_event!(action: action.to_s, metadata: metadata.to_h.deep_stringify_keys, sequence: sequence)
-    attach_tool_trace_to_latest_ai_message! if TOOL_ACTIONS.include?(action.to_s)
+    normalized_action = action.to_s
+    if TOOL_ACTIONS.include?(normalized_action)
+      attach_tool_trace_to_latest_ai_message!
+      return
+    end
+
+    upsert_activity_event!(action: normalized_action, metadata: metadata.to_h.deep_stringify_keys, sequence: sequence)
   end
 
   private

@@ -35,8 +35,10 @@ class Telephony::EventsIngestionService
     'tool_progress' => nil,
     'tool_completed' => nil,
     'tool_failed' => nil,
+    'tool_suppressed' => nil,
     'tool_async_completed' => nil,
     'tool_async_failed' => nil,
+    'post_tool_model_stall' => nil,
     'ai_speaking' => nil,
     'caller_interrupted' => nil,
     'ringing' => 'ringing',
@@ -662,7 +664,7 @@ class Telephony::EventsIngestionService
   end
 
   def voice_ai_tool_events(call_session)
-    tool_event_types = %w[tool_started tool_progress tool_completed tool_failed tool_async_completed tool_async_failed]
+    tool_event_types = %w[tool_started tool_progress tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed]
 
     call_session.events.where(event_type: tool_event_types).order(:created_at, :id).last(20).filter_map do |event|
       event_payload = event.payload.to_h.deep_stringify_keys
@@ -688,8 +690,8 @@ class Telephony::EventsIngestionService
   def ai_voice_event_types
     %w[
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
-      media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed
-      tool_async_completed tool_async_failed
+      media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed tool_suppressed
+      tool_async_completed tool_async_failed post_tool_model_stall
     ]
   end
 
@@ -699,6 +701,8 @@ class Telephony::EventsIngestionService
       'running'
     when 'tool_completed', 'tool_async_completed'
       'completed'
+    when 'tool_suppressed'
+      'suppressed'
     when 'tool_failed', 'tool_async_failed'
       'failed'
     end
