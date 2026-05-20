@@ -19,7 +19,7 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
       'data' => {
         'event' => 'estate.managerChanged',
         'object' => {
-          'estate_id' => 6841608,
+          'estate_id' => 6_841_608,
           'client_phones' => '+7 (700) 123-45-67',
           'status' => 10,
           'previous_status' => 5,
@@ -48,17 +48,17 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
 
   context 'when MacroCRM returns an assigned manager via estateBuy/list' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
-    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
 
     before do
       create(:inbox_member, inbox: inbox, user: mapped_agent)
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
-              'manager' => { 'id' => 78731 }
+              'manager' => { 'id' => 78_731 }
             }
           ]
         }
@@ -75,17 +75,48 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
     end
   end
 
+  context 'when MacroCRM returns the newer data managerId shape via estateBuy/list' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
+        {
+          'data' => [
+            {
+              'id' => 6_841_608,
+              'contactsId' => 5_044_369,
+              'managerId' => 78_731,
+              'managerName' => 'Мираз'
+            }
+          ],
+          'meta' => { 'next' => nil }
+        }
+      )
+    end
+
+    it 'assigns the mapped agent from managerId' do
+      perform
+
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+      expect(conversation.custom_attributes['macrocrm_manager_changed_at']).to eq(
+        Time.zone.parse('2026-03-28 18:53:43').utc.iso8601
+      )
+    end
+  end
+
   context 'when MacroCRM reports manager removal via estateBuy/list' do
     let!(:current_assignee) { create(:user, account: account, role: :agent) }
 
     before do
       create(:inbox_member, inbox: inbox, user: current_assignee)
       conversation.update!(assignee: current_assignee)
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
               'manager' => { 'id' => nil }
             }
@@ -103,16 +134,16 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
 
   context 'when estateBuy/list misses the estate and fallback resolves the manager' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
-    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
 
     before do
       create(:inbox_member, inbox: inbox, user: mapped_agent)
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return({ 'buys' => [] })
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return({ 'buys' => [] })
       allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
-        { 'contact' => { 'id' => 5044369 } }
+        { 'contact' => { 'id' => 5_044_369 } }
       )
-      allow(client).to receive(:find_estate_buy).with(contact_id: 5044369).and_return(
-        { 'buys' => [{ 'id' => 6841608, 'manager_id' => 78731 }] }
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5_044_369).and_return(
+        { 'buys' => [{ 'id' => 6_841_608, 'manager_id' => 78_731 }] }
       )
     end
 
@@ -123,15 +154,37 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
     end
   end
 
+  context 'when fallback estate lookup returns the newer data managerId shape' do
+    let!(:mapped_agent) { create(:user, account: account, role: :agent) }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: mapped_agent)
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return({ 'data' => [] })
+      allow(client).to receive(:find_contact).with(phone: '+77001234567').and_return(
+        { 'contact' => { 'id' => 5_044_369 } }
+      )
+      allow(client).to receive(:find_estate_buy).with(contact_id: 5_044_369).and_return(
+        { 'data' => [{ 'id' => 6_841_608, 'managerId' => 78_731 }] }
+      )
+    end
+
+    it 'falls back and assigns the mapped agent from managerId' do
+      perform
+
+      expect(conversation.reload.assignee).to eq(mapped_agent)
+    end
+  end
+
   context 'when the manager is not mapped to a local assignable agent' do
     before do
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
-              'manager' => { 'id' => 78731 }
+              'manager' => { 'id' => 78_731 }
             }
           ]
         }
@@ -139,7 +192,7 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
     end
 
     it 'keeps the conversation unchanged' do
-      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect { perform }.not_to(change { conversation.reload.assignee_id })
     end
   end
 
@@ -152,11 +205,11 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
         assignee: current_assignee,
         custom_attributes: { 'macrocrm_manager_changed_at' => Time.zone.parse('2026-03-28 19:00:00').utc.iso8601 }
       )
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
               'manager' => { 'id' => nil }
             }
@@ -166,14 +219,14 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
     end
 
     it 'ignores the older event' do
-      expect { perform }.not_to change { conversation.reload.assignee_id }
+      expect { perform }.not_to(change { conversation.reload.assignee_id })
       expect(conversation.reload.custom_attributes['macrocrm_manager_changed_at']).to eq(Time.zone.parse('2026-03-28 19:00:00').utc.iso8601)
     end
   end
 
   context 'when multiple conversations share the same phone but one has the linked estate id' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
-    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
     let!(:newer_conversation) do
       create(
         :conversation,
@@ -192,13 +245,13 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
         custom_attributes: { 'macrocrm_estate_id' => '6841608' },
         last_activity_at: 10.minutes.ago
       )
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
-              'manager' => { 'id' => 78731 }
+              'manager' => { 'id' => 78_731 }
             }
           ]
         }
@@ -215,7 +268,7 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
 
   context 'when phone fallback matches multiple unresolved conversations without an estate link' do
     let!(:mapped_agent) { create(:user, account: account, role: :agent) }
-    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78731 }] }
+    let(:manager_mappings) { [{ 'user_id' => mapped_agent.id, 'macro_manager_id' => 78_731 }] }
     let!(:newer_conversation) do
       create(
         :conversation,
@@ -230,13 +283,13 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
 
     before do
       create(:inbox_member, inbox: inbox, user: mapped_agent)
-      allow(client).to receive(:list_estate_buy).with(ids: [6841608], statuses: [10]).and_return(
+      allow(client).to receive(:list_estate_buy).with(ids: [6_841_608], statuses: [10]).and_return(
         {
           'buys' => [
             {
-              'id' => 6841608,
+              'id' => 6_841_608,
               'contact' => { 'phones' => ['+7 700 123 45 67'] },
-              'manager' => { 'id' => 78731 }
+              'manager' => { 'id' => 78_731 }
             }
           ]
         }
@@ -255,7 +308,7 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
 
   context 'when event type is unrelated' do
     let(:payload) do
-      { 'action' => 'estate.created', 'data' => { 'event' => 'estate.created', 'object' => { 'estate_id' => 6841608 } } }
+      { 'action' => 'estate.created', 'data' => { 'event' => 'estate.created', 'object' => { 'estate_id' => 6_841_608 } } }
     end
 
     it 'does nothing' do

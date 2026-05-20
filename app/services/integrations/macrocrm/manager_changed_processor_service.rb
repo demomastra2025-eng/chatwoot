@@ -82,13 +82,13 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
       ids: [estate_id],
       statuses: Array(status).compact_blank
     )
-    buy = Array(response['buys']).find { |item| item['id'].to_s == estate_id.to_s }
+    buy = estate_records(response).find { |item| item['id'].to_s == estate_id.to_s }
     return if buy.blank?
 
     {
       estate_id: buy['id'],
-      manager_id: buy.dig('manager', 'id'),
-      phones: Array(buy.dig('contact', 'phones')).filter_map { |phone| normalize_phone(phone) }
+      manager_id: estate_record_manager_id(buy),
+      phones: estate_record_phones(buy)
     }
   rescue Integrations::Macrocrm::Client::TransientError => e
     remember_transient_lookup_error(e)
@@ -106,12 +106,12 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
     return if contact.blank?
 
     buys_response = client.find_estate_buy(contact_id: contact['id'])
-    buy = Array(buys_response['buys']).find { |item| item['id'].to_s == estate_id.to_s }
+    buy = estate_records(buys_response).find { |item| item['id'].to_s == estate_id.to_s }
     return if buy.blank?
 
     {
       estate_id: buy['id'],
-      manager_id: buy['manager_id'],
+      manager_id: estate_record_manager_id(buy),
       phones: [webhook_phone]
     }
   rescue Integrations::Macrocrm::Client::TransientError => e
@@ -130,6 +130,19 @@ class Integrations::Macrocrm::ManagerChangedProcessorService
     return nil if response['contact'].blank? && response['error'] != true
 
     raise Integrations::Macrocrm::Client::PermanentError, 'Unexpected MacroCRM contact response'
+  end
+
+  def estate_records(response)
+    Array(response['buys'].presence || response['data'])
+  end
+
+  def estate_record_manager_id(record)
+    record.dig('manager', 'id') || record['manager_id'] || record['managerId']
+  end
+
+  def estate_record_phones(record)
+    Array(record.dig('contact', 'phones').presence || record['phones'] || record['contactPhones'])
+      .filter_map { |phone| normalize_phone(phone) }
   end
 
   def macrocrm_error_details(error)
