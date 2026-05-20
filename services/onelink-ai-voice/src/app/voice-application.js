@@ -187,6 +187,7 @@ class VoiceApplication {
     if (session.state === 'fallback') {
       initialMediaKeepalive?.stop?.('fallback');
       closeMediaStreamSafely(mediaStream);
+      this.registry?.close?.(callRef, context?.ai?.reason || 'context_unavailable');
       await this.fallbackResponder.greet(call);
       return { session, context, mode: 'fallback', completion: Promise.resolve() };
     }

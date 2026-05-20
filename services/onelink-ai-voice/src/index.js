@@ -14,6 +14,7 @@ async function main() {
     baseUrl: config.railsBaseUrl,
     token: config.internalToken,
     bridgeToken: config.bridgeToken,
+    timeoutMs: config.onelinkTimeoutMs,
     contextPath: config.contextPath,
     transcriptPath: config.transcriptPath,
     controlPath: config.controlPath,

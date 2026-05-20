@@ -10,6 +10,7 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.geminiVoice, 'sulafat');
   assert.equal(config.language, 'ru-KZ');
   assert.equal(config.toolTimeoutMs, 3_000);
+  assert.equal(config.onelinkTimeoutMs, 10_000);
   assert.equal(config.outputMaxBufferedMs, 5_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
@@ -37,6 +38,11 @@ test('loadConfig keeps bridge token separate from AI voice token', () => {
 
   assert.equal(config.internalToken, 'ai-token');
   assert.equal(config.bridgeToken, 'bridge-token');
+});
+
+test('loadConfig uses a longer bounded Onelink HTTP timeout for slow voice context bootstrap', () => {
+  assert.equal(loadConfig({ VOICE_AGENT_ONELINK_TIMEOUT_MS: '12000' }).onelinkTimeoutMs, 12_000);
+  assert.equal(loadConfig({ VOICE_AGENT_ONELINK_AI_TIMEOUT_MS: '9000' }).onelinkTimeoutMs, 9_000);
 });
 
 test('loadConfig accepts Fonoster contract env aliases for Rails and realtime tuning', () => {

@@ -587,6 +587,7 @@ class Telephony::EventsIngestionService
     return if conversation.blank?
 
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i
+    source_id = "voice_call:#{call_session.external_call_ref}"
     conversation.messages.create!(
       account: conversation.account,
       inbox: conversation.inbox,
@@ -594,7 +595,7 @@ class Telephony::EventsIngestionService
       message_type: :incoming,
       content: 'Voice Call',
       content_type: :voice_call,
-      source_id: "voice_call:#{call_session.external_call_ref}",
+      source_id: source_id,
       content_attributes: {
         'data' => {
           'call_sid' => call_session.external_call_ref,
@@ -609,6 +610,9 @@ class Telephony::EventsIngestionService
         }.compact
       }
     )
+  rescue ActiveRecord::RecordNotUnique
+    conversation.messages.voice_calls.find_by(source_id: source_id) ||
+      Message.find_by(inbox: conversation.inbox, source_id: source_id)
   end
 
   def voice_message_meta(call_session)

@@ -120,6 +120,20 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
   end
 
+  it 'builds the full Captain prompt once per voice context request' do
+    builder = Telephony::AiVoice::ContextBuilder.new(
+      params: { call_ref: call_session.external_call_ref, account_id: account.id }
+    )
+    resolved_assistant = builder.send(:captain_assistant)
+    expect(resolved_assistant).to receive(:agent_instructions).once.and_call_original
+
+    first_prompt = builder.send(:system_prompt)
+    second_prompt = builder.send(:system_prompt)
+
+    expect(first_prompt).to eq(second_prompt)
+    expect(first_prompt).to include('Ты голосовой ассистент в телефонном звонке')
+  end
+
   it 'allows voice recording to be disabled explicitly for a route' do
     number_binding.routing_policy.update!(
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(recording_enabled: false)

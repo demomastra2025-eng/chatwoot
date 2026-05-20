@@ -35,6 +35,7 @@ function loadConfig(env = process.env) {
     apiPort: parseInteger(env.VOICE_AGENT_API_PORT, 8081),
     whatsappAttachPath: env.VOICE_AGENT_WHATSAPP_ATTACH_PATH || env.ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH || env.AI_VOICE_WHATSAPP_ATTACH_PATH || '/internal/whatsapp-cloud/calls',
     sessionTtlMs: parseInteger(env.VOICE_AGENT_SESSION_TTL_MS, 3_600_000),
+    onelinkTimeoutMs: parseInteger(env.VOICE_AGENT_ONELINK_TIMEOUT_MS || env.VOICE_AGENT_ONELINK_AI_TIMEOUT_MS, 10_000),
     toolTimeoutMs: parseInteger(env.VOICE_AGENT_TOOL_TIMEOUT_MS, 3_000),
     realtimeProvider: env.VOICE_AGENT_REALTIME_PROVIDER || 'gemini-live',
     geminiApiKey: env.VOICE_AGENT_REALTIME_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '',

@@ -57,6 +57,26 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'reuses the exact voice call bubble when message creation races with the WhatsApp webhook' do
+      existing_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'call-retry-1' } }
+      )
+      service = described_class.new(payload: payload)
+      messages = existing_call_session.conversation.messages
+      allow(existing_call_session.conversation).to receive(:messages).and_return(messages)
+      allow(messages).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique)
+
+      message = service.send(:build_voice_message!, existing_call_session)
+
+      expect(message).to eq(existing_message)
+    end
+
     it 'stores native answered audit fields using canonical lifecycle status' do
       occurred_at = Time.zone.parse(1.minute.ago.iso8601)
 
@@ -552,7 +572,8 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       existing_call_session.update!(status: 'in_progress')
 
-      %w[caller_interrupted tool_started tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed post_tool_model_stall ai_speaking].each do |event_name|
+      %w[caller_interrupted tool_started tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed post_tool_model_stall
+         ai_speaking].each do |event_name|
         result = described_class.new(
           payload: payload.merge(
             event_key: "evt-#{event_name}",

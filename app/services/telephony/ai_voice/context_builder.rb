@@ -151,17 +151,21 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def system_prompt
-    base = []
-    base << captain_agent_instructions if captain_assistant.present?
-    base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
-    base << DEFAULT_SYSTEM_PROMPT
-    base.compact_blank.join("\n")
+    @system_prompt ||= begin
+      base = []
+      base << captain_agent_instructions if captain_assistant.present?
+      base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
+      base << DEFAULT_SYSTEM_PROMPT
+      base.compact_blank.join("\n")
+    end
   end
 
   def captain_agent_instructions
-    state = captain_runtime_state_for_prompt
-    context_wrapper = Struct.new(:context).new({ state: state })
-    captain_assistant.agent_instructions(context_wrapper)
+    @captain_agent_instructions ||= begin
+      state = captain_runtime_state_for_prompt
+      context_wrapper = Struct.new(:context).new({ state: state })
+      captain_assistant.agent_instructions(context_wrapper)
+    end
   end
 
   def captain_runtime_state_for_prompt

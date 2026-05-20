@@ -729,6 +729,41 @@ test('VoiceApplication fails and removes the session when app answer never resol
   assert.equal(registry.activeCount(), 0);
 });
 
+test('VoiceApplication closes the sidecar registry when context bootstrap falls back after media is established', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const registry = new SessionRegistry();
+  const greetings = [];
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', account_id: 42 }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => { throw new Error('request timed out after 5000ms'); },
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+
+  const app = new VoiceApplication({
+    client,
+    registry,
+    fallbackResponder: { greet: async () => greetings.push('fallback') },
+    realtimeFactory: () => { throw new Error('realtime should not start without context'); }
+  });
+
+  const result = await app.handleCall(call, { call_ref: 'call-context-timeout', number_ref: 'number-1' });
+
+  assert.equal(result.mode, 'fallback');
+  assert.equal(stream.closed, true);
+  assert.deepEqual(greetings, ['fallback']);
+  assert.equal(controls.at(-1).action, 'session_failed');
+  assert.equal(controls.at(-1).metadata.reason, 'request timed out after 5000ms');
+  assert.equal(registry.activeCount(), 0);
+});
+
 test('VoiceApplication refuses to write AUDIO_OUT before a real streamRef exists', async () => {
   const stream = new FakeVoiceStream();
   stream.streamRef = '';
