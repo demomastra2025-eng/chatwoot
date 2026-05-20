@@ -37,16 +37,39 @@ async function handleAttach({ app, payload, res }) {
     return;
   }
 
+  const callRef = request.call_ref || request.callRef;
   try {
-    const result = await app.handleCall(buildWhatsappCallFacade(request), request);
+    const run = app.handleCall(buildWhatsappCallFacade(request), request);
+    observeVoiceAppRun(run, callRef);
     writeJson(res, 202, {
       status: 'accepted',
-      mode: result?.mode || 'accepted',
-      call_ref: request.call_ref || request.callRef
+      mode: 'accepted',
+      call_ref: callRef
     });
   } catch (error) {
     writeJson(res, 502, { error: 'attach_failed', message: sanitizeMessage(error?.message) });
   }
+}
+
+function observeVoiceAppRun(run, callRef) {
+  Promise.resolve(run)
+    .then(result => {
+      const completion = result?.completion;
+      if (completion && typeof completion.then === 'function') {
+        completion.catch(error => logAttachError('completion', callRef, error));
+      }
+    })
+    .catch(error => logAttachError('handle_call', callRef, error));
+}
+
+function logAttachError(scope, callRef, error) {
+  const payload = {
+    event: 'whatsapp_internal_attach_error',
+    scope,
+    call_ref: String(callRef || '').slice(0, 120),
+    message: sanitizeMessage(error?.message || error)
+  };
+  console.error(JSON.stringify(payload));
 }
 
 function buildWhatsappCallFacade(request) {

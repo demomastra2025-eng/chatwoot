@@ -60,9 +60,38 @@ test('WhatsApp internal attach endpoint starts the voice app with the runtime st
 
   assert.equal(handledRoute, true);
   assert.equal(res.statusCode, 202);
-  assert.deepEqual(res.json(), { status: 'accepted', mode: 'realtime', call_ref: 'whatsapp:wa-call-1' });
+  assert.deepEqual(res.json(), { status: 'accepted', mode: 'accepted', call_ref: 'whatsapp:wa-call-1' });
   assert.equal(handled.payload.media_session_ref, 'media-1');
   assert.equal(handled.call.request.runtime_stream.stream_url, body.runtime_stream.stream_url);
+});
+
+test('WhatsApp internal attach endpoint responds before the long running voice session completes', async () => {
+  let startedResolve;
+  const started = new Promise(resolve => { startedResolve = resolve; });
+  const app = {
+    async handleCall(call, payload) {
+      startedResolve();
+      assert.equal(payload.call_ref, 'whatsapp:wa-call-1');
+      assert.equal(await call.answer(), true);
+      return new Promise(() => {});
+    }
+  };
+  const handler = createWhatsappInternalHandler({ app, internalToken: 'voice-secret' });
+  const req = fakeReq({ body: { call_ref: 'whatsapp:wa-call-1', media_session_id: 'media-1' } });
+  const res = fakeRes();
+  const done = new Promise(resolve => { res.emit = resolve; });
+
+  assert.equal(handler(req, res), true);
+  req.emitBody();
+  await started;
+  const result = await Promise.race([
+    done.then(() => 'responded'),
+    new Promise(resolve => setTimeout(() => resolve('timeout'), 50))
+  ]);
+
+  assert.equal(result, 'responded');
+  assert.equal(res.statusCode, 202);
+  assert.deepEqual(res.json(), { status: 'accepted', mode: 'accepted', call_ref: 'whatsapp:wa-call-1' });
 });
 
 test('WhatsApp internal attach endpoint fails closed without a matching bearer token', async () => {
