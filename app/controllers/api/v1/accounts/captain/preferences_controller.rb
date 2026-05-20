@@ -54,15 +54,17 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   private
 
   def preferences_payload
-    {
-      providers: Llm::Models.providers,
-      models: Llm::Models.models(account: Current.account),
-      features: features_with_account_preferences,
-      runtime: runtime_with_account_preferences,
-      observability: observability_with_account_preferences,
-      provider_credentials: provider_credentials_payload,
-      runtime_metadata: Llm::ModelRegistryService.runtime_metadata(account: Current.account)
-    }
+    Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
+      {
+        providers: Llm::Models.providers,
+        models: Llm::Models.models(account: Current.account),
+        features: features_with_account_preferences,
+        runtime: runtime_with_account_preferences,
+        observability: observability_with_account_preferences,
+        provider_credentials: provider_credentials_payload,
+        runtime_metadata: Llm::ModelRegistryService.runtime_metadata(account: Current.account)
+      }
+    end
   end
 
   def authorize_account_update

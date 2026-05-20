@@ -207,7 +207,7 @@ RSpec.describe Llm::Models do
 
       expect(help_center_config[:default]).to eq('text-embedding-3-small')
       expect(help_center_config[:models]).to include(
-        hash_including(id: 'text-embedding-3-small', provider: 'openai', capabilities: include('embedding'))
+        hash_including(id: 'text-embedding-3-small', provider: 'openrouter', capabilities: include('embedding'))
       )
     end
   end

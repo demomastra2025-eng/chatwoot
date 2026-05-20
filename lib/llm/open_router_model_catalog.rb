@@ -24,10 +24,13 @@ class Llm::OpenRouterModelCatalog
 
       payload = fetch_payload(models_uri(api_base.presence || Llm::Config.api_base(PROVIDER) || DEFAULT_API_BASE), resolved_api_key)
       model_configs = normalize_payload(payload)
-      timestamp = Time.current.iso8601
+      timestamp = Time.current.iso8601(6)
       @last_model_configs = model_configs
       @last_refreshed_at = timestamp
       @last_refresh_error = nil
+      @cached_model_configs = model_configs
+      @cached_model_configs_refresh_marker = timestamp
+      @cached_model_configs_loaded = true
 
       Rails.cache.write(CACHE_KEY, model_configs)
       Rails.cache.write(LAST_REFRESH_AT_CACHE_KEY, timestamp)
@@ -54,7 +57,15 @@ class Llm::OpenRouterModelCatalog
     end
 
     def model_configs
-      refreshed_model_configs.presence || fallback_model_configs
+      current_model_configs_snapshot || refreshed_model_configs.presence || fallback_model_configs
+    end
+
+    def with_model_configs_snapshot
+      previous_snapshot = Thread.current[model_configs_snapshot_key]
+      Thread.current[model_configs_snapshot_key] = model_configs
+      yield
+    ensure
+      Thread.current[model_configs_snapshot_key] = previous_snapshot
     end
 
     def model_config(model_name)
@@ -91,6 +102,14 @@ class Llm::OpenRouterModelCatalog
     end
 
     private
+
+    def current_model_configs_snapshot
+      Thread.current[model_configs_snapshot_key]
+    end
+
+    def model_configs_snapshot_key
+      :llm_openrouter_model_catalog_model_configs_snapshot
+    end
 
     def fetch_payload(uri, api_key)
       response = http_for(uri).request(request_for(uri, api_key))
@@ -131,7 +150,21 @@ class Llm::OpenRouterModelCatalog
     end
 
     def cached_model_configs
-      normalize_cached_models(Rails.cache.read(CACHE_KEY))
+      refresh_marker = Rails.cache.read(LAST_REFRESH_AT_CACHE_KEY)
+
+      if refresh_marker.present? && defined?(@cached_model_configs_loaded) && @cached_model_configs_loaded &&
+         @cached_model_configs_refresh_marker == refresh_marker
+        return @cached_model_configs
+      end
+
+      cached_configs = normalize_cached_models(Rails.cache.read(CACHE_KEY))
+      if refresh_marker.present?
+        @cached_model_configs = cached_configs
+        @cached_model_configs_refresh_marker = refresh_marker
+        @cached_model_configs_loaded = true
+      end
+
+      cached_configs
     end
 
     def refreshed_model_configs

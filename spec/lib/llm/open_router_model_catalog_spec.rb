@@ -46,6 +46,9 @@ RSpec.describe Llm::OpenRouterModelCatalog do
     described_class.instance_variable_set(:@last_model_configs, nil)
     described_class.instance_variable_set(:@last_refreshed_at, nil)
     described_class.instance_variable_set(:@last_refresh_error, nil)
+    described_class.instance_variable_set(:@cached_model_configs, nil)
+    described_class.instance_variable_set(:@cached_model_configs_refresh_marker, nil)
+    described_class.instance_variable_set(:@cached_model_configs_loaded, nil)
   end
 
   describe '.model_configs' do
@@ -65,6 +68,41 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       expect(capabilities).to include('tool_calling')
       expect(capabilities).not_to include('structured_output')
     end
+
+    it 'reuses normalized cached API models across repeated reads for the same refresh marker' do
+      Rails.cache.write(
+        described_class::CACHE_KEY,
+        'openai/gpt-4' => { provider: 'openrouter', type: 'chat', capabilities: %w[streaming] }
+      )
+      Rails.cache.write(described_class::LAST_REFRESH_AT_CACHE_KEY, '2026-05-20T09:41:29Z')
+
+      expect(Rails.cache).to receive(:read).with(described_class::LAST_REFRESH_AT_CACHE_KEY).twice.and_call_original
+      expect(Rails.cache).to receive(:read).with(described_class::CACHE_KEY).once.and_call_original
+
+      2.times do
+        expect(described_class.model_configs).to include(
+          'openai/gpt-4' => include('provider' => 'openrouter')
+        )
+      end
+    end
+
+    it 'uses a thread-local snapshot to avoid repeated cache reads while building one payload' do
+      Rails.cache.write(
+        described_class::CACHE_KEY,
+        'openai/gpt-4' => { provider: 'openrouter', type: 'chat', capabilities: %w[streaming] }
+      )
+      Rails.cache.write(described_class::LAST_REFRESH_AT_CACHE_KEY, '2026-05-20T09:41:29Z')
+
+      expect(Rails.cache).to receive(:read).with(described_class::LAST_REFRESH_AT_CACHE_KEY).once.and_call_original
+      expect(Rails.cache).to receive(:read).with(described_class::CACHE_KEY).once.and_call_original
+
+      described_class.with_model_configs_snapshot do
+        2.times do
+          expect(described_class.model_config('openai/gpt-4')).to include('provider' => 'openrouter')
+          expect(described_class.model_ids).to include('openai/gpt-4')
+        end
+      end
+    end
   end
 
   describe '.refresh!' do
@@ -76,7 +114,7 @@ RSpec.describe Llm::OpenRouterModelCatalog do
       metadata = described_class.refresh!(api_key: '[REDACTED]')
 
       expect(metadata).to include(total_models: 1, chat_models: 1, source: 'openrouter_api', using_fallback: false)
-      expect(metadata[:last_refreshed_at]).to be_present
+      expect(metadata[:last_refreshed_at]).to match(/\.\d{6}/)
       expect(described_class.model_config('openai/gpt-4')).to include(
         'provider' => 'openrouter',
         'display_name' => 'GPT-4 via OpenRouter',
