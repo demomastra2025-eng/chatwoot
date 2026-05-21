@@ -37,7 +37,7 @@ describe('buildCaptainToolTraceMessages', () => {
           content: 'Using search_documentation',
           toolName: 'search_documentation',
           status: 'start',
-          input: '{\n  "query": "pricing",\n  "apiToken": "[REDACTED]"\n}',
+          input: 'Query: pricing\nApi Token: [REDACTED]',
         },
       },
       {
@@ -46,7 +46,7 @@ describe('buildCaptainToolTraceMessages', () => {
           content: 'Completed search_documentation',
           toolName: 'search_documentation',
           status: 'finish',
-          output: '{\n  "total": 2\n}',
+          output: 'Total: 2',
         },
       },
     ]);
@@ -70,10 +70,50 @@ describe('buildCaptainToolTraceMessages', () => {
       },
     });
 
-    expect(message.output).toContain('"message": {');
-    expect(message.output).toContain('"action": "list_deal_custom_fields"');
-    expect(message.output).toContain('"fields": [');
+    expect(message.output).toContain('Сообщение:');
+    expect(message.output).toContain('Действие: list_deal_custom_fields');
+    expect(message.output).toContain('Найдено: 2');
+    expect(message.output).toContain('Поля:');
+    expect(message.output).toContain('- Источник');
     expect(message.output).not.toContain('\\n  \\"action\\"');
+    expect(message.output).not.toContain('{');
+  });
+
+  it('unwraps captain_tool result envelopes and renders them as human-readable lists', () => {
+    const [{ message }] = buildCaptainToolTraceMessages({
+      captainTrace: {
+        toolSteps: [
+          {
+            id: 'crm:finish:2',
+            toolName: 'list_deal_pipelines',
+            status: 'finish',
+            content: 'Completed list_deal_pipelines',
+            output: {
+              action: 'captain_tool',
+              result: JSON.stringify({
+                action: 'list_deal_pipelines',
+                filters: { include_inactive: false },
+                returned_count: 2,
+                pipelines: [
+                  { id: 1, name: 'Продажи', active: true },
+                  { id: 2, name: 'Поддержка', active: true },
+                ],
+              }),
+            },
+          },
+        ],
+      },
+    });
+
+    expect(message.output).toContain('Действие: list_deal_pipelines');
+    expect(message.output).toContain('Фильтры:');
+    expect(message.output).toContain('Показывать неактивные: Нет');
+    expect(message.output).toContain('Найдено: 2');
+    expect(message.output).toContain('Воронки:');
+    expect(message.output).toContain('- Продажи #1');
+    expect(message.output).not.toContain('captain_tool');
+    expect(message.output).not.toContain('"result"');
+    expect(message.output).not.toContain('\\"action\\"');
   });
 
   it('keeps malformed JSON-like strings readable as plain strings', () => {
@@ -91,8 +131,8 @@ describe('buildCaptainToolTraceMessages', () => {
       },
     });
 
-    expect(message.output).toContain('"message": "{not valid json"');
-    expect(message.output).toContain('"apiToken": "[REDACTED]"');
+    expect(message.output).toContain('Сообщение: {not valid json');
+    expect(message.output).toContain('Api Token: [REDACTED]');
   });
 
   it('normalizes legacy status values from stored traces', () => {

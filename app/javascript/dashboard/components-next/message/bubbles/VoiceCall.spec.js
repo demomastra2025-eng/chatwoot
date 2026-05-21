@@ -223,7 +223,7 @@ describe('VoiceCall bubble', () => {
     expect(wrapper.text()).toContain('CONVERSATION.VOICE_CALL.NO_ANSWER');
   });
 
-  it('renders the shared audio waveform chip for completed calls with an authorized recording URL', () => {
+  it('renders the shared audio waveform chip inside a collapsed accordion for completed calls with an authorized recording URL', () => {
     const wrapper = buildWrapper({
       contentAttributes: ref({
         data: {
@@ -234,7 +234,13 @@ describe('VoiceCall bubble', () => {
       }),
     });
 
-    const recording = wrapper.find('[data-testid="voice-call-recording"]');
+    const accordion = wrapper.find(
+      '[data-testid="voice-call-recording-accordion"]'
+    );
+    expect(accordion.exists()).toBe(true);
+    expect(accordion.attributes('open')).toBeUndefined();
+
+    const recording = accordion.find('[data-testid="voice-call-recording"]');
     expect(recording.exists()).toBe(true);
     expect(recording.attributes('data-url')).toBe(
       '/api/v1/accounts/1/telephony/calls/call-1/recording.wav'
@@ -260,7 +266,11 @@ describe('VoiceCall bubble', () => {
     expect(recording.attributes('data-transcribed-text')).toBe(
       'Клиент: привет\nAgent: здравствуйте'
     );
-    expect(wrapper.text()).not.toContain('CONVERSATION.VOICE_CALL.TRANSCRIPT');
+    expect(
+      wrapper
+        .find('[data-testid="voice-call-recording-accordion"]')
+        .attributes('open')
+    ).toBeUndefined();
   });
 
   it('formats transcript items for the shared audio chip when only structured items are available', () => {
@@ -423,9 +433,9 @@ describe('VoiceCall bubble', () => {
     });
 
     expect(wrapper.text()).toContain('faq_lookup');
-    expect(wrapper.text()).toContain('"query": "цена"');
-    expect(wrapper.text()).toContain('"accessToken": "[REDACTED]"');
-    expect(wrapper.text()).toContain('"answer": "1000 тг"');
+    expect(wrapper.text()).toContain('Query: цена');
+    expect(wrapper.text()).toContain('Access Token: [REDACTED]');
+    expect(wrapper.text()).toContain('Answer: 1000 тг');
     expect(wrapper.findAll('[data-voice-tool-trace-panel]')).toHaveLength(2);
     expect(wrapper.text()).not.toContain('lookup_customer');
   });

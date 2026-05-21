@@ -418,16 +418,30 @@ const handleJoinCall = async () => {
         </button>
       </div>
 
-      <div
+      <details
         v-if="recordingAttachment && hasRenderableRecordingStatus"
-        class="px-3 pb-2"
+        class="voice-call-recording-accordion mx-3 mb-2 rounded-xl border border-n-weak bg-n-alpha-1"
+        data-testid="voice-call-recording-accordion"
       >
-        <AudioChip
-          :attachment="recordingAttachment"
-          show-transcribed-text
-          class="!w-full rounded-xl bg-n-alpha-1 px-2 py-2 text-n-slate-12 skip-context-menu"
-        />
-      </div>
+        <summary
+          class="voice-call-recording-accordion__summary flex cursor-pointer select-none items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-n-slate-11"
+        >
+          <span class="flex items-center gap-1.5">
+            <i class="i-ph-waveform text-sm" />
+            {{ $t('CONVERSATION.VOICE_CALL.TRANSCRIPT') }}
+          </span>
+          <i
+            class="voice-call-recording-accordion__chevron i-ph-caret-down text-sm text-n-slate-10 transition-transform"
+          />
+        </summary>
+        <div class="px-2 pb-2">
+          <AudioChip
+            :attachment="recordingAttachment"
+            show-transcribed-text
+            class="!w-full rounded-xl bg-n-alpha-1 px-2 py-2 text-n-slate-12 skip-context-menu"
+          />
+        </div>
+      </details>
 
       <div v-if="showTools" class="px-3 pb-3">
         <div class="mb-1 text-xs font-medium text-n-slate-11">
@@ -483,3 +497,17 @@ const handleJoinCall = async () => {
     </div>
   </BaseBubble>
 </template>
+
+<style scoped>
+.voice-call-recording-accordion__summary::-webkit-details-marker {
+  display: none;
+}
+
+.voice-call-recording-accordion__summary::marker {
+  content: '';
+}
+
+.voice-call-recording-accordion[open] .voice-call-recording-accordion__chevron {
+  transform: rotate(180deg);
+}
+</style>
