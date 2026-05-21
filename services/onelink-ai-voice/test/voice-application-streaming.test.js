@@ -596,7 +596,7 @@ test('VoiceApplication treats media stream close after live audio as completed',
   stream.emit('close');
   await result.completion;
 
-  assert.equal(stream.writes.length, 1);
+  assert.equal(stream.writes.length, 3);
   assert.equal(controls.at(-1).action, 'session_completed');
   assert.equal(finalizations.at(-1).status, 'completed');
   assert.equal(finalizations.at(-1).reason, 'media_stream_closed');
@@ -1498,11 +1498,10 @@ test('VoiceApplication sends a bounded Gemini continuation when the model stalls
 
   assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), true);
   assert.equal(sentTexts.some(text => text.includes('ничего не найдено')), true);
-  const stallEvent = events.find(event => event.event_type === 'post_tool_model_stall');
-  assert.ok(stallEvent);
-  assert.equal(stallEvent.payload.tool_name, 'faq_lookup');
-  assert.equal(stallEvent.payload.bridge_call_ref, 'bridge-tool-stall');
-  assert.equal(controls.some(payload => payload.action === 'post_tool_model_stall'), true);
+  const stallControl = controls.find(payload => payload.action === 'post_tool_model_stall');
+  assert.ok(stallControl);
+  assert.equal(stallControl.metadata.tool_name, 'faq_lookup');
+  assert.equal(stallControl.metadata.bridge_call_ref, 'bridge-tool-stall');
 
   call.emit('end');
   await result.completion;
@@ -1608,6 +1607,7 @@ test('VoiceApplication cancels post-tool stall watchdog when Gemini streams answ
 test('VoiceApplication keeps post-tool continuation armed when only a tool-wait filler is spoken', async () => {
   const stream = new FakeVoiceStream();
   const events = [];
+  const controls = [];
   const sentTexts = [];
   let realtimeCallbacks;
 
@@ -1627,7 +1627,7 @@ test('VoiceApplication keeps post-tool continuation armed when only a tool-wait 
       },
       tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
     }),
-    sendControl: async () => ({ status: 'ok' }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
     sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' }),
     callTool: async () => ({ answer: 'Акуна матата' })
@@ -1651,7 +1651,7 @@ test('VoiceApplication keeps post-tool continuation armed when only a tool-wait 
   await new Promise(resolve => setTimeout(resolve, 30));
 
   assert.equal(sentTexts.some(text => text.includes('Продолжи голосовой ответ')), true);
-  assert.equal(events.some(event => event.event_type === 'post_tool_model_stall'), true);
+  assert.equal(controls.some(payload => payload.action === 'post_tool_model_stall'), true);
 
   call.emit('end');
   await result.completion;

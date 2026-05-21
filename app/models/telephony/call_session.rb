@@ -139,7 +139,7 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   def voice_message_for_current_call
-    exact_voice_message || voice_message_with_call_ref || single_legacy_voice_message || legacy_current_call_message
+    linked_parent_voice_message || exact_voice_message || voice_message_with_call_ref || single_legacy_voice_message || legacy_current_call_message
   end
 
   def to_telephony_h
@@ -186,6 +186,27 @@ class Telephony::CallSession < ApplicationRecord
 
     message = voice_messages.first
     return message if voice_message_data(message)['call_sid'].blank? && message.source_id.blank?
+  end
+
+  def linked_parent_voice_message
+    parent_ref = linked_parent_call_ref
+    return if parent_ref.blank? || parent_ref == external_call_ref
+
+    conversation&.messages&.voice_calls&.find_by(source_id: "voice_call:#{parent_ref}") ||
+      conversation&.messages&.voice_calls&.order(created_at: :desc, id: :desc)&.detect do |message|
+        voice_message_data(message)['call_sid'] == parent_ref
+      end
+  end
+
+  def linked_parent_call_ref
+    ai_voice = metadata.to_h['ai_voice'].is_a?(Hash) ? metadata.to_h['ai_voice'] : {}
+    linked_terminal = ai_voice['linked_parent_terminal'].is_a?(Hash) ? ai_voice['linked_parent_terminal'] : {}
+    last_payload = metadata.to_h['last_payload'].is_a?(Hash) ? metadata.to_h['last_payload'] : {}
+    nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'] : {}
+
+    linked_terminal['bridge_call_ref'].presence ||
+      last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
+      nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence
   end
 
   def voice_message_with_call_ref

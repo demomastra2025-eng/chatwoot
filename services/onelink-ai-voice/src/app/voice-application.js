@@ -1614,7 +1614,7 @@ function buildCompletion({ call, mediaStream, outputPacer, realtime, session, re
       // ignore input-gate cleanup errors
     }
 
-    if (shouldDrainOutput(initialAction)) {
+    if (shouldDrainOutput(finalAction)) {
       try {
         await outputPacer?.drain?.({ timeoutMs: 2_000 });
       } catch (_error) {
@@ -2085,7 +2085,6 @@ class Pcm16FramePacer {
           resolve({ drained: false, reason: 'timeout', dropped_bytes: this.buffer.length });
         }
       }, this.frameMs);
-      check.unref?.();
     });
   }
 

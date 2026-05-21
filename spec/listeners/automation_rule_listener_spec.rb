@@ -231,6 +231,15 @@ describe AutomationRuleListener do
         expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
       end
 
+      it 'does not call AutomationRules::ActionService if message is a voice call bubble' do
+        message.update!(content_type: :voice_call, content_attributes: { data: { call_sid: 'call-1' } })
+        allow(condition_match).to receive(:present?).and_return(true)
+
+        listener.message_created(event)
+
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+      end
+
       it 'does not call AutomationRules::ActionService if message is auto reply email' do
         email_channel = create(:channel_email, account: account)
         email_inbox = create(:inbox, channel: email_channel, account: account)

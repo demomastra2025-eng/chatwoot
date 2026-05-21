@@ -236,8 +236,35 @@ test('VoiceSession ignores non-terminal realtime work after close', async () => 
   const toolResult = await session.executeTool('faq_lookup', { query: 'late' });
 
   assert.equal(toolResult.ignored, true);
-  assert.deepEqual(calls.filter(([kind]) => kind === 'event').map(([, payload]) => payload.event_type), ['session_completed']);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'event').map(([, payload]) => payload.event_type), []);
   assert.deepEqual(calls.filter(([kind]) => kind === 'control').map(([, payload]) => payload.action), ['session_completed']);
   assert.equal(calls.some(([kind]) => kind === 'transcript'), false);
   assert.equal(calls.some(([kind]) => kind === 'tool'), false);
+});
+
+test('VoiceSession does not double-persist control actions that Rails already stores as events', async () => {
+  const calls = [];
+  const client = {
+    sendControl: async payload => { calls.push(['control', payload]); return { status: 'ok' }; },
+    sendEvent: async payload => { calls.push(['event', payload]); return { status: 'ok' }; }
+  };
+  const session = new VoiceSession({ client, callRef: 'dedupe-runtime' });
+
+  await session.safeControl('tool_completed', { tool_name: 'faq_lookup', tool_call_id: 'tool-1', ok: true });
+
+  assert.deepEqual(calls.map(([kind]) => kind), ['control']);
+});
+
+test('VoiceSession falls back to direct event persistence when control acknowledgement fails', async () => {
+  const calls = [];
+  const client = {
+    sendControl: async payload => { calls.push(['control', payload]); throw new Error('rails control down'); },
+    sendEvent: async payload => { calls.push(['event', payload]); return { status: 'ok' }; }
+  };
+  const session = new VoiceSession({ client, callRef: 'control-fallback-runtime' });
+
+  await session.safeControl('tool_completed', { tool_name: 'faq_lookup', tool_call_id: 'tool-1', ok: true });
+
+  assert.deepEqual(calls.map(([kind]) => kind), ['control', 'event']);
+  assert.equal(calls[1][1].event_type, 'tool_completed');
 });

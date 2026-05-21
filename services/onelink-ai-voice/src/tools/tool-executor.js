@@ -89,15 +89,19 @@ class ToolExecutor {
   }
 
   async safeControl(action, metadata = {}) {
+    let controlSent = false;
     try {
       await this.client.sendControl(this.scopedPayload({ action, metadata }));
+      controlSent = true;
     } catch (_error) {
       // Control-plane acknowledgement must not block realtime audio/tool fallback.
     }
-    try {
-      await this.eventSender?.(action, metadata);
-    } catch (_error) {
-      // Event persistence is best effort from the realtime media path.
+    if (!controlSent) {
+      try {
+        await this.eventSender?.(action, metadata);
+      } catch (_error) {
+        // Event persistence is best effort from the realtime media path.
+      }
     }
   }
 

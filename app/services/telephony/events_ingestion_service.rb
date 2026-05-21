@@ -551,6 +551,22 @@ class Telephony::EventsIngestionService
     data['data']['summary'] = call_session.summary if call_session.summary.present?
     data['data']['duration'] = call_session.duration_seconds if call_session.duration_seconds.present?
     message.update!(content_attributes: data)
+    mark_linked_runtime_duplicate_message!(call_session, message)
+  end
+
+  def mark_linked_runtime_duplicate_message!(call_session, canonical_message)
+    duplicate = call_session.exact_voice_message
+    return if duplicate.blank? || canonical_message.blank? || duplicate.id == canonical_message.id
+
+    duplicate_attrs = (duplicate.content_attributes || {}).deep_dup.deep_stringify_keys
+    duplicate_attrs['data'] ||= {}
+    duplicate_attrs['data']['hidden'] = true
+    duplicate_attrs['data']['duplicate_of'] = canonical_message.source_id
+    duplicate_attrs['data']['ai_voice'] = (duplicate_attrs['data']['ai_voice'].is_a?(Hash) ? duplicate_attrs['data']['ai_voice'] : {}).merge(
+      'duplicate_of' => canonical_message.source_id,
+      'canonical_call_sid' => canonical_message.content_attributes.to_h.deep_stringify_keys.dig('data', 'call_sid')
+    ).compact
+    duplicate.update!(content_attributes: duplicate_attrs)
   end
 
   def enqueue_call_recording_transcription(call_session)
@@ -670,7 +686,7 @@ class Telephony::EventsIngestionService
   def voice_ai_tool_events(call_session)
     tool_event_types = %w[tool_started tool_progress tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed]
 
-    call_session.events.where(event_type: tool_event_types).order(:created_at, :id).last(20).filter_map do |event|
+    rows = call_session.events.where(event_type: tool_event_types).order(:created_at, :id).last(40).filter_map do |event|
       event_payload = event.payload.to_h.deep_stringify_keys
       tool_payload = event_payload['payload'].is_a?(Hash) ? event_payload['payload'].deep_stringify_keys : {}
       metadata_payload = event_payload['metadata'].is_a?(Hash) ? event_payload['metadata'].deep_stringify_keys : {}
@@ -684,10 +700,24 @@ class Telephony::EventsIngestionService
         'ok' => tool_payload.key?('ok') ? tool_payload['ok'] : metadata_payload['ok'],
         'pending' => tool_payload.key?('pending') ? tool_payload['pending'] : metadata_payload['pending'],
         'async' => tool_payload.key?('async') ? tool_payload['async'] : metadata_payload['async'],
+        'tool_call_id' => tool_payload['tool_call_id'] || tool_payload['toolCallId'] || metadata_payload['tool_call_id'] || metadata_payload['toolCallId'],
         'request_id' => tool_payload['request_id'] || tool_payload['requestId'] || metadata_payload['request_id'] || metadata_payload['requestId'],
         'error' => tool_payload['error'] || metadata_payload['error'],
         'at' => parse_time(event_payload['occurred_at'] || event_payload['occurredAt'])&.iso8601 || event.created_at.iso8601
       }.compact
+    end
+
+    dedupe_tool_rows(rows).last(20)
+  end
+
+  def dedupe_tool_rows(rows)
+    seen = Set.new
+    rows.reverse_each.with_object([]) do |row, deduped|
+      key = [row['event'], row['name'], row['tool_call_id'].presence || row['request_id'].presence || row['at']].join(':')
+      next if seen.include?(key)
+
+      seen << key
+      deduped.unshift(row)
     end
   end
 

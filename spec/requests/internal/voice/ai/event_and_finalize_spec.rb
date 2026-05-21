@@ -603,8 +603,10 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(call_session.reload).to have_attributes(status: 'cancelled', end_reason: 'caller_hangup')
     expect(runtime_session.reload).to have_attributes(status: 'cancelled', end_reason: 'caller_hangup')
     expect(parent_message.reload.content_attributes.dig('data', 'status')).to eq('cancelled')
-    expect(runtime_message.reload.content_attributes.dig('data', 'status')).to eq('cancelled')
-    expect(runtime_message.content_attributes.dig('data', 'ai_voice', 'state')).to eq('completed')
+    runtime_message.reload
+    expect(runtime_message.content_attributes.dig('data', 'hidden')).to be(true)
+    expect(runtime_message.content_attributes.dig('data', 'duplicate_of')).to eq(parent_message.source_id)
+    expect(parent_message.reload.content_attributes.dig('data', 'ai_voice', 'state')).to eq('completed')
   end
 
   it 'accepts incomplete media-stream finalization with partial transcript payloads' do

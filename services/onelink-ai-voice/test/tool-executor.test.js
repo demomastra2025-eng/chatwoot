@@ -82,6 +82,46 @@ test('ToolExecutor reports late async tool result to runtime callback after fore
   assert.deepEqual(lateResults[0].result, { answer: 'late answer' });
 });
 
+test('ToolExecutor does not double-persist events when control succeeds', async () => {
+  const controls = [];
+  const events = [];
+  const client = {
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    callTool: async () => ({ ok: true })
+  };
+  const executor = new ToolExecutor({
+    client,
+    callRef: 'call-1',
+    timeoutMs: 100,
+    eventSender: async (action, metadata) => { events.push({ action, metadata }); }
+  });
+
+  const result = await executor.execute('faq_lookup', { query: 'слоган' }, { tool_call_id: 'tool-1' });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(controls.map(event => event.action), ['tool_started', 'tool_completed']);
+  assert.deepEqual(events, []);
+});
+
+test('ToolExecutor falls back to event persistence when control fails', async () => {
+  const events = [];
+  const client = {
+    sendControl: async () => { throw new Error('control unavailable'); },
+    callTool: async () => ({ ok: true })
+  };
+  const executor = new ToolExecutor({
+    client,
+    callRef: 'call-1',
+    timeoutMs: 100,
+    eventSender: async (action, metadata) => { events.push({ action, metadata }); }
+  });
+
+  const result = await executor.execute('faq_lookup', { query: 'слоган' }, { tool_call_id: 'tool-1' });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(events.map(event => event.action), ['tool_started', 'tool_completed']);
+});
+
 test('ToolExecutor uses per-tool timeout when catalog provides one', async () => {
   const controls = [];
   const callOptions = [];

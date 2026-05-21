@@ -41,11 +41,16 @@ const props = defineProps({
 
 const emit = defineEmits(['retry']);
 
+const isHiddenDuplicateMessage = message => {
+  const data = message.contentAttributes?.data || {};
+  return data.hidden === true && Boolean(data.duplicateOf);
+};
+
 const allMessages = computed(() => {
   return useCamelCase(props.messages, {
     deep: true,
     stopPaths: ['content_attributes.translations'],
-  });
+  }).filter(message => !isHiddenDuplicateMessage(message));
 });
 
 const currentChat = useMapGetter('getSelectedChat');

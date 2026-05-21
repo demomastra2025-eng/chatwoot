@@ -109,12 +109,16 @@ class VoiceSession {
 
   async safeControl(action, metadata = {}) {
     if (this.closed && !terminalLifecycleAction(action)) return;
+    let controlSent = false;
     try {
       await this.client.sendControl(this.scopedPayload({ action, metadata }));
+      controlSent = true;
     } catch (_error) {
       // Realtime path remains live even if Rails control acknowledgement is temporarily unavailable.
     }
-    await this.safeEvent(action, metadata);
+    if (!controlSent || !controlPersistsLifecycle(action)) {
+      await this.safeEvent(action, metadata);
+    }
   }
 
   async safeFinalize(action, metadata = {}) {
@@ -246,6 +250,10 @@ function terminalLifecycleAction(action) {
     normalized.includes('fonoster_call_closed') ||
     normalized.includes('runtime_closed') ||
     normalized.includes('transfer_completed');
+}
+
+function controlPersistsLifecycle(action) {
+  return String(action || '').trim() !== 'handoff_requested';
 }
 
 function compactPayload(payload = {}) {
