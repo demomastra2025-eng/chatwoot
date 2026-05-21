@@ -1634,6 +1634,57 @@ test('VoiceApplication cancels post-tool stall watchdog when Gemini continues wi
   await result.completion;
 });
 
+test('VoiceApplication nudges Gemini when a post-tool answer stops mid-sentence', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-incomplete-answer' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-incomplete-answer',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'search_deals', description: 'Search CRM deals', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => ({ action: 'captain_tool', result: '{"deals":[{"title":"Тест","stage":"Спящие"}]}' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    incompleteAnswerContinuationMs: 10,
+    postToolContinuationMs: 0
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-incomplete-answer' });
+
+  await realtimeCallbacks.onToolCall({ id: 'tool-1', name: 'search_deals', args: { query: 'мои сделки' } });
+  realtimeCallbacks.onTranscript({ speaker: 'ai', text: 'Я вижу, что у вас есть сделка в воронке Продажи на этапе', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(sentTexts.some(text => text.includes('Договори последнюю голосовую реплику')), true);
+  const stallControl = controls.find(payload => payload.action === 'incomplete_answer_model_stall');
+  assert.ok(stallControl);
+  assert.equal(stallControl.metadata.last_ai_text.includes('на этапе'), true);
+  assert.equal(stallControl.metadata.bridge_call_ref, 'bridge-incomplete-answer');
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication cancels post-tool stall watchdog when Gemini streams answer audio before transcript', async () => {
   const stream = new FakeVoiceStream();
   const events = [];

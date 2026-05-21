@@ -42,6 +42,7 @@ class Telephony::EventsIngestionService
     'business_faq_gate_fired' => nil,
     'business_faq_gate_result_injected' => nil,
     'ordinary_answer_model_stall' => nil,
+    'incomplete_answer_model_stall' => nil,
     'ai_speaking' => nil,
     'caller_interrupted' => nil,
     'ringing' => 'ringing',
@@ -746,7 +747,7 @@ class Telephony::EventsIngestionService
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
       media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed tool_suppressed
       tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
-      ordinary_answer_model_stall
+      ordinary_answer_model_stall incomplete_answer_model_stall
     ]
   end
 
@@ -888,7 +889,7 @@ class Telephony::EventsIngestionService
     event_name = resolved_event_type.to_s
     ai_event_names = %w[
       caller_interrupted realtime_audio_out first_audio_out_write media_stream_started provider_stream_closed provider_error
-      business_faq_gate_fired business_faq_gate_result_injected ordinary_answer_model_stall
+      business_faq_gate_fired business_faq_gate_result_injected ordinary_answer_model_stall incomplete_answer_model_stall
     ]
     return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name.in?(ai_event_names)
     return 'operator' if event_name.start_with?('transfer_', 'operator_')

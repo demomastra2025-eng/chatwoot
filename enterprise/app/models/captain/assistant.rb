@@ -63,7 +63,9 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_AI = 'ai'
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
+  CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
+  CRM_DEAL_WRITE_TOOL_IDS = %w[create_deal update_deal transition_deal_stage].freeze
   CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY = {
     deal: 'list_deal_custom_fields',
     task: 'list_task_custom_fields',
@@ -1130,6 +1132,9 @@ class Captain::Assistant < ApplicationRecord
 
     deal_pipeline_tools_selected = normalized_tool_ids.intersect?(CRM_DEAL_PIPELINE_AWARE_TOOL_IDS)
     expanded_tool_ids.concat(CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS) if deal_pipeline_tools_selected
+
+    deal_write_tools_selected = normalized_tool_ids.intersect?(CRM_DEAL_WRITE_TOOL_IDS)
+    expanded_tool_ids.concat(CRM_DEAL_READ_COMPANION_TOOL_IDS) if deal_write_tools_selected
 
     CRM_CUSTOM_FIELD_AWARE_TOOL_IDS_BY_ENTITY.each do |entity_kind, aware_tool_ids|
       next unless normalized_tool_ids.intersect?(aware_tool_ids)

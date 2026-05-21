@@ -293,7 +293,7 @@ RSpec.describe Captain::Assistant, type: :model do
         }
       )
 
-      expected_tool_ids = %w[faq_lookup create_deal list_deal_pipelines list_deal_stages list_deal_custom_fields]
+      expected_tool_ids = %w[faq_lookup create_deal get_deal search_deals list_deal_pipelines list_deal_stages list_deal_custom_fields]
 
       expect(assistant.allowed_agent_tool_ids).to match_array(expected_tool_ids)
       expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to match_array(expected_tool_ids)

@@ -118,6 +118,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'storage_provider' => 'onelink_storage'
     )
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
+    end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
+    expect(end_call_tool['timeout_ms']).to be >= 1500
   end
 
   it 'builds the full Captain prompt once per voice context request' do
@@ -349,6 +351,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'create_deal',
       'update_deal',
       'transition_deal_stage',
+      'get_deal',
+      'search_deals',
       'list_deal_pipelines',
       'list_deal_stages'
     )

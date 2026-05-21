@@ -51,7 +51,8 @@ class Telephony::AiVoice::ConversationTimelineService
     'post_tool_model_stall' => 'AI-агент не продолжил ответ после инструмента',
     'business_faq_gate_fired' => 'AI-агент проверяет базу знаний',
     'business_faq_gate_result_injected' => 'AI-агент получил результат базы знаний',
-    'ordinary_answer_model_stall' => 'AI-агенту отправлен запрос продолжить ответ'
+    'ordinary_answer_model_stall' => 'AI-агенту отправлен запрос продолжить ответ',
+    'incomplete_answer_model_stall' => 'AI-агенту отправлен запрос договорить оборванный ответ'
   }.freeze
 
   def initialize(call_session:)

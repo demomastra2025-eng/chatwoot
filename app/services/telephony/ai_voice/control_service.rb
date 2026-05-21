@@ -5,7 +5,7 @@ class Telephony::AiVoice::ControlService
     caller_hangup media_stream_closed media_stream_not_established provider_stream_closed provider_error fonoster_call_closed runtime_closed
     tool_requested_end_call handoff_requested close
     tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
-    ordinary_answer_model_stall
+    ordinary_answer_model_stall incomplete_answer_model_stall
   ].freeze
   BRIDGE_CALL_REF_KEYS = %w[bridge_call_ref bridgeCallRef parent_call_ref parentCallRef].freeze
   RUNTIME_CALL_REF_KEYS = %w[

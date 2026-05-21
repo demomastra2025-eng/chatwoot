@@ -26,6 +26,7 @@ class VoiceApplication {
     postToolContinuationMs = 4_000,
     businessFaqGateDelayMs = 650,
     ordinaryAnswerContinuationMs = 2_500,
+    incompleteAnswerContinuationMs = 1_200,
     initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0),
     answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000)
   } = {}) {
@@ -44,6 +45,7 @@ class VoiceApplication {
     this.postToolContinuationMs = postToolContinuationMs;
     this.businessFaqGateDelayMs = businessFaqGateDelayMs;
     this.ordinaryAnswerContinuationMs = ordinaryAnswerContinuationMs;
+    this.incompleteAnswerContinuationMs = incompleteAnswerContinuationMs;
     this.initialMediaKeepaliveMs = initialMediaKeepaliveMs;
     this.answerTimeoutMs = answerTimeoutMs;
   }
@@ -325,6 +327,13 @@ class VoiceApplication {
       context,
       sendContinuation: text => realtime?.sendText?.(text)
     });
+    const incompleteAnswerWatchdog = createIncompleteAnswerWatchdog({
+      timeoutMs: context.ai?.incomplete_answer_continuation_ms ?? context.ai?.incompleteAnswerContinuationMs ?? this.incompleteAnswerContinuationMs,
+      session,
+      requestPayload,
+      context,
+      sendContinuation: text => realtime?.sendText?.(text)
+    });
     const businessFaqGate = createBusinessFaqGate({
       delayMs: context.ai?.business_faq_gate_after_ms ?? context.ai?.businessFaqGateAfterMs ?? this.businessFaqGateDelayMs,
       session,
@@ -526,6 +535,7 @@ class VoiceApplication {
           postToolWatchdog.cancel('model_audio');
         }
         ordinaryAnswerWatchdog.cancel('model_audio');
+        incompleteAnswerWatchdog.cancel('model_audio');
         if (now - lastAudioOutLogAt >= 1_000) {
           lastAudioOutLogAt = now;
           void session.safeEvent('realtime_audio_out', {
@@ -551,6 +561,7 @@ class VoiceApplication {
           lastCallerTranscriptAt = item.at || new Date().toISOString();
           void confirmCallerTranscriptInterrupt(item);
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
+          incompleteAnswerWatchdog.cancel('caller_transcript');
           if (item.final !== false) {
             ordinaryAnswerWatchdog.arm(item);
             businessFaqGate.consider(item);
@@ -562,12 +573,18 @@ class VoiceApplication {
           } else if (String(item.text || '').trim()) {
             postToolWatchdog.cancel('model_transcript');
             ordinaryAnswerWatchdog.cancel('model_transcript');
+            if (item.final !== false && isLikelyIncompleteAnswer(item.text)) {
+              incompleteAnswerWatchdog.arm(item);
+            } else {
+              incompleteAnswerWatchdog.cancel('model_transcript');
+            }
           }
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
       onToolCall: async callPayload => {
         ordinaryAnswerWatchdog.cancel('model_tool_call');
+        incompleteAnswerWatchdog.cancel('model_tool_call');
         const gatedToolResult = businessFaqGate.consumeToolCall(callPayload);
         if (!gatedToolResult) businessFaqGate.cancel('model_tool_call');
         dialogueDirector?.startToolWait(callPayload);
@@ -730,6 +747,7 @@ class VoiceApplication {
         initialMediaKeepalive?.stop?.('completion');
         postToolWatchdog.cancel('completion');
         ordinaryAnswerWatchdog.cancel('completion');
+        incompleteAnswerWatchdog.cancel('completion');
         businessFaqGate.cancel('completion');
         dialogueDirector?.close();
       }
@@ -1639,6 +1657,45 @@ function createPostToolWatchdog({ timeoutMs = 4_000, session, requestPayload = {
   return { arm, cancel };
 }
 
+function createIncompleteAnswerWatchdog({ timeoutMs = 1_200, session, requestPayload = {}, context = {}, sendContinuation = null } = {}) {
+  let timer = null;
+  let sequence = 0;
+  const normalizedTimeout = Number.parseInt(timeoutMs, 10);
+  const enabledTimeout = Number.isFinite(normalizedTimeout) && normalizedTimeout > 0 ? normalizedTimeout : 0;
+
+  const cancel = (_reason = 'cancelled') => {
+    if (!timer) return;
+    clearTimer(timer);
+    timer = null;
+  };
+
+  const arm = (transcript = {}) => {
+    const text = String(transcript.text || '').trim();
+    if (!enabledTimeout || session?.closed || !isLikelyIncompleteAnswer(text)) return;
+    cancel('rearmed');
+    const currentSequence = ++sequence;
+    const metadata = compactPayload({
+      ...correlationPayload(session, requestPayload, context),
+      provider: transcript.provider || 'gemini-live',
+      timeout_ms: enabledTimeout,
+      last_ai_text: summarizeCallerText(text)
+    });
+
+    timer = setTimer(() => {
+      if (currentSequence !== sequence || session?.closed) return;
+      timer = null;
+      void session.safeControl('incomplete_answer_model_stall', metadata);
+      try {
+        sendContinuation?.(incompleteAnswerContinuationPrompt(text));
+      } catch (_error) {
+        // Continuation is best effort; persisted control event above is the RCA anchor.
+      }
+    }, enabledTimeout);
+  };
+
+  return { arm, cancel };
+}
+
 function shouldWatchPostToolContinuation(toolResult = {}) {
   if (!toolResult?.ok) return false;
   const action = String(toolResult.result?.action || '').trim().toLowerCase();
@@ -1699,6 +1756,24 @@ function postToolContinuationPrompt(toolCall = {}, toolResult = {}) {
 function ordinaryAnswerContinuationPrompt(text = '') {
   const question = summarizeCallerText(text);
   return `Ответь клиенту сейчас коротко и естественно по-русски. Не молчи и не обрывай фразу.${question ? ` Последний вопрос клиента: ${question}` : ''}`;
+}
+
+function incompleteAnswerContinuationPrompt(text = '') {
+  const lastText = summarizeCallerText(text);
+  return `Договори последнюю голосовую реплику клиенту. Продолжи с места обрыва, коротко и естественно по-русски, без повторения всей фразы.${lastText ? ` Оборванная фраза: ${lastText}` : ''}`;
+}
+
+function isLikelyIncompleteAnswer(text = '') {
+  const normalized = normalizeSpokenText(text);
+  if (normalized.length < 18) return false;
+  if (/[.!?…]$/.test(String(text || '').trim())) return false;
+  const lastWord = normalized.split(/\s+/).filter(Boolean).pop();
+  return new Set([
+    'в', 'во', 'на', 'к', 'ко', 'с', 'со', 'у', 'от', 'до', 'для', 'по', 'при', 'про', 'через', 'между',
+    'и', 'или', 'а', 'но', 'что', 'чтобы', 'если', 'когда', 'где', 'как', 'который', 'которая', 'которые',
+    'потому', 'поэтому', 'это', 'этапе', 'статусе', 'воронке', 'составляет', 'будет', 'можно', 'нужно',
+    'должен', 'должна', 'должны'
+  ]).has(lastWord);
 }
 
 function hasTool(context = {}, toolName = '') {
