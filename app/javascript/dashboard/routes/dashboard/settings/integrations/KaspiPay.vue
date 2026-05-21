@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFunctionGetter, useStore } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
-import integrationAPI from 'dashboard/api/integrations';
+import integrationAPI, {
+  normalizeKaspiPayCashierPhone,
+} from 'dashboard/api/integrations';
 import Integration from './Integration.vue';
 import Spinner from 'shared/components/Spinner.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -40,13 +42,36 @@ const connectButtonLabel = computed(() => {
     : t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT');
 });
 
+const KASPI_CASHIER_PHONE_PATTERN = /^7\d{9}$/;
+
+const cashierPhoneDigits = computed(() =>
+  normalizeKaspiPayCashierPhone(phoneNumber.value)
+);
+
+const isCashierPhoneComplete = computed(() =>
+  KASPI_CASHIER_PHONE_PATTERN.test(cashierPhoneDigits.value)
+);
+
+const connectButtonDisabled = computed(() => {
+  if (isSubmitting.value) return true;
+  if (step.value === 'phone') return !isCashierPhoneComplete.value;
+  return !otp.value;
+});
+
+const normalizePhoneInput = event => {
+  phoneNumber.value = normalizeKaspiPayCashierPhone(event.target.value).slice(
+    0,
+    10
+  );
+};
+
 const initializeKaspiPayIntegration = async () => {
   await store.dispatch('integrations/get', 'kaspi_pay');
   integrationLoaded.value = true;
 };
 
 const sendOtp = async () => {
-  if (!phoneNumber.value) {
+  if (!isCashierPhoneComplete.value) {
     formError.value = t('INTEGRATION_SETTINGS.KASPI_PAY.PHONE_REQUIRED');
     return;
   }
@@ -58,7 +83,7 @@ const sendOtp = async () => {
     processId.value = initResponse.data.process_id;
     const phoneResponse = await integrationAPI.sendKaspiPayPhone({
       processId: processId.value,
-      phoneNumber: phoneNumber.value,
+      phoneNumber: cashierPhoneDigits.value,
     });
 
     if (!phoneResponse.data.success) {
@@ -88,7 +113,7 @@ const verifyOtp = async () => {
   try {
     await integrationAPI.verifyKaspiPayOtp({
       processId: processId.value,
-      phoneNumber: phoneNumber.value,
+      phoneNumber: cashierPhoneDigits.value,
       otp: otp.value,
       settings: {
         default_payment_type: 'qr',
@@ -123,6 +148,7 @@ onMounted(() => {
     <div v-if="integrationLoaded" class="flex flex-col gap-6">
       <Integration
         :integration-id="integration.id"
+        :integration-logo="integration.logo"
         :integration-name="integration.name"
         :integration-description="integration.description"
         :integration-enabled="integration.enabled"
@@ -136,6 +162,7 @@ onMounted(() => {
           <Button
             teal
             :is-loading="isSubmitting"
+            :disabled="connectButtonDisabled"
             :label="connectButtonLabel"
             @click="submit"
           />
@@ -151,9 +178,12 @@ onMounted(() => {
             v-model="phoneNumber"
             :label="$t('INTEGRATION_SETTINGS.KASPI_PAY.PHONE_LABEL')"
             placeholder="7012345678"
+            type="tel"
             inputmode="numeric"
-            maxlength="11"
+            pattern="[0-9]*"
+            maxlength="16"
             :disabled="step === 'otp'"
+            @input="normalizePhoneInput"
           />
           <Input
             v-if="step === 'otp'"

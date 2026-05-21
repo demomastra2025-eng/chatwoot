@@ -344,7 +344,7 @@ leadsquared:
 
 kaspi_pay:
   id: kaspi_pay
-  logo: kaspi_pay.png
+  logo: kaspilogo.png
   i18n_key: kaspi_pay
   action: /kaspi_pay
   hook_type: account
