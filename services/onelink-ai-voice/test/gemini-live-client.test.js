@@ -161,12 +161,12 @@ test('GeminiLiveClient buffers streaming transcription chunks until the provider
   socket.receive({ serverContent: { inputTranscription: { text: 'слоган?', finished: false }, turnComplete: true } });
 
   assert.deepEqual(transcripts.map(item => [item.speaker, item.text, item.final]), [
-    ['ai', 'Здравствуйте! Чем могу помочь?', true],
-    ['caller', 'Какой у вас слоган?', true]
+    ['caller', 'Какой у вас слоган?', true],
+    ['ai', 'Здравствуйте! Чем могу помочь?', true]
   ]);
 });
 
-test('GeminiLiveClient buffers unmarked AI transcription chunks until turnComplete', async () => {
+test('GeminiLiveClient buffers final-marked AI transcription chunks until turnComplete', async () => {
   FakeSocket.instances = [];
   const transcripts = [];
 
@@ -186,8 +186,8 @@ test('GeminiLiveClient buffers unmarked AI transcription chunks until turnComple
 
   assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 512);
 
-  socket.receive({ serverContent: { outputTranscription: { text: 'У вас' } } });
-  socket.receive({ serverContent: { outputTranscription: { text: ' есть' } } });
+  socket.receive({ serverContent: { outputTranscription: { text: 'У вас', finished: true } } });
+  socket.receive({ serverContent: { outputTranscription: { text: ' есть', finished: true } } });
   assert.deepEqual(transcripts, []);
 
   socket.receive({ serverContent: { outputTranscription: { text: ' одна сделка.' }, turnComplete: true } });

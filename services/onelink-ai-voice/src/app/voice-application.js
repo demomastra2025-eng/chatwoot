@@ -21,7 +21,7 @@ class VoiceApplication {
     recordingWriterFactory = null,
     recordingEnabled = envFlag('VOICE_AGENT_RECORDING_ENABLED'),
     toolTimeoutMs = 3_000,
-    outputMaxBufferedMs = 5_000,
+    outputMaxBufferedMs = 15_000,
     clearOutputOnInterrupt = false,
     postToolContinuationMs = 4_000,
     businessFaqGateDelayMs = 650,

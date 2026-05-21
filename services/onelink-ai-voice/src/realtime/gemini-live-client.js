@@ -7,10 +7,6 @@ function normalizeMaxOutputTokens(value) {
   return Math.max(parsed, MIN_AUDIO_MAX_OUTPUT_TOKENS);
 }
 
-function hasOwn(object, key) {
-  return Object.prototype.hasOwnProperty.call(object || {}, key);
-}
-
 class GeminiLiveClient {
   constructor({
     apiKey,
@@ -275,15 +271,14 @@ class GeminiLiveClient {
     const rawText = String(transcription?.text || '');
     if (!rawText) return;
 
-    const hasExplicitFinal = hasOwn(transcription, 'finished') || hasOwn(transcription, 'isFinal') || hasOwn(transcription, 'final');
     const finished = transcription.finished || transcription.isFinal || transcription.final;
     const streaming = transcription.finished === false || transcription.isFinal === false || transcription.final === false;
-    if (streaming) {
+    if (speaker === 'ai') {
       this.transcriptChunks[speaker].push(rawText);
       return;
     }
 
-    if (speaker === 'ai' && !hasExplicitFinal) {
+    if (streaming) {
       this.transcriptChunks[speaker].push(rawText);
       return;
     }

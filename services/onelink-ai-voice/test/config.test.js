@@ -11,7 +11,7 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.language, 'ru-KZ');
   assert.equal(config.toolTimeoutMs, 3_000);
   assert.equal(config.onelinkTimeoutMs, 10_000);
-  assert.equal(config.outputMaxBufferedMs, 5_000);
+  assert.equal(config.outputMaxBufferedMs, 15_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
   assert.equal(config.interruptionMode, 'transcript_confirmed');
