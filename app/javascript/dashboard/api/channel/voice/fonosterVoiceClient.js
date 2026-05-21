@@ -329,13 +329,20 @@ class FonosterVoiceClient extends EventTarget {
 
   async destroyDevice({ preserveSessionConfig = false } = {}) {
     const currentUser = this.simpleUser;
+    const shouldReportOffline =
+      this.initialized ||
+      this.connected ||
+      this.registered ||
+      Boolean(currentUser);
 
     this.simpleUser = null;
     this.initialized = false;
     this.connected = false;
     this.registered = false;
     this.stopPresenceHeartbeat();
-    FonosterVoiceClient.reportPresence(false);
+    if (shouldReportOffline) {
+      FonosterVoiceClient.reportPresence(false);
+    }
     this.pendingIncomingCall = false;
     this.hasActiveCall = false;
     this.registrationPromise = null;

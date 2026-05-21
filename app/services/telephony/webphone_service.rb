@@ -8,6 +8,8 @@ class Telephony::WebphoneService
 
   def token_for(user:, inbox: nil)
     agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
+    return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if agent_binding.blank?
+
     response = bridge_client.post('/telephony/webphone/token', token_request_payload(user, inbox, agent_binding))
 
     response = response.deep_dup
@@ -24,9 +26,14 @@ class Telephony::WebphoneService
   end
 
   def update_presence!(user:, registered:)
-    agent_binding = account.telephony_agent_bindings.find_by!(user_id: user.id)
+    agent_binding = account.telephony_agent_bindings.find_by(user_id: user.id)
+    return unsupported_webphone_payload(reason: 'agent_binding_missing') if agent_binding.blank?
+
     agent_binding.update_browser_registration!(registered: registered)
-    agent_binding.to_telephony_h.merge(registered_for_routing: agent_binding.registered_for_routing?)
+    agent_binding.to_telephony_h.merge(
+      calling_supported: agent_binding.enabled?,
+      registered_for_routing: agent_binding.registered_for_routing?
+    )
   end
 
   private
@@ -45,6 +52,16 @@ class Telephony::WebphoneService
 
   def fallback_provider(inbox, agent_binding)
     inbox&.channel&.provider || agent_binding&.provider || 'fonoster'
+  end
+
+  def unsupported_webphone_payload(reason:, inbox: nil)
+    {
+      provider: fallback_provider(inbox, nil),
+      calling_supported: false,
+      registered: false,
+      registered_for_routing: false,
+      reason: reason
+    }
   end
 
   def agent_binding_usable?(agent_binding)

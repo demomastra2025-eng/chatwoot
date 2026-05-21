@@ -167,37 +167,50 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       'presence' => 'online',
       'last_presence_source' => 'browser_webphone'
     )
+    expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
   end
 
-  it 'does not advertise browser calling without an operator binding even when the bridge contract is complete' do
+  it 'treats browser presence without an operator binding as a quiet unsupported state' do
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: false },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'provider' => 'fonoster',
+      'calling_supported' => false,
+      'registered' => false,
+      'registered_for_routing' => false,
+      'reason' => 'agent_binding_missing'
+    )
+  end
+
+  it 'does not advertise browser calling or call the bridge without an operator binding' do
+    token_request = nil
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
     ) do
-      stub_request(:post, 'https://bridge.example/telephony/webphone/token')
-        .with(headers: { 'X-Bridge-Secret' => 'bridge-secret', 'X-Account-Id' => account.id.to_s })
-        .to_return(
-          status: 200,
-          body: {
-            token: 'test-token',
-            provider: 'fonoster',
-            username: 'agent-404',
-            domain: 'agents.example.test',
-            signalingServer: 'wss://bridge.example/ws',
-            targetAor: 'sip:agent-404@agents.example.test'
-          }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
-        )
+      token_request = stub_request(:post, 'https://bridge.example/telephony/webphone/token')
 
       post path, headers: headers, as: :json
     end
 
     expect(response).to have_http_status(:ok)
+    expect(token_request).not_to have_been_requested
+    expect(response.parsed_body.dig('payload', 'provider')).to eq('fonoster')
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(false)
+    expect(response.parsed_body.dig('payload', 'registered')).to be(false)
+    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(false)
+    expect(response.parsed_body.dig('payload', 'reason')).to eq('agent_binding_missing')
   end
 
   it 'does not advertise browser calling for fonoster without a complete browser contract' do
+    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'
@@ -207,7 +220,6 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         .to_return(
           status: 200,
           body: {
-            token: 'test-token',
             provider: 'fonoster',
             calling_supported: true
           }.to_json,
@@ -226,6 +238,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   it 'keeps browser calling disabled when the bridge sends callingSupported false' do
+    create(:telephony_agent_binding, account: account, user: administrator, provider: 'fonoster')
+
     with_modified_env(
       TELEPHONY_BRIDGE_BASE_URL: 'https://bridge.example',
       TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret'

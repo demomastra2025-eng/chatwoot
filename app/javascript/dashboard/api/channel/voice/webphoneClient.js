@@ -249,6 +249,25 @@ class WebphoneClient extends EventTarget {
       };
     }
 
+    const callingSupported =
+      response?.callingSupported ?? response?.calling_supported;
+    if (callingSupported === false) {
+      await client.destroyDevice?.();
+      const resolvedSession = {
+        provider,
+        callingSupported: false,
+        registered: false,
+        reason: response?.reason,
+      };
+      this.providerSessions[provider] = resolvedSession;
+      if (this.activeProvider === provider) {
+        this.activeProvider = null;
+      }
+      this.clearTokenRefresh(provider);
+      delete this.tokenRefreshState[provider];
+      return resolvedSession;
+    }
+
     const session = await client.initializeDevice(
       {
         ...(response || {}),

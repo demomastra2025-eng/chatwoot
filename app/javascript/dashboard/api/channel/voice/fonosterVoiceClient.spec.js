@@ -82,7 +82,7 @@ describe('fonosterVoiceClient', () => {
     expect(response).toEqual(
       expect.objectContaining({ provider: 'fonoster', registered: true })
     );
-    expect(updateWebphonePresenceMock).toHaveBeenCalledWith(false);
+    expect(updateWebphonePresenceMock).not.toHaveBeenCalledWith(false);
     expect(updateWebphonePresenceMock).toHaveBeenCalledWith(true);
   });
 

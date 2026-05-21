@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getWebphoneTokenMock, twilioInitializeMock, fonosterInitializeMock } =
-  vi.hoisted(() => ({
-    getWebphoneTokenMock: vi.fn(),
-    twilioInitializeMock: vi.fn(),
-    fonosterInitializeMock: vi.fn(),
-  }));
+const {
+  getWebphoneTokenMock,
+  twilioInitializeMock,
+  fonosterInitializeMock,
+  fonosterDestroyMock,
+} = vi.hoisted(() => ({
+  getWebphoneTokenMock: vi.fn(),
+  twilioInitializeMock: vi.fn(),
+  fonosterInitializeMock: vi.fn(),
+  fonosterDestroyMock: vi.fn(),
+}));
 
 vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
   default: {
@@ -30,7 +35,7 @@ vi.mock('dashboard/api/channel/voice/fonosterVoiceClient', () => ({
     joinClientCall: vi.fn(),
     rejectIncomingCall: vi.fn(),
     endClientCall: vi.fn(),
-    destroyDevice: vi.fn(),
+    destroyDevice: fonosterDestroyMock,
   },
 }));
 
@@ -41,6 +46,7 @@ describe('webphoneClient', () => {
     getWebphoneTokenMock.mockReset();
     twilioInitializeMock.mockReset();
     fonosterInitializeMock.mockReset();
+    fonosterDestroyMock.mockReset();
     WebphoneClient.activeProvider = null;
     WebphoneClient.providerSessions = {};
     Object.values(WebphoneClient.tokenRefreshTimers || {}).forEach(timer => {
@@ -85,14 +91,22 @@ describe('webphoneClient', () => {
     getWebphoneTokenMock.mockResolvedValue({
       provider: 'fonoster',
       calling_supported: false,
+      reason: 'agent_binding_missing',
     });
-    fonosterInitializeMock.mockResolvedValue({
-      provider: 'fonoster',
-      callingSupported: false,
-    });
+    WebphoneClient.activeProvider = 'fonoster';
 
-    await WebphoneClient.bootstrapIncomingSupport();
+    const response = await WebphoneClient.bootstrapIncomingSupport();
 
+    expect(response).toEqual(
+      expect.objectContaining({
+        provider: 'fonoster',
+        callingSupported: false,
+        registered: false,
+        reason: 'agent_binding_missing',
+      })
+    );
+    expect(fonosterInitializeMock).not.toHaveBeenCalled();
+    expect(WebphoneClient.activeProvider).toBeNull();
     expect(WebphoneClient.supportsBrowserCalling('fonoster')).toBe(false);
   });
 
