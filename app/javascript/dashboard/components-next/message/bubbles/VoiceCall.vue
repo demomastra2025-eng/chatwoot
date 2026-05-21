@@ -9,6 +9,7 @@ import { messageTimestamp } from 'shared/helpers/timeHelper';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import BaseBubble from 'next/message/bubbles/Base.vue';
 import AudioChip from 'next/message/chips/Audio.vue';
+import { formatToolTraceDetail } from 'dashboard/components-next/message/helpers/captainToolTrace';
 
 const LABEL_MAP = {
   [VOICE_CALL_STATUS.IN_PROGRESS]: 'CONVERSATION.VOICE_CALL.CALL_IN_PROGRESS',
@@ -309,6 +310,14 @@ const toolStatusKey = tool => {
   return 'CONVERSATION.VOICE_CALL.TOOL_RUNNING';
 };
 
+const toolTraceInput = tool => formatToolTraceDetail(tool.input);
+const toolTraceOutput = tool =>
+  formatToolTraceDetail(tool.output ?? tool.result);
+const hasToolTraceDetail = tool =>
+  Boolean(toolTraceInput(tool) || toolTraceOutput(tool));
+const TOOL_TRACE_INPUT_LABEL = 'Input';
+const TOOL_TRACE_OUTPUT_LABEL = 'Output';
+
 const handleJoinCall = async () => {
   if (isJoining.value) return;
   isJoining.value = true;
@@ -428,14 +437,46 @@ const handleJoinCall = async () => {
           <div
             v-for="(tool, index) in tools"
             :key="`${tool.name}-${tool.event}-${tool.at}-${index}`"
-            class="flex items-center justify-between gap-2 rounded-md bg-n-alpha-2 px-2 py-1 text-xs"
+            class="rounded-md bg-n-alpha-2 px-2 py-1 text-xs"
           >
-            <span class="font-mono text-n-slate-12 truncate">
-              {{ tool.name }}
-            </span>
-            <span class="shrink-0" :class="toolStatusClass(tool)">
-              {{ $t(toolStatusKey(tool)) }}
-            </span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-mono text-n-slate-12 truncate">
+                {{ tool.name }}
+              </span>
+              <span class="shrink-0" :class="toolStatusClass(tool)">
+                {{ $t(toolStatusKey(tool)) }}
+              </span>
+            </div>
+            <div v-if="hasToolTraceDetail(tool)" class="mt-1 space-y-1">
+              <details
+                v-if="toolTraceInput(tool)"
+                class="rounded border border-n-weak bg-n-alpha-1"
+                data-voice-tool-trace-panel="input"
+              >
+                <summary class="cursor-pointer px-1.5 py-0.5 text-n-slate-11">
+                  {{ TOOL_TRACE_INPUT_LABEL }}
+                </summary>
+                <div
+                  class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 font-mono text-[11px] text-n-slate-12"
+                >
+                  {{ toolTraceInput(tool) }}
+                </div>
+              </details>
+              <details
+                v-if="toolTraceOutput(tool)"
+                class="rounded border border-n-weak bg-n-alpha-1"
+                data-voice-tool-trace-panel="output"
+              >
+                <summary class="cursor-pointer px-1.5 py-0.5 text-n-slate-11">
+                  {{ TOOL_TRACE_OUTPUT_LABEL }}
+                </summary>
+                <div
+                  class="max-h-48 overflow-auto whitespace-pre-wrap break-words px-1.5 pb-1.5 font-mono text-[11px] text-n-slate-12"
+                >
+                  {{ toolTraceOutput(tool) }}
+                </div>
+              </details>
+            </div>
           </div>
         </div>
       </div>

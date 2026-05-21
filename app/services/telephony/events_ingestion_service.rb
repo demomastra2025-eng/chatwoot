@@ -709,6 +709,16 @@ class Telephony::EventsIngestionService
       runtime_call_ref = tool_payload['runtime_call_ref'] || tool_payload['runtimeCallRef'] ||
                          metadata_payload['runtime_call_ref'] || metadata_payload['runtimeCallRef'] ||
                          call_session.external_call_ref
+      input_payload = tool_payload.key?('input') ? tool_payload['input'] : metadata_payload['input']
+      output_payload = if tool_payload.key?('output')
+                         tool_payload['output']
+                       elsif tool_payload.key?('result')
+                         tool_payload['result']
+                       elsif metadata_payload.key?('output')
+                         metadata_payload['output']
+                       else
+                         metadata_payload['result']
+                       end
 
       {
         'event' => event.event_type,
@@ -723,6 +733,8 @@ class Telephony::EventsIngestionService
         'bridge_call_ref' => bridge_call_ref,
         'runtime_call_ref' => runtime_call_ref,
         'conversation_id' => call_session.conversation_id,
+        'input' => input_payload,
+        'output' => output_payload,
         'error' => tool_payload['error'] || metadata_payload['error'],
         'at' => parse_time(event_payload['occurred_at'] || event_payload['occurredAt'])&.iso8601 || event.created_at.iso8601
       }.compact

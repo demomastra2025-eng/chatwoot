@@ -69,7 +69,7 @@ const redactValue = value => {
   return value;
 };
 
-const formatDetail = value => {
+export const formatToolTraceDetail = value => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
@@ -116,8 +116,8 @@ export const buildCaptainToolTraceMessages = additionalAttributes => {
         content: step.content,
         toolName: stepToolName(step),
         status: stepStatus(step),
-        input: formatDetail(stepInput(step)),
-        output: formatDetail(stepOutput(step)),
+        input: formatToolTraceDetail(stepInput(step)),
+        output: formatToolTraceDetail(stepOutput(step)),
       },
     }));
 };

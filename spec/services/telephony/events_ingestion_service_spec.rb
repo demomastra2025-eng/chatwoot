@@ -579,7 +579,13 @@ RSpec.describe Telephony::EventsIngestionService do
             event_key: "evt-#{event_name}",
             event: event_name,
             occurred_at: Time.current.iso8601,
-            payload: { tool_name: 'faq_lookup', request_id: 'tool-req-1', ok: event_name.include?('completed') }
+            payload: {
+              tool_name: 'faq_lookup',
+              request_id: 'tool-req-1',
+              ok: event_name.include?('completed'),
+              input: { query: 'цена' },
+              output: event_name.include?('completed') ? { answer: '1000 тг' } : nil
+            }.compact
           )
         ).perform
 
@@ -596,6 +602,45 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(tools.map { |tool| tool['call_ref'] }).to all(eq(existing_call_session.external_call_ref))
       expect(tools.map { |tool| tool['runtime_call_ref'] }).to all(eq(existing_call_session.external_call_ref))
       expect(tools.map { |tool| tool['conversation_id'] }).to all(eq(existing_call_session.conversation_id))
+      expect(tools.map { |tool| tool['input'] }).to all(eq({ 'query' => 'цена' }))
+      completed_tool = tools.find { |tool| tool['event'] == 'tool_completed' }
+      expect(completed_tool['output']).to eq({ 'answer' => '1000 тг' })
+    end
+
+    it 'preserves false tool input and output values in voice bubble traces' do
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'in_progress' } }
+      )
+      existing_call_session.update!(status: 'in_progress')
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-tool-false-output',
+          event: 'tool_completed',
+          occurred_at: Time.current.iso8601,
+          payload: {
+            tool_name: 'availability_check',
+            request_id: 'tool-req-false',
+            ok: true,
+            input: false,
+            output: false
+          },
+          metadata: {
+            input: { query: 'fallback input' },
+            output: { answer: 'fallback output' }
+          }
+        )
+      ).perform
+
+      tools = existing_call_session.latest_voice_message.reload.content_attributes.dig('data', 'tools')
+      tool = tools.find { |item| item['request_id'] == 'tool-req-false' }
+      expect(tool['input']).to be(false)
+      expect(tool['output']).to be(false)
     end
 
     it 'stores first_audio_out_write as non-terminal AI telemetry with stream correlation' do

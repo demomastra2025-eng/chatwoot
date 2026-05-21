@@ -409,6 +409,8 @@ describe('VoiceCall bubble', () => {
               name: 'faq_lookup',
               status: 'completed',
               callRef: 'call-current',
+              input: { query: 'цена', accessToken: 'secret' },
+              output: { answer: '1000 тг' },
             },
             {
               name: 'lookup_customer',
@@ -421,6 +423,10 @@ describe('VoiceCall bubble', () => {
     });
 
     expect(wrapper.text()).toContain('faq_lookup');
+    expect(wrapper.text()).toContain('"query": "цена"');
+    expect(wrapper.text()).toContain('"accessToken": "[REDACTED]"');
+    expect(wrapper.text()).toContain('"answer": "1000 тг"');
+    expect(wrapper.findAll('[data-voice-tool-trace-panel]')).toHaveLength(2);
     expect(wrapper.text()).not.toContain('lookup_customer');
   });
 });
