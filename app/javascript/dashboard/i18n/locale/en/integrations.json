@@ -512,7 +512,15 @@
       },
       "ERRORS": {
         "CATALOG_FAILED": "Could not load evaluation packs.",
-        "RUN_FAILED": "Could not run offline evaluations."
+        "RUN_FAILED": "Could not run offline evaluations.",
+        "IMPORT_FAILED": "Could not export this conversation."
+      },
+      "IMPORT": {
+        "TITLE": "Import conversation regression",
+        "DESCRIPTION": "Export a sanitized AI Voice conversation trace as YAML that can be pasted into the offline fixture pack.",
+        "INBOX_ID": "Inbox ID",
+        "DISPLAY_ID": "Conversation display ID",
+        "BUTTON": "Export fixture"
       }
     },
     "PAYWALL": {

@@ -13,6 +13,10 @@ class CaptainEvaluations extends ApiClient {
   run(payload = {}) {
     return axios.post(`${this.url}/run`, payload);
   }
+
+  importConversation(payload = {}) {
+    return axios.post(`${this.url}/import_conversation`, payload);
+  }
 }
 
 export default new CaptainEvaluations();

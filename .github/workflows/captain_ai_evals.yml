@@ -1,0 +1,118 @@
+name: Captain AI Evals
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/captain_ai_evals.yml'
+      - 'app/controllers/api/v1/accounts/captain/evaluations_controller.rb'
+      - 'app/javascript/dashboard/api/captain/evaluations.js'
+      - 'app/javascript/dashboard/api/specs/captainEvaluations.spec.js'
+      - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
+      - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
+      - 'app/javascript/dashboard/routes/dashboard/captain/evaluations/**'
+      - 'config/llm_evals/**'
+      - 'config/routes.rb'
+      - 'enterprise/lib/captain/evals/**'
+      - 'lib/llm/evals/**'
+      - 'lib/tasks/llm_evals.rake'
+      - 'spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb'
+      - 'spec/enterprise/lib/captain/evals/**'
+      - 'spec/lib/llm/evals/**'
+      - 'spec/llm_evals/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-evals:
+    runs-on: ubuntu-22.04
+    if: ${{ hashFiles('enterprise/**/*') != '' }}
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: --entrypoint redis-server
+
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
+      NODE_OPTIONS: --openssl-legacy-provider
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install pnpm dependencies
+        run: pnpm i
+
+      - name: Create database
+        run: bundle exec rake db:create
+
+      - name: Install pgvector extension
+        run: |
+          PGPASSWORD="" psql -h localhost -U postgres -d chatwoot_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Load schema
+        run: bundle exec rake db:schema:load
+
+      - name: Run deterministic AI eval specs
+        run: |
+          bundle exec rspec \
+            spec/llm_evals/ruby_llm/tribunal_spec.rb \
+            spec/lib/llm/evals/case_loader_spec.rb \
+            spec/lib/llm/evals/collection_result_spec.rb \
+            spec/lib/llm/evals/moderation_suite_spec.rb \
+            spec/lib/llm/evals/runner_spec.rb \
+            spec/lib/llm/evals/ai_voice_trace_exporter_spec.rb \
+            spec/enterprise/lib/captain/evals/tool_safety_suite_spec.rb \
+            spec/enterprise/lib/captain/evals/conversation_completion_suite_spec.rb \
+            spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb \
+            spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb
+
+      - name: Run deterministic AI eval CI gate
+        run: bundle exec rake llm:evals:ci
+
+      - name: Run Captain evaluations frontend checks
+        run: |
+          pnpm exec vitest run \
+            app/javascript/dashboard/api/specs/captainEvaluations.spec.js \
+            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js \
+            app/javascript/dashboard/routes/dashboard/captain/captain.routes.spec.js \
+            app/javascript/dashboard/components-next/sidebar/sidebarVisibility.spec.js
+          pnpm exec eslint \
+            app/javascript/dashboard/api/captain/evaluations.js \
+            app/javascript/dashboard/api/specs/captainEvaluations.spec.js \
+            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.vue \
+            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js

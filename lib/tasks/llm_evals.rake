@@ -30,6 +30,30 @@ namespace :llm do
       abort('Deterministic AI evals failed') unless result.passed?
     end
 
+    desc 'CI gate for deterministic offline AI evals. No live LLM/API calls.'
+    task ci: :environment do
+      result = Llm::Evals::Runner.new.call
+      summary = result.to_h.slice(:status, :suite_count, :total_count, :passed_count, :failed_count, :error_count)
+
+      puts JSON.pretty_generate(summary)
+      abort('AI eval CI gate failed') unless result.passed?
+    end
+
+    desc 'Export an AI Voice conversation as a sanitized trace eval fixture preview. Requires ACCOUNT_ID, INBOX_ID, DISPLAY_ID.'
+    task export_ai_voice_trace: :environment do
+      account_id = ENV['ACCOUNT_ID'].presence || abort('ACCOUNT_ID is required')
+      inbox_id = ENV['INBOX_ID'].presence || abort('INBOX_ID is required')
+      display_id = ENV['DISPLAY_ID'].presence || abort('DISPLAY_ID is required')
+
+      exported = Llm::Evals::AiVoiceTraceExporter.new(
+        account: Account.find(account_id),
+        inbox_id: inbox_id,
+        display_id: display_id
+      ).call
+
+      puts exported[:yaml]
+    end
+
     desc 'Run the Captain conversation completion regression suite. Requires ACCOUNT_ID.'
     task conversation_completion: :environment do
       account_id = ENV['ACCOUNT_ID'].presence || abort('ACCOUNT_ID is required')

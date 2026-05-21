@@ -22,6 +22,16 @@ class Api::V1::Accounts::Captain::EvaluationsController < Api::V1::Accounts::Bas
     render json: { packs: Llm::Evals::PackRegistry.catalog, result: result.to_h }
   end
 
+  def import_conversation
+    exported = Llm::Evals::AiVoiceTraceExporter.new(
+      account: @current_account,
+      inbox_id: params[:inbox_id],
+      display_id: params[:display_id]
+    ).call
+
+    render json: exported
+  end
+
   private
 
   def live_eval_requested?

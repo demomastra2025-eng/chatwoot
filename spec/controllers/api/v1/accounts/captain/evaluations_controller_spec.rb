@@ -30,6 +30,26 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/{account.id}/captain/evaluations/import_conversation' do
+    it 'exports a sanitized AI Voice trace fixture preview for admins' do
+      exporter = instance_double(
+        Llm::Evals::AiVoiceTraceExporter,
+        call: { case: { id: 'conversation_481_ai_voice_trace' }, yaml: "cases:\n  - id: conversation_481_ai_voice_trace\n" }
+      )
+      allow(Llm::Evals::AiVoiceTraceExporter).to receive(:new).and_return(exporter)
+
+      post "/api/v1/accounts/#{account.id}/captain/evaluations/import_conversation",
+           headers: admin.create_new_auth_token,
+           params: { inbox_id: 57, display_id: 481 },
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(Llm::Evals::AiVoiceTraceExporter).to have_received(:new).with(account: account, inbox_id: 57, display_id: 481)
+      expect(json_response[:case]).to include(id: 'conversation_481_ai_voice_trace')
+      expect(json_response[:yaml]).to include('conversation_481_ai_voice_trace')
+    end
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/captain/evaluations/run' do
     it 'runs deterministic packs for admins' do
       report = Llm::Evals::CollectionResult.new(suites: [

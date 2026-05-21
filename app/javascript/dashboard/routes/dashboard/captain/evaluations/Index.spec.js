@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 
 const getMock = vi.fn();
 const runMock = vi.fn();
+const importConversationMock = vi.fn();
 
 const ButtonStub = defineComponent({
   name: 'NextButtonStub',
@@ -39,6 +40,7 @@ vi.mock('dashboard/api/captain/evaluations', () => ({
   default: {
     get: getMock,
     run: runMock,
+    importConversation: importConversationMock,
   },
 }));
 
@@ -107,8 +109,12 @@ describe('Captain evaluations page', () => {
   beforeEach(() => {
     getMock.mockReset();
     runMock.mockReset();
+    importConversationMock.mockReset();
     getMock.mockResolvedValue(catalogPayload);
     runMock.mockResolvedValue(runPayload);
+    importConversationMock.mockResolvedValue({
+      data: { yaml: 'cases:\n  - id: conversation_481_ai_voice_trace\n' },
+    });
   });
 
   it('loads the eval catalog and marks live packs as locked', async () => {
@@ -140,5 +146,27 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULT_STATUS.PASS');
     expect(wrapper.text()).toContain('12 / 12');
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
+  });
+
+  it('exports a conversation trace fixture preview from the page', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    const inputs = wrapper.findAll('input');
+    await inputs[0].setValue('57');
+    await inputs[1].setValue('481');
+
+    const importButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CAPTAIN.EVALUATIONS.IMPORT.BUTTON');
+
+    await importButton.trigger('click');
+    await flushPromises();
+
+    expect(importConversationMock).toHaveBeenCalledWith({
+      inbox_id: '57',
+      display_id: '481',
+    });
+    expect(wrapper.text()).toContain('conversation_481_ai_voice_trace');
   });
 });

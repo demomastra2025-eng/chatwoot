@@ -9,6 +9,9 @@ const { t } = useI18n();
 
 const packs = ref([]);
 const result = ref(null);
+const importInboxId = ref('');
+const importDisplayId = ref('');
+const importedFixtureYaml = ref('');
 const isLoadingCatalog = ref(false);
 const isRunning = ref(false);
 const errorMessage = ref('');
@@ -43,6 +46,10 @@ const evaluationTargets = computed(() => [
 
 const deterministicPacks = computed(() =>
   packs.value.filter(pack => pack.default_enabled && !pack.live_model)
+);
+
+const canImportConversation = computed(
+  () => importInboxId.value.trim() && importDisplayId.value.trim()
 );
 
 const resultStatusLabel = computed(() => {
@@ -92,6 +99,24 @@ const runDeterministicEvals = async () => {
 
 const formatCount = (passedCount, totalCount) =>
   `${passedCount} / ${totalCount}`;
+
+const importConversation = async () => {
+  isRunning.value = true;
+  errorMessage.value = '';
+  importedFixtureYaml.value = '';
+
+  try {
+    const response = await captainEvaluationsAPI.importConversation({
+      inbox_id: importInboxId.value.trim(),
+      display_id: importDisplayId.value.trim(),
+    });
+    importedFixtureYaml.value = response.data?.yaml || '';
+  } catch (error) {
+    errorMessage.value = t('CAPTAIN.EVALUATIONS.ERRORS.IMPORT_FAILED');
+  } finally {
+    isRunning.value = false;
+  }
+};
 
 onMounted(fetchCatalog);
 </script>
@@ -224,6 +249,44 @@ onMounted(fetchCatalog);
               </p>
             </article>
           </div>
+        </div>
+
+        <div class="rounded-xl border border-n-weak bg-n-surface-2 p-5">
+          <h3 class="text-base font-semibold text-n-slate-12 mb-3">
+            {{ t('CAPTAIN.EVALUATIONS.IMPORT.TITLE') }}
+          </h3>
+          <p class="text-sm leading-6 text-n-slate-11 mb-4">
+            {{ t('CAPTAIN.EVALUATIONS.IMPORT.DESCRIPTION') }}
+          </p>
+          <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+              <span>{{ t('CAPTAIN.EVALUATIONS.IMPORT.INBOX_ID') }}</span>
+              <input
+                v-model="importInboxId"
+                class="rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2 text-n-slate-12 outline-none"
+                type="text"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+              <span>{{ t('CAPTAIN.EVALUATIONS.IMPORT.DISPLAY_ID') }}</span>
+              <input
+                v-model="importDisplayId"
+                class="rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2 text-n-slate-12 outline-none"
+                type="text"
+              />
+            </label>
+            <Button
+              :label="t('CAPTAIN.EVALUATIONS.IMPORT.BUTTON')"
+              icon="i-lucide-download"
+              :is-loading="isRunning"
+              :disabled="isRunning || !canImportConversation"
+              @click="importConversation"
+            />
+          </div>
+          <pre
+            v-if="importedFixtureYaml"
+            class="mt-4 overflow-x-auto rounded-lg bg-n-slate-3 p-4 text-xs text-n-slate-12"
+          ><code>{{ importedFixtureYaml }}</code></pre>
         </div>
 
         <div

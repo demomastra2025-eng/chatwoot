@@ -41,4 +41,13 @@ describe('#CaptainEvaluationsAPI', () => {
       { pack_ids: ['captain.ai_voice_trace'] }
     );
   });
+
+  it('exports a conversation as an eval fixture preview through the account-scoped endpoint', () => {
+    captainEvaluationsAPI.importConversation({ inbox_id: 57, display_id: 481 });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/6/captain/evaluations/import_conversation',
+      { inbox_id: 57, display_id: 481 }
+    );
+  });
 });
