@@ -15,6 +15,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState.Inbox).toBe(true);
     expect(visibilityState.Campaigns).toBe(true);
     expect(visibilityState['Campaigns:Templates']).toBe(true);
+    expect(visibilityState['Captain:Evaluations']).toBe(true);
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Workspace']).toBe(true);
     expect(visibilityState['Reports:Overview']).toBe(true);

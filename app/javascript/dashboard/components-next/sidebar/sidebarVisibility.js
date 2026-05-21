@@ -36,6 +36,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Prompts', 'SIDEBAR.CAPTAIN_PROMPTS'),
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
+    item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
     item('Captain:Documents', 'SIDEBAR.CAPTAIN_DOCUMENTS'),
     item('Captain:Playground', 'SIDEBAR.CAPTAIN_PLAYGROUND'),

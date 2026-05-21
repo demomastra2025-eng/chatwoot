@@ -464,6 +464,35 @@
       "DESCRIPTION": "Используйте эту площадку, чтобы отправлять сообщения своему AI-агенту и проверять, насколько быстро, точно и в нужном тоне он отвечает.",
       "CREDIT_NOTE": "Отправленные здесь сообщения будут учитываться в AI-кредитах."
     },
+    "EVALUATIONS": {
+      "TITLE": "Качество AI",
+      "BADGE": "RubyLLM Tribunal",
+      "HERO_TITLE": "Проверяйте ответы Captain до регрессий",
+      "HERO_DESCRIPTION": "Отдельная страница для deterministic проверок, LLM-as-judge оценок и safety regression packs для Captain и AI Voice.",
+      "TARGETS_TITLE": "Что проверяем",
+      "STATUS_TITLE": "Текущий статус внедрения",
+      "STATUS_DESCRIPTION": "Tribunal подключён сначала для development/test eval-спек. Запуск из UI в runtime нужно добавлять отдельно: с очередью, аудитом и лимитами расходов перед живыми LLM-вызовами.",
+      "PILLARS": {
+        "DETERMINISTIC": {
+          "TITLE": "Быстрые deterministic проверки",
+          "DESCRIPTION": "Проверяют обязательный текст, JSON-формат, длину и маркеры tool result без внешних API-вызовов."
+        },
+        "JUDGE": {
+          "TITLE": "Оценка LLM-судьёй",
+          "DESCRIPTION": "Оценивает groundedness, relevance, correctness и риск галлюцинаций относительно контекста."
+        },
+        "SAFETY": {
+          "TITLE": "Safety и red-team наборы",
+          "DESCRIPTION": "Проверяют jailbreak resistance, harmful content, toxicity, bias и утечки PII до релиза."
+        }
+      },
+      "TARGETS": {
+        "TOOL_RESULTS": "Проверять, что ответы используют результаты Captain tools, а не игнорируют их.",
+        "RAG_CONTEXT": "Ловить галлюцинации относительно документов, FAQ и найденного контекста.",
+        "VOICE_TRANSCRIPTS": "Проигрывать AI Voice transcripts, чтобы ловить съеденный смысл и небезопасные продолжения.",
+        "SAFETY": "Запускать safety/jailbreak проверки перед изменениями prompt, model или tools."
+      }
+    },
     "PAYWALL": {
       "TITLE": "Обновите тарифный план, чтобы использовать AI-агентов",
       "AVAILABLE_ON": "AI-агенты недоступны на бесплатном тарифном плане.",

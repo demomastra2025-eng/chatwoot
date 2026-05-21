@@ -859,6 +859,8 @@ GEM
       ruby_llm-schema (~> 0)
       zeitwerk (~> 2)
     ruby_llm-schema (0.4.0)
+    ruby_llm-tribunal (0.1.1)
+      ruby_llm (~> 1.0)
     ruby_parser (3.20.0)
       sexp_processor (~> 4.16)
     sass (3.7.4)
@@ -1157,6 +1159,7 @@ DEPENDENCIES
   ruby_llm (~> 1.15)
   ruby_llm-mcp!
   ruby_llm-schema (~> 0.4)
+  ruby_llm-tribunal (~> 0.1)
   scout_apm
   scss_lint
   searchkick

@@ -246,6 +246,7 @@ end
 
 group :development, :test do
   gem 'active_record_query_trace'
+  gem 'ruby_llm-tribunal', '~> 0.1', require: false
   ##--- gems for debugging and error reporting ---##
   # static analysis
   gem 'brakeman'

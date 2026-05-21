@@ -984,6 +984,17 @@ const menuItems = computed(() => {
             activeOn: ['captain_observability_index'],
             to: accountScopedRoute('captain_observability_index'),
           },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'Evaluations',
+                  visibilityKey: 'Captain:Evaluations',
+                  label: t('SIDEBAR.CAPTAIN_EVALUATIONS'),
+                  activeOn: ['captain_evaluations_index'],
+                  to: accountScopedRoute('captain_evaluations_index'),
+                },
+              ]
+            : []),
           {
             name: 'FAQs',
             visibilityKey: 'Captain:FAQs',

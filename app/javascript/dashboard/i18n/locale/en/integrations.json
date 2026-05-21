@@ -464,6 +464,35 @@
       "DESCRIPTION": "Use this playground to send messages to your AI agent and check if it responds accurately, quickly, and in the tone you expect.",
       "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits."
     },
+    "EVALUATIONS": {
+      "TITLE": "AI Quality",
+      "BADGE": "RubyLLM Tribunal",
+      "HERO_TITLE": "Evaluate Captain responses before they regress",
+      "HERO_DESCRIPTION": "This page is the dedicated home for deterministic checks, LLM-as-judge evaluations, and safety regression packs for Captain and AI Voice.",
+      "TARGETS_TITLE": "Evaluation targets",
+      "STATUS_TITLE": "Current implementation status",
+      "STATUS_DESCRIPTION": "Tribunal is wired for development/test evaluation specs first. Runtime execution from this page should be added separately with queueing, audit logs, and spending controls before enabling live model calls.",
+      "PILLARS": {
+        "DETERMINISTIC": {
+          "TITLE": "Fast deterministic checks",
+          "DESCRIPTION": "Validate required text, JSON shape, token length, and tool-result markers without external API calls."
+        },
+        "JUDGE": {
+          "TITLE": "LLM-as-judge scoring",
+          "DESCRIPTION": "Score faithfulness, relevance, correctness, and hallucination risk against expected context."
+        },
+        "SAFETY": {
+          "TITLE": "Safety and red-team packs",
+          "DESCRIPTION": "Check jailbreak resistance, harmful content, toxicity, bias, and PII leakage before rollout."
+        }
+      },
+      "TARGETS": {
+        "TOOL_RESULTS": "Verify that answers use Captain tool results instead of ignoring them.",
+        "RAG_CONTEXT": "Detect hallucinations against documents, FAQs, and retrieved context.",
+        "VOICE_TRANSCRIPTS": "Replay AI Voice transcripts to catch clipped meaning and unsafe follow-ups.",
+        "SAFETY": "Run safety/jailbreak checks before prompt, model, or tool changes go live."
+      }
+    },
     "PAYWALL": {
       "TITLE": "Upgrade to use AI Agents",
       "AVAILABLE_ON": "AI Agents are not available on the free plan.",
