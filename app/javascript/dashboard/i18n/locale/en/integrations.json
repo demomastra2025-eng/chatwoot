@@ -491,6 +491,28 @@
         "RAG_CONTEXT": "Detect hallucinations against documents, FAQs, and retrieved context.",
         "VOICE_TRANSCRIPTS": "Replay AI Voice transcripts to catch clipped meaning and unsafe follow-ups.",
         "SAFETY": "Run safety/jailbreak checks before prompt, model, or tool changes go live."
+      },
+      "RUN_DETERMINISTIC": "Run offline checks",
+      "RESULT_TITLE": "Latest run result",
+      "RESULT_STATUS": {
+        "PASS": "Passed",
+        "FAIL": "Failed"
+      },
+      "RESULTS": {
+        "PASSED": "Passed cases",
+        "SUITES": "Suites",
+        "FAILED": "Failed cases",
+        "ERRORS": "Errors"
+      },
+      "PACKS": {
+        "TITLE": "Eval packs",
+        "LOADING": "Loading packs...",
+        "OFFLINE": "Offline",
+        "LIVE_LOCKED": "Live locked"
+      },
+      "ERRORS": {
+        "CATALOG_FAILED": "Could not load evaluation packs.",
+        "RUN_FAILED": "Could not run offline evaluations."
       }
     },
     "PAYWALL": {

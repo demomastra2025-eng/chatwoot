@@ -39,3 +39,53 @@ cases:
         - realtime_audio_out
       forbid_actions:
         - pacer_drop
+
+  - id: conversation_481_search_deals_price_retention
+    description: Regression for account 6 inbox 57 display conversation 481; a price follow-up must reuse the completed search_deals amount instead of calling get_deal with empty arguments.
+    tags: [ai_voice, conversation_481, crm, tools, retention]
+    events:
+      - action: caller_transcript_final
+        content: Какие у меня сделки есть?
+      - action: tool_completed
+        tool_name: search_deals
+        result:
+          ok: true
+          content:
+            id: 481
+            title: Сделка #481
+            amount: 250000
+            currency: KZT
+      - action: ai_transcript_turn
+        role: ai
+        content: Нашла одну сделку — Сделка #481.
+      - action: caller_transcript_final
+        content: Какая цена?
+      - action: ai_transcript_turn
+        role: ai
+        content: Цена по сделке — 250000 KZT.
+    expected:
+      require_actions:
+        - tool_completed
+        - ai_transcript_turn
+      forbid_actions:
+        - pacer_drop
+      forbid_failed_tools:
+        - get_deal
+      require_tool_result_usage:
+        - tool: search_deals
+          fragment: "250000"
+
+  - id: conversation_481_no_audio_pacer_overflow
+    description: Regression for conversation 481 clipped speech; normal AI voice output must complete without pacer_drop overflow markers.
+    tags: [ai_voice, conversation_481, audio, truncation]
+    events:
+      - action: caller_transcript_final
+        content: Алло
+      - action: realtime_audio_out
+        role: ai
+        content: Здравствуйте! Чем могу помочь?
+    expected:
+      require_actions:
+        - realtime_audio_out
+      forbid_actions:
+        - pacer_drop

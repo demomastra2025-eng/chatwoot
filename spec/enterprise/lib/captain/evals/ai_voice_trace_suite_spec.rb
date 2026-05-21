@@ -3,6 +3,15 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Evals::AiVoiceTraceSuite do
+  it 'keeps conversation 481 as a default regression case' do
+    result = described_class.new.call
+
+    expect(result.to_h[:cases]).to include(
+      include(id: 'conversation_481_search_deals_price_retention', status: 'pass'),
+      include(id: 'conversation_481_no_audio_pacer_overflow', status: 'pass')
+    )
+  end
+
   it 'passes voice traces where the answer uses a completed tool result' do
     Tempfile.create(['ai_voice_trace_suite', '.yml']) do |file|
       file.write(

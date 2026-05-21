@@ -491,6 +491,28 @@
         "RAG_CONTEXT": "Ловить галлюцинации относительно документов, FAQ и найденного контекста.",
         "VOICE_TRANSCRIPTS": "Проигрывать AI Voice transcripts, чтобы ловить съеденный смысл и небезопасные продолжения.",
         "SAFETY": "Запускать safety/jailbreak проверки перед изменениями prompt, model или tools."
+      },
+      "RUN_DETERMINISTIC": "Запустить offline проверки",
+      "RESULT_TITLE": "Последний результат запуска",
+      "RESULT_STATUS": {
+        "PASS": "Пройдено",
+        "FAIL": "Провалено"
+      },
+      "RESULTS": {
+        "PASSED": "Пройдено кейсов",
+        "SUITES": "Наборы",
+        "FAILED": "Провалено кейсов",
+        "ERRORS": "Ошибки"
+      },
+      "PACKS": {
+        "TITLE": "Eval-наборы",
+        "LOADING": "Загружаем наборы...",
+        "OFFLINE": "Offline",
+        "LIVE_LOCKED": "Live заблокирован"
+      },
+      "ERRORS": {
+        "CATALOG_FAILED": "Не удалось загрузить eval-наборы.",
+        "RUN_FAILED": "Не удалось запустить offline evals."
       }
     },
     "PAYWALL": {
