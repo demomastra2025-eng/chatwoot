@@ -596,9 +596,8 @@ class VoiceApplication {
             dialogueDirector?.finishToolWait(callPayload, lateResult);
             if (session.closed || realtime?.closed) return;
             if (!shouldInjectLateToolResult(callPayload, lateResult)) return;
-            const prompt = lateToolResultPrompt(callPayload, lateResult);
-            if (!prompt) return;
-            realtime?.sendText?.(prompt);
+            const delivery = deliverLateToolResultToRealtime(realtime, callPayload, lateResult);
+            if (!delivery.delivered) return;
             await session.safeEvent('tool_async_result_injected', compactPayload({
               ...correlationPayload(session, requestPayload, context),
               provider: 'gemini-live',
@@ -606,6 +605,7 @@ class VoiceApplication {
               tool_call_id: callPayload.id,
               request_id: lateResult.request_id,
               ok: lateResult.ok,
+              delivery_channel: delivery.channel,
               result_keys: objectKeys(lateResult.result)
             }));
           }
@@ -613,7 +613,7 @@ class VoiceApplication {
         dialogueDirector?.finishToolWait(callPayload, toolResult);
         await this.handleRealtimeToolAction({ call, session, requestPayload, toolResult, toolCall: callPayload });
         if (shouldWatchPostToolContinuation(toolResult)) postToolWatchdog.arm(callPayload, toolResult);
-        return toolResult;
+        return realtimeToolResponse(callPayload, toolResult);
       },
       onInterrupt: async (metadata = {}) => {
         const shouldClearOutput = shouldClearOutputBufferOnInterrupt(clearOutputOnInterrupt, {
@@ -1722,14 +1722,62 @@ function foregroundToolWaitMs(context = {}, toolName = '') {
 }
 
 function shouldInjectLateToolResult(toolCall = {}, lateResult = {}) {
-  if (!lateResult?.async || lateResult.ok === false) return false;
+  if (!lateResult?.async) return false;
   if (isSideEffectToolName(toolCall.name)) return false;
   const action = String(lateResult.result?.action || '').trim().toLowerCase();
   return !['transfer', 'end_call', 'hangup'].includes(action);
 }
 
+function deliverLateToolResultToRealtime(realtime, toolCall = {}, lateResult = {}) {
+  const response = realtimeToolResponse(toolCall, lateResult);
+  const prompt = lateToolResultPrompt(toolCall, lateResult);
+  let sentToolResponse = false;
+
+  if (toolCall.id && typeof realtime?.sendToolResponse === 'function') {
+    try {
+      realtime.sendToolResponse(toolCall.id, response, toolCall.name);
+      sentToolResponse = true;
+    } catch (_error) {
+      sentToolResponse = false;
+    }
+  }
+
+  let sentText = false;
+  if (prompt && typeof realtime?.sendText === 'function') {
+    try {
+      realtime.sendText(prompt);
+      sentText = true;
+    } catch (_error) {
+      sentText = false;
+    }
+  }
+
+  return {
+    delivered: sentToolResponse || sentText,
+    channel: sentToolResponse && sentText ? 'tool_response_and_text' : (sentToolResponse ? 'tool_response' : (sentText ? 'text' : null))
+  };
+}
+
+function realtimeToolResponse(toolCall = {}, toolResult = {}) {
+  if (toolResult?.pending) {
+    return {
+      ok: true,
+      pending: true,
+      async: true,
+      request_id: toolResult.request_id || toolCall.id,
+      tool_name: toolCall.name,
+      message: 'Tool request accepted and is still running. Wait for the async result before using this information.'
+    };
+  }
+  return toolResult;
+}
+
 function lateToolResultPrompt(toolCall = {}, lateResult = {}) {
   const toolName = String(toolCall.name || lateResult.tool_name || 'инструмента').trim();
+  if (lateResult.ok === false) {
+    const reason = summarizeCallerText(sanitizeReason(lateResult.error || 'инструмент временно недоступен'));
+    return `Результат инструмента ${toolName}: ошибка. Коротко скажи клиенту, что не удалось проверить данные сейчас, и предложи уточнить вопрос или соединить со специалистом. Причина: ${reason}`;
+  }
   const answer = summarizeToolResult(lateResult.result);
   if (!answer) return '';
   return `Результат инструмента ${toolName} готов. Используй его в следующей голосовой реплике клиенту, коротко и естественно по-русски. Не перечисляй служебные поля. Результат: ${answer}`;

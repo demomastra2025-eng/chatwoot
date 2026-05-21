@@ -960,8 +960,9 @@ test('VoiceApplication passes configured tool timeout into realtime tool executi
   const result = await app.handleCall(call, { call_ref: 'call-tool-timeout' });
 
   const toolResult = await realtimeCallbacks.onToolCall({ name: 'slow_tool', args: {} });
-  assert.equal(toolResult.ok, false);
-  assert.equal(toolResult.error.includes('10ms'), true);
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolResult.pending, true);
+  assert.equal(toolResult.async, true);
   assert.equal(controls.some(payload => payload.action === 'tool_failed'), true);
 
   call.emit('end');
@@ -1398,7 +1399,9 @@ test('VoiceApplication treats the next caller question after drained AI audio as
 test('VoiceApplication injects late async tool result back into Gemini context after foreground timeout', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
+  const events = [];
   const sentTexts = [];
+  const sentToolResponses = [];
   let realtimeCallbacks;
 
   const call = Object.assign(new EventEmitter(), {
@@ -1414,12 +1417,14 @@ test('VoiceApplication injects late async tool result back into Gemini context a
       tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200, foreground_wait_ms: 5 }]
     }),
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' }),
     callTool: async () => new Promise(resolve => setTimeout(() => resolve({ answer: 'Акуна матата' }), 25))
   };
   const realtime = {
     connect: async options => { realtimeCallbacks = options; },
     sendText: text => sentTexts.push(text),
+    sendToolResponse: (id, response, name) => sentToolResponses.push({ id, response, name }),
     sendAudio: () => {},
     close: () => {}
   };
@@ -1433,12 +1438,75 @@ test('VoiceApplication injects late async tool result back into Gemini context a
   const result = await app.handleCall(call, { call_ref: 'runtime-tool-late-result' });
 
   const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-late-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  assert.equal(toolResult.ok, true);
   assert.equal(toolResult.pending, true);
+  assert.equal(toolResult.request_id, 'tool-late-1');
   await new Promise(resolve => setTimeout(resolve, 50));
 
   assert.equal(controls.some(payload => payload.action === 'tool_async_completed'), true);
+  assert.equal(sentToolResponses.length, 1);
+  assert.equal(sentToolResponses[0].id, 'tool-late-1');
+  assert.equal(sentToolResponses[0].name, 'faq_lookup');
+  assert.deepEqual(sentToolResponses[0].response.result, { answer: 'Акуна матата' });
   assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup готов')), true);
   assert.equal(sentTexts.some(text => text.includes('Акуна матата')), true);
+  const injectedEvent = events.find(payload => payload.event_type === 'tool_async_result_injected');
+  assert.equal(injectedEvent.payload.delivery_channel, 'tool_response_and_text');
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication injects late async tool failure back into Gemini context after foreground timeout', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const sentTexts = [];
+  const sentToolResponses = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-late-failure',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200, foreground_wait_ms: 5 }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('rails unavailable')), 25))
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendToolResponse: (id, response, name) => sentToolResponses.push({ id, response, name }),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, toolTimeoutMs: 200 });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-late-failure' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-late-fail-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolResult.pending, true);
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.equal(controls.some(payload => payload.action === 'tool_async_failed'), true);
+  assert.equal(sentToolResponses.length, 1);
+  assert.equal(sentToolResponses[0].id, 'tool-late-fail-1');
+  assert.equal(sentToolResponses[0].response.ok, false);
+  assert.equal(sentToolResponses[0].response.error, 'rails unavailable');
+  assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup: ошибка')), true);
+  const injectedEvent = events.find(payload => payload.event_type === 'tool_async_result_injected');
+  assert.equal(injectedEvent.payload.ok, false);
+  assert.equal(injectedEvent.payload.delivery_channel, 'tool_response_and_text');
 
   call.emit('end');
   await result.completion;
