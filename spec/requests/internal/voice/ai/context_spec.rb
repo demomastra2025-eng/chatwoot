@@ -102,6 +102,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'emotional_style' => 'warm_professional',
       'nonverbal_cues_enabled' => true,
       'ambient_noise_enabled' => false,
+      'max_output_tokens' => 1024,
       'max_duration_sec' => 600
     )
     expect(body.dig('ai', 'system_prompt')).to include('Ты голосовой ассистент в телефонном звонке')
@@ -119,7 +120,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
     end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
-    expect(end_call_tool['timeout_ms']).to be >= 1500
+    expect(end_call_tool['timeout_ms']).to be >= 5000
   end
 
   it 'builds the full Captain prompt once per voice context request' do

@@ -67,7 +67,7 @@ class Telephony::AiVoice::ToolDispatchService
     {
       name: 'end_call',
       description: 'End the current voice call when the conversation is complete.',
-      timeout_ms: 1_500,
+      timeout_ms: 5_000,
       realtime_safe: true,
       parameters: {
         type: 'object',

@@ -9,7 +9,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'voice' => 'sulafat',
     'language' => 'ru-KZ',
     'temperature' => 0.3,
-    'max_output_tokens' => 120,
+    'max_output_tokens' => 1024,
     'max_duration_sec' => 900,
     'first_message' => 'Здравствуйте! Чем могу помочь?',
     'closing_message' => 'Спасибо за звонок. Хорошего дня!',

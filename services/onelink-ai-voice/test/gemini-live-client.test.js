@@ -77,7 +77,7 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
   assert.equal(socket.sent[0].setup.model, 'models/gemini-live-test');
   assert.equal(socket.sent[0].setup.generationConfig.responseModalities[0], 'AUDIO');
   assert.equal(socket.sent[0].setup.generationConfig.temperature, 0.3);
-  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 120);
+  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 1024);
   assert.equal(socket.sent[0].setup.realtimeInputConfig.activityHandling, 'NO_INTERRUPTION');
   assert.equal(socket.sent[0].setup.realtimeInputConfig.turnCoverage, 'TURN_INCLUDES_ONLY_ACTIVITY');
   assert.equal(socket.sent[0].setup.realtimeInputConfig.automaticActivityDetection.prefixPaddingMs, 300);
@@ -98,7 +98,8 @@ test('GeminiLiveClient connects without leaking api key in URL and bridges audio
       inputTranscription: { text: 'алло' },
       outputTranscription: { text: 'здравствуйте' },
       modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: Buffer.from([4, 5]).toString('base64') } }] },
-      interrupted: true
+      interrupted: true,
+      turnComplete: true
     }
   });
 
@@ -162,6 +163,37 @@ test('GeminiLiveClient buffers streaming transcription chunks until the provider
   assert.deepEqual(transcripts.map(item => [item.speaker, item.text, item.final]), [
     ['ai', 'Здравствуйте! Чем могу помочь?', true],
     ['caller', 'Какой у вас слоган?', true]
+  ]);
+});
+
+test('GeminiLiveClient buffers unmarked AI transcription chunks until turnComplete', async () => {
+  FakeSocket.instances = [];
+  const transcripts = [];
+
+  const client = new GeminiLiveClient({
+    apiKey: 'secret-token-123',
+    model: 'gemini-live-test',
+    WebSocketImpl: FakeSocket,
+    maxOutputTokens: 120,
+    onTranscript: item => transcripts.push(item)
+  });
+
+  const connectPromise = client.connect();
+  const socket = FakeSocket.instances[0];
+  socket.open();
+  socket.receive({ setupComplete: {} });
+  await connectPromise;
+
+  assert.equal(socket.sent[0].setup.generationConfig.maxOutputTokens, 512);
+
+  socket.receive({ serverContent: { outputTranscription: { text: 'У вас' } } });
+  socket.receive({ serverContent: { outputTranscription: { text: ' есть' } } });
+  assert.deepEqual(transcripts, []);
+
+  socket.receive({ serverContent: { outputTranscription: { text: ' одна сделка.' }, turnComplete: true } });
+
+  assert.deepEqual(transcripts.map(item => [item.speaker, item.text, item.final]), [
+    ['ai', 'У вас есть одна сделка.', true]
   ]);
 });
 

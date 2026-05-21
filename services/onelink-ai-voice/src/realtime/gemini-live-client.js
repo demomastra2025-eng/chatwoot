@@ -1,3 +1,16 @@
+const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
+const MIN_AUDIO_MAX_OUTPUT_TOKENS = 512;
+
+function normalizeMaxOutputTokens(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_OUTPUT_TOKENS;
+  return Math.max(parsed, MIN_AUDIO_MAX_OUTPUT_TOKENS);
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
 class GeminiLiveClient {
   constructor({
     apiKey,
@@ -5,7 +18,7 @@ class GeminiLiveClient {
     voice = 'sulafat',
     language = 'ru-KZ',
     temperature = 0.3,
-    maxOutputTokens = 120,
+    maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS,
     url = null,
     WebSocketImpl = null,
     setupTimeoutMs = 15_000,
@@ -27,7 +40,7 @@ class GeminiLiveClient {
     this.voice = voice;
     this.language = language;
     this.temperature = temperature;
-    this.maxOutputTokens = maxOutputTokens;
+    this.maxOutputTokens = normalizeMaxOutputTokens(maxOutputTokens);
     this.speechStartSensitivity = speechStartSensitivity;
     this.speechEndSensitivity = speechEndSensitivity;
     this.prefixPaddingMs = prefixPaddingMs;
@@ -262,9 +275,15 @@ class GeminiLiveClient {
     const rawText = String(transcription?.text || '');
     if (!rawText) return;
 
+    const hasExplicitFinal = hasOwn(transcription, 'finished') || hasOwn(transcription, 'isFinal') || hasOwn(transcription, 'final');
     const finished = transcription.finished || transcription.isFinal || transcription.final;
     const streaming = transcription.finished === false || transcription.isFinal === false || transcription.final === false;
     if (streaming) {
+      this.transcriptChunks[speaker].push(rawText);
+      return;
+    }
+
+    if (speaker === 'ai' && !hasExplicitFinal) {
       this.transcriptChunks[speaker].push(rawText);
       return;
     }

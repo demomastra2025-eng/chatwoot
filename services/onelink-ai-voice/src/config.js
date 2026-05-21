@@ -43,7 +43,7 @@ function loadConfig(env = process.env) {
     geminiVoice: env.VOICE_AGENT_REALTIME_VOICE || 'sulafat',
     language: env.VOICE_AGENT_LANGUAGE || env.VOICE_AGENT_REALTIME_LANGUAGE || 'ru-KZ',
     temperature: parseFloatValue(env.VOICE_AGENT_REALTIME_TEMPERATURE, 0.3),
-    maxOutputTokens: parseInteger(env.VOICE_AGENT_REALTIME_MAX_OUTPUT_TOKENS, 120),
+    maxOutputTokens: parseInteger(env.VOICE_AGENT_REALTIME_MAX_OUTPUT_TOKENS, 1024),
     setupTimeoutMs: parseInteger(env.VOICE_AGENT_REALTIME_SETUP_TIMEOUT_MS, 15_000),
     interruptions: !['0', 'false', 'off', 'no'].includes(String(env.VOICE_AGENT_REALTIME_INTERRUPTS || 'true').trim().toLowerCase()),
     interruptionMode: env.VOICE_AGENT_REALTIME_INTERRUPTION_MODE || 'transcript_confirmed',
