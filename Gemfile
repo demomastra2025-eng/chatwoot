@@ -185,15 +185,15 @@ gem 'omniauth-rails_csrf_protection', '~> 1.0', '>= 1.0.2'
 
 ## Gems for reponse bot
 # adds cosine similarity to postgres using vector extension
-gem 'neighbor'
+gem 'neighbor', '~> 0.6'
 gem 'pgvector'
 # Convert Website HTML to Markdown
 gem 'reverse_markdown'
 
 gem 'iso-639'
 gem 'ruby-openai'
-gem 'ruby_llm', '~> 1.14.1'
-gem 'ruby_llm-schema'
+gem 'ruby_llm', '~> 1.15'
+gem 'ruby_llm-schema', '~> 0.4'
 gem 'ruby_llm-mcp', git: 'https://github.com/patvice/ruby_llm-mcp', ref: '4d10851994029c7d7f3246ad517b2eef483ac810'
 
 gem 'cld3', '~> 3.7'
