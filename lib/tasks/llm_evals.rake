@@ -24,12 +24,7 @@ namespace :llm do
 
     desc 'Run all deterministic offline AI regression evals.'
     task deterministic: :environment do
-      result = Llm::Evals::CollectionResult.new(
-        suites: [
-          Llm::Evals::ModerationSuite.new.call,
-          Captain::Evals::ToolSafetySuite.new.call
-        ]
-      )
+      result = Llm::Evals::Runner.new.call
 
       puts JSON.pretty_generate(result.to_h)
       abort('Deterministic AI evals failed') unless result.passed?
@@ -52,21 +47,12 @@ namespace :llm do
 
     desc 'Run the full AI eval pack. Conversation completion is included only when ACCOUNT_ID is provided.'
     task all: :environment do
-      suites = [
-        Llm::Evals::ModerationSuite.new.call,
-        Captain::Evals::ToolSafetySuite.new.call
-      ]
+      result = Llm::Evals::Runner.new(
+        account: ENV['ACCOUNT_ID'].present? ? Account.find(ENV['ACCOUNT_ID']) : nil,
+        include_live: ENV['ACCOUNT_ID'].present?
+      ).call
 
-      if ENV['ACCOUNT_ID'].present?
-        suites << Captain::Evals::ConversationCompletionSuite.new(
-          account: Account.find(ENV['ACCOUNT_ID'])
-        ).call
-      else
-        warn('Skipping conversation completion evals because ACCOUNT_ID is not set')
-      end
-
-      result = Llm::Evals::CollectionResult.new(suites: suites)
-
+      warn('Skipping live conversation completion evals because ACCOUNT_ID is not set') if ENV['ACCOUNT_ID'].blank?
       puts JSON.pretty_generate(result.to_h)
       abort('AI eval pack failed') unless result.passed?
     end

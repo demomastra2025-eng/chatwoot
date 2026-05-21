@@ -1,0 +1,41 @@
+cases:
+  - id: voice_deal_price_uses_search_deals_result
+    description: AI Voice should speak the completed CRM tool result instead of losing it on the next turn.
+    tags: [ai_voice, tools, crm, retention]
+    events:
+      - action: caller_transcript_final
+        content: Какая цена по сделке?
+      - action: tool_completed
+        tool_name: search_deals
+        result:
+          ok: true
+          content: "Сделка #481, цена 250 000 ₸"
+      - action: ai_transcript_turn
+        role: ai
+        content: "По сделке #481 цена 250 000 ₸."
+    expected:
+      require_actions:
+        - tool_completed
+        - ai_transcript_turn
+      forbid_actions:
+        - pacer_drop
+      forbid_failed_tools:
+        - search_deals
+      require_tool_result_usage:
+        - tool: search_deals
+          fragment: "250 000"
+
+  - id: voice_long_answer_has_no_output_clip_markers
+    description: AI Voice trace should not contain output pacer overflow markers for ordinary answers.
+    tags: [ai_voice, audio, truncation]
+    events:
+      - action: caller_transcript_final
+        content: Расскажите условия доставки.
+      - action: realtime_audio_out
+        role: ai
+        content: Доставка занимает один-два дня, стоимость зависит от города.
+    expected:
+      require_actions:
+        - realtime_audio_out
+      forbid_actions:
+        - pacer_drop

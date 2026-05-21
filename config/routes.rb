@@ -73,6 +73,9 @@ Rails.application.routes.draw do
             resource :preferences, only: [:show, :update] do
               post :refresh_openrouter_models
             end
+            resource :evaluations, only: [:show], controller: 'evaluations' do
+              post :run
+            end
             resources :assistants do
               member do
                 patch :avatar

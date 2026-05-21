@@ -471,7 +471,7 @@
       "HERO_DESCRIPTION": "Отдельная страница для deterministic проверок, LLM-as-judge оценок и safety regression packs для Captain и AI Voice.",
       "TARGETS_TITLE": "Что проверяем",
       "STATUS_TITLE": "Текущий статус внедрения",
-      "STATUS_DESCRIPTION": "Tribunal подключён сначала для development/test eval-спек. Запуск из UI в runtime нужно добавлять отдельно: с очередью, аудитом и лимитами расходов перед живыми LLM-вызовами.",
+      "STATUS_DESCRIPTION": "Backend runner теперь запускает deterministic offline packs для moderation, Captain tool safety и AI Voice trace integrity без внешних LLM-вызовов. Живые LLM-evals из UI пока заблокированы до очереди, аудита и лимитов расходов.",
       "PILLARS": {
         "DETERMINISTIC": {
           "TITLE": "Быстрые deterministic проверки",
