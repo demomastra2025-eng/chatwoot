@@ -42,6 +42,34 @@ describe('#CaptainEvaluationsAPI', () => {
     );
   });
 
+  it('runs live packs through the controlled account-scoped endpoint', () => {
+    captainEvaluationsAPI.runLive({
+      pack_ids: ['captain.conversation_completion'],
+      acknowledge_live_cost: true,
+      budget_cents: 75,
+      max_cases: 2,
+    });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/6/captain/evaluations/run_live',
+      {
+        pack_ids: ['captain.conversation_completion'],
+        acknowledge_live_cost: true,
+        budget_cents: 75,
+        max_cases: 2,
+      }
+    );
+  });
+
+  it('fetches a live run status through the account-scoped endpoint', () => {
+    captainEvaluationsAPI.getLiveRun(123);
+
+    expect(axiosMock.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/6/captain/evaluations/live_run',
+      { params: { run_id: 123 } }
+    );
+  });
+
   it('exports a conversation as an eval fixture preview through the account-scoped endpoint', () => {
     captainEvaluationsAPI.importConversation({ inbox_id: 57, display_id: 481 });
 

@@ -4,6 +4,8 @@ import { flushPromises, mount } from '@vue/test-utils';
 
 const getMock = vi.fn();
 const runMock = vi.fn();
+const runLiveMock = vi.fn();
+const getLiveRunMock = vi.fn();
 const importConversationMock = vi.fn();
 
 const ButtonStub = defineComponent({
@@ -40,6 +42,8 @@ vi.mock('dashboard/api/captain/evaluations', () => ({
   default: {
     get: getMock,
     run: runMock,
+    runLive: runLiveMock,
+    getLiveRun: getLiveRunMock,
     importConversation: importConversationMock,
   },
 }));
@@ -79,6 +83,13 @@ const catalogPayload = {
         default_enabled: false,
       },
     ],
+    live_evals: {
+      enabled: true,
+      max_budget_cents: 500,
+      default_budget_cents: 100,
+      max_cases: 10,
+      default_max_cases: 3,
+    },
   },
 };
 
@@ -109,9 +120,24 @@ describe('Captain evaluations page', () => {
   beforeEach(() => {
     getMock.mockReset();
     runMock.mockReset();
+    runLiveMock.mockReset();
+    getLiveRunMock.mockReset();
     importConversationMock.mockReset();
     getMock.mockResolvedValue(catalogPayload);
     runMock.mockResolvedValue(runPayload);
+    runLiveMock.mockResolvedValue({
+      data: {
+        run: {
+          id: 123,
+          status: 'queued',
+          pack_ids: ['captain.conversation_completion'],
+        },
+        live_evals: catalogPayload.data.live_evals,
+      },
+    });
+    getLiveRunMock.mockResolvedValue({
+      data: { run: { id: 123, status: 'passed', result: { status: 'pass' } } },
+    });
     importConversationMock.mockResolvedValue({
       data: { yaml: 'cases:\n  - id: conversation_481_ai_voice_trace\n' },
     });
@@ -148,13 +174,40 @@ describe('Captain evaluations page', () => {
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
   });
 
+  it('queues live judge runs with explicit budget and acknowledgement', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    const inputs = wrapper.findAll('input');
+    await inputs[0].setValue('75');
+    await inputs[1].setValue('2');
+    await inputs[2].setValue(true);
+
+    const liveButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CAPTAIN.EVALUATIONS.LIVE.BUTTON');
+
+    await liveButton.trigger('click');
+    await flushPromises();
+
+    expect(runLiveMock).toHaveBeenCalledWith({
+      pack_ids: ['captain.conversation_completion'],
+      acknowledge_live_cost: true,
+      budget_cents: 75,
+      max_cases: 2,
+    });
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.LIVE.LAST_RUN_WITH_ID'
+    );
+  });
+
   it('exports a conversation trace fixture preview from the page', async () => {
     const wrapper = mount(EvaluationsIndex);
     await flushPromises();
 
     const inputs = wrapper.findAll('input');
-    await inputs[0].setValue('57');
-    await inputs[1].setValue('481');
+    await inputs[3].setValue('57');
+    await inputs[4].setValue('481');
 
     const importButton = wrapper
       .findAll('button')

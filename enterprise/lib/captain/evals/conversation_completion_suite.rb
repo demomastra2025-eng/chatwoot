@@ -9,11 +9,12 @@ module Captain
       PROMPT_ID = 'conversation_completion'.freeze
       DEFAULT_CASES_PATH = Rails.root.join('config/llm_evals/conversation_completion.yml')
 
-      def initialize(account:, cases_path: DEFAULT_CASES_PATH, model: nil, runner: nil)
+      def initialize(account:, cases_path: DEFAULT_CASES_PATH, model: nil, runner: nil, max_cases: nil)
         @account = account
         @cases_path = cases_path
         @model = model
         @runner = runner || method(:run_case_via_runtime)
+        @max_cases = max_cases
       end
 
       def call
@@ -33,7 +34,10 @@ module Captain
       private
 
       def eval_cases
-        @eval_cases ||= ::Llm::Evals::CaseLoader.new(path: @cases_path).load
+        @eval_cases ||= begin
+          cases = ::Llm::Evals::CaseLoader.new(path: @cases_path).load
+          @max_cases.present? ? cases.first(@max_cases.to_i) : cases
+        end
       end
 
       def evaluate_case(eval_case)

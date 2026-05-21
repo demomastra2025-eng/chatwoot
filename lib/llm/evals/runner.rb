@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 class Llm::Evals::Runner
-  def initialize(account: nil, pack_ids: nil, include_live: false)
+  def initialize(account: nil, pack_ids: nil, include_live: false, max_cases: nil)
     @account = account
     @pack_ids = Array(pack_ids).filter_map { |id| id.to_s.presence }
     @include_live = include_live
+    @max_cases = max_cases
   end
 
   def call
@@ -24,6 +25,6 @@ class Llm::Evals::Runner
   end
 
   def run_pack(pack)
-    pack.build(account: @account).call
+    pack.build(account: @account, max_cases: @max_cases).call
   end
 end

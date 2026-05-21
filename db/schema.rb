@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_18_070752) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_21_195216) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1452,6 +1452,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_18_070752) do
     t.index ["user_id"], name: "index_leaves_on_user_id"
   end
 
+  create_table "llm_eval_runs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id"
+    t.string "status", default: "queued", null: false
+    t.string "mode", default: "live_model", null: false
+    t.jsonb "pack_ids", default: [], null: false
+    t.integer "requested_budget_cents", default: 0, null: false
+    t.integer "max_cases"
+    t.jsonb "result", default: {}, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.text "error_message"
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_llm_eval_runs_on_account_id_and_created_at"
+    t.index ["account_id", "status"], name: "index_llm_eval_runs_on_account_id_and_status"
+    t.index ["account_id"], name: "index_llm_eval_runs_on_account_id"
+    t.index ["user_id"], name: "index_llm_eval_runs_on_user_id"
+  end
+
   create_table "llm_event_annotations", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "llm_event_id", null: false
@@ -2352,6 +2373,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_18_070752) do
   add_foreign_key "inboxes", "portals"
   add_foreign_key "kaspi_pay_payments", "accounts"
   add_foreign_key "kaspi_pay_payments", "integrations_hooks", column: "integration_hook_id"
+  add_foreign_key "llm_eval_runs", "accounts"
+  add_foreign_key "llm_eval_runs", "users"
   add_foreign_key "llm_event_annotations", "accounts"
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
@@ -2403,7 +2426,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_18_070752) do
   add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
   add_foreign_key "telephony_call_sessions", "inboxes", on_delete: :nullify
   add_foreign_key "telephony_call_sessions", "telephony_agent_bindings", column: "agent_binding_id"
-  add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
+  add_foreign_key "telephony_call_sessions", "telephony_number_bindings", column: "number_binding_id"
   add_foreign_key "telephony_events", "accounts"
   add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
   add_foreign_key "telephony_number_bindings", "accounts"

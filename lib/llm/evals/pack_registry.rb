@@ -24,14 +24,14 @@ class Llm::Evals::PackRegistry
       }
     end
 
-    def build(account: nil)
+    def build(account: nil, max_cases: nil)
       raise ArgumentError, "#{id} requires account" if requires_account && account.blank?
 
-      if requires_account
-        suite_class.constantize.new(account: account)
-      else
-        suite_class.constantize.new
-      end
+      kwargs = {}
+      kwargs[:account] = account if requires_account
+      kwargs[:max_cases] = max_cases if live_model && max_cases.present?
+
+      suite_class.constantize.new(**kwargs)
     end
   end
 

@@ -75,6 +75,8 @@ Rails.application.routes.draw do
             end
             resource :evaluations, only: [:show], controller: 'evaluations' do
               post :run
+              post :run_live
+              get :live_run
               post :import_conversation
             end
             resources :assistants do

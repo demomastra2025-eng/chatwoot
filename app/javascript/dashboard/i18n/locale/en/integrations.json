@@ -471,7 +471,7 @@
       "HERO_DESCRIPTION": "This page is the dedicated home for deterministic checks, LLM-as-judge evaluations, and safety regression packs for Captain and AI Voice.",
       "TARGETS_TITLE": "Evaluation targets",
       "STATUS_TITLE": "Current implementation status",
-      "STATUS_DESCRIPTION": "The backend runner now executes deterministic offline packs for moderation, Captain tool safety, and AI Voice trace integrity without external LLM calls. Live LLM evals from the UI stay blocked until queueing, audit logs, and spending controls exist.",
+      "STATUS_DESCRIPTION": "The backend runner executes deterministic offline packs without external LLM calls. Live LLM-as-judge runs are now available only through the queued, audited, spend-capped endpoint when explicitly enabled by admins.",
       "PILLARS": {
         "DETERMINISTIC": {
           "TITLE": "Fast deterministic checks",
@@ -513,7 +513,24 @@
       "ERRORS": {
         "CATALOG_FAILED": "Could not load evaluation packs.",
         "RUN_FAILED": "Could not run offline evaluations.",
+        "LIVE_RUN_FAILED": "Could not queue the live judge run.",
+        "LIVE_STATUS_FAILED": "Could not refresh the live judge run status.",
         "IMPORT_FAILED": "Could not export this conversation."
+      },
+      "LIVE": {
+        "TITLE": "Live LLM-as-judge",
+        "DESCRIPTION": "Queues account-scoped live judge packs with explicit admin opt-in, budget cap, case cap, and persisted run status. Disabled unless LLM_EVALS_LIVE_ENABLED is set.",
+        "ENABLED": "Live enabled",
+        "DISABLED": "Live disabled",
+        "BUDGET_CENTS": "Budget cap, cents",
+        "MAX_CASES": "Max cases",
+        "ACKNOWLEDGE": "I acknowledge this can use external LLM credits and should not be run from CI.",
+        "BUTTON": "Queue live judge",
+        "LAST_RUN": "Latest live run",
+        "LAST_RUN_WITH_ID": "Latest live run #{id}",
+        "STATUS": "Status",
+        "STATUS_WITH_VALUE": "Status: {status}",
+        "REFRESH": "Refresh status"
       },
       "IMPORT": {
         "TITLE": "Import conversation regression",

@@ -26,6 +26,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
         include(id: 'captain.ai_voice_trace', live_model: false, default_enabled: true),
         include(id: 'captain.conversation_completion', live_model: true, default_enabled: false)
       )
+      expect(json_response[:live_evals]).to include(
+        enabled: false,
+        max_budget_cents: Llm::Evals::LiveRunRequest::MAX_BUDGET_CENTS,
+        max_cases: Llm::Evals::LiveRunRequest::MAX_CASES
+      )
       expect(response.body).not_to include('api_key')
     end
   end
@@ -96,6 +101,68 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(json_response[:error]).to eq('live_eval_runs_not_enabled')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/captain/evaluations/run_live' do
+    include ActiveJob::TestHelper
+
+    it 'queues a live model run through the controlled job endpoint' do
+      with_modified_env LLM_EVALS_LIVE_ENABLED: 'true' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/evaluations/run_live",
+               headers: admin.create_new_auth_token,
+               params: {
+                 pack_ids: ['captain.conversation_completion'],
+                 acknowledge_live_cost: true,
+                 budget_cents: 75,
+                 max_cases: 2
+               },
+               as: :json
+        end.to have_enqueued_job(Llm::Evals::LiveRunJob)
+      end
+
+      expect(response).to have_http_status(:accepted)
+      expect(json_response[:run]).to include(
+        status: 'queued',
+        mode: 'live_model',
+        pack_ids: ['captain.conversation_completion'],
+        requested_budget_cents: 75,
+        max_cases: 2
+      )
+    end
+
+    it 'keeps live model runs blocked when the live flag is disabled' do
+      post "/api/v1/accounts/#{account.id}/captain/evaluations/run_live",
+           headers: admin.create_new_auth_token,
+           params: { pack_ids: ['captain.conversation_completion'], acknowledge_live_cost: true },
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(json_response[:error]).to eq('live_eval_runs_disabled')
+    end
+  end
+
+  describe 'GET /api/v1/accounts/{account.id}/captain/evaluations/live_run' do
+    it 'returns an account-scoped live run status' do
+      run = Llm::EvalRun.create!(
+        account: account,
+        user: admin,
+        status: 'passed',
+        mode: 'live_model',
+        pack_ids: ['captain.conversation_completion'],
+        requested_budget_cents: 75,
+        max_cases: 1,
+        result: { status: 'pass' }
+      )
+
+      get "/api/v1/accounts/#{account.id}/captain/evaluations/live_run",
+          headers: admin.create_new_auth_token,
+          params: { run_id: run.id },
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response[:run]).to include(id: run.id, status: 'passed', result: { status: 'pass' })
     end
   end
 end

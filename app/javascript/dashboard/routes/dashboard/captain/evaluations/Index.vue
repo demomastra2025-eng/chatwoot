@@ -9,6 +9,11 @@ const { t } = useI18n();
 
 const packs = ref([]);
 const result = ref(null);
+const liveEvals = ref({ enabled: false });
+const liveRun = ref(null);
+const liveBudgetCents = ref('100');
+const liveMaxCases = ref('3');
+const acknowledgeLiveCost = ref(false);
 const importInboxId = ref('');
 const importDisplayId = ref('');
 const importedFixtureYaml = ref('');
@@ -48,6 +53,17 @@ const deterministicPacks = computed(() =>
   packs.value.filter(pack => pack.default_enabled && !pack.live_model)
 );
 
+const livePacks = computed(() => packs.value.filter(pack => pack.live_model));
+
+const canRunLiveEvals = computed(
+  () =>
+    liveEvals.value?.enabled &&
+    livePacks.value.length &&
+    acknowledgeLiveCost.value &&
+    liveBudgetCents.value &&
+    liveMaxCases.value
+);
+
 const canImportConversation = computed(
   () => importInboxId.value.trim() && importDisplayId.value.trim()
 );
@@ -66,6 +82,20 @@ const resultStatusClass = computed(() =>
     : 'bg-n-ruby-3 text-n-ruby-11'
 );
 
+const liveRunTitle = computed(() =>
+  liveRun.value?.id
+    ? t('CAPTAIN.EVALUATIONS.LIVE.LAST_RUN_WITH_ID', { id: liveRun.value.id })
+    : ''
+);
+
+const liveRunStatus = computed(() =>
+  liveRun.value?.status
+    ? t('CAPTAIN.EVALUATIONS.LIVE.STATUS_WITH_VALUE', {
+        status: liveRun.value.status,
+      })
+    : ''
+);
+
 const fetchCatalog = async () => {
   isLoadingCatalog.value = true;
   errorMessage.value = '';
@@ -73,6 +103,8 @@ const fetchCatalog = async () => {
   try {
     const response = await captainEvaluationsAPI.get();
     packs.value = response.data?.packs || [];
+    liveEvals.value = response.data?.live_evals || { enabled: false };
+    liveRun.value = response.data?.latest_live_run || null;
   } catch (error) {
     errorMessage.value = t('CAPTAIN.EVALUATIONS.ERRORS.CATALOG_FAILED');
   } finally {
@@ -99,6 +131,42 @@ const runDeterministicEvals = async () => {
 
 const formatCount = (passedCount, totalCount) =>
   `${passedCount} / ${totalCount}`;
+
+const runLiveEvals = async () => {
+  isRunning.value = true;
+  errorMessage.value = '';
+
+  try {
+    const response = await captainEvaluationsAPI.runLive({
+      pack_ids: livePacks.value.map(pack => pack.id),
+      acknowledge_live_cost: acknowledgeLiveCost.value,
+      budget_cents: Number(liveBudgetCents.value),
+      max_cases: Number(liveMaxCases.value),
+    });
+    liveRun.value = response.data?.run || null;
+    liveEvals.value = response.data?.live_evals || liveEvals.value;
+    packs.value = response.data?.packs || packs.value;
+  } catch (error) {
+    errorMessage.value = t('CAPTAIN.EVALUATIONS.ERRORS.LIVE_RUN_FAILED');
+  } finally {
+    isRunning.value = false;
+  }
+};
+
+const refreshLiveRun = async () => {
+  if (!liveRun.value?.id) return;
+  isRunning.value = true;
+  errorMessage.value = '';
+
+  try {
+    const response = await captainEvaluationsAPI.getLiveRun(liveRun.value.id);
+    liveRun.value = response.data?.run || liveRun.value;
+  } catch (error) {
+    errorMessage.value = t('CAPTAIN.EVALUATIONS.ERRORS.LIVE_STATUS_FAILED');
+  } finally {
+    isRunning.value = false;
+  }
+};
 
 const importConversation = async () => {
   isRunning.value = true;
@@ -248,6 +316,89 @@ onMounted(fetchCatalog);
                 {{ pack.description }}
               </p>
             </article>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-n-weak bg-n-surface-2 p-5">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <h3 class="text-base font-semibold text-n-slate-12">
+              {{ t('CAPTAIN.EVALUATIONS.LIVE.TITLE') }}
+            </h3>
+            <span
+              class="rounded-full px-2 py-1 text-xs font-medium"
+              :class="
+                liveEvals.enabled
+                  ? 'bg-n-teal-3 text-n-teal-11'
+                  : 'bg-n-amber-3 text-n-amber-11'
+              "
+            >
+              {{
+                liveEvals.enabled
+                  ? t('CAPTAIN.EVALUATIONS.LIVE.ENABLED')
+                  : t('CAPTAIN.EVALUATIONS.LIVE.DISABLED')
+              }}
+            </span>
+          </div>
+          <p class="text-sm leading-6 text-n-slate-11 mb-4">
+            {{ t('CAPTAIN.EVALUATIONS.LIVE.DESCRIPTION') }}
+          </p>
+          <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+              <span>{{ t('CAPTAIN.EVALUATIONS.LIVE.BUDGET_CENTS') }}</span>
+              <input
+                v-model="liveBudgetCents"
+                class="rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2 text-n-slate-12 outline-none"
+                type="number"
+                min="1"
+                :max="liveEvals.max_budget_cents"
+              />
+            </label>
+            <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+              <span>{{ t('CAPTAIN.EVALUATIONS.LIVE.MAX_CASES') }}</span>
+              <input
+                v-model="liveMaxCases"
+                class="rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2 text-n-slate-12 outline-none"
+                type="number"
+                min="1"
+                :max="liveEvals.max_cases"
+              />
+            </label>
+            <Button
+              :label="t('CAPTAIN.EVALUATIONS.LIVE.BUTTON')"
+              icon="i-lucide-scale"
+              :is-loading="isRunning"
+              :disabled="isRunning || !canRunLiveEvals"
+              @click="runLiveEvals"
+            />
+          </div>
+          <label class="mt-3 flex items-start gap-2 text-sm text-n-slate-11">
+            <input v-model="acknowledgeLiveCost" type="checkbox" class="mt-1" />
+            <span>{{ t('CAPTAIN.EVALUATIONS.LIVE.ACKNOWLEDGE') }}</span>
+          </label>
+          <div
+            v-if="liveRun"
+            class="mt-4 rounded-lg border border-n-weak bg-n-alpha-1 p-4 text-sm text-n-slate-11"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="font-medium text-n-slate-12">
+                  {{ liveRunTitle }}
+                </p>
+                <p class="mt-1">
+                  {{ liveRunStatus }}
+                </p>
+              </div>
+              <Button
+                :label="t('CAPTAIN.EVALUATIONS.LIVE.REFRESH')"
+                icon="i-lucide-refresh-cw"
+                :is-loading="isRunning"
+                @click="refreshLiveRun"
+              />
+            </div>
+            <pre
+              v-if="liveRun.result"
+              class="mt-3 overflow-x-auto rounded-lg bg-n-slate-3 p-3 text-xs text-n-slate-12"
+            ><code>{{ JSON.stringify(liveRun.result, null, 2) }}</code></pre>
           </div>
         </div>
 
