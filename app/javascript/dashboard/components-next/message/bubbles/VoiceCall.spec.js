@@ -396,4 +396,31 @@ describe('VoiceCall bubble', () => {
         .attributes('data-transcribed-text')
     ).toBe('');
   });
+
+  it('renders only tool events scoped to the current call bubble', () => {
+    const wrapper = buildWrapper({
+      contentAttributes: ref({
+        data: {
+          status: 'completed',
+          callSid: 'call-current',
+          aiVoice: { enabled: true, timelineMessagesEnabled: false },
+          tools: [
+            {
+              name: 'faq_lookup',
+              status: 'completed',
+              callRef: 'call-current',
+            },
+            {
+              name: 'lookup_customer',
+              status: 'completed',
+              callRef: 'call-other',
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(wrapper.text()).toContain('faq_lookup');
+    expect(wrapper.text()).not.toContain('lookup_customer');
+  });
 });

@@ -593,6 +593,9 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       expect(tools.map { |tool| tool['name'] }).to all(eq('faq_lookup'))
       expect(tools.filter_map { |tool| tool['request_id'] }).to all(eq('tool-req-1'))
+      expect(tools.map { |tool| tool['call_ref'] }).to all(eq(existing_call_session.external_call_ref))
+      expect(tools.map { |tool| tool['runtime_call_ref'] }).to all(eq(existing_call_session.external_call_ref))
+      expect(tools.map { |tool| tool['conversation_id'] }).to all(eq(existing_call_session.conversation_id))
     end
 
     it 'stores first_audio_out_write as non-terminal AI telemetry with stream correlation' do

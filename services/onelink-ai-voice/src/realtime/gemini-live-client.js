@@ -11,10 +11,10 @@ class GeminiLiveClient {
     setupTimeoutMs = 15_000,
     interruptions = true,
     interruptionMode = 'transcript_confirmed',
-    speechStartSensitivity = 'START_SENSITIVITY_HIGH',
-    speechEndSensitivity = 'END_SENSITIVITY_HIGH',
-    prefixPaddingMs = 120,
-    silenceDurationMs = 300,
+    speechStartSensitivity = null,
+    speechEndSensitivity = null,
+    prefixPaddingMs = 300,
+    silenceDurationMs = 700,
     turnCoverage = 'TURN_INCLUDES_ONLY_ACTIVITY',
     onAudio = null,
     onTranscript = null,
@@ -138,13 +138,13 @@ class GeminiLiveClient {
         }
       },
       realtimeInputConfig: {
-        automaticActivityDetection: {
+        automaticActivityDetection: compactPayload({
           disabled: false,
           startOfSpeechSensitivity: this.speechStartSensitivity,
           endOfSpeechSensitivity: this.speechEndSensitivity,
           prefixPaddingMs: this.prefixPaddingMs,
           silenceDurationMs: this.silenceDurationMs
-        },
+        }),
         activityHandling: this.shouldUseProviderInterruptions() ? 'START_OF_ACTIVITY_INTERRUPTS' : 'NO_INTERRUPTION',
         turnCoverage: this.turnCoverage
       },
@@ -381,6 +381,10 @@ function normalizeInterruptionMode(value) {
 
 function sanitizeErrorMessage(message) {
   return String(message || 'request failed').replace(/(key|token|secret|password)=([^\s&]+)/gi, '$1=[REDACTED]');
+}
+
+function compactPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
 module.exports = { GeminiLiveClient, buildGeminiLiveUrl, normalizeTools, normalizeModel };

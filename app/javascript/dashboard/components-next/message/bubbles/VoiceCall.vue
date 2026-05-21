@@ -76,7 +76,44 @@ const recordingUrl = computed(
 const transcript = computed(() => data.value?.transcript);
 const transcriptItems = computed(() => data.value?.transcriptItems || []);
 const aiVoice = computed(() => data.value?.aiVoice || {});
-const tools = computed(() => data.value?.tools || []);
+const callRefs = computed(() =>
+  [
+    callId.value,
+    data.value?.callSid,
+    data.value?.callRef,
+    data.value?.call_ref,
+    data.value?.runtimeCallRef,
+    data.value?.runtime_call_ref,
+    data.value?.bridgeCallRef,
+    data.value?.bridge_call_ref,
+  ]
+    .map(value => value?.toString?.().trim())
+    .filter(Boolean)
+);
+const tools = computed(() => {
+  const rawTools = Array.isArray(data.value?.tools) ? data.value.tools : [];
+  if (!callRefs.value.length) return rawTools;
+
+  return rawTools.filter(tool => {
+    const toolRefs = [
+      tool.callRef,
+      tool.call_ref,
+      tool.callSid,
+      tool.call_sid,
+      tool.runtimeCallRef,
+      tool.runtime_call_ref,
+      tool.bridgeCallRef,
+      tool.bridge_call_ref,
+    ]
+      .map(value => value?.toString?.().trim())
+      .filter(Boolean);
+
+    return (
+      toolRefs.length === 0 ||
+      toolRefs.some(toolRef => callRefs.value.includes(toolRef))
+    );
+  });
+});
 const isAiVoice = computed(() => Boolean(aiVoice.value?.enabled));
 const aiVoiceState = computed(() => aiVoice.value?.state?.toString());
 const timelineMessagesEnabled = computed(

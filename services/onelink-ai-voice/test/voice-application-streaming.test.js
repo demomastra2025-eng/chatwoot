@@ -1736,6 +1736,268 @@ test('VoiceApplication keeps post-tool continuation armed when only a tool-wait 
   await result.completion;
 });
 
+test('VoiceApplication deterministically runs faq_lookup for business questions when Gemini does not call a tool', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const events = [];
+  const sentTexts = [];
+  const toolCalls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route', bridge_call_ref: 'bridge-business-faq' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-business-faq',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendEvent: async payload => { events.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (name, payload) => {
+      toolCalls.push({ name, payload });
+      return { answer: 'Наш слоган — Акуна матата.' };
+    }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    businessFaqGateDelayMs: 5,
+    ordinaryAnswerContinuationMs: 0
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-business-faq' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'Какой у вас слоган?', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].name, 'faq_lookup');
+  assert.deepEqual(toolCalls[0].payload.arguments, { query: 'Какой у вас слоган?' });
+  assert.equal(controls.some(payload => payload.action === 'business_faq_gate_fired'), true);
+  assert.equal(controls.some(payload => payload.action === 'tool_started'), true);
+  assert.equal(controls.some(payload => payload.action === 'tool_completed'), true);
+  assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup готов')), true);
+  assert.equal(sentTexts.some(text => text.includes('Акуна матата')), true);
+  assert.equal(events.some(event => event.event_type === 'business_faq_gate_result_injected'), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication cancels deterministic faq gate when Gemini calls a tool itself', async () => {
+  const stream = new FakeVoiceStream();
+  const sentTexts = [];
+  const toolCalls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-business-faq-cancel',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (name, payload) => {
+      toolCalls.push({ name, payload });
+      return { answer: 'Наш слоган — Акуна матата.' };
+    }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    businessFaqGateDelayMs: 20,
+    ordinaryAnswerContinuationMs: 0
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-business-faq-cancel' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'Какой у вас слоган?', final: true });
+  await realtimeCallbacks.onToolCall({ id: 'tool-model-1', name: 'faq_lookup', args: { query: 'слоган' } });
+  await new Promise(resolve => setTimeout(resolve, 35));
+
+  assert.equal(toolCalls.length, 1);
+  assert.deepEqual(toolCalls[0].payload.arguments, { query: 'слоган' });
+  assert.equal(sentTexts.filter(text => text.includes('Результат инструмента faq_lookup готов')).length, 0);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication reuses in-flight deterministic faq gate when Gemini calls faq_lookup late', async () => {
+  const stream = new FakeVoiceStream();
+  const toolCalls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-business-faq-race',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (name, payload) => {
+      toolCalls.push({ name, payload });
+      await new Promise(resolve => setTimeout(resolve, 25));
+      return { answer: 'Наш слоган — Акуна матата.' };
+    }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: () => {},
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    businessFaqGateDelayMs: 5,
+    ordinaryAnswerContinuationMs: 0
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-business-faq-race' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'Какой у вас слоган?', final: true });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-model-late', name: 'faq_lookup', args: { query: 'слоган' } });
+
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolCalls.length, 1);
+  assert.deepEqual(toolCalls[0].payload.arguments, { query: 'Какой у вас слоган?' });
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication reuses completed deterministic faq gate when Gemini calls faq_lookup after completion', async () => {
+  const stream = new FakeVoiceStream();
+  const toolCalls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-business-faq-completed-race',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} } }]
+    }),
+    sendControl: async () => ({ status: 'ok' }),
+    sendEvent: async () => ({ status: 'ok' }),
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async (name, payload) => {
+      toolCalls.push({ name, payload });
+      return { answer: 'Наш слоган — Акуна матата.' };
+    }
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: () => {},
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    businessFaqGateDelayMs: 5,
+    ordinaryAnswerContinuationMs: 0
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-business-faq-completed-race' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'Какой у вас слоган?', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-model-after-gate', name: 'faq_lookup', args: { query: 'слоган' } });
+
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolCalls.length, 1);
+  assert.deepEqual(toolCalls[0].payload.arguments, { query: 'Какой у вас слоган?' });
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication nudges Gemini when a normal caller turn stalls without tool or answer', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-ordinary-stall',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: []
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({
+    client,
+    realtimeFactory: () => realtime,
+    ordinaryAnswerContinuationMs: 10
+  });
+  const result = await app.handleCall(call, { call_ref: 'runtime-ordinary-stall' });
+
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'Расскажите подробнее про услугу', final: true });
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  assert.equal(controls.some(payload => payload.action === 'ordinary_answer_model_stall'), true);
+  assert.equal(sentTexts.some(text => text.includes('Ответь клиенту сейчас')), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
 test('VoiceApplication asks Rails for a route first and dials operator without AI bootstrap', async () => {
   const routeCalls = [];
   const bridgeEvents = [];

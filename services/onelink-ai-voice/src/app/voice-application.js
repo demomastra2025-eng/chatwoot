@@ -24,6 +24,8 @@ class VoiceApplication {
     outputMaxBufferedMs = 5_000,
     clearOutputOnInterrupt = false,
     postToolContinuationMs = 4_000,
+    businessFaqGateDelayMs = 650,
+    ordinaryAnswerContinuationMs = 2_500,
     initialMediaKeepaliveMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_MEDIA_KEEPALIVE_MS, 0),
     answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000)
   } = {}) {
@@ -40,6 +42,8 @@ class VoiceApplication {
     this.outputMaxBufferedMs = outputMaxBufferedMs;
     this.clearOutputOnInterrupt = clearOutputOnInterrupt;
     this.postToolContinuationMs = postToolContinuationMs;
+    this.businessFaqGateDelayMs = businessFaqGateDelayMs;
+    this.ordinaryAnswerContinuationMs = ordinaryAnswerContinuationMs;
     this.initialMediaKeepaliveMs = initialMediaKeepaliveMs;
     this.answerTimeoutMs = answerTimeoutMs;
   }
@@ -314,6 +318,22 @@ class VoiceApplication {
       context,
       sendContinuation: text => realtime?.sendText?.(text)
     });
+    const ordinaryAnswerWatchdog = createOrdinaryAnswerWatchdog({
+      timeoutMs: context.ai?.ordinary_answer_continuation_ms ?? context.ai?.ordinaryAnswerContinuationMs ?? this.ordinaryAnswerContinuationMs,
+      session,
+      requestPayload,
+      context,
+      sendContinuation: text => realtime?.sendText?.(text)
+    });
+    const businessFaqGate = createBusinessFaqGate({
+      delayMs: context.ai?.business_faq_gate_after_ms ?? context.ai?.businessFaqGateAfterMs ?? this.businessFaqGateDelayMs,
+      session,
+      requestPayload,
+      context,
+      executeTool: (name, args, metadata) => session.executeTool(name, args, metadata),
+      foregroundTimeoutMs: toolName => foregroundToolWaitMs(context, toolName),
+      sendContinuation: text => realtime?.sendText?.(text)
+    });
     const mediaFrameBytes = pcm16FrameBytes(FONOSTER_CALL_RATE, 20);
     const recordingWriter = this.createRecordingWriter(session, requestPayload, context);
     const degradedRecordingDirections = new Set();
@@ -505,6 +525,7 @@ class VoiceApplication {
         if (!recentToolWaitFillerTranscript(now, lastToolWaitFillerTranscriptAt)) {
           postToolWatchdog.cancel('model_audio');
         }
+        ordinaryAnswerWatchdog.cancel('model_audio');
         if (now - lastAudioOutLogAt >= 1_000) {
           lastAudioOutLogAt = now;
           void session.safeEvent('realtime_audio_out', {
@@ -530,19 +551,27 @@ class VoiceApplication {
           lastCallerTranscriptAt = item.at || new Date().toISOString();
           void confirmCallerTranscriptInterrupt(item);
           session.recordCallerTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
+          if (item.final !== false) {
+            ordinaryAnswerWatchdog.arm(item);
+            businessFaqGate.consider(item);
+          }
         } else {
           lastAiTranscriptAt = item.at || new Date().toISOString();
           if (isToolWaitFillerTranscript(item.text, context.ai)) {
             lastToolWaitFillerTranscriptAt = Date.now();
           } else if (String(item.text || '').trim()) {
             postToolWatchdog.cancel('model_transcript');
+            ordinaryAnswerWatchdog.cancel('model_transcript');
           }
           session.recordAiTranscript(item.text, { final: item.final !== false, provider: item.provider, at: item.at });
         }
       },
       onToolCall: async callPayload => {
+        ordinaryAnswerWatchdog.cancel('model_tool_call');
+        const gatedToolResult = businessFaqGate.consumeToolCall(callPayload);
+        if (!gatedToolResult) businessFaqGate.cancel('model_tool_call');
         dialogueDirector?.startToolWait(callPayload);
-        const toolResult = await session.executeTool(callPayload.name, callPayload.args || {}, {
+        const toolResult = gatedToolResult ? await gatedToolResult : await session.executeTool(callPayload.name, callPayload.args || {}, {
           provider: 'gemini-live',
           tool_call_id: callPayload.id,
           foreground_timeout_ms: foregroundToolWaitMs(context, callPayload.name),
@@ -700,6 +729,8 @@ class VoiceApplication {
       onFinish: () => {
         initialMediaKeepalive?.stop?.('completion');
         postToolWatchdog.cancel('completion');
+        ordinaryAnswerWatchdog.cancel('completion');
+        businessFaqGate.cancel('completion');
         dialogueDirector?.close();
       }
     });
@@ -1435,6 +1466,138 @@ function operatorFallbackDecision(routeDecision = {}, reason = 'operator_failed'
   };
 }
 
+function createOrdinaryAnswerWatchdog({ timeoutMs = 2_500, session, requestPayload = {}, context = {}, sendContinuation = null } = {}) {
+  let timer = null;
+  let sequence = 0;
+  const normalizedTimeout = Number.parseInt(timeoutMs, 10);
+  const enabledTimeout = Number.isFinite(normalizedTimeout) && normalizedTimeout > 0 ? normalizedTimeout : 0;
+
+  const cancel = (_reason = 'cancelled') => {
+    if (!timer) return;
+    clearTimer(timer);
+    timer = null;
+  };
+
+  const arm = (transcript = {}) => {
+    if (!enabledTimeout || session?.closed || !isMeaningfulCallerText(transcript.text)) return;
+    cancel('rearmed');
+    const currentSequence = ++sequence;
+    const metadata = compactPayload({
+      ...correlationPayload(session, requestPayload, context),
+      provider: transcript.provider || 'gemini-live',
+      caller_transcript: summarizeCallerText(transcript.text),
+      timeout_ms: enabledTimeout
+    });
+
+    timer = setTimer(() => {
+      if (currentSequence !== sequence || session?.closed) return;
+      timer = null;
+      void session.safeControl('ordinary_answer_model_stall', metadata);
+      try {
+        sendContinuation?.(ordinaryAnswerContinuationPrompt(transcript.text));
+      } catch (_error) {
+        // Continuation is best effort; diagnostics above are persisted through Rails.
+      }
+    }, enabledTimeout);
+  };
+
+  return { arm, cancel };
+}
+
+function createBusinessFaqGate({ delayMs = 650, session, requestPayload = {}, context = {}, executeTool = null, foregroundTimeoutMs = null, sendContinuation = null } = {}) {
+  let timer = null;
+  let inFlight = null;
+  let completed = null;
+  let sequence = 0;
+  const normalizedDelay = Number.parseInt(delayMs, 10);
+  const enabledDelay = Number.isFinite(normalizedDelay) && normalizedDelay >= 0 ? normalizedDelay : 0;
+
+  const cancel = (_reason = 'cancelled') => {
+    if (!timer) return;
+    clearTimer(timer);
+    timer = null;
+  };
+
+  const consumeToolCall = (callPayload = {}) => {
+    if (String(callPayload.name || '').trim().toLowerCase() !== 'faq_lookup') return null;
+    if (inFlight) return inFlight.promise;
+    if (completed && completed.expiresAt > Date.now()) return completed.promise;
+    completed = null;
+    return null;
+  };
+
+  const consider = transcript => {
+    if (!hasTool(context, 'faq_lookup') || !shouldGateFaqLookup(transcript?.text) || typeof executeTool !== 'function') return;
+    cancel('rearmed');
+    completed = null;
+    const currentSequence = ++sequence;
+    const query = String(transcript.text || '').trim();
+    const gateId = `business_faq_gate:${currentSequence}`;
+
+    timer = setTimer(() => {
+      if (currentSequence !== sequence || session?.closed) return;
+      timer = null;
+      void fire(query, gateId, transcript);
+    }, enabledDelay);
+  };
+
+  const fire = (query, gateId, transcript = {}) => {
+    const metadata = compactPayload({
+      ...correlationPayload(session, requestPayload, context),
+      provider: transcript.provider || 'gemini-live',
+      reason: 'business_faq_gate',
+      tool_name: 'faq_lookup',
+      tool_call_id: gateId,
+      caller_transcript: summarizeCallerText(query)
+    });
+    const promise = (async () => {
+      await session.safeControl('business_faq_gate_fired', metadata);
+      const toolResult = await executeTool('faq_lookup', { query }, {
+        provider: 'gemini-live',
+        tool_call_id: gateId,
+        reason: 'business_faq_gate',
+        foreground_timeout_ms: typeof foregroundTimeoutMs === 'function' ? foregroundTimeoutMs('faq_lookup') : undefined,
+        onAsyncResult: async lateResult => {
+          if (session.closed || !shouldInjectLateToolResult({ name: 'faq_lookup' }, lateResult)) return;
+          const prompt = lateToolResultPrompt({ name: 'faq_lookup' }, lateResult);
+          if (!prompt) return;
+          sendContinuation?.(prompt);
+          await session.safeEvent('business_faq_gate_result_injected', compactPayload({
+            ...metadata,
+            request_id: lateResult.request_id,
+            ok: lateResult.ok,
+            async: true
+          }));
+        }
+      });
+      if (session.closed || !toolResult?.ok) return toolResult;
+      const prompt = lateToolResultPrompt({ name: 'faq_lookup' }, { ok: true, async: true, result: toolResult.result });
+      if (!prompt) return toolResult;
+      sendContinuation?.(prompt);
+      await session.safeEvent('business_faq_gate_result_injected', compactPayload({
+        ...metadata,
+        ok: true,
+        async: false,
+        result_keys: objectKeys(toolResult.result)
+      }));
+      return toolResult;
+    })().then(result => {
+      completed = { gateId, promise: Promise.resolve(result), expiresAt: Date.now() + 5_000 };
+      return result;
+    }).catch(error => {
+      const result = { ok: false, error: sanitizeReason(error?.message || 'business_faq_gate_failed') };
+      completed = { gateId, promise: Promise.resolve(result), expiresAt: Date.now() + 5_000 };
+      return result;
+    }).finally(() => {
+      if (inFlight?.gateId === gateId) inFlight = null;
+    });
+    inFlight = { gateId, promise };
+    return promise;
+  };
+
+  return { consider, cancel, consumeToolCall };
+}
+
 function createPostToolWatchdog({ timeoutMs = 4_000, session, requestPayload = {}, context = {}, sendContinuation = null } = {}) {
   let timer = null;
   let sequence = 0;
@@ -1531,6 +1694,33 @@ function postToolContinuationPrompt(toolCall = {}, toolResult = {}) {
   const toolName = String(toolCall.name || 'инструмента').trim();
   const answer = summarizeToolResult(toolResult.result);
   return `Продолжи голосовой ответ клиенту после результата ${toolName}. Не молчи, скажи коротко и естественно по-русски.${answer ? ` Учитывай результат: ${answer}` : ''}`;
+}
+
+function ordinaryAnswerContinuationPrompt(text = '') {
+  const question = summarizeCallerText(text);
+  return `Ответь клиенту сейчас коротко и естественно по-русски. Не молчи и не обрывай фразу.${question ? ` Последний вопрос клиента: ${question}` : ''}`;
+}
+
+function hasTool(context = {}, toolName = '') {
+  const expected = String(toolName || '').trim().toLowerCase();
+  return Array.isArray(context.tools) && context.tools.some(tool => String(tool?.name || '').trim().toLowerCase() === expected);
+}
+
+function shouldGateFaqLookup(text = '') {
+  const normalized = normalizeSpokenText(text);
+  if (!isMeaningfulCallerText(normalized)) return false;
+  if (/\b(оператор|менеджер|человек|живой|переведи|соедини|transfer)\b/i.test(normalized)) return false;
+  return /\b(цена|цены|стоимост|сколько стоит|прайс|тариф|режим|график|адрес|где находится|локац|услуг|доставка|оплат|гаранти|акци|скидк|услови|документ|срок|слоган|название|телефон|номер|whatsapp|ватсап|инстаграм|instagram|сайт|работаете|открыт|закрыт)\b/i.test(normalized) ||
+    /^(какой|какая|какие|как|где|когда|сколько|есть ли|можно ли|что у вас)/i.test(normalized);
+}
+
+function isMeaningfulCallerText(text = '') {
+  const normalized = normalizeSpokenText(text);
+  return normalized.length >= 8 && !/^(алло|привет|здравствуйте|добрый день|да|нет|угу|ага|ок|спасибо)$/.test(normalized);
+}
+
+function summarizeCallerText(text = '') {
+  return String(text || '').trim().replace(/\s+/g, ' ').slice(0, 180);
 }
 
 function summarizeToolResult(result) {

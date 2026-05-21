@@ -48,7 +48,10 @@ class Telephony::AiVoice::ConversationTimelineService
     'tool_requested_end_call' => 'Инструмент запросил завершение звонка',
     'handoff_requested' => 'AI-агент запросил передачу оператору',
     'close' => 'AI-сессия закрыта',
-    'post_tool_model_stall' => 'AI-агент не продолжил ответ после инструмента'
+    'post_tool_model_stall' => 'AI-агент не продолжил ответ после инструмента',
+    'business_faq_gate_fired' => 'AI-агент проверяет базу знаний',
+    'business_faq_gate_result_injected' => 'AI-агент получил результат базы знаний',
+    'ordinary_answer_model_stall' => 'AI-агенту отправлен запрос продолжить ответ'
   }.freeze
 
   def initialize(call_session:)

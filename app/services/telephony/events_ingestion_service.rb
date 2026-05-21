@@ -39,6 +39,9 @@ class Telephony::EventsIngestionService
     'tool_async_completed' => nil,
     'tool_async_failed' => nil,
     'post_tool_model_stall' => nil,
+    'business_faq_gate_fired' => nil,
+    'business_faq_gate_result_injected' => nil,
+    'ordinary_answer_model_stall' => nil,
     'ai_speaking' => nil,
     'caller_interrupted' => nil,
     'ringing' => 'ringing',
@@ -560,11 +563,14 @@ class Telephony::EventsIngestionService
 
     duplicate_attrs = (duplicate.content_attributes || {}).deep_dup.deep_stringify_keys
     duplicate_attrs['data'] ||= {}
+    canonical_data = canonical_message.content_attributes.to_h.deep_stringify_keys.fetch('data', {})
+    duplicate_attrs['data']['status'] = canonical_data['status'] if canonical_data['status'].present?
+    duplicate_attrs['data']['ai_voice'] = canonical_data['ai_voice'] if canonical_data['ai_voice'].is_a?(Hash)
     duplicate_attrs['data']['hidden'] = true
     duplicate_attrs['data']['duplicate_of'] = canonical_message.source_id
     duplicate_attrs['data']['ai_voice'] = (duplicate_attrs['data']['ai_voice'].is_a?(Hash) ? duplicate_attrs['data']['ai_voice'] : {}).merge(
       'duplicate_of' => canonical_message.source_id,
-      'canonical_call_sid' => canonical_message.content_attributes.to_h.deep_stringify_keys.dig('data', 'call_sid')
+      'canonical_call_sid' => canonical_data['call_sid']
     ).compact
     duplicate.update!(content_attributes: duplicate_attrs)
   end
@@ -693,6 +699,16 @@ class Telephony::EventsIngestionService
       tool_name = tool_payload['tool_name'] || metadata_payload['tool_name'] || event_payload['tool_name']
       next if tool_name.blank?
 
+      tool_call_id = tool_payload['tool_call_id'] || tool_payload['toolCallId'] ||
+                     metadata_payload['tool_call_id'] || metadata_payload['toolCallId']
+      request_id = tool_payload['request_id'] || tool_payload['requestId'] ||
+                   metadata_payload['request_id'] || metadata_payload['requestId']
+      bridge_call_ref = tool_payload['bridge_call_ref'] || tool_payload['bridgeCallRef'] ||
+                        metadata_payload['bridge_call_ref'] || metadata_payload['bridgeCallRef']
+      runtime_call_ref = tool_payload['runtime_call_ref'] || tool_payload['runtimeCallRef'] ||
+                         metadata_payload['runtime_call_ref'] || metadata_payload['runtimeCallRef'] ||
+                         call_session.external_call_ref
+
       {
         'event' => event.event_type,
         'name' => tool_name,
@@ -700,8 +716,12 @@ class Telephony::EventsIngestionService
         'ok' => tool_payload.key?('ok') ? tool_payload['ok'] : metadata_payload['ok'],
         'pending' => tool_payload.key?('pending') ? tool_payload['pending'] : metadata_payload['pending'],
         'async' => tool_payload.key?('async') ? tool_payload['async'] : metadata_payload['async'],
-        'tool_call_id' => tool_payload['tool_call_id'] || tool_payload['toolCallId'] || metadata_payload['tool_call_id'] || metadata_payload['toolCallId'],
-        'request_id' => tool_payload['request_id'] || tool_payload['requestId'] || metadata_payload['request_id'] || metadata_payload['requestId'],
+        'tool_call_id' => tool_call_id,
+        'request_id' => request_id,
+        'call_ref' => call_session.external_call_ref,
+        'bridge_call_ref' => bridge_call_ref,
+        'runtime_call_ref' => runtime_call_ref,
+        'conversation_id' => call_session.conversation_id,
         'error' => tool_payload['error'] || metadata_payload['error'],
         'at' => parse_time(event_payload['occurred_at'] || event_payload['occurredAt'])&.iso8601 || event.created_at.iso8601
       }.compact
@@ -725,7 +745,8 @@ class Telephony::EventsIngestionService
     %w[
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
       media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed tool_suppressed
-      tool_async_completed tool_async_failed post_tool_model_stall
+      tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
+      ordinary_answer_model_stall
     ]
   end
 
@@ -865,7 +886,10 @@ class Telephony::EventsIngestionService
 
   def leg_name
     event_name = resolved_event_type.to_s
-    ai_event_names = %w[caller_interrupted realtime_audio_out first_audio_out_write media_stream_started provider_stream_closed provider_error]
+    ai_event_names = %w[
+      caller_interrupted realtime_audio_out first_audio_out_write media_stream_started provider_stream_closed provider_error
+      business_faq_gate_fired business_faq_gate_result_injected ordinary_answer_model_stall
+    ]
     return 'ai' if event_name.start_with?('ai_', 'tool_') || event_name.in?(ai_event_names)
     return 'operator' if event_name.start_with?('transfer_', 'operator_')
 
