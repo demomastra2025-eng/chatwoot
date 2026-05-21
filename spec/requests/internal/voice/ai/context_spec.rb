@@ -98,7 +98,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'silence_prompt_enabled' => true,
       'tool_start_phrases' => ['Секунду, проверю.'],
       'tool_start_after_ms' => 1800,
-      'tool_foreground_wait_ms' => 350,
+      'tool_foreground_wait_ms' => 900,
       'emotional_style' => 'warm_professional',
       'nonverbal_cues_enabled' => true,
       'ambient_noise_enabled' => false,

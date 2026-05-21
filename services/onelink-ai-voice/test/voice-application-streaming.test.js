@@ -137,10 +137,9 @@ test('VoiceApplication bridges Fonoster stream audio to Gemini realtime and writ
   const toolResult = await realtimeCallbacks.onToolCall({ name: 'lookup_customer', args: { phone: '+77001112233' } });
   assert.equal(toolResult.ok, true);
 
+  const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
-  assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(controls.at(-1).metadata.reason, 'vad_or_caller_speech');
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
   assert.equal(stream.cleanupCallbacks.length, 1);
 
   let completed = false;
@@ -1138,7 +1137,7 @@ test('VoiceApplication executes AI transfer tools and finalizes the call as tran
   assert.equal(finalizations.at(-1).transfer_result.result, 'answered');
 });
 
-test('VoiceApplication paces model audio into 20ms frames and preserves buffered output on caller interruption by default', async () => {
+test('VoiceApplication treats provider interruption as telemetry by default and preserves buffered output', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
   let realtimeCallbacks;
@@ -1171,11 +1170,11 @@ test('VoiceApplication paces model audio into 20ms frames and preserves buffered
   assert.equal(stream.writes[0].data.length, 320);
   assert.equal(stream.writes[0].data.readInt16LE(2), 3);
 
+  const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
 
-  assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
   assert.equal(stream.writes.length > 1, true);
 
   call.emit('end');
@@ -1209,21 +1208,21 @@ test('VoiceApplication honors per-assistant clear_audio_on_interrupt from contex
   const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
   const result = await app.handleCall(call, { call_ref: 'call-clear-on-interrupt' });
 
-  realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
+  realtimeCallbacks.onAudio(Buffer.alloc(48000), { mimeType: 'audio/pcm;rate=24000' });
   assert.equal(stream.writes.length, 1);
   stream.emitPayload({ type: 'audio_in', data: Buffer.from([1, 2]), streamRef: 'stream-1', format: 'wav' });
 
+  const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
 
-  assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
   assert.equal(stream.writes.length > 1, true);
 
   realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'подо', final: false });
   await new Promise(resolve => setTimeout(resolve, 30));
 
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
 
   realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'подождите', final: true });
   await new Promise(resolve => setTimeout(resolve, 30));
@@ -1281,7 +1280,7 @@ test('VoiceApplication clears queued audio on provider-mode interrupt after call
   await result.completion;
 });
 
-test('VoiceApplication does not clear queued audio on interrupt without fresh caller activity', async () => {
+test('VoiceApplication does not emit user-facing interrupt without fresh caller activity', async () => {
   const stream = new FakeVoiceStream();
   const controls = [];
   let realtimeCallbacks;
@@ -1309,11 +1308,11 @@ test('VoiceApplication does not clear queued audio on interrupt without fresh ca
   realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
   assert.equal(stream.writes.length, 1);
 
+  const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
 
-  assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
   assert.equal(stream.writes.length > 1, true);
 
   call.emit('end');
@@ -1349,12 +1348,48 @@ test('VoiceApplication preserves queued audio when provider interrupt follows st
   realtimeCallbacks.onAudio(Buffer.alloc(1920), { mimeType: 'audio/pcm;rate=24000' });
   assert.equal(stream.writes.length, 1);
 
+  const controlCountBeforeProviderInterrupt = controls.length;
   await realtimeCallbacks.onInterrupt({ source: 'serverContent.interrupted', reason: 'vad_or_caller_speech' });
   await new Promise(resolve => setTimeout(resolve, 30));
 
-  assert.equal(controls.at(-1).action, 'caller_interrupted');
-  assert.equal(controls.at(-1).metadata.clear_output_buffer, false);
+  assert.equal(controls.length, controlCountBeforeProviderInterrupt);
   assert.equal(stream.writes.length > 1, true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication treats the next caller question after drained AI audio as a normal turn, not an interruption', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({ call_ref: 'call-normal-next-turn', ai: { provider: 'gemini-live', clear_audio_on_interrupt: true } }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' })
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, clearOutputOnInterrupt: false });
+  const result = await app.handleCall(call, { call_ref: 'call-normal-next-turn' });
+
+  realtimeCallbacks.onAudio(Buffer.alloc(960), { mimeType: 'audio/pcm;rate=24000' });
+  await new Promise(resolve => setTimeout(resolve, 90));
+  realtimeCallbacks.onTranscript({ speaker: 'caller', text: 'какой у вас слоган?', final: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+
+  assert.equal(controls.some(payload => payload.action === 'caller_interrupted'), false);
 
   call.emit('end');
   await result.completion;
@@ -1375,8 +1410,8 @@ test('VoiceApplication injects late async tool result back into Gemini context a
     sendBridgeEvent: async () => ({ status: 'ok' }),
     getContext: async () => ({
       call_ref: 'runtime-tool-late-result',
-      ai: { provider: 'gemini-live', model: 'gemini-live-test', tool_foreground_wait_ms: 5 },
-      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200 }]
+      ai: { provider: 'gemini-live', model: 'gemini-live-test' },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200, foreground_wait_ms: 5 }]
     }),
     sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
     sendTranscript: async () => ({ status: 'ok' }),
@@ -1404,6 +1439,50 @@ test('VoiceApplication injects late async tool result back into Gemini context a
   assert.equal(controls.some(payload => payload.action === 'tool_async_completed'), true);
   assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup готов')), true);
   assert.equal(sentTexts.some(text => text.includes('Акуна матата')), true);
+
+  call.emit('end');
+  await result.completion;
+});
+
+test('VoiceApplication floors read-tool foreground wait so normal Rails latency does not become a user-facing failure', async () => {
+  const stream = new FakeVoiceStream();
+  const controls = [];
+  const sentTexts = [];
+  let realtimeCallbacks;
+
+  const call = Object.assign(new EventEmitter(), {
+    async answer() {},
+    stream() { return stream; }
+  });
+  const client = {
+    routeInbound: async () => ({ action: 'ai', reason: 'ai_route' }),
+    sendBridgeEvent: async () => ({ status: 'ok' }),
+    getContext: async () => ({
+      call_ref: 'runtime-tool-normal-latency',
+      ai: { provider: 'gemini-live', model: 'gemini-live-test', tool_foreground_wait_ms: 5 },
+      tools: [{ name: 'faq_lookup', description: 'Search FAQ', parameters: { type: 'object', properties: {} }, timeout_ms: 200 }]
+    }),
+    sendControl: async payload => { controls.push(payload); return { status: 'ok' }; },
+    sendTranscript: async () => ({ status: 'ok' }),
+    callTool: async () => new Promise(resolve => setTimeout(() => resolve({ answer: 'Акуна матата' }), 25))
+  };
+  const realtime = {
+    connect: async options => { realtimeCallbacks = options; },
+    sendText: text => sentTexts.push(text),
+    sendAudio: () => {},
+    close: () => {}
+  };
+
+  const app = new VoiceApplication({ client, realtimeFactory: () => realtime, toolTimeoutMs: 200 });
+  const result = await app.handleCall(call, { call_ref: 'runtime-tool-normal-latency' });
+
+  const toolResult = await realtimeCallbacks.onToolCall({ id: 'tool-normal-1', name: 'faq_lookup', args: { query: 'слоган' } });
+
+  assert.equal(toolResult.ok, true);
+  assert.equal(toolResult.pending, undefined);
+  assert.equal(controls.some(payload => payload.action === 'tool_failed'), false);
+  assert.equal(controls.some(payload => payload.action === 'tool_async_completed'), false);
+  assert.equal(sentTexts.some(text => text.includes('Результат инструмента faq_lookup готов')), false);
 
   call.emit('end');
   await result.completion;

@@ -42,7 +42,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'filler_phrases' => ['Понял.', 'Да, вижу.', 'Сейчас уточню.'].freeze,
     'tool_start_phrases' => ['Секунду, проверю.'].freeze,
     'tool_start_after_ms' => 1800,
-    'tool_foreground_wait_ms' => 350,
+    'tool_foreground_wait_ms' => 900,
     'tool_delay_phrases' => ['Ещё смотрю, почти готово.'].freeze,
     'tool_failure_phrases' => ['Не получилось проверить автоматически. Могу соединить со специалистом.'].freeze,
     'tool_delay_after_ms' => 1800,

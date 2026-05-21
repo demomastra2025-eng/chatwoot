@@ -304,6 +304,7 @@ class VoiceApplication {
     let lastCallerAudioAt = null;
     let lastAiTranscriptAt = null;
     let lastAiAudioAt = null;
+    let aiOutputActiveUntilMs = 0;
     let lastMediaWriteAt = null;
     const clearOutputOnInterrupt = context.ai?.clear_audio_on_interrupt ?? context.ai?.clearAudioOnInterrupt ?? this.clearOutputOnInterrupt;
     const postToolWatchdog = createPostToolWatchdog({
@@ -467,10 +468,12 @@ class VoiceApplication {
         callerTranscript: item.text,
         lastCallerTranscriptAt,
         lastAiAudioAt,
+        aiOutputActiveUntilMs,
         lastConfirmedCallerInterruptAt
       })) return;
 
       lastConfirmedCallerInterruptAt = lastCallerTranscriptAt;
+      aiOutputActiveUntilMs = 0;
       outputPacer?.clear?.();
       realtime?.interrupt?.();
       await session.safeControl('caller_interrupted', compactPayload({
@@ -498,6 +501,7 @@ class VoiceApplication {
         if (!data.length) return;
         const now = Date.now();
         lastAiAudioAt = new Date(now).toISOString();
+        aiOutputActiveUntilMs = Math.max(aiOutputActiveUntilMs, now + outputPlaybackDurationMs(outputPacer, data));
         if (!recentToolWaitFillerTranscript(now, lastToolWaitFillerTranscriptAt)) {
           postToolWatchdog.cancel('model_audio');
         }
@@ -570,6 +574,7 @@ class VoiceApplication {
           lastCallerTranscriptAt,
           lastCallerAudioAt,
           lastAiAudioAt,
+          aiOutputActiveUntilMs,
           interruptionMode: context.ai?.interruption_mode || context.ai?.interruptionMode
         });
         const interruptMetadata = compactPayload({
@@ -585,9 +590,12 @@ class VoiceApplication {
           media_session_ref: mediaSessionRef
         });
         if (shouldClearOutput) {
+          aiOutputActiveUntilMs = 0;
           outputPacer?.clear?.();
+          await session.safeControl('caller_interrupted', interruptMetadata);
+          return;
         }
-        await session.safeControl('caller_interrupted', interruptMetadata);
+        await session.safeEvent('realtime_interrupted', interruptMetadata);
       },
       onEvent: event => {
         // Do not disarm the post-tool continuation watchdog on provider
@@ -1474,7 +1482,7 @@ function shouldWatchPostToolContinuation(toolResult = {}) {
   return !['transfer', 'end_call', 'hangup'].includes(action);
 }
 
-const DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS = 350;
+const DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS = 900;
 
 function foregroundToolWaitMs(context = {}, toolName = '') {
   if (isSideEffectToolName(toolName)) return null;
@@ -1486,7 +1494,11 @@ function foregroundToolWaitMs(context = {}, toolName = '') {
   if (!isReadLikeToolName(toolName)) return null;
 
   const globalReadWaitMs = parsePositiveInt(context.ai?.tool_foreground_wait_ms ?? context.ai?.toolForegroundWaitMs);
-  return globalReadWaitMs || DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS;
+  // Read-only Rails/Captain tools commonly finish in 400-700ms; do not let
+  // legacy/global 350ms settings create a user-facing failure before the
+  // normal result arrives. Tool-specific foreground_wait_ms remains an explicit
+  // opt-in above for tests or intentionally async tools.
+  return Math.max(globalReadWaitMs || 0, DEFAULT_READ_TOOL_FOREGROUND_WAIT_MS);
 }
 
 function shouldInjectLateToolResult(toolCall = {}, lateResult = {}) {
@@ -2313,12 +2325,14 @@ function shouldClearOutputBufferOnInterrupt(enabled, {
   lastCallerTranscriptAt,
   lastCallerAudioAt,
   lastAiAudioAt,
+  aiOutputActiveUntilMs,
   interruptionMode
 } = {}) {
   if (!enabled) return false;
 
   const aiAudioTime = Date.parse(lastAiAudioAt || '');
   if (!Number.isFinite(aiAudioTime)) return false;
+  if (!isAiOutputActive(aiOutputActiveUntilMs)) return false;
 
   if (normalizeInterruptionMode(interruptionMode) === 'provider') {
     const callerAudioTime = Date.parse(lastCallerAudioAt || '');
@@ -2333,11 +2347,25 @@ function shouldClearOutputBufferOnCallerTranscript(enabled, {
   callerTranscript,
   lastCallerTranscriptAt,
   lastAiAudioAt,
+  aiOutputActiveUntilMs,
   lastConfirmedCallerInterruptAt
 } = {}) {
   if (!meaningfulCallerTranscript(callerTranscript)) return false;
   if (lastConfirmedCallerInterruptAt && lastConfirmedCallerInterruptAt === lastCallerTranscriptAt) return false;
-  return shouldClearOutputBufferOnInterrupt(enabled, { lastCallerTranscriptAt, lastAiAudioAt });
+  return shouldClearOutputBufferOnInterrupt(enabled, { lastCallerTranscriptAt, lastAiAudioAt, aiOutputActiveUntilMs });
+}
+
+function isAiOutputActive(activeUntilMs) {
+  const parsed = Number(activeUntilMs);
+  return Number.isFinite(parsed) && parsed > Date.now();
+}
+
+function outputPlaybackDurationMs(outputPacer, data) {
+  const bufferedBytes = Number(outputPacer?.buffer?.length || 0);
+  const dataBytes = Buffer.isBuffer(data) ? data.length : Buffer.byteLength(Buffer.from(data || []));
+  const bytes = Math.max(0, bufferedBytes + dataBytes);
+  if (!bytes) return 0;
+  return Math.max(20, Math.ceil((bytes / (FONOSTER_CALL_RATE * 2)) * 1000));
 }
 
 function meaningfulCallerTranscript(value) {
