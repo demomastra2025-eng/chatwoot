@@ -7,6 +7,7 @@ import { routes as notificationRoutes } from './notifications/routes';
 import { routes as inboxRoutes } from './inbox/routes';
 import { routes as crmRoutes } from './crm/routes';
 import { routes as schedulingRoutes } from './scheduling/routes';
+import { routes as smmRoutes } from './smm/routes';
 import { frontendURL } from '../../helper/URLHelper';
 import helpcenterRoutes from './helpcenter/helpcenter.routes';
 import campaignsRoutes from './campaigns/campaigns.routes';
@@ -28,6 +29,7 @@ export default {
         ...companyRoutes,
         ...crmRoutes,
         ...schedulingRoutes,
+        ...smmRoutes,
         ...searchRoutes,
         ...notificationRoutes,
         ...helpcenterRoutes.routes,

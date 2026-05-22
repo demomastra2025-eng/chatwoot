@@ -1,11 +1,42 @@
 #!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
+HUSKY_SH="$(dirname "$0")/_/husky.sh"
+if [ -f "$HUSKY_SH" ]; then
+  . "$HUSKY_SH"
+fi
+
+status=0
 
 # lint js and vue files
-pnpm exec lint-staged --concurrent false
+pnpm exec lint-staged --concurrent false || status=$?
 
 # lint only staged ruby files that still exist (not deleted)
-git diff --name-only --cached | xargs -I {} sh -c 'test -f "{}" && echo "{}"' | grep '\.rb$' | xargs -I {} bundle exec rubocop --force-exclusion -a "{}" || true
+ruby_files=$(git diff --name-only --cached | while IFS= read -r file; do
+  if [ -f "$file" ] && printf '%s' "$file" | grep -q '\.rb$'; then
+    printf '%s\n' "$file"
+  fi
+done)
 
-# stage rubocop changes to files
-git diff --name-only --cached | xargs -I {} sh -c 'test -f "{}" && git add "{}"' || true
+if [ -n "$ruby_files" ]; then
+  fully_staged_ruby_files=$(printf '%s\n' "$ruby_files" | while IFS= read -r file; do
+    if git diff --quiet -- "$file"; then
+      printf '%s\n' "$file"
+    fi
+  done)
+
+  printf '%s\n' "$ruby_files" | while IFS= read -r file; do
+    if printf '%s\n' "$fully_staged_ruby_files" | grep -Fxq "$file"; then
+      bundle exec rubocop --force-exclusion -a --fail-level E "$file" || exit $?
+    else
+      bundle exec rubocop --force-exclusion --fail-level E "$file" || exit $?
+    fi
+  done || status=$?
+
+  # Stage only RuboCop autocorrects for files that had no unstaged hunks before the hook.
+  printf '%s\n' "$fully_staged_ruby_files" | while IFS= read -r file; do
+    if [ -f "$file" ]; then
+      git add "$file"
+    fi
+  done
+fi
+
+exit "$status"

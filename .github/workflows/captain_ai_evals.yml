@@ -95,14 +95,18 @@ jobs:
             spec/lib/llm/evals/collection_result_spec.rb \
             spec/lib/llm/evals/moderation_suite_spec.rb \
             spec/lib/llm/evals/runner_spec.rb \
+            spec/lib/llm/evals/tribunal_dataset_runner_spec.rb \
             spec/lib/llm/evals/ai_voice_trace_exporter_spec.rb \
             spec/enterprise/lib/captain/evals/tool_safety_suite_spec.rb \
+            spec/enterprise/lib/captain/evals/red_team_suite_spec.rb \
             spec/enterprise/lib/captain/evals/conversation_completion_suite_spec.rb \
             spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb \
             spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb
 
       - name: Run deterministic AI eval CI gate
-        run: bundle exec rake llm:evals:ci
+        run: |
+          bundle exec rake llm:evals:ci
+          bundle exec rake llm:evals:tribunal FORMAT=json STRICT=true
 
       - name: Run Captain evaluations frontend checks
         run: |

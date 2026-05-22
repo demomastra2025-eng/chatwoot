@@ -433,7 +433,14 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "AI Staff",
-    "CONVERSATION_WORKFLOW": "Conversation Workflow"
+    "CONVERSATION_WORKFLOW": "Conversation Workflow",
+    "SMM": "SMM",
+    "SMM_CALENDAR": "Calendar",
+    "SMM_POSTS": "Posts",
+    "SMM_CHANNELS": "Social networks",
+    "SMM_MEDIA": "Media",
+    "SMM_ANALYTICS": "Analytics",
+    "SMM_SETTINGS": "Settings"
   },
   "CAPTAIN_SETTINGS": {
     "TITLE": "AI Staff Settings",
@@ -473,7 +480,7 @@
       "METADATA_SEPARATOR": " · ",
       "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure a provider key or refresh the OpenRouter catalog.",
       "SPECIALIZED_TITLE": "Specialized AI models",
-      "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, and FAQ embeddings separately from the chat model.",
+      "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, image recognition, and FAQ embeddings separately from the chat model.",
       "EDITOR": {
         "TITLE": "Editor Features",
         "DESCRIPTION": "Powers smart compose, grammar corrections, tone adjustments, and content enhancement in your message editor."
@@ -494,19 +501,13 @@
         "TITLE": "Audio recognition model",
         "DESCRIPTION": "Transcribes voice messages and call recordings. OpenRouter options must support audio input; OpenAI transcription endpoint models remain optional."
       },
+      "IMAGE_RECOGNITION": {
+        "TITLE": "Image recognition model",
+        "DESCRIPTION": "Describes customer-shared images before the AI Agent / Assistant processes the message. Defaults are selected automatically when OpenAI or OpenRouter is configured."
+      },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embeddings model",
         "DESCRIPTION": "Builds vectors for FAQ and help-center semantic search. If embeddings are unavailable, FAQ lookup can still use exact keyword fallback."
-      },
-      "IMAGE_UNDERSTANDING": {
-        "TITLE": "Image understanding",
-        "DESCRIPTION": "There is no separate image model. Images use the selected AI Agent / Assistant chat model when it advertises image input support.",
-        "SUPPORTED": "Images supported",
-        "NOT_SUPPORTED": "Images not supported",
-        "FEATURES": {
-          "ASSISTANT": "AI Agent",
-          "COPILOT": "Assistant"
-        }
       }
     },
     "FEATURES": {
@@ -621,6 +622,7 @@
         "LABEL_SUGGESTION": "Label Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
         "HELP_CENTER_SEARCH": "Help Center Search",
+        "IMAGE_RECOGNITION": "Image Recognition",
         "MODERATION": "Moderation"
       }
     },
@@ -1123,6 +1125,85 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "SMM": {
+    "CONNECT_POSTIZ": "Connect Postiz",
+    "REFRESH": "Refresh",
+    "OPEN_SETTINGS": "Open settings",
+    "YES": "Yes",
+    "NO": "No",
+    "EMPTY_CONNECTION_TITLE": "Connect Postiz to start",
+    "EMPTY_CONNECTION_DESCRIPTION": "The SMM module uses a server-side Postiz API key. The key is stored on the backend and is never sent to the browser.",
+    "TABS": {
+      "CALENDAR": "Calendar",
+      "POSTS": "Posts",
+      "CHANNELS": "Social networks",
+      "MEDIA": "Media",
+      "ANALYTICS": "Analytics",
+      "SETTINGS": "Settings"
+    },
+    "CALENDAR": {
+      "TITLE": "Content calendar",
+      "DESCRIPTION": "A Postiz-style schedule of planned and published posts.",
+      "EMPTY": "No posts in the current month."
+    },
+    "POSTS": {
+      "TITLE": "Posts",
+      "DESCRIPTION": "Postiz posts and statuses from the connected workspace.",
+      "EMPTY": "No posts found.",
+      "STATUS_UNKNOWN": "Unknown"
+    },
+    "CHANNELS": {
+      "TITLE": "Social networks",
+      "DESCRIPTION": "Connect and manage social accounts through Postiz OAuth.",
+      "EMPTY": "No social networks connected yet.",
+      "OAUTH_FAILED": "Could not open Postiz OAuth URL."
+    },
+    "COMPOSER": {
+      "TITLE": "Composer",
+      "DESCRIPTION": "Create a simple Postiz post payload from OneLink.",
+      "SELECT_CHANNEL": "Select social network",
+      "TYPE_SCHEDULE": "Schedule",
+      "TYPE_DRAFT": "Draft",
+      "TYPE_NOW": "Publish now",
+      "DATE": "Publication date",
+      "TEXT_PLACEHOLDER": "Write post text",
+      "CREATE": "Create post",
+      "REQUIRED": "Select a social network and enter post text.",
+      "CREATED": "Post created",
+      "CREATE_FAILED": "Could not create post"
+    },
+    "MEDIA": {
+      "TITLE": "Media",
+      "DESCRIPTION": "Upload media to Postiz from a URL. File upload is available through the backend API.",
+      "URL_PLACEHOLDER": "https://example.com/image.jpg",
+      "UPLOAD_URL": "Upload URL",
+      "UPLOADED": "Media uploaded",
+      "UPLOAD_FAILED": "Could not upload media"
+    },
+    "ANALYTICS": {
+      "TITLE": "Analytics",
+      "DESCRIPTION": "Load Postiz analytics for a connected social network.",
+      "SELECT_CHANNEL": "Select social network",
+      "LOAD": "Load analytics",
+      "LOAD_FAILED": "Could not load analytics"
+    },
+    "SETTINGS": {
+      "TITLE": "Postiz connection",
+      "DESCRIPTION": "Store the Postiz Public API key server-side. Existing keys are never displayed.",
+      "API_KEY_PLACEHOLDER": "Postiz API key",
+      "ORG_PLACEHOLDER": "Organization ID (optional)",
+      "TIMEZONE_PLACEHOLDER": "Default timezone (optional)",
+      "SAVE": "Save connection",
+      "TEST": "Test connection",
+      "SAVED": "Postiz connection saved",
+      "SAVE_FAILED": "Could not save Postiz connection",
+      "TEST_OK": "Postiz connection works",
+      "TEST_FAILED": "Postiz connection test failed",
+      "STATUS": "Connection status",
+      "CONNECTED": "Connected",
+      "TOKEN_CONFIGURED": "API key configured"
     }
   }
 }

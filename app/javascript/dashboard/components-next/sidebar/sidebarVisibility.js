@@ -57,6 +57,14 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Scheduling:Exceptions', 'SIDEBAR.SCHEDULING_EXCEPTIONS'),
     item('Scheduling:Kassa', 'SIDEBAR.SCHEDULING_KASSA'),
   ]),
+  item('SMM', 'SIDEBAR.SMM', [
+    item('SMM:Calendar', 'SIDEBAR.SMM_CALENDAR'),
+    item('SMM:Posts', 'SIDEBAR.SMM_POSTS'),
+    item('SMM:Channels', 'SIDEBAR.SMM_CHANNELS'),
+    item('SMM:Media', 'SIDEBAR.SMM_MEDIA'),
+    item('SMM:Analytics', 'SIDEBAR.SMM_ANALYTICS'),
+    item('SMM:Settings', 'SIDEBAR.SMM_SETTINGS'),
+  ]),
   item('Reports', 'SIDEBAR.REPORTS', [
     item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),
     item('Reports:Conversation', 'SIDEBAR.REPORTS_CONVERSATION'),

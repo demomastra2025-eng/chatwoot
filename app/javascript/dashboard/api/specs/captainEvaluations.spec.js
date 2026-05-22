@@ -33,39 +33,30 @@ describe('#CaptainEvaluationsAPI', () => {
     );
   });
 
-  it('runs deterministic packs through the account-scoped endpoint', () => {
-    captainEvaluationsAPI.run({ pack_ids: ['captain.ai_voice_trace'] });
-
-    expect(axiosMock.post).toHaveBeenCalledWith(
-      '/api/v1/accounts/6/captain/evaluations/run',
-      { pack_ids: ['captain.ai_voice_trace'] }
-    );
-  });
-
-  it('runs live packs through the controlled account-scoped endpoint', () => {
-    captainEvaluationsAPI.runLive({
-      pack_ids: ['captain.conversation_completion'],
-      acknowledge_live_cost: true,
+  it('runs any selected packs through the unified account-scoped endpoint', () => {
+    captainEvaluationsAPI.run({
+      pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
+      acknowledge_llm_cost: true,
       budget_cents: 75,
       max_cases: 2,
     });
 
     expect(axiosMock.post).toHaveBeenCalledWith(
-      '/api/v1/accounts/6/captain/evaluations/run_live',
+      '/api/v1/accounts/6/captain/evaluations/run',
       {
-        pack_ids: ['captain.conversation_completion'],
-        acknowledge_live_cost: true,
+        pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
+        acknowledge_llm_cost: true,
         budget_cents: 75,
         max_cases: 2,
       }
     );
   });
 
-  it('fetches a live run status through the account-scoped endpoint', () => {
-    captainEvaluationsAPI.getLiveRun(123);
+  it('fetches a queued eval run status through the account-scoped endpoint', () => {
+    captainEvaluationsAPI.getRun(123);
 
     expect(axiosMock.get).toHaveBeenCalledWith(
-      '/api/v1/accounts/6/captain/evaluations/live_run',
+      '/api/v1/accounts/6/captain/evaluations/run_status',
       { params: { run_id: 123 } }
     );
   });
@@ -76,6 +67,35 @@ describe('#CaptainEvaluationsAPI', () => {
     expect(axiosMock.post).toHaveBeenCalledWith(
       '/api/v1/accounts/6/captain/evaluations/import_conversation',
       { inbox_id: 57, display_id: 481 }
+    );
+  });
+
+  it('runs generic Tribunal datasets through the account-scoped endpoint', () => {
+    captainEvaluationsAPI.runDataset({
+      files: ['config/llm_evals/datasets/captain_sample.yml'],
+      format: 'json',
+      strict: true,
+    });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/6/captain/evaluations/run_dataset',
+      {
+        files: ['config/llm_evals/datasets/captain_sample.yml'],
+        format: 'json',
+        strict: true,
+      }
+    );
+  });
+
+  it('generates red-team prompts through the account-scoped endpoint', () => {
+    captainEvaluationsAPI.generateRedTeam({
+      prompt: 'unsafe prompt',
+      categories: ['encoding'],
+    });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/6/captain/evaluations/red_team',
+      { prompt: 'unsafe prompt', categories: ['encoding'] }
     );
   });
 });

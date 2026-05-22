@@ -74,6 +74,14 @@ const specializedModelFeatures = computed(() => [
     enterprise: true,
   },
   {
+    key: 'image_recognition',
+    title: t('CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_RECOGNITION.TITLE'),
+    description: t(
+      'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_RECOGNITION.DESCRIPTION'
+    ),
+    enterprise: true,
+  },
+  {
     key: 'help_center_search',
     title: t('CAPTAIN_SETTINGS.MODEL_CONFIG.EMBEDDINGS.TITLE'),
     description: t('CAPTAIN_SETTINGS.MODEL_CONFIG.EMBEDDINGS.DESCRIPTION'),
@@ -168,46 +176,6 @@ const openRouterCredentialStatus = computed(() => {
 });
 const isOpenRouterApiKeyDirty = computed(
   () => openRouterApiKey.value.trim().length > 0
-);
-
-const selectedModelDetailsForFeature = featureKey => {
-  const feature = features.value[featureKey];
-  const selectedModel = feature?.selected || feature?.default;
-  return feature?.models?.find(model => model.id === selectedModel) || null;
-};
-
-const supportsImageInput = model => {
-  return (
-    model?.capabilities?.includes('image_input') ||
-    model?.capabilities?.includes('multimodal_input')
-  );
-};
-
-const imageFeatureLabel = featureKey => {
-  switch (featureKey) {
-    case 'assistant':
-      return t(
-        'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.FEATURES.ASSISTANT'
-      );
-    case 'copilot':
-      return t(
-        'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.FEATURES.COPILOT'
-      );
-    default:
-      return featureKey;
-  }
-};
-
-const imageCapabilityItems = computed(() =>
-  ['assistant', 'copilot'].map(featureKey => {
-    const model = selectedModelDetailsForFeature(featureKey);
-    return {
-      key: featureKey,
-      label: imageFeatureLabel(featureKey),
-      modelName: model?.display_name || '—',
-      supported: supportsImageInput(model),
-    };
-  })
 );
 
 watch(
@@ -398,54 +366,6 @@ onMounted(() => {
               :description="feature.description"
               @change="handleModelChange"
             />
-            <div
-              class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-            >
-              <div class="min-w-0">
-                <h4 class="text-sm font-medium text-n-slate-12">
-                  {{
-                    t('CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.TITLE')
-                  }}
-                </h4>
-                <p class="text-sm text-n-slate-11 mt-0.5">
-                  {{
-                    t(
-                      'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.DESCRIPTION'
-                    )
-                  }}
-                </p>
-              </div>
-              <div class="grid gap-2 md:grid-cols-2">
-                <div
-                  v-for="item in imageCapabilityItems"
-                  :key="item.key"
-                  class="rounded-lg border border-n-weak bg-n-alpha-2 px-3 py-2"
-                >
-                  <div class="text-sm font-medium text-n-slate-12">
-                    {{ item.label }}
-                  </div>
-                  <div class="text-xs text-n-slate-11 mt-0.5">
-                    {{ item.modelName }}
-                  </div>
-                  <div
-                    class="text-xs font-medium mt-1"
-                    :class="
-                      item.supported ? 'text-n-teal-11' : 'text-n-amber-12'
-                    "
-                  >
-                    {{
-                      item.supported
-                        ? t(
-                            'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.SUPPORTED'
-                          )
-                        : t(
-                            'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_UNDERSTANDING.NOT_SUPPORTED'
-                          )
-                    }}
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </SectionLayout>
 

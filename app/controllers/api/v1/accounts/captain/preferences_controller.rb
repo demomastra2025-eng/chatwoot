@@ -105,7 +105,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def permitted_captain_models
     params.require(:captain_models).permit(
       :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :help_center_search, :moderation
+      :audio_transcription, :image_recognition, :help_center_search, :moderation
     ).to_h.stringify_keys
   end
 

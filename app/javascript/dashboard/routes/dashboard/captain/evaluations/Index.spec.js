@@ -1,12 +1,14 @@
+/* eslint-disable vue/one-component-per-file */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
 const getMock = vi.fn();
 const runMock = vi.fn();
-const runLiveMock = vi.fn();
-const getLiveRunMock = vi.fn();
+const getRunMock = vi.fn();
 const importConversationMock = vi.fn();
+const runDatasetMock = vi.fn();
+const generateRedTeamMock = vi.fn();
 
 const ButtonStub = defineComponent({
   name: 'NextButtonStub',
@@ -19,6 +21,10 @@ const ButtonStub = defineComponent({
       type: Boolean,
       default: false,
     },
+    disabled: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['click'],
   setup(props, { emit }) {
@@ -26,7 +32,7 @@ const ButtonStub = defineComponent({
       h(
         'button',
         {
-          disabled: props.isLoading,
+          disabled: props.isLoading || props.disabled,
           onClick: () => emit('click'),
         },
         props.label
@@ -42,9 +48,10 @@ vi.mock('dashboard/api/captain/evaluations', () => ({
   default: {
     get: getMock,
     run: runMock,
-    runLive: runLiveMock,
-    getLiveRun: getLiveRunMock,
+    getRun: getRunMock,
     importConversation: importConversationMock,
+    runDataset: runDatasetMock,
+    generateRedTeam: generateRedTeamMock,
   },
 }));
 
@@ -69,7 +76,7 @@ const catalogPayload = {
       {
         id: 'captain.ai_voice_trace',
         label: 'AI Voice trace integrity',
-        description: 'Offline trace checks',
+        description: 'Trace checks',
         deterministic: true,
         live_model: false,
         default_enabled: true,
@@ -77,18 +84,25 @@ const catalogPayload = {
       {
         id: 'captain.conversation_completion',
         label: 'Captain conversation completion',
-        description: 'Live checks',
+        description: 'LLM checks',
         deterministic: false,
         live_model: true,
         default_enabled: false,
       },
     ],
-    live_evals: {
-      enabled: true,
+    eval_runs: {
+      llm_model_enabled: true,
       max_budget_cents: 500,
       default_budget_cents: 100,
       max_cases: 10,
       default_max_cases: 3,
+    },
+    tribunal: {
+      available_assertions: ['contains', 'not_contains', 'similar'],
+      judge_names: ['faithful', 'onelink_brand_voice'],
+      report_formats: ['json', 'html', 'junit', 'github'],
+      red_team_categories: ['encoding', 'injection', 'jailbreak'],
+      max_concurrency: 8,
     },
   },
 };
@@ -116,88 +130,187 @@ const runPayload = {
   },
 };
 
+const findButton = (wrapper, label) =>
+  wrapper.findAll('button').find(button => button.text() === label);
+
 describe('Captain evaluations page', () => {
   beforeEach(() => {
     getMock.mockReset();
     runMock.mockReset();
-    runLiveMock.mockReset();
-    getLiveRunMock.mockReset();
+    getRunMock.mockReset();
     importConversationMock.mockReset();
+    runDatasetMock.mockReset();
+    generateRedTeamMock.mockReset();
     getMock.mockResolvedValue(catalogPayload);
     runMock.mockResolvedValue(runPayload);
-    runLiveMock.mockResolvedValue({
+    getRunMock.mockResolvedValue({
       data: {
         run: {
           id: 123,
-          status: 'queued',
-          pack_ids: ['captain.conversation_completion'],
+          status: 'passed',
+          result_summary: {
+            suite_count: 1,
+            passed_count: 1,
+            failed_count: 0,
+            suite_ids: ['captain.conversation_completion'],
+          },
         },
-        live_evals: catalogPayload.data.live_evals,
       },
-    });
-    getLiveRunMock.mockResolvedValue({
-      data: { run: { id: 123, status: 'passed', result: { status: 'pass' } } },
     });
     importConversationMock.mockResolvedValue({
       data: { yaml: 'cases:\n  - id: conversation_481_ai_voice_trace\n' },
     });
+    runDatasetMock.mockResolvedValue({
+      data: { report: '{"summary":{"total":1,"passed":1}}' },
+    });
+    generateRedTeamMock.mockResolvedValue({
+      data: { attacks: [{ type: 'base64', prompt: 'encoded attack' }] },
+    });
   });
 
-  it('loads the eval catalog and marks live packs as locked', async () => {
+  it('loads the eval catalog as one selectable pack list', async () => {
     const wrapper = mount(EvaluationsIndex);
     await flushPromises();
 
     expect(getMock).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain('AI Voice trace integrity');
-    expect(wrapper.text()).toContain('Captain conversation completion');
-    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.LIVE_LOCKED');
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.PACK_COPY.AI_VOICE.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.PACK_COPY.COMPLETION.LABEL'
+    );
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.DETERMINISTIC');
+    expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.PACKS.LLM_MODEL');
+    expect(wrapper.text()).not.toContain(
+      'CAPTAIN.EVALUATIONS.PACKS.LIVE_LOCKED'
+    );
   });
 
-  it('runs deterministic packs and renders the result summary', async () => {
+  it('runs the default selected eval packs and renders the result summary', async () => {
     const wrapper = mount(EvaluationsIndex);
     await flushPromises();
 
-    const runButton = wrapper
-      .findAll('button')
-      .find(
-        button => button.text() === 'CAPTAIN.EVALUATIONS.RUN_DETERMINISTIC'
-      );
-
-    await runButton.trigger('click');
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
     await flushPromises();
 
     expect(runMock).toHaveBeenCalledWith({
       pack_ids: ['captain.ai_voice_trace'],
+      acknowledge_llm_cost: false,
+      budget_cents: 100,
+      max_cases: 3,
     });
     expect(wrapper.text()).toContain('CAPTAIN.EVALUATIONS.RESULT_STATUS.PASS');
     expect(wrapper.text()).toContain('12 / 12');
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
   });
 
-  it('queues live judge runs with explicit budget and acknowledgement', async () => {
+  it('queues LLM-backed eval packs from the same run button with explicit budget and acknowledgement', async () => {
+    runMock.mockResolvedValueOnce({
+      data: {
+        run: {
+          id: 123,
+          status: 'queued',
+          mode: 'evals',
+          pack_ids: [
+            'captain.ai_voice_trace',
+            'captain.conversation_completion',
+          ],
+        },
+        eval_runs: catalogPayload.data.eval_runs,
+      },
+    });
     const wrapper = mount(EvaluationsIndex);
     await flushPromises();
 
-    const inputs = wrapper.findAll('input');
-    await inputs[0].setValue('75');
-    await inputs[1].setValue('2');
-    await inputs[2].setValue(true);
+    await wrapper
+      .findAll('[data-testid="eval-pack-checkbox"]')[1]
+      .setValue(true);
+    await wrapper.find('[data-testid="eval-budget-cents"]').setValue('75');
+    await wrapper.find('[data-testid="eval-max-cases"]').setValue('2');
+    await wrapper.find('[data-testid="eval-acknowledge-cost"]').setValue(true);
 
-    const liveButton = wrapper
-      .findAll('button')
-      .find(button => button.text() === 'CAPTAIN.EVALUATIONS.LIVE.BUTTON');
-
-    await liveButton.trigger('click');
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
     await flushPromises();
 
-    expect(runLiveMock).toHaveBeenCalledWith({
-      pack_ids: ['captain.conversation_completion'],
-      acknowledge_live_cost: true,
+    expect(runMock).toHaveBeenCalledWith({
+      pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
+      acknowledge_llm_cost: true,
       budget_cents: 75,
       max_cases: 2,
     });
     expect(wrapper.text()).toContain(
-      'CAPTAIN.EVALUATIONS.LIVE.LAST_RUN_WITH_ID'
+      'CAPTAIN.EVALUATIONS.RUN.LAST_RUN_WITH_ID'
+    );
+  });
+
+  it('refreshes queued eval run status from the page', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    runMock.mockResolvedValueOnce({
+      data: { run: { id: 123, status: 'queued' } },
+    });
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
+    await flushPromises();
+
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN.REFRESH').trigger(
+      'click'
+    );
+    await flushPromises();
+
+    expect(getRunMock).toHaveBeenCalledWith(123);
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.RUN.STATUS_WITH_VALUE'
+    );
+    expect(wrapper.text()).toContain('captain.conversation_completion');
+  });
+
+  it('does not render raw eval run result payloads from status responses', async () => {
+    getRunMock.mockResolvedValueOnce({
+      data: {
+        run: {
+          id: 123,
+          status: 'passed',
+          result: { cases: [{ input: 'secret customer prompt' }] },
+          result_summary: {
+            suite_count: 1,
+            passed_count: 1,
+            failed_count: 0,
+            suite_ids: ['captain.ai_voice_trace'],
+          },
+        },
+      },
+    });
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    runMock.mockResolvedValueOnce({
+      data: { run: { id: 123, status: 'queued' } },
+    });
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
+    await flushPromises();
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN.REFRESH').trigger(
+      'click'
+    );
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="eval-run-summary"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('captain.ai_voice_trace');
+    expect(wrapper.text()).not.toContain('secret customer prompt');
+  });
+
+  it('shows backend validation errors for eval runs', async () => {
+    runMock.mockRejectedValueOnce({
+      response: { data: { error: 'llm_model_eval_already_running' } },
+    });
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RUN_EVALS').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.EVALUATIONS.ERRORS.RUN_FAILED: llm_model_eval_already_running'
     );
   });
 
@@ -205,15 +318,12 @@ describe('Captain evaluations page', () => {
     const wrapper = mount(EvaluationsIndex);
     await flushPromises();
 
-    const inputs = wrapper.findAll('input');
-    await inputs[3].setValue('57');
-    await inputs[4].setValue('481');
+    await wrapper.find('[data-testid="import-inbox-id"]').setValue('57');
+    await wrapper.find('[data-testid="import-display-id"]').setValue('481');
 
-    const importButton = wrapper
-      .findAll('button')
-      .find(button => button.text() === 'CAPTAIN.EVALUATIONS.IMPORT.BUTTON');
-
-    await importButton.trigger('click');
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.IMPORT.BUTTON').trigger(
+      'click'
+    );
     await flushPromises();
 
     expect(importConversationMock).toHaveBeenCalledWith({
@@ -221,5 +331,94 @@ describe('Captain evaluations page', () => {
       display_id: '481',
     });
     expect(wrapper.text()).toContain('conversation_481_ai_voice_trace');
+  });
+
+  it('runs generic Tribunal datasets with a selected report format', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    await wrapper
+      .find('[data-testid="tribunal-dataset-files"]')
+      .setValue('config/llm_evals/datasets/captain_sample.yml');
+    await wrapper
+      .find('[data-testid="tribunal-dataset-format"]')
+      .setValue('json');
+    await wrapper
+      .find('[data-testid="tribunal-dataset-concurrency"]')
+      .setValue('2');
+    await wrapper
+      .find('[data-testid="tribunal-dataset-threshold"]')
+      .setValue('0.9');
+
+    await findButton(
+      wrapper,
+      'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON'
+    ).trigger('click');
+    await flushPromises();
+
+    expect(runDatasetMock).toHaveBeenCalledWith({
+      files: ['config/llm_evals/datasets/captain_sample.yml'],
+      format: 'json',
+      strict: true,
+      allow_live_assertions: false,
+      acknowledge_llm_cost: false,
+      budget_cents: 100,
+      max_cases: 3,
+      threshold: 0.9,
+      concurrency: 2,
+    });
+    expect(wrapper.text()).toContain('"summary"');
+  });
+
+  it('requires visible budget acknowledgement for dataset live assertions', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    await wrapper
+      .find('[data-testid="tribunal-dataset-live-assertions"]')
+      .setValue(true);
+
+    expect(wrapper.find('[data-testid="tribunal-acknowledge-cost"]').exists()).toBe(
+      true
+    );
+    expect(
+      findButton(wrapper, 'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON').attributes(
+        'disabled'
+      )
+    ).toBeDefined();
+
+    await wrapper.find('[data-testid="tribunal-acknowledge-cost"]').setValue(true);
+    await findButton(
+      wrapper,
+      'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON'
+    ).trigger('click');
+    await flushPromises();
+
+    expect(runDatasetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allow_live_assertions: true,
+        acknowledge_llm_cost: true,
+      })
+    );
+  });
+
+  it('generates red-team prompts from the page', async () => {
+    const wrapper = mount(EvaluationsIndex);
+    await flushPromises();
+
+    await wrapper
+      .find('[data-testid="red-team-prompt"]')
+      .setValue('unsafe prompt');
+
+    await findButton(wrapper, 'CAPTAIN.EVALUATIONS.RED_TEAM.BUTTON').trigger(
+      'click'
+    );
+    await flushPromises();
+
+    expect(generateRedTeamMock).toHaveBeenCalledWith({
+      prompt: 'unsafe prompt',
+      categories: ['encoding', 'injection', 'jailbreak'],
+    });
+    expect(wrapper.text()).toContain('encoded attack');
   });
 });

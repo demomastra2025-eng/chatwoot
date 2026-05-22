@@ -4,6 +4,11 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
   subject(:service) { described_class.new(message: message) }
 
   let(:message) { create(:message, content: 'Hello world') }
+  let(:image_recognition_service) { instance_double(Captain::ImageRecognitionService, perform: 'Recognized image content') }
+
+  before do
+    allow(Captain::ImageRecognitionService).to receive(:new).and_return(image_recognition_service)
+  end
 
   describe '#generate_content' do
     context 'when message has only text content' do
@@ -30,7 +35,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         result = service.generate_content
         expect(result).to be_an(Array)
         expect(result).to include({ type: 'text', text: 'Hello world' })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
 
@@ -42,11 +47,9 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment.save!
       end
 
-      it 'returns an array of content parts without text' do
+      it 'returns recognized image text without original text' do
         result = service.generate_content
-        expect(result).to be_an(Array)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
-        expect(result).not_to include(hash_including(type: 'text', text: 'Hello world'))
+        expect(result).to eq('Image attachment: Recognized image content')
       end
     end
   end
@@ -63,7 +66,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
 
       it 'includes image parts' do
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
 
@@ -133,7 +136,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
         expect(result).to include({ type: 'text', text: 'Audio text' })
         expect(result).to include({ type: 'text', text: 'User has shared an attachment' })
       end
@@ -163,8 +166,8 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         image_attachments = message.attachments.where(file_type: :image)
         result = service.send(:image_parts, image_attachments)
 
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image1.jpg' } })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image2.jpg' } })
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
 
@@ -323,10 +326,16 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
     end
 
-    describe '#image_part' do
-      it 'returns correct image part format' do
-        result = service.send(:image_part, 'https://example.com/image.jpg')
-        expect(result).to eq({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+    describe '#image_description_part' do
+      let(:attachment) do
+        attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/image.jpg')
+        attachment.save!
+        attachment
+      end
+
+      it 'returns recognized image text part format' do
+        result = service.send(:image_description_part, attachment, 'https://example.com/image.jpg')
+        expect(result).to eq({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
   end

@@ -261,3 +261,6 @@
   display_name: Custom Tools
   enabled: false
   premium: true
+- name: content
+  display_name: SMM
+  enabled: true

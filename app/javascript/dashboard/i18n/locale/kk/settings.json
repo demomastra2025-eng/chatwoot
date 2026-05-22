@@ -449,7 +449,7 @@
       "METADATA_SEPARATOR": " · ",
       "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure a provider key or refresh the OpenRouter catalog.",
       "SPECIALIZED_TITLE": "Specialized AI models",
-      "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, and FAQ embeddings separately from the chat model.",
+      "SPECIALIZED_DESCRIPTION": "Choose capability-safe models for moderation, audio recognition, image recognition, and FAQ embeddings separately from the chat model.",
       "EDITOR": {
         "TITLE": "Editor Features",
         "DESCRIPTION": "Powers smart compose, grammar corrections, tone adjustments, and content enhancement in your message editor."
@@ -470,19 +470,13 @@
         "TITLE": "Audio recognition model",
         "DESCRIPTION": "Transcribes voice messages and call recordings. OpenRouter options must support audio input; OpenAI transcription endpoint models remain optional."
       },
+      "IMAGE_RECOGNITION": {
+        "TITLE": "Image recognition model",
+        "DESCRIPTION": "Describes customer-shared images before the AI Agent / Assistant processes the message. Defaults are selected automatically when OpenAI or OpenRouter is configured."
+      },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embeddings model",
         "DESCRIPTION": "Builds vectors for FAQ and help-center semantic search. If embeddings are unavailable, FAQ lookup can still use exact keyword fallback."
-      },
-      "IMAGE_UNDERSTANDING": {
-        "TITLE": "Image understanding",
-        "DESCRIPTION": "There is no separate image model. Images use the selected AI Agent / Assistant chat model when it advertises image input support.",
-        "SUPPORTED": "Images supported",
-        "NOT_SUPPORTED": "Images not supported",
-        "FEATURES": {
-          "ASSISTANT": "AI Agent",
-          "COPILOT": "Assistant"
-        }
       }
     },
     "FEATURES": {
@@ -597,6 +591,7 @@
         "LABEL_SUGGESTION": "Label Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
         "HELP_CENTER_SEARCH": "Help Center Search",
+        "IMAGE_RECOGNITION": "Image Recognition",
         "MODERATION": "Moderation"
       }
     },

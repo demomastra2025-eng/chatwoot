@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe Llm::Evals::LiveRunJob do
+RSpec.describe Llm::Evals::RunJob do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :administrator) }
   let(:eval_run) do
@@ -10,14 +10,14 @@ RSpec.describe Llm::Evals::LiveRunJob do
       account: account,
       user: user,
       status: 'queued',
-      mode: 'live_model',
-      pack_ids: ['captain.conversation_completion'],
+      mode: 'evals',
+      pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
       requested_budget_cents: 75,
       max_cases: 1
     )
   end
 
-  it 'executes selected live packs through the shared runner and stores sanitized result' do
+  it 'executes selected eval packs through the shared runner and stores sanitized result' do
     suite_result = Llm::Evals::Result.new(
       suite_id: 'captain.conversation_completion',
       prompt_id: 'conversation_completion',
@@ -33,7 +33,7 @@ RSpec.describe Llm::Evals::LiveRunJob do
 
     expect(Llm::Evals::Runner).to have_received(:new).with(
       account: account,
-      pack_ids: ['captain.conversation_completion'],
+      pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
       include_live: true,
       max_cases: 1
     )
@@ -45,11 +45,21 @@ RSpec.describe Llm::Evals::LiveRunJob do
   it 'marks the run failed when the runner raises' do
     allow(Llm::Evals::Runner).to receive(:new).and_raise(StandardError, 'provider unavailable token=secret123')
 
-    expect { described_class.perform_now(eval_run.id) }.to raise_error(StandardError, 'provider unavailable token=secret123')
+    expect { described_class.perform_now(eval_run.id) }.not_to raise_error
 
     expect(eval_run.reload).to have_attributes(
       status: 'failed',
       error_message: 'StandardError: provider unavailable token=[REDACTED]'
     )
+  end
+
+  it 'does not re-run terminal eval runs' do
+    eval_run.update!(status: 'failed', finished_at: 1.hour.ago, error_message: 'already failed')
+    allow(Llm::Evals::Runner).to receive(:new)
+
+    described_class.perform_now(eval_run.id)
+
+    expect(Llm::Evals::Runner).not_to have_received(:new)
+    expect(eval_run.reload.error_message).to eq('already failed')
   end
 end

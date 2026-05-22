@@ -114,6 +114,13 @@ const hasSchedulingSettings = computed(() => {
   );
 });
 
+const hasSmm = computed(() => {
+  return (
+    checkPermissions(['administrator']) &&
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.SMM)
+  );
+});
+
 const hasCrmSettingsAccess = computed(() => {
   return checkPermissions([
     'administrator',
@@ -1188,6 +1195,53 @@ const menuItems = computed(() => {
           },
         ],
       },
+      ...(hasSmm.value
+        ? [
+            {
+              name: 'SMM',
+              label: t('SIDEBAR.SMM'),
+              icon: 'i-lucide-megaphone',
+              children: [
+                {
+                  name: 'SMM Calendar',
+                  visibilityKey: 'SMM:Calendar',
+                  label: t('SIDEBAR.SMM_CALENDAR'),
+                  to: accountScopedRoute('smm_calendar'),
+                },
+                {
+                  name: 'SMM Posts',
+                  visibilityKey: 'SMM:Posts',
+                  label: t('SIDEBAR.SMM_POSTS'),
+                  to: accountScopedRoute('smm_posts'),
+                },
+                {
+                  name: 'SMM Channels',
+                  visibilityKey: 'SMM:Channels',
+                  label: t('SIDEBAR.SMM_CHANNELS'),
+                  to: accountScopedRoute('smm_channels'),
+                },
+                {
+                  name: 'SMM Media',
+                  visibilityKey: 'SMM:Media',
+                  label: t('SIDEBAR.SMM_MEDIA'),
+                  to: accountScopedRoute('smm_media'),
+                },
+                {
+                  name: 'SMM Analytics',
+                  visibilityKey: 'SMM:Analytics',
+                  label: t('SIDEBAR.SMM_ANALYTICS'),
+                  to: accountScopedRoute('smm_analytics'),
+                },
+                {
+                  name: 'SMM Settings',
+                  visibilityKey: 'SMM:Settings',
+                  label: t('SIDEBAR.SMM_SETTINGS'),
+                  to: accountScopedRoute('smm_settings'),
+                },
+              ],
+            },
+          ]
+        : []),
       {
         name: 'Reports',
         label: t('SIDEBAR.REPORTS'),

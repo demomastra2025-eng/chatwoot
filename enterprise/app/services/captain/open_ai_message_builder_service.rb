@@ -23,8 +23,13 @@ class Captain::OpenAiMessageBuilderService
     { type: 'text', text: text }
   end
 
-  def image_part(image_url)
-    { type: 'image_url', image_url: { url: image_url } }
+  def image_description_part(attachment, image_url)
+    description = Captain::ImageRecognitionService.new(
+      account: @message.account,
+      attachment: attachment,
+      image_url: image_url
+    ).perform
+    text_part("Image attachment: #{description}") if description.present?
   end
 
   def attachment_parts(attachments)
@@ -42,7 +47,7 @@ class Captain::OpenAiMessageBuilderService
   def image_parts(image_attachments)
     image_attachments.each_with_object([]) do |attachment, parts|
       url = get_attachment_url(attachment)
-      parts << image_part(url) if url.present?
+      parts << image_description_part(attachment, url) if url.present?
     end
   end
 

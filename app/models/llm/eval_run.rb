@@ -9,7 +9,7 @@
 #  finished_at            :datetime
 #  max_cases              :integer
 #  metadata               :jsonb            not null
-#  mode                   :string           default("live_model"), not null
+#  mode                   :string           default("evals"), not null
 #  pack_ids               :jsonb            not null
 #  requested_budget_cents :integer          default(0), not null
 #  result                 :jsonb            not null
@@ -26,6 +26,8 @@
 #  index_llm_eval_runs_on_account_id_and_created_at  (account_id,created_at)
 #  index_llm_eval_runs_on_account_id_and_status      (account_id,status)
 #  index_llm_eval_runs_on_user_id                    (user_id)
+#  index_llm_eval_runs_one_active_live_per_account   (account_id) UNIQUE
+#    WHERE status IN ('queued', 'running') AND metadata queued_llm_model_run is true
 #
 # Foreign Keys
 #
@@ -35,8 +37,15 @@
 class Llm::EvalRun < ApplicationRecord
   self.table_name = 'llm_eval_runs'
 
+  SENSITIVE_FRAGMENT = /(api[_-]?key|token|secret|password|authorization|credential)(=|:)?[^\s,;&]*/i
+  SENSITIVE_RESULT_KEYS = %w[
+    api_key token secret password authorization credential prompt input output actual actual_output
+    expected expected_output context retrieval_context messages message content response request
+  ].freeze
+  MAX_STRING_BYTES = 2_000
+
   STATUSES = %w[queued running passed failed].freeze
-  MODES = %w[live_model].freeze
+  MODES = %w[evals].freeze
 
   belongs_to :account
   belongs_to :user, optional: true
@@ -48,7 +57,39 @@ class Llm::EvalRun < ApplicationRecord
 
   scope :recent, -> { order(created_at: :desc) }
 
-  def summary
+  class << self
+    def sanitize_result(value)
+      case value
+      when Array
+        value.map { |entry| sanitize_result(entry) }
+      when Hash
+        value.each_with_object({}) do |(key, entry), result|
+          string_key = key.to_s
+          result[string_key] = if SENSITIVE_RESULT_KEYS.include?(string_key)
+                                 '[REDACTED]'
+                               else
+                                 sanitize_result(entry)
+                               end
+        end
+      when String
+        redact_string(value)
+      else
+        value
+      end
+    end
+
+    def redact_string(value)
+      redacted = value.gsub(SENSITIVE_FRAGMENT) do |match|
+        key = match.split(/=|:/, 2).first
+        "#{key}=[REDACTED]"
+      end
+      return redacted if redacted.bytesize <= MAX_STRING_BYTES
+
+      "#{redacted[0, MAX_STRING_BYTES]}...[TRUNCATED]"
+    end
+  end
+
+  def summary(include_result: false)
     {
       id: id,
       status: status,
@@ -56,12 +97,31 @@ class Llm::EvalRun < ApplicationRecord
       pack_ids: pack_ids,
       requested_budget_cents: requested_budget_cents,
       max_cases: max_cases,
-      result: result.presence,
+      result_summary: result_summary,
+      result: include_result ? self.class.sanitize_result(result.presence) : nil,
       error_message: error_message,
       started_at: started_at,
       finished_at: finished_at,
       created_at: created_at,
       updated_at: updated_at
     }.compact
+  end
+
+  private
+
+  def result_summary
+    suites = Array(result['suites'] || result[:suites])
+    return if suites.blank?
+
+    {
+      suite_count: suites.size,
+      passed_count: suites.count { |suite| suite_status(suite) == 'pass' },
+      failed_count: suites.count { |suite| suite_status(suite) != 'pass' },
+      suite_ids: suites.filter_map { |suite| suite['suite_id'] || suite[:suite_id] }
+    }
+  end
+
+  def suite_status(suite)
+    (suite['status'] || suite[:status]).to_s
   end
 end

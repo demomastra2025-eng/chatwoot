@@ -1,4 +1,7 @@
 #!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
+HUSKY_SH="$(dirname "$0")/_/husky.sh"
+if [ -f "$HUSKY_SH" ]; then
+  . "$HUSKY_SH"
+fi
 
 sh bin/validate_push

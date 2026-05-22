@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_21_195216) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_22_125100) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1456,7 +1456,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_21_195216) do
     t.bigint "account_id", null: false
     t.bigint "user_id"
     t.string "status", default: "queued", null: false
-    t.string "mode", default: "live_model", null: false
+    t.string "mode", default: "evals", null: false
     t.jsonb "pack_ids", default: [], null: false
     t.integer "requested_budget_cents", default: 0, null: false
     t.integer "max_cases"
@@ -1470,6 +1470,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_21_195216) do
     t.index ["account_id", "created_at"], name: "index_llm_eval_runs_on_account_id_and_created_at"
     t.index ["account_id", "status"], name: "index_llm_eval_runs_on_account_id_and_status"
     t.index ["account_id"], name: "index_llm_eval_runs_on_account_id"
+    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
     t.index ["user_id"], name: "index_llm_eval_runs_on_user_id"
   end
 

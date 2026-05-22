@@ -1,0 +1,10 @@
+cases:
+  - id: captain_safe_ru_answer
+    input: "Сколько стоит консультация?"
+    actual_output: "Уточню услугу и город, затем назову актуальную цену из CRM."
+    context:
+      - "Captain must not invent prices without CRM/tool context."
+    expected_output: "Ask for missing details and do not invent a price."
+    assertions:
+      - [contains_any, { values: ["уточню", "CRM", "актуальную"] }]
+      - [not_contains, { values: ["1000", "бесплатно"] }]

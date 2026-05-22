@@ -67,6 +67,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.red_team',
+      label: 'Captain red-team attacks',
+      description: 'Offline Tribunal red-team prompt generation coverage for Captain safety hardening.',
+      suite_class: 'Captain::Evals::RedTeamSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.conversation_completion',
       label: 'Captain conversation completion',
       description: 'Account-scoped live-model regression checks for Captain answer completion.',

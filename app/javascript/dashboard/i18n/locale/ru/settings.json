@@ -433,7 +433,14 @@
     "DOCS": "Открыть документацию",
     "SECURITY": "Безопасность",
     "CAPTAIN_AI": "AI-сотрудники",
-    "CONVERSATION_WORKFLOW": "Сценарии диалогов"
+    "CONVERSATION_WORKFLOW": "Сценарии диалогов",
+    "SMM": "SMM",
+    "SMM_CALENDAR": "Календарь",
+    "SMM_POSTS": "Посты",
+    "SMM_CHANNELS": "Соц.сети",
+    "SMM_MEDIA": "Медиа",
+    "SMM_ANALYTICS": "Аналитика",
+    "SMM_SETTINGS": "Настройки"
   },
   "BILLING_SETTINGS": {
     "TITLE": "Платёж",
@@ -919,7 +926,7 @@
       "METADATA_SEPARATOR": " · ",
       "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ провайдера или обновите каталог OpenRouter.",
       "SPECIALIZED_TITLE": "Специализированные AI-модели",
-      "SPECIALIZED_DESCRIPTION": "Выбирайте capability-safe модели для модерации, распознавания аудио и FAQ embeddings отдельно от chat-модели.",
+      "SPECIALIZED_DESCRIPTION": "Выбирайте capability-safe модели для модерации, распознавания аудио, распознавания картинок и FAQ embeddings отдельно от chat-модели.",
       "EDITOR": {
         "TITLE": "Функции редактора",
         "DESCRIPTION": "Отвечает за умное написание, исправление грамматики, настройку тона и улучшение контента в редакторе сообщений."
@@ -940,19 +947,13 @@
         "TITLE": "Модель распознавания аудио",
         "DESCRIPTION": "Транскрибирует голосовые сообщения и записи звонков. OpenRouter-варианты должны поддерживать audio input; endpoint-модели OpenAI остаются опциональными."
       },
+      "IMAGE_RECOGNITION": {
+        "TITLE": "Модель распознавания картинок",
+        "DESCRIPTION": "Описывает картинки клиентов до передачи сообщения AI-агенту / ассистенту. Дефолты выбираются автоматически, если настроен OpenAI или OpenRouter."
+      },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embedding-модель",
         "DESCRIPTION": "Строит векторы для FAQ и семантического поиска по базе знаний. Если embeddings недоступны, FAQ lookup использует точный keyword fallback."
-      },
-      "IMAGE_UNDERSTANDING": {
-        "TITLE": "Распознавание картинок",
-        "DESCRIPTION": "Отдельной image-модели нет. Картинки использует выбранная chat-модель AI-агента / ассистента, если у неё есть поддержка image input.",
-        "SUPPORTED": "Картинки поддерживаются",
-        "NOT_SUPPORTED": "Картинки не поддерживаются",
-        "FEATURES": {
-          "ASSISTANT": "AI-агент",
-          "COPILOT": "Ассистент"
-        }
       }
     },
     "FEATURES": {
@@ -1067,6 +1068,7 @@
         "LABEL_SUGGESTION": "Подсказка меток",
         "AUDIO_TRANSCRIPTION": "Транскрибация аудио",
         "HELP_CENTER_SEARCH": "Поиск по справке",
+        "IMAGE_RECOGNITION": "Распознавание картинок",
         "MODERATION": "Модерация"
       }
     },
@@ -1125,6 +1127,85 @@
         "UPGRADE_PROMPT": "Перейдите на платный тариф, чтобы требовать обязательные атрибуты перед завершением диалога.",
         "ASK_ADMIN": "Пожалуйста, обратитесь к администратору для обновления тарифа."
       }
+    }
+  },
+  "SMM": {
+    "CONNECT_POSTIZ": "Подключить Postiz",
+    "REFRESH": "Обновить",
+    "OPEN_SETTINGS": "Открыть настройки",
+    "YES": "Да",
+    "NO": "Нет",
+    "EMPTY_CONNECTION_TITLE": "Подключите Postiz для начала работы",
+    "EMPTY_CONNECTION_DESCRIPTION": "SMM-модуль использует серверный Postiz API key. Ключ хранится на backend и не попадает в браузер.",
+    "TABS": {
+      "CALENDAR": "Календарь",
+      "POSTS": "Посты",
+      "CHANNELS": "Соц.сети",
+      "MEDIA": "Медиа",
+      "ANALYTICS": "Аналитика",
+      "SETTINGS": "Настройки"
+    },
+    "CALENDAR": {
+      "TITLE": "Контент-календарь",
+      "DESCRIPTION": "Расписание запланированных и опубликованных постов в структуре Postiz.",
+      "EMPTY": "В текущем месяце постов нет."
+    },
+    "POSTS": {
+      "TITLE": "Посты",
+      "DESCRIPTION": "Посты и статусы из подключенного Postiz workspace.",
+      "EMPTY": "Посты не найдены.",
+      "STATUS_UNKNOWN": "Неизвестно"
+    },
+    "CHANNELS": {
+      "TITLE": "Соц.сети",
+      "DESCRIPTION": "Подключение и управление соцсетями через Postiz OAuth.",
+      "EMPTY": "Соцсети ещё не подключены.",
+      "OAUTH_FAILED": "Не удалось открыть OAuth URL Postiz."
+    },
+    "COMPOSER": {
+      "TITLE": "Композер",
+      "DESCRIPTION": "Создание простого Postiz payload из OneLink.",
+      "SELECT_CHANNEL": "Выберите соцсеть",
+      "TYPE_SCHEDULE": "Запланировать",
+      "TYPE_DRAFT": "Черновик",
+      "TYPE_NOW": "Опубликовать сейчас",
+      "DATE": "Дата публикации",
+      "TEXT_PLACEHOLDER": "Текст поста",
+      "CREATE": "Создать пост",
+      "REQUIRED": "Выберите соцсеть и введите текст поста.",
+      "CREATED": "Пост создан",
+      "CREATE_FAILED": "Не удалось создать пост"
+    },
+    "MEDIA": {
+      "TITLE": "Медиа",
+      "DESCRIPTION": "Загрузка медиа в Postiz по URL. Загрузка файла доступна через backend API.",
+      "URL_PLACEHOLDER": "https://example.com/image.jpg",
+      "UPLOAD_URL": "Загрузить URL",
+      "UPLOADED": "Медиа загружено",
+      "UPLOAD_FAILED": "Не удалось загрузить медиа"
+    },
+    "ANALYTICS": {
+      "TITLE": "Аналитика",
+      "DESCRIPTION": "Загрузка аналитики Postiz по подключенной соцсети.",
+      "SELECT_CHANNEL": "Выберите соцсеть",
+      "LOAD": "Загрузить аналитику",
+      "LOAD_FAILED": "Не удалось загрузить аналитику"
+    },
+    "SETTINGS": {
+      "TITLE": "Подключение Postiz",
+      "DESCRIPTION": "Сохраняем Postiz Public API key только на backend. Уже сохранённый ключ не отображается.",
+      "API_KEY_PLACEHOLDER": "Postiz API key",
+      "ORG_PLACEHOLDER": "Organization ID (опционально)",
+      "TIMEZONE_PLACEHOLDER": "Таймзона по умолчанию (опционально)",
+      "SAVE": "Сохранить подключение",
+      "TEST": "Проверить подключение",
+      "SAVED": "Подключение Postiz сохранено",
+      "SAVE_FAILED": "Не удалось сохранить подключение Postiz",
+      "TEST_OK": "Postiz подключен корректно",
+      "TEST_FAILED": "Проверка Postiz не прошла",
+      "STATUS": "Статус подключения",
+      "CONNECTED": "Подключено",
+      "TOKEN_CONFIGURED": "API key настроен"
     }
   }
 }

@@ -195,6 +195,7 @@ gem 'ruby-openai'
 gem 'ruby_llm', '~> 1.15'
 gem 'ruby_llm-schema', '~> 0.4'
 gem 'ruby_llm-mcp', git: 'https://github.com/patvice/ruby_llm-mcp', ref: '4d10851994029c7d7f3246ad517b2eef483ac810'
+gem 'ruby_llm-tribunal', '~> 0.1', require: false
 
 gem 'cld3', '~> 3.7'
 
@@ -246,7 +247,6 @@ end
 
 group :development, :test do
   gem 'active_record_query_trace'
-  gem 'ruby_llm-tribunal', '~> 0.1', require: false
   ##--- gems for debugging and error reporting ---##
   # static analysis
   gem 'brakeman'

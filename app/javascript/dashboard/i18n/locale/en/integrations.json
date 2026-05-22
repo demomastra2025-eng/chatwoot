@@ -465,35 +465,73 @@
       "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits."
     },
     "EVALUATIONS": {
-      "TITLE": "AI Quality",
-      "BADGE": "RubyLLM Tribunal",
-      "HERO_TITLE": "Evaluate Captain responses before they regress",
-      "HERO_DESCRIPTION": "This page is the dedicated home for deterministic checks, LLM-as-judge evaluations, and safety regression packs for Captain and AI Voice.",
-      "TARGETS_TITLE": "Evaluation targets",
-      "STATUS_TITLE": "Current implementation status",
-      "STATUS_DESCRIPTION": "The backend runner executes deterministic offline packs without external LLM calls. Live LLM-as-judge runs are now available only through the queued, audited, spend-capped endpoint when explicitly enabled by admins.",
-      "PILLARS": {
-        "DETERMINISTIC": {
-          "TITLE": "Fast deterministic checks",
-          "DESCRIPTION": "Validate required text, JSON shape, token length, and tool-result markers without external API calls."
-        },
-        "JUDGE": {
-          "TITLE": "LLM-as-judge scoring",
-          "DESCRIPTION": "Score faithfulness, relevance, correctness, and hallucination risk against expected context."
+      "TITLE": "AI quality",
+      "BADGE": "Quality checks",
+      "HERO_TITLE": "Ready-made Captain checks",
+      "HERO_DESCRIPTION": "Check answers, tools, voice, and safety without technical setup.",
+      "RUN_EVALS": "Run check",
+      "ADVANCED": {
+        "TITLE": "Advanced settings"
+      },
+      "SELECTION": {
+        "EMPTY": "No checks selected",
+        "COUNT": "Selected checks: {count}",
+        "FREE": "No LLM credits",
+        "LLM": "LLM",
+        "LLM_COST": "May use LLM credits",
+        "CUSTOM_TITLE": "Custom check set",
+        "CUSTOM_DESCRIPTION": "Manual checks are selected in advanced settings."
+      },
+      "SCENARIOS": {
+        "RELEASE": {
+          "TITLE": "Before release",
+          "SHORT": "Fast quality smoke",
+          "TOOLTIP": "Runs baseline safety, tool, AI Voice, and red-team generation checks before shipping changes."
         },
         "SAFETY": {
-          "TITLE": "Safety and red-team packs",
-          "DESCRIPTION": "Check jailbreak resistance, harmful content, toxicity, bias, and PII leakage before rollout."
+          "TITLE": "Safety",
+          "SHORT": "Do not expose unsafe data",
+          "TOOLTIP": "Checks moderation, tool argument/result blocking, and jailbreak variants."
+        },
+        "VOICE": {
+          "TITLE": "AI Voice",
+          "SHORT": "Voice keeps the meaning",
+          "TOOLTIP": "Checks that voice uses tool results, keeps deal/price context, and has no clipped-speech markers."
+        },
+        "TOOLS": {
+          "TITLE": "CRM tools",
+          "SHORT": "Tools stay controlled",
+          "TOOLTIP": "Checks Captain tool inputs and outputs before they reach the customer."
+        },
+        "COMPLETION": {
+          "TITLE": "Conversation closing",
+          "SHORT": "Close only solved chats",
+          "TOOLTIP": "Live model check: separates solved conversations from cases waiting for customer data or follow-up."
         }
       },
-      "TARGETS": {
-        "TOOL_RESULTS": "Verify that answers use Captain tool results instead of ignoring them.",
-        "RAG_CONTEXT": "Detect hallucinations against documents, FAQs, and retrieved context.",
-        "VOICE_TRANSCRIPTS": "Replay AI Voice transcripts to catch clipped meaning and unsafe follow-ups.",
-        "SAFETY": "Run safety/jailbreak checks before prompt, model, or tool changes go live."
+      "PACK_COPY": {
+        "MODERATION": {
+          "LABEL": "Message safety",
+          "DESCRIPTION": "Checks that dangerous content and unavailable moderation are handled correctly."
+        },
+        "TOOL_SAFETY": {
+          "LABEL": "Tool safety",
+          "DESCRIPTION": "Checks Captain tool arguments and results before customer display."
+        },
+        "AI_VOICE": {
+          "LABEL": "AI Voice trace",
+          "DESCRIPTION": "Checks voice traces: tool result was used and speech was not clipped."
+        },
+        "RED_TEAM": {
+          "LABEL": "Red-team prompts",
+          "DESCRIPTION": "Checks adversarial prompt generation for safety testing."
+        },
+        "COMPLETION": {
+          "LABEL": "Conversation completion",
+          "DESCRIPTION": "Live check: whether a customer conversation is solved."
+        }
       },
-      "RUN_DETERMINISTIC": "Run offline checks",
-      "RESULT_TITLE": "Latest run result",
+      "RESULT_TITLE": "Latest result",
       "RESULT_STATUS": {
         "PASS": "Passed",
         "FAIL": "Failed"
@@ -505,39 +543,60 @@
         "ERRORS": "Errors"
       },
       "PACKS": {
-        "TITLE": "Eval packs",
-        "LOADING": "Loading packs...",
-        "OFFLINE": "Offline",
-        "LIVE_LOCKED": "Live locked"
+        "TITLE": "Check packs",
+        "LOADING": "Loading...",
+        "DETERMINISTIC": "Fast",
+        "LLM_MODEL": "Uses LLM",
+        "SELECT": "Select"
       },
       "ERRORS": {
-        "CATALOG_FAILED": "Could not load evaluation packs.",
-        "RUN_FAILED": "Could not run offline evaluations.",
-        "LIVE_RUN_FAILED": "Could not queue the live judge run.",
-        "LIVE_STATUS_FAILED": "Could not refresh the live judge run status.",
-        "IMPORT_FAILED": "Could not export this conversation."
-      },
-      "LIVE": {
-        "TITLE": "Live LLM-as-judge",
-        "DESCRIPTION": "Queues account-scoped live judge packs with explicit admin opt-in, budget cap, case cap, and persisted run status. Disabled unless LLM_EVALS_LIVE_ENABLED is set.",
-        "ENABLED": "Live enabled",
-        "DISABLED": "Live disabled",
-        "BUDGET_CENTS": "Budget cap, cents",
-        "MAX_CASES": "Max cases",
-        "ACKNOWLEDGE": "I acknowledge this can use external LLM credits and should not be run from CI.",
-        "BUTTON": "Queue live judge",
-        "LAST_RUN": "Latest live run",
-        "LAST_RUN_WITH_ID": "Latest live run #{id}",
-        "STATUS": "Status",
-        "STATUS_WITH_VALUE": "Status: {status}",
-        "REFRESH": "Refresh status"
+        "CATALOG_FAILED": "Could not load checks.",
+        "RUN_FAILED": "Could not run checks.",
+        "DATASET_FAILED": "Could not run dataset.",
+        "RED_TEAM_FAILED": "Could not generate prompts.",
+        "RUN_STATUS_FAILED": "Could not refresh status.",
+        "IMPORT_FAILED": "Could not export conversation."
       },
       "IMPORT": {
-        "TITLE": "Import conversation regression",
-        "DESCRIPTION": "Export a sanitized AI Voice conversation trace as YAML that can be pasted into the offline fixture pack.",
+        "TITLE": "Import conversation",
+        "DESCRIPTION": "Exports a sanitized AI Voice trace to YAML for regression checks.",
         "INBOX_ID": "Inbox ID",
-        "DISPLAY_ID": "Conversation display ID",
-        "BUTTON": "Export fixture"
+        "DISPLAY_ID": "Conversation ID",
+        "BUTTON": "Export"
+      },
+      "TRIBUNAL": {
+        "TITLE": "Dataset checks",
+        "DESCRIPTION": "Runs ready YAML/JSON cases. Leave empty to use the default dataset.",
+        "FILES": "Dataset file",
+        "FILES_PLACEHOLDER": "Empty = default dataset",
+        "FORMAT": "Report",
+        "CONCURRENCY": "Concurrency",
+        "THRESHOLD": "Threshold",
+        "STRICT": "Strict",
+        "ALLOW_LIVE_ASSERTIONS": "Allow LLM judge",
+        "ASSERTIONS": "Assertions",
+        "JUDGES": "Judges",
+        "DATASET_BUTTON": "Run dataset"
+      },
+      "RED_TEAM": {
+        "TITLE": "Prompt attacks",
+        "DESCRIPTION": "Generates jailbreak/prompt-injection variants to test Captain protection.",
+        "PROMPT": "Unsafe request",
+        "BUTTON": "Generate"
+      },
+      "RUN": {
+        "TITLE": "Run settings",
+        "DESCRIPTION": "Choose a ready scenario or manual checks.",
+        "LLM_ENABLED": "LLM enabled",
+        "LLM_DISABLED": "LLM disabled",
+        "BUDGET_CENTS": "Budget, cents",
+        "BUDGET_TOOLTIP": "Upper spend limit for live checks through an external model.",
+        "MAX_CASES": "Cases",
+        "ACKNOWLEDGE": "I understand selected LLM-backed evals can spend external LLM credits and should not run from CI.",
+        "ACKNOWLEDGE_SHORT": "I approve LLM credit usage",
+        "LAST_RUN_WITH_ID": "Run #{id}",
+        "STATUS_WITH_VALUE": "Status: {status}",
+        "REFRESH": "Refresh"
       }
     },
     "PAYWALL": {

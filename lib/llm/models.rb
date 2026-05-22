@@ -18,9 +18,10 @@ module Llm::Models
   OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS = {
     'editor' => [],
     'label_suggestion' => [],
-    'assistant' => %w[structured_output tool_calling image_input],
-    'copilot' => %w[structured_output tool_calling image_input],
+    'assistant' => %w[structured_output tool_calling],
+    'copilot' => %w[structured_output tool_calling],
     'audio_transcription' => %w[audio_input text_output],
+    'image_recognition' => %w[image_input],
     'moderation' => %w[text_input text_output structured_output]
   }.freeze
   OPENROUTER_NO_FALLBACK_FEATURES = OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.keys.freeze

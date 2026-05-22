@@ -76,7 +76,7 @@ RSpec.describe Llm::Models do
       expect(claude[:capabilities]).to include('reasoning', 'structured_output', 'tool_calling')
     end
 
-    it 'includes dynamically fetched OpenRouter models that satisfy feature capabilities when OpenRouter is configured' do
+    it 'includes dynamically fetched OpenRouter chat models that satisfy assistant capabilities when OpenRouter is configured' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {
@@ -125,9 +125,33 @@ RSpec.describe Llm::Models do
           capabilities: include('structured_output', 'tool_calling', 'image_input')
         )
       )
-      expect(config[:models]).not_to include(hash_including(id: 'tool/without-image-input'))
+      expect(config[:models]).to include(hash_including(id: 'tool/without-image-input'))
       expect(config[:models]).not_to include(hash_including(id: 'tool/without-structured-output'))
       expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+    end
+
+    it 'filters image recognition OpenRouter models by image input support' do
+      allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o' => {
+          'provider' => 'openrouter',
+          'display_name' => 'GPT-4o via OpenRouter',
+          'type' => 'chat',
+          'capabilities' => %w[image_input text_output streaming]
+        },
+        'text/only' => {
+          'provider' => 'openrouter',
+          'display_name' => 'Text Only',
+          'type' => 'chat',
+          'capabilities' => %w[text_output streaming]
+        }
+      )
+
+      config = described_class.feature_config(:image_recognition)
+
+      expect(config[:models]).to include(hash_including(id: 'openai/gpt-4o'))
+      expect(config[:models]).not_to include(hash_including(id: 'text/only'))
+      expect(config[:required_capabilities]).to eq(%w[image_input])
     end
 
     it 'does not include OpenRouter catalog models when OpenRouter is not configured' do
@@ -182,16 +206,21 @@ RSpec.describe Llm::Models do
       expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
     end
 
-    it 'offers static capability-safe OpenRouter models for audio transcription and moderation when the live catalog is empty' do
+    it 'offers static capability-safe OpenRouter models for audio transcription, image recognition, and moderation when the live catalog is empty' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
       audio_config = described_class.feature_config(:audio_transcription)
+      image_config = described_class.feature_config(:image_recognition)
       moderation_config = described_class.feature_config(:moderation)
 
       expect(audio_config[:default]).to eq('openai/gpt-4o-audio-preview')
       expect(audio_config[:models]).to include(
         hash_including(id: 'openai/gpt-4o-audio-preview', provider: 'openrouter', capabilities: include('audio_input'))
+      )
+      expect(image_config[:default]).to eq('openai/gpt-5.4-mini')
+      expect(image_config[:models]).to include(
+        hash_including(id: 'openai/gpt-5.4-mini', provider: 'openrouter', capabilities: include('image_input'))
       )
       expect(moderation_config[:default]).to eq('openai/gpt-oss-safeguard-20b')
       expect(moderation_config[:models]).to include(
