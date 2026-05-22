@@ -19,13 +19,16 @@ class Llm::Monitoring::PrometheusExporter
     append_counter(lines, 'llm_moderation_checks_total', 'LLM moderation checks.', @snapshot[:moderation_count])
     append_counter(lines, 'llm_safety_blocked_total', 'LLM events blocked by safety policy.', @snapshot[:blocked_count])
     append_counter(lines, 'llm_errors_total', 'LLM events recorded as errors.', @snapshot[:error_count])
-    append_counter(lines, 'llm_moderation_skipped_total', 'LLM moderation checks skipped because safety was unavailable.', @snapshot[:moderation_skipped_count])
+    append_counter(lines, 'llm_provider_failures_total', 'LLM events recorded with provider failure error codes.', @snapshot[:provider_failure_count])
+    append_counter(lines, 'llm_moderation_skipped_total', 'LLM moderation checks skipped because safety was unavailable.',
+                   @snapshot[:moderation_skipped_count])
     append_counter(lines, 'llm_schema_invalid_total', 'Invalid structured-output responses.', @snapshot[:schema_invalid_count])
     append_counter(lines, 'llm_tool_failures_total', 'Tool executions recorded as failures.', @snapshot[:tool_failure_count])
     append_counter(lines, 'llm_tokens_total', 'LLM tokens used by chat completions.', @snapshot[:total_tokens])
     append_counter(lines, 'llm_all_tokens_total', 'LLM tokens used by all persisted AI events.', @snapshot[:all_total_tokens])
     append_counter(lines, 'llm_estimated_cost_usd_total', 'Estimated LLM cost in USD.', @snapshot[:estimated_cost])
-    append_counter(lines, 'llm_all_estimated_cost_usd_total', 'Estimated LLM cost in USD across all persisted AI events.', @snapshot[:total_estimated_cost])
+    append_counter(lines, 'llm_all_estimated_cost_usd_total', 'Estimated LLM cost in USD across all persisted AI events.',
+                   @snapshot[:total_estimated_cost])
     append_gauge(lines, 'llm_request_duration_ms_average', 'Average LLM chat completion duration in milliseconds.', @snapshot[:avg_duration_ms])
     append_gauge(lines, 'llm_last_event_timestamp_seconds', 'Unix timestamp for the last persisted LLM event.', last_event_timestamp)
 

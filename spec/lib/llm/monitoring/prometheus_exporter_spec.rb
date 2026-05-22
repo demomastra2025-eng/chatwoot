@@ -15,6 +15,7 @@ RSpec.describe Llm::Monitoring::PrometheusExporter do
           moderation_count: 1,
           blocked_count: 1,
           error_count: 1,
+          provider_failure_count: 1,
           moderation_skipped_count: 0,
           schema_invalid_count: 1,
           tool_failure_count: 1,
@@ -46,6 +47,7 @@ RSpec.describe Llm::Monitoring::PrometheusExporter do
       expect(output).to include('llm_moderation_checks_total{account_id="1"} 1')
       expect(output).to include('llm_estimated_cost_usd_total{account_id="1"} 0.0012')
       expect(output).to include('llm_all_estimated_cost_usd_total{account_id="1"} 0.0015')
+      expect(output).to include('llm_provider_failures_total{account_id="1"} 1')
       expect(output).to include('llm_requests_by_feature_total{account_id="1",feature="assistant"} 2')
       expect(output).to include('llm_events_by_name_total{account_id="1",event_name="llm.chat.complete"} 2')
       expect(output).to include('llm_release_gate_status{account_id="1",status="fail"} 1')

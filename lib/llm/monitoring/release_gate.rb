@@ -13,6 +13,8 @@ class Llm::Monitoring::ReleaseGate
     enabled: true,
     min_request_count: 10,
     max_error_rate: 0.05,
+    max_provider_failure_rate: 0.05,
+    max_payload_truncated_rate: 0.05,
     max_schema_invalid_rate: 0.02,
     max_tool_failure_rate: 0.10,
     max_moderation_skipped_rate: 0.0,
@@ -101,6 +103,8 @@ class Llm::Monitoring::ReleaseGate
     durations = request_rollups.filter_map { |rollup| rollup[:duration_ms] }.sort
     cost = request_rollups.sum { |rollup| rollup[:estimated_cost] }
     error_request_count = request_rollups.count { |rollup| rollup[:error] }
+    provider_failure_request_count = request_rollups.count { |rollup| rollup[:provider_failure] }
+    payload_truncated_request_count = request_rollups.count { |rollup| rollup[:payload_truncated] }
     blocked_request_count = request_rollups.count { |rollup| rollup[:blocked] }
     schema_invalid_request_count = request_rollups.count { |rollup| rollup[:schema_invalid] }
     tool_failure_request_count = request_rollups.count { |rollup| rollup[:tool_failure] }
@@ -109,6 +113,8 @@ class Llm::Monitoring::ReleaseGate
     snapshot.merge(
       request_count: request_count,
       error_rate: rate(error_request_count, request_count),
+      provider_failure_rate: rate(provider_failure_request_count, request_count),
+      payload_truncated_rate: rate(payload_truncated_request_count, request_count),
       schema_invalid_rate: rate(schema_invalid_request_count, request_count),
       tool_failure_rate: rate(tool_failure_request_count, request_count),
       moderation_skipped_rate: rate(moderation_skipped_request_count, request_count),
@@ -126,6 +132,8 @@ class Llm::Monitoring::ReleaseGate
         :request_id,
         :trace_id,
         :session_id,
+        :error_code,
+        :payload_truncated,
         :blocked,
         :error,
         :schema_invalid,
@@ -141,6 +149,8 @@ class Llm::Monitoring::ReleaseGate
         rollup = rollups[request_key] ||= {
           blocked: false,
           error: false,
+          provider_failure: false,
+          payload_truncated: false,
           schema_invalid: false,
           tool_failure: false,
           moderation_skipped: false,
@@ -150,6 +160,8 @@ class Llm::Monitoring::ReleaseGate
 
         rollup[:blocked] ||= event.blocked?
         rollup[:error] ||= event.error?
+        rollup[:provider_failure] ||= provider_failure_event?(event)
+        rollup[:payload_truncated] ||= event.payload_truncated?
         rollup[:schema_invalid] ||= event.schema_invalid?
         rollup[:tool_failure] ||= event.tool_failure?
         rollup[:moderation_skipped] ||= event.moderation_skipped?
@@ -161,9 +173,17 @@ class Llm::Monitoring::ReleaseGate
   def request_rollup_key(event)
     return "request:#{event.request_id}" if event.request_id.present?
     return "trace:#{event.trace_id}" if event.trace_id.present?
-    return "event:#{event.id}" if REQUEST_ANCHOR_EVENTS.include?(event.event_name)
+    return "event:#{event.id}" if REQUEST_ANCHOR_EVENTS.include?(event.event_name) || payload_budget_alert_event?(event)
 
     nil
+  end
+
+  def payload_budget_alert_event?(event)
+    event.payload_truncated? || provider_failure_event?(event)
+  end
+
+  def provider_failure_event?(event)
+    Llm::Monitoring::RuntimeHealth::PROVIDER_FAILURE_ERROR_CODES.include?(event.error_code.to_s)
   end
 
   def period_payload(range, metrics)
@@ -182,6 +202,20 @@ class Llm::Monitoring::ReleaseGate
         expected: @config[:max_error_rate],
         comparator: :<=,
         message: 'Error event rate exceeds the allowed threshold.'
+      ),
+      threshold_check(
+        name: 'provider_failure_rate',
+        actual: current_metrics[:provider_failure_rate],
+        expected: @config[:max_provider_failure_rate],
+        comparator: :<=,
+        message: 'Provider failure rate exceeds the allowed threshold.'
+      ),
+      threshold_check(
+        name: 'payload_truncated_rate',
+        actual: current_metrics[:payload_truncated_rate],
+        expected: @config[:max_payload_truncated_rate],
+        comparator: :<=,
+        message: 'Payload truncation rate exceeds the allowed threshold.'
       ),
       threshold_check(
         name: 'schema_invalid_rate',

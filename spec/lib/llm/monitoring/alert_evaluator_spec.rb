@@ -11,6 +11,8 @@ RSpec.describe Llm::Monitoring::AlertEvaluator do
           evaluated_at: Time.zone.parse('2026-04-10 12:00:00'),
           checks: [
             { name: 'error_rate', status: 'fail', actual: 0.2, expected: 0.05, message: 'Too many errors.' },
+            { name: 'provider_failure_rate', status: 'fail', actual: 0.2, expected: 0.05, message: 'Provider down.' },
+            { name: 'payload_truncated_rate', status: 'fail', actual: 0.1, expected: 0.05, message: 'Payload summaries too large.' },
             { name: 'schema_invalid_rate', status: 'fail', actual: 0.1, expected: 0.02, message: 'Too many schema failures.' },
             { name: 'avg_duration_ms', status: 'pass', actual: 300, expected: 500 }
           ]
@@ -20,10 +22,12 @@ RSpec.describe Llm::Monitoring::AlertEvaluator do
       expect(report).to include(
         status: 'alerting',
         release_gate_status: 'fail',
-        active_count: 2
+        active_count: 4
       )
       expect(report[:alerts]).to contain_exactly(
         include(name: 'error_rate', severity: 'critical', status: 'firing'),
+        include(name: 'provider_failure_rate', severity: 'critical', status: 'firing'),
+        include(name: 'payload_truncated_rate', severity: 'warning', status: 'firing'),
         include(name: 'schema_invalid_rate', severity: 'warning', status: 'firing')
       )
     end

@@ -96,6 +96,53 @@ RSpec.describe Llm::Monitoring::ReleaseGate do
       )
     end
 
+    it 'fails on provider failures and payload-budget truncation rates' do
+      10.times do |index|
+        create(
+          :llm_event,
+          event_name: 'llm.chat.complete',
+          request_id: "request-#{index}",
+          trace_id: "trace-#{index}",
+          created_at: 2.hours.ago(now) + index.minutes
+        )
+      end
+      create(
+        :llm_event,
+        event_name: 'llm.chat.complete',
+        request_id: 'request-provider-failure',
+        trace_id: 'trace-provider-failure',
+        error: true,
+        error_code: 'provider_unavailable',
+        created_at: 90.minutes.ago(now)
+      )
+      create(
+        :llm_event,
+        event_name: 'llm.tool.complete',
+        payload_truncated: true,
+        created_at: 85.minutes.ago(now)
+      )
+
+      report = described_class.new(
+        date_range: date_range,
+        now: now,
+        config: {
+          min_request_count: 10,
+          max_provider_failure_rate: 0.01,
+          max_payload_truncated_rate: 0.01
+        }
+      ).call
+
+      expect(report[:status]).to eq('fail')
+      expect(report.dig(:current_period, :metrics)).to include(
+        provider_failure_rate: 1.0 / 12.0,
+        payload_truncated_rate: 1.0 / 12.0
+      )
+      expect(report[:checks]).to include(
+        include(name: 'provider_failure_rate', status: 'fail'),
+        include(name: 'payload_truncated_rate', status: 'fail')
+      )
+    end
+
     it 'evaluates error rate per request instead of diluting it across child events' do
       create(
         :llm_event,

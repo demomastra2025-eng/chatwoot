@@ -11,14 +11,21 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
 
   def show
     query = events_query
+    snapshot = query.snapshot
     release_gate = query.release_gate(account: Current.account)
     alerts = Llm::Monitoring::AlertEvaluator.new(release_gate_report: release_gate).call
+    runtime_health = query.runtime_health(
+      account: Current.account,
+      snapshot: snapshot,
+      release_gate: release_gate
+    )
 
     render json: {
-      snapshot: query.snapshot,
+      snapshot: snapshot,
       time_series: query.time_series,
       release_gate: release_gate,
       alerts: alerts,
+      runtime_health: runtime_health,
       alert_delivery_state: Llm::Monitoring::AlertNotifier.state_for(Current.account),
       preferences: observability_preferences,
       payload: query.paginated_events.map { |event| serialize_event(event) },
@@ -62,7 +69,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
     format = request.format.csv? || requested_format.to_s.downcase == 'csv' ? 'csv' : 'json'
 
     send_data(
-      format == 'csv' ? csv_export(payload) : json_export(query, payload, total_count:, truncated:),
+      format == 'csv' ? csv_export(payload) : json_export(query, payload, total_count: total_count, truncated: truncated),
       filename: export_filename(format),
       type: format == 'csv' ? 'text/csv; charset=utf-8' : 'application/json'
     )

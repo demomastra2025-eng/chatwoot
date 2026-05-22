@@ -7,6 +7,8 @@ class Llm::RuntimePolicy
     enabled
     min_request_count
     max_error_rate
+    max_provider_failure_rate
+    max_payload_truncated_rate
     max_schema_invalid_rate
     max_tool_failure_rate
     max_moderation_skipped_rate
@@ -77,6 +79,8 @@ class Llm::RuntimePolicy
         enabled: boolean_or_default(normalized['enabled'], default: true),
         min_request_count: integer_or_default(normalized['min_request_count'], default: nil),
         max_error_rate: float_or_default(normalized['max_error_rate'], default: nil),
+        max_provider_failure_rate: float_or_default(normalized['max_provider_failure_rate'], default: nil),
+        max_payload_truncated_rate: float_or_default(normalized['max_payload_truncated_rate'], default: nil),
         max_schema_invalid_rate: float_or_default(normalized['max_schema_invalid_rate'], default: nil),
         max_tool_failure_rate: float_or_default(normalized['max_tool_failure_rate'], default: nil),
         max_moderation_skipped_rate: float_or_default(normalized['max_moderation_skipped_rate'], default: nil),

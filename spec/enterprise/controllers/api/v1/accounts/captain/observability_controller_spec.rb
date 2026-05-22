@@ -114,6 +114,13 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
           release_gate_status: 'insufficient_data',
           active_count: 0
         )
+        expect(json_response[:runtime_health]).to include(
+          status: 'insufficient_data',
+          account_id: account.id
+        )
+        expect(json_response[:runtime_health][:checks]).to include(
+          include(name: 'event_ingestion', status: 'pass')
+        )
         expect(json_response[:alert_delivery_state]).to include(
           status: 'delivered',
           last_delivery_channels: ['email']
@@ -146,6 +153,16 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
       end
 
       it 'supports filtering by feature, event name, assistant_id, and date range' do
+        create(
+          :llm_event,
+          account: account,
+          feature: 'copilot',
+          event_name: 'llm.chat.complete',
+          error: true,
+          error_code: 'provider_unavailable',
+          created_at: 2.hours.ago
+        )
+
         get "/api/v1/accounts/#{account.id}/captain/observability",
             params: {
               feature: 'assistant',
@@ -173,6 +190,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         expect(json_response[:time_series][:points].sum { |point| point[:request_count] }).to eq(1)
         expect(json_response[:release_gate][:current_period][:metrics]).to include(
           request_count: 1
+        )
+        expect(json_response[:runtime_health]).to include(
+          status: 'insufficient_data',
+          recent_error_codes: {}
         )
       end
 

@@ -3,6 +3,8 @@
 class Llm::Monitoring::AlertEvaluator
   SEVERITY_BY_CHECK = {
     error_rate: 'critical',
+    provider_failure_rate: 'critical',
+    payload_truncated_rate: 'warning',
     moderation_skipped_rate: 'critical',
     schema_invalid_rate: 'warning',
     tool_failure_rate: 'warning',

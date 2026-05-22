@@ -20,6 +20,7 @@ class Llm::Monitoring::MetricsSnapshot
       moderation_count: moderation_events.count,
       blocked_count: @scope.blocked_events.count,
       error_count: @scope.error_events.count,
+      provider_failure_count: @scope.where(error_code: Llm::Monitoring::RuntimeHealth::PROVIDER_FAILURE_ERROR_CODES).count,
       moderation_skipped_count: @scope.moderation_skipped_events.count,
       schema_invalid_count: @scope.schema_invalid_events.count,
       tool_failure_count: @scope.tool_failure_events.count,
