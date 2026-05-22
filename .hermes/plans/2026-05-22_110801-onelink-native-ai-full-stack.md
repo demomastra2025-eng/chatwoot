@@ -1285,8 +1285,42 @@ pnpm exec eslint app/javascript/dashboard/routes/dashboard/captain/evaluations/I
 # deleted Ruby skip, RuboCop failure propagation, partial-staging preservation, and pre-push validate_push propagation.
 ```
 
+## 2026-05-22 Etapa 3 OTel export compatibility slice
+
+Status: **Etapa 3 V1 adapter is implemented.**
+
+Implemented:
+
+- Added `Llm::Monitoring::OtelEventExporter` as the OneLink EventBus -> OTel adapter.
+- `Llm::EventSubscriber` now routes each `llm.*` notification to both persisted monitoring and the OTel adapter.
+- Export is opt-in behind `LLM_EVENT_OTEL_EXPORT_ENABLED` (ENV or `InstallationConfig`) plus existing `ChatwootApp.otel_enabled?`, so existing Langfuse/manual spans are not duplicated by default.
+- Added optional `LLM_EVENT_OTEL_SAMPLE_RATE` support; malformed explicit sample-rate values fail closed instead of unexpectedly exporting full volume.
+- EventSubscriber isolates exporter exceptions so persisted monitoring delivery is not blocked if OTel export breaks.
+- Exported attributes use safe GenAI + OneLink namespaces:
+  - `gen_ai.provider.name`, `gen_ai.request.model`, token usage, `gen_ai.response.error_code`;
+  - `one_link.event.*`, account/assistant/conversation IDs, feature/runtime, project case, tool/schema, RCA counters.
+- Raw prompt/message/content/body/arguments/result/image keys are never exported by this adapter.
+- OTLP/tracer errors are swallowed and logged so Captain runtime is not affected.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/event_subscriber_spec.rb spec/lib/llm/monitoring/otel_event_exporter_spec.rb spec/lib/integrations/llm_instrumentation_spec.rb spec/lib/integrations/llm_instrumentation_helpers_spec.rb
+# 27 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c lib/llm/event_subscriber.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c lib/llm/monitoring/otel_event_exporter.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --force-exclusion --fail-level E lib/llm/event_subscriber.rb lib/llm/monitoring/otel_event_exporter.rb spec/lib/llm/event_subscriber_spec.rb spec/lib/llm/monitoring/otel_event_exporter_spec.rb
+# 4 files inspected, no offenses detected
+
+git diff --check
+# clean
+```
+
 Next coding slice:
 
-1. Proceed to **Etapa 5 semantic validators**: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
-2. Keep adding case fixtures as each product case is implemented (campaigns/templates, knowledge/RAG, files/artifacts, MCP/custom HTTP, AI Voice).
-3. Use the new `captain.event_contract_trace` deterministic pack as the regression gate for future event/trace changes.
+1. Proceed to **Etapa 4 Runtime Health / Alerts V1**: one safe alert rule and one indexed metrics query from persisted summaries.
+2. Then proceed to **Etapa 5 semantic validators**: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
+3. Keep `captain.event_contract_trace` as the regression gate for future event/trace changes.
