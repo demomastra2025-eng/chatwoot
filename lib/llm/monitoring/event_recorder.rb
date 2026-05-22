@@ -18,13 +18,19 @@ class Llm::Monitoring::EventRecorder
     ]
   ).freeze
 
+  PERSISTED_PAYLOAD_MAX_BYTES = 8.kilobytes
+  ESSENTIAL_PAYLOAD_KEYS = %w[
+    canonical_event_name event_name_alias error_class error_code failure_mode payload_bytes payload_budget_bytes
+    project_case_id queue_wait_ms retry_count schema_invalid_count status thinking_tokens tool_calls_count
+  ].freeze
+
   PROMOTED_PAYLOAD_KEYS = Set.new(
     %w[
       account_id assistant_id blocked channel_type completion_tokens conversation_display_id
-      conversation_id copilot_thread_id current_agent error estimated_cost feature model
-      moderation_skipped prompt_tokens provider reason request_id runtime_mode
-      schema_invalid schema_name session_id source status tool_failure tool_name
-      total_tokens trace_id
+      conversation_id copilot_thread_id current_agent error estimated_cost error_code feature model
+      moderation_skipped payload_bytes payload_truncated project_case_id prompt_tokens provider queue_wait_ms
+      reason request_id retry_count runtime_mode schema_invalid schema_invalid_count schema_name session_id
+      source status thinking_tokens tool_calls_count tool_failure tool_name total_tokens trace_id
     ]
   ).freeze
 
@@ -74,6 +80,15 @@ class Llm::Monitoring::EventRecorder
       request_id: @payload['request_id'],
       trace_id: @payload['trace_id'],
       session_id: @payload['session_id'],
+      project_case_id: project_case_id,
+      error_code: error_code,
+      queue_wait_ms: summary_fields['queue_wait_ms'],
+      thinking_tokens: summary_fields['thinking_tokens'],
+      payload_bytes: summary_fields['payload_bytes'],
+      payload_truncated: payload_over_budget?,
+      retry_count: summary_fields['retry_count'],
+      tool_calls_count: summary_fields['tool_calls_count'],
+      schema_invalid_count: summary_fields['schema_invalid_count'],
       account_id: integer_value(@payload['account_id']),
       assistant_id: integer_value(@payload['assistant_id']),
       conversation_id: integer_value(@payload['conversation_id']),
@@ -95,19 +110,72 @@ class Llm::Monitoring::EventRecorder
   end
 
   def summarized_payload
-    @payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact
+    enforce_payload_budget(@payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact)
   end
 
   def summary_fields
     {
       'payload_bytes' => payload_bytes,
+      'payload_budget_bytes' => PERSISTED_PAYLOAD_MAX_BYTES,
       'retry_count' => retry_count,
       'tool_calls_count' => tool_calls_count,
       'schema_invalid_count' => schema_invalid_count,
-      'error_code' => @payload['error_code'],
+      'error_code' => error_code,
       'queue_wait_ms' => integer_value(@payload['queue_wait_ms']),
       'thinking_tokens' => integer_value(@payload['thinking_tokens'] || @payload['reasoning_tokens'])
     }
+  end
+
+  def project_case_id
+    Llm::ProjectCaseId.normalize(@payload['project_case_id'])
+  end
+
+  def error_code
+    Llm::EventCode.normalize(@payload['error_code'])
+  end
+
+  def enforce_payload_budget(payload)
+    return payload unless payload_over_budget?(payload)
+
+    essential = payload.slice(*ESSENTIAL_PAYLOAD_KEYS)
+    budgeted = essential.merge(
+      'payload_truncated' => true,
+      '_truncated_payload_keys_count' => [payload.keys.size - essential.keys.size, 0].max
+    )
+    return budgeted unless payload_over_budget?(budgeted)
+
+    minimal_payload(payload, budgeted)
+  end
+
+  def minimal_payload(original_payload, budgeted_payload)
+    minimal = budgeted_payload.slice(
+      'error_code',
+      'payload_bytes',
+      'payload_budget_bytes',
+      'project_case_id',
+      'queue_wait_ms',
+      'retry_count',
+      'schema_invalid_count',
+      'thinking_tokens',
+      'tool_calls_count'
+    ).compact.merge(
+      'payload_truncated' => true,
+      '_truncated_payload_keys_count' => original_payload.keys.size
+    )
+    return minimal unless payload_over_budget?(minimal)
+
+    {
+      'payload_bytes' => payload_bytes,
+      'payload_budget_bytes' => PERSISTED_PAYLOAD_MAX_BYTES,
+      'payload_truncated' => true,
+      '_truncated_payload_keys_count' => original_payload.keys.size
+    }
+  end
+
+  def payload_over_budget?(payload = @payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact)
+    payload.to_json.bytesize > PERSISTED_PAYLOAD_MAX_BYTES
+  rescue StandardError
+    payload.to_s.bytesize > PERSISTED_PAYLOAD_MAX_BYTES
   end
 
   def payload_bytes

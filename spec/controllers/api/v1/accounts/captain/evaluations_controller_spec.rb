@@ -37,6 +37,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Evaluations', type: :request do
       expect(response).to have_http_status(:success)
       expect(json_response[:packs]).to include(
         include(id: 'captain.ai_voice_trace', live_model: false, default_enabled: true),
+        include(id: 'captain.event_contract_trace', live_model: false, default_enabled: true),
         include(id: 'captain.conversation_completion', live_model: true, default_enabled: false)
       )
       expect(json_response[:eval_runs]).to include(

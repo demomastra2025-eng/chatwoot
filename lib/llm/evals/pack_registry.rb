@@ -67,6 +67,16 @@ class Llm::Evals::PackRegistry
       default_enabled: true
     ),
     Pack.new(
+      id: 'captain.event_contract_trace',
+      label: 'Captain event-contract trace fixtures',
+      description: 'Deterministic checks for normalized event names, project case IDs, payload budgets, and raw-content-free traces.',
+      suite_class: 'Captain::Evals::EventContractTraceSuite',
+      requires_account: false,
+      live_model: false,
+      deterministic: true,
+      default_enabled: true
+    ),
+    Pack.new(
       id: 'captain.red_team',
       label: 'Captain red-team attacks',
       description: 'Offline Tribunal red-team prompt generation coverage for Captain safety hardening.',

@@ -10,26 +10,35 @@
 #  current_agent           :string
 #  duration_ms             :integer
 #  error                   :boolean          default(FALSE), not null
+#  error_code              :string
 #  estimated_cost          :decimal(12, 8)
 #  event_name              :string           not null
 #  feature                 :string
 #  model                   :string
 #  moderation_skipped      :boolean          default(FALSE), not null
 #  payload                 :jsonb            not null
+#  payload_bytes           :integer
+#  payload_truncated       :boolean          default(FALSE), not null
+#  project_case_id         :string
 #  prompt_tokens           :integer
 #  provider                :string
+#  queue_wait_ms           :integer
 #  reason                  :string
 #  request_id              :string
+#  retry_count             :integer
 #  runtime_mode            :string
 #  schema_invalid          :boolean          default(FALSE), not null
+#  schema_invalid_count    :integer
 #  schema_name             :string
 #  session_id              :string
 #  source                  :string
 #  status                  :string
-#  trace_id                :string
+#  thinking_tokens         :integer
+#  tool_calls_count        :integer
 #  tool_failure            :boolean          default(FALSE), not null
 #  tool_name               :string
 #  total_tokens            :integer
+#  trace_id                :string
 #  created_at              :datetime         not null
 #  updated_at              :datetime         not null
 #  account_id              :integer
@@ -40,10 +49,12 @@
 #
 # Indexes
 #
-#  index_llm_events_on_account_created_at          (account_id,created_at)
-#  index_llm_events_on_account_feature_created_at  (account_id,feature,created_at)
-#  index_llm_events_on_account_model_created_at    (account_id,model,created_at)
-#  index_llm_events_on_account_request_created_at  (account_id,request_id,created_at) WHERE (request_id IS NOT NULL)
+#  index_llm_events_on_account_created_at               (account_id,created_at)
+#  index_llm_events_on_account_error_code_created_at    (account_id,error_code,created_at) WHERE (error_code IS NOT NULL)
+#  index_llm_events_on_account_feature_created_at       (account_id,feature,created_at)
+#  index_llm_events_on_account_model_created_at         (account_id,model,created_at)
+#  index_llm_events_on_account_project_case_created_at  (account_id,project_case_id,created_at) WHERE (project_case_id IS NOT NULL)
+#  index_llm_events_on_account_request_created_at       (account_id,request_id,created_at) WHERE (request_id IS NOT NULL)
 #  index_llm_events_on_account_session_created_at  (account_id,session_id,created_at) WHERE (session_id IS NOT NULL)
 #  index_llm_events_on_account_trace_created_at    (account_id,trace_id,created_at) WHERE (trace_id IS NOT NULL)
 #  index_llm_events_on_assistant_created_at        (assistant_id,created_at)
@@ -75,6 +86,8 @@ class LlmEvent < ApplicationRecord
   scope :for_request_id, ->(request_id) { where(request_id: request_id) if request_id.present? }
   scope :for_trace_id, ->(trace_id) { where(trace_id: trace_id) if trace_id.present? }
   scope :for_session_id, ->(session_id) { where(session_id: session_id) if session_id.present? }
+  scope :for_project_case, ->(project_case_id) { where(project_case_id: project_case_id) if project_case_id.present? }
+  scope :for_error_code, ->(error_code) { where(error_code: error_code) if error_code.present? }
   scope :for_assistant, ->(assistant_id) { where(assistant_id: assistant_id) if assistant_id.present? }
   scope :for_conversation, ->(conversation_id) { where(conversation_id: conversation_id) if conversation_id.present? }
   scope :for_conversation_display_id, lambda { |conversation_display_id|

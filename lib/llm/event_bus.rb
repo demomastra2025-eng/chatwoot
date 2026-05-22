@@ -70,7 +70,11 @@ class Llm::EventBus
 
     def normalize_payload(payload)
       current_context.merge(payload.to_h.each_with_object({}) do |(key, value), result|
-        result[key.to_s] = value
+        string_key = key.to_s
+        normalized_value = normalize_context_value(string_key, value)
+        next if string_key == 'project_case_id' && normalized_value.blank?
+
+        result[string_key] = normalized_value
       end).tap do |normalized|
         normalized['request_id'] = normalized['request_id'].presence || normalized['trace_id'].presence || SecureRandom.uuid
       end
@@ -80,10 +84,18 @@ class Llm::EventBus
       payload.to_h.each_with_object({}) do |(key, value), result|
         string_key = key.to_s
         next unless CONTEXT_KEYS.include?(string_key)
-        next if value.blank?
 
-        result[string_key] = value
+        normalized_value = normalize_context_value(string_key, value)
+        next if normalized_value.blank?
+
+        result[string_key] = normalized_value
       end
+    end
+
+    def normalize_context_value(key, value)
+      return Llm::ProjectCaseId.normalize(value) if key == 'project_case_id'
+
+      value
     end
 
     def current_context

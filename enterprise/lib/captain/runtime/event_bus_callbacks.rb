@@ -2,7 +2,6 @@
 
 class Captain::Runtime::EventBusCallbacks
   EVENT_BUS_STATE_KEY = :__llm_event_bus
-  PREVIEW_LIMIT = 500
 
   def on_run_start(agent_name, input, context_wrapper)
     publish(
@@ -44,8 +43,7 @@ class Captain::Runtime::EventBusCallbacks
       context_wrapper,
       tool_name: tool_name,
       arguments_keys: args.respond_to?(:keys) ? args.keys.map(&:to_s) : [],
-      arguments_size: payload_size(args),
-      arguments_preview: preview_payload(args)
+      arguments_size: payload_size(args)
     )
   end
 
@@ -55,8 +53,7 @@ class Captain::Runtime::EventBusCallbacks
       context_wrapper,
       tool_name: tool_name,
       progress_type: payload_type(details),
-      progress_size: payload_size(details),
-      progress_preview: preview_payload(details)
+      progress_size: payload_size(details)
     )
   end
 
@@ -72,8 +69,10 @@ class Captain::Runtime::EventBusCallbacks
       error: tool_error?(result),
       result_success: normalized_result[:success],
       result_retryable: normalized_result[:retryable],
-      result_message_preview: preview_payload(normalized_result[:message]),
-      result_error_preview: preview_payload(normalized_result[:error])
+      result_message_type: payload_type(normalized_result[:message]),
+      result_message_size: payload_size(normalized_result[:message]),
+      result_error_type: payload_type(normalized_result[:error]),
+      result_error_size: payload_size(normalized_result[:error])
     )
   end
 
@@ -187,15 +186,6 @@ class Captain::Runtime::EventBusCallbacks
       value.to_json.bytesize
     else
       value.to_s.bytesize
-    end
-  end
-
-  def preview_payload(value)
-    case value
-    when Hash, Array
-      value.to_json.first(PREVIEW_LIMIT)
-    else
-      value.to_s.first(PREVIEW_LIMIT)
     end
   end
 end

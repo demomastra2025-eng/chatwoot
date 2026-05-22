@@ -105,5 +105,20 @@ RSpec.describe Llm::EventBus do
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
+
+    it 'normalizes project case identifiers before publishing context' do
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe(/llm\./) do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      described_class.publish('chat.complete', project_case_id: ' crm.lookup_tool ')
+      described_class.publish('chat.complete', project_case_id: 'raw customer question')
+
+      expect(events.first.payload['project_case_id']).to eq('crm.lookup_tool')
+      expect(events.second.payload).not_to have_key('project_case_id')
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
   end
 end

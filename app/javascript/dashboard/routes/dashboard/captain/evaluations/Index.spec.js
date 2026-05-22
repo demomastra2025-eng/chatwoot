@@ -82,6 +82,14 @@ const catalogPayload = {
         default_enabled: true,
       },
       {
+        id: 'captain.event_contract_trace',
+        label: 'Captain event-contract trace fixtures',
+        description: 'Event contract checks',
+        deterministic: true,
+        live_model: false,
+        default_enabled: true,
+      },
+      {
         id: 'captain.conversation_completion',
         label: 'Captain conversation completion',
         description: 'LLM checks',
@@ -194,7 +202,7 @@ describe('Captain evaluations page', () => {
     await flushPromises();
 
     expect(runMock).toHaveBeenCalledWith({
-      pack_ids: ['captain.ai_voice_trace'],
+      pack_ids: ['captain.ai_voice_trace', 'captain.event_contract_trace'],
       acknowledge_llm_cost: false,
       budget_cents: 100,
       max_cases: 3,
@@ -213,6 +221,7 @@ describe('Captain evaluations page', () => {
           mode: 'evals',
           pack_ids: [
             'captain.ai_voice_trace',
+            'captain.event_contract_trace',
             'captain.conversation_completion',
           ],
         },
@@ -223,7 +232,7 @@ describe('Captain evaluations page', () => {
     await flushPromises();
 
     await wrapper
-      .findAll('[data-testid="eval-pack-checkbox"]')[1]
+      .findAll('[data-testid="eval-pack-checkbox"]')[2]
       .setValue(true);
     await wrapper.find('[data-testid="eval-budget-cents"]').setValue('75');
     await wrapper.find('[data-testid="eval-max-cases"]').setValue('2');
@@ -233,7 +242,11 @@ describe('Captain evaluations page', () => {
     await flushPromises();
 
     expect(runMock).toHaveBeenCalledWith({
-      pack_ids: ['captain.ai_voice_trace', 'captain.conversation_completion'],
+      pack_ids: [
+        'captain.ai_voice_trace',
+        'captain.event_contract_trace',
+        'captain.conversation_completion',
+      ],
       acknowledge_llm_cost: true,
       budget_cents: 75,
       max_cases: 2,
@@ -294,7 +307,9 @@ describe('Captain evaluations page', () => {
     );
     await flushPromises();
 
-    expect(wrapper.find('[data-testid="eval-run-summary"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="eval-run-summary"]').exists()).toBe(
+      true
+    );
     expect(wrapper.text()).toContain('captain.ai_voice_trace');
     expect(wrapper.text()).not.toContain('secret customer prompt');
   });
@@ -378,16 +393,19 @@ describe('Captain evaluations page', () => {
       .find('[data-testid="tribunal-dataset-live-assertions"]')
       .setValue(true);
 
-    expect(wrapper.find('[data-testid="tribunal-acknowledge-cost"]').exists()).toBe(
-      true
-    );
     expect(
-      findButton(wrapper, 'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON').attributes(
-        'disabled'
-      )
+      wrapper.find('[data-testid="tribunal-acknowledge-cost"]').exists()
+    ).toBe(true);
+    expect(
+      findButton(
+        wrapper,
+        'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON'
+      ).attributes('disabled')
     ).toBeDefined();
 
-    await wrapper.find('[data-testid="tribunal-acknowledge-cost"]').setValue(true);
+    await wrapper
+      .find('[data-testid="tribunal-acknowledge-cost"]')
+      .setValue(true);
     await findButton(
       wrapper,
       'CAPTAIN.EVALUATIONS.TRIBUNAL.DATASET_BUTTON'

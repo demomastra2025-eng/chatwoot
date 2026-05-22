@@ -1,0 +1,43 @@
+suite: captain.event_contract_trace
+cases:
+  - id: customer_support.basic_no_tool
+    description: Text Captain support reply without tools keeps the normalized event contract small and raw-content free.
+    tags: [customer_support, no_tool, event_contract]
+    fixture: config/llm_evals/fixtures/captain/event_contract/customer_support_basic_no_tool.json
+    expected:
+      required_events: [llm.run.start, llm.chat.complete, llm.run.complete]
+      forbidden_raw_keys: [prompt, messages, input, output, response, content]
+      max_event_payload_bytes: 8192
+
+  - id: crm.lookup_tool
+    description: CRM lookup flow includes tool lifecycle, bounded previews, safe UI action shape, and project case metadata.
+    tags: [crm, tool, ui_actions, event_contract]
+    fixture: config/llm_evals/fixtures/captain/event_contract/crm_lookup_tool.json
+    expected:
+      required_events: [llm.run.start, llm.chat.complete, llm.tool.execute, llm.tool.complete, llm.run.complete]
+      required_tools: [search_deals]
+      required_ui_actions: [open_deal]
+      forbidden_raw_keys: [prompt, messages, input, output, response, content]
+      max_event_payload_bytes: 8192
+
+  - id: scheduling.tool_wait
+    description: Scheduling flow records progress/wait evidence without leaking raw tool payloads.
+    tags: [scheduling, tool_wait, progress, event_contract]
+    fixture: config/llm_evals/fixtures/captain/event_contract/scheduling_tool_wait.json
+    expected:
+      required_events: [llm.run.start, llm.tool.execute, llm.tool.progress, llm.tool.complete, llm.run.complete]
+      required_tools: [schedule_appointment]
+      required_progress_events: 1
+      forbidden_raw_keys: [prompt, messages, input, output, response, content]
+      max_event_payload_bytes: 8192
+
+  - id: provider.failure
+    description: Provider failure is represented through canonical persisted event names, alias metadata, safe error code, and no raw content.
+    tags: [provider_failure, error, alias, event_contract]
+    fixture: config/llm_evals/fixtures/captain/event_contract/provider_failure.json
+    expected:
+      required_events: [llm.run.start, llm.run.complete]
+      required_aliases: [llm.run.failed]
+      required_error_code: provider_unavailable
+      forbidden_raw_keys: [prompt, messages, input, output, response, content]
+      max_event_payload_bytes: 8192

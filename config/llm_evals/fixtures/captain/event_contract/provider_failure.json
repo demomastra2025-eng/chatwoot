@@ -1,0 +1,47 @@
+[
+  {
+    "name": "llm.run.start",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 6,
+      "conversation_display_id": 483,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_483",
+      "project_case_id": "provider.failure",
+      "agent_name": "assistant_agent",
+      "input_type": "string",
+      "input_size": 26,
+      "canonical_event_name": "llm.run.start"
+    }
+  },
+  {
+    "name": "llm.run.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 6,
+      "conversation_display_id": 483,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_483",
+      "project_case_id": "provider.failure",
+      "agent_name": "assistant_agent",
+      "status": "failed",
+      "error": true,
+      "error_class": "Llm::ProviderUnavailableError",
+      "error_code": "provider_unavailable",
+      "output_type": "nil",
+      "output_size": 0,
+      "canonical_event_name": "llm.run.complete",
+      "event_name_alias": "llm.run.failed"
+    }
+  }
+]

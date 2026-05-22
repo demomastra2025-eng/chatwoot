@@ -100,7 +100,8 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'error' => true,
       'result_success' => false,
       'result_retryable' => true,
-      'result_error_preview' => 'Provider timeout'
+      'result_error_type' => 'string',
+      'result_error_size' => 16
     )
   end
 
@@ -154,7 +155,7 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, case_context)
     callbacks.on_run_complete('assistant_agent', result, case_context)
 
-    expected = JSON.parse(Rails.root.join('spec/fixtures/captain/runtime/customer_support_no_tool_trace.json').read)
+    expected = JSON.parse(Rails.root.join('config/llm_evals/fixtures/captain/event_contract/customer_support_basic_no_tool.json').read)
     actual = events.last(3).map do |event|
       {
         'name' => event.name,

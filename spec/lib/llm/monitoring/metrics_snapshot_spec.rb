@@ -5,10 +5,46 @@ require 'rails_helper'
 RSpec.describe Llm::Monitoring::MetricsSnapshot do
   describe '#call' do
     it 'builds a summarized monitoring snapshot from persisted llm events' do
-      create(:llm_event, feature: 'assistant', model: 'gpt-4.1-mini', total_tokens: 100, estimated_cost: 0.0001, duration_ms: 200)
-      create(:llm_event, feature: 'copilot', model: 'gpt-5.1', total_tokens: 200, estimated_cost: 0.0005, duration_ms: 400, error: true)
-      create(:llm_event, event_name: 'llm.schema.invalid', schema_invalid: true, total_tokens: nil, estimated_cost: nil)
-      create(:llm_event, event_name: 'llm.moderation.unavailable', status: 'unavailable', moderation_skipped: true, total_tokens: nil, estimated_cost: nil)
+      create(
+        :llm_event,
+        feature: 'assistant',
+        model: 'gpt-4.1-mini',
+        total_tokens: 100,
+        estimated_cost: 0.0001,
+        duration_ms: 200,
+        queue_wait_ms: 40,
+        payload_bytes: 2048,
+        retry_count: 1,
+        tool_calls_count: 2,
+        schema_invalid_count: 1
+      )
+      create(
+        :llm_event,
+        feature: 'copilot',
+        model: 'gpt-5.1',
+        total_tokens: 200,
+        estimated_cost: 0.0005,
+        duration_ms: 400,
+        error: true,
+        queue_wait_ms: 80,
+        payload_bytes: 4096,
+        payload_truncated: true
+      )
+      create(
+        :llm_event,
+        event_name: 'llm.schema.invalid',
+        schema_invalid: true,
+        total_tokens: nil,
+        estimated_cost: nil
+      )
+      create(
+        :llm_event,
+        event_name: 'llm.moderation.unavailable',
+        status: 'unavailable',
+        moderation_skipped: true,
+        total_tokens: nil,
+        estimated_cost: nil
+      )
       create(
         :llm_event,
         event_name: 'llm.moderation.complete',
@@ -49,10 +85,16 @@ RSpec.describe Llm::Monitoring::MetricsSnapshot do
         schema_invalid_count: 1,
         tool_failure_count: 1,
         total_tokens: 300,
-        all_total_tokens: 350
+        all_total_tokens: 350,
+        max_payload_bytes: 4096,
+        payload_truncated_count: 1,
+        retry_occurrences: 1,
+        tool_call_occurrences: 2,
+        schema_invalid_occurrences: 1
       )
       expect(snapshot[:estimated_cost].to_f).to eq(0.0006)
       expect(snapshot[:total_estimated_cost].to_f).to eq(0.0008)
+      expect(snapshot[:avg_queue_wait_ms]).to eq(60.0)
       expect(snapshot[:by_feature]).to eq('assistant' => 1, 'copilot' => 1)
       expect(snapshot[:by_model]).to eq('gpt-4.1-mini' => 1, 'gpt-5.1' => 1)
       expect(snapshot[:by_provider]).to eq('openai' => 2)

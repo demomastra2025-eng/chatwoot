@@ -1,0 +1,157 @@
+[
+  {
+    "name": "llm.run.start",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "agent_name": "assistant_agent",
+      "input_type": "string",
+      "input_size": 21,
+      "canonical_event_name": "llm.run.start"
+    }
+  },
+  {
+    "name": "llm.chat.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "agent_name": "assistant_agent",
+      "model": "gpt-4.1-mini",
+      "schema_name": "Captain::ResponseSchema",
+      "prompt_tokens": 32,
+      "completion_tokens": 8,
+      "total_tokens": 40,
+      "tool_call": true,
+      "output_type": "hash",
+      "output_size": 96,
+      "canonical_event_name": "llm.chat.complete"
+    }
+  },
+  {
+    "name": "llm.tool.execute",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "tool_name": "search_deals",
+      "arguments_keys": [
+        "contact_id",
+        "limit"
+      ],
+      "arguments_size": 28,
+      "canonical_event_name": "llm.tool.execute"
+    }
+  },
+  {
+    "name": "llm.tool.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "tool_name": "search_deals",
+      "result_type": "hash",
+      "result_size": 88,
+      "error": false,
+      "result_success": true,
+      "result_retryable": false,
+      "canonical_event_name": "llm.tool.complete",
+      "result_message_type": "string",
+      "result_message_size": 19,
+      "result_error_type": "nil",
+      "result_error_size": 0
+    }
+  },
+  {
+    "name": "llm.chat.complete",
+    "payload": {
+      "feature": "copilot",
+      "runtime_mode": "copilot_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "copilot_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "agent_name": "copilot_agent",
+      "model": "gpt-4.1-mini",
+      "schema_name": "Captain::Llm::Schemas::CopilotResponse",
+      "prompt_tokens": 18,
+      "completion_tokens": 12,
+      "total_tokens": 30,
+      "tool_call": false,
+      "output_type": "hash",
+      "output_size": 128,
+      "ui_actions": [
+        {
+          "type": "open_deal",
+          "label": "Open deal",
+          "target_id": "481"
+        }
+      ],
+      "canonical_event_name": "llm.chat.complete"
+    }
+  },
+  {
+    "name": "llm.run.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 481,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_481",
+      "project_case_id": "crm.lookup_tool",
+      "agent_name": "assistant_agent",
+      "error": false,
+      "output_type": "hash",
+      "output_size": 64,
+      "usage": {
+        "input_tokens": 50,
+        "output_tokens": 20,
+        "total_tokens": 70
+      },
+      "canonical_event_name": "llm.run.complete"
+    }
+  }
+]

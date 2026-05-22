@@ -43,6 +43,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
         model: 'gpt-4.1-mini',
         request_id: 'request-123',
         trace_id: 'trace-123',
+        project_case_id: nil,
         total_tokens: 160,
         duration_ms: 1000,
         credit_multiplier: 1
@@ -137,6 +138,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
           'account_id' => account.id,
           'feature' => 'assistant',
           'tool_name' => 'lookup_contact',
+          'project_case_id' => 'crm.lookup_tool',
           'error' => true,
           'error_code' => 'timeout',
           'queue_wait_ms' => '42',
@@ -145,13 +147,58 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       )
 
       event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        project_case_id: 'crm.lookup_tool',
+        error_code: 'timeout',
+        queue_wait_ms: 42,
+        thinking_tokens: 12,
+        tool_calls_count: 1,
+        payload_truncated: false
+      )
       expect(event.payload).to include(
+        'payload_budget_bytes' => Llm::Monitoring::EventRecorder::PERSISTED_PAYLOAD_MAX_BYTES,
         'tool_calls_count' => 1,
         'error_code' => 'timeout',
         'queue_wait_ms' => 42,
         'thinking_tokens' => 12
       )
       expect(event.payload['payload_bytes']).to be_positive
+    end
+
+    it 'bounds large sanitized payloads while preserving RCA columns and essential summary fields' do
+      described_class.record_notification(
+        event_name: 'llm.chat.complete',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'project_case_id' => 'provider.failure',
+          'model' => 'gpt-4.1-mini',
+          'canonical_event_name' => 'x' * 2_500,
+          'event_name_alias' => 'x' * 2_500,
+          'error_class' => 'x' * 2_500,
+          'failure_mode' => 'x' * 2_500,
+          'status' => 'failed',
+          'error_code' => 'provider_unavailable',
+          'details' => Array.new(30) { |index| { "key_#{index}" => 'x' * 2_000 } }
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        project_case_id: 'provider.failure',
+        error_code: 'provider_unavailable',
+        payload_truncated: true
+      )
+      expect(event.payload.to_json.bytesize).to be <= Llm::Monitoring::EventRecorder::PERSISTED_PAYLOAD_MAX_BYTES
+      expect(event.payload).to include(
+        'payload_truncated' => true,
+        'payload_bytes' => be > Llm::Monitoring::EventRecorder::PERSISTED_PAYLOAD_MAX_BYTES,
+        'payload_budget_bytes' => Llm::Monitoring::EventRecorder::PERSISTED_PAYLOAD_MAX_BYTES
+      )
+      expect(event.payload).not_to have_key('details')
+      expect(event.payload).not_to have_key('error_class')
     end
   end
 end

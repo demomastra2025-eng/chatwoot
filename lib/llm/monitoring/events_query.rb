@@ -61,20 +61,22 @@ class Llm::Monitoring::EventsQuery
 
   def scoped_without_date_range
     @scoped_without_date_range ||= @scope
-                        .for_feature(@params[:feature])
-                        .for_model(@params[:model])
-                        .for_event_name(@params[:event_name])
-                        .for_runtime_mode(@params[:runtime_mode])
-                        .for_status(@params[:status])
-                        .for_trace_id(@params[:trace_id])
-                        .for_session_id(@params[:session_id])
-                        .for_flag(@params[:flag])
-                        .for_assistant(@params[:assistant_id])
-                        .for_conversation(@params[:conversation_id])
-                        .for_conversation_display_id(@params[:conversation_display_id])
-                        .for_copilot_thread(@params[:copilot_thread_id])
-                        .for_tool_name(@params[:tool_name])
-                        .for_schema_name(@params[:schema_name])
+                                   .for_feature(@params[:feature])
+                                   .for_model(@params[:model])
+                                   .for_event_name(@params[:event_name])
+                                   .for_runtime_mode(@params[:runtime_mode])
+                                   .for_status(@params[:status])
+                                   .for_trace_id(@params[:trace_id])
+                                   .for_session_id(@params[:session_id])
+                                   .for_project_case(project_case_id)
+                                   .for_error_code(error_code)
+                                   .for_flag(@params[:flag])
+                                   .for_assistant(@params[:assistant_id])
+                                   .for_conversation(@params[:conversation_id])
+                                   .for_conversation_display_id(@params[:conversation_display_id])
+                                   .for_copilot_thread(@params[:copilot_thread_id])
+                                   .for_tool_name(@params[:tool_name])
+                                   .for_schema_name(@params[:schema_name])
   end
 
   def current_page
@@ -98,6 +100,8 @@ class Llm::Monitoring::EventsQuery
       status: @params[:status],
       trace_id: @params[:trace_id],
       session_id: @params[:session_id],
+      project_case_id: project_case_id,
+      error_code: error_code,
       flag: @params[:flag],
       assistant_id: integer_filter(:assistant_id),
       conversation_id: integer_filter(:conversation_id),
@@ -108,6 +112,14 @@ class Llm::Monitoring::EventsQuery
       since: @params[:since],
       until: @params[:until]
     }.compact
+  end
+
+  def project_case_id
+    Llm::ProjectCaseId.normalize(@params[:project_case_id])
+  end
+
+  def error_code
+    Llm::EventCode.normalize(@params[:error_code])
   end
 
   def integer_filter(key)

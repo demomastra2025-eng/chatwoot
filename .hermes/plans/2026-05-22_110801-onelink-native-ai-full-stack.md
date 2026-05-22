@@ -1178,3 +1178,115 @@ Next coding slice:
 1. Add the next deterministic case fixtures: CRM lookup/tool, scheduling/tool wait, provider failure.
 2. Continue Etapa 5 semantic validators: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
 3. Decide whether `project_case_id` should be populated by eval packs only or also by runtime scenario metadata.
+
+## 2026-05-22 Etapa 1/2 event-contract completion slice
+
+Status: **Etapa 1/2 is now complete for the planned V1 contract.**
+
+Implemented:
+
+- Added deterministic event-contract eval pack `captain.event_contract_trace` and included it in the release scenario/default deterministic eval flow.
+- Moved the first case fixture into product eval config and added the remaining V1 fixtures:
+  - `customer_support.basic_no_tool`
+  - `crm.lookup_tool`
+  - `scheduling.tool_wait`
+  - `provider.failure`
+- Added `Captain::Evals::EventContractTraceSuite` checks for:
+  - required canonical event names;
+  - accepted alias metadata such as `llm.run.failed` -> `llm.run.complete`;
+  - stable `project_case_id` per fixture;
+  - required tool lifecycle evidence;
+  - typed safe `ui_actions` only;
+  - no raw content-like keys (`prompt/messages/input/output/response/content`);
+  - per-event payload budget <= 8KB.
+- Added normalized `Llm::ProjectCaseId` policy:
+  - IDs must be compact machine identifiers like `crm.lookup_tool`;
+  - raw human text / customer content is dropped.
+- Promoted query-critical RCA fields from JSON payload into `llm_events` columns with focused indexes where needed:
+  - `project_case_id`
+  - `error_code`
+  - `queue_wait_ms`
+  - `thinking_tokens`
+  - `payload_bytes`
+  - `payload_truncated`
+  - `retry_count`
+  - `tool_calls_count`
+  - `schema_invalid_count`
+- Added persisted payload budget enforcement in `Llm::Monitoring::EventRecorder`:
+  - default persisted summary payload max: 8KB;
+  - oversized sanitized payloads are reduced to essential RCA fields;
+  - raw content remains redacted before budget enforcement;
+  - budget enforcement re-checks the essential slice and falls back to minimal RCA fields if needed.
+- Removed raw Captain tool preview payloads from event-bus callbacks; tool events keep structural keys/sizes/types, not argument/result text.
+- Added EventsQuery filters for `project_case_id` and `error_code`.
+- Added metrics snapshot fields for queue wait, payload budget truncation, retry/tool/schema occurrences.
+
+Project case ID policy decision:
+
+- `project_case_id` is a **machine-safe evaluation/trace identifier**, not free text.
+- It may be set by deterministic eval packs and by runtime scenario metadata **only when the value already matches the safe ID format**.
+- Arbitrary scenario names, customer messages, prompts, or human labels are not persisted as `project_case_id`.
+
+Etapa 1/2 V1 acceptance:
+
+- Canonical event vocabulary: done.
+- Alias compatibility without changing existing persisted event names: done.
+- No raw prompt/content persistence by default: done.
+- RCA summary fields: done, now indexed/promoted where query-critical.
+- Payload budget: done.
+- First project trace fixtures: done for support, CRM, scheduling wait, provider failure.
+- UI eval evidence: done through `/captain/evaluations` deterministic pack inclusion.
+
+Verification completed:
+
+```bash
+RAILS_ENV=test DISABLE_SPRING=1 bundle exec rails db:migrate
+# 20260522143000 applied to test DB
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/event_bus_spec.rb spec/lib/llm/monitoring/event_recorder_spec.rb spec/lib/llm/monitoring/events_query_spec.rb spec/lib/llm/monitoring/metrics_snapshot_spec.rb spec/enterprise/lib/captain/runtime/event_bus_callbacks_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb
+# 40 examples, 0 failures
+
+pnpm exec vitest --no-watch --no-cache --no-coverage app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js app/javascript/dashboard/api/specs/captainEvaluations.spec.js
+# 2 files / 17 tests passed
+
+pnpm exec eslint app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.vue app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js app/javascript/dashboard/api/specs/captainEvaluations.spec.js
+# exit 0
+
+bundle exec ruby -c lib/llm/project_case_id.rb
+bundle exec ruby -c lib/llm/event_bus.rb
+bundle exec ruby -c lib/llm/monitoring/event_recorder.rb
+bundle exec ruby -c lib/llm/monitoring/events_query.rb
+bundle exec ruby -c lib/llm/monitoring/metrics_snapshot.rb
+bundle exec ruby -c enterprise/lib/captain/evals/event_contract_trace_suite.rb
+bundle exec ruby -c db/migrate/20260522143000_add_rca_fields_to_llm_events.rb
+# Syntax OK
+
+bundle exec rubocop --fail-level E <touched ruby files>
+# exit 0; only legacy/style/metrics C/W offenses remain, no E-level offenses
+```
+
+Post-review verification update:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/event_bus_spec.rb spec/lib/llm/monitoring/event_recorder_spec.rb spec/lib/llm/monitoring/events_query_spec.rb spec/lib/llm/monitoring/metrics_snapshot_spec.rb spec/enterprise/lib/captain/runtime/event_bus_callbacks_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb
+# 40 examples, 0 failures
+
+pnpm exec vitest --no-watch --no-cache --no-coverage app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js app/javascript/dashboard/api/specs/captainEvaluations.spec.js
+# 2 files / 17 tests passed
+
+pnpm exec eslint app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.vue app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js app/javascript/dashboard/api/specs/captainEvaluations.spec.js
+# exit 0
+
+# Independent review found one blocker: EventsQuery used raw error_code while EventRecorder persisted normalized error_code.
+# Fixed by normalizing error_code in EventsQuery filter/applied_filters and covering whitespace-normalized query params.
+# Re-review passed with no blockers.
+
+# Isolated Husky tests passed for: missing .husky/_/husky.sh, no staged files, lint-staged failure propagation,
+# deleted Ruby skip, RuboCop failure propagation, partial-staging preservation, and pre-push validate_push propagation.
+```
+
+Next coding slice:
+
+1. Proceed to **Etapa 5 semantic validators**: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
+2. Keep adding case fixtures as each product case is implemented (campaigns/templates, knowledge/RAG, files/artifacts, MCP/custom HTTP, AI Voice).
+3. Use the new `captain.event_contract_trace` deterministic pack as the regression gate for future event/trace changes.

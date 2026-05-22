@@ -14,6 +14,8 @@ RSpec.describe Llm::Monitoring::EventsQuery do
         model: 'gpt-4.1-mini',
         event_name: 'llm.chat.complete',
         assistant_id: 42,
+        project_case_id: 'crm.lookup_tool',
+        error_code: 'provider_unavailable',
         runtime_mode: 'captain_runtime',
         status: 'completed',
         created_at: 2.hours.ago
@@ -36,6 +38,8 @@ RSpec.describe Llm::Monitoring::EventsQuery do
           feature: 'assistant',
           model: 'gpt-4.1-mini',
           assistant_id: 42,
+          project_case_id: ' crm.lookup_tool ',
+          error_code: ' provider_unavailable ',
           runtime_mode: 'captain_runtime',
           page: 1,
           per_page: 10
@@ -56,6 +60,8 @@ RSpec.describe Llm::Monitoring::EventsQuery do
           feature: 'assistant',
           model: 'gpt-4.1-mini',
           assistant_id: 42,
+          project_case_id: 'crm.lookup_tool',
+          error_code: 'provider_unavailable',
           runtime_mode: 'captain_runtime'
         )
       )

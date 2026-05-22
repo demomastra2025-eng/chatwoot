@@ -1,0 +1,120 @@
+[
+  {
+    "name": "llm.run.start",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 5,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "scheduling.tool_wait",
+      "agent_name": "assistant_agent",
+      "input_type": "string",
+      "input_size": 34,
+      "canonical_event_name": "llm.run.start"
+    }
+  },
+  {
+    "name": "llm.tool.execute",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 5,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "scheduling.tool_wait",
+      "tool_name": "schedule_appointment",
+      "arguments_keys": [
+        "service_id",
+        "scheduled_at",
+        "limit"
+      ],
+      "arguments_size": 58,
+      "canonical_event_name": "llm.tool.execute"
+    }
+  },
+  {
+    "name": "llm.tool.progress",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 5,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "scheduling.tool_wait",
+      "tool_name": "schedule_appointment",
+      "progress_type": "hash",
+      "progress_size": 38,
+      "queue_wait_ms": 1200,
+      "canonical_event_name": "llm.tool.progress"
+    }
+  },
+  {
+    "name": "llm.tool.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 5,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "scheduling.tool_wait",
+      "tool_name": "schedule_appointment",
+      "result_type": "hash",
+      "result_size": 72,
+      "error": false,
+      "result_success": true,
+      "result_retryable": false,
+      "canonical_event_name": "llm.tool.complete",
+      "result_message_type": "string",
+      "result_message_size": 30,
+      "result_error_type": "nil",
+      "result_error_size": 0
+    }
+  },
+  {
+    "name": "llm.run.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 5,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "scheduling.tool_wait",
+      "agent_name": "assistant_agent",
+      "error": false,
+      "output_type": "hash",
+      "output_size": 60,
+      "usage": {
+        "input_tokens": 44,
+        "output_tokens": 18,
+        "total_tokens": 62
+      },
+      "canonical_event_name": "llm.run.complete"
+    }
+  }
+]

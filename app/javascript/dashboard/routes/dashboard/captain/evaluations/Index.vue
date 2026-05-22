@@ -16,6 +16,7 @@ const SCENARIO_DEFINITIONS = [
       'llm.moderation',
       'captain.tool_safety',
       'captain.ai_voice_trace',
+      'captain.event_contract_trace',
       'captain.red_team',
     ],
   },
@@ -1014,14 +1015,18 @@ onMounted(fetchCatalog);
                     :max="evalRuns.max_cases"
                   />
                 </label>
-                <label class="flex items-start gap-2 rounded-lg bg-n-alpha-1 p-3">
+                <label
+                  class="flex items-start gap-2 rounded-lg bg-n-alpha-1 p-3"
+                >
                   <input
                     v-model="acknowledgeLlmCost"
                     data-testid="tribunal-acknowledge-cost"
                     type="checkbox"
                     class="mt-1"
                   />
-                  <span>{{ t('CAPTAIN.EVALUATIONS.RUN.ACKNOWLEDGE_SHORT') }}</span>
+                  <span>{{
+                    t('CAPTAIN.EVALUATIONS.RUN.ACKNOWLEDGE_SHORT')
+                  }}</span>
                 </label>
               </div>
               <Button

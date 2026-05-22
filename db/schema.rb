@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_05_22_125100) do
+ActiveRecord::Schema[7.1].define(version: 2026_05_22_143000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1522,9 +1522,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_22_125100) do
     t.datetime "updated_at", null: false
     t.string "trace_id"
     t.string "request_id"
+    t.string "project_case_id"
+    t.string "error_code"
+    t.integer "queue_wait_ms"
+    t.integer "thinking_tokens"
+    t.integer "payload_bytes"
+    t.boolean "payload_truncated", default: false, null: false
+    t.integer "retry_count"
+    t.integer "tool_calls_count"
+    t.integer "schema_invalid_count"
     t.index ["account_id", "created_at"], name: "index_llm_events_on_account_created_at"
+    t.index ["account_id", "error_code", "created_at"], name: "index_llm_events_on_account_error_code_created_at", where: "(error_code IS NOT NULL)"
     t.index ["account_id", "feature", "created_at"], name: "index_llm_events_on_account_feature_created_at"
     t.index ["account_id", "model", "created_at"], name: "index_llm_events_on_account_model_created_at"
+    t.index ["account_id", "project_case_id", "created_at"], name: "index_llm_events_on_account_project_case_created_at", where: "(project_case_id IS NOT NULL)"
     t.index ["account_id", "request_id", "created_at"], name: "index_llm_events_on_account_request_created_at", where: "(request_id IS NOT NULL)"
     t.index ["account_id", "session_id", "created_at"], name: "index_llm_events_on_account_session_created_at", where: "(session_id IS NOT NULL)"
     t.index ["account_id", "trace_id", "created_at"], name: "index_llm_events_on_account_trace_created_at", where: "(trace_id IS NOT NULL)"
