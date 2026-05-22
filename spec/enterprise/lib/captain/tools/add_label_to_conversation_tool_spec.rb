@@ -13,7 +13,7 @@ RSpec.describe Captain::Tools::AddLabelToConversationTool, type: :model do
 
   describe '#description' do
     it 'returns the correct description' do
-      expect(tool.description).to eq('Add a label to a conversation')
+      expect(tool.description).to eq('Add an existing label to the current conversation')
     end
   end
 
@@ -31,9 +31,17 @@ RSpec.describe Captain::Tools::AddLabelToConversationTool, type: :model do
       context 'with valid label that exists' do
         before { label }
 
-        it 'adds label to conversation and returns success message' do
+        it 'adds label to conversation and returns a structured payload' do
           result = tool.perform(tool_context, label_name: 'urgent')
-          expect(result).to eq("Label 'urgent' added to conversation ##{conversation.display_id}")
+          payload = JSON.parse(result)
+
+          expect(payload).to include(
+            'action' => 'add_label_to_conversation',
+            'conversation_id' => conversation.id,
+            'conversation_display_id' => conversation.display_id,
+            'label_name' => 'urgent'
+          )
+          expect(payload['labels']).to include('urgent')
 
           expect(conversation.reload.label_list).to include('urgent')
         end
@@ -49,12 +57,12 @@ RSpec.describe Captain::Tools::AddLabelToConversationTool, type: :model do
 
         it 'handles case insensitive label names' do
           result = tool.perform(tool_context, label_name: 'URGENT')
-          expect(result).to eq("Label 'urgent' added to conversation ##{conversation.display_id}")
+          expect(JSON.parse(result)).to include('label_name' => 'urgent')
         end
 
         it 'strips whitespace from label names' do
           result = tool.perform(tool_context, label_name: '  urgent  ')
-          expect(result).to eq("Label 'urgent' added to conversation ##{conversation.display_id}")
+          expect(JSON.parse(result)).to include('label_name' => 'urgent')
         end
       end
 

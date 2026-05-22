@@ -9,9 +9,18 @@ class Captain::Tools::AddPrivateNoteTool < Captain::Tools::BasePublicTool
     return 'Note content is required' if note.blank?
 
     log_tool_usage('add_private_note', { conversation_id: conversation.id, note_length: note.length })
-    create_private_note(conversation, note)
+    message = create_private_note(conversation, note)
 
-    'Private note added successfully'
+    tool_success(
+      data: {
+        action: 'add_private_note',
+        conversation_id: conversation.id,
+        conversation_display_id: conversation.display_id,
+        message_id: message.id,
+        note: message.content,
+        created_at: message.created_at&.iso8601
+      }
+    )
   end
 
   private

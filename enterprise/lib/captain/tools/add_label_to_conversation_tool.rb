@@ -12,11 +12,19 @@ class Captain::Tools::AddLabelToConversationTool < Captain::Tools::BasePublicToo
     label = find_label(label_name)
     return 'Label not found' unless label
 
-    add_label_to_conversation(conversation, label_name)
+    conversation = add_label_to_conversation(conversation, label_name)
 
     log_tool_usage('added_label', conversation_id: conversation.id, label: label_name)
 
-    "Label '#{label_name}' added to conversation ##{conversation.display_id}"
+    tool_success(
+      data: {
+        action: 'add_label_to_conversation',
+        conversation_id: conversation.id,
+        conversation_display_id: conversation.display_id,
+        label_name: label_name,
+        labels: conversation.label_list.to_a
+      }
+    )
   end
 
   private
@@ -27,6 +35,7 @@ class Captain::Tools::AddLabelToConversationTool < Captain::Tools::BasePublicToo
 
   def add_label_to_conversation(conversation, label_name)
     conversation.add_labels(label_name)
+    conversation.reload
   rescue StandardError => e
     Rails.logger.error "Failed to add label to conversation: #{e.message}"
     raise

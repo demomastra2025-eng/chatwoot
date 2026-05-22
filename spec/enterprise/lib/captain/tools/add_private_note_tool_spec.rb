@@ -12,7 +12,7 @@ RSpec.describe Captain::Tools::AddPrivateNoteTool, type: :model do
 
   describe '#description' do
     it 'returns the correct description' do
-      expect(tool.description).to eq('Add a private note to a conversation')
+      expect(tool.description).to eq('Add a private note to the current conversation')
     end
   end
 
@@ -28,12 +28,20 @@ RSpec.describe Captain::Tools::AddPrivateNoteTool, type: :model do
   describe '#perform' do
     context 'when conversation exists' do
       context 'with valid note content' do
-        it 'creates a private note and returns success message' do
+        it 'creates a private note and returns a structured payload' do
           note_content = 'This is a private note'
 
           expect do
             result = tool.perform(tool_context, note: note_content)
-            expect(result).to eq('Private note added successfully')
+            payload = JSON.parse(result)
+
+            expect(payload).to include(
+              'action' => 'add_private_note',
+              'conversation_id' => conversation.id,
+              'conversation_display_id' => conversation.display_id,
+              'note' => note_content
+            )
+            expect(payload['message_id']).to be_present
           end.to change(Message, :count).by(1)
         end
 
