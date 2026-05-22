@@ -67,6 +67,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
     it 'filters by service availability for the specialist' do
       payload = JSON.parse(service.execute(service_id: service_record.id))
 
+      expect(payload['filters']).to include('service_id' => service_record.id, 'search_by' => 'all', 'include_inactive' => false)
       expect(payload['resources'].map { |item| item['id'] }).to eq([therapist.id])
     end
 

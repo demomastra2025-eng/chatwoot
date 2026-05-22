@@ -19,17 +19,24 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
   end
 
   describe '#execute' do
-    it 'returns normalized deals with filters and returned_count' do
+    it 'returns normalized deals with filters and total_count before limit' do
       payload = JSON.parse(service.execute(query: 'renewal', company_id: company.id, limit: 1))
 
       expect(payload['filters']).to include('query' => 'renewal', 'company_id' => company.id)
-      expect(payload['returned_count']).to eq(1)
+      expect(payload['total_count']).to eq(1)
       expect(payload['deals'].length).to eq(1)
       expect(payload['deals'].first).to include(
         'id' => deal1.id,
         'title' => 'Enterprise renewal',
         'company_id' => company.id
       )
+    end
+
+    it 'keeps total_count independent from the requested limit' do
+      payload = JSON.parse(service.execute(pipeline_id: pipeline.id, limit: 1))
+
+      expect(payload['total_count']).to eq(2)
+      expect(payload['deals'].length).to eq(1)
     end
 
     it 'filters deals by pipeline and stage identifiers without relying on duplicate stage names' do

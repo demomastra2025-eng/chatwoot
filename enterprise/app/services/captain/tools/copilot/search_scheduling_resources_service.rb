@@ -21,9 +21,12 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     ).perform
 
     formatted_payload(
-      query: query.to_s.presence,
-      search_by: search_by.to_s.presence || 'all',
-      service_id: service_id,
+      filters: {
+        query: query.to_s.presence,
+        search_by: search_by.to_s.presence || 'all',
+        service_id: service_id,
+        include_inactive: cast_boolean(include_inactive)
+      }.compact,
       total_count: result[:total_count],
       resources: result[:resources]
     )

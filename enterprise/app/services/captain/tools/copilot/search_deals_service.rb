@@ -35,6 +35,7 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     deals = deals.where(company_id: company_id) if company_id.present?
     deals = deals.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: "%#{query}%") if query.present?
 
+    total_count = deals.count
     records = deals.ordered.limit(parse_limit(limit)).map { |deal| Crm::PayloadBuilder.ai_deal(deal) }
 
     formatted_payload(
@@ -51,7 +52,7 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
         company_id: company_id,
         archived: cast_boolean(archived)
       }.compact,
-      returned_count: records.length,
+      total_count: total_count,
       deals: records
     )
   end
