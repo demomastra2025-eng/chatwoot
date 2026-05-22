@@ -12,7 +12,7 @@ class Captain::Tools::Copilot::SearchCannedResponsesService < Captain::Tools::Co
     total_count = responses.count
 
     formatted_payload(
-      query: query.presence,
+      filters: { query: query.presence }.compact,
       total_count: total_count,
       canned_responses: responses.limit(parse_limit(limit)).map { |response| canned_response_payload(response) }
     )

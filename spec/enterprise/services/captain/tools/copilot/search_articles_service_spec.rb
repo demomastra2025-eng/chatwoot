@@ -23,4 +23,15 @@ RSpec.describe Captain::Tools::Copilot::SearchArticlesService do
       'status' => 'published'
     )
   end
+
+  it 'keeps total_count independent from the requested limit' do
+    portal = create(:portal, account: account)
+    create(:article, account: account, portal: portal, author: user, title: 'Refund policy', content: 'Refund policy', status: 'published')
+    create(:article, account: account, portal: portal, author: user, title: 'Refund procedure', content: 'Refund procedure', status: 'published')
+
+    payload = JSON.parse(service.execute(query: 'Refund', limit: 1))
+
+    expect(payload['total_count']).to eq(2)
+    expect(payload['articles'].length).to eq(1)
+  end
 end
