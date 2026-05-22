@@ -38,6 +38,7 @@ const STATUS_CLASSES = Object.freeze({
   pass: 'bg-n-teal-3 text-n-teal-11',
   pass_with_warnings: 'bg-n-amber-3 text-n-amber-11',
   fail: 'bg-n-ruby-3 text-n-ruby-11',
+  warn: 'bg-n-amber-3 text-n-amber-11',
   alerting: 'bg-n-ruby-3 text-n-ruby-11',
   firing: 'bg-n-ruby-3 text-n-ruby-11',
   warning: 'bg-n-amber-3 text-n-amber-11',
@@ -139,6 +140,7 @@ const overview = reactive({
   timeSeries: {},
   releaseGate: {},
   alerts: {},
+  runtimeHealth: {},
   alertDeliveryState: {},
   preferences: defaultObservabilityPreferences(),
   events: [],
@@ -343,6 +345,19 @@ const topAssistantCostDistribution = computed(() =>
 );
 const activeAlerts = computed(() => Array(overview.alerts.alerts || []));
 const releaseChecks = computed(() => Array(overview.releaseGate.checks || []));
+const runtimeHealth = computed(() => overview.runtimeHealth || {});
+const runtimeHealthChecks = computed(() =>
+  Array.isArray(runtimeHealth.value.checks) ? runtimeHealth.value.checks : []
+);
+const runtimeHealthProviderDistribution = computed(() =>
+  buildDistribution(runtimeHealth.value.top_providers)
+);
+const runtimeHealthModelDistribution = computed(() =>
+  buildDistribution(runtimeHealth.value.top_models)
+);
+const runtimeHealthErrorCodeDistribution = computed(() =>
+  buildDistribution(runtimeHealth.value.recent_error_codes)
+);
 const savedViews = computed(() =>
   Array(overview.preferences.saved_views || [])
 );
@@ -885,6 +900,7 @@ async function loadOverview() {
     overview.timeSeries = response.data.time_series || {};
     overview.releaseGate = response.data.release_gate || {};
     overview.alerts = response.data.alerts || {};
+    overview.runtimeHealth = response.data.runtime_health || {};
     overview.alertDeliveryState = response.data.alert_delivery_state || {};
     applyObservabilityPreferences(response.data.preferences || {});
     overview.events = response.data.payload || [];
@@ -954,6 +970,11 @@ function statusLabel(status) {
       return t('CAPTAIN.OBSERVABILITY.STATUS.PASS_WITH_WARNINGS');
     case 'fail':
       return t('CAPTAIN.OBSERVABILITY.STATUS.FAIL');
+    case 'warn':
+    case 'warning':
+      return t('CAPTAIN.OBSERVABILITY.STATUS.WARNING');
+    case 'critical':
+      return t('CAPTAIN.OBSERVABILITY.STATUS.CRITICAL');
     case 'insufficient_data':
       return t('CAPTAIN.OBSERVABILITY.STATUS.INSUFFICIENT_DATA');
     case 'disabled':
@@ -1074,6 +1095,35 @@ function formatDateTime(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(parsed);
+}
+
+function formatRuntimeHealthWindow() {
+  const dateRange = runtimeHealth.value.date_range || {};
+  if (!dateRange.started_at && !dateRange.ended_at) {
+    return t('GENERAL.NONE');
+  }
+
+  return t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.WINDOW_VALUE', {
+    since: formatDateTime(dateRange.started_at),
+    until: formatDateTime(dateRange.ended_at),
+  });
+}
+
+function formatRuntimeHealthActual(value) {
+  if (value === null || value === undefined) {
+    return t('GENERAL.NONE');
+  }
+  if (typeof value === 'number') {
+    return formatInteger(value);
+  }
+  if (typeof value === 'string') {
+    return statusLabel(value);
+  }
+  if (typeof value === 'object' && value.status) {
+    return statusLabel(value.status);
+  }
+
+  return t('GENERAL.NONE');
 }
 
 function buildDistribution(distribution) {
@@ -2166,6 +2216,165 @@ onMounted(async () => {
         <section
           class="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]"
         >
+          <article
+            class="rounded-2xl border border-n-weak bg-n-solid-1 p-5 lg:col-span-2"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-base font-medium text-n-slate-12">
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.TITLE') }}
+                </h2>
+                <p class="mt-1 text-sm text-n-slate-11">
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.DESCRIPTION') }}
+                </p>
+              </div>
+              <span
+                class="rounded-full px-2.5 py-1 text-xs font-medium"
+                :class="statusClass(runtimeHealth.status)"
+              >
+                {{ statusLabel(runtimeHealth.status) }}
+              </span>
+            </div>
+
+            <div class="mt-5 grid gap-3 md:grid-cols-3">
+              <div class="rounded-xl bg-n-alpha-2 p-4">
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.EVALUATED_AT') }}
+                </div>
+                <div class="mt-2 text-sm font-medium text-n-slate-12">
+                  {{ formatDateTime(runtimeHealth.evaluated_at) }}
+                </div>
+              </div>
+              <div class="rounded-xl bg-n-alpha-2 p-4 md:col-span-2">
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.WINDOW') }}
+                </div>
+                <div class="mt-2 text-sm font-medium text-n-slate-12">
+                  {{ formatRuntimeHealthWindow() }}
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div
+                v-for="check in runtimeHealthChecks"
+                :key="check.name"
+                class="rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium text-n-slate-12">
+                      {{ humanizeIdentifier(check.name) }}
+                    </div>
+                    <div class="mt-1 text-xs text-n-slate-10">
+                      {{
+                        t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.ACTUAL', {
+                          value: formatRuntimeHealthActual(check.actual),
+                        })
+                      }}
+                    </div>
+                  </div>
+                  <span
+                    class="rounded-full px-2.5 py-1 text-xs font-medium"
+                    :class="statusClass(check.status)"
+                  >
+                    {{ statusLabel(check.status) }}
+                  </span>
+                </div>
+                <p v-if="check.message" class="mt-3 text-sm text-n-slate-11">
+                  {{ check.message }}
+                </p>
+              </div>
+              <div
+                v-if="runtimeHealthChecks.length === 0"
+                class="rounded-xl bg-n-alpha-2 p-4 text-sm text-n-slate-11 md:col-span-2 xl:col-span-4"
+              >
+                {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.EMPTY') }}
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-4 md:grid-cols-3">
+              <div>
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.TOP_PROVIDERS') }}
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="[name, count] in runtimeHealthProviderDistribution"
+                    :key="`runtime-health-provider-${name}`"
+                    class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+                  >
+                    {{
+                      `${name || t('GENERAL.NONE')} (${formatInteger(count)})`
+                    }}
+                  </span>
+                  <span
+                    v-if="runtimeHealthProviderDistribution.length === 0"
+                    class="text-xs text-n-slate-11"
+                  >
+                    {{ t('GENERAL.NONE') }}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.TOP_MODELS') }}
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="[name, count] in runtimeHealthModelDistribution"
+                    :key="`runtime-health-model-${name}`"
+                    class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+                  >
+                    {{
+                      `${name || t('GENERAL.NONE')} (${formatInteger(count)})`
+                    }}
+                  </span>
+                  <span
+                    v-if="runtimeHealthModelDistribution.length === 0"
+                    class="text-xs text-n-slate-11"
+                  >
+                    {{ t('GENERAL.NONE') }}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div
+                  class="text-xs uppercase tracking-[0.08em] text-n-slate-10"
+                >
+                  {{ t('CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.ERROR_CODES') }}
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span
+                    v-for="[name, count] in runtimeHealthErrorCodeDistribution"
+                    :key="`runtime-health-error-code-${name}`"
+                    class="rounded-full bg-n-alpha-2 px-2.5 py-1 text-xs text-n-slate-11"
+                  >
+                    {{
+                      `${name || t('GENERAL.NONE')} (${formatInteger(count)})`
+                    }}
+                  </span>
+                  <span
+                    v-if="runtimeHealthErrorCodeDistribution.length === 0"
+                    class="text-xs text-n-slate-11"
+                  >
+                    {{ t('GENERAL.NONE') }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </article>
+
           <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-5">
             <div class="flex items-start justify-between gap-4">
               <div>

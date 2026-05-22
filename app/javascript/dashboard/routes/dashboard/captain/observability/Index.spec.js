@@ -1,0 +1,271 @@
+/* eslint-disable vue/one-component-per-file */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { defineComponent, h } from 'vue';
+import { flushPromises, mount } from '@vue/test-utils';
+
+const getMock = vi.fn();
+const releaseCheckMock = vi.fn();
+const exportMock = vi.fn();
+const updatePreferencesMock = vi.fn();
+const routerReplaceMock = vi.fn();
+const useAlertMock = vi.fn();
+
+const ButtonStub = defineComponent({
+  name: 'NextButtonStub',
+  props: {
+    label: { type: String, default: '' },
+    isLoading: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false },
+  },
+  emits: ['click'],
+  setup(props, { emit }) {
+    return () =>
+      h(
+        'button',
+        {
+          disabled: props.isLoading || props.disabled,
+          onClick: () => emit('click'),
+        },
+        props.label
+      );
+  },
+});
+
+const InputStub = defineComponent({
+  name: 'InputStub',
+  props: {
+    modelValue: { type: [String, Number, Boolean, Array], default: '' },
+    label: { type: String, default: '' },
+    placeholder: { type: String, default: '' },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () =>
+      h('label', [
+        props.label || props.placeholder,
+        h('input', {
+          value: props.modelValue,
+          onInput: event => emit('update:modelValue', event.target.value),
+        }),
+      ]);
+  },
+});
+
+const SelectStub = defineComponent({
+  name: 'SelectStub',
+  props: {
+    modelValue: { type: [String, Number, Boolean, Array], default: '' },
+    label: { type: String, default: '' },
+    options: { type: Array, default: () => [] },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () =>
+      h('label', [
+        props.label,
+        h(
+          'select',
+          {
+            value: props.modelValue,
+            onChange: event => emit('update:modelValue', event.target.value),
+          },
+          props.options.map(option =>
+            h(
+              'option',
+              { key: option.value, value: option.value },
+              option.label
+            )
+          )
+        ),
+      ]);
+  },
+});
+
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({
+    t: (key, values) => {
+      if (!values) return key;
+      return Object.entries(values).reduce(
+        (message, [name, value]) => message.replace(`{${name}}`, String(value)),
+        key
+      );
+    },
+    locale: { value: 'en' },
+  }),
+}));
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    name: 'captain_observability',
+    params: { accountId: '6' },
+    query: { tab: 'overview' },
+  }),
+  useRouter: () => ({ replace: routerReplaceMock }),
+}));
+
+vi.mock('dashboard/composables', () => ({
+  useAlert: (...args) => useAlertMock(...args),
+}));
+
+vi.mock('dashboard/api/captain/observability', () => ({
+  default: {
+    get: getMock,
+    releaseCheck: releaseCheckMock,
+    export: exportMock,
+  },
+}));
+
+vi.mock('dashboard/api/captain/preferences', () => ({
+  default: {
+    updatePreferences: updatePreferencesMock,
+  },
+}));
+
+vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
+  default: defineComponent({
+    name: 'PageLayout',
+    setup(_props, { slots }) {
+      return () =>
+        h('main', [slots.subHeader?.(), slots.controls?.(), slots.body?.()]);
+    },
+  }),
+}));
+
+vi.mock('dashboard/components-next/button/Button.vue', () => ({
+  default: ButtonStub,
+}));
+
+vi.mock('dashboard/components-next/input/Input.vue', () => ({
+  default: InputStub,
+}));
+
+vi.mock('dashboard/components-next/select/Select.vue', () => ({
+  default: SelectStub,
+}));
+
+vi.mock('dashboard/components-next/tabbar/TabBar.vue', () => ({
+  default: defineComponent({
+    name: 'TabBar',
+    props: {
+      tabs: { type: Array, default: () => [] },
+    },
+    setup(props) {
+      return () =>
+        h(
+          'nav',
+          props.tabs.map(tab => h('span', { key: tab.id }, tab.label))
+        );
+    },
+  }),
+}));
+
+vi.mock('dashboard/components-next/table/BaseTable.vue', () => ({
+  default: defineComponent({ name: 'BaseTable', template: '<div />' }),
+}));
+
+vi.mock('shared/components/charts/LineChart.vue', () => ({
+  default: defineComponent({ name: 'LineChart', template: '<div />' }),
+}));
+
+vi.mock('./EventDetailsDialog.vue', () => ({
+  default: defineComponent({
+    name: 'EventDetailsDialog',
+    setup(_props, { expose }) {
+      expose({ open: vi.fn() });
+      return () => h('div');
+    },
+  }),
+}));
+
+const { default: ObservabilityIndex } = await import('./Index.vue');
+
+const overviewPayload = {
+  data: {
+    snapshot: {
+      total_events: 3,
+      request_count: 1,
+      error_count: 1,
+      blocked_count: 0,
+      avg_duration_ms: 240,
+      all_total_tokens: 1200,
+      total_estimated_cost: 0.0123,
+      moderation_count: 0,
+    },
+    time_series: { bucket: 'hour', points: [] },
+    release_gate: { status: 'pass', checks: [] },
+    alerts: { status: 'ok', alerts: [] },
+    runtime_health: {
+      status: 'critical',
+      evaluated_at: '2026-05-22T12:00:00Z',
+      date_range: {
+        started_at: '2026-05-22T11:00:00Z',
+        ended_at: '2026-05-22T12:00:00Z',
+      },
+      checks: [
+        {
+          name: 'event_ingestion',
+          status: 'pass',
+          severity: 'info',
+          actual: 3,
+          message: 'LLM events are being persisted for this window.',
+        },
+        {
+          name: 'provider_failures',
+          status: 'fail',
+          severity: 'critical',
+          actual: 1,
+          message: 'Provider failure events were recorded in this window.',
+        },
+        {
+          name: 'payload_budget',
+          status: 'warn',
+          severity: 'warning',
+          actual: 2,
+          message: 'Some LLM event payload summaries were truncated.',
+        },
+        {
+          name: 'otel_event_export',
+          status: 'disabled',
+          severity: 'info',
+          actual: { status: 'disabled', sample_rate_valid: true },
+          message: 'EventBus OTel export is disabled.',
+        },
+      ],
+      top_providers: { openrouter: 2, openai: 1 },
+      top_models: { 'openrouter/anthropic/claude-sonnet-4': 2 },
+      recent_error_codes: { provider_unavailable: 1 },
+    },
+    alert_delivery_state: {},
+    preferences: {},
+    payload: [],
+    meta: { count: 0, current_page: 1, per_page: 25 },
+  },
+};
+
+describe('Captain observability page', () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    getMock.mockResolvedValue(overviewPayload);
+    releaseCheckMock.mockReset();
+    exportMock.mockReset();
+    updatePreferencesMock.mockReset();
+    routerReplaceMock.mockReset();
+    useAlertMock.mockReset();
+  });
+
+  it('renders bounded runtime health without raw payload details', async () => {
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.OBSERVABILITY.RUNTIME_HEALTH.TITLE'
+    );
+    expect(wrapper.text()).toContain('CAPTAIN.OBSERVABILITY.STATUS.CRITICAL');
+    expect(wrapper.text()).toContain('Provider Failures');
+    expect(wrapper.text()).toContain('Payload Budget');
+    expect(wrapper.text()).toContain('openrouter (2)');
+    expect(wrapper.text()).toContain('provider_unavailable (1)');
+    expect(wrapper.text()).not.toContain('prompt');
+    expect(wrapper.text()).not.toContain('messages');
+  });
+});

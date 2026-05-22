@@ -2317,6 +2317,18 @@
         "DELIVERY_CHANNELS": "Каналы доставки",
         "EMPTY": "Для выбранной области активных алертов нет."
       },
+      "RUNTIME_HEALTH": {
+        "TITLE": "Здоровье runtime",
+        "DESCRIPTION": "Ограниченные проверки провайдера, payload-budget и OTel export для текущего окна фильтров.",
+        "EVALUATED_AT": "Проверено",
+        "WINDOW": "Окно",
+        "WINDOW_VALUE": "{since} - {until}",
+        "ACTUAL": "Факт: {value}",
+        "TOP_PROVIDERS": "Топ провайдеров",
+        "TOP_MODELS": "Топ моделей",
+        "ERROR_CODES": "Последние коды ошибок",
+        "EMPTY": "Для выбранной области runtime health проверок нет."
+      },
       "DISTRIBUTION": {
         "TITLE": "Распределение трафика",
         "DESCRIPTION": "Топ функций, моделей и провайдеров в текущем отфильтрованном окне.",

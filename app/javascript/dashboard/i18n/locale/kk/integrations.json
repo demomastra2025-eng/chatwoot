@@ -1477,6 +1477,18 @@
         "DELIVERY_CHANNELS": "Delivery channels",
         "EMPTY": "No active alerts for the selected scope."
       },
+      "RUNTIME_HEALTH": {
+        "TITLE": "Runtime health",
+        "DESCRIPTION": "Bounded provider, payload-budget, and OTel export checks for the current filtered window.",
+        "EVALUATED_AT": "Evaluated at",
+        "WINDOW": "Window",
+        "WINDOW_VALUE": "{since} to {until}",
+        "ACTUAL": "Actual: {value}",
+        "TOP_PROVIDERS": "Top providers",
+        "TOP_MODELS": "Top models",
+        "ERROR_CODES": "Recent error codes",
+        "EMPTY": "No runtime health checks for the selected scope."
+      },
       "DISTRIBUTION": {
         "TITLE": "Traffic distribution",
         "DESCRIPTION": "Top features, models, and providers in the current filtered window.",
