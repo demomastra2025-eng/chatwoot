@@ -74,5 +74,36 @@ RSpec.describe Llm::EventBus do
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
+
+    it 'publishes canonical names for accepted aliases while recording the alias in payload' do
+      alias_matrix = {
+        'run.started' => 'llm.run.start',
+        'llm.run.finished' => 'llm.run.complete',
+        'run.failed' => 'llm.run.complete',
+        'tool.started' => 'llm.tool.execute',
+        'tool.finished' => 'llm.tool.complete',
+        'tool.failed' => 'llm.tool.complete',
+        'schema.repair' => 'llm.schema.repair_requested'
+      }
+
+      events = []
+      subscriber = ActiveSupport::Notifications.subscribe(/llm\./) do |*args|
+        events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      alias_matrix.each do |event_alias, canonical_event_name|
+        events.clear
+        described_class.publish(event_alias, tool_name: 'lookup_contact')
+
+        expect(events.map(&:name)).to eq([canonical_event_name])
+        expect(events.first.payload).to include(
+          'canonical_event_name' => canonical_event_name,
+          'event_name_alias' => event_alias.start_with?('llm.') ? event_alias : "llm.#{event_alias}",
+          'tool_name' => 'lookup_contact'
+        )
+      end
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
   end
 end

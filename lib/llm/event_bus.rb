@@ -5,6 +5,15 @@ require 'securerandom'
 class Llm::EventBus
   EVENT_NAMESPACE = 'llm'.freeze
   CONTEXT_STATE_KEY = :llm_event_bus_context_stack
+  EVENT_NAME_ALIASES = {
+    'llm.run.started' => 'llm.run.start',
+    'llm.run.finished' => 'llm.run.complete',
+    'llm.run.failed' => 'llm.run.complete',
+    'llm.tool.started' => 'llm.tool.execute',
+    'llm.tool.finished' => 'llm.tool.complete',
+    'llm.tool.failed' => 'llm.tool.complete',
+    'llm.schema.repair' => 'llm.schema.repair_requested'
+  }.freeze
   CONTEXT_KEYS = %w[
     request_id trace_id session_id account_id assistant_id conversation_id
     conversation_display_id copilot_thread_id current_agent channel_type source
@@ -13,15 +22,20 @@ class Llm::EventBus
 
   class << self
     def publish(event_name, payload = {})
-      normalized_payload = normalize_payload(payload)
+      normalized_event_name = full_event_name(event_name)
+      event_name_for_publish = canonical_event_name(normalized_event_name)
+      normalized_payload = normalize_payload(payload).merge(
+        'canonical_event_name' => event_name_for_publish
+      )
+      normalized_payload['event_name_alias'] = normalized_event_name if normalized_event_name != event_name_for_publish
 
       with_context(normalized_payload) do
         if block_given?
-          ActiveSupport::Notifications.instrument(full_event_name(event_name), normalized_payload) do |instrument_payload|
+          ActiveSupport::Notifications.instrument(event_name_for_publish, normalized_payload) do |instrument_payload|
             yield(instrument_payload || normalized_payload)
           end
         else
-          ActiveSupport::Notifications.instrument(full_event_name(event_name), normalized_payload)
+          ActiveSupport::Notifications.instrument(event_name_for_publish, normalized_payload)
         end
       end
     end
@@ -48,6 +62,10 @@ class Llm::EventBus
       return event_name if event_name.start_with?("#{EVENT_NAMESPACE}.")
 
       "#{EVENT_NAMESPACE}.#{event_name}"
+    end
+
+    def canonical_event_name(event_name)
+      EVENT_NAME_ALIASES.fetch(event_name, event_name)
     end
 
     def normalize_payload(payload)

@@ -1082,3 +1082,61 @@ Next coding slice:
 1. Etapa 1/2 event-contract hardening for Captain runtime traces: schema-typed `ui_actions`, trace/event redaction, bounded event payload, deterministic trace fixtures for the first project cases.
 2. Move `run_dataset` live/judge execution from synchronous web request into queued `Llm::EvalRun` once live judge mode is product-enabled.
 3. Add eval history/cancel/retry/autopoll and real spend accounting before calling Tribunal live judge production-ready.
+
+## 2026-05-22 Etapa 1/2 event-contract hardening status
+
+Completed first safe backend slice after DEV smoke:
+
+- DEV `chatwoot_dev` pending migration `20260522125100` was applied.
+- DEV smoke now passes for the combined evals/SMM surface:
+  - `/app/accounts/1/captain/evaluations` -> 200
+  - `/app/accounts/1/smm` -> 200
+  - `/app/accounts/1/smm/calendar` -> 200
+  - `/vite-dev/@vite/client` -> 200
+  - unauth `/api/v1/accounts/1/captain/evaluations` -> 401
+  - unauth `/api/v1/accounts/1/content/channels` -> 401
+  - local Postiz `/auth` -> 200
+  - Rails runner confirms `development`, DB `chatwoot_dev`, no pending migrations, eval/content routes/classes loaded, `llm_eval_runs` present, `LLM_EVALS_LIVE_ENABLED=true`.
+- `Llm::EventBus` now has explicit accepted aliases for proposed lifecycle names while keeping current persisted event names stable:
+  - `llm.run.started` -> `llm.run.start`
+  - `llm.run.finished` / `llm.run.failed` -> `llm.run.complete`
+  - `llm.tool.started` -> `llm.tool.execute`
+  - `llm.tool.finished` / `llm.tool.failed` -> `llm.tool.complete`
+  - `llm.schema.repair` -> `llm.schema.repair_requested`
+- Every published event payload includes `canonical_event_name`; alias calls also include `event_name_alias`.
+- `Llm::Monitoring::PayloadSanitizer` now redacts raw prompt/message/input/output/response/content keys by default, keeps token-usage keys available, limits hash fanout, and preserves existing secret redaction/truncation.
+- `Llm::Monitoring::EventRecorder` adds compact RCA fields into persisted sanitized payloads without adding hot-path DB columns yet:
+  - `payload_bytes`
+  - `retry_count`
+  - `tool_calls_count`
+  - `schema_invalid_count`
+  - `error_code`
+  - `queue_wait_ms`
+  - `thinking_tokens`
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/event_bus_spec.rb spec/lib/llm/event_subscriber_spec.rb spec/lib/llm/monitoring/event_recorder_spec.rb spec/lib/llm/monitoring/payload_sanitizer_spec.rb spec/enterprise/lib/captain/runtime/event_bus_callbacks_spec.rb
+# 18 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH DISABLE_SPRING=1 bundle exec rspec spec/lib/llm/monitoring/events_query_spec.rb spec/lib/llm/monitoring/metrics_snapshot_spec.rb spec/lib/llm/monitoring/release_gate_spec.rb spec/enterprise/controllers/api/v1/accounts/captain/observability_controller_spec.rb spec/enterprise/services/captain/tools/copilot/account_observability_tools_spec.rb
+# 41 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c lib/llm/event_bus.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c lib/llm/monitoring/event_recorder.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c lib/llm/monitoring/payload_sanitizer.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --fail-level E lib/llm/event_bus.rb lib/llm/monitoring/event_recorder.rb lib/llm/monitoring/payload_sanitizer.rb spec/lib/llm/event_bus_spec.rb spec/lib/llm/monitoring/event_recorder_spec.rb spec/lib/llm/monitoring/payload_sanitizer_spec.rb
+# exit 0; existing C-level style/metrics offenses remain in touched legacy files
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Extend deterministic trace fixtures/UI evidence for the first project cases.
+2. Promote any RCA fields that prove query-critical from payload-only to indexed DB columns/rollups.
+3. Start Etapa 5 semantic structured-output hardening: blank response, invalid handoff/action/artifact ids, and no unsafe retry after mutating tools.

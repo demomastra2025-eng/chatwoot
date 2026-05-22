@@ -95,7 +95,37 @@ class Llm::Monitoring::EventRecorder
   end
 
   def summarized_payload
-    @payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).compact
+    @payload.except(*PROMOTED_PAYLOAD_KEYS.to_a).merge(summary_fields).compact
+  end
+
+  def summary_fields
+    {
+      'payload_bytes' => payload_bytes,
+      'retry_count' => retry_count,
+      'tool_calls_count' => tool_calls_count,
+      'schema_invalid_count' => schema_invalid_count,
+      'error_code' => @payload['error_code'],
+      'queue_wait_ms' => integer_value(@payload['queue_wait_ms']),
+      'thinking_tokens' => integer_value(@payload['thinking_tokens'] || @payload['reasoning_tokens'])
+    }
+  end
+
+  def payload_bytes
+    @payload.to_json.bytesize
+  rescue StandardError
+    @payload.to_s.bytesize
+  end
+
+  def retry_count
+    integer_value(@payload['retry_count']) || (@event_name == 'llm.run.retry' ? 1 : nil)
+  end
+
+  def tool_calls_count
+    integer_value(@payload['tool_calls_count']) || (@event_name == 'llm.tool.complete' ? 1 : nil)
+  end
+
+  def schema_invalid_count
+    integer_value(@payload['schema_invalid_count']) || (@event_name == 'llm.schema.invalid' ? 1 : nil)
   end
 
   def provider_for(model_name)

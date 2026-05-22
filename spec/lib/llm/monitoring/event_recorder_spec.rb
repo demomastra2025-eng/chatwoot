@@ -50,6 +50,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.estimated_cost.to_f).to eq(0.00012)
       expect(event.payload).not_to have_key('request_id')
       expect(event.payload).not_to have_key('trace_id')
+      expect(event.payload['payload_bytes']).to be_positive
     end
 
     it 'persists moderation skip and blocking flags' do
@@ -97,7 +98,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
         status: 'retrying',
         error: true
       )
-      expect(event.payload).to include('attempt' => 1, 'max_attempts' => 1)
+      expect(event.payload).to include('attempt' => 1, 'max_attempts' => 1, 'retry_count' => 1)
     end
 
     it 'sanitizes persisted payload details before storing them in llm_events' do
@@ -110,6 +111,8 @@ RSpec.describe Llm::Monitoring::EventRecorder do
           'feature' => 'assistant',
           'model' => 'gpt-4.1-mini',
           'authorization' => 'Bearer top-secret',
+          'prompt' => 'private customer request',
+          'messages' => [{ 'role' => 'user', 'content' => 'private message' }],
           'details' => {
             'api_key' => 'super-secret',
             'body' => 'x' * 2_500
@@ -119,8 +122,36 @@ RSpec.describe Llm::Monitoring::EventRecorder do
 
       event = LlmEvent.order(:id).last
       expect(event.payload['authorization']).to eq('[REDACTED]')
+      expect(event.payload['prompt']).to eq('[REDACTED]')
+      expect(event.payload['messages']).to eq('[REDACTED]')
       expect(event.payload.dig('details', 'api_key')).to eq('[REDACTED]')
       expect(event.payload.dig('details', 'body')).to end_with('...[TRUNCATED]')
+    end
+
+    it 'records compact RCA counters in the sanitized summary payload' do
+      described_class.record_notification(
+        event_name: 'llm.tool.complete',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'tool_name' => 'lookup_contact',
+          'error' => true,
+          'error_code' => 'timeout',
+          'queue_wait_ms' => '42',
+          'thinking_tokens' => '12'
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event.payload).to include(
+        'tool_calls_count' => 1,
+        'error_code' => 'timeout',
+        'queue_wait_ms' => 42,
+        'thinking_tokens' => 12
+      )
+      expect(event.payload['payload_bytes']).to be_positive
     end
   end
 end
