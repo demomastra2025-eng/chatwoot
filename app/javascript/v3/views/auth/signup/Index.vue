@@ -1,27 +1,16 @@
 <script setup>
-import { ref, computed, onBeforeMount } from 'vue';
+import { computed } from 'vue';
 import { useStore } from 'vuex';
 import SignupForm from './components/Signup/Form.vue';
-import Testimonials from './components/Testimonials/Index.vue';
-import Spinner from 'shared/components/Spinner.vue';
 import { useBranding } from 'shared/composables/useBranding';
 
 const store = useStore();
 const { replaceInstallationName } = useBranding();
 
-const isLoading = ref(false);
 const globalConfig = computed(() => store.getters['globalConfig/get']);
 const isADefaultBrandedInstance = computed(
   () => globalConfig.value.installationName === 'OneLink'
 );
-
-onBeforeMount(() => {
-  isLoading.value = isADefaultBrandedInstance.value;
-});
-
-const resizeContainers = () => {
-  isLoading.value = false;
-};
 </script>
 
 <template>
@@ -29,7 +18,6 @@ const resizeContainers = () => {
     class="relative w-full h-full min-h-screen flex items-center justify-center bg-n-background p-4"
   >
     <div
-      v-show="!isLoading"
       class="relative flex max-w-[960px] bg-white dark:bg-n-solid-2 rounded-lg outline outline-1 outline-n-container shadow-sm"
       :class="{ 'w-auto xl:w-full': isADefaultBrandedInstance }"
     >
@@ -69,17 +57,6 @@ const resizeContainers = () => {
           <SignupForm />
         </div>
       </div>
-      <Testimonials
-        v-if="isADefaultBrandedInstance"
-        class="flex-1 hidden xl:flex"
-        @resize-containers="resizeContainers"
-      />
-    </div>
-    <div
-      v-show="isLoading"
-      class="relative flex items-center justify-center w-full h-full"
-    >
-      <Spinner color-scheme="primary" size="" />
     </div>
   </div>
 </template>
