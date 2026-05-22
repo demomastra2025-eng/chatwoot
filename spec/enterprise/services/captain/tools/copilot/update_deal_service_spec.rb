@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::UpdateDealService do
   let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
+  let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
@@ -14,7 +14,8 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       custom_attributes: { 'lead_source' => 'site' }
     )
   end
-  let(:service) { described_class.new(assistant, user: user, conversation: conversation) }
+  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
+  let(:service) { described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread) }
 
   before do
     account.enable_features!('crm_deals')
@@ -24,7 +25,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
 
   describe '#execute' do
     it 'updates the current deal using JSON custom_attributes' do
-      service.execute(title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
+      execute_confirmed(title: 'Renewal won', custom_attributes: { lead_source: 'captain', segment: 'enterprise' }.to_json)
 
       deal.reload
 
@@ -36,14 +37,14 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
     end
 
     it 'updates the current deal from an AI-facing major-unit amount without exposing trailing zero decimals' do
-      result = service.execute(amount: '200.00', currency: 'USD')
+      payload = JSON.parse(execute_confirmed(amount: '200.00', currency: 'USD'))
 
       deal.reload
 
       expect(deal.amount_minor).to eq(20_000)
-      expect(result).to include('Amount: 200 USD')
-      expect(result).not_to include('Amount Minor')
-      expect(result).not_to include('20000')
+      expect(payload).to include('action' => 'update_deal')
+      expect(payload['deal']).to include('id' => deal.id, 'amount' => '200', 'currency' => 'USD')
+      expect(payload['deal']).not_to have_key('amount_minor')
     end
 
     it 'can move the current deal to a pipeline-scoped stage while updating deal fields' do
@@ -51,7 +52,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       target_stage = create(:crm_stage, account: account, pipeline: target_pipeline, name: 'В работе', code: 'work', position: 1, color: '#111111')
       create(:crm_stage, account: account, pipeline: deal.pipeline, name: 'В работе', code: 'work', position: 2, color: '#222222')
 
-      service.execute(title: 'Moved renewal', pipeline_code: 'Expansion', stage_code: 'Work')
+      execute_confirmed(title: 'Moved renewal', pipeline_code: 'Expansion', stage_code: 'Work')
 
       deal.reload
       expect(deal.title).to eq('Moved renewal')
@@ -72,12 +73,31 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       pipeline = deal.pipeline
       won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won', code: 'won', color: '#333333')
 
-      result = service.execute(stage_id: won_stage.id, custom_attributes: { decision_maker: 'Aruzhan' }.to_json)
+      payload = JSON.parse(execute_confirmed(stage_id: won_stage.id, custom_attributes: { decision_maker: 'Aruzhan' }.to_json))
 
       deal.reload
       expect(deal.stage_id).to eq(won_stage.id)
       expect(deal.custom_attributes).to include('decision_maker' => 'Aruzhan')
-      expect(result).to include('Stage: ')
+      expect(payload).to include('action' => 'update_deal')
+      expect(payload['deal']).to include('id' => deal.id, 'stage_id' => won_stage.id)
     end
+  end
+
+  def execute_confirmed(**arguments)
+    first_result = service.execute(**arguments)
+    first_payload = JSON.parse(first_result)
+    return first_result unless first_payload.dig('data', 'confirmation_required')
+
+    confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+
+    create(
+      :captain_copilot_message,
+      account: account,
+      copilot_thread: copilot_thread,
+      message_type: 'user',
+      message: { 'content' => "Подтверждаю #{confirmation_token}" }
+    )
+
+    service.execute(**arguments)
   end
 end

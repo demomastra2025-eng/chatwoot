@@ -41,7 +41,7 @@ class Captain::Tools::Copilot::UpdateDealService < Captain::Tools::Copilot::Base
       stage_name: stage_name,
       stage_code: stage_code
     )
-    formatted_record(deal)
+    formatted_payload(action: 'update_deal', deal: ::Crm::PayloadBuilder.ai_deal(deal))
   rescue StandardError => e
     tool_failure(e)
   end
