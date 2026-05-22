@@ -181,6 +181,31 @@ RSpec.describe Captain::Copilot::ChatService do
 
       described_class.new(assistant, config).generate_response('Hello')
     end
+
+    it 'normalizes copilot UI actions before returning and persisting the assistant message' do
+      allow(mock_response).to receive(:content).and_return(
+        {
+          content: 'Open the contact and reports.',
+          reasoning: 'The operator needs quick navigation.',
+          reply_suggestion: false,
+          ui_actions: [
+            { type: 'open_contact', label: '<b>Open contact</b>', target_id: contact.id.to_s },
+            { type: 'click_dom', label: 'Unsafe DOM', target_id: '#delete' },
+            { type: 'open_reports', label: 'Reports', target_id: '' }
+          ]
+        }
+      )
+
+      response = described_class.new(assistant, config).generate_response('Hello')
+      expected_actions = [
+        { 'type' => 'open_contact', 'label' => 'Open contact', 'target_id' => contact.id.to_s },
+        { 'type' => 'open_reports', 'label' => 'Reports', 'target_id' => '' }
+      ]
+
+      expect(response['ui_actions']).to eq(expected_actions)
+      expect(response.keys).not_to include(:ui_actions)
+      expect(copilot_thread.copilot_messages.assistant.last.message['ui_actions']).to eq(expected_actions)
+    end
   end
 
   describe '#generate_response' do

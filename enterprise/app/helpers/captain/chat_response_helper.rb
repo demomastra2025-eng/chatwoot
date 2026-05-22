@@ -7,6 +7,7 @@ module Captain::ChatResponseHelper
     Rails.logger.debug { "#{self.class.name} Assistant: #{@assistant.id}, Received response #{response}" }
 
     parsed = normalize_response_content(response.content)
+    parsed = normalize_ui_actions_payload(parsed)
     parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] = usage_payload(response)
 
@@ -17,6 +18,7 @@ module Captain::ChatResponseHelper
 
   def build_fallback_response(payload)
     parsed = normalize_response_content(payload)
+    parsed = normalize_ui_actions_payload(parsed)
     parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] ||= zero_usage_payload
 
@@ -30,6 +32,16 @@ module Captain::ChatResponseHelper
     return content.to_h.with_indifferent_access if content.respond_to?(:to_h)
 
     { 'content' => content.to_s }
+  end
+
+  def normalize_ui_actions_payload(parsed_response)
+    return parsed_response unless parsed_response.key?('ui_actions') || parsed_response.key?(:ui_actions)
+
+    raw_actions = parsed_response['ui_actions'] || parsed_response[:ui_actions]
+    parsed_response.delete('ui_actions')
+    parsed_response.delete(:ui_actions)
+    parsed_response['ui_actions'] = Captain::UiActionContract.normalize(raw_actions)
+    parsed_response
   end
 
   def usage_payload(response)

@@ -118,6 +118,7 @@ class Captain::Runtime::EventBusCallbacks
       conversation_display_id: conversation[:display_id],
       channel_type: state[:channel_type],
       source: state[:source],
+      project_case_id: state[:project_case_id] || context_wrapper&.context&.dig(:project_case_id),
       current_agent: context_wrapper&.context&.dig(:current_agent),
       session_id: context_wrapper&.context&.dig(:session_id)
     }.merge(trace_payload(context_wrapper))

@@ -1,0 +1,74 @@
+[
+  {
+    "name": "llm.run.start",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 3,
+      "conversation_display_id": 42,
+      "channel_type": "web",
+      "source": "spec",
+      "current_agent": "assistant_agent",
+      "session_id": "1_42",
+      "project_case_id": "customer_support.basic_no_tool",
+      "agent_name": "assistant_agent",
+      "input_type": "string",
+      "input_size": 18,
+      "canonical_event_name": "llm.run.start"
+    }
+  },
+  {
+    "name": "llm.chat.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 3,
+      "conversation_display_id": 42,
+      "channel_type": "web",
+      "source": "spec",
+      "current_agent": "assistant_agent",
+      "session_id": "1_42",
+      "project_case_id": "customer_support.basic_no_tool",
+      "agent_name": "assistant_agent",
+      "model": "gpt-4.1-mini",
+      "schema_name": "Captain::ResponseSchema",
+      "prompt_tokens": 12,
+      "completion_tokens": 9,
+      "total_tokens": 21,
+      "tool_call": false,
+      "output_type": "hash",
+      "output_size": 40,
+      "canonical_event_name": "llm.chat.complete"
+    }
+  },
+  {
+    "name": "llm.run.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 3,
+      "conversation_display_id": 42,
+      "channel_type": "web",
+      "source": "spec",
+      "current_agent": "assistant_agent",
+      "session_id": "1_42",
+      "project_case_id": "customer_support.basic_no_tool",
+      "agent_name": "assistant_agent",
+      "error": false,
+      "output_type": "hash",
+      "output_size": 40,
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 9,
+        "total_tokens": 21
+      },
+      "canonical_event_name": "llm.run.complete"
+    }
+  }
+]

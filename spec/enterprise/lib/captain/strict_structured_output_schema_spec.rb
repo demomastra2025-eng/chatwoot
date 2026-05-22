@@ -5,7 +5,8 @@ require 'rails_helper'
 RSpec.describe 'Captain strict structured output schemas' do
   [
     Captain::ResponseSchema,
-    Captain::ConversationCompletionSchema
+    Captain::ConversationCompletionSchema,
+    Captain::Llm::Schemas::CopilotResponse
   ].each do |schema_class|
     it "keeps #{schema_class.name} compatible with OpenAI strict structured outputs" do
       schema_payload = schema_class.new.to_json_schema.with_indifferent_access

@@ -1147,3 +1147,34 @@ Next coding slice:
 1. Extend deterministic trace fixtures/UI evidence for the first project cases.
 2. Promote any RCA fields that prove query-critical from payload-only to indexed DB columns/rollups.
 3. Start Etapa 5 semantic structured-output hardening: blank response, invalid handoff/action/artifact ids, and no unsafe retry after mutating tools.
+
+## 2026-05-22 Etapa 1/2 UI action + first-case fixture slice
+
+Implemented:
+
+- Added backend `Captain::UiActionContract` for Copilot `ui_actions`:
+  - whitelist of supported dashboard action types;
+  - max 5 accepted actions and max 20 scanned raw actions;
+  - raw field pre-bounds before markup stripping;
+  - label/target bounds;
+  - markup stripping;
+  - typed persisted payload shape: `type`, `label`, `target_id` only.
+- `Captain::Llm::Schemas::CopilotResponse` now describes the supported UI action contract and is included in strict structured-output schema coverage.
+- Copilot responses normalize UI actions before returning/persisting assistant messages; frontend still performs route-level validation as defense-in-depth.
+- Added first deterministic Captain trace fixture: `customer_support.basic_no_tool`, with `project_case_id` propagated through event payloads.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/strict_structured_output_schema_spec.rb spec/enterprise/lib/captain/ui_action_contract_spec.rb spec/enterprise/services/captain/copilot/chat_service_spec.rb spec/enterprise/lib/captain/runtime/event_bus_callbacks_spec.rb spec/lib/llm/event_bus_spec.rb
+# 43 examples, 0 failures
+
+pnpm exec vitest --no-watch --no-cache --no-coverage app/javascript/dashboard/helper/specs/captainUiActions.spec.js app/javascript/dashboard/components-next/copilot/CopilotAssistantMessage.spec.js
+# 2 files / 8 tests passed
+```
+
+Next coding slice:
+
+1. Add the next deterministic case fixtures: CRM lookup/tool, scheduling/tool wait, provider failure.
+2. Continue Etapa 5 semantic validators: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
+3. Decide whether `project_case_id` should be populated by eval packs only or also by runtime scenario metadata.

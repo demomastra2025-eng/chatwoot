@@ -42,7 +42,7 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
 
   it 'publishes normalized runtime events with shared metadata' do
     chat = EventBusCallbacksSpecChat.new('gpt-4.1-mini')
-    Llm::StructuredOutputPolicy.bind!(chat:, schema: Captain::ConversationCompletionSchema)
+    Llm::StructuredOutputPolicy.bind!(chat: chat, schema: Captain::ConversationCompletionSchema)
     response = Struct.new(:content, :input_tokens, :output_tokens, :tool_call?) do
       def initialize(...)
         super
@@ -128,5 +128,40 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'span_kind' => 'tool',
       'span_name' => 'llm.captain_v2.tool.lookup_contact'
     )
+  end
+
+  it 'matches the deterministic trace fixture for the first customer-support no-tool case' do
+    case_context = Captain::Runtime::RunContext.new(
+      context_wrapper.context.deep_dup.tap do |context|
+        context[:state] = context[:state].merge(project_case_id: 'customer_support.basic_no_tool')
+      end
+    )
+    chat = EventBusCallbacksSpecChat.new('gpt-4.1-mini')
+    Llm::StructuredOutputPolicy.bind!(chat: chat, schema: Captain::ResponseSchema)
+    response = Struct.new(:content, :input_tokens, :output_tokens, :tool_call?).new(
+      { response: 'Your order is on the way.' },
+      12,
+      9,
+      false
+    )
+    result = Captain::Runtime::Result.new(
+      output: { response: 'Your order is on the way.' },
+      usage: Struct.new(:input_tokens, :output_tokens, :total_tokens).new(12, 9, 21)
+    )
+
+    callbacks.on_run_start('assistant_agent', 'Where is my order?', case_context)
+    callbacks.on_chat_created(chat, 'assistant_agent', 'gpt-4.1-mini', case_context)
+    callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, case_context)
+    callbacks.on_run_complete('assistant_agent', result, case_context)
+
+    expected = JSON.parse(Rails.root.join('spec/fixtures/captain/runtime/customer_support_no_tool_trace.json').read)
+    actual = events.last(3).map do |event|
+      {
+        'name' => event.name,
+        'payload' => JSON.parse(event.payload.except('request_id').to_json)
+      }
+    end
+
+    expect(actual).to eq(expected)
   end
 end

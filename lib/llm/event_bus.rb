@@ -3,7 +3,7 @@
 require 'securerandom'
 
 class Llm::EventBus
-  EVENT_NAMESPACE = 'llm'.freeze
+  EVENT_NAMESPACE = 'llm'
   CONTEXT_STATE_KEY = :llm_event_bus_context_stack
   EVENT_NAME_ALIASES = {
     'llm.run.started' => 'llm.run.start',
@@ -17,7 +17,7 @@ class Llm::EventBus
   CONTEXT_KEYS = %w[
     request_id trace_id session_id account_id assistant_id conversation_id
     conversation_display_id copilot_thread_id current_agent channel_type source
-    feature runtime_mode
+    feature runtime_mode project_case_id
   ].freeze
 
   class << self
