@@ -8,8 +8,8 @@ RSpec.describe Captain::Evals::EventContractTraceSuite do
 
     expect(result.to_h).to include(
       suite_id: 'captain.event_contract_trace',
-      total_count: 5,
-      passed_count: 5,
+      total_count: 7,
+      passed_count: 7,
       failed_count: 0,
       error_count: 0,
       status: 'pass'
@@ -19,6 +19,8 @@ RSpec.describe Captain::Evals::EventContractTraceSuite do
       include(id: 'crm.lookup_tool', status: 'pass'),
       include(id: 'scheduling.tool_wait', status: 'pass'),
       include(id: 'semantic.invalid_artifact_ids', status: 'pass'),
+      include(id: 'semantic.invalid_handoff_output', status: 'pass'),
+      include(id: 'semantic.reserved_runtime_action', status: 'pass'),
       include(id: 'provider.failure', status: 'pass')
     )
   end

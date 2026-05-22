@@ -213,6 +213,73 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context[:current_agent]).to eq('assistant_agent')
     end
 
+    it 'resolves string handoff targets through the runtime registry' do
+      handoff_response = RubyLLM::Tool::Halt.new('Transferred to scenario')
+      first_chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
+      second_chat = RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
+
+      allow(runner).to receive(:handoff_requested?).and_call_original
+      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
+      expect(Llm::ChatClient).to receive(:build).and_return(first_chat, second_chat)
+
+      result = runner.run(
+        first_agent,
+        'Help me',
+        context: { pending_handoff: { target_agent: 'scenario_agent' } },
+        registry: { first_agent.name => first_agent, second_agent.name => second_agent },
+        llm_context: llm_context
+      )
+
+      expect(result.output).to eq('Done')
+      expect(result.context[:current_agent]).to eq('scenario_agent')
+    end
+
+    it 'returns a safe runtime error for stale handoff target identifiers' do
+      handoff_response = RubyLLM::Tool::Halt.new('Transferred to deleted scenario')
+      chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
+
+      allow(runner).to receive(:handoff_requested?).and_call_original
+      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
+      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+
+      result = runner.run(
+        first_agent,
+        'Help me',
+        context: { pending_handoff: { target_agent: 'deleted_scenario_agent' } },
+        registry: { first_agent.name => first_agent },
+        llm_context: llm_context
+      )
+
+      expect(result.output).to be_nil
+      expect(result.error).to be_a(described_class::AgentNotFoundError)
+      expect(result.error.message).to eq("Handoff failed: Agent 'deleted_scenario_agent' not found in registry")
+      expect(result.context[:current_agent]).to eq('assistant_agent')
+      expect(result.context).not_to have_key(:pending_handoff)
+    end
+
+    it 'returns a safe runtime error for malformed handoff state without a target' do
+      handoff_response = RubyLLM::Tool::Halt.new('Transferred to nowhere')
+      chat = RuntimeRunnerSpecChat.new(ask_response: handoff_response)
+
+      allow(runner).to receive(:handoff_requested?).and_call_original
+      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
+      expect(Llm::ChatClient).to receive(:build).once.and_return(chat)
+
+      result = runner.run(
+        first_agent,
+        'Help me',
+        context: { pending_handoff: {} },
+        registry: { first_agent.name => first_agent },
+        llm_context: llm_context
+      )
+
+      expect(result.output).to be_nil
+      expect(result.error).to be_a(described_class::AgentNotFoundError)
+      expect(result.error.message).to eq('Handoff failed: target agent is missing')
+      expect(result.context[:current_agent]).to eq('assistant_agent')
+      expect(result.context).not_to have_key(:pending_handoff)
+    end
+
     it 'normalizes structured output when the runtime continues with complete' do
       agent = Captain::Runtime::Agent.new(
         name: 'assistant_agent',

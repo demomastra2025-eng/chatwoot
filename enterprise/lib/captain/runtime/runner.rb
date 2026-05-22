@@ -121,9 +121,9 @@ class Captain::Runtime::Runner
   end
 
   def handle_handoff(session)
-    next_agent = handoff_target(session)
+    next_agent, target_name = handoff_target(session)
+    return missing_agent_result(session, target_name) unless next_agent
     return self_handoff_result(session, next_agent) if self_handoff?(session, next_agent)
-    return missing_agent_result(session, next_agent) unless session[:registry][next_agent.name]
 
     persist_handoff_state(session, next_agent)
     reset_session_for_handoff!(session, next_agent)
@@ -131,11 +131,22 @@ class Captain::Runtime::Runner
   end
 
   def handoff_target(session)
-    session[:context_wrapper].context.delete(:pending_handoff)[:target_agent]
+    pending_handoff = session[:context_wrapper].context.delete(:pending_handoff).to_h.with_indifferent_access
+    raw_target = pending_handoff[:target_agent]
+    target_name = handoff_target_name(raw_target)
+
+    [session[:registry][target_name], target_name]
   end
 
-  def missing_agent_result(session, next_agent)
-    error = AgentNotFoundError.new("Handoff failed: Agent '#{next_agent.name}' not found in registry")
+  def handoff_target_name(raw_target)
+    return raw_target.name.to_s if raw_target.respond_to?(:name)
+
+    raw_target.to_s
+  end
+
+  def missing_agent_result(session, target_name)
+    message = target_name.present? ? "Handoff failed: Agent '#{target_name}' not found in registry" : 'Handoff failed: target agent is missing'
+    error = AgentNotFoundError.new(message)
     finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
   end
 

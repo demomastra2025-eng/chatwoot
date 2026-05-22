@@ -1,0 +1,68 @@
+[
+  {
+    "name": "llm.run.start",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "semantic.invalid_handoff_output",
+      "agent_name": "assistant_agent",
+      "input_type": "string",
+      "input_size": 18,
+      "canonical_event_name": "llm.run.start"
+    }
+  },
+  {
+    "name": "llm.schema.invalid",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "semantic.invalid_handoff_output",
+      "schema_name": "Captain::ResponseSchema",
+      "semantic_error_code": "invalid_handoff_output",
+      "response_type": "hash",
+      "response_size": 96,
+      "artifact_ids_count": 0,
+      "available_artifact_ids_count": 0,
+      "completed_tools_count": 0,
+      "canonical_event_name": "llm.schema.invalid"
+    }
+  },
+  {
+    "name": "llm.run.complete",
+    "payload": {
+      "feature": "assistant",
+      "runtime_mode": "captain_runtime",
+      "account_id": 1,
+      "assistant_id": 2,
+      "conversation_id": 4,
+      "conversation_display_id": 482,
+      "channel_type": "web",
+      "source": "fixture",
+      "current_agent": "assistant_agent",
+      "session_id": "1_482",
+      "project_case_id": "semantic.invalid_handoff_output",
+      "agent_name": "assistant_agent",
+      "error": true,
+      "error_code": "semantic_output_invalid",
+      "output_type": "hash",
+      "output_size": 96,
+      "canonical_event_name": "llm.run.complete"
+    }
+  }
+]

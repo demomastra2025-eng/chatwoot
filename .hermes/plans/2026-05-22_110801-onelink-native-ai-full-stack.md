@@ -1374,3 +1374,47 @@ Next coding slice:
 1. Continue Etapa 5 with semantic validators for invalid handoff target/action/artifact identifiers at the runtime/tool boundary where the target registry or artifact resolver can prove invalidity.
 2. Add deterministic eval fixture coverage for the new semantic failures so `captain.event_contract_trace` can catch regressions.
 3. Then continue Etapa 6/7 tool contract + confirmation modernization case-by-case.
+
+## 2026-05-22 Etapa 5 handoff/action semantic completion slice
+
+Status: **Second Etapa 5 semantic validator slice is implemented.**
+
+Implemented:
+
+- Hardened runtime handoff target resolution in `Captain::Runtime::Runner`:
+  - valid string target identifiers now resolve through the agent registry;
+  - stale/deleted target identifiers fail safely with `AgentNotFoundError`;
+  - malformed `pending_handoff` state without a target fails safely instead of raising a secondary `NoMethodError`;
+  - canonical registry agent objects are used for the next turn.
+- Expanded deterministic `captain.event_contract_trace` coverage from 5 to 7 cases:
+  - `semantic.invalid_handoff_output` covers model-authored `conversation_handoff` without runtime handoff state;
+  - `semantic.reserved_runtime_action` covers model-authored reserved action identifiers such as `response_cancelled` / provider-error sentinel;
+  - existing `semantic.invalid_artifact_ids` remains the artifact-ID regression case.
+- Independent targeted review found no blockers.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c enterprise/lib/captain/runtime/runner.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c spec/enterprise/lib/captain/runtime/runner_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb
+# Syntax OK
+
+python3 -m json.tool config/llm_evals/fixtures/captain/event_contract/semantic_invalid_handoff_output.json >/dev/null
+python3 -m json.tool config/llm_evals/fixtures/captain/event_contract/semantic_reserved_runtime_action.json >/dev/null
+# JSON OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/runtime/runner_spec.rb spec/enterprise/lib/captain/runtime/agent_runner_spec.rb spec/enterprise/services/captain/assistant/agent_runner_service_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb
+# 73 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --force-exclusion --fail-level E enterprise/lib/captain/runtime/runner.rb spec/enterprise/lib/captain/runtime/runner_spec.rb spec/enterprise/lib/captain/evals/event_contract_trace_suite_spec.rb
+# exit 0; existing C-level ClassLength/RSpec SubjectStub offenses remain, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 6/7 tool contract modernization case-by-case with structured payload parity and confirmation gates.
+2. Keep `captain.event_contract_trace` as regression gate when adding new semantic output or runtime handoff cases.
