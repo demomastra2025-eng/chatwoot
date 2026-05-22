@@ -1506,3 +1506,50 @@ Next coding slice:
 
 1. Continue remaining Etapa 6/7 tools case-by-case: scheduling resources/appointments, touch plans/templates, then admin/runtime tools.
 2. For each mutating tool: keep confirmation-gate specs plus shared payload builders and public/Copilot symmetry where the tool is intentionally public.
+
+## 2026-05-22 Etapa 6/7 appointment structured-payload coverage slice
+
+Status: **Implemented.**
+
+Implemented:
+
+- Verified appointment mutation implementation already routes public and Copilot create/update/cancel/add-payment outputs through `Scheduling::ToolPayloadBuilder.appointment_payload`.
+- Hardened public appointment tool specs for top-level appointment contract keys:
+  - `appointment_id`
+  - `status`
+  - `resource_id`
+  - `contact_id`
+  - `service_id`
+  - `starts_at`
+  - `ends_at`
+  - nested `appointment`
+- Hardened Copilot create/update/cancel appointment service specs with the same top-level key assertions.
+- Hardened assistant-only `add_appointment_payment` broad native ops example to assert the same top-level wrapper after confirmation.
+- Independent targeted review found no blockers.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/tools/create_appointment_tool_spec.rb spec/enterprise/lib/captain/tools/update_appointment_tool_spec.rb spec/enterprise/lib/captain/tools/cancel_appointment_tool_spec.rb spec/enterprise/services/captain/tools/copilot/create_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/cancel_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb:184
+# 13 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/create_appointment_tool_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/update_appointment_tool_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/cancel_appointment_tool_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/create_appointment_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/update_appointment_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/cancel_appointment_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --fail-level E spec/enterprise/lib/captain/tools/create_appointment_tool_spec.rb spec/enterprise/lib/captain/tools/update_appointment_tool_spec.rb spec/enterprise/lib/captain/tools/cancel_appointment_tool_spec.rb spec/enterprise/services/captain/tools/copilot/create_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/cancel_appointment_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# exit 0; only existing native_ops RSpec/DescribeClass C-level offense remains, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 6/7 with touch plans/templates structured payload + confirmation coverage.
+2. Then continue admin/runtime tools after outbound contracts are locked.

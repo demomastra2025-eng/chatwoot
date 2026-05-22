@@ -28,7 +28,16 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                                                     starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601,
                                                     custom_attributes: { source: 'agent' }))
 
-    expect(payload).to include('action' => 'update_appointment', 'appointment_id' => appointment.id, 'status' => payload.dig('appointment', 'status'))
+    expect(payload).to include(
+      'action' => 'update_appointment',
+      'appointment_id' => appointment.id,
+      'status' => payload.dig('appointment', 'status'),
+      'resource_id' => new_resource.id,
+      'contact_id' => contact.id,
+      'service_id' => new_service.id,
+      'starts_at' => payload.dig('appointment', 'starts_at'),
+      'ends_at' => payload.dig('appointment', 'ends_at')
+    )
     expect(payload['appointment']).to include('id' => appointment.id, 'resource_id' => new_resource.id, 'service_id' => new_service.id)
     expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
   end

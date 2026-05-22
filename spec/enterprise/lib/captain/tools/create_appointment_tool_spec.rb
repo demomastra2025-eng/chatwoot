@@ -25,7 +25,12 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(payload).to include(
       'action' => 'create_appointment',
       'appointment_id' => payload.dig('appointment', 'id'),
-      'status' => payload.dig('appointment', 'status')
+      'status' => payload.dig('appointment', 'status'),
+      'resource_id' => resource.id,
+      'contact_id' => contact.id,
+      'service_id' => scheduling_service.id,
+      'starts_at' => payload.dig('appointment', 'starts_at'),
+      'ends_at' => payload.dig('appointment', 'ends_at')
     )
     expect(payload['appointment']).to include('resource_id' => resource.id, 'contact_id' => contact.id, 'service_id' => scheduling_service.id)
     expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')

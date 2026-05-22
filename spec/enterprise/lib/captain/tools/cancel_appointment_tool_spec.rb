@@ -20,7 +20,16 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context))
 
-    expect(payload).to include('action' => 'cancel_appointment', 'appointment_id' => appointment.id, 'status' => 'cancelled')
+    expect(payload).to include(
+      'action' => 'cancel_appointment',
+      'appointment_id' => appointment.id,
+      'status' => 'cancelled',
+      'resource_id' => resource.id,
+      'contact_id' => contact.id,
+      'service_id' => scheduling_service.id,
+      'starts_at' => payload.dig('appointment', 'starts_at'),
+      'ends_at' => payload.dig('appointment', 'ends_at')
+    )
     expect(payload['appointment']).to include('id' => appointment.id, 'status' => 'cancelled')
   end
 end

@@ -205,7 +205,16 @@ RSpec.describe 'Captain native ops tools' do
         payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
       end
 
-      expect(payload).to include('action' => 'add_appointment_payment', 'appointment_id' => appointment.id, 'status' => appointment.status)
+      expect(payload).to include(
+        'action' => 'add_appointment_payment',
+        'appointment_id' => appointment.id,
+        'status' => appointment.status,
+        'resource_id' => appointment.resource_id,
+        'contact_id' => appointment.contact_id,
+        'service_id' => appointment.service_id,
+        'starts_at' => payload.dig('appointment', 'starts_at'),
+        'ends_at' => payload.dig('appointment', 'ends_at')
+      )
       expect(Scheduling::Appointments::FinanceSyncService).to have_received(:new)
     end
   end

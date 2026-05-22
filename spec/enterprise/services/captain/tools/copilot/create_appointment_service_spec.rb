@@ -32,7 +32,16 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
 
       appointment = account.scheduling_appointments.order(:id).last
 
-      expect(payload).to include('action' => 'create_appointment', 'appointment_id' => appointment.id, 'status' => appointment.status)
+      expect(payload).to include(
+        'action' => 'create_appointment',
+        'appointment_id' => appointment.id,
+        'status' => appointment.status,
+        'resource_id' => resource.id,
+        'contact_id' => contact.id,
+        'service_id' => consultation.id,
+        'starts_at' => payload.dig('appointment', 'starts_at'),
+        'ends_at' => payload.dig('appointment', 'ends_at')
+      )
       expect(payload['appointment']).to include(
         'id' => appointment.id,
         'resource_id' => resource.id,
