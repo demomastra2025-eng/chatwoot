@@ -56,13 +56,14 @@ class Captain::Assistant::AgentRunnerService
 
       attempts += 1
       blank_response_retried = true
-      retry_context = context_for_blank_response_retry(result.context)
+      retry_context = context_for_blank_response_retry(result.context, retry_context)
       publish_blank_response_retry(result, attempts)
     end
   end
 
-  def context_for_blank_response_retry(context)
-    context.deep_dup.tap do |retry_context|
+  def context_for_blank_response_retry(context, fallback_context)
+    source_context = context.presence || fallback_context
+    source_context.deep_dup.tap do |retry_context|
       retry_context.delete(:captain_v2_handoff_tool_called)
       retry_context.delete(:captain_v2_completed_tool_names)
     end

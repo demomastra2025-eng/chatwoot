@@ -252,6 +252,49 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(response['handoff_tool_called']).to be true
     end
 
+    it 'retries blank structured output without tools using the original run context' do
+      blank_result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => '' },
+        context: nil,
+        error: nil
+      )
+      recovered_result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'Recovered answer' },
+        context: { current_agent: 'assistant_agent' },
+        error: nil
+      )
+      run_contexts = []
+      retry_events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.run.retry') do |*args|
+        retry_events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      allow(mock_runner).to receive(:run) do |_input, context:, **_kwargs|
+        run_contexts << context
+        run_contexts.one? ? blank_result : recovered_result
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).twice
+      expect(run_contexts.second).to include(
+        session_id: "#{account.id}_#{conversation.display_id}",
+        conversation_history: [
+          { role: :user, content: 'Hello there' },
+          { role: :assistant, content: 'Hi! How can I help you?', agent_name: 'Assistant' }
+        ],
+        state: hash_including(account_id: account.id, assistant_id: assistant.id)
+      )
+      expect(result).to include('response' => 'Recovered answer', 'blank_response_retry' => true)
+      expect(retry_events.map(&:payload)).to contain_exactly(
+        hash_including('reason' => 'blank_response', 'attempt' => 1, 'max_attempts' => 1)
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
     it 'retries once from the post-handoff context when structured agent output is blank' do
       retry_history = [
         { role: :user, content: 'I need help with my account' },

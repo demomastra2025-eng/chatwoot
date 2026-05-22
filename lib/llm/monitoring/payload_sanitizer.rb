@@ -5,7 +5,7 @@ class Llm::Monitoring::PayloadSanitizer
   MAX_ARRAY_ITEMS = 20
   MAX_HASH_KEYS = 50
   REDACTED = '[REDACTED]'
-  TRUNCATED_SUFFIX = '...[TRUNCATED]'.freeze
+  TRUNCATED_SUFFIX = '...[TRUNCATED]'
   TOKEN_USAGE_KEYS = %w[
     cached_tokens completion_tokens input_tokens output_tokens prompt_tokens reasoning_tokens thinking_tokens token_count total_tokens
   ].freeze
@@ -13,20 +13,20 @@ class Llm::Monitoring::PayloadSanitizer
   RAW_CONTENT_KEY_PATTERN = /\A(raw_)?(prompt|messages|input|output|response|content)\z/i
 
   class << self
-    def call(payload)
-      sanitize_value(payload)
+    def call(payload, redact_raw_content: false)
+      sanitize_value(payload, redact_raw_content: redact_raw_content)
     end
 
     private
 
-    def sanitize_value(value, key: nil)
-      return REDACTED if sensitive_key?(key)
+    def sanitize_value(value, key: nil, redact_raw_content: false)
+      return REDACTED if sensitive_key?(key, redact_raw_content: redact_raw_content)
 
       case value
       when Hash
-        sanitize_hash(value)
+        sanitize_hash(value, redact_raw_content: redact_raw_content)
       when Array
-        sanitized_items = value.first(MAX_ARRAY_ITEMS).map { |entry| sanitize_value(entry) }
+        sanitized_items = value.first(MAX_ARRAY_ITEMS).map { |entry| sanitize_value(entry, redact_raw_content: redact_raw_content) }
         return sanitized_items if value.length <= MAX_ARRAY_ITEMS
 
         sanitized_items + [TRUNCATED_SUFFIX]
@@ -37,16 +37,16 @@ class Llm::Monitoring::PayloadSanitizer
       end
     end
 
-    def sensitive_key?(key)
+    def sensitive_key?(key, redact_raw_content: false)
       key.present? && TOKEN_USAGE_KEYS.exclude?(key.to_s) && (
-        key.match?(SENSITIVE_KEY_PATTERN) || key.match?(RAW_CONTENT_KEY_PATTERN)
+        key.match?(SENSITIVE_KEY_PATTERN) || (redact_raw_content && key.match?(RAW_CONTENT_KEY_PATTERN))
       )
     end
 
-    def sanitize_hash(value)
+    def sanitize_hash(value, redact_raw_content: false)
       limited_pairs = value.first(MAX_HASH_KEYS)
       sanitized = limited_pairs.each_with_object({}) do |(child_key, child_value), result|
-        result[child_key] = sanitize_value(child_value, key: child_key.to_s)
+        result[child_key] = sanitize_value(child_value, key: child_key.to_s, redact_raw_content: redact_raw_content)
       end
       return sanitized if value.size <= MAX_HASH_KEYS
 

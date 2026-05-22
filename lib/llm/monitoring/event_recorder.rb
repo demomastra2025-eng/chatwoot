@@ -38,7 +38,7 @@ class Llm::Monitoring::EventRecorder
     @event_name = event_name.to_s
     @started_at = started_at
     @finished_at = finished_at
-    @payload = Llm::Monitoring::PayloadSanitizer.call(payload.to_h.stringify_keys)
+    @payload = Llm::Monitoring::PayloadSanitizer.call(payload.to_h.stringify_keys, redact_raw_content: true)
   end
 
   def record

@@ -484,6 +484,13 @@ Add semantic validators:
 
 Blank/invalid semantic output is caught, traced, and recovered/fails safely.
 
+### Implementation Note — 2026-05-22
+
+- Added Captain blank structured-output semantic retry: one retry for blank `response` when no unsafe non-handoff tool completed.
+- Handoff blank retry resumes from post-handoff context/current agent; no-tool blank retry falls back to the original run context.
+- Unsafe completed non-handoff tools still fail safely via provider-error handoff; no blind mutating retry.
+- Emits `llm.run.retry` with `reason=blank_response` and preserves explicit trace capture content while event-recorder summaries redact raw content by default.
+
 ---
 
 ## Etapa 6 — Tool Contract Modernization

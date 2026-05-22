@@ -46,6 +46,17 @@ RSpec.describe Llm::TracePayloadPolicy do
       expect(payload).to include('[EMAIL]')
       expect(payload).not_to include('test@example.com')
     end
+
+    it 'keeps content fields when trace capture is explicitly enabled' do
+      payload = described_class.capture(
+        [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }] }],
+        direction: :input,
+        preferences: { 'trace_input_capture' => true }
+      )
+
+      expect(payload).to include('image_url')
+      expect(payload).to include('https://example.com/image.jpg')
+    end
   end
 
   describe '.trace_attributes' do

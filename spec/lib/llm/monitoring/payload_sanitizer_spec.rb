@@ -52,7 +52,8 @@ RSpec.describe Llm::Monitoring::PayloadSanitizer do
           'response' => 'private response',
           'raw_content' => 'private content',
           'output_tokens' => 5
-        }
+        },
+        redact_raw_content: true
       )
 
       expect(sanitized).to include(
