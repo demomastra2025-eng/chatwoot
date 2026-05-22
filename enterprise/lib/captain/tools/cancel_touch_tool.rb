@@ -6,10 +6,7 @@ class Captain::Tools::CancelTouchTool < Captain::Tools::BasePublicTool
   def perform(tool_context, touch_id:, reason: nil)
     touch = operations(tool_context.state).cancel_touch(touch_id: touch_id, reason: reason)
 
-    JSON.pretty_generate(
-      action: 'cancel_touch',
-      touch: ::Outbound::PayloadBuilder.touch_payload(touch)
-    )
+    tool_success(data: ::Outbound::ToolPayloadBuilder.touch_payload(action: 'cancel_touch', touch: touch, reason: reason))
   rescue StandardError => e
     tool_failure(e)
   end

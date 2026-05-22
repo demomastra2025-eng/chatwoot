@@ -9,10 +9,7 @@ class Captain::Tools::ArchiveTouchPlanTool < Captain::Tools::BasePublicTool
       touch_plan_name: touch_plan_name
     )
 
-    JSON.pretty_generate(
-      action: 'archive_touch_plan',
-      touch_plan: ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan)
-    )
+    tool_success(data: ::Outbound::ToolPayloadBuilder.touch_plan_payload(action: 'archive_touch_plan', touch_plan: touch_plan))
   rescue StandardError => e
     tool_failure(e)
   end

@@ -15,11 +15,7 @@ class Captain::Tools::Copilot::ApplyTouchPlanService < Captain::Tools::Copilot::
       remindable_kind: remindable_kind
     )
 
-    formatted_payload(
-      action: 'apply_touch_plan',
-      touches: touches.map { |touch| ::Outbound::PayloadBuilder.touch_payload(touch) },
-      meta: { count: touches.size }
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.apply_touch_plan_payload(touches))
   rescue StandardError => e
     tool_failure(e)
   end

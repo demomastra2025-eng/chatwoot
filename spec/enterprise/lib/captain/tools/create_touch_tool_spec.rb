@@ -20,7 +20,7 @@ RSpec.describe Captain::Tools::CreateTouchTool, type: :model do
     payload = JSON.parse(tool.perform(tool_context, body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601,
                                                     auto_cancel_on_incoming: true))
 
-    expect(payload).to include('action' => 'create_touch')
+    expect(payload).to include('action' => 'create_touch', 'touch_id' => Reminder.last.id, 'status' => 'pending')
     expect(payload['touch']).to include('body' => 'Ping client tomorrow', 'status' => 'pending', 'auto_cancel_on_incoming' => true)
   end
 

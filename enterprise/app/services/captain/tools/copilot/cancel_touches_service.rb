@@ -17,7 +17,7 @@ class Captain::Tools::Copilot::CancelTouchesService < Captain::Tools::Copilot::B
       reason: reason
     )
 
-    formatted_payload({ action: 'cancel_touches' }.merge(result))
+    formatted_payload(::Outbound::ToolPayloadBuilder.cancel_touches_payload(result: result, reason: reason))
   rescue StandardError => e
     tool_failure(e)
   end

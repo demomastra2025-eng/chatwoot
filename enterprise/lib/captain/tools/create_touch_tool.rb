@@ -51,10 +51,7 @@ class Captain::Tools::CreateTouchTool < Captain::Tools::BasePublicTool
       artifact_ids: artifact_ids
     )
 
-    JSON.pretty_generate(
-      action: 'create_touch',
-      touch: ::Outbound::PayloadBuilder.touch_payload(touch)
-    )
+    tool_success(data: ::Outbound::ToolPayloadBuilder.touch_payload(action: 'create_touch', touch: touch))
   rescue StandardError => e
     tool_failure(e)
   end

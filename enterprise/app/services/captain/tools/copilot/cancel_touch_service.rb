@@ -10,10 +10,7 @@ class Captain::Tools::Copilot::CancelTouchService < Captain::Tools::Copilot::Bas
   def execute(touch_id:, reason: nil)
     touch = touch_operations.cancel_touch(touch_id: touch_id, reason: reason)
 
-    formatted_payload(
-      action: 'cancel_touch',
-      touch: ::Outbound::PayloadBuilder.touch_payload(touch)
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.touch_payload(action: 'cancel_touch', touch: touch, reason: reason))
   rescue StandardError => e
     tool_failure(e)
   end

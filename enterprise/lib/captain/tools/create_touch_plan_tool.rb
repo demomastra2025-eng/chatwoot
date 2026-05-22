@@ -15,10 +15,7 @@ class Captain::Tools::CreateTouchPlanTool < Captain::Tools::BasePublicTool
       touches: touches
     )
 
-    JSON.pretty_generate(
-      action: 'create_touch_plan',
-      touch_plan: ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan)
-    )
+    tool_success(data: ::Outbound::ToolPayloadBuilder.touch_plan_payload(action: 'create_touch_plan', touch_plan: touch_plan))
   rescue StandardError => e
     tool_failure(e)
   end

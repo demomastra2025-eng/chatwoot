@@ -10,10 +10,7 @@ class Captain::Tools::Copilot::ArchiveTouchPlanService < Captain::Tools::Copilot
   def execute(touch_plan_id: nil, touch_plan_name: nil)
     touch_plan = touch_operations.archive_touch_plan(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
 
-    formatted_payload(
-      action: 'archive_touch_plan',
-      touch_plan: ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan)
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.touch_plan_payload(action: 'archive_touch_plan', touch_plan: touch_plan))
   rescue StandardError => e
     tool_failure(e)
   end

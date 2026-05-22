@@ -26,9 +26,21 @@ RSpec.describe 'Captain touch management public tools', type: :model do
     touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, status: :pending)
     payload = JSON.parse(Captain::Tools::CancelTouchTool.new(assistant).perform(tool_context, touch_id: touch.id, reason: 'Done'))
 
-    expect(payload).to include('action' => 'cancel_touch')
+    expect(payload).to include('action' => 'cancel_touch', 'touch_id' => touch.id, 'status' => 'cancelled', 'reason' => 'Done')
     expect(payload.dig('touch', 'id')).to eq(touch.id)
     expect(payload.dig('touch', 'status')).to eq('cancelled')
+  end
+
+  it 'returns the default cancellation reason when bulk cancelling without a reason' do
+    create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, status: :pending)
+
+    payload = JSON.parse(Captain::Tools::CancelTouchesTool.new(assistant).perform(tool_context))
+
+    expect(payload).to include(
+      'action' => 'cancel_touches',
+      'cancelled_count' => 1,
+      'reason' => Captain::Tools::Operations::TouchOperations::CAPTAIN_CANCEL_REASON
+    )
   end
 
   it 'returns a normalized delete_touch payload' do
@@ -53,11 +65,12 @@ RSpec.describe 'Captain touch management public tools', type: :model do
                                                                                                        reason: 'Stop plan'))
     archive_payload = JSON.parse(Captain::Tools::ArchiveTouchPlanTool.new(assistant).perform(tool_context, touch_plan_id: touch_plan_id))
 
-    expect(create_payload).to include('action' => 'create_touch_plan')
-    expect(apply_payload).to include('action' => 'apply_touch_plan')
+    expect(create_payload).to include('action' => 'create_touch_plan', 'touch_plan_id' => touch_plan_id, 'touch_count' => 1)
+    expect(apply_payload).to include('action' => 'apply_touch_plan', 'touch_plan_id' => touch_plan_id, 'created_count' => 1)
     expect(apply_payload.dig('meta', 'count')).to eq(1)
-    expect(cancel_payload).to include('action' => 'cancel_touches', 'cancelled_count' => 1)
-    expect(archive_payload).to include('action' => 'archive_touch_plan')
+    expect(apply_payload['touch_ids']).to contain_exactly(Reminder.last.id)
+    expect(cancel_payload).to include('action' => 'cancel_touches', 'cancelled_count' => 1, 'touch_plan_id' => touch_plan_id, 'reason' => 'Stop plan')
+    expect(archive_payload).to include('action' => 'archive_touch_plan', 'touch_plan_id' => touch_plan_id, 'active' => false)
     expect(archive_payload.dig('touch_plan', 'archived_at')).to be_present
   end
 end

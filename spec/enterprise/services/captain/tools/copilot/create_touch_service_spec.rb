@@ -5,7 +5,8 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:conversation) { create(:conversation, account: account) }
-  let(:service) { described_class.new(assistant, user: user, conversation: conversation) }
+  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
+  let(:service) { described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread) }
   let(:account_owned_blob) do
     ActiveStorage::Blob.create_and_upload!(
       io: File.open('spec/assets/avatar.png', 'rb'),
@@ -16,9 +17,9 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   end
 
   it 'returns a normalized touch payload wrapper' do
-    payload = JSON.parse(service.execute(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601, auto_cancel_on_incoming: true))
+    payload = JSON.parse(execute_confirmed(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601, auto_cancel_on_incoming: true))
 
-    expect(payload).to include('action' => 'create_touch')
+    expect(payload).to include('action' => 'create_touch', 'touch_id' => Reminder.last.id, 'status' => 'pending')
     expect(payload.fetch('touch')).to include(
       'body' => 'Ping client tomorrow',
       'status' => 'pending',
@@ -29,7 +30,7 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   it 'passes selected attachments to the reminder pipeline' do
     signed_blob_id = account_owned_blob.signed_id
 
-    payload = JSON.parse(service.execute(
+    payload = JSON.parse(execute_confirmed(
                            body: 'Ping client with a file',
                            scheduled_at: 2.days.from_now.iso8601,
                            attachment_ids: [signed_blob_id]
@@ -45,7 +46,7 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
     contact = create(:contact, account: account)
     contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
     whatsapp_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox)
-    whatsapp_service = described_class.new(assistant, user: user, conversation: whatsapp_conversation)
+    whatsapp_service = described_class.new(assistant, user: user, conversation: whatsapp_conversation, copilot_thread: copilot_thread)
     template_params = {
       name: 'sample_shipping_confirmation',
       language: 'en_US',
@@ -53,7 +54,8 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
       processed_params: { '1' => '2' }
     }
 
-    payload = JSON.parse(whatsapp_service.execute(
+    payload = JSON.parse(execute_confirmed(
+                           whatsapp_service,
                            content_kind: 'channel_template',
                            template_params: template_params,
                            scheduled_at: 2.days.from_now.iso8601
@@ -63,5 +65,23 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
     expect(payload.dig('touch', 'content_kind')).to eq('channel_template')
     expect(Reminder.last.template_params).to include('name' => 'sample_shipping_confirmation')
     expect(Reminder.last.metadata['delivery_policy']).to include('delivery_mode' => 'channel_template')
+  end
+
+  def execute_confirmed(target_service = service, **arguments)
+    first_result = target_service.execute(**arguments)
+    first_payload = JSON.parse(first_result)
+    return first_result unless first_payload.dig('data', 'confirmation_required')
+
+    confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+
+    create(
+      :captain_copilot_message,
+      account: account,
+      copilot_thread: copilot_thread,
+      message_type: 'user',
+      message: { 'content' => "Подтверждаю #{confirmation_token}" }
+    )
+
+    target_service.execute(**arguments)
   end
 end

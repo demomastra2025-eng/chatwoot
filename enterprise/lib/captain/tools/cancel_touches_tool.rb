@@ -13,7 +13,7 @@ class Captain::Tools::CancelTouchesTool < Captain::Tools::BasePublicTool
       reason: reason
     )
 
-    JSON.pretty_generate({ action: 'cancel_touches' }.merge(result))
+    tool_success(data: ::Outbound::ToolPayloadBuilder.cancel_touches_payload(result: result, reason: reason))
   rescue StandardError => e
     tool_failure(e)
   end

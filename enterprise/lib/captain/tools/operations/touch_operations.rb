@@ -102,6 +102,7 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
 
     {
       cancelled_count: cancelled_count,
+      reason: cancellation_reason,
       remindable: ::Outbound::PayloadBuilder.remindable_payload(remindable),
       touch_plan: touch_plan ? ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan) : nil
     }

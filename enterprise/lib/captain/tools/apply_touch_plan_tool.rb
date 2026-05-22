@@ -11,11 +11,7 @@ class Captain::Tools::ApplyTouchPlanTool < Captain::Tools::BasePublicTool
       remindable_kind: remindable_kind
     )
 
-    JSON.pretty_generate(
-      action: 'apply_touch_plan',
-      touches: touches.map { |touch| ::Outbound::PayloadBuilder.touch_payload(touch) },
-      meta: { count: touches.size }
-    )
+    tool_success(data: ::Outbound::ToolPayloadBuilder.apply_touch_plan_payload(touches))
   rescue StandardError => e
     tool_failure(e)
   end

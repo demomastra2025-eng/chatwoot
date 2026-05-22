@@ -54,10 +54,7 @@ class Captain::Tools::Copilot::CreateTouchService < Captain::Tools::Copilot::Bas
       artifact_ids: artifact_ids
     )
 
-    formatted_payload(
-      action: 'create_touch',
-      touch: ::Outbound::PayloadBuilder.touch_payload(touch)
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.touch_payload(action: 'create_touch', touch: touch))
   rescue StandardError => e
     tool_failure(e)
   end

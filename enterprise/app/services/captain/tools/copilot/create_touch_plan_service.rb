@@ -19,10 +19,7 @@ class Captain::Tools::Copilot::CreateTouchPlanService < Captain::Tools::Copilot:
       touches: touches
     )
 
-    formatted_payload(
-      action: 'create_touch_plan',
-      touch_plan: ::Outbound::PayloadBuilder.touch_plan_payload(touch_plan)
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.touch_plan_payload(action: 'create_touch_plan', touch_plan: touch_plan))
   rescue StandardError => e
     tool_failure(e)
   end
