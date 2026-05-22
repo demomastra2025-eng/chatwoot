@@ -48,8 +48,8 @@ class Captain::Runtime::AgentRunner
   end
 
   def determine_conversation_agent(context)
-    current_agent_name = context[:current_agent] || context['current_agent']
-    return @registry[current_agent_name] if @registry[current_agent_name]
+    explicit_agent = explicit_conversation_agent(context)
+    return explicit_agent if explicit_agent
 
     history = context[:conversation_history] || []
     return @default_agent if history.empty?
@@ -60,6 +60,16 @@ class Captain::Runtime::AgentRunner
     last_agent_name = message_agent_name(last_assistant_message) if last_assistant_message
 
     @registry[last_agent_name] || @default_agent
+  end
+
+  def explicit_conversation_agent(context)
+    current_agent_name = context[:current_agent] || context['current_agent']
+    return if current_agent_name.blank?
+
+    agent = @registry[current_agent_name]
+    return agent if agent
+
+    raise Captain::Runtime::Runner::AgentNotFoundError, "Current agent '#{current_agent_name}' not found in registry"
   end
 
   def message_role(message)

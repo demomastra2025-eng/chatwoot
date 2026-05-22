@@ -12,6 +12,7 @@ class Captain::Assistant::AgentRunnerService
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
   MAX_BLANK_RESPONSE_RETRIES = 1
+  MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
 
   class BlankResponseError < StandardError; end
 
@@ -195,7 +196,9 @@ class Captain::Assistant::AgentRunnerService
   def semantic_output_error(response, context)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
+    return invalid_handoff_output_error if invalid_handoff_output?(response)
     return artifact_ids_without_tool_error if artifact_ids_without_completed_tool?(response, context)
+    return invalid_artifact_ids_error if invalid_artifact_ids?(response, context)
 
     nil
   end
@@ -223,6 +226,17 @@ class Captain::Assistant::AgentRunnerService
     )
   end
 
+  def invalid_handoff_output?(response)
+    response['response'].to_s == 'conversation_handoff'
+  end
+
+  def invalid_handoff_output_error
+    SemanticOutputError.new(
+      'invalid_handoff_output',
+      'Model output attempted human handoff without runtime handoff state'
+    )
+  end
+
   def artifact_ids_without_completed_tool?(response, context)
     response_artifact_ids(response).present? && completed_tool_names(context).blank?
   end
@@ -231,6 +245,19 @@ class Captain::Assistant::AgentRunnerService
     SemanticOutputError.new(
       'artifact_ids_without_tool',
       'Model output referenced artifact_ids without a completed tool result'
+    )
+  end
+
+  def invalid_artifact_ids?(response, context)
+    artifact_ids = response_artifact_ids(response)
+    available_ids = available_artifact_ids(context)
+    artifact_ids.present? && (artifact_ids - available_ids).present?
+  end
+
+  def invalid_artifact_ids_error
+    SemanticOutputError.new(
+      'invalid_artifact_ids',
+      'Model output referenced artifact_ids not exposed by completed tool results'
     )
   end
 
@@ -247,7 +274,11 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def completed_tool_names(context)
-    Array(context&.dig(:captain_v2_completed_tool_names)).filter_map { |tool_name| tool_name.to_s.strip.presence }
+    Array(context&.dig(:captain_v2_completed_tool_names)).filter_map { |tool_name| tool_name.to_s.strip.presence }.uniq
+  end
+
+  def available_artifact_ids(context)
+    Array(context&.dig(:captain_v2_artifact_ids)).filter_map { |artifact_id| artifact_id.to_s.strip.presence }.uniq
   end
 
   def publish_semantic_invalid_event(error, response, context)
@@ -261,6 +292,7 @@ class Captain::Assistant::AgentRunnerService
       response_type: 'hash',
       response_size: response.to_json.bytesize,
       artifact_ids_count: artifact_ids.size,
+      available_artifact_ids_count: available_artifact_ids(context).size,
       completed_tools_count: completed_tool_names(context).size
     )
   end
@@ -439,8 +471,8 @@ class Captain::Assistant::AgentRunnerService
     handoff_tool_name = Captain::Tools::HandoffTool.new(@assistant).name
 
     # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
-    runner.on_tool_complete do |tool_name, _tool_result, context_wrapper|
-      track_completed_tool_usage(tool_name, context_wrapper)
+    runner.on_tool_complete do |tool_name, tool_result, context_wrapper|
+      track_completed_tool_usage(tool_name, tool_result, context_wrapper)
       track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
     end
 
@@ -452,11 +484,60 @@ class Captain::Assistant::AgentRunnerService
     runner
   end
 
-  def track_completed_tool_usage(tool_name, context_wrapper)
+  def track_completed_tool_usage(tool_name, tool_result, context_wrapper)
     return unless context_wrapper&.context
 
     context_wrapper.context[:captain_v2_completed_tool_names] ||= []
     context_wrapper.context[:captain_v2_completed_tool_names] << tool_name.to_s
+    artifact_ids = extract_tool_artifact_ids(tool_result)
+    return if artifact_ids.blank?
+
+    context_wrapper.context[:captain_v2_artifact_ids] ||= []
+    context_wrapper.context[:captain_v2_artifact_ids] |= artifact_ids
+  end
+
+  def extract_tool_artifact_ids(tool_result)
+    normalized = Captain::ToolResult.normalize(tool_result)
+    artifact_ids_from_value(normalized[:data]) + artifact_ids_from_value(normalized[:message])
+  rescue StandardError
+    []
+  end
+
+  def artifact_ids_from_value(value)
+    case value
+    when Hash
+      artifact_ids_from_hash(value)
+    when Array
+      value.flat_map { |item| artifact_ids_from_value(item) }
+    when String
+      artifact_ids_from_string(value)
+    else
+      []
+    end.filter_map { |artifact_id| artifact_id.to_s.strip.presence }.uniq
+  end
+
+  def artifact_ids_from_hash(value)
+    hash = value.with_indifferent_access
+    artifact_ids = []
+    artifact_ids << hash[:artifact_id] if hash[:artifact_id].present?
+    artifact_ids.concat(Array(hash[:artifact_candidates]).filter_map do |candidate|
+      next unless candidate.respond_to?(:[])
+
+      candidate[:id] || candidate['id']
+    end)
+    artifact_ids.concat(hash.values.flat_map { |nested_value| artifact_ids_from_value(nested_value) })
+    artifact_ids
+  end
+
+  def artifact_ids_from_string(value)
+    return [] if value.bytesize > MAX_TOOL_ARTIFACT_SCAN_BYTES
+
+    stripped = value.strip
+    return [] unless stripped.start_with?('{', '[')
+
+    artifact_ids_from_value(JSON.parse(stripped))
+  rescue JSON::ParserError
+    []
   end
 
   def track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)

@@ -490,6 +490,10 @@ Blank/invalid semantic output is caught, traced, and recovered/fails safely.
 - Handoff blank retry resumes from post-handoff context/current agent; no-tool blank retry falls back to the original run context.
 - Unsafe completed non-handoff tools still fail safely via provider-error handoff; no blind mutating retry.
 - Emits `llm.run.retry` with `reason=blank_response` and preserves explicit trace capture content while event-recorder summaries redact raw content by default.
+- Added semantic hardening for reserved runtime literals, model-invented human handoff, artifact IDs without completed tools, and artifact IDs not exposed by completed tool results.
+- Runtime now rejects explicit stale/unknown `current_agent` context instead of silently falling back to the default agent.
+- Copilot UI actions now reject target-specific action types without a target identifier while preserving targetless create actions.
+- Deterministic event-contract eval fixtures now include `llm.schema.invalid` semantic-error coverage for invalid artifact IDs.
 
 ---
 

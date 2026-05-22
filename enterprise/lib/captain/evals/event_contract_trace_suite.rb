@@ -79,6 +79,7 @@ class Captain::Evals::EventContractTraceSuite
       ui_action_types: ui_action_types(payloads),
       progress_event_count: events.count { |event| event[:name] == 'llm.tool.progress' },
       error_codes: payloads.filter_map { |payload| payload[:error_code] }.uniq,
+      semantic_error_codes: payloads.filter_map { |payload| payload[:semantic_error_code] }.uniq,
       max_event_payload_bytes: payloads.map { |payload| payload.to_json.bytesize }.max.to_i,
       raw_content_keys: raw_content_keys(payloads),
       preview_keys: preview_keys(payloads),
@@ -109,6 +110,10 @@ class Captain::Evals::EventContractTraceSuite
 
     if expected[:required_error_code].present? && actual[:error_codes].exclude?(expected[:required_error_code].to_s)
       failures << "required error_code missing: #{expected[:required_error_code]}"
+    end
+
+    if expected[:required_semantic_error_code].present? && actual[:semantic_error_codes].exclude?(expected[:required_semantic_error_code].to_s)
+      failures << "required semantic_error_code missing: #{expected[:required_semantic_error_code]}"
     end
 
     if expected[:required_progress_events].present? && actual[:progress_event_count] < expected[:required_progress_events].to_i

@@ -434,12 +434,108 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
-    it 'allows artifact ids after a completed tool result' do
+    it 'blocks model-invented human handoff instead of treating it as a runtime handoff' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'conversation_handoff', 'handoff_message' => 'I will transfer you.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+      invalid_events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.schema.invalid') do |*args|
+        invalid_events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output attempted human handoff without runtime handoff state'
+      )
+      expect(invalid_events.map(&:payload)).to contain_exactly(
+        hash_including(
+          'semantic_error_code' => 'invalid_handoff_output',
+          'artifact_ids_count' => 0,
+          'completed_tools_count' => 0
+        )
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'blocks artifact ids that were not exposed by completed tool results' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Here is the file.', 'artifact_ids' => ['hallucinated-artifact-id'] },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_names: ['list_captain_documents'],
+            captain_v2_artifact_ids: ['real-tool-artifact-id']
+          },
+          error: nil
+        )
+      )
+      invalid_events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.schema.invalid') do |*args|
+        invalid_events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output referenced artifact_ids not exposed by completed tool results'
+      )
+      expect(invalid_events.map(&:payload)).to contain_exactly(
+        hash_including(
+          'semantic_error_code' => 'invalid_artifact_ids',
+          'artifact_ids_count' => 1,
+          'available_artifact_ids_count' => 1,
+          'completed_tools_count' => 1
+        )
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'blocks artifact ids when completed tools exposed no artifact ids' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Here is the file.', 'artifact_ids' => ['hallucinated-artifact-id'] },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_names: ['search_deals']
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output referenced artifact_ids not exposed by completed tool results'
+      )
+    end
+
+    it 'allows artifact ids after a completed tool result exposed the same ids' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
           output: { 'response' => 'Here is the file.', 'artifact_ids' => ['opaque-tool-artifact-id'] },
-          context: { current_agent: 'assistant_agent', captain_v2_completed_tool_names: ['list_captain_documents'] },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_names: ['list_captain_documents'],
+            captain_v2_artifact_ids: ['opaque-tool-artifact-id']
+          },
           error: nil
         )
       )
@@ -1042,6 +1138,42 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
       expect(root_span).to receive(:set_attribute).with('langfuse.trace.metadata.credit_used', 'false')
       run_complete_callback.call('assistant', nil, context_wrapper)
+    end
+
+    it 'tracks artifact ids exposed by completed tool results' do
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      runner = instance_double(Captain::Runtime::AgentRunner)
+      tool_complete_callback = nil
+      context_wrapper = Struct.new(:context).new({})
+
+      allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
+      allow(runner).to receive(:on_tool_complete) do |&block|
+        tool_complete_callback = block
+        runner
+      end
+
+      service.send(:add_usage_metadata_callback, runner)
+
+      tool_complete_callback.call(
+        'list_captain_documents',
+        Captain::ToolResult.success(
+          data: {
+            documents: [
+              { artifact_id: 'doc-artifact-1', sendable: true },
+              { 'artifact_id' => 'doc-artifact-2', 'sendable' => true }
+            ],
+            artifact_candidates: [{ id: 'http-artifact-1' }]
+          }
+        ),
+        context_wrapper
+      )
+
+      expect(context_wrapper.context[:captain_v2_completed_tool_names]).to eq(['list_captain_documents'])
+      expect(context_wrapper.context[:captain_v2_artifact_ids]).to contain_exactly(
+        'doc-artifact-1',
+        'doc-artifact-2',
+        'http-artifact-1'
+      )
     end
 
     it 'sets credit_used=true when handoff tool is not used' do

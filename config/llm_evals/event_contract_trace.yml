@@ -31,6 +31,17 @@ cases:
       forbidden_raw_keys: [prompt, messages, input, output, response, content]
       max_event_payload_bytes: 8192
 
+  - id: semantic.invalid_artifact_ids
+    description: Semantic structured-output failure records safe schema-invalid metadata without raw response content.
+    tags: [semantic_output, schema_invalid, artifacts, event_contract]
+    fixture: config/llm_evals/fixtures/captain/event_contract/semantic_invalid_artifact_ids.json
+    expected:
+      required_events: [llm.run.start, llm.tool.complete, llm.schema.invalid, llm.run.complete]
+      required_tools: [list_captain_documents]
+      required_semantic_error_code: invalid_artifact_ids
+      forbidden_raw_keys: [prompt, messages, input, output, response, content]
+      max_event_payload_bytes: 8192
+
   - id: provider.failure
     description: Provider failure is represented through canonical persisted event names, alias metadata, safe error code, and no raw content.
     tags: [provider_failure, error, alias, event_contract]

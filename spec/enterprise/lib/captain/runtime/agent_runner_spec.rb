@@ -81,5 +81,14 @@ RSpec.describe Captain::Runtime::AgentRunner do
         )
       ).to eq(:ok)
     end
+
+    it 'rejects explicit current_agent values that are not in the registry' do
+      expect do
+        runner.run('continue', context: { current_agent: 'deleted_scenario_agent' })
+      end.to raise_error(
+        Captain::Runtime::Runner::AgentNotFoundError,
+        "Current agent 'deleted_scenario_agent' not found in registry"
+      )
+    end
   end
 end

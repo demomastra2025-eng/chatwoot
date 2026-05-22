@@ -23,6 +23,8 @@ class Captain::UiActionContract
     open_captain_tools open_captain_scenarios open_captain_playground open_captain_channels
     open_captain_assistant_settings open_captain_prompts create_contact create_company create_task create_deal
   ].freeze
+  OPTIONAL_TARGET_ACTION_TYPES = %w[create_contact create_company create_task create_deal].freeze
+  REQUIRED_TARGET_ACTION_TYPES = (TARGET_ACTION_TYPES - OPTIONAL_TARGET_ACTION_TYPES).freeze
 
   SUPPORTED_TYPES = (SIMPLE_ACTION_TYPES + TARGET_ACTION_TYPES).freeze
   SUPPORTED_TYPES_DESCRIPTION = SUPPORTED_TYPES.join(', ')
@@ -53,10 +55,13 @@ class Captain::UiActionContract
       label = strip_markup(action_value(action, 'label')).first(MAX_LABEL_LENGTH)
       return if label.blank?
 
+      target_id = target_id(action)
+      return if REQUIRED_TARGET_ACTION_TYPES.include?(type) && target_id.blank?
+
       {
         'type' => type,
         'label' => label,
-        'target_id' => target_id(action)
+        'target_id' => target_id
       }
     end
 

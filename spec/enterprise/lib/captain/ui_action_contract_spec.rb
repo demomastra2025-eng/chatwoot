@@ -33,6 +33,17 @@ RSpec.describe Captain::UiActionContract do
       expect(described_class.normalize([{ 'type' => 'open_contact', 'label' => '', 'target_id' => '42' }])).to eq([])
     end
 
+    it 'rejects target-specific actions without a target id but allows create actions without one' do
+      expect(
+        described_class.normalize(
+          [
+            { 'type' => 'open_deal', 'label' => 'Open deal', 'target_id' => '' },
+            { 'type' => 'create_deal', 'label' => 'Create deal' }
+          ]
+        )
+      ).to eq([{ 'type' => 'create_deal', 'label' => 'Create deal', 'target_id' => '' }])
+    end
+
     it 'stops scanning after bounded accepted and raw input action counts' do
       exploding_label = Object.new.tap do |object|
         def object.to_s
