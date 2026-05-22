@@ -7,10 +7,7 @@ class Captain::Tools::Copilot::CancelAppointmentService < Captain::Tools::Copilo
 
   def execute
     appointment = appointment_operations.cancel_current_appointment
-    formatted_payload(
-      action: 'cancel_appointment',
-      appointment: ::Scheduling::PayloadBuilder.appointment(appointment)
-    )
+    formatted_payload(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'cancel_appointment', appointment: appointment))
   rescue StandardError => e
     tool_failure(e)
   end

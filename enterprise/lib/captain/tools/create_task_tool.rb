@@ -21,10 +21,7 @@ class Captain::Tools::CreateTaskTool < Captain::Tools::BasePublicTool
       custom_attributes: custom_attributes
     )
 
-    JSON.pretty_generate(
-      action: 'create_task',
-      task: ::Crm::PayloadBuilder.task(task)
-    )
+    JSON.pretty_generate(::Crm::ToolPayloadBuilder.task_payload(action: 'create_task', task: task))
   rescue StandardError => e
     tool_failure(e)
   end

@@ -22,7 +22,11 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
                                                     starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
                                                     duration_min: 30, custom_attributes: { source: 'agent' }))
 
-    expect(payload).to include('action' => 'create_appointment')
+    expect(payload).to include(
+      'action' => 'create_appointment',
+      'appointment_id' => payload.dig('appointment', 'id'),
+      'status' => payload.dig('appointment', 'status')
+    )
     expect(payload['appointment']).to include('resource_id' => resource.id, 'contact_id' => contact.id, 'service_id' => scheduling_service.id)
     expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
   end

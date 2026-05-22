@@ -11,10 +11,7 @@ class Captain::Tools::ChangeTaskStatusTool < Captain::Tools::BasePublicTool
       status_code: status_code
     )
 
-    JSON.pretty_generate(
-      action: 'change_task_status',
-      task: ::Crm::PayloadBuilder.task(task)
-    )
+    JSON.pretty_generate(::Crm::ToolPayloadBuilder.task_payload(action: 'change_task_status', task: task))
   rescue StandardError => e
     tool_failure(e)
   end

@@ -19,7 +19,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'New title', amount: '200.00', currency: 'USD'))
 
-    expect(payload).to include('action' => 'update_deal')
+    expect(payload).to include('action' => 'update_deal', 'deal_id' => deal.id)
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'New title', 'amount' => '200')
     expect(payload['deal']).not_to have_key('amount_minor')
     expect(payload.to_json).not_to include('20000')
@@ -35,6 +35,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'Moved deal', pipeline_code: 'expansion', stage_code: 'work'))
 
+    expect(payload).to include('deal_id' => deal.id, 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved deal', 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
   end
 end

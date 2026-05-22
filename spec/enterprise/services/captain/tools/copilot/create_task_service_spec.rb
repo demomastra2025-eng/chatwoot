@@ -29,7 +29,7 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
 
       task = account.crm_tasks.order(:id).last
 
-      expect(payload).to include('action' => 'create_task')
+      expect(payload).to include('action' => 'create_task', 'task_id' => task.id)
       expect(payload['task']).to include('id' => task.id, 'title' => 'Call back tomorrow', 'priority' => 'high')
       expect(task.title).to eq('Call back tomorrow')
       expect(task.priority).to eq('high')

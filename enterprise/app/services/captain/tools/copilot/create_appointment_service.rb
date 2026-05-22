@@ -29,7 +29,7 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
-    formatted_payload(action: 'create_appointment', appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
+    formatted_payload(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'create_appointment', appointment: appointment))
   rescue StandardError => e
     tool_failure(e)
   end

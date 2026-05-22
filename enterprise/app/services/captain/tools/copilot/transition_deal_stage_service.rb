@@ -24,10 +24,7 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
       pipeline_code: pipeline_code,
       stage_action: stage_action
     )
-    formatted_payload(
-      action: 'transition_deal_stage',
-      deal: ::Crm::PayloadBuilder.ai_deal(deal)
-    )
+    formatted_payload(::Crm::ToolPayloadBuilder.deal_payload(action: 'transition_deal_stage', deal: deal))
   rescue StandardError => e
     tool_failure(e)
   end

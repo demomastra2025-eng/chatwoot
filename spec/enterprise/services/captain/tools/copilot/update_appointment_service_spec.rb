@@ -49,7 +49,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
 
       appointment.reload
 
-      expect(payload).to include('action' => 'update_appointment')
+      expect(payload).to include('action' => 'update_appointment', 'appointment_id' => appointment.id, 'status' => appointment.status)
       expect(payload['appointment']).to include(
         'id' => appointment.id,
         'resource_id' => new_resource.id,

@@ -24,7 +24,7 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
       due_at: due_at,
       custom_attributes: custom_attributes
     )
-    formatted_payload(action: 'update_task', task: ::Crm::PayloadBuilder.task(task))
+    formatted_payload(::Crm::ToolPayloadBuilder.task_payload(action: 'update_task', task: task))
   rescue StandardError => e
     tool_failure(e)
   end

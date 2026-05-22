@@ -9,10 +9,7 @@ class Captain::Tools::Copilot::CompleteTaskService < Captain::Tools::Copilot::Ba
   def execute(task_id:)
     task = task_operations.complete_task(task_id: task_id)
 
-    formatted_payload(
-      action: 'complete_task',
-      task: ::Crm::PayloadBuilder.task(task)
-    )
+    formatted_payload(::Crm::ToolPayloadBuilder.task_payload(action: 'complete_task', task: task))
   rescue StandardError => e
     tool_failure(e)
   end

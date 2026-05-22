@@ -186,11 +186,24 @@ RSpec.describe 'Captain native ops tools' do
       allow(Captain::ContextFields).to receive(:appointment_for).and_return(appointment)
       finance_service = instance_double(Scheduling::Appointments::FinanceSyncService, add_payment!: appointment)
       allow(Scheduling::Appointments::FinanceSyncService).to receive(:new).and_return(finance_service)
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      copilot_thread = create(:captain_copilot_thread, account: account, user: user, assistant: assistant)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
+      first_payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
+      payload = first_payload
+      if first_payload.dig('data', 'confirmation_required')
+        confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+        create(
+          :captain_copilot_message,
+          account: account,
+          copilot_thread: copilot_thread,
+          message_type: 'user',
+          message: { 'content' => "Подтверждаю #{confirmation_token}" }
+        )
+        payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
+      end
 
-      expect(payload['action']).to eq('add_appointment_payment')
+      expect(payload).to include('action' => 'add_appointment_payment', 'appointment_id' => appointment.id, 'status' => appointment.status)
       expect(Scheduling::Appointments::FinanceSyncService).to have_received(:new)
     end
   end

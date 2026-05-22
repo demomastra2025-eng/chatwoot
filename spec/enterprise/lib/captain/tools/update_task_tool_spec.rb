@@ -17,7 +17,7 @@ RSpec.describe Captain::Tools::UpdateTaskTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'New task'))
 
-    expect(payload).to include('action' => 'update_task')
+    expect(payload).to include('action' => 'update_task', 'task_id' => task.id, 'status_id' => status.id)
     expect(payload['task']).to include('id' => task.id, 'title' => 'New task')
   end
 end

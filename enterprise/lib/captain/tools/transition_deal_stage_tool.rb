@@ -22,10 +22,7 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
       stage_action: stage_action
     )
 
-    JSON.pretty_generate(
-      action: 'transition_deal_stage',
-      deal: ::Crm::PayloadBuilder.ai_deal(deal)
-    )
+    JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'transition_deal_stage', deal: deal))
   rescue StandardError => e
     tool_failure(e)
   end

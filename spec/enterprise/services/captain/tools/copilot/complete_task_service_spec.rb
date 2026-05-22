@@ -18,7 +18,7 @@ RSpec.describe Captain::Tools::Copilot::CompleteTaskService do
 
       payload = JSON.parse(service.execute(task_id: task.id))
 
-      expect(payload).to include('action' => 'complete_task')
+      expect(payload).to include('action' => 'complete_task', 'task_id' => task.id, 'status_id' => done_status.id, 'completed_at' => be_present)
       expect(payload.fetch('task')).to include(
         'id' => task.id,
         'status_id' => done_status.id,

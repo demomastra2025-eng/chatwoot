@@ -42,7 +42,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       deal.reload
 
       expect(deal.amount_minor).to eq(20_000)
-      expect(payload).to include('action' => 'update_deal')
+      expect(payload).to include('action' => 'update_deal', 'deal_id' => deal.id, 'amount' => '200', 'currency' => 'USD')
       expect(payload['deal']).to include('id' => deal.id, 'amount' => '200', 'currency' => 'USD')
       expect(payload['deal']).not_to have_key('amount_minor')
     end
@@ -78,7 +78,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
       deal.reload
       expect(deal.stage_id).to eq(won_stage.id)
       expect(deal.custom_attributes).to include('decision_maker' => 'Aruzhan')
-      expect(payload).to include('action' => 'update_deal')
+      expect(payload).to include('action' => 'update_deal', 'deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => won_stage.id)
       expect(payload['deal']).to include('id' => deal.id, 'stage_id' => won_stage.id)
     end
   end

@@ -16,7 +16,7 @@ RSpec.describe Captain::Tools::CreateDealTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'Enterprise renewal', amount: '200.00', currency: 'USD'))
 
-    expect(payload).to include('action' => 'create_deal')
+    expect(payload).to include('action' => 'create_deal', 'deal_id' => payload.dig('deal', 'id'))
     expect(payload['deal']).to include(
       'title' => 'Enterprise renewal',
       'originating_conversation_id' => conversation.id,
@@ -35,6 +35,7 @@ RSpec.describe Captain::Tools::CreateDealTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'Pipeline deal', pipeline_code: 'andalusiya2', stage_code: 'new'))
 
+    expect(payload).to include('deal_id' => payload.dig('deal', 'id'), 'pipeline_id' => pipeline.id, 'stage_id' => stage.id)
     expect(payload['deal']).to include('pipeline_id' => pipeline.id, 'stage_id' => stage.id)
   end
 end

@@ -45,7 +45,7 @@ RSpec.describe Captain::Tools::Copilot::CreateDealService do
       deal = account.crm_deals.order(:id).last
 
       expect(deal.amount_minor).to eq(20_000)
-      expect(payload).to include('action' => 'create_deal')
+      expect(payload).to include('action' => 'create_deal', 'deal_id' => deal.id)
       expect(payload['deal']).to include('id' => deal.id, 'amount' => '200', 'currency' => 'USD')
       expect(payload['deal']).not_to have_key('amount_minor')
     end

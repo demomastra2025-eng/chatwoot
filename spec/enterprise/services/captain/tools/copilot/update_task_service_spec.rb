@@ -29,7 +29,7 @@ RSpec.describe Captain::Tools::Copilot::UpdateTaskService do
 
       task.reload
 
-      expect(payload).to include('action' => 'update_task')
+      expect(payload).to include('action' => 'update_task', 'task_id' => task.id)
       expect(payload['task']).to include('id' => task.id, 'priority' => 'urgent')
       expect(task.priority).to eq('urgent')
       expect(task.custom_attributes).to include(

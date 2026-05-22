@@ -38,10 +38,7 @@ class Captain::Tools::UpdateDealTool < Captain::Tools::BasePublicTool
       stage_code: stage_code
     )
 
-    JSON.pretty_generate(
-      action: 'update_deal',
-      deal: ::Crm::PayloadBuilder.ai_deal(deal)
-    )
+    JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'update_deal', deal: deal))
   rescue StandardError => e
     tool_failure(e)
   end

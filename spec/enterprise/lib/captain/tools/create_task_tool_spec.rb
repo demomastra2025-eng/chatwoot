@@ -15,7 +15,7 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, title: 'Call client'))
 
-    expect(payload).to include('action' => 'create_task')
+    expect(payload).to include('action' => 'create_task', 'task_id' => payload.dig('task', 'id'))
     expect(payload['task']).to include('title' => 'Call client', 'originating_conversation_id' => conversation.id)
   end
 end

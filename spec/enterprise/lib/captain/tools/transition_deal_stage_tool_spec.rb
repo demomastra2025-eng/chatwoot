@@ -19,7 +19,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, stage_code: 'qualified'))
 
-    expect(payload).to include('action' => 'transition_deal_stage')
+    expect(payload).to include('action' => 'transition_deal_stage', 'deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => new_stage.id)
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => new_stage.id)
   end
 
@@ -33,6 +33,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, stage_action: 'next'))
 
+    expect(payload).to include('deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => next_stage.id)
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => next_stage.id)
   end
 end
