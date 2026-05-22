@@ -19,7 +19,14 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   it 'returns a normalized touch payload wrapper' do
     payload = JSON.parse(execute_confirmed(body: 'Ping client tomorrow', scheduled_at: 2.days.from_now.iso8601, auto_cancel_on_incoming: true))
 
-    expect(payload).to include('action' => 'create_touch', 'touch_id' => Reminder.last.id, 'status' => 'pending')
+    expect(payload).to include(
+      'action' => 'create_touch',
+      'touch_id' => Reminder.last.id,
+      'status' => 'pending',
+      'content_kind' => 'free_text',
+      'timing_mode' => 'absolute',
+      'auto_cancel_on_incoming' => true
+    )
     expect(payload.fetch('touch')).to include(
       'body' => 'Ping client tomorrow',
       'status' => 'pending',
@@ -62,6 +69,11 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
                          ))
 
     expect(payload['action']).to eq('create_touch')
+    expect(payload).to include(
+      'content_kind' => 'channel_template',
+      'template_name' => 'sample_shipping_confirmation',
+      'template_language' => 'en_US'
+    )
     expect(payload.dig('touch', 'content_kind')).to eq('channel_template')
     expect(Reminder.last.template_params).to include('name' => 'sample_shipping_confirmation')
     expect(Reminder.last.metadata['delivery_policy']).to include('delivery_mode' => 'channel_template')
@@ -70,7 +82,7 @@ RSpec.describe Captain::Tools::Copilot::CreateTouchService do
   def execute_confirmed(target_service = service, **arguments)
     first_result = target_service.execute(**arguments)
     first_payload = JSON.parse(first_result)
-    return first_result unless first_payload.dig('data', 'confirmation_required')
+    expect(first_payload.dig('data', 'confirmation_required')).to be(true)
 
     confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
 

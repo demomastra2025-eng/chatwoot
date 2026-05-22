@@ -16,8 +16,18 @@ RSpec.describe Captain::Tools::ListChannelTemplatesTool, type: :model do
     payload = JSON.parse(tool.perform(tool_context, name: 'sample_shipping_confirmation', language: 'en_US'))
 
     expect(payload['action']).to eq('list_channel_templates')
-    expect(payload['supports_channel_templates']).to be(true)
-    expect(payload.dig('templates', 0, 'name')).to eq('sample_shipping_confirmation')
-    expect(payload.dig('templates', 0, 'language')).to eq('en_US')
+    expect(payload).to include(
+      'inbox_id' => inbox.id,
+      'channel_type' => 'Channel::Whatsapp',
+      'supports_channel_templates' => true,
+      'requires_template_for_outside_window' => true,
+      'total_count' => 1,
+      'filters' => { 'name' => 'sample_shipping_confirmation', 'language' => 'en_US', 'status' => 'approved' }
+    )
+    expect(payload.dig('templates', 0)).to include(
+      'name' => 'sample_shipping_confirmation',
+      'language' => 'en_US',
+      'supported' => true
+    )
   end
 end

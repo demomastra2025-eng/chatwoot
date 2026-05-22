@@ -45,9 +45,19 @@ RSpec.describe 'Captain touch management copilot services' do
     delete_service = copilot_service(Captain::Tools::Copilot::DeleteTouchService)
     delete_payload = JSON.parse(execute_confirmed(delete_service, touch_id: cancelled_touch.id))
 
-    expect(cancel_payload).to include('action' => 'cancel_touch', 'touch_id' => pending_touch.id, 'status' => 'cancelled', 'reason' => 'Done')
+    expect(cancel_payload).to include(
+      'action' => 'cancel_touch',
+      'touch_id' => pending_touch.id,
+      'status' => 'cancelled',
+      'reason' => 'Done'
+    )
     expect(cancel_payload.dig('touch', 'status')).to eq('cancelled')
-    expect(delete_payload).to include('action' => 'delete_touch', 'deleted_touch_id' => cancelled_touch.id)
+    expect(delete_payload).to include(
+      'action' => 'delete_touch',
+      'deleted_touch_id' => cancelled_touch.id,
+      'touch_id' => cancelled_touch.id,
+      'status' => 'cancelled'
+    )
     expect(account.reminders.exists?(cancelled_touch.id)).to be(false)
   end
 
@@ -73,8 +83,20 @@ RSpec.describe 'Captain touch management copilot services' do
     archive_service = copilot_service(Captain::Tools::Copilot::ArchiveTouchPlanService)
     archive_payload = JSON.parse(execute_confirmed(archive_service, touch_plan_id: touch_plan_id))
 
-    expect(create_payload).to include('action' => 'create_touch_plan', 'touch_plan_id' => touch_plan_id, 'touch_count' => 1)
-    expect(apply_payload).to include('action' => 'apply_touch_plan', 'touch_plan_id' => touch_plan_id, 'created_count' => 1)
+    expect(create_payload).to include(
+      'action' => 'create_touch_plan',
+      'touch_plan_id' => touch_plan_id,
+      'name' => 'Conversation nurture',
+      'entity_kinds' => ['conversation'],
+      'touch_count' => 1
+    )
+    expect(create_payload.dig('touch_plan', 'touches', 0, 'body')).to eq('Plan follow-up')
+    expect(apply_payload).to include(
+      'action' => 'apply_touch_plan',
+      'touch_plan_id' => touch_plan_id,
+      'touch_plan_name' => 'Conversation nurture',
+      'created_count' => 1
+    )
     expect(apply_payload.dig('meta', 'count')).to eq(1)
     expect(apply_payload['touch_ids']).to contain_exactly(created_touch_id)
     expect(cancel_payload).to include('action' => 'cancel_touches', 'cancelled_count' => 1, 'touch_plan_id' => touch_plan_id, 'reason' => 'Stop plan')
@@ -85,7 +107,7 @@ RSpec.describe 'Captain touch management copilot services' do
   def execute_confirmed(service, **arguments)
     first_result = service.execute(**arguments)
     first_payload = JSON.parse(first_result)
-    return first_result unless first_payload.dig('data', 'confirmation_required')
+    expect(first_payload.dig('data', 'confirmation_required')).to be(true)
 
     confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
 

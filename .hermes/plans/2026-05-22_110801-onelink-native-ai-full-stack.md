@@ -1553,3 +1553,56 @@ Next coding slice:
 
 1. Continue Etapa 6/7 with touch plans/templates structured payload + confirmation coverage.
 2. Then continue admin/runtime tools after outbound contracts are locked.
+
+## 2026-05-22 Etapa 6/7 touch plans/templates payload coverage slice
+
+Status: **Implemented.**
+
+Implemented:
+
+- Extended shared `Outbound::ToolPayloadBuilder.touch_payload` with top-level machine-readable fields for downstream AI flow continuation:
+  - `reminder_group_id`
+  - `target_inbox_id`
+  - `target_contact_id`
+  - `template_name`
+  - `template_language`
+- Added shared `Outbound::ToolPayloadBuilder.delete_touch_payload` and routed public + Copilot delete-touch tools through it for parity.
+- Kept existing nested `touch`, `touch_plan`, and template catalog payloads intact; all changes are additive.
+- Hardened public and Copilot touch specs for:
+  - create touch free-text top-level contract;
+  - create touch `channel_template` metadata;
+  - delete touch top-level `touch_id/status`;
+  - create/apply/cancel/archive touch-plan top-level plan fields;
+  - high-risk Copilot confirmation gate before executing touch/touch-plan mutations.
+- Hardened list-channel-templates specs for stable template catalog contract:
+  - `inbox_id`, `supports_channel_templates`, `requires_template_for_outside_window`, `total_count`, `filters`, `supported`, `required_params`.
+- Independent targeted review found no blockers.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/lib/captain/tools/create_touch_tool_spec.rb spec/enterprise/lib/captain/tools/list_channel_templates_tool_spec.rb spec/enterprise/lib/captain/tools/touch_management_tools_spec.rb spec/enterprise/services/captain/tools/copilot/create_touch_service_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/services/captain/tools/copilot/touch_management_services_spec.rb
+# 39 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c app/builders/outbound/tool_payload_builder.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/lib/captain/tools/delete_touch_tool.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/delete_touch_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/create_touch_tool_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/create_touch_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/touch_management_tools_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/touch_management_services_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tools/list_channel_templates_tool_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --fail-level E app/builders/outbound/tool_payload_builder.rb enterprise/lib/captain/tools/delete_touch_tool.rb enterprise/app/services/captain/tools/copilot/delete_touch_service.rb spec/enterprise/lib/captain/tools/create_touch_tool_spec.rb spec/enterprise/services/captain/tools/copilot/create_touch_service_spec.rb spec/enterprise/lib/captain/tools/touch_management_tools_spec.rb spec/enterprise/services/captain/tools/copilot/touch_management_services_spec.rb spec/enterprise/lib/captain/tools/list_channel_templates_tool_spec.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+# exit 0; only existing C-level RSpec style/expectation offenses remain, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 6/7 with admin/runtime tools after outbound contracts are locked.
+2. Keep shared payload-builder + public/Copilot parity as the default mutation-tool pattern.

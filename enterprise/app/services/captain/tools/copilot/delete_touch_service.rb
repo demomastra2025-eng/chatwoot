@@ -9,12 +9,7 @@ class Captain::Tools::Copilot::DeleteTouchService < Captain::Tools::Copilot::Bas
   def execute(touch_id:)
     touch_payload = touch_operations.delete_touch(touch_id: touch_id)
 
-    formatted_payload(
-      action: 'delete_touch',
-      deleted: true,
-      deleted_touch_id: touch_payload[:id],
-      touch: touch_payload
-    )
+    formatted_payload(::Outbound::ToolPayloadBuilder.delete_touch_payload(touch_payload: touch_payload))
   rescue StandardError => e
     tool_failure(e)
   end

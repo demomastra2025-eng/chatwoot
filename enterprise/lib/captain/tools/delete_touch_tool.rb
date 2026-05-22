@@ -5,12 +5,7 @@ class Captain::Tools::DeleteTouchTool < Captain::Tools::BasePublicTool
   def perform(tool_context, touch_id:)
     touch_payload = operations(tool_context.state).delete_touch(touch_id: touch_id)
 
-    JSON.pretty_generate(
-      action: 'delete_touch',
-      deleted: true,
-      deleted_touch_id: touch_payload[:id],
-      touch: touch_payload
-    )
+    JSON.pretty_generate(::Outbound::ToolPayloadBuilder.delete_touch_payload(touch_payload: touch_payload))
   rescue StandardError => e
     tool_failure(e)
   end

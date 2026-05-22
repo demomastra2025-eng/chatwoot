@@ -47,7 +47,13 @@ RSpec.describe 'Captain touch management public tools', type: :model do
     touch = create(:reminder, account: account, remindable: conversation, touch_conversation: conversation, status: :cancelled)
     payload = JSON.parse(Captain::Tools::DeleteTouchTool.new(assistant).perform(tool_context, touch_id: touch.id))
 
-    expect(payload).to include('action' => 'delete_touch', 'deleted' => true, 'deleted_touch_id' => touch.id)
+    expect(payload).to include(
+      'action' => 'delete_touch',
+      'deleted' => true,
+      'deleted_touch_id' => touch.id,
+      'touch_id' => touch.id,
+      'status' => 'cancelled'
+    )
     expect(account.reminders.exists?(touch.id)).to be(false)
   end
 
@@ -65,8 +71,20 @@ RSpec.describe 'Captain touch management public tools', type: :model do
                                                                                                        reason: 'Stop plan'))
     archive_payload = JSON.parse(Captain::Tools::ArchiveTouchPlanTool.new(assistant).perform(tool_context, touch_plan_id: touch_plan_id))
 
-    expect(create_payload).to include('action' => 'create_touch_plan', 'touch_plan_id' => touch_plan_id, 'touch_count' => 1)
-    expect(apply_payload).to include('action' => 'apply_touch_plan', 'touch_plan_id' => touch_plan_id, 'created_count' => 1)
+    expect(create_payload).to include(
+      'action' => 'create_touch_plan',
+      'touch_plan_id' => touch_plan_id,
+      'name' => 'Conversation nurture',
+      'entity_kinds' => ['conversation'],
+      'touch_count' => 1
+    )
+    expect(create_payload.dig('touch_plan', 'touches', 0, 'body')).to eq('Plan follow-up')
+    expect(apply_payload).to include(
+      'action' => 'apply_touch_plan',
+      'touch_plan_id' => touch_plan_id,
+      'touch_plan_name' => 'Conversation nurture',
+      'created_count' => 1
+    )
     expect(apply_payload.dig('meta', 'count')).to eq(1)
     expect(apply_payload['touch_ids']).to contain_exactly(Reminder.last.id)
     expect(cancel_payload).to include('action' => 'cancel_touches', 'cancelled_count' => 1, 'touch_plan_id' => touch_plan_id, 'reason' => 'Stop plan')

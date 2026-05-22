@@ -3,6 +3,7 @@ module Outbound::ToolPayloadBuilder
 
   def touch_payload(action:, touch:, reason: nil)
     touch_data = Outbound::PayloadBuilder.touch_payload(touch)
+    template_params = touch_data[:template_params]
 
     {
       action: action,
@@ -11,6 +12,11 @@ module Outbound::ToolPayloadBuilder
       content_kind: touch_data[:content_kind],
       timing_mode: touch_data[:timing_mode],
       scheduled_at: touch_data[:scheduled_at],
+      reminder_group_id: touch_data[:reminder_group_id],
+      target_inbox_id: touch_data.dig(:target, :inbox_id),
+      target_contact_id: touch_data.dig(:target, :contact_id),
+      template_name: hash_value(template_params, :name),
+      template_language: hash_value(template_params, :language),
       auto_cancel_on_incoming: touch_data[:auto_cancel_on_incoming],
       reason: touch_data.dig(:metadata, 'cancelled_reason').presence || reason.presence,
       touch: touch_data
@@ -39,6 +45,7 @@ module Outbound::ToolPayloadBuilder
     {
       action: 'apply_touch_plan',
       touch_plan_id: touch_plan&.id,
+      touch_plan_name: touch_plan&.name,
       created_count: touch_data.size,
       touch_ids: touch_data.pluck(:id),
       touches: touch_data,
@@ -57,5 +64,22 @@ module Outbound::ToolPayloadBuilder
       remindable: result[:remindable],
       touch_plan: touch_plan
     }.compact
+  end
+
+  def delete_touch_payload(touch_payload:)
+    {
+      action: 'delete_touch',
+      deleted: true,
+      deleted_touch_id: touch_payload[:id],
+      touch_id: touch_payload[:id],
+      status: touch_payload[:status],
+      touch: touch_payload
+    }.compact
+  end
+
+  def hash_value(hash, key)
+    return if hash.blank?
+
+    hash[key] || hash[key.to_s]
   end
 end
