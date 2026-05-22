@@ -1459,3 +1459,50 @@ Next coding slice:
 
 1. Continue remaining Etapa 6/7 tools case-by-case: scheduling resources/appointments, touch plans, campaigns/templates, then admin/runtime tools.
 2. For each mutation tool: keep confirmation-gate specs plus shared payload builders and public/Copilot symmetry.
+
+## 2026-05-22 Etapa 6/7 campaign control hardening slice
+
+Status: **Implemented.**
+
+Implemented:
+
+- Added `Campaigns::ToolPayloadBuilder` for structured campaign list, preview, analytics, and retry result wrappers.
+- Kept campaign control tools on Copilot/assistant surface only:
+  - `list_campaigns`
+  - `preview_campaign`
+  - `get_campaign_analytics`
+  - `retry_failed_campaign_deliveries`
+- Removed public/customer-agent exposure for list/preview/analytics campaign controls in `Captain::ToolRegistry`.
+- Added shared Copilot account-admin guard and applied it to campaign control services.
+- Preserved confirmation gate for the mutating retry-failed-deliveries service and updated specs to confirm high-risk tools before asserting mutation payloads.
+- Covered non-admin campaign control hiding and registry agent-count reduction.
+- Independent targeted re-review found no blockers.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb spec/enterprise/lib/captain/tool_registry_assistant_ops_spec.rb
+# 36 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c app/builders/campaigns/tool_payload_builder.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/base_account_tool.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/list_campaigns_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/preview_campaign_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/get_campaign_analytics_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/retry_failed_campaign_deliveries_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/lib/captain/tool_registry.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tool_registry_spec.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --fail-level E app/builders/campaigns/tool_payload_builder.rb enterprise/app/services/captain/tools/copilot/base_account_tool.rb enterprise/app/services/captain/tools/copilot/list_campaigns_service.rb enterprise/app/services/captain/tools/copilot/preview_campaign_service.rb enterprise/app/services/captain/tools/copilot/get_campaign_analytics_service.rb enterprise/app/services/captain/tools/copilot/retry_failed_campaign_deliveries_service.rb enterprise/lib/captain/tool_registry.rb spec/enterprise/services/captain/tools/copilot/native_ops_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb
+# exit 0; only existing C-level style/metrics offenses remain, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue remaining Etapa 6/7 tools case-by-case: scheduling resources/appointments, touch plans/templates, then admin/runtime tools.
+2. For each mutating tool: keep confirmation-gate specs plus shared payload builders and public/Copilot symmetry where the tool is intentionally public.

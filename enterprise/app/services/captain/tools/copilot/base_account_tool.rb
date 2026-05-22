@@ -43,6 +43,10 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     raise ArgumentError, message unless account.feature_enabled?(feature_name)
   end
 
+  def ensure_account_administrator!
+    raise ArgumentError, 'Account administrator permission is required' unless account_administrator?
+  end
+
   def feature_enabled?(feature_name)
     account.feature_enabled?(feature_name)
   end

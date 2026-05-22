@@ -13,6 +13,8 @@ class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot:
   param :scheduled_at, type: :string, desc: 'Optional planned campaign send datetime used for WhatsApp official 24-hour policy', required: false
 
   def execute(inbox_id:, audience:, message: nil, instructions: nil, text_mode: nil, template_params: nil, scheduled_at: nil)
+    ensure_account_administrator!
+
     inbox = account.inboxes.find(inbox_id)
     preview = ::Campaigns::PreviewService.new(
       account: account,
@@ -25,7 +27,7 @@ class Captain::Tools::Copilot::PreviewCampaignService < Captain::Tools::Copilot:
       scheduled_at: scheduled_at
     ).call
 
-    formatted_payload(preview)
+    formatted_payload(::Campaigns::ToolPayloadBuilder.preview_payload(preview))
   rescue StandardError => e
     tool_failure(e)
   end

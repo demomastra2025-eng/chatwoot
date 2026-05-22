@@ -7,10 +7,13 @@ class Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService < Captain::T
   param :campaign_id, type: :integer, desc: 'Campaign display ID', required: true
 
   def execute(campaign_id:)
+    ensure_account_administrator!
+
     campaign = find_campaign!(campaign_id)
     ::Campaigns::RetryFailedDeliveriesService.new(campaign: campaign).perform
+    analytics = ::Campaigns::AnalyticsService.new(campaign: campaign.reload).call
 
-    formatted_payload(::Campaigns::AnalyticsService.new(campaign: campaign.reload).call)
+    formatted_payload(::Campaigns::ToolPayloadBuilder.analytics_payload(action: 'retry_failed_campaign_deliveries', analytics: analytics))
   rescue StandardError => e
     tool_failure(e)
   end

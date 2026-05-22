@@ -1360,8 +1360,7 @@ class Captain::ToolRegistry
           description: 'List campaigns for the current account',
           group_name: 'Outbound',
           icon: 'megaphone',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::ListCampaignsService,
           risk_level: 'low'
         ),
@@ -1371,8 +1370,7 @@ class Captain::ToolRegistry
           description: 'Preview a campaign before sending it',
           group_name: 'Outbound',
           icon: 'eye',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::PreviewCampaignService,
           risk_level: 'low'
         ),
@@ -1382,8 +1380,7 @@ class Captain::ToolRegistry
           description: 'Get analytics for a campaign',
           group_name: 'Outbound',
           icon: 'chart',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetCampaignAnalyticsService,
           risk_level: 'low'
         ),

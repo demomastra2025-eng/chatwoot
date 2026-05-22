@@ -7,8 +7,12 @@ class Captain::Tools::Copilot::GetCampaignAnalyticsService < Captain::Tools::Cop
   param :campaign_id, type: :integer, desc: 'Campaign display ID', required: true
 
   def execute(campaign_id:)
+    ensure_account_administrator!
+
     campaign = find_campaign!(campaign_id)
-    formatted_payload(::Campaigns::AnalyticsService.new(campaign: campaign).call)
+    analytics = ::Campaigns::AnalyticsService.new(campaign: campaign).call
+
+    formatted_payload(::Campaigns::ToolPayloadBuilder.analytics_payload(action: 'get_campaign_analytics', analytics: analytics))
   rescue StandardError => e
     tool_failure(e)
   end

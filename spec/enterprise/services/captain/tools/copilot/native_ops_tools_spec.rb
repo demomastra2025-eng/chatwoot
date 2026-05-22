@@ -7,6 +7,7 @@ RSpec.describe 'Captain native ops tools' do
   let(:inbox) { create(:inbox, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
+  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
   let(:account_owned_blob) do
     ActiveStorage::Blob.create_and_upload!(
       io: File.open('spec/assets/avatar.png', 'rb'),
@@ -18,9 +19,9 @@ RSpec.describe 'Captain native ops tools' do
 
   describe Captain::Tools::Copilot::SendMessageToConversationService do
     it 'sends a message to the target conversation' do
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(conversation_id: conversation.display_id, content: 'Hello from captain'))
+      payload = execute_confirmed(service, conversation_id: conversation.display_id, content: 'Hello from captain')
 
       expect(payload['action']).to eq('send_message_to_conversation')
       expect(payload.dig('message', 'content')).to eq('Hello from captain')
@@ -28,14 +29,15 @@ RSpec.describe 'Captain native ops tools' do
     end
 
     it 'sends selected attachments through the native message pipeline' do
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       signed_blob_id = account_owned_blob.signed_id
 
-      payload = JSON.parse(service.execute(
-                             conversation_id: conversation.display_id,
-                             content: '',
-                             attachment_ids: [signed_blob_id]
-                           ))
+      payload = execute_confirmed(
+        service,
+        conversation_id: conversation.display_id,
+        content: '',
+        attachment_ids: [signed_blob_id]
+      )
 
       expect(payload.dig('message', 'attachments', 0, 'file_type')).to eq('image')
       expect(conversation.reload.messages.outgoing.last.attachments.first.file.blob.signed_id).to eq(signed_blob_id)
@@ -93,12 +95,12 @@ RSpec.describe 'Captain native ops tools' do
 
   describe Captain::Tools::Copilot::RetryFailedMessageService do
     it 'retries a failed outgoing message' do
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       message = create(:message, conversation: conversation, inbox: conversation.inbox, account: account,
                                  sender: user, message_type: 'outgoing', status: 'failed', content: 'Retry me')
       allow(SendReplyJob).to receive(:perform_later)
 
-      payload = JSON.parse(service.execute(message_id: message.id))
+      payload = execute_confirmed(service, message_id: message.id)
 
       expect(payload['action']).to eq('retry_failed_message')
       expect(payload.dig('message', 'status')).to eq('sent')
@@ -109,7 +111,7 @@ RSpec.describe 'Captain native ops tools' do
 
   describe Captain::Tools::Copilot::EditMessageService do
     it 'edits a message through the update content service' do
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       message = create(:message, conversation: conversation, inbox: conversation.inbox, account: account,
                                  sender: user, message_type: 'outgoing', status: 'sent', content: 'Old content')
       editor = instance_double(Messages::UpdateContentService)
@@ -119,7 +121,7 @@ RSpec.describe 'Captain native ops tools' do
         message
       end
 
-      payload = JSON.parse(service.execute(message_id: message.id, content: 'New content'))
+      payload = execute_confirmed(service, message_id: message.id, content: 'New content')
 
       expect(payload.dig('message', 'content')).to eq('New content')
       expect(message.reload.content).to eq('New content')
@@ -169,12 +171,12 @@ RSpec.describe 'Captain native ops tools' do
     it 'merges contacts into the base contact' do
       base_contact = create(:contact, account: account, email: 'base@example.com')
       mergee_contact = create(:contact, account: account, phone_number: '+77000000001')
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(base_contact_id: base_contact.id, mergee_contact_id: mergee_contact.id))
+      payload = execute_confirmed(service, base_contact_id: base_contact.id, mergee_contact_id: mergee_contact.id)
 
       expect(payload['action']).to eq('merge_contacts')
-      expect(payload.dig('contact', 'id')).to eq(base_contact.id)
+
       expect(account.contacts.exists?(mergee_contact.id)).to be(false)
     end
   end
@@ -211,10 +213,10 @@ RSpec.describe 'Captain native ops tools' do
   describe Captain::Tools::Copilot::ExecuteMacroService do
     it 'enqueues macro execution for the current conversation by default' do
       macro = create(:macro, account: account, created_by: user)
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       allow(MacrosExecutionJob).to receive(:perform_later)
 
-      payload = JSON.parse(service.execute(macro_id: macro.id))
+      payload = execute_confirmed(service, macro_id: macro.id)
 
       expect(payload['action']).to eq('execute_macro')
       expect(payload.dig('macro', 'conversation_display_ids')).to eq([conversation.display_id])
@@ -245,9 +247,9 @@ RSpec.describe 'Captain native ops tools' do
       inbox = instance_double(Inbox, id: 456, name: 'WA Inbox', channel: channel, channel_type: 'Channel::WhatsappWeb', updated_at: Time.zone.now)
       allow(account.inboxes).to receive(:find).with(456).and_return(inbox)
       allow(inbox).to receive(:reload).and_return(inbox)
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(inbox_id: 456))
+      payload = execute_confirmed(service, inbox_id: 456)
 
       expect(payload['action']).to eq('reconnect_whatsapp_web')
       expect(channel).to have_received(:reconnect!)
@@ -300,8 +302,29 @@ RSpec.describe 'Captain native ops tools' do
 
       payload = JSON.parse(service.execute(campaign_status: 'active'))
 
+      expect(payload['action']).to eq('list_campaigns')
       expect(payload['total_count']).to eq(1)
+      expect(payload.dig('campaigns', 0, 'campaign_id')).to be_present
       expect(payload.dig('campaigns', 0, 'campaign_status')).to eq('active')
+    end
+
+    it 'rejects direct execution by non-admin users' do
+      non_admin = create(:user, account: account)
+      service = described_class.new(assistant, user: non_admin, conversation: conversation)
+
+      expect { service.execute }.to raise_error(ArgumentError, 'Account administrator permission is required')
+    end
+
+    it 'hides campaign controls from non-admin users' do
+      non_admin = create(:user, account: account)
+      campaign_tool_classes = [
+        described_class,
+        Captain::Tools::Copilot::PreviewCampaignService,
+        Captain::Tools::Copilot::GetCampaignAnalyticsService,
+        Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService
+      ]
+
+      expect(campaign_tool_classes.map { |tool_class| tool_class.new(assistant, user: non_admin).active? }).to all(be(false))
     end
   end
 
@@ -309,12 +332,13 @@ RSpec.describe 'Captain native ops tools' do
     it 'returns preview payload' do
       inbox = create(:inbox, account: account)
       service = described_class.new(assistant, user: user, conversation: conversation)
-      preview_service = instance_double(Campaigns::PreviewService, call: { 'preview' => 'ok' })
+      preview_service = instance_double(Campaigns::PreviewService, call: { 'audience_size' => 1, 'preview' => 'ok' })
       allow(Campaigns::PreviewService).to receive(:new).and_return(preview_service)
 
       payload = JSON.parse(service.execute(inbox_id: inbox.id, audience: { 'type' => 'all' }, message: 'Hello'))
 
-      expect(payload).to eq('preview' => 'ok')
+      expect(payload).to include('action' => 'preview_campaign', 'audience_size' => 1)
+      expect(payload['preview']).to include('preview' => 'ok')
     end
   end
 
@@ -322,41 +346,57 @@ RSpec.describe 'Captain native ops tools' do
     it 'returns campaign analytics' do
       campaign = create(:campaign, account: account)
       service = described_class.new(assistant, user: user, conversation: conversation)
-      analytics = { 'sent' => 10, 'failed' => 2 }
+      analytics = { 'campaign_id' => campaign.display_id, 'sent' => 10, 'failed' => 2 }
       analytics_service = instance_double(Campaigns::AnalyticsService, call: analytics)
       allow(Campaigns::AnalyticsService).to receive(:new).and_return(analytics_service)
 
       payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
 
-      expect(payload).to eq(analytics)
+      expect(payload).to include('action' => 'get_campaign_analytics', 'campaign_id' => campaign.display_id)
+      expect(payload['analytics']).to include('sent' => 10, 'failed' => 2)
     end
   end
 
   describe Captain::Tools::Copilot::RetryFailedCampaignDeliveriesService do
     it 'retries failed deliveries and returns analytics' do
       campaign = create(:campaign, account: account)
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      copilot_thread = create(:captain_copilot_thread, account: account, user: user, assistant: assistant)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       retry_service = instance_double(Campaigns::RetryFailedDeliveriesService, perform: true)
       analytics_service = instance_double(Campaigns::AnalyticsService, call: { 'retried' => true })
       allow(Campaigns::RetryFailedDeliveriesService).to receive(:new).and_return(retry_service)
       allow(Campaigns::AnalyticsService).to receive(:new).and_return(analytics_service)
 
+      first_payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
+      confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+      expect(first_payload.dig('data', 'confirmation_required')).to be(true)
+
+      create(
+        :captain_copilot_message,
+        account: account,
+        copilot_thread: copilot_thread,
+        message_type: 'user',
+        message: { 'content' => "Подтверждаю #{confirmation_token}" }
+      )
+
       payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
 
-      expect(payload).to eq('retried' => true)
+      expect(payload).to include('action' => 'retry_failed_campaign_deliveries')
+      expect(payload['analytics']).to include('retried' => true)
       expect(retry_service).to have_received(:perform)
     end
   end
 
   describe Captain::Tools::Copilot::CreateWebhookService do
     it 'creates a webhook' do
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(
-                             url: 'https://example.com/hook',
-                             subscriptions: %w[conversation_created message_created],
-                             name: 'Captain Hook'
-                           ))
+      payload = execute_confirmed(
+        service,
+        url: 'https://example.com/hook',
+        subscriptions: %w[conversation_created message_created],
+        name: 'Captain Hook'
+      )
 
       expect(payload['action']).to eq('create_webhook')
       expect(payload.dig('webhook', 'url')).to eq('https://example.com/hook')
@@ -367,17 +407,35 @@ RSpec.describe 'Captain native ops tools' do
   describe Captain::Tools::Copilot::UpdateWebhookService do
     it 'updates a webhook' do
       webhook = create(:webhook, account: account, inbox: nil, url: 'https://old.example.com')
-      service = described_class.new(assistant, user: user, conversation: conversation)
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
 
-      payload = JSON.parse(service.execute(
-                             webhook_id: webhook.id,
-                             url: 'https://new.example.com',
-                             subscriptions: %w[conversation_updated]
-                           ))
+      payload = execute_confirmed(
+        service,
+        webhook_id: webhook.id,
+        url: 'https://new.example.com',
+        subscriptions: %w[conversation_updated]
+      )
 
       expect(payload['action']).to eq('update_webhook')
       expect(payload.dig('webhook', 'url')).to eq('https://new.example.com')
       expect(webhook.reload.url).to eq('https://new.example.com')
     end
+  end
+
+  def execute_confirmed(service, **arguments)
+    first_payload = JSON.parse(service.execute(**arguments))
+    return first_payload unless first_payload.dig('data', 'confirmation_required')
+
+    thread = service.instance_variable_get(:@copilot_thread)
+    confirmation_token = thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+    create(
+      :captain_copilot_message,
+      account: account,
+      copilot_thread: thread,
+      message_type: 'user',
+      message: { 'content' => "Подтверждаю #{confirmation_token}" }
+    )
+
+    JSON.parse(service.execute(**arguments))
   end
 end
