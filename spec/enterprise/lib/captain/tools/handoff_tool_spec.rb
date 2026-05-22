@@ -13,7 +13,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#description' do
     it 'returns the correct description' do
-      expect(tool.description).to eq('Hand off the conversation to a human agent when unable to assist further')
+      expect(tool.description).to eq('Hand off the current conversation to a human team')
     end
   end
 
@@ -22,7 +22,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       expect(tool.parameters).to have_key(:reason)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
-      expect(tool.parameters[:reason].description).to eq('The reason why handoff is needed (optional)')
+      expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
       expect(tool.parameters[:reason].required).to be false
     end
   end
@@ -67,7 +67,8 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             expect(result.content).to eq('Conversation handed off to human support team')
           end.not_to change(Message, :count)
 
-          expect(run_context.context[:pending_human_handoff]).to include(reason: nil)
+          expect(run_context.context[:pending_human_handoff]).not_to have_key(:reason)
+          expect(run_context.context[:pending_human_handoff]).to have_key(:timestamp)
         end
 
         it 'logs tool usage with default reason' do

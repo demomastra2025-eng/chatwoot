@@ -18,9 +18,17 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
 
   describe 'resolving a conversation' do
     it 'marks resolved and enqueues an activity message with the reason when provided' do
-      tool.perform(tool_context, reason: 'Possible spam')
+      result = tool.perform(tool_context, reason: 'Possible spam')
+      payload = JSON.parse(result)
 
       expect(conversation.reload).to be_resolved
+      expect(payload).to include(
+        'action' => 'resolve_conversation',
+        'conversation_id' => conversation.id,
+        'conversation_display_id' => conversation.display_id,
+        'status' => 'resolved',
+        'reason' => 'Possible spam'
+      )
       expect(Conversations::ActivityMessageJob).to have_been_enqueued.with(
         conversation,
         hash_including(
@@ -33,9 +41,17 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
     end
 
     it 'marks resolved without requiring a reason' do
-      tool.perform(tool_context)
+      result = tool.perform(tool_context)
+      payload = JSON.parse(result)
 
       expect(conversation.reload).to be_resolved
+      expect(payload).to include(
+        'action' => 'resolve_conversation',
+        'conversation_id' => conversation.id,
+        'conversation_display_id' => conversation.display_id,
+        'status' => 'resolved'
+      )
+      expect(payload).not_to have_key('reason')
     end
 
     it 'creates a conversation_resolved reporting event' do

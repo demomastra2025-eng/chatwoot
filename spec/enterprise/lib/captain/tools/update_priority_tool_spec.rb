@@ -12,7 +12,7 @@ RSpec.describe Captain::Tools::UpdatePriorityTool, type: :model do
 
   describe '#description' do
     it 'returns the correct description' do
-      expect(tool.description).to eq('Update the priority of a conversation')
+      expect(tool.description).to eq('Update the priority of the current conversation')
     end
   end
 
@@ -31,7 +31,14 @@ RSpec.describe Captain::Tools::UpdatePriorityTool, type: :model do
         %w[low medium high urgent].each do |priority|
           it "updates conversation priority to #{priority}" do
             result = tool.perform(tool_context, priority: priority)
-            expect(result).to eq("Priority updated to '#{priority}' for conversation ##{conversation.display_id}")
+            payload = JSON.parse(result)
+
+            expect(payload).to include(
+              'action' => 'update_priority',
+              'conversation_id' => conversation.id,
+              'conversation_display_id' => conversation.display_id,
+              'priority' => priority
+            )
 
             expect(conversation.reload.priority).to eq(priority)
           end
@@ -41,7 +48,14 @@ RSpec.describe Captain::Tools::UpdatePriorityTool, type: :model do
           conversation.update!(priority: 'high')
 
           result = tool.perform(tool_context, priority: 'nil')
-          expect(result).to eq("Priority updated to 'none' for conversation ##{conversation.display_id}")
+          payload = JSON.parse(result)
+
+          expect(payload).to include(
+            'action' => 'update_priority',
+            'conversation_id' => conversation.id,
+            'conversation_display_id' => conversation.display_id,
+            'priority' => nil
+          )
 
           expect(conversation.reload.priority).to be_nil
         end
@@ -50,7 +64,7 @@ RSpec.describe Captain::Tools::UpdatePriorityTool, type: :model do
           conversation.update!(priority: 'high')
 
           result = tool.perform(tool_context, priority: '')
-          expect(result).to eq("Priority updated to 'none' for conversation ##{conversation.display_id}")
+          expect(JSON.parse(result)).to include('priority' => nil)
 
           expect(conversation.reload.priority).to be_nil
         end

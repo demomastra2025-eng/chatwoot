@@ -18,8 +18,16 @@ class Captain::Tools::UpdatePriorityTool < Captain::Tools::BasePublicTool
 
   def execute_priority_update
     update_conversation_priority(@conversation, @normalized_priority)
-    priority_text = @normalized_priority || 'none'
-    "Priority updated to '#{priority_text}' for conversation ##{@conversation.display_id}"
+    @conversation.reload
+
+    tool_success(
+      data: {
+        action: 'update_priority',
+        conversation_id: @conversation.id,
+        conversation_display_id: @conversation.display_id,
+        priority: @conversation.priority
+      }
+    )
   end
 
   def normalize_priority(priority)

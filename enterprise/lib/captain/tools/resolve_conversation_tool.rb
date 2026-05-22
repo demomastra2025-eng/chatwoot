@@ -11,8 +11,17 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
     log_tool_usage('resolve_conversation', { conversation_id: conversation.id, reason: reason })
 
     conversation.with_captain_activity_context(reason: reason, reason_type: :tool) { conversation.resolved! }
+    conversation.reload
 
-    "Conversation ##{conversation.display_id} resolved#{" (Reason: #{reason})" if reason}"
+    tool_success(
+      data: {
+        action: 'resolve_conversation',
+        conversation_id: conversation.id,
+        conversation_display_id: conversation.display_id,
+        status: conversation.status,
+        reason: reason.presence
+      }.compact
+    )
   end
 
   private
