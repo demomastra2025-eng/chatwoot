@@ -14,7 +14,7 @@ class Captain::Tools::Copilot::SearchCompaniesService < Captain::Tools::Copilot:
     companies = companies.where('LOWER(domain) ILIKE ?', "%#{domain.to_s.downcase}%") if domain.present?
 
     total_count = companies.count
-    records = companies.limit(parse_limit(limit)).map { |company| company_payload(company) }
+    records = companies.limit(parse_limit(limit)).map { |company| ::Crm::PayloadBuilder.company(company) }
 
     formatted_payload(
       filters: {
@@ -28,18 +28,5 @@ class Captain::Tools::Copilot::SearchCompaniesService < Captain::Tools::Copilot:
 
   def active?
     @user.present?
-  end
-
-  private
-
-  def company_payload(company)
-    {
-      id: company.id,
-      name: company.name,
-      domain: company.domain,
-      description: company.description,
-      created_at: company.created_at&.iso8601,
-      updated_at: company.updated_at&.iso8601
-    }
   end
 end

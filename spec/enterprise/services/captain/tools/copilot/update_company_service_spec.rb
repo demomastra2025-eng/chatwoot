@@ -12,9 +12,10 @@ RSpec.describe Captain::Tools::Copilot::UpdateCompanyService do
   it 'returns normalized updated company payload wrapper' do
     payload = JSON.parse(service.execute(name: 'NewCo', domain: 'new.co', description: 'Updated'))
 
-    expect(payload).to include('action' => 'update_company')
+    expect(payload).to include('action' => 'update_company', 'company_id' => company.id)
     expect(payload['company']).to include(
       'id' => company.id,
+      'account_id' => account.id,
       'name' => 'NewCo',
       'domain' => 'new.co',
       'description' => 'Updated'

@@ -16,8 +16,10 @@ RSpec.describe Captain::Tools::Copilot::SearchCompaniesService do
       expect(payload['filters']).to include('name' => 'Health')
       expect(payload['total_count']).to eq(1)
       expect(payload['companies'].length).to eq(1)
+      expect(payload['companies'].map { |company| company['id'] }).not_to include(company2.id)
       expect(payload['companies'].first).to include(
         'id' => company1.id,
+        'account_id' => account.id,
         'name' => 'OneLink Health',
         'domain' => 'onelink.health'
       )

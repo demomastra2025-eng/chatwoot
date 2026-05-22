@@ -1418,3 +1418,44 @@ Next coding slice:
 
 1. Continue Etapa 6/7 tool contract modernization case-by-case with structured payload parity and confirmation gates.
 2. Keep `captain.event_contract_trace` as regression gate when adding new semantic output or runtime handoff cases.
+
+## 2026-05-22 Etapa 6/7 company tool contract slice
+
+Status: **Implemented.**
+
+Implemented:
+
+- Added shared `Crm::PayloadBuilder.company` for AI-safe company records.
+- Added `Crm::ToolPayloadBuilder.company_payload` wrapper with `action`, `company_id`, top-level `name/domain`, and nested `company`.
+- Migrated public and Copilot `create_company` / `update_company` tools to the shared wrapper for payload parity.
+- Migrated Copilot `get_company` / `search_companies` to the shared company payload.
+- Kept Copilot `create_company` confirmation coverage by using a real `captain_copilot_thread` and confirming before final payload assertions.
+- Independent targeted review found no blockers.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/create_company_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_company_service_spec.rb spec/enterprise/services/captain/tools/copilot/search_companies_service_spec.rb spec/enterprise/services/captain/tools/copilot/get_company_service_spec.rb spec/enterprise/lib/captain/tools/create_company_tool_spec.rb spec/enterprise/lib/captain/tools/update_company_tool_spec.rb
+# 6 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c app/services/crm/payload_builder.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c app/builders/crm/tool_payload_builder.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/create_company_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/update_company_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/get_company_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/search_companies_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/lib/captain/tools/create_company_tool.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/lib/captain/tools/update_company_tool.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --fail-level E app/services/crm/payload_builder.rb app/builders/crm/tool_payload_builder.rb enterprise/app/services/captain/tools/copilot/create_company_service.rb enterprise/app/services/captain/tools/copilot/update_company_service.rb enterprise/app/services/captain/tools/copilot/get_company_service.rb enterprise/app/services/captain/tools/copilot/search_companies_service.rb enterprise/lib/captain/tools/create_company_tool.rb enterprise/lib/captain/tools/update_company_tool.rb spec/enterprise/services/captain/tools/copilot/create_company_service_spec.rb spec/enterprise/services/captain/tools/copilot/update_company_service_spec.rb spec/enterprise/services/captain/tools/copilot/search_companies_service_spec.rb spec/enterprise/services/captain/tools/copilot/get_company_service_spec.rb spec/enterprise/lib/captain/tools/create_company_tool_spec.rb spec/enterprise/lib/captain/tools/update_company_tool_spec.rb
+# exit 0; existing C-level metrics offenses remain in app/services/crm/payload_builder.rb, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue remaining Etapa 6/7 tools case-by-case: scheduling resources/appointments, touch plans, campaigns/templates, then admin/runtime tools.
+2. For each mutation tool: keep confirmation-gate specs plus shared payload builders and public/Copilot symmetry.

@@ -30,4 +30,16 @@ module Crm::ToolPayloadBuilder
       task: task_data
     }.compact
   end
+
+  def company_payload(action:, company:)
+    company_data = Crm::PayloadBuilder.company(company)
+
+    {
+      action: action,
+      company_id: company_data[:id],
+      name: company_data[:name],
+      domain: company_data[:domain],
+      company: company_data
+    }.compact
+  end
 end

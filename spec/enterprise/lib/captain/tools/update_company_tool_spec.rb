@@ -12,7 +12,13 @@ RSpec.describe Captain::Tools::UpdateCompanyTool, type: :model do
   it 'returns normalized update_company payload' do
     payload = JSON.parse(tool.perform(tool_context, name: 'NewCo', domain: 'new.co', description: 'Updated'))
 
-    expect(payload).to include('action' => 'update_company')
-    expect(payload['company']).to include('id' => company.id, 'name' => 'NewCo', 'domain' => 'new.co', 'description' => 'Updated')
+    expect(payload).to include('action' => 'update_company', 'company_id' => company.id)
+    expect(payload['company']).to include(
+      'id' => company.id,
+      'account_id' => account.id,
+      'name' => 'NewCo',
+      'domain' => 'new.co',
+      'description' => 'Updated'
+    )
   end
 end

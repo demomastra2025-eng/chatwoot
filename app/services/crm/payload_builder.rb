@@ -126,6 +126,18 @@ module Crm::PayloadBuilder
     }
   end
 
+  def company(company)
+    {
+      id: company.id,
+      account_id: company.account_id,
+      name: company.name,
+      domain: company.domain,
+      description: company.description,
+      created_at: company.created_at&.iso8601,
+      updated_at: company.updated_at&.iso8601
+    }
+  end
+
   def comment(comment)
     {
       id: comment.id,

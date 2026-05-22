@@ -11,10 +11,7 @@ class Captain::Tools::UpdateCompanyTool < Captain::Tools::BasePublicTool
       description: description
     )
 
-    JSON.pretty_generate(
-      action: 'update_company',
-      company: company_payload(company)
-    )
+    JSON.pretty_generate(::Crm::ToolPayloadBuilder.company_payload(action: 'update_company', company: company))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -26,16 +23,5 @@ class Captain::Tools::UpdateCompanyTool < Captain::Tools::BasePublicTool
       assistant: assistant,
       conversation: current_conversation(state)
     )
-  end
-
-  def company_payload(company)
-    {
-      id: company.id,
-      name: company.name,
-      domain: company.domain,
-      description: company.description,
-      created_at: company.created_at&.iso8601,
-      updated_at: company.updated_at&.iso8601
-    }
   end
 end

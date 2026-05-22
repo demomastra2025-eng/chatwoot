@@ -11,7 +11,12 @@ RSpec.describe Captain::Tools::CreateCompanyTool, type: :model do
   it 'returns normalized create_company payload' do
     payload = JSON.parse(tool.perform(tool_context, name: 'OneLink', domain: 'onelink.kz', description: 'CRM'))
 
-    expect(payload).to include('action' => 'create_company')
-    expect(payload['company']).to include('name' => 'OneLink', 'domain' => 'onelink.kz', 'description' => 'CRM')
+    expect(payload).to include('action' => 'create_company', 'company_id' => payload.dig('company', 'id'))
+    expect(payload['company']).to include(
+      'account_id' => account.id,
+      'name' => 'OneLink',
+      'domain' => 'onelink.kz',
+      'description' => 'CRM'
+    )
   end
 end
