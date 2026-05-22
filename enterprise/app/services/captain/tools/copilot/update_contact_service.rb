@@ -18,7 +18,7 @@ class Captain::Tools::Copilot::UpdateContactService < Captain::Tools::Copilot::B
       identifier: identifier,
       custom_attributes: custom_attributes
     )
-    formatted_record(contact)
+    formatted_payload(action: 'update_contact', contact: contact_payload(contact))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -35,5 +35,21 @@ class Captain::Tools::Copilot::UpdateContactService < Captain::Tools::Copilot::B
       conversation: current_conversation,
       actor: @user
     )
+  end
+
+  def contact_payload(contact)
+    {
+      id: contact.id,
+      name: contact.name,
+      email: contact.email,
+      phone_number: contact.phone_number,
+      identifier: contact.identifier,
+      company_id: contact.company_id,
+      contact_type: contact.contact_type,
+      additional_attributes: contact.additional_attributes,
+      custom_attributes: contact.custom_attributes,
+      created_at: contact.created_at&.iso8601,
+      updated_at: contact.updated_at&.iso8601
+    }
   end
 end

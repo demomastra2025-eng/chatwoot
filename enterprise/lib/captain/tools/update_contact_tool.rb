@@ -40,6 +40,8 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
       phone_number: contact.phone_number,
       identifier: contact.identifier,
       company_id: contact.company_id,
+      contact_type: contact.contact_type,
+      additional_attributes: contact.additional_attributes,
       custom_attributes: contact.custom_attributes,
       created_at: contact.created_at&.iso8601,
       updated_at: contact.updated_at&.iso8601
