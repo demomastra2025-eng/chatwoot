@@ -35,6 +35,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         result = service.generate_content
         expect(result).to be_an(Array)
         expect(result).to include({ type: 'text', text: 'Hello world' })
+        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
@@ -47,9 +48,14 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment.save!
       end
 
-      it 'returns recognized image text without original text' do
+      it 'returns image URL and recognized image text without original text' do
         result = service.generate_content
-        expect(result).to eq('Image attachment: Recognized image content')
+        expect(result).to eq(
+          [
+            { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } },
+            { type: 'text', text: 'Image attachment: Recognized image content' }
+          ]
+        )
       end
     end
   end
@@ -66,6 +72,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
 
       it 'includes image parts' do
         result = service.send(:attachment_parts, attachments)
+        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
@@ -136,6 +143,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         result = service.send(:attachment_parts, attachments)
+        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
         expect(result).to include({ type: 'text', text: 'Audio text' })
         expect(result).to include({ type: 'text', text: 'User has shared an attachment' })
@@ -166,8 +174,9 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         image_attachments = message.attachments.where(file_type: :image)
         result = service.send(:image_parts, image_attachments)
 
-        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
-        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
+        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image1.jpg' } })
+        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image2.jpg' } })
+        expect(result.count { |part| part == { type: 'text', text: 'Image attachment: Recognized image content' } }).to eq(2)
       end
     end
 

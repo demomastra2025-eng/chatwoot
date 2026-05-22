@@ -47,8 +47,15 @@ class Captain::OpenAiMessageBuilderService
   def image_parts(image_attachments)
     image_attachments.each_with_object([]) do |attachment, parts|
       url = get_attachment_url(attachment)
-      parts << image_description_part(attachment, url) if url.present?
-    end
+      next if url.blank?
+
+      parts << image_url_part(url)
+      parts << image_description_part(attachment, url)
+    end.compact
+  end
+
+  def image_url_part(url)
+    { type: 'image_url', image_url: { url: url } }
   end
 
   def get_attachment_url(attachment)

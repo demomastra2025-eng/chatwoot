@@ -15,6 +15,15 @@ class Captain::Assistant::AgentRunnerService
 
   class BlankResponseError < StandardError; end
 
+  class SemanticOutputError < StandardError
+    attr_reader :code
+
+    def initialize(code, message)
+      @code = code
+      super(message)
+    end
+  end
+
   def initialize(assistant:, conversation: nil, callbacks: {}, source: nil)
     @assistant = assistant
     @conversation = conversation
@@ -143,6 +152,9 @@ class Captain::Assistant::AgentRunnerService
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => 'Processed by agent' }
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
+    semantic_error = semantic_output_error(response, result.context)
+    return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
+
     return provider_error_response(blank_response_error, handoff_tool_called: handoff_tool_called) if blank_public_response?(response)
 
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
@@ -173,6 +185,84 @@ class Captain::Assistant::AgentRunnerService
     }
     response['handoff_tool_called'] = true if handoff_tool_called
     response
+  end
+
+  def semantic_output_error_response(error, response, context, handoff_tool_called: false)
+    publish_semantic_invalid_event(error, response, context)
+    provider_error_response(error, handoff_tool_called: handoff_tool_called)
+  end
+
+  def semantic_output_error(response, context)
+    return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
+    return provider_error_literal_error if provider_error_literal?(response)
+    return artifact_ids_without_tool_error if artifact_ids_without_completed_tool?(response, context)
+
+    nil
+  end
+
+  def reserved_runtime_action?(response)
+    ActiveModel::Type::Boolean.new.cast(response['response_cancelled']) || response['response'].to_s == 'response_cancelled'
+  end
+
+  def reserved_runtime_action_error(response)
+    action = response['response'].presence || 'response_cancelled'
+    SemanticOutputError.new(
+      'reserved_runtime_action',
+      "Model output attempted reserved runtime action #{action}"
+    )
+  end
+
+  def provider_error_literal?(response)
+    response['response'].to_s == PROVIDER_ERROR_RESPONSE && response['error_class'].blank? && response['error_message'].blank?
+  end
+
+  def provider_error_literal_error
+    SemanticOutputError.new(
+      'reserved_runtime_action',
+      "Model output attempted reserved runtime action #{PROVIDER_ERROR_RESPONSE}"
+    )
+  end
+
+  def artifact_ids_without_completed_tool?(response, context)
+    response_artifact_ids(response).present? && completed_tool_names(context).blank?
+  end
+
+  def artifact_ids_without_tool_error
+    SemanticOutputError.new(
+      'artifact_ids_without_tool',
+      'Model output referenced artifact_ids without a completed tool result'
+    )
+  end
+
+  def response_artifact_ids(response)
+    raw_artifact_ids = response['artifact_ids']
+    case raw_artifact_ids
+    when Array
+      raw_artifact_ids.filter_map { |artifact_id| artifact_id.to_s.strip.presence }
+    when String
+      raw_artifact_ids.to_s.split(/[,\s]+/).filter_map(&:presence)
+    else
+      []
+    end
+  end
+
+  def completed_tool_names(context)
+    Array(context&.dig(:captain_v2_completed_tool_names)).filter_map { |tool_name| tool_name.to_s.strip.presence }
+  end
+
+  def publish_semantic_invalid_event(error, response, context)
+    artifact_ids = response_artifact_ids(response)
+    Llm::EventBus.publish(
+      'schema.invalid',
+      schema_name: Captain::ResponseSchema.name,
+      current_agent: context&.dig(:current_agent),
+      reason: error.message,
+      semantic_error_code: error.code,
+      response_type: 'hash',
+      response_size: response.to_json.bytesize,
+      artifact_ids_count: artifact_ids.size,
+      completed_tools_count: completed_tool_names(context).size
+    )
   end
 
   def handoff_tool_called_from_context(context)

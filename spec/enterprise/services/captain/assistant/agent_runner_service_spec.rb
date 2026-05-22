@@ -367,6 +367,91 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'blocks model-invented response cancellation instead of silently suppressing the reply' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'response_cancelled', 'response_cancelled' => true },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+      invalid_events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.schema.invalid') do |*args|
+        invalid_events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output attempted reserved runtime action response_cancelled'
+      )
+      expect(invalid_events.map(&:payload)).to contain_exactly(
+        hash_including(
+          'schema_name' => 'Captain::ResponseSchema',
+          'semantic_error_code' => 'reserved_runtime_action',
+          'reason' => 'Model output attempted reserved runtime action response_cancelled'
+        )
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'blocks hallucinated artifact ids when no tool completed' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Here is the file.', 'artifact_ids' => ['hallucinated-artifact-id'] },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+      invalid_events = []
+      subscriber = ActiveSupport::Notifications.subscribe('llm.schema.invalid') do |*args|
+        invalid_events << ActiveSupport::Notifications::Event.new(*args)
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).once
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
+        'error_message' => 'Model output referenced artifact_ids without a completed tool result'
+      )
+      expect(invalid_events.map(&:payload)).to contain_exactly(
+        hash_including(
+          'schema_name' => 'Captain::ResponseSchema',
+          'semantic_error_code' => 'artifact_ids_without_tool',
+          'artifact_ids_count' => 1,
+          'completed_tools_count' => 0
+        )
+      )
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    it 'allows artifact ids after a completed tool result' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Here is the file.', 'artifact_ids' => ['opaque-tool-artifact-id'] },
+          context: { current_agent: 'assistant_agent', captain_v2_completed_tool_names: ['list_captain_documents'] },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => 'Here is the file.',
+        'artifact_ids' => ['opaque-tool-artifact-id']
+      )
+    end
+
     it 'returns a standardized handoff payload when the runtime requests a human handoff' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(

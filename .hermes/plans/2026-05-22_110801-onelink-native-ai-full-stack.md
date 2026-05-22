@@ -1324,3 +1324,49 @@ Next coding slice:
 1. Proceed to **Etapa 4 Runtime Health / Alerts V1**: one safe alert rule and one indexed metrics query from persisted summaries.
 2. Then proceed to **Etapa 5 semantic validators**: invalid handoff/action/artifact ids and tool-needed-but-not-called where detectable.
 3. Keep `captain.event_contract_trace` as the regression gate for future event/trace changes.
+
+## 2026-05-22 Etapa 5 semantic structured-output hardening slice
+
+Status: **First Etapa 5 semantic validator slice is implemented.**
+
+Implemented:
+
+- Added Captain response semantic validation in `Captain::Assistant::AgentRunnerService` after schema-valid output is normalized but before public response processing.
+- Blocked reserved runtime actions invented by the model instead of runtime state:
+  - `response_cancelled` / `response_cancelled=true` can no longer silently suppress a reply unless the runtime context set `pending_response_cancellation`.
+  - provider-error handoff sentinel text from model output is treated as a reserved runtime action unless it came from an actual provider error path.
+- Blocked hallucinated `artifact_ids` when no Captain tool completed in the run context.
+- Allowed `artifact_ids` only after at least one completed tool result is recorded, so artifact delivery remains tool-derived rather than free-text hallucinated.
+- Semantic failures publish `llm.schema.invalid` with controlled metadata only:
+  - `semantic_error_code`
+  - `schema_name=Captain::ResponseSchema`
+  - response type/size
+  - artifact/completed-tool counts
+  - no raw response text, prompts, messages, tool args, or artifact ids.
+- Preserved existing no-unsafe-retry boundary: blank response retry is still skipped after non-handoff tools complete.
+- Fixed Captain multimodal history regression surfaced by the broader targeted job spec: image attachments now keep the direct `image_url` part for vision-capable runtime while still adding bounded image-recognition text when available.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/assistant/agent_runner_service_spec.rb spec/enterprise/services/captain/open_ai_message_builder_service_spec.rb spec/enterprise/jobs/captain/conversation/response_builder_job_spec.rb spec/lib/llm/monitoring/event_recorder_spec.rb
+# 132 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c enterprise/app/services/captain/assistant/agent_runner_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c enterprise/app/services/captain/open_ai_message_builder_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c spec/enterprise/services/captain/assistant/agent_runner_service_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec ruby -c spec/enterprise/services/captain/open_ai_message_builder_service_spec.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/assistant/agent_runner_service.rb enterprise/app/services/captain/open_ai_message_builder_service.rb spec/enterprise/services/captain/assistant/agent_runner_service_spec.rb spec/enterprise/services/captain/open_ai_message_builder_service_spec.rb
+# exit 0; existing C-level metrics/RSpec helper-count offenses remain, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Continue Etapa 5 with semantic validators for invalid handoff target/action/artifact identifiers at the runtime/tool boundary where the target registry or artifact resolver can prove invalidity.
+2. Add deterministic eval fixture coverage for the new semantic failures so `captain.event_contract_trace` can catch regressions.
+3. Then continue Etapa 6/7 tool contract + confirmation modernization case-by-case.
