@@ -25,9 +25,15 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, contact: { id: contact.id } })
 
     payload = JSON.parse(tool.perform(tool_context, resource_id: new_resource.id, service_id: new_service.id,
-                                                    starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601))
+                                                    starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601,
+                                                    custom_attributes: { source: 'agent' }))
 
     expect(payload).to include('action' => 'update_appointment')
     expect(payload['appointment']).to include('id' => appointment.id, 'resource_id' => new_resource.id, 'service_id' => new_service.id)
+    expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
+  end
+
+  it 'exposes custom_attributes as an object parameter' do
+    expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
 end

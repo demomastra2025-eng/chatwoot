@@ -55,9 +55,7 @@ RSpec.describe 'Captain tool schema metadata' do
       [Captain::Tools::CreateDealTool, Captain::Tools::Copilot::CreateDealService],
       [Captain::Tools::UpdateDealTool, Captain::Tools::Copilot::UpdateDealService],
       [Captain::Tools::CreateTaskTool, Captain::Tools::Copilot::CreateTaskService],
-      [Captain::Tools::UpdateTaskTool, Captain::Tools::Copilot::UpdateTaskService],
-      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
-      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+      [Captain::Tools::UpdateTaskTool, Captain::Tools::Copilot::UpdateTaskService]
     ]
 
     tool_pairs.each do |public_tool, assistant_tool|
@@ -67,6 +65,22 @@ RSpec.describe 'Captain tool schema metadata' do
         'properties', 'custom_attributes'
       )
       expect(custom_attributes_schema['type']).to eq('string')
+    end
+  end
+
+  it 'exposes scheduling appointment custom_attributes as native objects' do
+    tool_pairs = [
+      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+    ]
+
+    tool_pairs.each do |public_tool, assistant_tool|
+      expect(public_tool.parameters[:custom_attributes].type).to eq('object')
+      expect(assistant_tool.parameters[:custom_attributes].type).to eq(:object)
+      custom_attributes_schema = public_tool.new(Captain::Assistant.new).params_schema.dig(
+        'properties', 'custom_attributes'
+      )
+      expect(custom_attributes_schema['type']).to eq('object')
     end
   end
 

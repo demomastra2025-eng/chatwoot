@@ -12,8 +12,8 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
   param :appointment_type, type: :string, desc: 'Appointment type', required: false
   param :client_comment, type: :string, desc: 'Client comment', required: false
   param :custom_attributes,
-        type: :string,
-        desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \
+        type: :object,
+        desc: 'Optional scheduling custom attributes object. Use the matching list_*_custom_fields tool first; ' \
               'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
@@ -29,7 +29,7 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
-    formatted_record(appointment)
+    formatted_payload(action: 'create_appointment', appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
   rescue StandardError => e
     tool_failure(e)
   end

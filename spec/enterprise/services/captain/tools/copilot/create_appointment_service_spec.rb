@@ -2,11 +2,12 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
   let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
+  let(:user) { create(:user, :administrator, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account, name: 'Aruzhan', phone_number: '+77000000000') }
   let(:conversation) { create(:conversation, account: account, contact: contact) }
-  let(:service) { described_class.new(assistant, user: user, conversation: conversation) }
+  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
+  let(:service) { described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread) }
   let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30) }
   let(:consultation) { create(:scheduling_service, account: account, name: 'Consultation', duration_min: 45, base_price: 20_000) }
   let(:starts_at) { Time.zone.parse('2026-04-20 09:00:00 +0500') }
@@ -18,17 +19,28 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
   end
 
   describe '#execute' do
-    it 'creates an appointment from the selected service duration without requiring ends_at' do
-      service.execute(
-        resource_id: resource.id,
-        starts_at: starts_at.iso8601,
-        service_id: consultation.id,
-        client_comment: 'Needs a morning slot',
-        custom_attributes: { source: 'captain', channel: 'telegram' }.to_json
+    it 'creates an appointment from the selected service duration and returns a structured payload' do
+      payload = JSON.parse(
+        execute_confirmed(
+          resource_id: resource.id,
+          starts_at: starts_at.iso8601,
+          service_id: consultation.id,
+          client_comment: 'Needs a morning slot',
+          custom_attributes: { source: 'captain', channel: 'telegram' }
+        )
       )
 
       appointment = account.scheduling_appointments.order(:id).last
 
+      expect(payload).to include('action' => 'create_appointment')
+      expect(payload['appointment']).to include(
+        'id' => appointment.id,
+        'resource_id' => resource.id,
+        'contact_id' => contact.id,
+        'service_id' => consultation.id,
+        'duration_min' => 45,
+        'client_comment' => 'Needs a morning slot'
+      )
       expect(appointment).to have_attributes(
         resource_id: resource.id,
         service_id: consultation.id,
@@ -46,13 +58,35 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
       )
     end
 
+    it 'exposes custom_attributes as an object parameter' do
+      expect(described_class.parameters[:custom_attributes].type).to eq(:object)
+    end
+
     it 'falls back to the specialist slot duration when no service or duration is provided' do
-      service.execute(resource_id: resource.id, starts_at: starts_at.iso8601)
+      execute_confirmed(resource_id: resource.id, starts_at: starts_at.iso8601)
 
       appointment = account.scheduling_appointments.order(:id).last
 
       expect(appointment.duration_min).to eq(30)
       expect(appointment.ends_at).to eq(starts_at + 30.minutes)
     end
+  end
+
+  def execute_confirmed(**arguments)
+    first_result = service.execute(**arguments)
+    first_payload = JSON.parse(first_result)
+    return first_result unless first_payload.dig('data', 'confirmation_required')
+
+    confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
+
+    create(
+      :captain_copilot_message,
+      account: account,
+      copilot_thread: copilot_thread,
+      message_type: 'user',
+      message: { 'content' => "Подтверждаю #{confirmation_token}" }
+    )
+
+    service.execute(**arguments)
   end
 end
