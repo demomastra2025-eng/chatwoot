@@ -199,6 +199,8 @@ RSpec.describe Captain::ToolRegistry do
       complete_task
       list_account_users
       list_teams
+      list_inboxes
+      list_assignment_policies
       get_account_health
       get_recent_account_errors
       get_tool_execution_log

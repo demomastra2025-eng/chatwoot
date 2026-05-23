@@ -1606,3 +1606,47 @@ Next coding slice:
 
 1. Continue Etapa 6/7 with admin/runtime tools after outbound contracts are locked.
 2. Keep shared payload-builder + public/Copilot parity as the default mutation-tool pattern.
+
+## 2026-05-23 Etapa 6/7 account admin routing catalog slice
+
+Status: **Implemented.**
+
+Implemented:
+
+- Added assistant-only `list_inboxes` catalog for account admins:
+  - account-scoped active inbox IDs/names/channel types;
+  - working-hours and auto-assignment flags;
+  - assignment-policy summary;
+  - Captain assistant/auto-reply metadata and available auto-reply modes.
+- Added assistant-only `list_assignment_policies` catalog for account admins:
+  - enabled state, assignment order, conversation priority;
+  - fair distribution settings;
+  - attached inbox IDs and compact inbox metadata.
+- Both catalogs enforce execute-time `ensure_account_administrator!`, not only prompt visibility.
+- Both tools are assistant-only, low-risk, idempotent, and not selected by default.
+- Customer-facing AI Agent scope does not expose these account-admin catalogs.
+
+Verification completed:
+
+```bash
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH RAILS_ENV=test DISABLE_SPRING=1 bundle exec rspec spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb --format progress
+# 21 examples, 0 failures
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/list_inboxes_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/app/services/captain/tools/copilot/list_assignment_policies_service.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c enterprise/lib/captain/tool_registry.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH ruby -c spec/enterprise/lib/captain/tool_registry_spec.rb
+# Syntax OK
+
+RBENV_ROOT=/root/.rbenv PATH=/root/.rbenv/bin:/root/.rbenv/shims:$PATH bundle exec rubocop --force-exclusion --fail-level E enterprise/app/services/captain/tools/copilot/list_inboxes_service.rb enterprise/app/services/captain/tools/copilot/list_assignment_policies_service.rb enterprise/lib/captain/tool_registry.rb spec/enterprise/services/captain/tools/copilot/account_directory_tools_spec.rb spec/enterprise/lib/captain/tool_registry_spec.rb
+# exit 0; existing C-level registry/spec metrics/style offenses remain, no E-level offenses
+
+git diff --check
+# clean
+```
+
+Next coding slice:
+
+1. Add high-risk confirmed mutation tools for inbox routing/AI settings after these catalogs: `update_captain_inbox_auto_reply_mode` and `set_inbox_assignment_policy`.
+2. Keep backend confirmation and execute-time account-admin gate as non-negotiable for those writes.

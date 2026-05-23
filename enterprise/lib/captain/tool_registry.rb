@@ -983,6 +983,30 @@ class Captain::ToolRegistry
           selected_by_default: false
         ),
         definition(
+          id: 'list_inboxes',
+          title: 'List Inboxes',
+          description: 'List account inboxes with routing, assignment policy, working-hours, and Captain auto-reply metadata',
+          group_name: 'Account',
+          icon: 'inbox',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListInboxesService,
+          risk_level: 'low',
+          idempotent: true,
+          selected_by_default: false
+        ),
+        definition(
+          id: 'list_assignment_policies',
+          title: 'List Assignment Policies',
+          description: 'List account assignment policies and attached inbox IDs for routing decisions',
+          group_name: 'Account',
+          icon: 'branch',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::ListAssignmentPoliciesService,
+          risk_level: 'low',
+          idempotent: true,
+          selected_by_default: false
+        ),
+        definition(
           id: 'retry_failed_message',
           title: 'Retry Failed Message',
           description: 'Retry a failed outgoing message in a conversation',
